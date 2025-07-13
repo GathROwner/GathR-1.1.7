@@ -1,0 +1,89 @@
+{
+  "expo": {
+    "name": "GathR",
+    "slug": "gathr",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "gathr",
+    "userInterfaceStyle": "automatic",
+    "icon": "./assets/icon.png",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "updates": {
+      "fallbackToCacheTimeout": 0
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.craigb.gathr",
+      "buildNumber": "1",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSLocationWhenInUseUsageDescription": "GathR needs your location to show nearby events on the map",
+        "NSCalendarsUsageDescription": "GathR needs access to your calendar to add events you're interested in attending",
+        "SKAdNetworkItems": [
+          {
+            "SKAdNetworkIdentifier": "cstr6suwn9.skadnetwork"
+          }
+        ],
+        "NSUserTrackingUsageDescription": "This identifier will be used to deliver personalized ads to you.",
+        "GADApplicationIdentifier": "ca-app-pub-9606287073864764~2169126745"
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#ffffff"
+      },
+      "package": "com.craigb.gathr",
+      "permissions": [
+        "ACCESS_FINE_LOCATION",
+        "READ_CALENDAR",
+        "WRITE_CALENDAR"
+      ],
+      "versionCode": 1
+    },
+    "web": {
+      "bundler": "metro"
+    },
+    "react-native-google-mobile-ads": {
+      "android_app_id": "ca-app-pub-9606287073864764~3873969279",
+      "ios_app_id": "ca-app-pub-9606287073864764~2169126745"
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Allow GathR to use your location to show nearby events on the map."
+        }
+      ],
+      [
+        "expo-calendar",
+        {
+          "calendarPermission": "Allow GathR to access your calendar to add events"
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow GathR to access your photos for profile images.",
+          "cameraPermission": "Allow GathR to use your camera for profile images."
+        }
+      ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "87fd0c8f-0007-49fb-a057-2f4e81afe1db"
+      },
+      "router": {
+        "origin": false
+      }
+    }
+  }
+}

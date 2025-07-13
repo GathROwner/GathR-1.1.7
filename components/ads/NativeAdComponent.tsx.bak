@@ -1,0 +1,233 @@
+import React from 'react';
+import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { MaterialIcons } from '@expo/vector-icons';
+import NativeAdView from 'react-native-google-mobile-ads/NativeAdView';
+import NativeMediaView from 'react-native-google-mobile-ads/NativeMediaView';
+import NativeAsset from 'react-native-google-mobile-ads/NativeAsset';
+import NativeAssetType from 'react-native-google-mobile-ads/NativeAssetType';
+
+
+// Use your app's brand color constants
+const BRAND = {
+  primary: '#1E90FF',
+  primaryDark: '#0066CC',
+  primaryLight: '#62B5FF',
+  accent: '#FF3B30',
+  white: '#FFFFFF',
+  text: '#333333',
+};
+
+interface NativeAdComponentProps {
+  nativeAd: any; // Replace with proper type if available
+  loading: boolean;
+}
+
+export default function NativeAdComponent({ nativeAd, loading }: NativeAdComponentProps) {
+  if (loading) {
+    return (
+      <View style={styles.eventCard}>
+        <View style={styles.adLoadingContainer}>
+          <Text style={styles.adLoadingText}>Ad is loading...</Text>
+        </View>
+      </View>
+    );
+  }
+
+  if (!nativeAd) {
+    return null;
+  }
+
+  return (
+    <NativeAdView style={styles.eventCard} nativeAd={nativeAd}>
+      {/* Left side color indicator */}
+      <View style={[styles.cardIndicator, { backgroundColor: BRAND.primary }]} />
+
+      <View style={styles.cardTopSection}>
+        {/* Text content section */}
+        <View style={styles.contentSection}>
+          <View style={styles.sponsoredRow}>
+            <Text style={styles.sponsoredText}>Sponsored</Text>
+          </View>
+          
+          {/* Headline */}
+          <Text style={styles.cardTitle}>{nativeAd.headline}</Text>
+          
+          {/* Venue-like row */}
+          <View style={styles.venueContainer}>
+            <View style={styles.venueRow}>
+              <MaterialIcons name="store" size={14} color="#666666" />
+              <Text style={styles.venueText}>{nativeAd.advertiser}</Text>
+            </View>
+          </View>
+          
+          {/* Star Rating (if provided) */}
+          {nativeAd.starRating ? (
+            <Text style={styles.starRatingText}>{`Rating: ${nativeAd.starRating}★`}</Text>
+          ) : null}
+        </View>
+        
+        {/* Image section */}
+        <View style={styles.imageSection}>
+          <NativeMediaView style={styles.cardImage} />
+        </View>
+      </View>
+      
+      {/* Description section */}
+      <View style={styles.descriptionSection}>
+        <Text style={styles.cardDescription}>{nativeAd.body}</Text>
+      </View>
+      
+      {/* Bottom action section */}
+      <View style={styles.cardBottomRow}>
+        <View style={styles.leftSection}>
+          <View style={[styles.categoryButton, { backgroundColor: BRAND.primary }]}>
+            <Text style={styles.categoryText}>Special Offer</Text>
+          </View>
+        </View>
+        
+        {/* Action button */}
+        <View style={styles.rightSection}>
+          <TouchableOpacity
+            style={styles.callToActionButton}
+            onPress={nativeAd.onAdClick}
+          >
+            <Text style={styles.callToActionText}>{nativeAd.callToAction}</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </NativeAdView>
+  );
+}
+
+const styles = StyleSheet.create({
+  eventCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    marginBottom: 16,
+    overflow: 'hidden',
+    position: 'relative',
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+  },
+  adLoadingContainer: {
+    padding: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    height: 200,
+  },
+  adLoadingText: {
+    color: '#888888',
+    fontSize: 14,
+  },
+  cardIndicator: {
+    width: 4,
+    height: '100%',
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    zIndex: 1,
+  },
+  cardTopSection: {
+    flexDirection: 'row',
+    padding: 12,
+    paddingBottom: 8,
+  },
+  contentSection: {
+    width: '65%',
+    paddingRight: 8,
+  },
+  sponsoredRow: {
+    marginBottom: 5,
+  },
+  sponsoredText: {
+    fontSize: 11,
+    color: '#999999',
+    fontStyle: 'italic',
+  },
+  imageSection: {
+    width: '35%',
+    height: 'auto',
+  },
+  cardImage: {
+    width: '100%',
+    height: 100,
+    borderRadius: 8,
+    backgroundColor: '#F0F0F0',
+  },
+  cardTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#333333',
+    marginBottom: 4,
+  },
+  venueContainer: {
+    marginBottom: 4,
+  },
+  venueRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 2,
+  },
+  venueText: {
+    fontSize: 13,
+    color: '#666666',
+    marginLeft: 4,
+    flex: 1,
+  },
+  starRatingText: {
+    fontSize: 12,
+    color: '#444444',
+  },
+  descriptionSection: {
+    paddingHorizontal: 12,
+    paddingBottom: 8,
+  },
+  cardDescription: {
+    fontSize: 14,
+    color: '#555555',
+    lineHeight: 18,
+  },
+  cardBottomRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#EEEEEE',
+  },
+  leftSection: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+  },
+  rightSection: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  categoryButton: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 4,
+    marginRight: 8,
+  },
+  categoryText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  callToActionButton: {
+    backgroundColor: BRAND.accent,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 4,
+  },
+  callToActionText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+});
