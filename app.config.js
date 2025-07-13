@@ -20,7 +20,7 @@ module.exports = ({ config }) => ({
     supportsTablet: true,
     bundleIdentifier: "com.craigb.gathr",
     buildNumber: "4", // ✅ Incremented build number
-    googleServicesFile: process.env.GOOGLE_SERVICES_PLIST || "./GoogleService-Info.plist",
+    googleServicesFile: "./GoogleService-Info.plist",
     infoPlist: {
       ITSAppUsesNonExemptEncryption: false,
       NSLocationWhenInUseUsageDescription:
