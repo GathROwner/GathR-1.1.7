@@ -91,6 +91,7 @@ function getFallbackImageUrl(category, type) {
     'Live Music': 'live-music.webp',
     'Trivia Night': 'trivia-night.webp',
     'Comedy': 'comedy.webp',
+    'Cinema': 'Cinema.webp',
     'Workshops & Classes': 'workshops.webp',
     'Religious': 'religious.webp',
     'Sports': 'sports.webp',
