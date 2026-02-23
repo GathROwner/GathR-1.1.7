@@ -14,24 +14,25 @@ import {
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { auth, firestore } from '../config/firebaseConfig';
 import { doc, getDoc, updateDoc } from 'firebase/firestore';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 
-// Define the interest categories
+// Define the interest categories (matching InterestFilterPills icon mapping)
 const EVENT_INTERESTS = [
-  { name: 'Live Music', icon: 'musical-notes' },
-  { name: 'Trivia Night', icon: 'help-circle' },
-  { name: 'Comedy', icon: 'happy' },
-  { name: 'Workshops & Classes', icon: 'school' },
-  { name: 'Religious', icon: 'heart' },
-  { name: 'Sports', icon: 'basketball' },
-  { name: 'Family Friendly', icon: 'people' },
-  { name: 'Social Gatherings & Parties', icon: 'beer' }
+  { name: 'Live Music', icon: 'audiotrack', iconLib: 'MaterialIcons' },
+  { name: 'Trivia Night', icon: 'psychology-alt', iconLib: 'MaterialIcons' },
+  { name: 'Comedy', icon: 'sentiment-very-satisfied', iconLib: 'MaterialIcons' },
+  { name: 'Workshops & Classes', icon: 'school', iconLib: 'Ionicons' },
+  { name: 'Religious', icon: 'church', iconLib: 'MaterialIcons' },
+  { name: 'Sports', icon: 'sports-basketball', iconLib: 'MaterialIcons' },
+  { name: 'Family Friendly', icon: 'family-restroom', iconLib: 'MaterialIcons' },
+  { name: 'Gatherings & Parties', icon: 'nightlife', iconLib: 'MaterialIcons' },
+  { name: 'Cinema', icon: 'theaters', iconLib: 'MaterialIcons' }
 ];
 
 const SPECIAL_INTERESTS = [
-  { name: 'Happy Hour', icon: 'time' },
-  { name: 'Food Special', icon: 'restaurant' },
-  { name: 'Drink Special', icon: 'wine' }
+  { name: 'Happy Hour', icon: 'local-bar', iconLib: 'MaterialIcons' },
+  { name: 'Food Special', icon: 'restaurant', iconLib: 'MaterialIcons' },
+  { name: 'Drink Special', icon: 'wine-bar', iconLib: 'MaterialIcons' }
 ];
 
 // Get screen dimensions to calculate button sizes and optimize layout
@@ -215,7 +216,7 @@ export default function InterestSelection() {
     // These specific interests need wider buttons
     const needsWideButton = [
       'Workshops & Classes', 
-      'Social Gatherings & Parties',
+      'Gatherings & Parties',
       'Family Friendly'
     ].includes(name);
     
@@ -227,15 +228,17 @@ export default function InterestSelection() {
     return BUTTON_WIDTH;
   };
 
-  const renderInterestButton = (interestItem: { name: string, icon: string }, index: number) => {
+  const renderInterestButton = (interestItem: { name: string, icon: string, iconLib: string }, index: number) => {
     const isSelected = isInterestSelected(interestItem.name);
     const buttonWidth = getButtonWidth(interestItem.name, index);
-    
+
     // Determine if we should reduce text size based on length or section
-    const shouldReduceTextSize = 
-      interestItem.name.length > 10 || 
+    const shouldReduceTextSize =
+      interestItem.name.length > 10 ||
       SPECIAL_INTERESTS.some(item => item.name === interestItem.name);
-    
+
+    const IconComponent = interestItem.iconLib === 'Ionicons' ? Ionicons : MaterialIcons;
+
     return (
       <Pressable
         key={interestItem.name}
@@ -246,13 +249,13 @@ export default function InterestSelection() {
         ]}
         onPress={() => toggleInterest(interestItem.name)}
       >
-        <Ionicons 
-          name={interestItem.icon as any} 
-          size={14} 
-          color={isSelected ? '#FFFFFF' : '#4A90E2'} 
-          style={styles.interestIcon} 
+        <IconComponent
+          name={interestItem.icon as any}
+          size={14}
+          color={isSelected ? '#FFFFFF' : '#4A90E2'}
+          style={styles.interestIcon}
         />
-        <Text 
+        <Text
           style={[
             styles.interestButtonText,
             isSelected && styles.selectedInterestButtonText,

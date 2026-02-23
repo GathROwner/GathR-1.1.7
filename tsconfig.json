@@ -12,5 +12,11 @@
     "**/*.ts",
     "**/*.tsx",
     "types" // <-- Add your custom types folder here
+  ],
+  "exclude": [
+    "**/*Copy*.ts",
+    "**/*Copy*.tsx",
+    "**/*copy*.ts",
+    "**/*copy*.tsx"
   ]
 }

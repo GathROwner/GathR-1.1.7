@@ -14,6 +14,81 @@ import {
   isSameDay
 } from 'date-fns';
 
+// ===============================================================
+// NEW: TEMPORAL DISTANCE SYSTEM FOR PRIORITY CALCULATIONS
+// ===============================================================
+
+// Temporal distance penalty bands for FUTURE events
+export const TEMPORAL_DISTANCE_BANDS = [
+  { maxDays: 1, multiplier: 1.0 },     // Tomorrow: no penalty
+  { maxDays: 3, multiplier: 0.9 },     // 2-3 days: 10% penalty  
+  { maxDays: 7, multiplier: 0.8 },     // 4-7 days: 20% penalty
+  { maxDays: 14, multiplier: 0.7 },    // 1-2 weeks: 30% penalty
+  { maxDays: 30, multiplier: 0.6 },    // 2-4 weeks: 40% penalty
+  { maxDays: Infinity, multiplier: 0.5 } // >1 month: 50% penalty
+];
+
+/**
+ * Get user's timezone for consistent timezone handling
+ * @returns {string} User's timezone identifier
+ */
+export const getUserTimezone = (): string => {
+  return Intl.DateTimeFormat().resolvedOptions().timeZone;
+};
+
+/**
+ * Get current date/time in user's timezone
+ * @returns {Date} Current date in user's local timezone
+ */
+export const getNowInUserTimezone = (): Date => {
+  return new Date(); // Always uses device timezone
+};
+
+/**
+ * Calculate days from now using timezone-aware date comparison
+ * This fixes the timezone bug by using date-only comparison in user's local timezone
+ * @param {string} eventDate - Event date in YYYY-MM-DD format
+ * @returns {number} Number of days from now (0 = today, 1 = tomorrow, etc.)
+ */
+export const getDaysFromNow = (eventDate: string): number => {
+  const now = getNowInUserTimezone();
+  const event = parseISO(eventDate);
+  
+  // Use date-only comparison to avoid time-of-day issues
+  const nowDateOnly = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const eventDateOnly = new Date(event.getFullYear(), event.getMonth(), event.getDate());
+  
+  const diffTime = eventDateOnly.getTime() - nowDateOnly.getTime();
+  const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
+  
+  return Math.max(0, diffDays); // Never negative
+};
+
+/**
+ * Get temporal multiplier for priority calculation (only applies to FUTURE events)
+ * @param {string} eventDate - Event date in YYYY-MM-DD format  
+ * @param {string} timeStatus - Time status ('now', 'today', 'future')
+ * @returns {number} Temporal multiplier (1.0 = no penalty, 0.5 = 50% penalty)
+ */
+export const getTemporalMultiplier = (eventDate: string, timeStatus: string): number => {
+  // Only apply temporal penalty to FUTURE events
+  if (timeStatus !== 'future') return 1.0;
+  
+  const daysFromNow = getDaysFromNow(eventDate);
+  
+  for (const band of TEMPORAL_DISTANCE_BANDS) {
+    if (daysFromNow <= band.maxDays) {
+      return band.multiplier;
+    }
+  }
+  
+  return 0.5; // Default fallback
+};
+
+// ===============================================================
+// EXISTING FUNCTIONS (keeping all your original functions)
+// ===============================================================
+
 /**
  * Format time string by removing unnecessary parts
  * @param {string} time - Time string (e.g., "7:00:00 PM" or "9:30 AM")
@@ -102,7 +177,7 @@ export const combineDateAndTime = (dateStr: string, timeStr: string): Date => {
  */
 export const isToday = (date: Date | string): boolean => {
   try {
-    const now = new Date();
+    const now = getNowInUserTimezone();
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     
     const compareDate = typeof date === 'string' ? parseISO(date) : date;
@@ -128,7 +203,7 @@ export const isToday = (date: Date | string): boolean => {
  */
 export const isTomorrow = (date: Date | string): boolean => {
   try {
-    const now = new Date();
+    const now = getNowInUserTimezone();
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const tomorrow = new Date(today);
     tomorrow.setDate(tomorrow.getDate() + 1);
@@ -300,7 +375,7 @@ export const isEventNow = (
   try {
     if (!startDate) return false;
     
-    const now = new Date();
+    const now = getNowInUserTimezone();
     
     // Always apply fallbacks internally to ensure consistency
     const effectiveEndDate = endDate || startDate;
@@ -308,39 +383,40 @@ export const isEventNow = (
     
     // MULTI-DAY EVENT HANDLING
     // If this is a multi-day event (different start and end dates)
+    // For multi-day events, check if TODAY is within the date range AND
+    // if the current TIME is within the daily time window
     if (effectiveEndDate !== startDate) {
-      //console.log(`[MULTI-DAY] Event spans from ${startDate} to ${effectiveEndDate}`);
-      
-      // Parse start date/time
-      const startDateTime = parseDateTime(startDate, startTime);
-      if (!startDateTime) {
-        //console.warn(`[MULTI-DAY] Failed to parse start date/time: ${startDate} ${startTime}`);
+      // Step 1: Check if today falls within the date range
+      const todayStr = format(now, 'yyyy-MM-dd');
+      const startDateObj = parseISO(startDate);
+      const endDateObj = parseISO(effectiveEndDate);
+      const todayDateObj = parseISO(todayStr);
+
+      // Normalize to date-only comparison (strip time components)
+      const startDateOnly = new Date(startDateObj.getFullYear(), startDateObj.getMonth(), startDateObj.getDate());
+      const endDateOnly = new Date(endDateObj.getFullYear(), endDateObj.getMonth(), endDateObj.getDate());
+      const todayDateOnly = new Date(todayDateObj.getFullYear(), todayDateObj.getMonth(), todayDateObj.getDate());
+
+      // If today is outside the date range, event is not happening now
+      if (todayDateOnly < startDateOnly || todayDateOnly > endDateOnly) {
         return false;
       }
-      
-      // Parse end date/time with appropriate fallbacks
-      let endDateTime;
-      if (effectiveEndTime) {
-        endDateTime = parseDateTime(effectiveEndDate, effectiveEndTime);
-      } else {
-        // No end time specified, use end of day
-        endDateTime = parseISO(effectiveEndDate);
-        endDateTime.setHours(23, 59, 59);
-      }
-      
-      if (!endDateTime) {
-        //console.warn(`[MULTI-DAY] Failed to parse end date/time: ${effectiveEndDate} ${effectiveEndTime || "EOD"}`);
+
+      // Step 2: Check if current time is within the daily time window
+      // Use today's date with the event's start/end times
+      const todayStartDateTime = parseDateTime(todayStr, startTime);
+      const todayEndDateTime = parseDateTime(todayStr, effectiveEndTime);
+
+      if (!todayStartDateTime || !todayEndDateTime) {
         return false;
       }
-      
-      // Debug info
-      //console.log(`[MULTI-DAY] Parsed times: Start=${startDateTime.toLocaleString()}, End=${endDateTime.toLocaleString()}, Now=${now.toLocaleString()}`);
-      
-      // Check if current time is within the event's timespan
-      const isOngoing = startDateTime <= now && endDateTime >= now;
-      //console.log(`[MULTI-DAY] Event is ${isOngoing ? "happening now" : "not happening now"}`);
-      
-      return isOngoing;
+
+      // Handle time window crossing midnight (e.g., 10pm - 2am)
+      if (todayEndDateTime < todayStartDateTime) {
+        todayEndDateTime.setDate(todayEndDateTime.getDate() + 1);
+      }
+
+      return isWithinInterval(now, { start: todayStartDateTime, end: todayEndDateTime });
     }
     
     // SINGLE-DAY EVENT HANDLING
@@ -402,7 +478,7 @@ export const isEventHappeningToday = (event: {
       return true;
     }
     
-    const now = new Date();
+    const now = getNowInUserTimezone();
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const tomorrow = new Date(today);
     tomorrow.setDate(tomorrow.getDate() + 1);
@@ -520,7 +596,7 @@ export const getRelativeTimeDescription = (
   if (!startDate || !startTime) return '';
   
   try {
-    const now = new Date();
+    const now = getNowInUserTimezone();
     
     // Apply fallbacks internally 
     const effectiveEndDate = endDate || startDate;
@@ -596,7 +672,7 @@ export const debugEventTimeStatus = (
     endTime?: string;
   }
 ) => {
-  const now = new Date();
+  const now = getNowInUserTimezone();
   
   //console.log(`[DEBUG TIME] Event: "${event.title}" (${event.type || 'unknown type'})`);
   //console.log(`[DEBUG TIME] Current time: ${now.toLocaleString()}`);
@@ -644,6 +720,7 @@ export const debugEventTimeStatus = (
   console.log(`[DEBUG TIME] isEventNow: ${isEventNow(event.startDate, event.startTime, event.endDate, event.endTime)}`);
   console.log(`[DEBUG TIME] isEventHappeningToday: ${isEventHappeningToday(event)}`);
   console.log(`[DEBUG TIME] getEventTimeStatus: ${getEventTimeStatus(event)}`);
+  console.log(`[DEBUG TIME] getDaysFromNow: ${getDaysFromNow(event.startDate)}`);
 };
 
 /**

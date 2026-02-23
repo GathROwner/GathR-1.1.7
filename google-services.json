@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "234071683975",
+    "project_id": "gathr-m1",
+    "storage_bucket": "gathr-m1.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:234071683975:android:988d506511718e89869922",
+        "android_client_info": {
+          "package_name": "com.craigb.gathr"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDZEjKY9eMNO2O8Dj0iutVesQb5Q65DbOU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -1,0 +1,1 @@
+export const EVENTS_MINIMAL = ['events-minimal'] as const;

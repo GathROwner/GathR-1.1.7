@@ -12,6 +12,7 @@
 export enum TimeFilterType {
   NOW = 'now',
   TODAY = 'today',
+  TOMORROW = 'tomorrow',
   UPCOMING = 'upcoming',
   ALL = 'all'
 }
@@ -76,20 +77,20 @@ export type FilterChangeHandler = (criteria: Partial<FilterCriteria>) => void;
  * This means no time filtering is applied by default (showing all events)
  */
 export const DEFAULT_FILTER_CRITERIA: FilterCriteria = {
-  showEvents: true,
-  showSpecials: true,
-  eventFilters: {
-    timeFilter: TimeFilterType.ALL,
-    category: undefined,
+    showEvents: true,
+    showSpecials: true,
+    eventFilters: {
+      timeFilter: TimeFilterType.TODAY,
+      category: undefined,
+      search: undefined,
+      savedOnly: false
+    },
+    specialFilters: {
+      timeFilter: TimeFilterType.TODAY,
+      category: undefined,
+      search: undefined,
+      savedOnly: false
+    },
     search: undefined,
-    savedOnly: false
-  },
-  specialFilters: {
-    timeFilter: TimeFilterType.ALL,
-    category: undefined,
-    search: undefined,
-    savedOnly: false
-  },
-  search: undefined,
-  type: undefined
-}
+    type: undefined
+  }

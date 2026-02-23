@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { 
   View, 
   Text, 
@@ -16,9 +17,9 @@ import {
   Animated,
   Dimensions,
   StatusBar,
-  Clipboard
+  Clipboard,
 } from 'react-native';
-import { useRouter, useNavigation } from 'expo-router';
+import { useRouter, useNavigation, usePathname } from 'expo-router';
 import { auth, firestore, storage } from '../config/firebaseConfig';
 import { doc, getDoc, updateDoc, deleteDoc, addDoc, collection, query, where, getDocs, serverTimestamp } from 'firebase/firestore';
 import { 
@@ -27,6 +28,9 @@ import {
   EmailAuthProvider, 
   reauthenticateWithCredential 
 } from 'firebase/auth';
+import { amplitudeTrack, amplitudeSetUserId } from '../lib/amplitudeAnalytics';
+import { TUTORIAL_STEPS } from '../config/tutorialSteps';
+import { useUserPrefsStore, updateShowDailyHotspot } from '../store/userPrefsStore';
 import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
 import { 
@@ -36,8 +40,13 @@ import {
   deleteObject 
 } from 'firebase/storage';
 
+
+
+
 // Get screen dimensions for responsive design
 const { width, height } = Dimensions.get('window');
+
+
 
 // Define brand colors
 const BRAND = {
@@ -55,12 +64,26 @@ const BRAND = {
 };
 
 // Enhanced Facebook Page Submission Component  
-const FacebookPageSubmission: React.FC = () => {
+interface FacebookPageSubmissionProps {
+  isHighlighted?: boolean;
+  pulseAnim?: Animated.Value;
+}
+
+const FacebookPageSubmission = React.forwardRef<View, FacebookPageSubmissionProps>(({ 
+  isHighlighted = false, 
+  pulseAnim 
+}, ref) => {
   const [facebookUrl, setFacebookUrl] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
   const [isResolving, setIsResolving] = useState(false);
   const [dailyCount, setDailyCount] = useState(0);
+  
+  // Log tutorial state but don't force collapse - padding handles the pulse
+  useEffect(() => {
+    const tutorialActive = (global as any).tutorialHighlightFacebookSubmission;
+    console.log('ðŸŽ¯ FACEBOOK SUBMISSION: Component mounted/updated. Tutorial active:', tutorialActive, 'Expanded:', isExpanded);
+  }, [(global as any).tutorialHighlightFacebookSubmission]);
 
   // Load daily count on component mount
   useEffect(() => {
@@ -163,7 +186,7 @@ const FacebookPageSubmission: React.FC = () => {
       
       if (resolvedUrl) {
         setFacebookUrl(resolvedUrl);
-        Alert.alert('✅ URL Resolved!', 'We found the clean page URL for you.');
+        Alert.alert('âœ… URL Resolved!', 'We found the clean page URL for you.');
       } else {
         Alert.alert(
           'Share Link Detected', 
@@ -239,6 +262,15 @@ const FacebookPageSubmission: React.FC = () => {
         status: 'pending'
       });
 
+      // ðŸ”¥ ANALYTICS: Track Facebook page submission
+      amplitudeTrack('facebook_page_submitted', {
+        url: normalizedUrl,
+        was_duplicate: isDuplicate,
+        daily_submission_count: dailyCount + 1,
+        source: 'profile_screen',
+        referrer_screen: '/profile',
+      });
+
       Alert.alert('Success', 'Thank you for your submission! We\'ll review it soon.');
       setFacebookUrl('');
       setDailyCount(prev => prev + 1);
@@ -251,8 +283,30 @@ const FacebookPageSubmission: React.FC = () => {
     }
   };
 
+  const tutorialHighlightStyle = {
+    shadowColor: '#FF6B35',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.9,
+    shadowRadius: 12,
+    elevation: 15,
+    borderWidth: 3,
+    borderColor: '#FF8C42',
+    borderRadius: 16,
+    backgroundColor: 'rgba(255, 255, 255, 0.95)',
+    transform: pulseAnim ? [{ scale: pulseAnim }] : [],
+  };
+
   return (
-    <View style={submissionStyles.container}>
+    <Animated.View style={isHighlighted ? tutorialHighlightStyle : {}}>
+      <View 
+        ref={ref}
+        style={submissionStyles.container}
+        onLayout={() => {
+          // Immediate measurement DISABLED - one-shot measurement system handles all measurements with padding
+          // The one-shot system measures once, applies padding, and marks as stable
+          // Do NOT overwrite facebookSubmissionLayout here or it will replace the padded measurement
+        }}
+      >
       {/* Compact Header - Always Visible */}
       <TouchableOpacity 
         style={[submissionStyles.header, submissionStyles.expandableHeader]}
@@ -331,10 +385,11 @@ const FacebookPageSubmission: React.FC = () => {
             )}
           </TouchableOpacity>
         </View>
-      )}
-    </View>
+       )}
+      </View>
+    </Animated.View>
   );
-};
+});
 
 export default function ProfileScreen() {
   // State variables
@@ -354,6 +409,10 @@ export default function ProfileScreen() {
   const [passwordInput, setPasswordInput] = useState('');
   const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [deletionInProgress, setDeletionInProgress] = useState(false);
+
+  // Daily hotspot preference
+  const showDailyHotspot = useUserPrefsStore((state) => state.showDailyHotspot);
+  const setShowDailyHotspot = useUserPrefsStore((state) => state.setShowDailyHotspot);
   
   // Animation values
   const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -361,8 +420,229 @@ export default function ProfileScreen() {
   const headerOpacity = useRef(new Animated.Value(0)).current;
   const modalAnimation = useRef(new Animated.Value(0)).current;
   
-  const router = useRouter();
-  const navigation = useNavigation();
+  // Tutorial awareness for Facebook submission
+  const facebookSubmissionRef = useRef<View>(null);
+  const facebookSubmissionPulseAnim = useRef(new Animated.Value(1)).current;
+  const [facebookSubmissionHighlighted, setFacebookSubmissionHighlighted] = useState(false);
+  
+  // Profile container ref for modal header measurement
+  const profileContainerRef = useRef<KeyboardAvoidingView>(null);
+  
+  // Make it globally accessible for tutorial measurement
+  useEffect(() => {
+    (global as any).profileContainerRef = profileContainerRef;
+    return () => {
+      delete (global as any).profileContainerRef;
+    };
+  }, []);
+
+  // Use useRef to persist measurement state across re-renders
+  const hasMeasuredRef = useRef(false);
+  
+  useEffect(() => {
+    console.log('ðŸ“ ONE-SHOT MEASUREMENT: Starting Facebook submission measurement');
+    console.log('ðŸ“ ONE-SHOT MEASUREMENT: hasMeasured status:', hasMeasuredRef.current);
+    
+    const interval = setInterval(() => {
+      const globalFlag = (global as any).tutorialHighlightFacebookSubmission || false;
+      
+      if (globalFlag !== facebookSubmissionHighlighted) {
+        setFacebookSubmissionHighlighted(globalFlag);
+        console.log('ðŸ“ ONE-SHOT MEASUREMENT: Tutorial highlight flag changed to:', globalFlag);
+      }
+      
+      /*
+      Polling lifecycle:
+    â€¢ While highlight flag is ON â†’ poll until we stabilize (or finalize elsewhere).
+    â€¢ When flag turns OFF â†’ clear interval immediately to avoid log spam
+      after leaving the step or finishing the tutorial.
+*/
+      // Reset when flag turns off
+      if (!globalFlag) {
+        (global as any).facebookSubmissionStable = false;
+        (global as any).facebookSubmissionLayout = null;
+        if (hasMeasuredRef.current) {
+          hasMeasuredRef.current = false; // Reset the ref
+        }
+        clearInterval(interval); // ðŸ”• ensure no lingering logs
+        console.log('ðŸ“ ONE-SHOT MEASUREMENT: Reset - tutorial flag off (interval cleared)');
+        return;
+      }
+      
+      // Only measure ONCE when flag is on and we haven't measured yet
+      if (globalFlag && facebookSubmissionRef.current && !hasMeasuredRef.current) {
+        console.log('ðŸ“ ONE-SHOT MEASUREMENT: Taking single measurement (first time only)...');
+        
+        // IMMEDIATELY set the flag to prevent re-measurement
+        hasMeasuredRef.current = true;
+        
+        // Clear any stale measurements before our measurement
+        console.log('ðŸ§¹ ONE-SHOT MEASUREMENT: Clearing stale data before measurement');
+        (global as any).facebookSubmissionLayout = null;
+        (global as any).facebookSubmissionStable = false;
+        
+        facebookSubmissionRef.current.measureInWindow((x: number, y: number, width: number, height: number) => {
+          const rawMeasurement = { 
+            x: Math.round(x), 
+            y: Math.round(y), 
+            width: Math.round(width), 
+            height: Math.round(height) 
+          };
+          
+          console.log('ðŸ“ ONE-SHOT MEASUREMENT: Raw measurement:', rawMeasurement);
+          
+          /*
+  PROFILE â†’ FACEBOOK SUBMISSION: ONE-SHOT MEASUREMENT
+  Modal header adjustment:
+    â€¢ iOS modals render ~72px lower vs "transparent" modal mode.
+    â€¢ Android uses 0 (no header delta).
+  We subtract this only on iOS to normalize the rect used by the tutorial spotlight.
+*/
+            const modalHeaderHeight = Platform.OS === 'ios' ? 72 : 0;
+          console.log('📍 ONE-SHOT MEASUREMENT: Using modal header offset:', modalHeaderHeight);
+          
+          const adjustedMeasurement = {
+            ...rawMeasurement,
+            y: rawMeasurement.y - modalHeaderHeight
+          };
+          
+          console.log('ðŸ“ ONE-SHOT MEASUREMENT: Adjusted for modal header:', {
+            originalY: rawMeasurement.y,
+            headerHeight: modalHeaderHeight,
+            adjustedY: adjustedMeasurement.y
+          });
+          
+          // Apply proportional padding for scale: 1.15 pulse animation
+          // We use 1.35x multiplier to ensure full coverage regardless of when we measure in the pulse cycle
+          // This accounts for: measuring at min (needs 115% coverage) or measuring mid-pulse (needs buffer both ways)
+          const paddingFactorX = 0.175; // 17.5% padding on each side horizontally (35% total)
+          const paddingFactorY = 0.175; // 17.5% padding on each side vertically (35% total)
+          const sizeMultiplier = 1.35; // 135% of measured size for generous coverage
+          
+          const paddedMeasurement = {
+            x: Math.round(adjustedMeasurement.x - (adjustedMeasurement.width * paddingFactorX)),
+            y: Math.round(adjustedMeasurement.y - (adjustedMeasurement.height * paddingFactorY)),
+            width: Math.round(adjustedMeasurement.width * sizeMultiplier),
+            height: Math.round(adjustedMeasurement.height * sizeMultiplier)
+          };
+          
+          console.log('ðŸ“ ONE-SHOT MEASUREMENT: Using generous 35% padding for full pulse coverage');
+          console.log('ðŸ“ ONE-SHOT MEASUREMENT: Initial padded measurement:', paddedMeasurement);
+          console.log('ðŸ“ ONE-SHOT MEASUREMENT: Padding applied:', {
+            xAdjustment: rawMeasurement.width * paddingFactorX,
+            yAdjustment: rawMeasurement.height * paddingFactorY,
+            widthIncrease: rawMeasurement.width * (sizeMultiplier - 1),
+            heightIncrease: rawMeasurement.height * (sizeMultiplier - 1)
+          });
+          
+          // Constrain to screen bounds with 4px margin
+          const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+          const SCREEN_MARGIN = 15;
+          
+          // Calculate constraints
+          const minX = SCREEN_MARGIN;
+          const maxX = SCREEN_WIDTH - SCREEN_MARGIN;
+          const minY = SCREEN_MARGIN;
+          const maxY = SCREEN_HEIGHT - SCREEN_MARGIN;
+          
+          // Apply constraints
+          let constrainedMeasurement = { ...paddedMeasurement };
+          
+          // Constrain X position
+          if (constrainedMeasurement.x < minX) {
+            console.log('ðŸ“ ONE-SHOT MEASUREMENT: Adjusting X from', constrainedMeasurement.x, 'to', minX);
+            constrainedMeasurement.x = minX;
+          }
+          
+          // Constrain width if it would exceed right edge
+          const rightEdge = constrainedMeasurement.x + constrainedMeasurement.width;
+          if (rightEdge > maxX) {
+            const newWidth = maxX - constrainedMeasurement.x;
+            console.log('ðŸ“ ONE-SHOT MEASUREMENT: Adjusting width from', constrainedMeasurement.width, 'to', newWidth, '(right edge was', rightEdge, ')');
+            constrainedMeasurement.width = newWidth;
+          }
+          
+          // Constrain Y position
+          if (constrainedMeasurement.y < minY) {
+            console.log('ðŸ“ ONE-SHOT MEASUREMENT: Adjusting Y from', constrainedMeasurement.y, 'to', minY);
+            constrainedMeasurement.y = minY;
+          }
+          
+          // Constrain height if it would exceed bottom edge
+          const bottomEdge = constrainedMeasurement.y + constrainedMeasurement.height;
+          if (bottomEdge > maxY) {
+            const newHeight = maxY - constrainedMeasurement.y;
+            console.log('ðŸ“ ONE-SHOT MEASUREMENT: Adjusting height from', constrainedMeasurement.height, 'to', newHeight, '(bottom edge was', bottomEdge, ')');
+            constrainedMeasurement.height = newHeight;
+          }
+          
+          // Fine-tune coverage - extend bottom without losing top
+          const HEIGHT_EXTENSION = 5; // Extend spotlight height by 5 pixels at bottom
+          constrainedMeasurement.height = constrainedMeasurement.height + HEIGHT_EXTENSION;
+          console.log('ðŸ“ ONE-SHOT MEASUREMENT: Extended height by', HEIGHT_EXTENSION, 'pixels to better contain bottom pulse');
+          
+          console.log('ðŸ“ ONE-SHOT MEASUREMENT: Final constrained measurement:', constrainedMeasurement);
+          console.log('ðŸ“ ONE-SHOT MEASUREMENT: Screen bounds:', {
+            screenWidth: SCREEN_WIDTH,
+            screenHeight: SCREEN_HEIGHT,
+            margin: SCREEN_MARGIN,
+            resultingBounds: {
+              left: constrainedMeasurement.x,
+              right: constrainedMeasurement.x + constrainedMeasurement.width,
+              top: constrainedMeasurement.y,
+              bottom: constrainedMeasurement.y + constrainedMeasurement.height
+            }
+          });
+          
+          // Store constrained measurement and mark as stable immediately
+          (global as any).facebookSubmissionLayout = constrainedMeasurement;
+          (global as any).facebookSubmissionStable = true;
+         
+          
+          console.log('âœ… ONE-SHOT MEASUREMENT: Complete! Marked as stable with padded bounds');
+          console.log('âœ… ONE-SHOT MEASUREMENT: hasMeasured set to true, will not measure again');
+          
+          // Force re-render to show overlay
+          setFacebookSubmissionHighlighted(prev => !prev);
+        });
+            } else if (globalFlag && hasMeasuredRef.current) {
+        // We've already measured; if the layout is marked stable, stop polling entirely.
+        if ((global as any).facebookSubmissionStable) {
+          clearInterval(interval);
+          console.log('ðŸ“ ONE-SHOT MEASUREMENT: Stable; interval cleared after "already measured" check');
+        } else {
+          // Not stable yet; do NOT spam logs.
+          // Leave interval running until facebookSubmissionStable flips true.
+        }
+      }
+
+    }, 200);
+    
+    return () => {
+      console.log('ðŸ“ ONE-SHOT MEASUREMENT: Cleanup - stopping interval');
+      clearInterval(interval);
+    };
+  }, [facebookSubmissionHighlighted]);
+
+  useEffect(() => {
+    if (facebookSubmissionHighlighted) {
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(facebookSubmissionPulseAnim, { toValue: 1.15, useNativeDriver: true, duration: 800 }),
+          Animated.timing(facebookSubmissionPulseAnim, { toValue: 1, useNativeDriver: true, duration: 800 }),
+        ])
+      ).start();
+    } else {
+      facebookSubmissionPulseAnim.stopAnimation();
+      facebookSubmissionPulseAnim.setValue(1);
+    }
+  }, [facebookSubmissionHighlighted]);
+  
+const router = useRouter();
+const navigation = useNavigation();
+const pathname = usePathname();
+const lastRestartClickAtRef = useRef(0); // dedupe double-taps (<350ms)
+
 
   // Set up header close button with circular background
   useEffect(() => {
@@ -412,55 +692,46 @@ export default function ProfileScreen() {
     }
   }, [showPasswordModal, modalAnimation]);
 
-  // Fetch user data
-  useEffect(() => {
-    const fetchUserProfile = async () => {
-      const currentUser = auth.currentUser;
-      if (!currentUser) {
-        router.replace('/');
-        return;
-      }
+  // Cached user profile (5 min)
+const currentUser = auth.currentUser;
 
-      try {
-        setEmail(currentUser.email || '');
-        
-        const userDoc = await getDoc(doc(firestore, 'users', currentUser.uid));
-        if (userDoc.exists()) {
-          const userData = userDoc.data();
-          setDisplayName(userData.displayName || '');
-          setEditedDisplayName(userData.displayName || '');
-          setPhotoURL(userData.photoURL || '');
-          setUserInterests(userData.userInterests || []);
-          
-          // Format the creation date
-          if (userData.createdAt) {
-            const createdAt = userData.createdAt.toDate ? 
-              userData.createdAt.toDate() : 
-              new Date(userData.createdAt);
-            setMemberSince(createdAt.toLocaleDateString('en-US', { 
-              month: 'long', 
-              year: 'numeric' 
-            }));
-          }
-        }
-      } catch (error) {
-        console.error('Error fetching user profile:', error);
-      } finally {
-        setLoading(false);
-      }
-    };
+const { data: cachedProfile, isFetching: profileFetching } = useQuery({
+  queryKey: ['user-profile', currentUser?.uid],
+  enabled: !!currentUser,
+  staleTime: 1000 * 60 * 5,
+  queryFn: async () => {
+    const snap = await getDoc(doc(firestore, 'users', currentUser!.uid));
+    return snap.exists() ? snap.data() : null;
+  },
+});
 
-    fetchUserProfile();
-  }, [router]);
+// Sync cached profile into component state
+useEffect(() => {
+  if (!currentUser) {
+    router.replace('/');
+    return;
+  }
+  if (cachedProfile) {
+    setEmail(currentUser.email || '');
+    setDisplayName(cachedProfile.displayName || '');
+    setEditedDisplayName(cachedProfile.displayName || '');
+    setPhotoURL(cachedProfile.photoURL || '');
+    setUserInterests(cachedProfile.userInterests || []);
 
-  // Auto-advance tutorial when profile screen loads
-  useEffect(() => {
-    // Auto-advance tutorial when user reaches profile screen (only call once)
-    if ((global as any).onProfileScreenNavigated) {
-      console.log('[GathR Tutorial] Profile modal opened - calling tutorial advancement');
-      (global as any).onProfileScreenNavigated();
+    if (cachedProfile.createdAt) {
+      const createdAt = cachedProfile.createdAt.toDate
+        ? cachedProfile.createdAt.toDate()
+        : new Date(cachedProfile.createdAt);
+      setMemberSince(createdAt.toLocaleDateString('en-US', {
+        month: 'long',
+        year: 'numeric',
+      }));
     }
-  }, []);
+    setLoading(false);
+  }
+}, [cachedProfile, currentUser?.uid, router]);
+
+
 
   
 
@@ -566,20 +837,58 @@ export default function ProfileScreen() {
     }
   };
 
-  const handleLogout = async () => {
-    try {
-      await signOut(auth);
-      router.replace('/');
-    } catch (error) {
-      console.error('Logout error:', error);
-      Alert.alert('Error', 'Failed to log out. Please try again.');
-    }
-  };
+const handleLogout = async () => {
+  try {
+    // Track before signOut (navigator may unmount during sign-out)
+    console.log('[analytics] about to track logout');
+    amplitudeTrack('user_logout');
+  } catch (e) {
+    console.warn('[analytics] logout track failed', e);
+  }
+
+  try {
+    await signOut(auth);
+  } finally {
+    // Always drop back to device-level analytics
+    amplitudeSetUserId(undefined);
+    console.log('[analytics] cleared amplitude user id after signOut');
+  }
+
+  try {
+    router.replace('/');
+  } catch (error) {
+    console.error('Logout navigation error:', error);
+  }
+};
+
+
 
   const handleInterests = () => {
     router.push({
       pathname: '/interest-selection',
       params: { fromProfile: 'true' }
+    });
+  };
+
+  // Toggle daily hotspot setting
+  const handleToggleHotspot = async () => {
+    const newValue = !showDailyHotspot;
+    setShowDailyHotspot(newValue);
+
+    // Persist to Firestore
+    const currentUser = auth.currentUser;
+    if (currentUser) {
+      try {
+        await updateShowDailyHotspot(currentUser.uid, newValue);
+      } catch (error) {
+        console.error('Failed to update hotspot setting:', error);
+      }
+    }
+
+    // Track analytics
+    amplitudeTrack('hotspot_setting_toggled', {
+      enabled: newValue,
+      source: 'profile',
     });
   };
 
@@ -721,6 +1030,7 @@ export default function ProfileScreen() {
 
   return (
     <KeyboardAvoidingView
+      ref={profileContainerRef}
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       keyboardVerticalOffset={Platform.OS === 'ios' ? 64 : 0}
@@ -895,15 +1205,41 @@ export default function ProfileScreen() {
                           { text: 'Cancel', style: 'cancel' },
                           { 
                             text: 'Start Tutorial', 
-                            onPress: () => {
-                              // Close profile modal and start tutorial
-                              router.back();
-                              setTimeout(() => {
-                                if ((global as any).triggerGathRTutorial) {
-                                (global as any).triggerGathRTutorial();
-                              }
-                              }, 500);
-                            }
+onPress: () => {
+  // ðŸ”” analytics: tutorial_restart_clicked (fires BEFORE overlay opens)
+  try {
+    const now = Date.now();
+    if (now - lastRestartClickAtRef.current >= 350) {
+      lastRestartClickAtRef.current = now;
+
+      amplitudeTrack('tutorial_restart_clicked', {
+        tutorial_id: 'main_onboarding_v1',
+        tutorial_version: 1,
+        total_steps: Array.isArray(TUTORIAL_STEPS) ? TUTORIAL_STEPS.length : 0,
+        source: 'tutorial_system',
+        from_screen: pathname || '/profile',
+        user_initiated: true,
+        launch_source: 'profile',
+        is_guest: !auth.currentUser,
+      });
+    }
+  } catch (e) {
+    console.log('[analytics] tutorial_restart_clicked failed:', e);
+  }
+
+  // Close profile modal and start tutorial
+  router.back();
+  setTimeout(() => {
+    // Mark this launch as user-initiated from Profile for downstream events
+    (global as any).tutorialLaunchUserInitiated = true;
+    (global as any).tutorialLaunchSource = 'profile';
+
+    if ((global as any).triggerGathRTutorial) {
+      (global as any).triggerGathRTutorial();
+    }
+  }, 500);
+}
+
                           }
                         ]
                       );
@@ -912,10 +1248,45 @@ export default function ProfileScreen() {
                     <Ionicons name="help-circle-outline" size={20} color={BRAND.primary} style={styles.buttonIcon} />
                     <Text style={styles.tutorialButtonText}>Replay Tutorial</Text>
                   </TouchableOpacity>
+
+                  {/* Daily Hotspot Toggle */}
+                  <TouchableOpacity
+                    style={styles.hotspotToggle}
+                    onPress={handleToggleHotspot}
+                  >
+                    <View style={styles.hotspotToggleContent}>
+                      <Ionicons
+                        name="flame-outline"
+                        size={20}
+                        color={showDailyHotspot ? BRAND.primary : BRAND.gray}
+                        style={styles.buttonIcon}
+                      />
+                      <View style={styles.hotspotToggleText}>
+                        <Text style={[
+                          styles.hotspotToggleLabel,
+                          !showDailyHotspot && styles.hotspotToggleLabelDisabled
+                        ]}>
+                          Daily Hotspot
+                        </Text>
+                        <Text style={styles.hotspotToggleDescription}>
+                          Highlight popular spots on map open
+                        </Text>
+                      </View>
+                    </View>
+                    <Ionicons
+                      name={showDailyHotspot ? "checkmark-circle" : "ellipse-outline"}
+                      size={24}
+                      color={showDailyHotspot ? BRAND.primary : BRAND.gray}
+                    />
+                  </TouchableOpacity>
                 </View>
-                
+
                 {/* Facebook Page Submission Component */}
-                <FacebookPageSubmission />
+                <FacebookPageSubmission 
+                  ref={facebookSubmissionRef}
+                  isHighlighted={facebookSubmissionHighlighted}
+                  pulseAnim={facebookSubmissionPulseAnim}
+                />
                 
                 {/* Account Management Buttons */}
                   <View style={styles.accountActionsContainer}>
@@ -1383,11 +1754,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 10,
+      ...(Platform.OS === 'android' ? { marginTop: 0 } : null),
   },
   editButtonText: {
     color: BRAND.primary,
     fontWeight: '600',
     fontSize: 16,
+      ...(Platform.OS === 'android'
+    ? { includeFontPadding: false, textAlignVertical: 'center', lineHeight: 20 }
+    : null),
   },
   // FIXED: New interests row with button and count
   interestsRow: {
@@ -1588,5 +1963,39 @@ countLabel: {
     color: BRAND.primary,
     fontWeight: '600',
     fontSize: 15,
+  },
+  hotspotToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: BRAND.white,
+    borderWidth: 1,
+    borderColor: BRAND.lightGray,
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    marginTop: 10,
+  },
+  hotspotToggleContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  hotspotToggleText: {
+    marginLeft: 4,
+    flex: 1,
+  },
+  hotspotToggleLabel: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: BRAND.text,
+  },
+  hotspotToggleLabelDisabled: {
+    color: BRAND.gray,
+  },
+  hotspotToggleDescription: {
+    fontSize: 12,
+    color: BRAND.textLight,
+    marginTop: 2,
   },
 });

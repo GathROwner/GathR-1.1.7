@@ -1,12 +1,31 @@
+/**
+ * Map gesture gating when callout is visible
+ *
+ * WHY:
+ *   When the bottom callout is open, vertical drags should scroll the callout—NOT pan the map underneath.
+ *   Otherwise Android often lets the map steal the gesture.
+ *
+ * WHAT:
+ *   - Compute isCalloutOpen from selectedCluster/selectedVenues.
+ *   - Set MapView scrollEnabled/zoomEnabled/rotateEnabled/pitchEnabled = !isCalloutOpen.
+ *
+ * EFFECT:
+ *   Prevents the map from intercepting callout drags on Android. iOS remains unaffected.
+ */
+
 import React, { useEffect, useRef, useState, useMemo, useCallback } from 'react';
-import { View, Text, StyleSheet, Animated, Dimensions, TouchableOpacity, Easing } from 'react-native';
+import { View, Text, StyleSheet, Animated, Dimensions, PixelRatio, TouchableOpacity, Easing, Keyboard, Pressable, Image, Modal } from 'react-native';
 import * as Location from 'expo-location';
 import MapboxGL from '@rnmapbox/maps';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
+import { Platform } from 'react-native';
+
+
 
 // Analytics integration
 import useAnalytics from '../../hooks/useAnalytics';
+import { amplitudeTrack } from '../../lib/amplitudeAnalytics';
 
 // Add these after your existing imports
 import { useGuestInteraction } from '../../hooks/useGuestInteraction';
@@ -21,7 +40,13 @@ import { FilterCriteria, TimeFilterType } from '../../types/filter';
 
 // Import components
 import FilterPills from '../../components/map/FilterPills';
+import MapLegend from '../../components/map/MapLegend';
+import InterestFilterPills from '../../components/map/InterestFilterPills';
+import InterestsCarousel from '../../components/map/InterestsCarousel';
+
 import EventCallout from '../../components/map/EventCallout';
+import EventImageLightbox from '../../components/map/EventImageLightbox';
+import HotspotHighlight from '../../components/map/HotspotHighlight';
 
 // Import centralized date utilities
 import { 
@@ -31,10 +56,20 @@ import {
 } from '../../utils/dateUtils';
 
 // Import user service for preferences
-import * as userService from '../../services/userService';
+import { getUserInterestsSync, getSavedEventsSync, getFavoriteVenuesSync } from '../../store/userPrefsStore';
+import { useClusterInteractionStore } from '../../store/clusterInteractionStore';
 
 // Import from store utility - assuming this is exported from your store
 import { ZOOM_THRESHOLDS, getThresholdIndexForZoom, calculateDistance } from '../../store/mapStore';
+
+// Import viewport calculation utilities
+import {
+  getViewportBoundingBox,
+  roundBoundingBoxForCache,
+  formatBoundingBoxForAPI,
+  type BoundingBox,
+  type GeoCoordinate
+} from '../../utils/geoUtils';
 
 // Initialize Mapbox token
 try {
@@ -69,6 +104,52 @@ const getTimeBadgeColor = (timeStatus: TimeStatus): string => {
     default:
       return 'transparent'; // No badge for future
   }
+};
+
+// Helper function to get icon for category
+const getCategoryIcon = (category: string): string => {
+  const categoryLower = category.toLowerCase();
+
+  // Handle variations in category names
+  if (categoryLower.includes('live music') || categoryLower.includes('music')) {
+    return 'audiotrack';
+  }
+  if (categoryLower.includes('comedy')) {
+    return 'sentiment-very-satisfied';
+  }
+  if (categoryLower.includes('sport')) {
+    return 'sports-basketball';
+  }
+  if (categoryLower.includes('trivia')) {
+    return 'psychology-alt';
+  }
+  if (categoryLower.includes('workshop') || categoryLower.includes('class')) {
+    return 'school';
+  }
+  if (categoryLower.includes('religious') || categoryLower.includes('church')) {
+    return 'church';
+  }
+  if (categoryLower.includes('family')) {
+    return 'family-restroom';
+  }
+  if (categoryLower.includes('gathering') || categoryLower.includes('parties') || categoryLower.includes('party')) {
+    return 'nightlife';
+  }
+  if (categoryLower.includes('cinema') || categoryLower.includes('movie') || categoryLower.includes('film')) {
+    return 'theaters';
+  }
+  if (categoryLower.includes('happy hour')) {
+    return 'local-bar';
+  }
+  if (categoryLower.includes('food') || categoryLower.includes('wing')) {
+    return 'restaurant';
+  }
+  if (categoryLower.includes('drink')) {
+    return 'wine-bar';
+  }
+
+  // Default fallback icon
+  return 'category';
 };
 
 // Helper function to get size based on interest level
@@ -173,6 +254,169 @@ const BroadcastingEffect: React.FC<BroadcastingEffectProps> = ({ size, color }) 
 };
 
 /**
+ * Category Carousel component - rotates through all categories in a cluster
+ * Prioritizes user interests first, then cycles through all remaining categories
+ */
+interface CategoryCarouselProps {
+  cluster: Cluster;
+  size: number;
+}
+
+interface CategoryItem {
+  category: string;
+  count: number;
+  isUserInterest: boolean;
+}
+
+const CategoryCarousel: React.FC<CategoryCarouselProps> = ({ cluster, size }) => {
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const fadeAnim = useRef(new Animated.Value(1)).current;
+  const pulseAnim = useRef(new Animated.Value(1)).current;
+
+  // Get user interests
+  const userInterests = getUserInterestsSync();
+
+  // Extract all categories from cluster with counts
+  const categoryItems = useMemo(() => {
+    const categoryMap = new Map<string, number>();
+
+    // Count categories from all events in all venues
+    cluster.venues.forEach(venue => {
+      venue.events.forEach(event => {
+        const currentCount = categoryMap.get(event.category) || 0;
+        categoryMap.set(event.category, currentCount + 1);
+      });
+    });
+
+    // Convert to array with user interest flag
+    const items: CategoryItem[] = Array.from(categoryMap.entries()).map(([category, count]) => ({
+      category,
+      count,
+      isUserInterest: userInterests.includes(category),
+    }));
+
+    // Sort: user interests first, then by count (descending)
+    items.sort((a, b) => {
+      if (a.isUserInterest && !b.isUserInterest) return -1;
+      if (!a.isUserInterest && b.isUserInterest) return 1;
+      return b.count - a.count;
+    });
+
+    // Debug: log unique categories
+    // if (items.length > 0) {
+    //   console.log(`[CategoryCarousel] Cluster ${cluster.id} has ${items.length} unique categories:`,
+    //     items.map(i => `${i.category}(${i.count})`).join(', '));
+    // }
+
+    return items;
+  }, [cluster, userInterests]);
+
+  // Clamp index when categories shrink (e.g., filters reduce to 0/1)
+  useEffect(() => {
+    if (categoryItems.length === 0) return;
+    if (currentIndex >= categoryItems.length) {
+      setCurrentIndex(0);
+    }
+  }, [categoryItems.length, currentIndex]);
+
+  // Rotate through categories (only if there are 2+ unique categories)
+  useEffect(() => {
+    if (categoryItems.length <= 1) return; // Don't animate if only one category
+
+    const interval = setInterval(() => {
+      // Fade out
+      Animated.timing(fadeAnim, {
+        toValue: 0,
+        duration: 200,
+        useNativeDriver: true,
+      }).start(() => {
+        // Change index
+        setCurrentIndex((prev) => (prev + 1) % categoryItems.length);
+
+        // Fade in
+        Animated.timing(fadeAnim, {
+          toValue: 1,
+          duration: 200,
+          useNativeDriver: true,
+        }).start();
+      });
+    }, 2500); // 2.5 seconds per category
+
+    return () => clearInterval(interval);
+  }, [categoryItems.length, fadeAnim]);
+
+  // Pulse animation for user interests
+  useEffect(() => {
+    if (categoryItems.length === 0) return;
+
+    const currentItem = categoryItems[currentIndex];
+    if (currentItem?.isUserInterest) {
+      // Start pulsing
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(pulseAnim, {
+            toValue: 1.15,
+            duration: 600,
+            useNativeDriver: true,
+            easing: Easing.inOut(Easing.ease),
+          }),
+          Animated.timing(pulseAnim, {
+            toValue: 1,
+            duration: 600,
+            useNativeDriver: true,
+            easing: Easing.inOut(Easing.ease),
+          }),
+        ])
+      ).start();
+    } else {
+      // Reset pulse
+      pulseAnim.setValue(1);
+    }
+  }, [currentIndex, categoryItems, pulseAnim]);
+
+  if (categoryItems.length === 0) return null;
+
+  const currentItem = categoryItems[currentIndex];
+  if (!currentItem) return null;
+  const iconName = getCategoryIcon(currentItem.category);
+
+  return (
+    <Animated.View
+      style={[
+        styles.categoryCarousel,
+        {
+          opacity: fadeAnim,
+          transform: [{ scale: pulseAnim }],
+        },
+      ]}
+    >
+      {/* Light blue glow for user interests */}
+      {currentItem.isUserInterest && (
+        <View style={styles.interestGlow} />
+      )}
+
+      <MaterialIcons
+        name={iconName as any}
+        size={size * 0.75}
+        color={currentItem.isUserInterest ? '#4A90E2' : '#333333'}
+        style={styles.categoryIcon}
+      />
+      <Text
+        style={[
+          styles.categoryCount,
+          {
+            fontSize: size * 0.6,
+            color: currentItem.isUserInterest ? '#4A90E2' : '#333333',
+          },
+        ]}
+      >
+        {currentItem.count}
+      </Text>
+    </Animated.View>
+  );
+};
+
+/**
  * User Location Marker component with pulsing animation
  */
 const UserLocationMarker: React.FC<{ location: Location.LocationObject }> = ({ location }) => {
@@ -206,6 +450,85 @@ const UserLocationMarker: React.FC<{ location: Location.LocationObject }> = ({ l
   );
 };
 
+// Animated "New Content" Indicator Dot for map markers
+interface IndicatorDotProps {
+  hasNewContent: boolean;
+  style: any;
+}
+
+const IndicatorDot: React.FC<IndicatorDotProps> = ({ hasNewContent, style }) => {
+  const pulseScale = useRef(new Animated.Value(1)).current;
+  const pulseOpacity = useRef(new Animated.Value(0.9)).current;
+  const fadeOpacity = useRef(new Animated.Value(hasNewContent ? 1 : 0)).current;
+
+  // Breathing pulse animation
+  useEffect(() => {
+    if (hasNewContent) {
+      // Fade in
+      Animated.timing(fadeOpacity, {
+        toValue: 1,
+        duration: 0,
+        useNativeDriver: true,
+      }).start();
+
+      // Start continuous pulse
+      const pulseAnimation = Animated.loop(
+        Animated.sequence([
+          Animated.parallel([
+            Animated.timing(pulseScale, {
+              toValue: 1.15,
+              duration: 1000,
+              useNativeDriver: true,
+            }),
+            Animated.timing(pulseOpacity, {
+              toValue: 1.0,
+              duration: 1000,
+              useNativeDriver: true,
+            }),
+          ]),
+          Animated.parallel([
+            Animated.timing(pulseScale, {
+              toValue: 1.0,
+              duration: 1000,
+              useNativeDriver: true,
+            }),
+            Animated.timing(pulseOpacity, {
+              toValue: 0.6,
+              duration: 1000,
+              useNativeDriver: true,
+            }),
+          ]),
+        ])
+      );
+
+      pulseAnimation.start();
+
+      return () => {
+        pulseAnimation.stop();
+      };
+    } else {
+      // Fade out smoothly when cleared
+      Animated.timing(fadeOpacity, {
+        toValue: 0,
+        duration: 150,
+        useNativeDriver: true,
+      }).start();
+    }
+  }, [hasNewContent]);
+
+  return (
+    <Animated.View
+      style={[
+        style,
+        {
+          opacity: Animated.multiply(fadeOpacity, pulseOpacity),
+          transform: [{ scale: pulseScale }],
+        },
+      ]}
+    />
+  );
+};
+
 // Tree Marker component for map points
 interface TreeMarkerProps {
   cluster: Cluster;
@@ -215,21 +538,36 @@ interface TreeMarkerProps {
 const TreeMarker: React.FC<TreeMarkerProps> = ({ cluster, isSelected }) => {
   // Determine color based on time status
   const color = getTimeStatusColor(cluster.timeStatus);
-  
+
   // Determine size based on interest level
   const size = getInterestLevelSize(cluster.interestLevel);
-  
+
   // Scale up if selected
   const scaleFactor = isSelected ? 1.2 : 1;
   const adjustedSize = size * scaleFactor;
-  
+
+  // Check if cluster contains Firestore-sourced events
+  const hasFirestoreEvents = cluster.venues.some(venue =>
+    venue.events.some(event => event.source === 'firestore')
+  );
+
+  // DEBUG: Log clusters with Firestore events
+  if (hasFirestoreEvents) {
+    const fsEventCount = cluster.venues.reduce((count, venue) =>
+      count + venue.events.filter(e => e.source === 'firestore').length, 0);
+    console.log(`[TreeMarker] Cluster ${cluster.id} has ${fsEventCount} Firestore events`);
+  }
+
   return (
     <View style={styles.markerWrapper}>
+      {/* Category Carousel - positioned above the tree */}
+      <CategoryCarousel cluster={cluster} size={adjustedSize} />
+
       {/* Broadcasting effect for 'now' events */}
       {cluster.isBroadcasting && (
         <BroadcastingEffect size={adjustedSize} color={color} />
       )}
-      
+
       {/* Tree top (circle) */}
       <View
         style={[
@@ -279,6 +617,46 @@ const TreeMarker: React.FC<TreeMarkerProps> = ({ cluster, isSelected }) => {
             {cluster.venues.length}
           </Text>
         </View>
+
+        {/* New content indicator - animated red dot */}
+        <IndicatorDot
+          hasNewContent={cluster.hasNewContent || false}
+          style={[
+            styles.newContentDot,
+            {
+              width: adjustedSize * 0.5,
+              height: adjustedSize * 0.5,
+              borderRadius: adjustedSize * 0.25,
+              top: -(adjustedSize * 0.15),
+              right: -(adjustedSize * 0.15),
+            }
+          ]}
+        />
+
+        {/* Firestore source indicator - subtle "F" badge in top-left */}
+        {hasFirestoreEvents && (
+          <View
+            style={[
+              styles.firestoreIndicator,
+              {
+                width: adjustedSize * 0.45,
+                height: adjustedSize * 0.45,
+                borderRadius: adjustedSize * 0.225,
+                top: -(adjustedSize * 0.15),
+                left: -(adjustedSize * 0.15),
+              }
+            ]}
+          >
+            <Text
+              style={[
+                styles.firestoreIndicatorText,
+                { fontSize: adjustedSize * 0.25 }
+              ]}
+            >
+              F
+            </Text>
+          </View>
+        )}
       </View>
 
       {/* Tree trunk (rectangle) */}
@@ -294,63 +672,40 @@ const TreeMarker: React.FC<TreeMarkerProps> = ({ cluster, isSelected }) => {
       />
       
       {/* Label area with category icons */}
-      <View 
+      <View
         style={[
-          styles.markerLabel, 
-          { 
-            width: Math.max(adjustedSize * 3.8, 62), // Minimum width of 62px
-            height: Math.max(adjustedSize, 25), // Minimum height of 25px
+          styles.markerLabel,
+          {
+            width: Math.max(adjustedSize * 3.4, 58),
+            height: Math.max(adjustedSize * 0.5, 16),
           }
         ]}
       >
         {/* Event icon and count */}
         {cluster.eventCount > 0 && (
           <View style={styles.iconContainer}>
-            <MaterialIcons 
-              name="event" 
-              size={Math.max(adjustedSize/2.5, 12)} // Minimum icon size of 12px
-              color="#666666" 
+            <MaterialIcons
+              name="event"
+              size={Math.max(adjustedSize / 3, 11)}
+              color="#2196F3"
             />
-            <Text style={styles.countText}>{cluster.eventCount}</Text>
+            <Text style={[styles.countText, { color: '#2196F3' }]}>{cluster.eventCount}</Text>
           </View>
         )}
-        
+
         {/* Special icon and count */}
         {cluster.specialCount > 0 && (
           <View style={styles.iconContainer}>
-            <MaterialIcons 
-              name="restaurant" 
-              size={Math.max(adjustedSize/2.5, 12)} // Minimum icon size of 12px
-              color="#666666" 
+            <MaterialIcons
+              name="restaurant"
+              size={Math.max(adjustedSize / 3, 11)}
+              color="#34A853"
             />
-            <Text style={styles.countText}>{cluster.specialCount}</Text>
+            <Text style={[styles.countText, { color: '#34A853' }]}>{cluster.specialCount}</Text>
           </View>
         )}
       </View>
       
-      {/* Time indicator badge for now/today */}
-      {cluster.timeStatus !== 'future' && (
-        <View 
-          style={[
-            styles.timeIndicator, 
-            { 
-              backgroundColor: getTimeBadgeColor(cluster.timeStatus),
-              width: 16,                // Fixed width (pixels)
-              height: 16,               // Fixed height (pixels)
-              borderRadius: 8,          // Fixed border radius
-              position: 'absolute',     // Ensure absolute positioning works
-              top: -4,                  // Position to overlap with tree top
-              right: 12,                // Position to overlap with tree top
-              borderWidth: 1.5,         // Add a white border
-              borderColor: '#FFFFFF',   // White border color
-            }
-          ]}
-        >
-          <Text style={[styles.timeIndicatorText, { fontSize: 10 }]}>
-            {cluster.timeStatus === 'now' ? 'N' : 'T'}
-          </Text>
-        </View>
-      )}
     </View>
   );
 };
@@ -378,8 +733,72 @@ const RecenterButton: React.FC<{
   );
 };
 
-// Main Map Screen component
-function MapScreen() {
+/**
+ * DeepLinkLightbox - Standalone lightbox for deep links
+ * Renders when globalSelectedImageData is set from deep link handlers
+ * This is separate from the EventCallout lightbox (which only renders when a cluster is open)
+ */
+const DeepLinkLightbox = () => {
+  const globalSelectedImageData = useMapStore((state) => state.selectedImageData);
+  const setGlobalSelectedImageData = useMapStore((state) => state.setSelectedImageData);
+
+  const handleClose = useCallback(() => {
+    setGlobalSelectedImageData(null);
+  }, [setGlobalSelectedImageData]);
+
+  if (!globalSelectedImageData) return null;
+
+  return (
+    <Modal
+      transparent={true}
+      visible={true}
+      animationType="fade"
+      onRequestClose={handleClose}
+      statusBarTranslucent={true}
+      presentationStyle="overFullScreen"
+      hardwareAccelerated={true}
+    >
+      <EventImageLightbox
+        imageUrl={globalSelectedImageData.imageUrl}
+        event={globalSelectedImageData.event}
+        venue={globalSelectedImageData.venue}
+        cluster={globalSelectedImageData.cluster}
+        onClose={handleClose}
+      />
+    </Modal>
+  );
+};
+
+ // Main Map Screen component
+ function MapScreen() {
+   // ───── DEBUG: Map load session & timers ─────
+   const DEBUG_MAP_LOAD = true;
+   const __ml_sessionIdRef = React.useRef<string>(`ML-${Date.now()}`);
+   const __ml_t0Ref = React.useRef<number>(Date.now());
+const __ml_firstMarkersLoggedRef = React.useRef<boolean>(false);
+const __ml_cameraTickCountRef = React.useRef<number>(0);
+const __ml_firstClustersLoggedRef = React.useRef<boolean>(false);
+const __ml_firstFrameLoggedRef = React.useRef<boolean>(false);
+const __ml_firstClustersReadyRef = React.useRef<boolean>(false);
+const __ml_userStartAppliedRef = React.useRef<boolean>(false);
+const __ml_styleReadyRef = React.useRef<boolean>(true);  // Set to true since callbacks don't work
+const __ml_initialSnapDoneRef = React.useRef<boolean>(false);
+
+// Preferred starting zoom (city-level)
+const START_ZOOM = 12;
+
+// Pick a start center dynamically:
+// 1) If we already know the user's location, use it
+// 2) Otherwise, fall back to your existing initialCenterCoordinate (global-safe)
+const computeStartCenter = (): [number, number] => {
+  if (location && location.coords && typeof location.coords.longitude === 'number' && typeof location.coords.latitude === 'number') {
+    return [location.coords.longitude, location.coords.latitude];
+  }
+  return (initialCenterCoordinate as [number, number]) ?? [-63.128, 46.238];
+};
+
+
+
   // 🔥 ANALYTICS INTEGRATION: Initialize analytics hook
   const analytics = useAnalytics();
 
@@ -391,28 +810,41 @@ function MapScreen() {
   const { trackInteraction } = useGuestInteraction();
 
   // Use the map store
-  const { 
+  const {
     clusters,
+    events,
+    viewportEvents,
     selectedVenue,
     selectedVenues,
     selectedCluster,
-    isLoading, 
-    error, 
-    fetchEvents, 
+    isLoading,
+    error,
+    fetchEvents,
+    fetchViewportEvents,
+    prefetchIfStale,
     selectVenue,
     selectVenues,
     selectCluster,
     setZoomLevel,
+    generateClusters,
     filterCriteria,
     zoomLevel,
     shouldClusterBeVisible,
     setUserLocation,
     activeFilterPanel,
-    setActiveFilterPanel
+    setActiveFilterPanel,
+    closeCalloutTrigger,
+    triggerCloseCallout,
+    isHeaderSearchActive,
+    setHeaderSearchActive
   } = useMapStore();
+
+  // Is the bottom callout visible?
+  const isCalloutOpen = !!selectedCluster || (Array.isArray(selectedVenues) && selectedVenues.length > 0);
 
   // 🎯 TUTORIAL INTEGRATION: Make map store available globally
   useEffect(() => {
+
     (global as any).mapStore = {
       clusters,
       selectedVenues,
@@ -422,10 +854,14 @@ function MapScreen() {
     
     // 🎯 TUTORIAL INTEGRATION: Expose camera ref for tutorial repositioning
     (global as any).mapCameraRef = cameraRef;
-    
+
+    // 🎯 HOTSPOT: Expose mapRef for getPointInView coordinate projection
+    (global as any).mapViewRef = mapRef;
+
     return () => {
       delete (global as any).mapStore;
       delete (global as any).mapCameraRef;
+      delete (global as any).mapViewRef;
     };
   }, [clusters, selectedVenues, filterCriteria, zoomLevel]);
 
@@ -444,6 +880,8 @@ function MapScreen() {
     }, [activeFilterPanel, setActiveFilterPanel, selectedVenues, selectVenue])
   );
 
+  
+
   // Local state for location and map
   const [location, setLocation] = useState<Location.LocationObject | null>(null);
   const [locationPermissionGranted, setLocationPermissionGranted] = useState<boolean>(false);
@@ -455,20 +893,96 @@ function MapScreen() {
   
   // Filter pills auto-hide functionality
   const [isMapMoving, setIsMapMoving] = useState<boolean>(false);
-  const pillsAnimation = useRef(new Animated.Value(0)).current; // 0 = visible, -100 = hidden
-  const hideTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const showTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const lastCameraChangeRef = useRef<number>(0);
-  
+
+  // 0 = visible; we'll compute hidden distance from measured height
+  const pillsAnimation = useRef(new Animated.Value(0)).current;
+  const pillsOpacity = useRef(new Animated.Value(1)).current;
+
+  // Measure pill row height so we can hide exactly by its height
+  const [pillsHeight, setPillsHeight] = useState<number>(56); // sensible default
+
+  // Actual map viewport dimensions (accounting for header, tab bar, safe areas)
+  const [mapDimensions, setMapDimensions] = useState<{ width: number; height: number } | null>(null);
+
+// Debounce + gating
+/**
+ * ────────────────────────────────────────────────────────────────────────────────
+ * FILTER PILLS AUTO-HIDE: DEBOUNCE + GATING REFS
+ *
+ * - hideTimeoutRef: debounces “movement end” (250ms idle) before re-showing pills.
+ * - showTimeoutRef: fallback re-show (1000ms) so pills can’t get “stuck” hidden.
+ * - hideCapTimeoutRef: hard cap (MAX_HIDDEN_MS) so long zoom tails can’t hide forever.
+ * - lastCameraChangeRef: timestamp of last camera tick for timing decisions.
+ *
+ * Paired with significance gating in handleCameraChange:
+ *   • A tick is “meaningful” only if zoom/center/heading/pitch crosses thresholds.
+ *   • Non-meaningful ticks DO NOT reset the movement-end debounce (prevents long
+ *     zoom-out tails at low zoom from keeping pills hidden).
+ * ────────────────────────────────────────────────────────────────────────────────
+ */
+const hideTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+const showTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+const hideCapTimeoutRef = useRef<NodeJS.Timeout | null>(null); // force-show cap
+
+
+
+const lastCameraChangeRef = useRef<number>(0);
+
+
+// Track previous camera values to compute true deltas
+const previousCenterRef = useRef<[number, number] | null>(null); // [lng, lat]
+const previousHeadingRef = useRef<number | null>(null);
+const previousPitchRef = useRef<number | null>(null);
+
+// After pills re-show, ignore hides for a short window
+const postShowLockoutUntilRef = useRef<number>(0);
+
+// --- DEBUG: pills logging helper + session id ---
+// Debug logging for Filter Pills (toggle-able)
+// Set DEBUG_PILLS = true to print detailed pill hide/show and camera-change logs.
+const pillsDebugSession = useRef(Math.floor(Math.random() * 1e6)).current;
+
+/** Master switch for filter-pills logging. true = verbose logs, false = silent. */
+const DEBUG_PILLS = false; /** Master switch for filter-pills logging. true = verbose logs, false = silent. */
+
+const logPills = (msg: string, ctx?: Record<string, any>) => {
+  if (!__DEV__ || !DEBUG_PILLS) return;
+  const t = new Date().toISOString().split('T')[1]?.replace('Z','');
+  console.log(`[PILLS ${pillsDebugSession}] ${t} ${msg}`, ctx || {});
+};
+
+// ------------------------------------------------
+
+  // Ignore non-user (programmatic) camera moves for a short window
+  const ignoreProgrammaticCameraRef = useRef<boolean>(false);
+
+  // Enable auto-hide only after initial camera settle
+  const autoHideEnabledRef = useRef<boolean>(false);
+
+  // After a reload/tutorial, wait for the first real user gesture before allowing hides again
+  const userGestureSeenRef = useRef<boolean>(false);
+
+  // Viewport filtering refs
+  const lastViewportBboxRef = useRef<BoundingBox | null>(null);
+  const viewportFetchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const lastViewportFetchTimeRef = useRef<number>(0);  // Track last fetch timestamp for throttling
+  const currentCameraStateRef = useRef<{ center: [number, number]; zoom: number } | null>(null);
+
+
   // Add a ref to track current zoom threshold and visible clusters for stability
-  const currentThresholdIndex = useRef<number>(getThresholdIndexForZoom(zoomLevel));
-  const visibleClusterIds = useRef<Set<string>>(new Set());
-  const previousFilterCriteria = useRef<FilterCriteria>(filterCriteria);
+const currentThresholdIndex = useRef<number>(getThresholdIndexForZoom(zoomLevel));
+const visibleClusterIds = useRef<Set<string>>(new Set());
+const previousFilterCriteria = useRef<FilterCriteria>(filterCriteria);
+const previousClusterCount = useRef<number>(0);
 
   // 🔥 ANALYTICS: Add refs for tracking performance and behavior
-  const mapInteractionStartTime = useRef<number | null>(null);
-  const lastZoomLevel = useRef<number>(zoomLevel);
-  const sessionClusterInteractions = useRef<number>(0);
+const mapInteractionStartTime = useRef<number | null>(null);
+const lastZoomLevel = useRef<number>(zoomLevel);
+const sessionClusterInteractions = useRef<number>(0);
+const clusterOpenStartRef = useRef<number | null>(null);
+const lastOpenedClusterIdRef = useRef<string | number | null>(null);
+
 
   // Create a memoized initial center coordinate
   // This will only update when location changes, not on every render
@@ -590,55 +1104,109 @@ function MapScreen() {
   useEffect(() => {
     // Only do this once when we first get a location
     if (location && !hasInitiallyPositioned && cameraRef.current) {
-      cameraRef.current.setCamera({
-        centerCoordinate: [location.coords.longitude, location.coords.latitude],
-        zoomLevel: 12,
-        animationDuration: 500,
-      });
-      
-      // 🔥 ANALYTICS: TEMPORARILY COMMENTED OUT
-      // analytics.trackMapInteraction('initial_position_set', {
-      //   zoom_level: 12,
-      //   positioned_to_user_location: true,
-      //   is_guest: isGuest
-      // });
-      
-      setHasInitiallyPositioned(true);
-    }
-  }, [location, hasInitiallyPositioned]); // REMOVED analytics, isGuest dependencies
-  
-  // Fetch data on component mount
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        // 🔥 ANALYTICS: Track data fetch start
-        const fetchStartTime = Date.now();
-        
-        await fetchEvents();
-        
-        // 🔥 ANALYTICS: Track data fetch completion
-        const fetchDuration = Date.now() - fetchStartTime;
-        analytics.logEvent('map_data_fetch', {
-          duration_ms: fetchDuration,
-          screen: 'map',
-          is_guest: isGuest
-        });
-        
-        analytics.trackMapInteraction('events_loaded', {
-          load_duration_ms: fetchDuration
-        });
-      } catch (error) {
-        console.error('Error fetching events:', error);
-        // 🔥 ANALYTICS: Track fetch errors
-        analytics.trackError('map_data_fetch_error',
-          error instanceof Error ? error.message : 'Unknown fetch error',
-          { screen: 'map' }
-        );
-      }
-    };
+        // Ignore hides briefly while we move the camera programmatically
+    ignoreProgrammaticCameraRef.current = true;
+    logPills('PROGRAMMATIC MOVE START (initial center) — suppress hides 800ms');
+    setTimeout(() => {
+      ignoreProgrammaticCameraRef.current = false;
+      logPills('PROGRAMMATIC MOVE END (initial center)');
+    }, 800);
 
-    fetchData();
-  }, [fetchEvents]); // 🔥 STABLE: Only fetchEvents dependency (from store)
+
+    cameraRef.current.setCamera({
+      centerCoordinate: [location.coords.longitude, location.coords.latitude],
+
+      zoomLevel: 12,
+      animationDuration: 500,
+    });
+
+    setHasInitiallyPositioned(true);
+
+        // Arm auto-hide after a short grace period so startup camera churn can't hide pills
+    autoHideEnabledRef.current = false;
+    logPills('AUTO-HIDE ARMED pending (600ms)');
+    setTimeout(() => {
+      autoHideEnabledRef.current = true;
+      logPills('AUTO-HIDE ARMED = true');
+    }, 600);
+
+  }
+
+  }, [location, hasInitiallyPositioned]); // REMOVED analytics, isGuest dependencies
+
+  // Initial viewport load when location is acquired
+  useEffect(() => {
+    if (location && !lastViewportBboxRef.current) {
+      const { width, height } = Dimensions.get('window');
+      const center: GeoCoordinate = {
+        latitude: location.coords.latitude,
+        longitude: location.coords.longitude
+      };
+
+      const bbox = getViewportBoundingBox(center, START_ZOOM, width, height, 1.0);
+      const roundedBbox = roundBoundingBoxForCache(bbox, 3);  // 3 decimals = ~110m resolution
+
+      if (DEBUG_MAP_LOAD) {
+        console.log('[Viewport] Initial load:', roundedBbox);
+      }
+      lastViewportBboxRef.current = roundedBbox;
+      fetchViewportEvents(roundedBbox);
+    }
+  }, [location, fetchViewportEvents]);
+
+// (Test code removed - validation complete)
+
+// Prefer preloaded events; derive clusters immediately. Fallback only if no events.
+  useEffect(() => {
+    const t0 = Date.now();
+    const eventsLen = Array.isArray(events) ? events.length : 0;
+    const cachedClusters = Array.isArray(clusters) ? clusters.length : 0;
+    console.log('[MapScreen] Mount: events =', eventsLen, 'cached clusters =', cachedClusters, 'isLoading =', isLoading);
+
+    if (eventsLen > 0) {
+      console.log('[MapScreen] Using preloaded events on mount — generating clusters now');
+      try {
+        generateClusters();
+        // Log the cluster count after the store updates on the next tick
+        setTimeout(() => {
+          const afterClusters = Array.isArray(clusters) ? clusters.length : 0;
+          console.log('[MapScreen] generateClusters() invoked; clusters now =', afterClusters);
+        }, 0);
+      } catch (err) {
+        console.error('[MapScreen] generateClusters() error:', err);
+      }
+      return;
+    }
+
+    // Check if viewport data already exists - if so, skip React Query fetch
+    const hasViewportData = viewportEvents.length > 0;
+
+    if (hasViewportData) {
+      console.log('[MapScreen] Viewport data already loaded, skipping prefetchIfStale');
+    } else {
+      console.log('[MapScreen] No preloaded events on mount — invoking prefetchIfStale(0)');
+      prefetchIfStale(0)
+        .catch((error) => {
+          console.error('Error prefetching events:', error);
+          // 🔥 ANALYTICS: Track fetch errors
+          analytics.trackError('map_data_fetch_error',
+            error instanceof Error ? error.message : 'Unknown prefetch error',
+            { screen: 'map' }
+          );
+        })
+        .finally(() => {
+          const dur = Date.now() - t0;
+          console.log('[MapScreen] prefetchIfStale(0) finished in', dur, 'ms');
+          analytics.logEvent('map_data_fetch', {
+            duration_ms: dur,
+            screen: 'map',
+            is_guest: isGuest
+          });
+          analytics.trackMapInteraction('events_loaded', { load_duration_ms: dur });
+        });
+    }
+  }, []); // run once
+
 
   // 🔥 ANALYTICS: Track filter panel usage
   useEffect(() => {
@@ -687,6 +1255,29 @@ function MapScreen() {
     }
   }, [filterCriteria, analytics, isGuest]); // 🔥 SMOKING GUN: filterCriteria object dependency
 
+  // Handle callout closing when map tab is re-pressed
+  const previousCloseCalloutTrigger = useRef(0);
+  
+  useEffect(() => {
+    // Only act when the trigger actually increments (not just when it's > 0)
+    if (closeCalloutTrigger > previousCloseCalloutTrigger.current) {
+      console.log('[MapScreen] Received close callout trigger, closing callouts');
+      previousCloseCalloutTrigger.current = closeCalloutTrigger;
+      
+      // Close any open callouts
+      if (selectedVenues && selectedVenues.length > 0) {
+        selectVenue(null); // This will clear all selections
+        
+        // 🔥 ANALYTICS: Track callout closure via tab re-press
+        analytics.trackMapInteraction('callout_closed_via_tab_repress', {
+          venue_count: selectedVenues.length,
+          session_interactions: sessionClusterInteractions.current,
+          is_guest: isGuest
+        });
+      }
+    }
+  }, [closeCalloutTrigger]); // Removed unnecessary dependencies
+
   // Animate callout when selected venue changes
   useEffect(() => {
     if (selectedVenues && selectedVenues.length > 0) {
@@ -717,7 +1308,7 @@ function MapScreen() {
           venue: venue.venue
         });
       });
-    } else {
+} else {
       // Hide callout (move off-screen)
       Animated.spring(calloutAnimation, {
         toValue: SCREEN_HEIGHT, // Move off-screen
@@ -726,11 +1317,17 @@ function MapScreen() {
         tension: 40
       }).start();
 
-      // 🔥 ANALYTICS: Track callout closure if it was previously open
-      if (selectedVenues && selectedVenues.length === 0) {
-        analytics.trackMapInteraction('venue_callout_closed', {
-          session_interactions: sessionClusterInteractions.current
+      // 🔥 ANALYTICS: Track callout closure
+      if (clusterOpenStartRef.current != null) {
+        const dur = Date.now() - clusterOpenStartRef.current;
+        amplitudeTrack('cluster_closed', {
+          cluster_active_for_ms: dur,
+          cluster_active_for_seconds: Math.round(dur / 1000),
+          cluster_id: lastOpenedClusterIdRef.current ?? 'unknown',
+          session_interactions: sessionClusterInteractions.current,
         });
+        clusterOpenStartRef.current = null;
+        lastOpenedClusterIdRef.current = null;
       }
     }
   }, [selectedVenues, calloutAnimation]); // 🔥 STABLE: Only essential dependencies
@@ -746,11 +1343,21 @@ function MapScreen() {
   // Re-center the map on user location
   const handleRecenterPress = () => {
     if (location && cameraRef.current) {
-      cameraRef.current.setCamera({
-        centerCoordinate: [location.coords.longitude, location.coords.latitude],
-        zoomLevel: 12,
-        animationDuration: 500,
-      });
+        ignoreProgrammaticCameraRef.current = true;
+    logPills('PROGRAMMATIC MOVE START (recenter) — suppress hides 800ms');
+    setTimeout(() => {
+      ignoreProgrammaticCameraRef.current = false;
+      logPills('PROGRAMMATIC MOVE END (recenter)');
+    }, 800);
+
+
+    cameraRef.current.setCamera({
+      centerCoordinate: [location.coords.longitude, location.coords.latitude],
+
+      zoomLevel: 12,
+      animationDuration: 500,
+    });
+
 
       // 🔥 ANALYTICS: Track re-center actions
       analytics.trackMapInteraction('recenter_to_user_location', {
@@ -769,12 +1376,62 @@ function MapScreen() {
   // Enhanced handleMarkerPress with comprehensive prioritization
   const handleMarkerPress = useCallback(async (cluster: Cluster): Promise<void> => {
     // LOG: Processing cluster press - tracks which cluster was tapped and venue count
-    // console.log("Processing cluster press:", cluster.id, "with", cluster.venues.length, "venues");
-    
+    console.log('[map] handleMarkerPress()', { cluster_id: cluster.id, type: cluster.clusterType, venue_count: cluster.venues?.length });
+
+    // Record interaction immediately for single-venue markers
+    // Tapping a single-venue marker is explicit intent, so clear indicator immediately
+    if (cluster.clusterType === 'single' && cluster.venues.length === 1) {
+      const venue = cluster.venues[0];
+      const venueEventIds = venue.events.map(event => event.id.toString());
+      const stableVenueId = venue.locationKey;
+      const { recordInteraction } = useClusterInteractionStore.getState();
+      console.log(`[SingleVenueTap] Recording immediate engagement for: ${venue.venue}, StableVenueID: ${stableVenueId}`);
+      recordInteraction(stableVenueId, venueEventIds);
+    }
+
     // 🔥 ANALYTICS: Track cluster interaction start
-    const interactionStartTime = Date.now();
-    sessionClusterInteractions.current += 1;
-    
+    // If another cluster was already open, close it and log its duration
+if (clusterOpenStartRef.current != null) {
+  const prevDur = Date.now() - clusterOpenStartRef.current;
+  amplitudeTrack('cluster_closed', {
+    cluster_active_for_ms: prevDur,
+    cluster_active_for_seconds: Math.round(prevDur / 1000),
+    cluster_id: lastOpenedClusterIdRef.current ?? 'unknown',
+    reason: 'open_another',
+    session_interactions: sessionClusterInteractions.current,
+  });
+  clusterOpenStartRef.current = null;
+  lastOpenedClusterIdRef.current = null;
+}
+
+// 🔥 ANALYTICS: Track cluster interaction start
+const interactionStartTime = Date.now();
+sessionClusterInteractions.current += 1;
+
+// Track cluster opened + start the open-duration timer
+console.log('[analytics] cluster_opened about to send', {
+  cluster_id: cluster.id,
+  cluster_size: cluster.venues.length,
+  session_interactions: sessionClusterInteractions.current,
+});
+amplitudeTrack('cluster_opened', {
+  cluster_id: cluster.id,
+  cluster_size: cluster.venues.length,
+  referrer_screen: '/map',
+  source: 'map',
+  session_interactions: sessionClusterInteractions.current,
+});
+console.log('[analytics] cluster_opened sent');
+
+clusterOpenStartRef.current = interactionStartTime;
+lastOpenedClusterIdRef.current = cluster.id;
+
+    // NOTE: We do NOT record venue interactions here on cluster open.
+    // Venue interactions are recorded by EventCallout when:
+    // 1. The callout opens and displays the default venue (first venue viewed)
+    // 2. The user swipes to a different venue in the venue selector
+    // This ensures we only mark venues as "seen" when the user actually views them.
+
     // Track guest interaction - only for guests
     if (isGuest && !trackInteraction(InteractionType.CLUSTER_CLICK)) {
       console.log("Cluster interaction blocked by guest limitation");
@@ -804,10 +1461,11 @@ function MapScreen() {
           )
         : null;
       
-      // Fetch user interests and saved events with proper typing
-      const userInterests: string[] = await userService.getUserInterests();
-      const savedEvents: string[] = await userService.getSavedEvents();
-      
+      // Read cached prefs synchronously (no network on tap)
+      const userInterests: string[] = getUserInterestsSync();
+      const savedEvents: string[] = getSavedEventsSync();
+      const favoriteVenues: string[] = getFavoriteVenuesSync();
+            
       // LOG: User data loaded - shows if user has interests/saved events for scoring algorithm
       // console.log("User data loaded:", {
       //   hasInterests: userInterests.length > 0,
@@ -825,17 +1483,24 @@ function MapScreen() {
       
       // Process all venues to add relevance scores to each event and venue
       for (const venue of venuesWithScores) {
+        // Check if this is a favorite venue (applies to all events at this venue)
+        const isFavoriteVenue = favoriteVenues.includes(venue.locationKey);
+        const favoriteVenueScore = isFavoriteVenue ? 500 : 0;
+
         // Calculate scores for each event in the venue
         for (const event of venue.events) {
           // Base score components
           let baseScore = 0;
-          
+
           // 1. Saved Status (Highest Priority - 1000 points base)
           const isSaved = savedEvents.includes(event.id.toString());
           const savedScore = isSaved ? 1000 : 0;
           if (isSaved) savedEventMatches++;
-          
-          // 2. User Interest Match (Second Priority - 100 points base)
+
+          // 2. Favorite Venue (Second Priority - 500 points)
+          // (favoriteVenueScore calculated at venue level above)
+
+          // 3. User Interest Match (Third Priority - 100 points base)
           const matchesInterest = userInterests.includes(event.category);
           const interestScore = matchesInterest ? 100 : 0;
           if (matchesInterest) interestMatches++;
@@ -868,7 +1533,7 @@ function MapScreen() {
           }
           
           // Calculate final relevance score
-          event.relevanceScore = savedScore + interestScore + timeScore + engagementScore + proximityScore;
+          event.relevanceScore = savedScore + favoriteVenueScore + interestScore + timeScore + engagementScore + proximityScore;
           
           if (event.relevanceScore > 100) highRelevanceEvents++;
           
@@ -877,6 +1542,7 @@ function MapScreen() {
           // if (process.env.NODE_ENV !== 'production') {
           //   console.log(`Event "${event.title}" scores:`, {
           //     saved: savedScore,
+          //     favorite: favoriteVenueScore,
           //     interest: interestScore,
           //     time: timeScore,
           //     engagement: engagementScore,
@@ -909,16 +1575,25 @@ function MapScreen() {
       
       // Select prioritized venues
       selectVenues(sortedVenues);
-      
+
       // Store the entire cluster if it contains multiple venues
       if (cluster.clusterType === 'multi') {
         selectCluster(cluster);
       } else {
         selectCluster(null);
       }
-      
+
       // For backward compatibility - select the first (most relevant) venue as primary
       selectVenue(sortedVenues[0]);
+
+      // DEBUG LOG 4: Log which venue is selected when cluster opens (via map tap)
+      console.log('[Hotspot] ===== Cluster opened via MAP tap =====');
+      console.log(`[Hotspot] Cluster: timeStatus=${cluster.timeStatus}, venues=${sortedVenues.length}`);
+      console.log(`[Hotspot] Selected venue (first after sort): ${sortedVenues[0]?.venue} (score: ${sortedVenues[0]?.relevanceScore?.toFixed(2)})`);
+      sortedVenues.slice(0, 5).forEach((v, idx) => {
+        const topEvent = v.events?.[0];
+        console.log(`[Hotspot]   ${idx + 1}. ${v.venue} (score: ${v.relevanceScore?.toFixed(2)}, top event: "${topEvent?.title}" ${topEvent?.category})`);
+      });
       
       // Calculate center coordinates for the cluster
       const coordinates = cluster.clusterType === 'multi'
@@ -929,11 +1604,20 @@ function MapScreen() {
         : [cluster.venues[0].longitude, cluster.venues[0].latitude];
       
       // Move camera to the cluster
+            ignoreProgrammaticCameraRef.current = true;
+      logPills('PROGRAMMATIC MOVE START (cluster tap) — suppress hides 800ms');
+      setTimeout(() => {
+        ignoreProgrammaticCameraRef.current = false;
+        logPills('PROGRAMMATIC MOVE END (cluster tap)');
+      }, 800);
+
+
       cameraRef.current?.setCamera({
         centerCoordinate: coordinates,
         zoomLevel: 14,
         animationDuration: 500,
       });
+
 
       // 🔥 ANALYTICS: TEMPORARILY COMMENTED OUT - Track successful cluster interaction
       // const interactionDuration = Date.now() - interactionStartTime;
@@ -1001,6 +1685,15 @@ function MapScreen() {
       is_guest: isGuest
     });
 
+    // ✅ Cancel Events "hold-to-arm clear" if active (FilterPills can't reliably capture map taps)
+    const isEventsClearGestureActive = (global as any).gathrEventsClearGestureActive;
+    const cancelEventsClearArmed = (global as any).gathrCancelEventsClearArmed;
+
+    if (isEventsClearGestureActive && typeof cancelEventsClearArmed === 'function') {
+      console.log('🧯 handleMapPress: cancelling Events clear (armed/hold)');
+      cancelEventsClearArmed('map-press');
+    }
+
     // Only close if there's a callout currently open
     if (selectedVenues && selectedVenues.length > 0) {
       selectVenue(null);
@@ -1014,85 +1707,267 @@ function MapScreen() {
   };
 
   // Auto-hide filter pills functionality
-  const hidePills = useCallback(() => {
+  /**
+ * Hide the pill row by translating it upward (out of view) and fading slightly.
+ * Notes:
+ *  • Skips when a filter panel is open (pills must remain accessible).
+ *  • Uses measured pill height so the slide fully clears (min 44dp safety).
+ *  • Accepts a `reason` string for log forensics (startup, movement_start, etc.).
+ */
+const hidePills = useCallback((reason: string = 'unspecified') => {
+
     // Don't hide if filter panel is open
-    if (activeFilterPanel) return;
-    
-    // LOG: Hiding filter pills animation started
-    // console.log('EXECUTING hidePills animation to -100');
-    Animated.timing(pillsAnimation, {
-      toValue: -100, // Hide above screen
-      duration: 200, // Faster animation
-      useNativeDriver: true,
-    }).start(() => {
-      console.log('hidePills animation completed');
+    if (activeFilterPanel) {
+      logPills('hidePills SKIPPED (panel open)', { reason });
+      return;
+    }
+
+    const distance = -Math.max(pillsHeight, 44); // slide up by actual height (min 44)
+    logPills('hidePills RUN', { reason, distance });
+
+    Animated.parallel([
+      Animated.timing(pillsAnimation, {
+        toValue: distance,
+        duration: 180,
+        useNativeDriver: true,
+      }),
+      Animated.timing(pillsOpacity, {
+        toValue: 0,
+        duration: 150,
+        useNativeDriver: true,
+      }),
+    ]).start(() => {
+      logPills('hidePills DONE', { reason });
     });
-  }, [activeFilterPanel, pillsAnimation]);
+  }, [activeFilterPanel, pillsAnimation, pillsOpacity, pillsHeight]);
 
-  const showPills = useCallback(() => {
-    // LOG: Showing filter pills animation started
-    // console.log('EXECUTING showPills animation to 0');
-    Animated.timing(pillsAnimation, {
-      toValue: 0, // Show in normal position
-      duration: 200, // Faster animation
-      useNativeDriver: true,
-    }).start(() => {
-    //  console.log('showPills animation completed');
+
+  /**
+ * Show the pill row (translateY → 0, opacity → 1) and start a short
+ * POST_SHOW_LOCKOUT window so a tiny camera tick right after showing
+ * can’t immediately trigger a new hide (prevents “blink-hide”).
+ */
+const showPills = useCallback((reason: string = 'unspecified') => {
+
+    logPills('showPills RUN', { reason });
+    // Set a brief lockout to prevent immediate re-hide flicker
+    postShowLockoutUntilRef.current = Date.now() + POST_SHOW_LOCKOUT_MS;
+    logPills('LOCKOUT set post-show', { lockoutMs: POST_SHOW_LOCKOUT_MS });
+
+    Animated.parallel([
+      Animated.timing(pillsAnimation, {
+        toValue: 0,
+        duration: 180,
+        useNativeDriver: true,
+      }),
+      Animated.timing(pillsOpacity, {
+        toValue: 1,
+        duration: 160,
+        useNativeDriver: true,
+      }),
+    ]).start(() => {
+      logPills('showPills DONE', { reason });
     });
-  }, [pillsAnimation]);
+  }, [pillsAnimation, pillsOpacity]);
 
-  const handleMapMovementStart = useCallback(() => {
-    // LOG: Map movement started - triggers filter pills hiding
-    // console.log('MAP MOVEMENT START - activeFilterPanel:', activeFilterPanel);
-    setIsMapMoving(true);
-    mapInteractionStartTime.current = Date.now();
-    
-    // Clear any existing timeouts
-    if (hideTimeoutRef.current) {
-      clearTimeout(hideTimeoutRef.current);
-      hideTimeoutRef.current = null;
-    }
-    if (showTimeoutRef.current) {
-      clearTimeout(showTimeoutRef.current);
-      showTimeoutRef.current = null;
-    }
-    
-    // Hide pills immediately when movement starts (unless filter panel is open)
-    if (!activeFilterPanel) {
-      console.log('HIDING PILLS');
-      hidePills();
-    } else {
-      console.log('NOT HIDING - filter panel is open');
-    }
-  }, [activeFilterPanel, hidePills]);
 
-  const handleMapMovementEnd = useCallback(() => {
-    // LOG: Map movement ended - triggers filter pills showing
-    // console.log('MAP MOVEMENT END');
-    setIsMapMoving(false);
-    
-    // 🔥 ANALYTICS: Track map movement session
-    if (mapInteractionStartTime.current) {
-      const movementDuration = Date.now() - mapInteractionStartTime.current;
-      analytics.trackMapInteraction('map_movement_session', {
-        duration_ms: movementDuration,
-        zoom_change: Math.abs(zoomLevel - lastZoomLevel.current),
-        is_guest: isGuest
-      });
-      mapInteractionStartTime.current = null;
+  // --- Floating pills top offset (baseline + small per-platform nudge) ---
+const BASELINE_TOP = 0; // dp - starting point that looks good under the header (reduced by 6px)
+const PLATFORM_NUDGE = Platform.select({ ios: 20, android: 20, default: 0 })!;
+const TOP_OFFSET = BASELINE_TOP + PLATFORM_NUDGE;
+// -----------
+
+// --- Movement significance thresholds (tune if needed) ---
+
+/**
+ * ────────────────────────────────────────────────────────────────────────────────
+ * FILTER PILLS AUTO-HIDE: THRESHOLDS & TUNING
+ *
+ * Goals
+ *  1) Hide immediately on real pans/zooms.
+ *  2) Ignore jitter/render settling (esp. iOS zoom-out tails).
+ *  3) Always re-show within a bounded window.
+ *
+ * Meaningful movement = any of:
+ *  • zoomDelta ≥ MIN_ZOOM_DELTA_TO_HIDE  (primary signal for pinch zooms)
+ *  • centerMovedMeters ≥ metersPerPixel * CENTER_PX_THRESHOLD
+ *      (with a floor of MIN_CENTER_METERS_TO_HIDE at high zooms)
+ *  • headingDelta ≥ MIN_HEADING_DELTA_TO_HIDE
+ *  • pitchDelta   ≥ MIN_PITCH_DELTA_TO_HIDE
+ *
+ * Behavioral guarantees
+ *  • Only meaningful ticks extend “moving”; tiny drifts don’t.
+ *  • After re-show we enforce POST_SHOW_LOCKOUT_MS to avoid blink-hide.
+ *  • MAX_HIDDEN_MS cap ensures pills never stay hidden too long.
+ *
+ * Quick tuning
+ *  • CENTER_PX_THRESHOLD: raise (8–10) if zoom-out tails feel sticky.
+ *  • MIN_ZOOM_DELTA_TO_HIDE: 0.05–0.07 to make zoom triggers stricter/looser.
+ *  • MAX_HIDDEN_MS: 1200–2000ms for how long pills can stay hidden mid-gesture.
+ * ────────────────────────────────────────────────────────────────────────────────
+ */
+const MIN_ZOOM_DELTA_TO_HIDE = 0.05;     // ignore tiny zoom jitters
+const MIN_CENTER_METERS_TO_HIDE = 10;    // minimum center move at high zooms
+const CENTER_PX_THRESHOLD = 6;           // ~how many pixels must the center move to count at any zoom
+const MIN_HEADING_DELTA_TO_HIDE = 4;     // degrees
+const MIN_PITCH_DELTA_TO_HIDE = 3;       // degrees
+const POST_SHOW_LOCKOUT_MS = 600;        // after pills re-show, ignore hides briefly
+const MAX_HIDDEN_MS = 1500;              // hard cap: never keep pills hidden longer than this
+// ---------------------------------------------------------
+
+// Small helpers for deltas
+const haversineMeters = (lng1: number, lat1: number, lng2: number, lat2: number) => {
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const R = 6371000; // meters
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
+    Math.sin(dLng / 2) * Math.sin(dLng / 2);
+  return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+};
+
+const metersPerPixel = (lat: number, zoom: number) => {
+  // Web Mercator: ~156543.03392 m/px at z0 at equator, scaled by cos(lat)
+  return 156543.03392 * Math.cos((lat * Math.PI) / 180) / Math.pow(2, zoom);
+};
+
+const angularDelta = (a?: number, b?: number) => {
+  if (typeof a !== 'number' || typeof b !== 'number') return 0;
+  let d = Math.abs(a - b) % 360;
+  return d > 180 ? 360 - d : d;
+};
+// ---------------------------------------------------------
+
+
+
+/**
+ * Movement START:
+ *  • Gated by: initial positioning done, auto-hide armed, not programmatic,
+ *    and not within the post-show lockout window.
+ *  • Starts MAX_HIDDEN_MS hard cap: if the map emits a long tail of meaningful
+ *    ticks (e.g., iOS zoom-out inertia), we force a movement end so pills re-show.
+ *  • Immediately hides (unless a filter panel is open).
+ */
+const handleMapMovementStart = useCallback(() => {
+  // Ignore until initial positioning is done AND auto-hide is armed
+  if (!hasInitiallyPositioned || !autoHideEnabledRef.current || ignoreProgrammaticCameraRef.current) {
+    // logPills('MOVEMENT START IGNORED', { hasInitiallyPositioned, autoHideEnabled: autoHideEnabledRef.current, ignoreProgrammatic: ignoreProgrammaticCameraRef.current });
+    return;
+  }
+
+  // NEW: require a REAL user gesture before we ever hide
+  if (!userGestureSeenRef.current) {
+    // logPills('MOVEMENT START IGNORED (no user gesture yet)');
+    return;
+  }
+
+
+  // Respect the post-show lockout to avoid blink-hide
+  const now = Date.now();
+  if (now < postShowLockoutUntilRef.current) {
+    // logPills('MOVEMENT START IGNORED (post-show lockout)', { remainingMs: postShowLockoutUntilRef.current - now });
+    return;
+  }
+
+  // Already moving? Nothing to do.
+  if (isMapMoving) return;
+
+  setIsMapMoving(true);
+  mapInteractionStartTime.current = now;
+
+  // Clear timers
+  if (hideTimeoutRef.current) { clearTimeout(hideTimeoutRef.current); hideTimeoutRef.current = null; }
+  if (showTimeoutRef.current) { clearTimeout(showTimeoutRef.current); showTimeoutRef.current = null; }
+  if (hideCapTimeoutRef.current) { clearTimeout(hideCapTimeoutRef.current); hideCapTimeoutRef.current = null; }
+
+  // Kick off the hard cap: force-show if we stay “moving” too long (e.g., long zoom-out tail)
+  hideCapTimeoutRef.current = setTimeout(() => {
+    if (isMapMoving) {
+      // logPills('MAX_HIDDEN cap reached — forcing show');
+      handleMapMovementEnd(); // will call showPills after debounce
     }
-    
-    // Clear any existing timeout
-    if (showTimeoutRef.current) {
-      clearTimeout(showTimeoutRef.current);
+  }, MAX_HIDDEN_MS);
+
+  // Hide now (unless panel open)
+  if (!activeFilterPanel) {
+    hidePills('movement_start');
+  } else {
+    // logPills('NOT HIDING (panel open)', { activeFilterPanel });
+  }
+}, [activeFilterPanel, hidePills, hasInitiallyPositioned, isMapMoving]);
+
+
+
+
+/**
+ * Movement END:
+ *  • Ends the analytics “movement session”.
+ *  • Clears the hard cap timer.
+ *  • Re-shows pills after a short idle delay (300ms) for a snappy feel.
+ *  • Starts POST_SHOW_LOCKOUT_MS so tiny follow-up ticks can’t instantly hide.
+ */
+const handleMapMovementEnd = useCallback(() => {
+
+  console.log('[DEBUG] 🛑 handleMapMovementEnd called');
+  setIsMapMoving(false);
+
+  // analytics session
+  if (mapInteractionStartTime.current) {
+    const movementDuration = Date.now() - mapInteractionStartTime.current;
+    analytics.trackMapInteraction('map_movement_session', {
+      duration_ms: movementDuration,
+      zoom_change: Math.abs(zoomLevel - lastZoomLevel.current),
+      is_guest: isGuest
+    });
+    mapInteractionStartTime.current = null;
+  }
+
+  // Clear timers
+  if (showTimeoutRef.current) { clearTimeout(showTimeoutRef.current); }
+  if (hideCapTimeoutRef.current) { clearTimeout(hideCapTimeoutRef.current); hideCapTimeoutRef.current = null; }
+
+  // Check if viewport changed during movement and fetch if needed
+  const cameraState = currentCameraStateRef.current;
+  console.log('[DEBUG] 📷 Camera state:', cameraState ? 'EXISTS' : 'NULL');
+
+  if (cameraState) {
+    const { width, height } = Dimensions.get('window');
+    const center: GeoCoordinate = {
+      latitude: cameraState.center[1],
+      longitude: cameraState.center[0]
+    };
+    const zoom = cameraState.zoom;
+
+    const bbox = getViewportBoundingBox(center, zoom, width, height, 1.0);
+    const roundedBbox = roundBoundingBoxForCache(bbox, 3);
+
+    const bboxChanged = !lastViewportBboxRef.current ||
+      JSON.stringify(roundedBbox) !== JSON.stringify(lastViewportBboxRef.current);
+
+    console.log('[DEBUG] 📦 Bbox changed:', bboxChanged, {
+      old: lastViewportBboxRef.current,
+      new: roundedBbox
+    });
+
+    if (bboxChanged) {
+      console.log('[Viewport] Movement ended - bbox changed, fetching:', roundedBbox);
+      lastViewportBboxRef.current = roundedBbox;
+      fetchViewportEvents(roundedBbox);
     }
-    
-    // Show pills after a shorter delay when movement stops
-    showTimeoutRef.current = setTimeout(() => {
-      console.log('SHOWING PILLS AFTER DELAY');
-      showPills();
-    }, 300); // Much shorter delay: 300ms instead of 1000ms
-  }, [showPills, analytics, zoomLevel, isGuest]); // 🔥 RESTORED: Full dependencies for testing
+  } else {
+    console.log('[DEBUG] ⚠️ No camera state available for viewport check');
+  }
+
+  // Re-show after a short idle delay (keeps UX snappy)
+  showTimeoutRef.current = setTimeout(() => {
+    showPills('movement_end');
+    // After showing, set a brief lockout so a tiny tick can't immediately hide again
+    postShowLockoutUntilRef.current = Date.now() + POST_SHOW_LOCKOUT_MS;
+  }, 300);
+}, [showPills, analytics, zoomLevel, isGuest, fetchViewportEvents]);
+
 
   // Add this right before the return statement in the component
   //console.log("RENDERING MAP - callout conditions:", {
@@ -1102,85 +1977,344 @@ function MapScreen() {
   //});
 
   // Handle map camera changes (both zoom and movement) with debouncing for movement detection
-  const handleCameraChange = useCallback((e: any) => {
-    const now = Date.now();
-    const zoom = e.properties.zoom;
-    
-    // Handle zoom changes (restore clustering functionality)
-    if (zoom) {
-      // 🔥 ANALYTICS: Track significant zoom changes
-      const zoomDelta = Math.abs(zoom - lastZoomLevel.current);
-      if (zoomDelta > 0.5) { // Only track significant zoom changes
-        analytics.trackMapInteraction('zoom_change', {
-          from_zoom: lastZoomLevel.current,
-          to_zoom: zoom,
-          delta: zoomDelta,
-          direction: zoom > lastZoomLevel.current ? 'in' : 'out',
-          visible_clusters_before: visibleClusterIds.current.size,
-          is_guest: isGuest
-        });
-        lastZoomLevel.current = zoom;
+/**
+ * CAMERA CHANGED:
+ *  • Computes deltas (zoom/center/heading/pitch).
+ *  • Uses zoom-aware center threshold: metersPerPixel * CENTER_PX_THRESHOLD,
+ *    floored by MIN_CENTER_METERS_TO_HIDE (so tiny drifts at low zoom don’t count).
+ *  • “Meaningful” ticks start/extend movement; non-meaningful ticks do not reset
+ *    the movement-end debounce (prevents long zoom tails from keeping pills hidden).
+ *  • Also re-enables auto-hide after tutorial/reload on the first true user gesture
+ *    (detected via e.properties.gesture / isUserInteraction).
+ */
+React.useEffect(() => {
+  if (!location) return;
+  if (__ml_userStartAppliedRef.current) return;
+  __ml_userStartAppliedRef.current = true;
+
+  try {
+    const dest: [number, number] = [location.coords.longitude, location.coords.latitude];
+    cameraRef.current?.setCamera({
+      centerCoordinate: dest,
+      zoomLevel: START_ZOOM,
+      animationDuration: 0,
+    });
+    if (DEBUG_MAP_LOAD) {
+      console.log(`[MapLoad][${__ml_sessionIdRef.current}] applied_user_start`);
+    }
+  } catch (e) {
+    if (DEBUG_MAP_LOAD) console.log('[MapLoad] setCamera(user) error', e);
+  }
+}, [location]);
+
+useEffect(() => {
+  // Snap the camera immediately on mount (no animation), so we never show the globe
+  try {
+    cameraRef.current?.setCamera({
+      centerCoordinate: computeStartCenter(),
+      zoomLevel: START_ZOOM,
+      animationDuration: 0,
+    });
+    if (typeof setZoomLevel === 'function') {
+      setZoomLevel(START_ZOOM);
+    }
+__ml_initialSnapDoneRef.current = true;
+if (DEBUG_MAP_LOAD) {
+  console.log(`[MapLoad][${__ml_sessionIdRef.current}] applied_initial_snap`);
+}
+
+  } catch (e) {
+    if (DEBUG_MAP_LOAD) console.log('[MapLoad] setCamera(initial) error', e);
+  }
+  // run once
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, []);
+
+useEffect(() => {
+  if (!DEBUG_MAP_LOAD) return;
+  if (__ml_firstClustersReadyRef.current) return;
+  if (clusters && clusters.length > 0) {
+    __ml_firstClustersReadyRef.current = true;
+    const t = Date.now();
+    const delta = t - __ml_t0Ref.current;
+    console.log(`[MapLoad][${__ml_sessionIdRef.current}] T5c clusters_ready +${delta}ms (clusters=${clusters.length})`);
+  }
+}, [clusters?.length]);
+
+const handleCameraChange = useCallback((e: any) => {
+  
+//  console.log('[DEBUG] handleCameraChange fired, tick count:', __ml_cameraTickCountRef.current);
+  
+  if (DEBUG_MAP_LOAD) { __ml_cameraTickCountRef.current += 1; }
+
+  // Ignore camera churn until the map has drawn once AND we've applied our initial snap.
+  if (!__ml_styleReadyRef.current || !__ml_initialSnapDoneRef.current) {
+    console.log('[DEBUG] Early return - styleReady:', __ml_styleReadyRef.current, 'initialSnap:', __ml_initialSnapDoneRef.current);
+    return;
+  }
+
+  const now = Date.now();
+
+const props: any = (e && (e.properties ?? e)) ?? {};
+// Some builds emit zoom/zoomLevel; tolerate both
+const zoom: number | undefined =
+  typeof props.zoom === 'number' ? props.zoom
+  : (typeof props.zoomLevel === 'number' ? props.zoomLevel : undefined);
+const heading: number | undefined = props.bearing ?? props.heading;
+const pitch: number | undefined = props.pitch ?? props.tilt;
+
+// NEW: first real user gesture gate (works on both platforms)
+const isGesture = !!(props.gesture ?? props.isUserInteraction);
+if (isGesture && !userGestureSeenRef.current) {
+  userGestureSeenRef.current = true;
+  ignoreProgrammaticCameraRef.current = false;
+  autoHideEnabledRef.current = true;
+  // logPills('USER GESTURE DETECTED — auto-hide enabled & programmatic off');
+}
+
+
+  // Center from props or geometry
+  const centerArr: [number, number] | undefined =
+    (Array.isArray(props.center) && props.center.length === 2 ? props.center as [number, number] : undefined) ||
+    (Array.isArray(e?.geometry?.coordinates) && e.geometry.coordinates.length === 2 ? e.geometry.coordinates as [number, number] : undefined);
+
+  // Deltas
+  const zoomDelta = typeof zoom === 'number' ? Math.abs(zoom - lastZoomLevel.current) : 0;
+  const headingDelta = angularDelta(heading, previousHeadingRef.current ?? heading);
+  const pitchDelta = angularDelta(pitch, previousPitchRef.current ?? pitch);
+
+  let centerMovedMeters = 0;
+  if (centerArr && previousCenterRef.current) {
+    centerMovedMeters = haversineMeters(
+      previousCenterRef.current[0], previousCenterRef.current[1],
+      centerArr[0], centerArr[1]
+    );
+  }
+
+  // Compute dynamic center threshold based on zoom (≈ pixels → meters)
+  const latForScale = centerArr ? centerArr[1] : 0; // default 0 if unknown
+  const mPerPx = (typeof zoom === 'number') ? metersPerPixel(latForScale, zoom) : 0;
+  const dynamicCenterMetersThreshold = Math.max(
+    MIN_CENTER_METERS_TO_HIDE,
+    mPerPx * CENTER_PX_THRESHOLD
+  );
+
+  // Decide if this tick is "meaningful" movement
+  // Prefer zoom for zoom gestures; only count center wiggles if they exceed the zoom-aware threshold
+  const isZoomMeaningful = zoomDelta >= MIN_ZOOM_DELTA_TO_HIDE;
+  const isCenterMeaningful = centerMovedMeters >= dynamicCenterMetersThreshold;
+  const isHeadingMeaningful = headingDelta >= MIN_HEADING_DELTA_TO_HIDE;
+  const isPitchMeaningful = pitchDelta >= MIN_PITCH_DELTA_TO_HIDE;
+
+  const meaningfulChange = isZoomMeaningful || isCenterMeaningful || isHeadingMeaningful || isPitchMeaningful;
+
+  // Update "previous" refs after computing deltas
+  // Update "previous" refs after computing deltas
+  if (centerArr) previousCenterRef.current = centerArr;
+  if (typeof heading === 'number') previousHeadingRef.current = heading;
+  if (typeof pitch === 'number') previousPitchRef.current = pitch;
+
+  // Store current camera state for viewport fetching on movement end
+  if (centerArr && typeof zoom === 'number') {
+    currentCameraStateRef.current = { center: centerArr, zoom };
+  }
+
+/* ─────────────────────────────────────────────────────────────────────────────
+Clustering refresh: keep zoom → store → recluster in sync
+- Recompute clusters when the visible zoom changes enough to matter.
+──────────────────────────────────────────────────────────────────────────── */
+    if (typeof zoom === 'number' && Math.abs(zoom - lastZoomLevel.current) >= 0.06) {
+      lastZoomLevel.current = zoom;
+
+      // Don't trigger cluster regeneration during programmatic camera moves
+      if (!ignoreProgrammaticCameraRef.current) {
+        try {
+          setZoomLevel(zoom); // triggers generateClusters(zoom) in the store
+        } catch (e) {
+          if (DEBUG_MAP_LOAD) console.log('[MapLoad] setZoomLevel error', e);
+        }
+      } else {
+        // During programmatic moves, just update the zoom ref without reclustering
+        logPills('ZOOM CHANGED during programmatic move — skipping recluster', { zoom });
+      }
+    }
+
+  /* ─────────────────────────────────────────────────────────────────────────────
+  Viewport-based event filtering: fetch events within current map view
+  - Calculates viewport bounding box with 20% margin
+  - Debounces fetch requests (500ms) to prevent excessive API calls
+  - Only triggers after user has interacted with map
+  ──────────────────────────────────────────────────────────────────────────── */
+  const { width: windowWidth, height: windowHeight } = Dimensions.get('window');
+  const pixelRatio = PixelRatio.get();
+
+  // Use actual map dimensions if available, otherwise fall back to window dimensions
+  const width = mapDimensions?.width ?? windowWidth;
+  const height = mapDimensions?.height ?? windowHeight;
+
+  console.log('[OnScreen] Camera tick:', {
+    centerArr: centerArr?.[0],
+    zoom,
+    hasCenter: !!centerArr,
+    hasZoom: typeof zoom === 'number',
+    windowWidth,
+    windowHeight,
+    mapWidth: width,
+    mapHeight: height,
+    usingActualMapDimensions: !!mapDimensions,
+    pixelRatio
+  });
+
+  if (centerArr && typeof zoom === 'number') {
+    const center: GeoCoordinate = {
+      latitude: centerArr[1],
+      longitude: centerArr[0]
+    };
+
+    // Calculate viewport bounding box (no buffer - exact viewport)
+    const bbox = getViewportBoundingBox(center, zoom, width, height, 1.0);
+    const roundedBbox = roundBoundingBoxForCache(bbox, 5);  // 5 decimals = ~1m resolution (very frequent updates)
+
+    // Filter viewportEvents to only those visible on actual screen
+    const currentViewportEvents = useMapStore.getState().viewportEvents || [];
+    const onScreenEvents = currentViewportEvents.filter(event => {
+      const lat = event.latitude;
+      const lng = event.longitude;
+      if (!lat || !lng) return false;
+
+      const inBounds = lat >= bbox.south &&
+                       lat <= bbox.north &&
+                       lng >= bbox.west &&
+                       lng <= bbox.east;
+
+      return inBounds;
+    });
+
+    // Debug logging for onScreen filtering with sample events
+    const sampleFiltered = currentViewportEvents.slice(0, 3).map(event => {
+      const latCheck = event.latitude >= bbox.south && event.latitude <= bbox.north;
+      const lngCheck = event.longitude >= bbox.west && event.longitude <= bbox.east;
+      return {
+        id: event.id,
+        lat: event.latitude?.toFixed(4),
+        lng: event.longitude?.toFixed(4),
+        latOk: latCheck,
+        lngOk: lngCheck,
+        latCalc: `${event.latitude?.toFixed(4)} >= ${bbox.south.toFixed(4)} && <= ${bbox.north.toFixed(4)}`,
+        lngCalc: `${event.longitude?.toFixed(4)} >= ${bbox.west.toFixed(4)} && <= ${bbox.east.toFixed(4)}`,
+        inBounds: onScreenEvents.includes(event)
+      };
+    });
+
+    console.log('[OnScreen] Filtering events:', {
+      viewportEventsCount: currentViewportEvents.length,
+      onScreenEventsCount: onScreenEvents.length,
+      filteredOut: currentViewportEvents.length - onScreenEvents.length,
+      bbox: {
+        south: bbox.south.toFixed(4),
+        north: bbox.north.toFixed(4),
+        west: bbox.west.toFixed(4),
+        east: bbox.east.toFixed(4)
+      },
+      sampleEvents: sampleFiltered
+    });
+
+    // Update store with on-screen events on every camera change
+    useMapStore.getState().setOnScreenEvents(onScreenEvents);
+
+    // Check if viewport changed significantly
+    const bboxChanged = !lastViewportBboxRef.current ||
+      JSON.stringify(roundedBbox) !== JSON.stringify(lastViewportBboxRef.current);
+
+    // Debug viewport change detection
+    if (DEBUG_MAP_LOAD && bboxChanged) {
+      console.log('[Viewport] Bbox changed:', {
+        old: lastViewportBboxRef.current,
+        new: roundedBbox,
+        userGestureSeen: userGestureSeenRef.current
+      });
+    }
+
+    // Fallback: if bbox changed after initial load and we don't have explicit gesture detection,
+    // assume it's a user gesture (works around platform-specific gesture detection issues)
+    const shouldFetch = bboxChanged && (userGestureSeenRef.current || lastViewportBboxRef.current !== null);
+
+    if (shouldFetch) {
+      // Hybrid approach: Throttle during active movement + Debounce for final accuracy
+      const now = Date.now();
+      const timeSinceLastFetch = now - lastViewportFetchTimeRef.current;
+      const THROTTLE_INTERVAL = 300; // Max 3 fetches per second during active movement
+      const DEBOUNCE_DELAY = 50; // Final fetch 50ms after movement stops
+
+      // Clear any pending debounced fetch
+      if (viewportFetchTimeoutRef.current) {
+        clearTimeout(viewportFetchTimeoutRef.current);
       }
 
-      // Determine if we've crossed a threshold boundary
-      const newThresholdIndex = getThresholdIndexForZoom(zoom);
-      const thresholdChanged = newThresholdIndex !== currentThresholdIndex.current;
-      
-      // If threshold has changed, clear the visible cluster cache to force recalculation
-      if (thresholdChanged) {
-        // 🔥 ANALYTICS: Track threshold changes for clustering analysis
-        analytics.trackMapInteraction('clustering_threshold_changed', {
-          from_threshold: ZOOM_THRESHOLDS[currentThresholdIndex.current].name,
-          to_threshold: ZOOM_THRESHOLDS[newThresholdIndex].name,
-          zoom_level: zoom,
-          clusters_visible_before: visibleClusterIds.current.size
-        });
-
-        //  console.log(`THRESHOLD CHANGE: ${ZOOM_THRESHOLDS[currentThresholdIndex.current].name} → ${ZOOM_THRESHOLDS[newThresholdIndex].name}`);
-        visibleClusterIds.current.clear();
-        currentThresholdIndex.current = newThresholdIndex;
+      // THROTTLE: If enough time has passed since last fetch, fetch immediately
+      if (timeSinceLastFetch >= THROTTLE_INTERVAL) {
+        if (DEBUG_MAP_LOAD) {
+          console.log('[Viewport] THROTTLED fetch (immediate):', { roundedBbox, timeSinceLastFetch });
+        }
+        lastViewportBboxRef.current = roundedBbox;
+        lastViewportFetchTimeRef.current = now;
+        fetchViewportEvents(roundedBbox);
+      } else {
+        // DEBOUNCE: Schedule a fetch after movement stops for final accuracy
+        viewportFetchTimeoutRef.current = setTimeout(() => {
+          if (DEBUG_MAP_LOAD) {
+            console.log('[Viewport] DEBOUNCED fetch (after stop):', roundedBbox);
+          }
+          lastViewportBboxRef.current = roundedBbox;
+          lastViewportFetchTimeRef.current = Date.now();
+          fetchViewportEvents(roundedBbox);
+        }, DEBOUNCE_DELAY);
       }
-      
-      setZoomLevel(zoom);
     }
-    
-    // Handle movement detection with improved thresholds
-    const timeSinceLastChange = now - lastCameraChangeRef.current;
-    lastCameraChangeRef.current = now;
-    
-    // Lower threshold for movement start detection to catch small movements
-    if (!isMapMoving && timeSinceLastChange > 50) { // Reduced from 100ms to 50ms
-    //  console.log('MOVEMENT START DETECTED - timeSinceLastChange:', timeSinceLastChange);
-      handleMapMovementStart();
-    }
-    
-    // Clear any existing end timeout and set a new one
-    if (hideTimeoutRef.current) {
-      clearTimeout(hideTimeoutRef.current);
-    }
-    
-    // Set timeout to detect when movement has stopped - longer timeout for better detection
+  }
+
+  // Movement timing
+  const timeSinceLastChange = now - lastCameraChangeRef.current;
+  lastCameraChangeRef.current = now;
+
+  lastCameraChangeRef.current = now;
+
+  // FIRST USER GESTURE gate remains (if you have it elsewhere): props.gesture / props.isUserInteraction handling
+
+  // Start movement only if there's meaningful change (and gates allow)
+  if (!isMapMoving && autoHideEnabledRef.current && !ignoreProgrammaticCameraRef.current && meaningfulChange) {
+    handleMapMovementStart();
+  }
+
+  // Movement end debounce:
+  // Only reset the debounce when the tick itself is meaningful.
+  // Tiny, non-meaningful drifts (especially at low zoom) won't extend the hidden period.
+  if (meaningfulChange) {
+    if (hideTimeoutRef.current) clearTimeout(hideTimeoutRef.current);
     hideTimeoutRef.current = setTimeout(() => {
       if (isMapMoving) {
-    //    console.log('MOVEMENT END DETECTED - no camera changes for 250ms');
         handleMapMovementEnd();
       }
-    }, 250); // Increased from 150ms to 250ms for more reliable detection
-    
-    // FALLBACK: Always ensure pills come back after any camera interaction
-    // Clear any existing fallback timeout
-    if (showTimeoutRef.current) {
-      clearTimeout(showTimeoutRef.current);
-    }
-    
-    // Set a longer fallback timeout to guarantee pills return
+    }, 250);
+
+    // Fallback: always ensure pills come back after prolonged movement
+    if (showTimeoutRef.current) clearTimeout(showTimeoutRef.current);
     showTimeoutRef.current = setTimeout(() => {
       if (isMapMoving) {
-      //  console.log('FALLBACK TRIGGERED - forcing pills to show after 1 second');
         handleMapMovementEnd();
       }
-    }, 1000); // 1 second fallback to ensure pills always come back
-  }, [isMapMoving, handleMapMovementStart, handleMapMovementEnd]); // REMOVED analytics, isGuest dependencies
+    }, 1000);
+  }
+}, [
+  isMapMoving,
+  handleMapMovementStart,
+  handleMapMovementEnd,
+  autoHideEnabledRef,
+  ignoreProgrammaticCameraRef,
+  fetchViewportEvents,
+  setZoomLevel
+]);
+
 
   // Effect to show pills when filter panel opens
   useEffect(() => {
@@ -1237,6 +2371,13 @@ function MapScreen() {
 
   // Render cluster markers on the map with improved stability
   const renderClusterMarkers = () => {
+  // DEBUG T5 (first render call)
+  if (DEBUG_MAP_LOAD && !__ml_firstMarkersLoggedRef.current) {
+    __ml_firstMarkersLoggedRef.current = true;
+    const t5 = Date.now();
+    const delta = t5 - __ml_t0Ref.current;
+    console.log(`[MapLoad][${__ml_sessionIdRef.current}] T5 first_render +${delta}ms (clusters=${clusters.length}) cameraTicks=${__ml_cameraTickCountRef.current}`);
+  }
     // Get the current threshold index and determine if it changed
     const thresholdIndex = getThresholdIndexForZoom(zoomLevel);
     const thresholdChanged = thresholdIndex !== currentThresholdIndex.current;
@@ -1247,20 +2388,40 @@ function MapScreen() {
     //console.log(`Rendering ${clusters.length} clusters with zoom level ${zoomLevel.toFixed(2)}`);
     
     // If this is the first render, threshold changed, OR filter changed, recalculate visible clusters
-    if (visibleClusterIds.current.size === 0 || thresholdChanged || filterChanged) {
-      // Update our tracking references
-      if (thresholdChanged) {
-        currentThresholdIndex.current = thresholdIndex;
-      }
-      if (filterChanged) {
-        previousFilterCriteria.current = { ...filterCriteria };
-     //   console.log('FILTER CRITERIA CHANGED - forcing cluster recalculation');
-      }
+    const clusterCountChanged = clusters.length !== previousClusterCount.current;
+
+// Smart cache invalidation: recalculate when cluster IDs change
+const currentClusterIds = new Set(clusters.map(c => c.id));
+const cachedClusterIds = new Set(Array.from(visibleClusterIds.current));
+const clusterIdsChanged = currentClusterIds.size !== cachedClusterIds.size || 
+  !Array.from(currentClusterIds).every(id => cachedClusterIds.has(id));
+
+  if (visibleClusterIds.current.size === 0 || thresholdChanged || filterChanged      
+  || clusterIdsChanged) {
+    // Update cluster count tracking
+    previousClusterCount.current = clusters.length;
+        // Update our tracking references
+        if (thresholdChanged) {
+          currentThresholdIndex.current = thresholdIndex;
+        }
+        if (filterChanged) {
+          previousFilterCriteria.current = { ...filterCriteria };
+       //   console.log('FILTER CRITERIA CHANGED - forcing cluster recalculation');
+        }
       
       // Calculate which clusters should be visible based on current filters
-      const visibleClusters = clusters.filter(cluster => 
-        shouldClusterBeVisible(cluster, filterCriteria)
-      );
+const visibleClusters = clusters.filter(cluster => 
+  shouldClusterBeVisible(cluster, filterCriteria)
+);
+
+// DEBUG T5b (first time we actually HAVE clusters)
+if (typeof DEBUG_MAP_LOAD !== 'undefined' && DEBUG_MAP_LOAD && !__ml_firstClustersLoggedRef.current && clusters.length > 0) {
+  __ml_firstClustersLoggedRef.current = true;
+  const t5b = Date.now();
+  const delta = t5b - __ml_t0Ref.current;
+  console.log(`[MapLoad][${__ml_sessionIdRef.current}] T5b first_clusters +${delta}ms (clusters=${clusters.length})`);
+}
+
       
       // Store their IDs for future reference
       visibleClusterIds.current = new Set(
@@ -1268,11 +2429,20 @@ function MapScreen() {
       );
       
       // Enhanced debug logging
-      const reason = visibleClusterIds.current.size === 0 ? 'FIRST_RENDER' : 
-                    thresholdChanged ? 'THRESHOLD_CHANGE' : 
-                    filterChanged ? 'FILTER_CHANGE' : 'UNKNOWN';
+const reason = visibleClusterIds.current.size === 0 ? 'FIRST_RENDER' : 
+              thresholdChanged ? 'THRESHOLD_CHANGE' : 
+              filterChanged ? 'FILTER_CHANGE' : 
+              clusterCountChanged ? 'CLUSTER_COUNT_CHANGE' : 'UNKNOWN';
       
-    //  console.log(`VISIBILITY RECALCULATED (${reason}): ${visibleClusters.length}/${clusters.length} clusters visible`);
+     console.log(`VISIBILITY RECALCULATED (${reason}): ${visibleClusters.length}/${clusters.length} clusters visible`);
+     // Debug individual cluster visibility
+if (reason === 'CLUSTER_COUNT_CHANGE') {
+  console.log('=== CLUSTER COUNT CHANGE DEBUG ===');
+  console.log('All clusters:', clusters.map(c => ({ id: c.id.substring(0, 20), venues: c.venues.length, type: c.clusterType })));
+  console.log('Visible clusters:', visibleClusters.map(c => ({ id: c.id.substring(0, 20), venues: c.venues.length, type: c.clusterType })));
+  console.log('Filtered out clusters:', clusters.filter(c => !visibleClusterIds.current.has(c.id)).map(c => ({ id: c.id.substring(0, 20), venues: c.venues.length, type: c.clusterType })));
+  console.log('================================');
+}
       
       if (filterChanged) {
         console.log('Filter criteria:', {
@@ -1335,6 +2505,7 @@ function MapScreen() {
             id={`cluster-${cluster.id}`}
             coordinate={coordinates}
             anchor={{ x: 0.5, y: 1.0 }}
+            
           >
             <TouchableOpacity 
               onPress={() => handleMarkerPress(cluster)}
@@ -1362,47 +2533,153 @@ function MapScreen() {
   // Render the map
   return (
     <View style={styles.container}>
+      {isHeaderSearchActive && (
+        <Pressable
+          onPress={() => { setHeaderSearchActive(false); Keyboard.dismiss(); }}
+          style={[StyleSheet.absoluteFillObject, { zIndex: 9999 }]}
+        />
+      )}
       {/* Add Filter Bar at the top */}
+      {/* Filter pills overlay (floating) anchored under safe-area */}
       <Animated.View
-        style={{
-          transform: [{ translateY: pillsAnimation }],
-          zIndex: 5,
-          position: 'relative',
+      pointerEvents="box-none"
+      style={{
+        position: 'absolute',
+        left: 0,
+        right: 0,
+        top: TOP_OFFSET, // baseline + per-platform nudge
+        zIndex: 5,
+        transform: [{ translateY: pillsAnimation }],
+        opacity: pillsOpacity,
+      }}
+    >
+      <View
+        testID="filter-pills"
+        pointerEvents="auto"
+        onLayout={(e) => {
+          const h = e.nativeEvent.layout.height || 0;
+          if (h && Math.abs(h - pillsHeight) > 1) setPillsHeight(h);
         }}
       >
-        <View testID="filter-pills">
-          <FilterPills />
-        </View>
-      </Animated.View>
+        <FilterPills />
+      </View>
+    </Animated.View>
+
+
+
       
-      <MapboxGL.MapView 
+      <MapboxGL.MapView
         ref={mapRef}
         style={styles.map}
         styleURL={MapboxGL.StyleURL.Street}
-        onDidFinishLoadingMap={() => {
-          console.log('Map finished loading');
-          // 🔥 ANALYTICS: Track map load completion
-          analytics.trackMapInteraction('map_loaded', {
-            is_guest: isGuest,
-            has_location_permission: locationPermissionGranted
-          });
+        scaleBarEnabled={true}
+        scaleBarPosition={{
+          bottom: 12,
+          left: Math.round((Dimensions.get('window').width / 2) - 50)
         }}
+onLayout={(event) => {
+  const { width, height, x, y } = event.nativeEvent.layout;
+  setMapDimensions({ width, height });
+
+  // Use measureInWindow to get absolute screen coordinates
+  // mapRef.current is the MapboxGL.MapView which doesn't have measureInWindow
+  // So we measure via the native view handle
+  const nativeHandle = (mapRef.current as any)?._nativeRef;
+  if (nativeHandle?.measureInWindow) {
+    nativeHandle.measureInWindow((absX: number, absY: number, absWidth: number, absHeight: number) => {
+      (global as any).mapViewLayout = { width: absWidth, height: absHeight, x: absX, y: absY, absoluteY: absY };
+      console.log('[MapView] onLayout (absolute):', { width: absWidth, height: absHeight, absX, absY, windowWidth: Dimensions.get('window').width, windowHeight: Dimensions.get('window').height });
+    });
+  } else {
+    // Fallback to relative layout
+    (global as any).mapViewLayout = { width, height, x, y };
+    console.log('[MapView] onLayout (relative):', { width, height, x, y, windowWidth: Dimensions.get('window').width, windowHeight: Dimensions.get('window').height });
+  }
+}}
+onMapIdle={() => {
+  if (DEBUG_MAP_LOAD) {
+    const t1b = Date.now();
+    const delta = t1b - __ml_t0Ref.current;
+    console.log(`[MapLoad][${__ml_sessionIdRef.current}] T1b map_idle +${delta}ms`);
+  }
+}}
+
+onDidFinishRenderingFrameFully={() => {
+  if (DEBUG_MAP_LOAD && !__ml_firstFrameLoggedRef.current) {
+    __ml_firstFrameLoggedRef.current = true;
+    const t1bf = Date.now();
+    const delta = t1bf - __ml_t0Ref.current;
+    console.log(`[MapLoad][${__ml_sessionIdRef.current}] T1b(frame) map_fully_rendered +${delta}ms`);
+  }
+}}
+
+
+onDidFinishLoadingMap={() => {
+  // Mark style ready on a supported callback (don’t depend on unsupported events)
+  if (!__ml_styleReadyRef.current) __ml_styleReadyRef.current = true;
+
+  // DEBUG T1
+  if (DEBUG_MAP_LOAD) {
+    const t1 = Date.now();
+    const delta = t1 - __ml_t0Ref.current;
+    console.log(`[MapLoad][${__ml_sessionIdRef.current}] T1 map_loaded +${delta}ms (styleReady=${__ml_styleReadyRef.current})`);
+  }
+  analytics.trackMapInteraction('map_loaded', {
+    is_guest: isGuest,
+    has_location_permission: locationPermissionGranted
+  });
+
+  // Instantly set camera to the best-known start center (no fly animation)
+  try {
+    const startCenter = computeStartCenter();
+    cameraRef.current?.setCamera({
+      centerCoordinate: startCenter,
+      zoomLevel: START_ZOOM,
+      animationDuration: 0,
+    });
+    if (typeof setZoomLevel === 'function') {
+      setZoomLevel(START_ZOOM);
+    }
+  } catch (e) {
+    if (DEBUG_MAP_LOAD) console.log('[MapLoad] setCamera error', e);
+  }
+
+  // Force pills visible NOW (inline animation; avoids order issues)
+  Animated.parallel([
+    Animated.timing(pillsAnimation, { toValue: 0, duration: 180, useNativeDriver: true }),
+    Animated.timing(pillsOpacity,  { toValue: 1, duration: 160, useNativeDriver: true }),
+  ]).start();
+
+  // Do NOT allow hides until the first real user gesture
+  userGestureSeenRef.current = false;
+  autoHideEnabledRef.current = false;
+  ignoreProgrammaticCameraRef.current = true;
+}}
+
+
+
+
         onMapLoadingError={() => {
           console.log('Map failed to load');
           // 🔥 ANALYTICS: Track map load errors
           analytics.trackError('map_load_error', 'Map failed to load', { screen: 'map' });
         }}
-        onCameraChanged={handleCameraChange}
+     
+          onCameraChanged={handleCameraChange}
+//onRegionDidChange={handleCameraChange} // removed — we use onMapIdle for idle logging
+
+
         onPress={handleMapPress}
       >
-        <MapboxGL.Camera
-          ref={cameraRef}
-          zoomLevel={12}
-          centerCoordinate={initialCenterCoordinate}
-          followUserLocation={false}
-          followZoomLevel={12}
-        />
-        
+<MapboxGL.Camera
+  ref={cameraRef}
+  defaultSettings={{
+    centerCoordinate: computeStartCenter(),
+    zoomLevel: START_ZOOM,
+  }}
+  followUserLocation={false}
+/>
+       
         {/* Render the user location marker if we have location and permission */}
         {location && locationPermissionGranted && (
           <UserLocationMarker location={location} />
@@ -1411,6 +2688,32 @@ function MapScreen() {
         {/* Render event markers */}
         {!isLoading && renderClusterMarkers()}
       </MapboxGL.MapView>
+
+            {/* GathR logo above Mapbox logo */}
+      <View style={styles.mapLogoContainer} pointerEvents="none">
+        <Image
+          source={require('../../assets/images/icon.png')}
+          style={styles.mapLogo}
+          resizeMode="contain"
+        />
+      </View>
+
+      <MapLegend topOffset={80} rightOffset={10} />
+
+      <View pointerEvents="box-none" style={styles.interestPillsContainer}>
+        <InterestFilterPills />
+      </View>
+
+      {/* Interests Carousel - appears when interest pill is selected */}
+      <InterestsCarousel />
+
+      <View style={styles.mapLogoContainer} pointerEvents="none">
+        <Image
+          source={require('../../assets/images/icon.png')}
+          style={styles.mapLogo}
+          resizeMode="contain"
+        />
+      </View>
       
       {/* Add the Re-center button */}
       {location && locationPermissionGranted && (
@@ -1428,22 +2731,68 @@ function MapScreen() {
       
       {selectedVenues && selectedVenues.length > 0 && (
         <>
-          {/* Optional background dimming overlay */}
-          <Animated.View 
-            style={[
-              StyleSheet.absoluteFillObject,
-              {
-                backgroundColor: 'black',
-                opacity: calloutAnimation.interpolate({
-                  inputRange: [0, SCREEN_HEIGHT],
-                  outputRange: [0.3, 0],
-                  extrapolate: 'clamp'
-                }),
-                zIndex: 4
-              }
-            ]}
-            pointerEvents="none"
-          />
+          {/* Background overlay that SWALLOWS touches (prevents MapView onPress behind it) */
+          /* ─────────────────────────────────────────────────────────────────────────────
+Event Callout: Android touch-capture overlay  — WHY this exists & how it works
+Rationale
+- On Android, touches/gestures can leak through non-interactive views and hit
+  MapboxGL.MapView underneath. iOS usually swallows them.
+- When the callout was open, background taps/scrolls reached MapView.onPress
+  (handleMapPress → selectVenue(null)), closing the callout unexpectedly while
+  switching venues/tabs or scrolling.
+
+What this block does
+- Renders a full-screen overlay above the map **only while a callout is open**.
+- Uses RN responder callbacks (onStartShouldSetResponder / onMoveShouldSetResponder)
+  to **capture all touches**, so MapView never receives them.
+- Treats an intentional tap on the overlay as “close callout” via selectVenue(null).
+
+Key details to keep stable
+- Keep `pointerEvents="auto"` and a higher `zIndex`/`elevation` so the overlay
+  actually wins the touch hit test on Android.
+- Ensure any explicit UI (e.g., the recenter/map icon) that should **still close**
+  the callout sits ABOVE this overlay (rendered later or with a higher zIndex/elevation).
+- Optional: short-circuit MapView.onPress while a callout is open (belt-and-suspenders),
+  since this overlay now owns the “tap outside to close” behavior.
+
+If you change this later
+- Removing the responder handlers or switching to `pointerEvents="none"` will
+  reintroduce Android background-tap leaks and accidental callout closes.
+- If you don’t want “tap outside to close,” delete onResponderRelease but keep
+  the overlay to swallow touches.
+
+Related context
+- Map gestures (scroll/zoom/rotate/pitch) are already disabled while a callout
+  is open; this overlay is the additional guard for **taps**.
+Owner: Map UX stability on Android • Last validated: 2025-09-04
+──────────────────────────────────────────────────────────────────────────── */
+}
+<View
+  style={[StyleSheet.absoluteFillObject, { zIndex: 4 }]}
+  pointerEvents="auto"
+  // Always capture touches so MapView doesn't receive them on Android
+  onStartShouldSetResponder={() => true}
+  onMoveShouldSetResponder={() => true}
+  onResponderRelease={() => {
+    // Tapping outside the sheet intentionally closes it
+    selectVenue(null);
+  }}
+>
+  <Animated.View
+    style={[
+      StyleSheet.absoluteFillObject,
+      {
+        backgroundColor: 'black',
+        opacity: calloutAnimation.interpolate({
+          inputRange: [0, SCREEN_HEIGHT],
+          outputRange: [0.3, 0],
+          extrapolate: 'clamp'
+        })
+      }
+    ]}
+  />
+</View>
+
           
           {/* Callout container */}
           <Animated.View 
@@ -1462,8 +2811,14 @@ function MapScreen() {
         </>
       )}
       
+      {/* Daily hotspot highlight - shows most active cluster */}
+      <HotspotHighlight />
+
       {/* Guest limitation registration prompt - only for guests */}
       {isGuest && <RegistrationPrompt />}
+
+      {/* Deep link lightbox - renders when globalSelectedImageData is set from deep link */}
+      <DeepLinkLightbox />
     </View>
   );
 }
@@ -1535,15 +2890,17 @@ const styles = StyleSheet.create({
     elevation: 5,
     zIndex: 3,
   },
-  venueCountContainer: {
-    position: 'absolute',
-    width: '100%',
-    height: '100%',
-    justifyContent: 'center',
-    alignItems: 'center',
-    flexDirection: 'row', // Add this to ensure horizontal alignment
-    zIndex: 4,
-  },
+venueCountContainer: {
+  position: 'absolute',
+  width: '100%',
+  height: '100%',
+  justifyContent: 'center',
+  alignItems: 'center',
+  flexDirection: 'row', // horizontal alignment
+  zIndex: 4,
+  
+},
+
   venueCountText: {
     fontSize: 12,
     fontWeight: 'bold',
@@ -1562,10 +2919,12 @@ const styles = StyleSheet.create({
     zIndex: 2,
   },
   markerLabel: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    padding: 5,
+    backgroundColor: '#F5F3E8',
+    borderRadius: 10,
+    paddingHorizontal: 6,
+    paddingVertical: 0,
     marginTop: -1,
+    marginHorizontal: 2,
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
@@ -1584,34 +2943,51 @@ const styles = StyleSheet.create({
   iconContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginHorizontal: 5,
+    marginHorizontal: 4,
+    ...(Platform.OS === 'android' ? { marginTop: 0 } : null),
   },
-  countText: {
-    fontSize: 12,
-    fontWeight: 'bold',
-    color: '#333333',
-    marginLeft: 2,
-  },
-  timeIndicator: {
+countText: {
+  fontSize: 11,
+  fontWeight: 'bold',
+  color: '#333333',
+  marginLeft: 2,
+  ...(Platform.OS === 'android'
+    ? { includeFontPadding: false, textAlignVertical: 'center', lineHeight: 12 }
+    : null),
+},
+
+  // New content indicator - red dot (matches filter pill badge style)
+  newContentDot: {
     position: 'absolute',
+    top: -3,
+    right: -3,
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#FF3B30',
+    borderWidth: 1.5,
+    borderColor: 'rgba(255, 255, 255, 0.9)',
+    zIndex: 5,
+  },
+  // Firestore source indicator - subtle badge in top-left
+  firestoreIndicator: {
+    position: 'absolute',
+    top: -3,
+    left: -3,
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#E3F2FD', // Light blue
+    borderWidth: 1,
+    borderColor: '#2196F3', // Blue border
+    zIndex: 5,
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#FFFFFF',
-    shadowColor: '#000000',
-    shadowOffset: {
-      width: 0,
-      height: 1,
-    },
-    shadowOpacity: 0.3,
-    shadowRadius: 2,
-    elevation: 4,
-    zIndex: 4,
   },
-  timeIndicatorText: {
-    color: '#FFFFFF',
+  firestoreIndicatorText: {
+    fontSize: 6,
     fontWeight: 'bold',
-    fontSize: 12,
+    color: '#1565C0', // Dark blue text
     textAlign: 'center',
   },
   // Broadcasting effect styles
@@ -1626,6 +3002,47 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderStyle: 'solid',
   },
+  // Category Carousel styles
+  categoryCarousel: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F5F3E8', // Light beige/tan - matches typical map background color
+    paddingHorizontal: 4, // Tighter padding
+    paddingVertical: 0,
+    borderRadius: 12,
+    marginBottom: 2,
+    borderWidth: 0,
+    shadowColor: '#000000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.4, // Stronger shadow for depth
+    shadowRadius: 4,
+    elevation: 5,
+    zIndex: 5,
+  },
+  interestGlow: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(74, 144, 226, 0.2)',
+    borderRadius: 12,
+    zIndex: -1,
+  },
+  categoryIcon: {
+    marginRight: 3,
+  },
+  categoryCount: {
+    fontWeight: '600',
+    lineHeight: 14,
+    textShadowColor: 'rgba(255, 255, 255, 0.9)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
+  },
   calloutAnimatedContainer: {
     position: 'absolute',
     left: 0,
@@ -1636,12 +3053,12 @@ const styles = StyleSheet.create({
   // Re-center button styles
   recenterButton: {
     position: 'absolute',
-    bottom: 40,
+    bottom: 80,
     right: 10,
     backgroundColor: 'white',
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     justifyContent: 'center',
     alignItems: 'center',
     shadowColor: '#000',
@@ -1657,7 +3074,32 @@ const styles = StyleSheet.create({
   recenterButtonDisabled: {
     backgroundColor: '#F5F5F5',
     shadowOpacity: 0.1,
-  }
+  },
+  interestPillsContainer: {
+    position: 'absolute',
+    right: 10,
+    top: 182, // Legend button ends at ~170 (80+54+36), add 12px spacing
+    bottom: 128, // Recenter button starts at ~116 from bottom (80 + 36), add 12px spacing
+    justifyContent: 'center',
+    alignItems: 'flex-end',
+    zIndex: 11,
+  },
+  mapLogoContainer: {
+    position: 'absolute',
+    left: 10,
+    bottom: 34, // sits just above the Mapbox logo area
+    zIndex: 6,
+  },
+  mapLogo: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3,
+    elevation: 3,
+  },
 });
 
 // Explicitly mark the default export for Expo Router

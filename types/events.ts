@@ -36,6 +36,7 @@ export interface Event {
   relevantImageUrl?: string;
   likes?: number | string;
   shares?: number | string;
+  interested?: number | string;  // GathR's internal interested count (calendar adds)
   comments?: number | string;
   topReactionsCount?: number | string;
   usersResponded?: number | string;
@@ -44,6 +45,31 @@ export interface Event {
 
     // For sorting/prioritization
   relevanceScore?: number;
+
+  // Data source tracking (for parallel API sources)
+  source?: 'google_sheets' | 'firestore';
+
+  // Additional media (Firestore events may have multiple images)
+  mediaUrls?: string[];
+
+  // Event details (from Firestore metadata)
+  facebookUrl?: string;
+  eventType?: string;
+  ageRestriction?: string;
+
+  // Recurrence metadata (materialized instance support)
+  isRecurring?: boolean;
+  recurringPattern?: string;
+  isRecurringInstance?: boolean;
+  originalEventId?: string | null;
+
+  // Venue details (from Firestore venue object)
+  venueRating?: number;
+  venuePhone?: string;
+  venueWebsite?: string;
+  venueFacebookUrl?: string;
+  venueInstagramUrl?: string;
+  venueCategories?: string[];
 }
 
 /**
@@ -77,7 +103,7 @@ export interface Cluster {
   id: string;                        // Stable identifier for cluster tracking
   clusterType: 'single' | 'multi';   // Type of clustering
   venues: Venue[];                   // Contained venues
-  
+
   // New properties for tree marker visualization
   timeStatus: TimeStatus;            // Timing status (now/today/future)
   interestLevel: InterestLevel;      // Interest/popularity level
@@ -85,4 +111,5 @@ export interface Cluster {
   eventCount: number;                // Number of events (non-specials)
   specialCount: number;              // Number of specials
   categories: string[];              // Unique categories in this cluster
+  hasNewContent?: boolean;           // Whether cluster has new events/specials since last interaction
 }

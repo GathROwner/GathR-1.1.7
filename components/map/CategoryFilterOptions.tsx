@@ -21,11 +21,9 @@ const CategoryFilterOptions: React.FC<CategoryFilterOptionsProps> = ({
   
   // If counts are provided (with custom order), use that order
   // Otherwise fall back to extracting from events
-  const typeCategories = counts 
-    ? Object.keys(counts).filter(category => 
-        typeEvents.some(event => event.category === category)
-      )
-    : Array.from(new Set(typeEvents.map(e => e.category)));
+const typeCategories = counts 
+  ? Object.keys(counts).filter(category => counts[category] > 0)
+  : Array.from(new Set(typeEvents.map(e => e.category)));
   
   // Get the currently active category for this event type
   const activeCategory = type === 'event' 
@@ -41,7 +39,7 @@ const CategoryFilterOptions: React.FC<CategoryFilterOptionsProps> = ({
       return 'audiotrack';
     }
     if (categoryLower.includes('comedy')) {
-      return 'theater-comedy';
+      return 'sentiment-very-satisfied';
     }
     if (categoryLower.includes('sport')) {
       return 'sports-basketball';
@@ -60,6 +58,9 @@ const CategoryFilterOptions: React.FC<CategoryFilterOptionsProps> = ({
     }
     if (categoryLower.includes('gathering') || categoryLower.includes('parties') || categoryLower.includes('party')) {
       return 'nightlife';
+    }
+    if (categoryLower.includes('cinema') || categoryLower.includes('movie') || categoryLower.includes('film')) {
+      return 'theaters';
     }
     if (categoryLower.includes('happy hour')) {
       return 'local-bar';
@@ -167,40 +168,37 @@ const CategoryFilterOptions: React.FC<CategoryFilterOptionsProps> = ({
 const styles = StyleSheet.create({
   outerContainer: {
     width: '100%',
-    backgroundColor: '#f5f5f5',
-    borderRadius: 8,
   },
   container: {
-    flexGrow: 1,
     paddingVertical: 2,
-    paddingHorizontal: 8,
     paddingBottom: 4,
-    minWidth: '100%',
-    justifyContent: 'center',
   },
   centerWrapper: {
     flexDirection: 'row',
-    justifyContent: 'center',
     alignItems: 'center',
     flexWrap: 'nowrap',
   },
-  option: {
-    backgroundColor: '#FFFFFF',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
-    marginHorizontal: 3,
-    borderWidth: 1,
-    borderColor: '#EEEEEE',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 1,
-    elevation: 1,
-  },
+
+option: {
+  flexDirection: 'row',
+  alignItems: 'center',
+  backgroundColor: '#FFFFFF',
+  paddingHorizontal: 12,
+  paddingVertical: 6,
+  borderRadius: 16,
+  marginRight: 6,
+  borderWidth: 1,
+  borderColor: '#EEEEEE',
+  shadowColor: '#000',
+  shadowOffset: { width: 0, height: 1 },
+  shadowOpacity: 0.1,
+  shadowRadius: 1,
+  elevation: 1,
+},
+
   selectedOption: {
-    backgroundColor: '#E94E77',
-    borderColor: '#E94E77',
+    backgroundColor: '#2196F3',
+    borderColor: '#2196F3',
   },
   categoryContent: {
     flexDirection: 'row',

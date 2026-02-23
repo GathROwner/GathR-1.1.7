@@ -80,6 +80,8 @@ export interface SpotlightConfig {
   width: number;
   height: number;
   borderRadius?: number;
+  showPulse?: boolean;
+  forceCircle?: boolean;
 }
 
 /**

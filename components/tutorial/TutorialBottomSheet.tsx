@@ -24,6 +24,8 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { TutorialTooltipProps } from '../../types/tutorial';
 import { TUTORIAL_CONFIG } from '../../config/tutorialSteps';
 import { IconLegendDemo } from './TutorialDemoComponents';
+import { ClusterExplanationContent } from './ClusterExplanationContent';
+
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -132,50 +134,85 @@ export const TutorialBottomSheet: React.FC<TutorialBottomSheetProps> = ({
             }
           ]
         };
+      
         
+        /* 
+  ──────────────────────────────────────────────────────────────────────────────
+  TUTORIAL: BOTTOM SHEET POSITION (ANDROID CLUSTER STEP)
+  ──────────────────────────────────────────────────────────────────────────────
+  Why:
+    • On Android, the default "bottom: 90" left too much dimmed space and the
+      tooltip overlapped the cluster spotlight on step 2 ("Event Clusters - Tap the Marker!").
+    • We pin the sheet a little lower ONLY for this step on Android to open a clean
+      gap above the sheet for the spotlight + tap target.
+
+  How:
+    • Title-gated override (kept simple for now): if platform=android AND this is the
+      cluster step (by title), use a smaller bottom offset (currently 8).
+    • All other steps/platforms keep the default offset (90).
+
+  Notes:
+    • Title matching is brittle ("Tap" vs "Tab"). If we productize this, switch to using
+      step.id === 'cluster-click' instead of the title.
+    • This logic only adjusts the sheet; spotlight/tooltip geometry is handled elsewhere.
+*/
       case 'bottom':
-      default:
-        // Slides UP from bottom - for top content tutorials
-        return {
-          ...baseStyle,
-          position: 'absolute' as const,
-          bottom: 90, // Above bottom navigation
-          left: 0,
-          right: 0,
-          transform: [
-            ...baseStyle.transform,
-            {
-              translateY: slideAnim.interpolate({
-                inputRange: [0, 1],
-                outputRange: [200, 0] // Slide UP from below
-              })
-            }
-          ]
-        };
+        default:
+          // Slides UP from bottom - for top content tutorials
+          // Lower the sheet ONLY for the Android cluster-click step so it doesn't cover the spotlight.
+          const bottomOffset =
+            (Platform.OS === 'android' && title === 'Event Clusters - Tap the Marker!')
+              ? 8   // ↓ was 16 — move the sheet ~8px closer to the system bar
+              : 90; // default elsewhere
+
+          console.log('[TutorialBottomSheet] bottom placement', { platform: Platform.OS, title, bottomOffset });
+
+          return {
+            ...baseStyle,
+            position: 'absolute' as const,
+            bottom: bottomOffset,
+            left: 0,
+            right: 0,
+            transform: [
+              ...baseStyle.transform,
+              {
+                translateY: slideAnim.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [200, 0] // Slide UP from below
+                })
+              }
+            ]
+          };
+
+
+
     }
   };
 
-  // Function to render content - special case for cluster-click step
-  const renderContent = () => {
-    // Check if this is the cluster-click step by title
-    const isClusterClickStep = title === 'Event Clusters - Tab the Marker!';
-    
-    if (isClusterClickStep) {
-      return (
-        <View style={styles.contentContainer}>
-          <Text style={styles.content}>{content}</Text>
-          <IconLegendDemo />
-        </View>
-      );
-    }
-    
-    // Regular text content for other steps
+
+// Function to render content - special case for cluster-click step
+const renderContent = () => {
+  // Check if this is the cluster-click step by title
+  const isClusterClickStep = title === 'Event Clusters - Tap the Marker!';
+
+  if (isClusterClickStep) {
+    // Bring back the richer "old" detail: explanation + icon legend panel together
     return (
       <View style={styles.contentContainer}>
-        <Text style={styles.content}>{content}</Text>
+        <ClusterExplanationContent />
       </View>
     );
-  };
+  }
+
+
+  // Regular text content for other steps
+  return (
+    <View style={styles.contentContainer}>
+      <Text style={styles.content}>{content}</Text>
+    </View>
+  );
+};
+
 
   return (
     <Animated.View style={[

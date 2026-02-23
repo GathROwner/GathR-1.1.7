@@ -1,3 +1,5 @@
+// \app\index.tsx
+
 import React, { useState, useEffect } from 'react';
 import { 
   View, 
@@ -21,6 +23,8 @@ import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
 import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import mobileAds, { MaxAdContentRating } from 'react-native-google-mobile-ads';
+import { amplitudeMarkManualLogin } from '../lib/amplitudeAnalytics';
+
 // Import for tracking transparency
 import { requestTrackingPermissionsAsync } from 'expo-tracking-transparency';
 // Import analytics hook
@@ -258,7 +262,8 @@ export default function Index() {
       });
 
       try {
-        const userCredential = await signInWithEmailAndPassword(auth, email, password);
+        await amplitudeMarkManualLogin();
+const userCredential = await signInWithEmailAndPassword(auth, email, password);
         const duration = Date.now() - startTime;
         
         // Track successful login
@@ -343,8 +348,10 @@ export default function Index() {
           createdAt: new Date(),
           lastLogin: new Date(),
           userInterests: [],
-          savedEvents: [] 
+          savedEvents: [],
+          likedEvents: [],
         });
+
         
         // Track successful registration
         analytics.trackUserRegistration('email');

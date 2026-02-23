@@ -3,6 +3,7 @@
 // PURPOSE: Define TypeScript types and enums for guest limitation system
 // DESCRIPTION: This file contains all the type definitions needed for tracking
 //              guest user interactions and managing registration prompts
+// UPDATED: Added optional parameter to hidePrompt for conversion tracking
 // ===============================================================
 
 /**
@@ -40,7 +41,11 @@ export interface GuestLimitationState {
   // Session management
   sessionStartTime: number;           // When the current session started
   totalSessionInteractions: number;   // Total interactions in current session
+
+  // 🔔 Global overlay close signal (bumped when we need to close any open modals/lightboxes)
+  overlayCloseSignal?: number;
 }
+
 
 /**
  * Interface for the guest limitation store actions
@@ -53,8 +58,11 @@ export interface GuestLimitationActions {
   
   // Prompt management
   showPrompt: () => void;                                   // Show the registration prompt
-  hidePrompt: () => void;                                   // Hide the registration prompt
+  hidePrompt: (trackDismissal?: boolean) => void;          // Hide the prompt (optional: skip dismissal tracking for conversions)
   markFirstPromptSeen: () => void;                          // Mark that user has seen first prompt
+
+  // Global overlay control
+  emitOverlayCloseSignal: () => void;                       // Emit a signal to close any open lightboxes/modals
   
   // Session management
   startNewSession: () => void;                              // Start a new user session

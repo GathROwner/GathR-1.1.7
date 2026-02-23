@@ -15,27 +15,34 @@ import {
   Linking,
   GestureResponderEvent,
   TextInput,
-  Alert
+  Alert,
+  Keyboard,
+  Pressable
 } from 'react-native';
 import { MaterialIcons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import FallbackImage from '../../components/common/FallbackImage';
+import { VenueFavoriteButton } from '../../components/common/VenueFavoriteButton';
 import Autolink from 'react-native-autolink';
 
 // Import the store and types
 import { useMapStore } from '../../store';
+import { useEventLikeCount, setEventLikeCount, startEventLikesListener, stopEventLikesListener } from '../../store/eventLikesStore';
+import { useEventShareCount, setEventShareCount, startEventSharesListener, stopEventSharesListener } from '../../store/eventSharesStore';
+import { useEventInterestedCount, setEventInterestedCount, startEventInterestedListener, stopEventInterestedListener } from '../../store/eventInterestedStore';
 import { Event } from '../../types/events';
 import { TimeFilterType } from '../../types/filter';
 import CategoryFilterOptions from '../../components/map/CategoryFilterOptions';
+
 
 // Import components
 import EventImageLightbox from '../../components/map/EventImageLightbox';
 import NativeAdComponent from '../../components/ads/NativeAdComponent';
 
 // Import utilities
-import { 
-  formatEventDateTime, 
-  getEventTimeStatus, 
+import {
+  formatEventDateTime,
+  getEventTimeStatus,
   sortEventsByTimeStatus,
   combineDateAndTime,
   isEventNow,
@@ -45,16 +52,21 @@ import {
   format
 } from '../../utils/dateUtils';
 import { addToCalendar } from '../../utils/calendarUtils';
+import { buildGathrSharePayload } from '../../utils/shareUtils';
 
 // Import priority utilities, user service, and distance calculation
-import { 
-  BASE_SCORES, 
-  DISTANCE_BANDS, 
-  ENGAGEMENT_TIERS, 
-  calculateEngagementTier 
+import {
+  BASE_SCORES,
+  DISTANCE_BANDS,
+  ENGAGEMENT_TIERS,
+  calculateEngagementTier,
+  FAVORITE_VENUE_BONUS,
+  createLocationKeyFromEvent
 } from '../../utils/priorityUtils';
 import * as userService from '../../services/userService';
 import { calculateDistance } from '../../store/mapStore';
+import { useUserPrefsStore } from '../../store/userPrefsStore';
+import { areEventIdsEquivalent } from '../../lib/api/firestoreEvents';
 
 // Import for loading native ads
 import useNativeAds from '../../hooks/useNativeAds';
@@ -72,7 +84,9 @@ import { InteractionType } from '../../types/guestLimitations';
 import { GuestLimitedContent } from '../../components/GuestLimitedContent';
 import { LockIcon } from '../../components/LockIcon';
 import { RegistrationPrompt } from '../../components/RegistrationPrompt';
-import { trackTabSelect, trackScrollInteraction } from '../../store/guestLimitationStore';
+import { trackTabSelect, trackScrollInteraction, useGuestLimitationStore} from '../../store/guestLimitationStore';
+import { amplitudeTrack } from '../../lib/amplitudeAnalytics';
+
 
 // ===============================================================
 // ANALYTICS IMPORT - RE-ENABLED
@@ -81,6 +95,65 @@ import useAnalytics from '../../hooks/useAnalytics';
 
 // Constants
 const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get('window');
+
+// --- Local helpers for safe label/range handling and end-date suffix ---
+function partsFrom(base: string, range?: string) {
+  const result = {
+    label: base,
+    start: undefined as string | undefined,
+    end: undefined as string | undefined,
+    labelWithTime: base,
+  };
+  if (!range) return result;
+
+  // Detect common separators: en dash, spaced hyphen, plain hyphen, and " to "
+  const rLower = range.toLowerCase();
+  const sep =
+    range.includes(' – ') ? ' – ' :
+    range.includes('–')    ? '–'    :
+    rLower.includes(' to ') ? ' to ' :
+    range.includes(' - ')  ? ' - '  :
+    range.includes('-')    ? '-'    :
+    null;
+
+  if (sep) {
+    const [startRaw, endRaw] = range.split(sep).map(s => s?.trim());
+    result.start = startRaw || undefined;
+    result.end = endRaw || undefined;
+  }
+
+  // Trim trailing " at <start>" only if it matches, case-insensitively.
+  if (result.start) {
+    const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const tailRe = new RegExp(`\\s+at\\s+${esc(result.start)}$`, 'i');
+    if (tailRe.test(base)) {
+      result.label = base.replace(tailRe, '');
+    }
+  }
+  return result;
+}
+
+
+function isFutureDate(dateStr?: string) {
+  if (!dateStr) return false;
+  try {
+    const d = parseISO(dateStr);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return d > today;
+  } catch {
+    return false;
+  }
+}
+
+function formatEndDateLabel(dateStr: string) {
+  try {
+    return format(parseISO(dateStr), 'MMM d');
+  } catch {
+    return '';
+  }
+}
+
 
 // Define brand colors for consistency with events page
 const BRAND = {
@@ -154,7 +227,7 @@ const sortCategoriesByPriorityAndCount = (
   return orderedCounts;
 };
 
-// Badge Container component (same as events.tsx)
+// Badge Container component (same as EventCallout)
 interface BadgeContainerProps {
   isNow: boolean;
   matchesUserInterests: boolean;
@@ -216,7 +289,7 @@ const BadgeContainer: React.FC<BadgeContainerProps> = ({
   );
 };
 
-// EventListItem component with analytics
+// EventListItem component with analytics (converted to hero image layout)
 interface EventListItemProps {
   event: Event;
   onPress: () => void;
@@ -225,7 +298,9 @@ interface EventListItemProps {
   matchesUserInterests: boolean;
   isGuest: boolean;
   analytics: any; // Analytics hook - RE-ENABLED
+  isFirstItem?: boolean; // NEW: Tutorial awareness only for first item
 }
+
 
 const EventListItem: React.FC<EventListItemProps> = ({ 
   event, 
@@ -234,25 +309,305 @@ const EventListItem: React.FC<EventListItemProps> = ({
   isSaved,
   matchesUserInterests,
   isGuest,
-  analytics
+  analytics,
+  isFirstItem = false
 }) => {
   const [expanded, setExpanded] = useState(false);
   const [bookmarked, setBookmarked] = useState(isSaved);
   const [isToggling, setIsToggling] = useState(false);
+  const [addressExpanded, setAddressExpanded] = useState(false);
+  const [isHeroLikeToggling, setIsHeroLikeToggling] = useState(false);
+  const eventIdString = String(event.id);
+  type UserPrefsState = {
+  savedEvents: string[];
+  interests: string[];
+  favoriteVenues: string[];
+  likedEvents: string[];
+  interestedEvents: string[];
+};
+const savedEvents = useUserPrefsStore((s: UserPrefsState) => s.savedEvents);
+const userInterests = useUserPrefsStore((s: UserPrefsState) => s.interests);
+const favoriteVenues = useUserPrefsStore((s: UserPrefsState) => s.favoriteVenues);
+
+  const likedEvents = useUserPrefsStore((s: UserPrefsState) => s.likedEvents);
+  const isHeroLiked = likedEvents.includes(eventIdString);
+  const interestedEvents = useUserPrefsStore((s: UserPrefsState) => s.interestedEvents);
+  const isInterested = interestedEvents.includes(eventIdString);
+  const [isInterestedToggling, setIsInterestedToggling] = useState(false);
+  const setUserPrefs = useUserPrefsStore.getState().setAll;
+  
+  // Tutorial awareness - only for first item
+  const tutorialRef = useRef<View>(null);
+  const pulseAnim = useRef(new Animated.Value(1)).current;
+  const [isHighlighted, setIsHighlighted] = useState(false);
+
+  useEffect(() => {
+    if (!isFirstItem) return; // Only first item participates in tutorial
+    
+    let lastMeasurement: any = null;
+    let measurementCount = 0;
+    
+    const interval = setInterval(() => {
+      const globalFlag = (global as any).tutorialHighlightSpecialsListExplanation || false;
+      if (globalFlag !== isHighlighted) {
+        setIsHighlighted(globalFlag);
+      }
+      if (globalFlag && tutorialRef.current) {
+        tutorialRef.current.measureInWindow((x: number, y: number, width: number, height: number) => {
+          // Add stability check to prevent measurement spam
+          const currentMeasurement = { x: Math.round(x), y: Math.round(y), width: Math.round(width), height: Math.round(height) };
+          
+          if (!lastMeasurement || 
+              Math.abs(currentMeasurement.x - lastMeasurement.x) > 2 ||
+              Math.abs(currentMeasurement.y - lastMeasurement.y) > 2 ||
+              Math.abs(currentMeasurement.width - lastMeasurement.width) > 2 ||
+              Math.abs(currentMeasurement.height - lastMeasurement.height) > 2) {
+            
+            lastMeasurement = currentMeasurement;
+            measurementCount++;
+            
+            // Only log first few measurements to prevent spam
+            if (measurementCount <= 3) {
+              console.log('Tutorial: Measured first specials card:', currentMeasurement);
+            }
+            
+            (global as any).specialsListExplanationLayout = currentMeasurement;
+          }
+        });
+      }
+    }, 200);
+    return () => clearInterval(interval);
+  }, [isHighlighted, isFirstItem]);
+
+  useEffect(() => {
+    if (isFirstItem && isHighlighted) {
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(pulseAnim, { toValue: 1.05, useNativeDriver: true, duration: 800 }),
+          Animated.timing(pulseAnim, { toValue: 1, useNativeDriver: true, duration: 800 }),
+        ])
+      ).start();
+    } else {
+      pulseAnim.stopAnimation();
+      pulseAnim.setValue(1);
+    }
+  }, [isHighlighted, isFirstItem]);
+
+  const tutorialHighlightStyle = {
+    shadowColor: '#FF6B35',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.9,
+    shadowRadius: 12,
+    elevation: 15,
+    borderWidth: 3,
+    borderColor: '#FF8C42',
+    backgroundColor: 'rgba(255, 255, 255, 0.95)',
+    transform: [{ scale: pulseAnim }],
+  };
   
   useEffect(() => {
     setBookmarked(isSaved);
   }, [isSaved]);
   
+  useEffect(() => {
+    setAddressExpanded(false);
+  }, [event.id]);
+  
   const timeStatus = getEventTimeStatus(event);
+  const hasVenueAddress = Boolean(event.address?.trim());
+  const handleVenuePress = (e: GestureResponderEvent) => {
+    e.stopPropagation();
+    if (!hasVenueAddress) return;
+    setAddressExpanded(prev => !prev);
+  };
+
+    useEffect(() => {
+    if (!event.id) return;
+    startEventLikesListener(event.id);
+    startEventSharesListener(event.id);
+    startEventInterestedListener(event.id);
+    return () => {
+      stopEventLikesListener(event.id);
+      stopEventSharesListener(event.id);
+      stopEventInterestedListener(event.id);
+    };
+  }, [event.id]);
+
+  const handleHeroLikePress = async (e: GestureResponderEvent) => {
+    e.stopPropagation();
+    analytics.trackUserAction('like_attempt', {
+      event_id: event.id.toString(),
+      event_type: 'special',
+      special_category: event.category,
+      liked: isHeroLiked,
+      is_guest: isGuest,
+      interaction_blocked: isGuest,
+    });
+
+    if (isGuest || isHeroLikeToggling) {
+      if (isGuest) {
+        console.log('[GuestLimitation] Like blocked - premium feature for registered users only');
+      }
+      return;
+    }
+
+    const startTime = Date.now();
+    setIsHeroLikeToggling(true);
+    const previousLikedEvents = [...likedEvents];
+    const nextLikedEvents = isHeroLiked
+      ? previousLikedEvents.filter((id) => id !== eventIdString)
+      : [...previousLikedEvents, eventIdString];
+
+    setUserPrefs({ likedEvents: nextLikedEvents });
+
+    try {
+      const baseLikes = event.likes !== undefined && event.likes !== null ? Number(event.likes) : 0;
+      const result = await userService.toggleEventLike(event.id, {
+        type: event.type,
+        source: 'list',
+        referrer: '/specials',
+        venue: event?.venue,
+        category: event?.category,
+        baseLikes,
+      });
+
+      if (!result.success) {
+        throw new Error(result.message || 'Failed to update like');
+      }
+
+      const nextCount =
+        typeof result.count === 'number'
+          ? result.count
+          : Math.max(0, (heroLikeLiveValue ?? baseLikes) + (result.liked ? 1 : -1));
+      setEventLikeCount(event.id, nextCount);
+
+      analytics.trackUserAction('like_success', {
+        event_id: event.id.toString(),
+        event_type: 'special',
+        special_category: event.category,
+        venue_name: event.venue,
+        liked: result.liked,
+        response_time_ms: Date.now() - startTime,
+      });
+    } catch (error) {
+      setUserPrefs({ likedEvents: previousLikedEvents });
+      const errorMessage = error instanceof Error ? error.message : 'Failed to update like';
+      analytics.trackError('like_failed', errorMessage, {
+        event_id: event.id.toString(),
+        user_action: 'toggle_like',
+      });
+      console.error('Error toggling like:', error);
+      Alert.alert('Error', errorMessage);
+    } finally {
+      setIsHeroLikeToggling(false);
+    }
+  };
+
   
   // ===============================================================
   // ANALYTICS-ENHANCED ACTION HANDLERS (Special-specific)
   // ===============================================================
-  
+
+  const handleInterestedPress = async (e: GestureResponderEvent) => {
+    e.stopPropagation();
+
+    analytics.trackUserAction('interested_attempt', {
+      event_id: event.id.toString(),
+      event_type: 'special',
+      special_category: event.category,
+      interested: isInterested,
+      is_guest: isGuest,
+      interaction_blocked: isGuest,
+    });
+
+    if (isGuest || isInterestedToggling) {
+      if (isGuest) {
+        console.log('[GuestLimitation] Interested blocked - premium feature for registered users only');
+      }
+      return;
+    }
+
+    const startTime = Date.now();
+    setIsInterestedToggling(true);
+    const previousInterestedEvents = [...interestedEvents];
+    const willBeInterested = !isInterested;
+    const nextInterestedEvents = willBeInterested
+      ? [...previousInterestedEvents, eventIdString]
+      : previousInterestedEvents.filter((id) => id !== eventIdString);
+
+    // Optimistic UI update
+    setUserPrefs({ interestedEvents: nextInterestedEvents });
+
+    try {
+      const baseInterested = facebookUsersResponded;
+      const result = await userService.toggleEventInterested(event.id, {
+        type: 'special',
+        source: 'list',
+        referrer: '/specials',
+        venue: event?.venue,
+        category: event?.category,
+        baseInterested,
+      });
+
+      if (!result.success) {
+        throw new Error(result.message || 'Failed to update interested');
+      }
+
+      const nextCount =
+        typeof result.count === 'number'
+          ? result.count
+          : Math.max(0, interestedValue + (result.interested ? 1 : -1));
+      setEventInterestedCount(event.id, nextCount);
+
+      analytics.trackUserAction('interested_success', {
+        event_id: event.id.toString(),
+        event_type: 'special',
+        special_category: event.category,
+        venue_name: event.venue,
+        interested: result.interested,
+        response_time_ms: Date.now() - startTime,
+      });
+
+      // If marking interested (not unmarking), also open calendar
+      if (result.interested) {
+        try {
+          await addToCalendar({
+            title: event.title,
+            startDate: combineDateAndTime(event.startDate, event.startTime),
+            endDate: combineDateAndTime(event.endDate || event.startDate, event.endTime || '11:59 PM'),
+            location: `${event.venue}, ${event.address}`,
+            notes: event.description,
+          });
+
+          analytics.trackUserAction('calendar_add_success', {
+            event_id: event.id.toString(),
+            event_type: 'special',
+            special_category: event.category,
+            venue_name: event.venue,
+            response_time_ms: Date.now() - startTime,
+          });
+        } catch (calendarError) {
+          console.error('Failed to add to calendar after marking interested:', calendarError);
+        }
+      }
+    } catch (error) {
+      // Rollback optimistic update
+      setUserPrefs({ interestedEvents: previousInterestedEvents });
+      const errorMessage = error instanceof Error ? error.message : 'Failed to update interested';
+      analytics.trackError('interested_failed', errorMessage, {
+        event_id: event.id.toString(),
+        user_action: 'toggle_interested',
+      });
+      console.error('Error toggling interested:', error);
+      Alert.alert('Error', errorMessage);
+    } finally {
+      setIsInterestedToggling(false);
+    }
+  };
+
   const handleAddToCalendar = async (e: GestureResponderEvent) => {
     e.stopPropagation();
-    
+
     // Track calendar interaction for specials
     analytics.trackUserAction('calendar_add_attempt', {
       event_id: event.id.toString(),
@@ -261,15 +616,21 @@ const EventListItem: React.FC<EventListItemProps> = ({
       is_guest: isGuest,
       interaction_blocked: isGuest
     });
-    
+
     if (isGuest) {
       console.log('[GuestLimitation] Calendar blocked - premium feature for registered users only');
       return;
     }
-    
+
+    // If not already interested, use interested flow (which also opens calendar)
+    if (!isInterested) {
+      return handleInterestedPress(e);
+    }
+
+    // Already interested - just open calendar without incrementing count
     try {
       const startTime = Date.now();
-      
+
       await addToCalendar({
         title: event.title,
         startDate: combineDateAndTime(event.startDate, event.startTime),
@@ -277,7 +638,7 @@ const EventListItem: React.FC<EventListItemProps> = ({
         location: `${event.venue}, ${event.address}`,
         notes: event.description
       });
-      
+
       // Track successful calendar addition for special
       analytics.trackUserAction('calendar_add_success', {
         event_id: event.id.toString(),
@@ -286,7 +647,7 @@ const EventListItem: React.FC<EventListItemProps> = ({
         venue_name: event.venue,
         response_time_ms: Date.now() - startTime
       });
-      
+
       // Track special-specific conversion
       analytics.trackConversion('special_calendar_addition', {
         content_id: event.id.toString(),
@@ -294,7 +655,7 @@ const EventListItem: React.FC<EventListItemProps> = ({
         special_category: event.category,
         value: 1
       });
-      
+
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       analytics.trackError('special_calendar_add_failed', errorMessage, {
@@ -307,7 +668,7 @@ const EventListItem: React.FC<EventListItemProps> = ({
   
   const handleShare = async (e: GestureResponderEvent) => {
     e.stopPropagation();
-    
+
     // Track share interaction for specials
     analytics.trackUserAction('share_attempt', {
       event_id: event.id.toString(),
@@ -316,37 +677,70 @@ const EventListItem: React.FC<EventListItemProps> = ({
       is_guest: isGuest,
       interaction_blocked: isGuest
     });
-    
+
     if (isGuest) {
       console.log('[GuestLimitation] Share blocked - premium feature for registered users only');
       return;
     }
-    
+
     try {
       const startTime = Date.now();
-      
-      await Share.share({
-        message: `Check out ${event.title} at ${event.venue} on ${formatEventDateTime(event.startDate, event.startTime)}. ${event.description}`,
-        title: event.title,
+
+      try {
+        amplitudeTrack('share_tapped', {
+          event_id: String(event.id),
+          content_type: 'special',
+          source: 'list',
+          referrer_screen: '/specials',
+          channel: 'system',
+        });
+      } catch {}
+
+      const sharePayload = buildGathrSharePayload(event);
+
+      const shareResult = await Share.share({
+        message: sharePayload.message,
+        title: sharePayload.title,
+        url: sharePayload.url, // iOS only - shows as link preview
       });
-      
-      // Track successful special share
-      analytics.trackUserAction('share_success', {
-        event_id: event.id.toString(),
-        event_type: 'special',
-        special_category: event.category,
-        venue_name: event.venue,
-        response_time_ms: Date.now() - startTime
-      });
-      
-      // Track special-specific conversion
-      analytics.trackConversion('special_share', {
-        content_id: event.id.toString(),
-        content_type: 'special',
-        special_category: event.category,
-        value: 1
-      });
-      
+
+      // Only increment count if user actually shared (not cancelled)
+      if (shareResult.action === Share.sharedAction) {
+        // Increment share count in Firestore
+        const baseShares = heroShareValueFromEvent;
+        const incrementResult = await userService.incrementEventShare(event.id, {
+          type: 'special',
+          source: 'list',
+          referrer: '/specials',
+          venue: event?.venue,
+          category: event?.category,
+          baseShares,
+        });
+
+        if (incrementResult.success) {
+          // Update local store with new count
+          setEventShareCount(event.id, incrementResult.count);
+        }
+
+        // Track successful special share
+        analytics.trackUserAction('share_success', {
+          event_id: event.id.toString(),
+          event_type: 'special',
+          special_category: event.category,
+          venue_name: event.venue,
+          response_time_ms: Date.now() - startTime,
+          new_share_count: incrementResult.count
+        });
+
+        // Track special-specific conversion
+        analytics.trackConversion('special_share', {
+          content_id: event.id.toString(),
+          content_type: 'special',
+          special_category: event.category,
+          value: 1
+        });
+      }
+
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       if (errorMessage !== 'User did not share') {
@@ -430,7 +824,23 @@ const EventListItem: React.FC<EventListItemProps> = ({
       // Optimistic UI update
       setBookmarked(!bookmarked);
       
-      const result = await userService.toggleSavedEvent(event.id);
+const result = await userService.toggleSavedEvent(event.id, {
+  type: 'special',
+  source: 'list',
+  referrer: '/specials',
+  venue: event?.venue,
+  category: event?.category,
+}, {
+  id: event.id,
+  title: event.title,
+  venue: event.venue,
+  address: event.address,
+  startDate: event.startDate,
+  startTime: event.startTime,
+  endDate: event.endDate,
+  endTime: event.endTime,
+});
+
       
       if (!result.success) {
         // Revert UI state if operation failed
@@ -482,17 +892,45 @@ const EventListItem: React.FC<EventListItemProps> = ({
                         isValidTicketUrl(event.ticketLinkPosts);
   const paid = isPaidEvent(event.ticketPrice);
   
-  const safeNumberToString = (value: any): string => {
+   const safeNumberToString = (value: any): string => {
     if (value === undefined || value === null) return '';
     return String(value);
   };
-  
+
   const isGreaterThanZero = (value: any): boolean => {
     if (value === undefined || value === null) return false;
     const num = parseInt(String(value), 10);
     return !isNaN(num) && num > 0;
   };
-  
+
+  const heroLikeLiveValue = useEventLikeCount(event.id);
+  const heroLikeValueFromEvent =
+    event.likes !== undefined && event.likes !== null ? Number(event.likes) : 0;
+  const heroLikeValue = heroLikeLiveValue != null ? heroLikeLiveValue : heroLikeValueFromEvent;
+  const heroLikeText = heroLikeValue > 0 ? safeNumberToString(heroLikeValue) : '';
+
+  // Live share count
+  const heroShareLiveValue = useEventShareCount(event.id);
+  const heroShareValueFromEvent = event.shares !== undefined && event.shares !== null ? Number(event.shares) : 0;
+  const heroShareValue = heroShareLiveValue != null ? heroShareLiveValue : heroShareValueFromEvent;
+  const heroShareText = heroShareValue > 0 ? safeNumberToString(heroShareValue) : '';
+
+  // Live interested count (combined with Facebook usersResponded)
+  const interestedLiveValue = useEventInterestedCount(event.id);
+  const facebookUsersResponded = event.usersResponded !== undefined && event.usersResponded !== null
+    ? Number(event.usersResponded)
+    : 0;
+  const interestedValue = interestedLiveValue != null ? interestedLiveValue : 0;
+  const combinedInterestedValue = facebookUsersResponded + interestedValue;
+  const interestedText = combinedInterestedValue > 0 ? safeNumberToString(combinedInterestedValue) : '';
+
+  const heroEngagementMetrics = [
+    { key: 'likes', icon: 'thumb-up', value: heroLikeText },
+    { key: 'shares', icon: 'share', value: heroShareText },
+    { key: 'interested', icon: 'person', value: interestedText },
+  ].filter(Boolean) as { key: string; icon: 'thumb-up' | 'share' | 'person'; value: string }[];
+  // Always show overlay - share button should always be visible
+  const showHeroEngagementOverlay = true;
   const showBuyTicketsButton = hasTicketLink && paid;
   const showRegisterButton = hasTicketLink && !paid && event.ticketPrice;
   const showTicketedEventBadge = hasTicketLink && 
@@ -514,101 +952,26 @@ const EventListItem: React.FC<EventListItemProps> = ({
   };
   
   return (
-    <TouchableOpacity 
-      style={[
-        styles.eventCard,
-        timeStatus === 'now' && styles.nowEventCard,
-        matchesUserInterests && styles.interestMatchCard,
-        isSaved && styles.savedCard
-      ]}
-      onPress={onPress}
-      activeOpacity={0.7}
-    >
+    <Animated.View style={isFirstItem && isHighlighted ? tutorialHighlightStyle : {}}>
+      <TouchableOpacity 
+        ref={tutorialRef as any}
+        style={[
+          styles.eventCard,
+          timeStatus === 'now' && styles.nowEventCard,
+          matchesUserInterests && styles.interestMatchCard,
+          isSaved && styles.savedCard
+        ]}
+        onPress={onPress}
+        activeOpacity={0.7}
+      >
       <View style={[
         styles.cardIndicator, 
         { backgroundColor: getCategoryColor(event.category) }
       ]} />
       
-      <View style={styles.cardTopSection}>
-        <View style={styles.contentSection}>
-          <Text 
-            style={styles.cardTitle} 
-            numberOfLines={1}
-            adjustsFontSizeToFit={true}
-            minimumFontScale={0.7}
-          >
-            {event.title}
-          </Text>
-          
-          <View style={styles.venueContainer}>
-            <View style={styles.venueRow}>
-              <MaterialIcons name="place" size={14} color="#666666" />
-              <Text 
-                style={styles.venueText} 
-                numberOfLines={1}
-                adjustsFontSizeToFit={true}
-                minimumFontScale={0.8}
-              >
-                {event.venue}
-              </Text>
-            </View>
-            {event.address && (
-              <Text 
-                style={styles.addressText} 
-                numberOfLines={1}
-                adjustsFontSizeToFit={true}
-                minimumFontScale={0.8}
-              >
-                {event.address}
-              </Text>
-            )}
-          </View>
-          
-          <View style={styles.dateTimeRow}>
-            <MaterialIcons name="access-time" size={14} color="#666666" />
-            <Text 
-              style={styles.dateTimeText}
-              numberOfLines={1}
-              adjustsFontSizeToFit={true}
-              minimumFontScale={0.7}
-            >
-              {formatFullDateTime()}
-            </Text>
-          </View>
-          
-          {(event.engagementScore !== undefined && isGreaterThanZero(event.engagementScore)) && (
-            <View style={styles.engagementRow}>
-              {event.likes !== undefined && isGreaterThanZero(event.likes) && (
-                <View style={styles.metricItem}>
-                  <MaterialIcons name="thumb-up" size={12} color="#666666" />
-                  <Text style={styles.metricText}>
-                    {safeNumberToString(event.likes)}
-                  </Text>
-                </View>
-              )}
-              
-              {event.shares !== undefined && isGreaterThanZero(event.shares) && (
-                <View style={styles.metricItem}>
-                  <MaterialIcons name="share" size={12} color="#666666" />
-                  <Text style={styles.metricText}>
-                    {safeNumberToString(event.shares)}
-                  </Text>
-                </View>
-              )}
-              
-              {event.usersResponded !== undefined && isGreaterThanZero(event.usersResponded) && (
-                <View style={styles.metricItem}>
-                  <MaterialIcons name="person" size={12} color="#666666" />
-                  <Text style={styles.metricText}>
-                    {safeNumberToString(event.usersResponded)}
-                  </Text>
-                </View>
-              )}
-            </View>
-          )}
-        </View>
-        
-        <View style={styles.imageSection}>
+      {/* Hero Image Section - NEW LAYOUT */}
+      <View style={styles.heroImageSection}>
+        <View style={styles.heroImageContainer}>
           <TouchableOpacity
             activeOpacity={0.9}
             onPress={() => onImagePress(event.imageUrl || event.profileUrl, event)}
@@ -617,19 +980,227 @@ const EventListItem: React.FC<EventListItemProps> = ({
               imageUrl={event.imageUrl || event.profileUrl}
               category={event.category}
               type={event.type}
-              style={styles.cardImage}
+              style={styles.heroImage}
               fallbackType={event.imageUrl ? 'post' : 'profile'}
+              resizeMode="cover"
             />
             
-            <BadgeContainer 
+            {/* Badge container positioned at top right of hero image */}
+            <BadgeContainer
               isNow={timeStatus === 'now'}
               matchesUserInterests={matchesUserInterests}
               isSaved={isSaved}
             />
+
+            {/* Venue profile picture with favorite heart - top left */}
+            <View style={styles.venueProfileOverlay}>
+              <View style={styles.venueProfileImageContainer}>
+                <FallbackImage
+                  imageUrl={event.profileUrl}
+                  category={event.category}
+                  type={event.type}
+                  style={styles.venueProfileImageSmall}
+                  fallbackType="profile"
+                  resizeMode="cover"
+                />
+                <View style={styles.venueFavoriteButtonOverlay}>
+                  <VenueFavoriteButton
+                    locationKey={createLocationKeyFromEvent(event)}
+                    venueName={event.venue}
+                    size={12}
+                    source="specials_tab"
+                    style={styles.venueFavoriteButtonSmall}
+                  />
+                </View>
+              </View>
+            </View>
+
+            {showHeroEngagementOverlay && (
+              <View style={styles.heroEngagementOverlay} pointerEvents="box-none">
+                {heroEngagementMetrics.map((metric, index) => {
+                  const isLikeMetric = metric.key === 'likes';
+                  const isShareMetric = metric.key === 'shares';
+                  const isInterestedMetric = metric.key === 'interested';
+                  const badgeStyles = [
+                    styles.heroEngagementBadge,
+                    index > 0 && styles.heroEngagementBadgeSpacing,
+                    isLikeMetric && isHeroLiked && styles.heroEngagementBadgeLiked,
+                    isInterestedMetric && isInterested && styles.heroEngagementBadgeInterested,
+                  ];
+                  const iconColor = isLikeMetric && isHeroLiked
+                    ? BRAND.primaryDark
+                    : isInterestedMetric && isInterested
+                    ? '#34A853'
+                    : '#333333';
+                  const badgeContent = (
+                    <>
+                      <MaterialIcons name={metric.icon} size={14} color={iconColor} />
+                      {metric.value ? (
+                        <Text style={styles.heroEngagementBadgeText}>{metric.value}</Text>
+                      ) : null}
+                    </>
+                  );
+
+                  if (isLikeMetric) {
+                    return (
+                      <TouchableOpacity
+                        key={metric.key}
+                        style={badgeStyles}
+                        onPress={handleHeroLikePress}
+                        disabled={isHeroLikeToggling || isGuest}
+                        activeOpacity={0.7}
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      >
+                        {badgeContent}
+                      </TouchableOpacity>
+                    );
+                  }
+
+                  if (isShareMetric) {
+                    return (
+                      <TouchableOpacity
+                        key={metric.key}
+                        style={badgeStyles}
+                        onPress={handleShare}
+                        disabled={isGuest}
+                        activeOpacity={0.7}
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      >
+                        {badgeContent}
+                      </TouchableOpacity>
+                    );
+                  }
+
+                  if (isInterestedMetric) {
+                    return (
+                      <TouchableOpacity
+                        key={metric.key}
+                        style={badgeStyles}
+                        onPress={handleInterestedPress}
+                        disabled={isInterestedToggling || isGuest}
+                        activeOpacity={0.7}
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      >
+                        {badgeContent}
+                      </TouchableOpacity>
+                    );
+                  }
+
+                  return (
+                    <View key={metric.key} style={badgeStyles}>
+                      {badgeContent}
+                    </View>
+                  );
+                })}
+              </View>
+            )}
+
           </TouchableOpacity>
         </View>
       </View>
       
+      {/* Content Section - Now below the hero image */}
+      <View style={styles.contentSection}>
+        <Text 
+          style={styles.cardTitle} 
+          numberOfLines={2}
+          adjustsFontSizeToFit={false}
+        >
+          {event.title}
+        </Text>
+        
+        <View style={styles.venueContainer}>
+          <TouchableOpacity
+            style={[
+              styles.venueRow,
+              hasVenueAddress && styles.venueRowInteractive
+            ]}
+            onPress={handleVenuePress}
+            activeOpacity={hasVenueAddress ? 0.7 : 1}
+          >
+            <MaterialIcons name="place" size={14} color="#666666" />
+            <Text 
+              style={[
+                styles.venueText,
+                hasVenueAddress && styles.venueTextActive
+              ]} 
+              numberOfLines={1}
+              adjustsFontSizeToFit={true}
+              minimumFontScale={0.8}
+            >
+              {event.venue}
+            </Text>
+            {hasVenueAddress && (
+              <MaterialIcons
+                name={addressExpanded ? 'expand-less' : 'expand-more'}
+                size={18}
+                color="#666666"
+                style={styles.venueChevron}
+              />
+            )}
+          </TouchableOpacity>
+          {hasVenueAddress && addressExpanded && (
+            <Text 
+              style={styles.addressText} 
+              numberOfLines={1}
+              adjustsFontSizeToFit={true}
+              minimumFontScale={0.8}
+            >
+              {event.address}
+            </Text>
+          )}
+        </View>
+        
+        <View style={styles.dateTimeRow}>
+        <MaterialIcons name="access-time" size={14} color="#666666" />
+        {(() => {
+          const base = formatEventDateTime(event.startDate, event.startTime, event);
+                      
+          const startRaw = event?.startTime;
+          const endRaw   = event?.endTime;
+
+          const start = startRaw && startRaw !== 'N/A' ? formatTime(startRaw) : null;
+          const end   = endRaw   && endRaw   !== 'N/A' ? formatTime(endRaw)   : null;
+
+          const range =
+            start && end ? `${start} – ${end}` :
+            start        ? `${start} – late`  :
+            end          ? `until ${end}`     :
+                          '';
+
+          const rangeOrUndefined = range && range.trim() ? range : undefined;
+          const { label, start: s, end: e, labelWithTime } = partsFrom(base, rangeOrUndefined);
+
+          // Use existing timeStatus from the component scope
+          // Use existing timeStatus from the component scope
+          const showRange = (timeStatus === 'now' || timeStatus === 'today' || timeStatus === 'future') && !!rangeOrUndefined;
+
+          const endDateSuffix =
+            showRange && isFutureDate(event.endDate) ? ` • (Until ${formatEndDateLabel(event.endDate!)})` : '';
+
+          const display = showRange
+            ? `${label} • ${s}${e ? ` – ${e}` : ''}${endDateSuffix}`
+            : labelWithTime;
+
+
+            return (
+              <Text
+                style={styles.dateTimeText}
+                numberOfLines={1}
+                adjustsFontSizeToFit={true}
+                minimumFontScale={0.7}
+              >
+                {display}
+              </Text>
+            );
+          })()}
+        </View>
+
+              
+        {/* Legacy engagement row removed to rely on hero-image badges */}
+      </View>
+      
+      {/* Description section - Full width with content limitation */}
       <View style={styles.descriptionSection}>
         <GuestLimitedContent 
           contentType="description" 
@@ -679,6 +1250,7 @@ const EventListItem: React.FC<EventListItemProps> = ({
         )}
       </View>
       
+      {/* Bottom action section */}
       <View style={styles.cardBottomRow}>
         <View style={styles.leftSection}>
           <View style={[
@@ -753,6 +1325,7 @@ const EventListItem: React.FC<EventListItemProps> = ({
           )}
         </View>
         
+        {/* Action buttons with circular backgrounds - locked for guests */}
         <View style={styles.rightSection}>
           <TouchableOpacity 
             style={[
@@ -777,30 +1350,7 @@ const EventListItem: React.FC<EventListItemProps> = ({
             </View>
           </TouchableOpacity>
           
-          <TouchableOpacity 
-            style={[
-              styles.quickActionButton,
-              isGuest && styles.disabledActionButton
-            ]}
-            onPress={handleShare}
-            activeOpacity={isGuest ? 1 : 0.7}
-            disabled={isGuest}
-          >
-            <View style={styles.actionButtonCircle}>
-              <MaterialIcons 
-                name="share" 
-                size={22} 
-                color={isGuest ? "#CCCCCC" : "#666666"} 
-              />
-              {isGuest && (
-                <View style={styles.lockIconOverlay}>
-                  <MaterialIcons name="lock" size={8} color="#333333" />
-                </View>
-              )}
-            </View>
-          </TouchableOpacity>
-          
-          <TouchableOpacity 
+          <TouchableOpacity
             style={[
               styles.quickActionButton,
               isGuest && styles.disabledActionButton
@@ -824,16 +1374,41 @@ const EventListItem: React.FC<EventListItemProps> = ({
           </TouchableOpacity>
         </View>
       </View>
-    </TouchableOpacity>
+      </TouchableOpacity>
+    </Animated.View>
   );
 };
 
 // Main Specials Screen component
 function SpecialsScreen() {
+
+  
   // ===============================================================
   // ANALYTICS INTEGRATION - RE-ENABLED
   // ===============================================================
   const analytics = useAnalytics();
+
+  // 🔔 If registration begins, close any open overlays (details sheet, image lightbox)
+  const overlayCloseSignal = useGuestLimitationStore(s => s.overlayCloseSignal);
+  useEffect(() => {
+    try {
+      if (typeof handleCloseDetails === 'function') {
+        handleCloseDetails();
+      } else {
+        setDetailsVisible?.(false);
+        setSelectedEvent?.(null);
+      }
+    } catch {}
+    try {
+      if (typeof handleModalClose === 'function') {
+        handleModalClose();
+      } else {
+        setSelectedImageData?.(null);
+      }
+    } catch {}
+  }, [overlayCloseSignal]);
+
+  
   
   // Track screen focus for session analytics - RE-ENABLED
   useFocusEffect(
@@ -869,18 +1444,33 @@ function SpecialsScreen() {
     }, [])
   );
 
+    // Read saved events and interests from the centralized cache (hydrated at login)
+  type UserPrefsState = {
+  savedEvents: string[];
+  interests: string[];
+  favoriteVenues: string[];
+  likedEvents: string[];
+  };
+  const savedEvents = useUserPrefsStore((s: UserPrefsState) => s.savedEvents);
+  const userInterests = useUserPrefsStore((s: UserPrefsState) => s.interests);
+  const favoriteVenues = useUserPrefsStore((s: UserPrefsState) => s.favoriteVenues);
+
   // Guest limitation setup
   const { user } = useAuth();
   const isGuest = !user;
   const { trackInteraction } = useGuestInteraction();
 
   // Store integration
-  const { 
+  const {
     events,
     filteredEvents,
-    isLoading, 
-    error, 
+    viewportEvents,
+    outsideViewportEvents,
+    viewportMetadata,
+    isLoading,
+    error,
     fetchEvents,
+    fetchEventDetails,
     setTypeFilters,
     categories,
     filterCriteria,
@@ -888,7 +1478,23 @@ function SpecialsScreen() {
     getTimeFilterCounts,
     getCategoryFilterCounts,
     scrollTriggers,
+    isHeaderSearchActive,
+    setHeaderSearchActive
   } = useMapStore();
+
+  // --- Prefetch confirmation (specials) ---
+  // Logs once on mount if cache already warm, and whenever events change.
+  useEffect(() => {
+    const specialsCount = events.filter(e => e.type === 'special').length;
+    if (events.length > 0 && specialsCount > 0) {
+      console.log(`[SpecialsScreen] Using preloaded specials from store: ${specialsCount}`);
+    }
+  }, [events]);
+
+  // Helper function to get updated event data from store
+  const getUpdatedEvent = (eventId: string | number) => {
+    return events.find((candidate) => areEventIdsEquivalent(candidate.id, eventId));
+  };
 
   // State management
   const [scrollY] = useState(new Animated.Value(0));
@@ -897,6 +1503,10 @@ function SpecialsScreen() {
   const headerTranslateY = useRef(new Animated.Value(0)).current;
   const lastScrollY = useRef(0);
   const flatListRef = useRef<FlatList>(null);
+  
+  // Back to top button state
+  const [showBackToTop, setShowBackToTop] = useState(false);
+  const backToTopOpacity = useRef(new Animated.Value(0)).current;
   
   // Performance tracking for specials
   const [listLoadTime, setListLoadTime] = useState<number | null>(null);
@@ -952,45 +1562,100 @@ function SpecialsScreen() {
     event: Event;
   } | null>(null);
   
-  // User preferences
-  const [userInterests, setUserInterests] = useState<string[]>([]);
-  const [savedEvents, setSavedEvents] = useState<string[]>([]);
-  
-  // Load user preferences
+
+
+  // Tutorial awareness for specials list
+  const tutorialSpecialsListRef = useRef<View>(null);
+  const specialsListPulseAnim = useRef(new Animated.Value(1)).current;
+  const [specialsListHighlighted, setSpecialsListHighlighted] = useState(false);
+
   useEffect(() => {
-    const loadUserPreferences = async () => {
-      const startTime = Date.now();
-      
-      try {
-        const interests = await userService.getUserInterests();
-        const saved = await userService.getSavedEvents();
-        
-        setUserInterests(interests);
-        setSavedEvents(saved);
-        
-        // Track preferences load performance for specials screen - RE-ENABLED
-        analytics.trackPerformance('preferences_load', Date.now() - startTime, {
-          interests_count: interests.length,
-          saved_events_count: saved.length,
-          screen: 'specials'
-        });
-        
-        console.log('Loaded user preferences:', {
-          interests: interests,
-          saved: saved
-        });
-      } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-        analytics.trackError('preferences_load_failed', errorMessage, {
-          user_action: 'load_preferences',
-          screen: 'specials'
-        });
-        console.error('Error loading user preferences:', error);
+    const interval = setInterval(() => {
+      const globalFlag = (global as any).tutorialHighlightSpecialsListExplanation || false;
+      if (globalFlag !== specialsListHighlighted) {
+        setSpecialsListHighlighted(globalFlag);
       }
-    };
+      if (globalFlag && tutorialSpecialsListRef.current) {
+        tutorialSpecialsListRef.current.measureInWindow((x: number, y: number, width: number, height: number) => {
+          (global as any).specialsListExplanationLayout = { x, y, width, height };
+          console.log('Tutorial: Measured specials list:', { x, y, width, height });
+        });
+      }
+    }, 200);
+    return () => clearInterval(interval);
+  }, [specialsListHighlighted]);
+
+  useEffect(() => {
+    if (specialsListHighlighted) {
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(specialsListPulseAnim, { toValue: 1.05, useNativeDriver: true, duration: 800 }),
+          Animated.timing(specialsListPulseAnim, { toValue: 1, useNativeDriver: true, duration: 800 }),
+        ])
+      ).start();
+    } else {
+      specialsListPulseAnim.stopAnimation();
+      specialsListPulseAnim.setValue(1);
+    }
+  }, [specialsListHighlighted]);
+
+  // Tutorial awareness for specials filters
+  const specialsFiltersRef = useRef<View>(null);
+  const specialsFiltersPulseAnim = useRef(new Animated.Value(1)).current;
+  const [specialsFiltersHighlighted, setSpecialsFiltersHighlighted] = useState(false);
+
+  useEffect(() => {
+    let lastMeasurement: any = null;
+    let measurementCount = 0;
     
-    loadUserPreferences();
-  }, []); // Remove analytics from dependency array
+    const interval = setInterval(() => {
+      const globalFlag = (global as any).tutorialHighlightSpecialsFilters || false;
+      if (globalFlag !== specialsFiltersHighlighted) {
+        setSpecialsFiltersHighlighted(globalFlag);
+      }
+      if (globalFlag && specialsFiltersRef.current) {
+        specialsFiltersRef.current.measureInWindow((x: number, y: number, width: number, height: number) => {
+          // Add stability check to prevent measurement spam
+          const currentMeasurement = { x: Math.round(x), y: Math.round(y), width: Math.round(width), height: Math.round(height) };
+          
+          if (!lastMeasurement || 
+              Math.abs(currentMeasurement.x - lastMeasurement.x) > 2 ||
+              Math.abs(currentMeasurement.y - lastMeasurement.y) > 2 ||
+              Math.abs(currentMeasurement.width - lastMeasurement.width) > 2 ||
+              Math.abs(currentMeasurement.height - lastMeasurement.height) > 2) {
+            
+            lastMeasurement = currentMeasurement;
+            measurementCount++;
+            
+            // Only log first few measurements to prevent spam
+            if (measurementCount <= 3) {
+              console.log('Tutorial: Measured specials filters:', currentMeasurement);
+            }
+            
+            (global as any).specialsFiltersLayout = currentMeasurement;
+          }
+        });
+      }
+    }, 200);
+    return () => clearInterval(interval);
+  }, [specialsFiltersHighlighted]);
+
+  useEffect(() => {
+    if (specialsFiltersHighlighted) {
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(specialsFiltersPulseAnim, { toValue: 1.05, useNativeDriver: true, duration: 800 }),
+          Animated.timing(specialsFiltersPulseAnim, { toValue: 1, useNativeDriver: true, duration: 800 }),
+        ])
+      ).start();
+    } else {
+      specialsFiltersPulseAnim.stopAnimation();
+      specialsFiltersPulseAnim.setValue(1);
+    }
+  }, [specialsFiltersHighlighted]);
+  
+  // Removed local fetching/listening of user prefs.
+  // Now sourced from useUserPrefsStore (hydrated at login via AuthProvider).
   
   // Banner animation
   useEffect(() => {
@@ -1010,40 +1675,7 @@ function SpecialsScreen() {
     }
   }, [userInterests, filterCriteria]);
   
-  // Firebase listener for real-time updates
-  useEffect(() => {
-    const currentUser = auth.currentUser;
-    if (!currentUser) return;
-    
-    console.log('Setting up Firebase listener for user preferences');
-    
-    const userDocRef = doc(firestore, 'users', currentUser.uid);
-    const unsubscribe = onSnapshot(userDocRef, (snapshot) => {
-      if (snapshot.exists()) {
-        const userData = snapshot.data();
-        
-        setUserInterests(userData.userInterests || []);
-        setSavedEvents(userData.savedEvents || []);
-        
-        console.log('User preferences updated from Firebase:', {
-          interests: userData.userInterests || [],
-          saved: userData.savedEvents || []
-        });
-      }
-    }, (error) => {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      analytics.trackError('firebase_listener_error', errorMessage, {
-        listener_type: 'user_preferences',
-        screen: 'specials'
-      });
-      console.error('Error in Firebase listener:', error);
-    });
-    
-    return () => {
-      console.log('Removing Firebase listener');
-      unsubscribe();
-    };
-  }, []); // Remove analytics from dependency array
+  // Removed Firebase listener - now handled centrally in AuthProvider.
   
   // Fetch specials data
   useEffect(() => {
@@ -1068,6 +1700,31 @@ function SpecialsScreen() {
       });
     }
   }, [events, fetchEvents]); // Remove analytics from dependency array
+  
+// NEW: Fetch enhanced details for specials that haven't been processed yet
+useEffect(() => {
+  if (events.length > 0) {
+    const specialIds = events
+      .filter(event => event.type === 'special')
+      .filter(event => {
+        // Check if special has been processed by enhancement API
+        // Specials that have been enhanced will have these properties (even if empty)
+        const hasBeenEnhanced = event.hasOwnProperty('fullDescription') || 
+                                event.hasOwnProperty('ticketLinkPosts') || 
+                                event.hasOwnProperty('ticketLinkEvents');
+        
+        return !hasBeenEnhanced;
+      })
+      .map(event => event.id);
+    
+    if (specialIds.length > 0) {
+      console.log('Specials tab: Fetching enhanced details for', specialIds.length, 'specials');
+      fetchEventDetails(specialIds);
+    } else {
+      console.log('Specials tab: All specials already have enhanced details, skipping fetch');
+    }
+  }
+}, [events.length]); // Trigger when events count changes
   
   // ===============================================================
   // ANALYTICS-ENHANCED FILTER HANDLERS (Special-specific)
@@ -1208,8 +1865,8 @@ function SpecialsScreen() {
       time_status: getEventTimeStatus(event),
       has_ticket_price: !!event.ticketPrice,
       is_guest: isGuest,
-      list_position: prioritizedSpecials.findIndex(e => e.id === event.id) + 1,
-      total_list_items: prioritizedSpecials.length
+      list_position: [...sortedViewportSpecials, ...sortedOutsideViewportSpecials].findIndex(e => e.id === event.id) + 1,
+      total_list_items: sortedViewportSpecials.length + sortedOutsideViewportSpecials.length
     };
     
     // Track special view
@@ -1285,8 +1942,19 @@ function SpecialsScreen() {
           trackScrollInteraction('specials');
         }
         
+        // Back to top button visibility logic
+        const shouldShowBackToTop = currentScrollY > SCREEN_HEIGHT;
+        if (shouldShowBackToTop !== showBackToTop) {
+          setShowBackToTop(shouldShowBackToTop);
+          Animated.timing(backToTopOpacity, {
+            toValue: shouldShowBackToTop ? 1 : 0,
+            duration: 300,
+            useNativeDriver: true,
+          }).start();
+        }
+        
         // Track scroll depth for special-specific engagement analytics
-        const contentHeight = prioritizedSpecials.length * 200;
+        const contentHeight = (sortedViewportSpecials.length + sortedOutsideViewportSpecials.length) * 200;
         const scrollPercentage = Math.floor((currentScrollY / contentHeight) * 100);
         
         if (scrollPercentage > 0 && scrollPercentage % 25 === 0) {
@@ -1321,10 +1989,76 @@ function SpecialsScreen() {
       },
     }
   );
-  
-  // Filter and sort specials
-  const specialItems = filteredEvents.filter(event => event.type === 'special');
-  
+
+  // Handle back to top button press
+  const handleBackToTop = () => {
+    analytics?.trackUserAction('back_to_top_pressed', {
+      screen: 'specials',
+      scroll_position: lastScrollY.current
+    });
+    
+    flatListRef.current?.scrollToOffset({ 
+      animated: true, 
+      offset: 0 
+    });
+  };
+
+  // Filter viewport specials
+  const filteredViewportSpecials = useMemo(() => {
+    let filtered = viewportEvents.filter(event => event.type === 'special');
+
+    if (filterCriteria.specialFilters.savedOnly) {
+      filtered = filtered.filter(e => isEventSaved(e));
+    }
+
+    const timeFilter = filterCriteria.specialFilters.timeFilter;
+    if (timeFilter === 'now') {
+            filtered = filtered.filter(e => isEventNow(e.startDate, e.startTime, e.endDate, e.endTime));
+    } else if (timeFilter === 'today') {
+      filtered = filtered.filter(e => isEventHappeningToday(e));
+    }
+
+    // Apply search filter if active
+    const searchTerm = filterCriteria.specialFilters.search?.toLowerCase().trim();
+    if (searchTerm) {
+      filtered = filtered.filter(e =>
+        e.title.toLowerCase().includes(searchTerm) ||
+        e.description.toLowerCase().includes(searchTerm) ||
+        e.venue.toLowerCase().includes(searchTerm)
+      );
+    }
+
+    return filtered;
+  }, [viewportEvents, filterCriteria, savedEvents]);
+
+  // Filter outside-viewport specials
+  const filteredOutsideViewportSpecials = useMemo(() => {
+    let filtered = outsideViewportEvents.filter(event => event.type === 'special');
+
+    if (filterCriteria.specialFilters.savedOnly) {
+      filtered = filtered.filter(e => isEventSaved(e));
+    }
+
+    const timeFilter = filterCriteria.specialFilters.timeFilter;
+    if (timeFilter === 'now') {
+            filtered = filtered.filter(e => isEventNow(e.startDate, e.startTime, e.endDate, e.endTime));
+    } else if (timeFilter === 'today') {
+      filtered = filtered.filter(e => isEventHappeningToday(e));
+    }
+
+    // Apply search filter if active
+    const searchTerm = filterCriteria.specialFilters.search?.toLowerCase().trim();
+    if (searchTerm) {
+      filtered = filtered.filter(e =>
+        e.title.toLowerCase().includes(searchTerm) ||
+        e.description.toLowerCase().includes(searchTerm) ||
+        e.venue.toLowerCase().includes(searchTerm)
+      );
+    }
+
+    return filtered;
+  }, [outsideViewportEvents, filterCriteria, savedEvents]);
+
   // Enhanced sorting with special-specific analytics tracking
   const sortAndPrioritizeSpecials = (specials: Event[]): Event[] => {
     const sortStartTime = Date.now();
@@ -1333,13 +2067,17 @@ function SpecialsScreen() {
       const isSaved = isEventSaved(special);
       const timeStatus = getEventTimeStatus(special);
       const matchesInterest = matchesUserInterests(special);
-      
+
+      // Check if special is from a favorite venue
+      const specialLocationKey = createLocationKeyFromEvent(special);
+      const isFromFavoriteVenue = favoriteVenues.includes(specialLocationKey);
+
       const scoreCategory = matchesInterest ? 'INTEREST_MATCH' : 'NON_INTEREST';
       const baseScore = BASE_SCORES[scoreCategory][timeStatus];
-      
+
       let proximityMultiplier = 1.0;
       let distance = Infinity;
-      
+
       if (userLocation) {
         distance = calculateDistance(
           userLocation.coords.latitude,
@@ -1347,7 +2085,7 @@ function SpecialsScreen() {
           special.latitude,
           special.longitude
         );
-        
+
         for (const band of DISTANCE_BANDS) {
           if (distance <= band.maxDistance) {
             proximityMultiplier = band.multiplier;
@@ -1355,13 +2093,35 @@ function SpecialsScreen() {
           }
         }
       }
-      
+
       const engagementTierPoints = calculateEngagementTier(special);
-      const compositeScore = (baseScore * proximityMultiplier) + engagementTierPoints;
+      // Add favorite venue bonus to composite score
+      const favoriteVenueBonus = isFromFavoriteVenue ? FAVORITE_VENUE_BONUS : 0;
+      const compositeScore = (baseScore * proximityMultiplier) + engagementTierPoints + favoriteVenueBonus;
       
-      return { 
+      // DEBUG: Log details for ALL specials to compare scoring
+     // if (true) {
+     //   console.log(`[DEBUG] ${special.title} Scoring:`, {
+     //     title: special.title,
+     //     venue: special.venue,
+     //     isSaved,
+     //     timeStatus,
+      //    matchesInterest,
+     //     baseScore,
+    //      coordinates: { lat: special.latitude, lng: special.longitude },
+    //      distance: distance.toFixed(0) + 'm',
+    //      proximityMultiplier,
+    //      engagementTierPoints,
+    //      compositeScore: compositeScore.toFixed(1),
+    //      userLocation: userLocation ? `${userLocation.coords.latitude.toFixed(4)}, ${userLocation.coords.longitude.toFixed(4)}` : 'null'
+    //    });
+    //  }
+      
+     
+      return {
         event: special,
         isSaved,
+        isFromFavoriteVenue,
         timeStatus,
         compositeScore,
         distance
@@ -1395,6 +2155,15 @@ function SpecialsScreen() {
       ...savedFutureSpecials.map(item => item.event),
       ...unsavedSpecials.map(item => item.event)
     ];
+
+    // DEBUG: Log the first 3 events to see ranking
+   // console.log('[DEBUG] Top 3 Specials Ranking:', sortedSpecials.slice(0, 3).map((event, index) => ({
+   //   position: index + 1,
+   //   title: event.title,
+   //   venue: event.venue,
+   //   isSaved: isEventSaved(event),
+   //   matchesInterest: matchesUserInterests(event)
+   // })));
     
     // Track special sorting performance
     const sortTime = Date.now() - sortStartTime;
@@ -1407,15 +2176,35 @@ function SpecialsScreen() {
     
     return sortedSpecials;
   };
-  
-  const prioritizedSpecials = sortAndPrioritizeSpecials(specialItems);
-  
+
+  // Apply priority sorting to viewport section
+  const sortedViewportSpecials = useMemo(() => {
+    return sortAndPrioritizeSpecials(filteredViewportSpecials);
+  }, [filteredViewportSpecials, userLocation, savedEvents, favoriteVenues]);
+
+  // Apply priority sorting to outside-viewport section
+  const sortedOutsideViewportSpecials = useMemo(() => {
+    return sortAndPrioritizeSpecials(filteredOutsideViewportSpecials);
+  }, [filteredOutsideViewportSpecials, userLocation, savedEvents, favoriteVenues]);
+
+  // State for pagination of outside-viewport specials
+  const [outsideViewportLoadCount, setOutsideViewportLoadCount] = useState(10);
+  const loadMoreBatchSize = 20;
+
   // Create specials with ads list
   type SpecialListItem = {
     type: 'special';
     data: Event;
   };
-  
+
+  type DividerItem = {
+    type: 'divider';
+    data: {
+      message: string;
+      count: number;
+    };
+  };
+
   type AdListItem = {
     type: 'ad';
     data: {
@@ -1424,43 +2213,91 @@ function SpecialsScreen() {
     };
   };
   
-  type ListItem = SpecialListItem | AdListItem;
+  type ListItem = SpecialListItem | DividerItem | AdListItem;
   
   const specialsWithAds = useMemo<ListItem[]>(() => {
-    if (prioritizedSpecials.length === 0) return [];
-    
+    const result: ListItem[] = [];
     const adFrequency = 4;
-    let result: ListItem[] = [];
     let adIndex = 0;
-    
-    prioritizedSpecials.forEach((special, index) => {
+
+    // Add viewport specials with ads
+    sortedViewportSpecials.forEach((special, index) => {
       result.push({ type: 'special', data: special });
-      
-      if ((index + 1) % adFrequency === 0 && adIndex < nativeAds.length) {
-        result.push({ type: 'ad', data: nativeAds[adIndex] });
-        adIndex++;
+
+      // Insert ad every 4 specials
+      if ((index + 1) % adFrequency === 0 && nativeAds.length > 0) {
+        const validAds = nativeAds.filter(ad => ad.ad !== null && !ad.loading);
+        if (validAds.length > 0) {
+          result.push({
+            type: 'ad',
+            data: validAds[adIndex % validAds.length]
+          });
+          adIndex++;
+        }
       }
     });
-    
+
+    // Add divider if outside-viewport specials exist
+    if (sortedOutsideViewportSpecials.length > 0) {
+      result.push({
+        type: 'divider',
+        data: {
+          message: 'Specials outside your current map view',
+          count: sortedOutsideViewportSpecials.length
+        }
+      });
+    }
+
+    // Add outside-viewport specials (paginated) with ads interspersed
+    const outsideViewportToShow = sortedOutsideViewportSpecials.slice(0, outsideViewportLoadCount);
+    outsideViewportToShow.forEach((special, index) => {
+      result.push({ type: 'special', data: special });
+
+      // Continue inserting ads every 4 specials in outside-viewport section
+      if ((index + 1) % adFrequency === 0 && nativeAds.length > 0) {
+        const validAds = nativeAds.filter(ad => ad.ad !== null && !ad.loading);
+        if (validAds.length > 0) {
+          result.push({
+            type: 'ad',
+            data: validAds[adIndex % validAds.length]
+          });
+          adIndex++;
+        }
+      }
+    });
+
+    // Low-count fallback for viewport section
+    if (sortedViewportSpecials.length > 0 && sortedViewportSpecials.length < adFrequency && nativeAds.length > 0 && sortedOutsideViewportSpecials.length === 0) {
+      const validAds = nativeAds.filter(ad => ad.ad !== null && !ad.loading);
+      if (validAds.length > 0) {
+        result.push({
+          type: 'ad',
+          data: validAds[0]
+        });
+      }
+    }
+
     return result;
-  }, [prioritizedSpecials, nativeAds]);
+  }, [sortedViewportSpecials, sortedOutsideViewportSpecials, nativeAds, outsideViewportLoadCount]);
   
   // Track special priority effectiveness
   useEffect(() => {
-    if (prioritizedSpecials.length > 0) {
-      const topSpecials = prioritizedSpecials.slice(0, 10);
+    if (sortedViewportSpecials.length > 0) {
+      const topSpecials = sortedViewportSpecials.slice(0, 10);
       const interestMatches = topSpecials.filter(e => matchesUserInterests(e)).length;
-      const savedSpecials = topSpecials.filter(e => isEventSaved(e)).length;
-      
+      const savedSpecialsInTop = topSpecials.filter(e => isEventSaved(e)).length;
+
       analytics.trackUserAction('special_priority_effectiveness', {
         top_10_interest_matches: interestMatches,
-        top_10_saved_specials: savedSpecials,
-        total_specials: prioritizedSpecials.length,
+        top_10_saved_specials: savedSpecialsInTop,
+        viewport_specials: sortedViewportSpecials.length,
+        outside_viewport_specials: sortedOutsideViewportSpecials.length,
+        total_specials: sortedViewportSpecials.length + sortedOutsideViewportSpecials.length,
         user_interests_count: userInterests.length,
-        personalization_score: (interestMatches + savedSpecials) / 10
+        personalization_score: (interestMatches + savedSpecialsInTop) / 10
       });
     }
-  }, [prioritizedSpecials, userInterests, savedEvents]); // Remove analytics from dependency array
+  }, [sortedViewportSpecials, sortedOutsideViewportSpecials, userInterests, savedEvents]); // Remove analytics from dependency array
   
   // Close special details
   const handleCloseDetails = () => {
@@ -1497,16 +2334,43 @@ function SpecialsScreen() {
       screen: 'specials',
       user_action: 'view_specials_list'
     });
-    
+
     return (
       <View style={styles.centerContainer}>
         <Text style={styles.errorText}>Error: {error}</Text>
       </View>
     );
   }
-  
+
+  // Divider component
+  const DividerComponent: React.FC<{ message: string; count: number }> = ({ message, count }) => {
+    return (
+      <View style={styles.viewportDivider}>
+        <View style={styles.dividerLine} />
+        <View style={styles.dividerTextContainer}>
+          <MaterialIcons name="location-off" size={18} color="#999" />
+          <Text style={styles.dividerText}>
+            {message} ({count})
+          </Text>
+        </View>
+        <View style={styles.dividerLine} />
+      </View>
+    );
+  };
+
+  // Handle loading more outside-viewport specials
+  const handleLoadMoreOutsideViewport = useCallback(() => {
+    setOutsideViewportLoadCount(prev => prev + loadMoreBatchSize);
+  }, []);
+
   return (
     <View style={styles.container}>
+      {isHeaderSearchActive && (
+        <Pressable
+          onPress={() => { setHeaderSearchActive(false); Keyboard.dismiss(); }}
+          style={[StyleSheet.absoluteFillObject, { zIndex: 9999 }]}
+        />
+      )}
       {/* Collapsible Header */}
       <Animated.View 
         style={[
@@ -1519,113 +2383,172 @@ function SpecialsScreen() {
           setHeaderHeight(height + 5);
         }}
       >
-        {/* Filtering section */}
-        <View style={styles.filtersContainer}>
-          <View style={styles.sectionHeaderContainer}>
-          <Text style={styles.filterSectionTitle}>When</Text>
-          <TouchableOpacity 
-            onPress={() => handleTimeFilterChange(TimeFilterType.ALL)}
-            style={styles.filterClearButton}
+{/* Filtering section */}
+<Animated.View 
+  style={[
+    specialsFiltersHighlighted ? {
+      // iOS: shadow* used. Android: elevation used. Both need a SOLID background for perf.
+      // Using an opaque color prevents the Android "shadow cannot be calculated efficiently" warning
+      // and reduces overdraw/jank during mount/scroll.
+      shadowColor: '#FF6B35',
+      shadowOffset: { width: 0, height: 0 },
+      shadowOpacity: 0.9,
+      shadowRadius: 12,
+      elevation: 15,
+      borderWidth: 3,
+      borderColor: '#FF8C42',
+      borderRadius: 12,
+      backgroundColor: '#FFFFFF', // ← was rgba(255,255,255,0.95)
+      transform: [{ scale: specialsFiltersPulseAnim }],
+    } : {}
+  ]}
+
+        >
+          <View 
+            ref={specialsFiltersRef}
+            style={styles.filtersContainer}
+            onLayout={() => {
+              // Immediate measurement for tutorial
+              if ((global as any).tutorialHighlightSpecialsFilters && specialsFiltersRef.current) {
+                specialsFiltersRef.current.measureInWindow((x: number, y: number, width: number, height: number) => {
+                  (global as any).specialsFiltersLayout = { x, y, width, height };
+                });
+              }
+            }}
           >
-            <Text style={styles.clearButtonText}>
-              {filterCriteria.specialFilters.timeFilter === TimeFilterType.ALL ? "Showing All" : "Show All"}
-            </Text>
-          </TouchableOpacity>
-        </View>
-        
-        <View style={styles.timeFilterContainer}>
-        <TouchableOpacity
-            style={[
-              styles.timeFilterPill,
-              styles.timeFilterPillNow,
-              filterCriteria.specialFilters.timeFilter === TimeFilterType.NOW && styles.activeTimeFilterPill
-            ]}
-            onPress={() => handleTimeFilterChange(TimeFilterType.NOW)}
-          >
-            <MaterialIcons 
-              name="access-time" 
-              size={14} 
-              color={filterCriteria.specialFilters.timeFilter === TimeFilterType.NOW ? '#FFFFFF' : '#666666'} 
-              style={styles.timeFilterIcon}
-            />
-            <Text style={[
-              styles.timeFilterText,
-              filterCriteria.specialFilters.timeFilter === TimeFilterType.NOW && styles.activeTimeFilterText
-            ]}>
-              Happening Now ({timeFilterCounts[TimeFilterType.NOW]})
-            </Text>
-          </TouchableOpacity>
-          
-          <TouchableOpacity
-            style={[
-              styles.timeFilterPill,
-              styles.timeFilterPillToday,
-              filterCriteria.specialFilters.timeFilter === TimeFilterType.TODAY && styles.activeTimeFilterPill
-            ]}
-            onPress={() => handleTimeFilterChange(TimeFilterType.TODAY)}
-          >
-            <MaterialIcons 
-              name="today" 
-              size={14} 
-              color={filterCriteria.specialFilters.timeFilter === TimeFilterType.TODAY ? '#FFFFFF' : '#666666'} 
-              style={styles.timeFilterIcon}
-            />
-            <Text style={[
-              styles.timeFilterText,
-              filterCriteria.specialFilters.timeFilter === TimeFilterType.TODAY && styles.activeTimeFilterText
-            ]}>
-              Today ({timeFilterCounts[TimeFilterType.TODAY]})
-            </Text>
-          </TouchableOpacity>
-          
-          <TouchableOpacity
-            style={[
-              styles.timeFilterPill,
-              styles.timeFilterPillUpcoming,
-              filterCriteria.specialFilters.timeFilter === TimeFilterType.UPCOMING && styles.activeTimeFilterPill
-            ]}
-            onPress={() => handleTimeFilterChange(TimeFilterType.UPCOMING)}
-          >
-            <MaterialIcons 
-              name="event" 
-              size={14} 
-              color={filterCriteria.specialFilters.timeFilter === TimeFilterType.UPCOMING ? '#FFFFFF' : '#666666'} 
-              style={styles.timeFilterIcon}
-            />
-            <Text style={[
-              styles.timeFilterText,
-              filterCriteria.specialFilters.timeFilter === TimeFilterType.UPCOMING && styles.activeTimeFilterText
-            ]}>
-              Upcoming ({timeFilterCounts[TimeFilterType.UPCOMING]})
-            </Text>
-          </TouchableOpacity>
+            <View style={styles.sectionHeaderContainer}>
+              <Text style={styles.filterSectionTitle}>When</Text>
+              <TouchableOpacity 
+                onPress={() => handleTimeFilterChange(TimeFilterType.ALL)}
+                style={styles.filterClearButton}
+              >
+                <Text style={styles.clearButtonText}>
+                  {filterCriteria.specialFilters.timeFilter === TimeFilterType.ALL ? "Showing All" : "Show All"}
+                </Text>
+              </TouchableOpacity>
+            </View>
+            
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              style={styles.timeFilterContainer}
+              contentContainerStyle={styles.timeFilterContentContainer}
+            >
+              <TouchableOpacity
+                style={[
+                  styles.timeFilterPill,
+                  styles.timeFilterPillNow,
+                  filterCriteria.specialFilters.timeFilter === TimeFilterType.NOW && styles.activeTimeFilterPill
+                ]}
+                onPress={() => handleTimeFilterChange(TimeFilterType.NOW)}
+              >
+                <MaterialIcons 
+                  name="access-time" 
+                  size={14} 
+                  color={filterCriteria.specialFilters.timeFilter === TimeFilterType.NOW ? '#FFFFFF' : '#666666'} 
+                  style={styles.timeFilterIcon}
+                />
+                <Text style={[
+                  styles.timeFilterText,
+                  filterCriteria.specialFilters.timeFilter === TimeFilterType.NOW && styles.activeTimeFilterText
+                ]}>
+                  Happening Now ({timeFilterCounts[TimeFilterType.NOW]})
+                </Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity
+                style={[
+                  styles.timeFilterPill,
+                  styles.timeFilterPillToday,
+                  filterCriteria.specialFilters.timeFilter === TimeFilterType.TODAY && styles.activeTimeFilterPill
+                ]}
+                onPress={() => handleTimeFilterChange(TimeFilterType.TODAY)}
+              >
+                <MaterialIcons 
+                  name="today" 
+                  size={14} 
+                  color={filterCriteria.specialFilters.timeFilter === TimeFilterType.TODAY ? '#FFFFFF' : '#666666'} 
+                  style={styles.timeFilterIcon}
+                />
+                <Text style={[
+                  styles.timeFilterText,
+                  filterCriteria.specialFilters.timeFilter === TimeFilterType.TODAY && styles.activeTimeFilterText
+                ]}>
+                  Today ({timeFilterCounts[TimeFilterType.TODAY]})
+                </Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity
+                style={[
+                  styles.timeFilterPill,
+                  styles.timeFilterPillTomorrow,
+                  filterCriteria.specialFilters.timeFilter === TimeFilterType.TOMORROW && styles.activeTimeFilterPill
+                ]}
+                onPress={() => handleTimeFilterChange(TimeFilterType.TOMORROW)}
+              >
+                <MaterialIcons 
+                  name="wb-sunny" 
+                  size={14} 
+                  color={filterCriteria.specialFilters.timeFilter === TimeFilterType.TOMORROW ? '#FFFFFF' : '#666666'} 
+                  style={styles.timeFilterIcon}
+                />
+                <Text style={[
+                  styles.timeFilterText,
+                  filterCriteria.specialFilters.timeFilter === TimeFilterType.TOMORROW && styles.activeTimeFilterText
+                ]}>
+                  Tomorrow ({timeFilterCounts[TimeFilterType.TOMORROW]})
+                </Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity
+                style={[
+                  styles.timeFilterPill,
+                  styles.timeFilterPillUpcoming,
+                  filterCriteria.specialFilters.timeFilter === TimeFilterType.UPCOMING && styles.activeTimeFilterPill
+                ]}
+                onPress={() => handleTimeFilterChange(TimeFilterType.UPCOMING)}
+              >
+                <MaterialIcons 
+                  name="event" 
+                  size={14} 
+                  color={filterCriteria.specialFilters.timeFilter === TimeFilterType.UPCOMING ? '#FFFFFF' : '#666666'} 
+                  style={styles.timeFilterIcon}
+                />
+                <Text style={[
+                  styles.timeFilterText,
+                  filterCriteria.specialFilters.timeFilter === TimeFilterType.UPCOMING && styles.activeTimeFilterText
+                ]}>
+                  Upcoming ({timeFilterCounts[TimeFilterType.UPCOMING]})
+                </Text>
+              </TouchableOpacity>
+            </ScrollView>
+            
+            <View style={styles.filterDivider} />
+            <View style={styles.sectionHeaderContainer}>
+              <Text style={styles.filterSectionTitle}>Category</Text>
+              <TouchableOpacity 
+                onPress={handleCategoryClearFilter}
+                style={styles.filterClearButton}
+              >
+                <Text style={styles.clearButtonText}>
+                  {filterCriteria.specialFilters.category === undefined ? "Showing All" : "Show All"}
+                </Text>
+              </TouchableOpacity>
+            </View>
+            
+            {(() => {
+              const sortedCounts = sortCategoriesByPriorityAndCount(categoryFilterCounts, userInterests);
+              
+              return (
+                <CategoryFilterOptions 
+                  type="special" 
+                  counts={sortedCounts}
+                  onCategorySelect={handleCategorySelect}
+                />
+              );
+            })()}
           </View>
-        
-        <View style={styles.filterDivider} />
-        <View style={styles.sectionHeaderContainer}>
-          <Text style={styles.filterSectionTitle}>Category</Text>
-          <TouchableOpacity 
-            onPress={handleCategoryClearFilter}
-            style={styles.filterClearButton}
-          >
-            <Text style={styles.clearButtonText}>
-              {filterCriteria.specialFilters.category === undefined ? "Showing All" : "Show All"}
-            </Text>
-          </TouchableOpacity>
-        </View>
-        
-        {(() => {
-          const sortedCounts = sortCategoriesByPriorityAndCount(categoryFilterCounts, userInterests);
-          
-          return (
-            <CategoryFilterOptions 
-              type="special" 
-              counts={sortedCounts}
-              onCategorySelect={handleCategorySelect}
-            />
-          );
-        })()}
-        </View>
+        </Animated.View>
       </Animated.View>
       
       {/* User preferences banner */}
@@ -1647,40 +2570,53 @@ function SpecialsScreen() {
       <FlatList
         ref={flatListRef}
         data={specialsWithAds}
-        keyExtractor={(item, index) => 
-          item.type === 'special' ? `special-${item.data.id}` : `ad-${index}`
-        }
+        keyExtractor={(item, index) => {
+          if (item.type === 'special') return `special-${item.data.id}`;
+          if (item.type === 'ad') return `ad-${index}`;
+          if (item.type === 'divider') return `divider-${index}`;
+          return `item-${index}`;
+        }}
         onScroll={handleScroll}
         scrollEventThrottle={16}
         contentContainerStyle={[
           styles.listContent,
           { 
-            paddingTop: Math.max(headerHeight, 120) + (showBanner ? 35 : 0)
+            paddingTop: Math.max(headerHeight, 120) + (showBanner ? 35 : 0) + 8 // Added +8 for breathing room
           }
         ]}
-        renderItem={({ item }) => {
+        renderItem={({ item, index }) => {
+          if (item.type === 'divider') {
+            return <DividerComponent message={item.data.message} count={item.data.count} />;
+          }
+
           if (item.type === 'ad') {
             return (
               <View style={styles.adContainer}>
-                <NativeAdComponent 
-                  nativeAd={item.data.ad} 
+                <NativeAdComponent
+                  nativeAd={item.data.ad}
                   loading={item.data.loading}
                 />
               </View>
             );
-          } else {
-            return (
-              <EventListItem 
-                event={item.data} 
-                onPress={() => handleEventPress(item.data)}
-                onImagePress={handleImagePress}
-                isSaved={isEventSaved(item.data)}
-                matchesUserInterests={matchesUserInterests(item.data)}
-                isGuest={isGuest}
-                analytics={analytics} // Pass analytics hook directly
-              />
-            );
           }
+
+          // item.type === 'special'
+          // Find the index of this special in the original specials array to determine if it's first
+          const specialIndex = specialsWithAds.slice(0, index + 1).filter(i => i.type === 'special').length - 1;
+          const isFirstSpecialItem = specialIndex === 0;
+
+          return (
+            <EventListItem
+              event={getUpdatedEvent(item.data.id) || item.data}
+              onPress={() => handleEventPress(getUpdatedEvent(item.data.id) || item.data)}
+              onImagePress={handleImagePress}
+              isSaved={isEventSaved(item.data)}
+              matchesUserInterests={matchesUserInterests(item.data)}
+              isGuest={isGuest}
+              analytics={analytics} // Pass analytics hook directly
+              isFirstItem={isFirstSpecialItem} // NEW: Only first special gets tutorial
+            />
+          );
         }}
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
@@ -1690,6 +2626,9 @@ function SpecialsScreen() {
           </View>
         }
         onEndReached={() => {
+          // Load more outside-viewport specials
+          handleLoadMoreOutsideViewport();
+
           // Track specials list end reached
           analytics.trackUserAction('specials_list_end_reached', {
             screen: 'specials',
@@ -1697,7 +2636,7 @@ function SpecialsScreen() {
             scroll_engagement: 'high'
           });
         }}
-        onEndReachedThreshold={0.1}
+        onEndReachedThreshold={0.5}
       />
       
       {/* Special details bottom sheet */}
@@ -1741,13 +2680,37 @@ function SpecialsScreen() {
         </Modal>
       )}
 
+      {/* Back to top button */}
+      {showBackToTop && (
+        <Animated.View
+          style={[
+            styles.backToTopButton,
+            {
+              opacity: backToTopOpacity,
+            }
+          ]}
+        >
+          <TouchableOpacity
+            style={styles.backToTopButtonInner}
+            onPress={handleBackToTop}
+            activeOpacity={0.8}
+          >
+            <MaterialIcons 
+              name="keyboard-double-arrow-up" 
+              size={24} 
+              color="#FFFFFF" 
+            />
+          </TouchableOpacity>
+        </Animated.View>
+      )}
+
       {/* Guest limitation registration prompt */}
       {isGuest && <RegistrationPrompt />}
     </View>
   );
 }
 
-// Styles (same as events.tsx)
+// Styles - Updated with hero image layout
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -1796,8 +2759,7 @@ const styles = StyleSheet.create({
   adContainer: {
     backgroundColor: '#FFFFFF',
     paddingBottom: 12,
-    borderBottomWidth: 6,
-    borderBottomColor: '#E8E8E8',
+    marginBottom: 12, // Changed from borderBottomWidth to margin
   },
   preferencesBar: {
     position: 'absolute',
@@ -1852,8 +2814,11 @@ const styles = StyleSheet.create({
   timeFilterContainer: {
     paddingHorizontal: 8,
     paddingBottom: 4,
+  },
+  timeFilterContentContainer: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingRight: 8,
   },
   timeFilterPill: {
     backgroundColor: '#FFFFFF',
@@ -1870,16 +2835,18 @@ const styles = StyleSheet.create({
     elevation: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
   },
   timeFilterPillNow: {
-    flex: 1.4,
+    marginRight: 6,
   },
   timeFilterPillToday: {
-    flex: 0.8,
+    marginRight: 6,
+  },
+  timeFilterPillTomorrow: {
+    marginRight: 6,
   },
   timeFilterPillUpcoming: {
-    flex: 1.2,
+    marginRight: 6,
   },
   timeFilterIcon: {
     marginRight: 4,
@@ -1901,14 +2868,25 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontWeight: '600',
   },
+  // Updated card styles - Hero image layout
   eventCard: {
     backgroundColor: '#FFFFFF',
-    marginBottom: 0,
-    paddingBottom: 12,
+    paddingBottom: 0,
     overflow: 'hidden',
     position: 'relative',
-    borderBottomWidth: 6,
-    borderBottomColor: '#E8E8E8',
+    // NEW: Rounded border around each card
+    borderRadius: 16,
+    borderWidth: 2,
+    borderColor: '#E8E8E8',
+    marginHorizontal: 2, // Add side margins so border is visible
+    marginRight: 4,
+    marginBottom: 4, // Replace bottom border with margin
+    // NEW: Add subtle shadow to match hero image effect
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
+    elevation: 3,
   },
   nowEventCard: {
     borderLeftColor: '#34A853',
@@ -1989,29 +2967,122 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     marginLeft: 4,
   },
-  cardTopSection: {
-    flexDirection: 'row',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    paddingBottom: 8,
-  },
-  contentSection: {
-    width: '65%',
-    paddingRight: 8,
-  },
-  imageSection: {
-    width: '35%',
-    height: 'auto',
-    position: 'relative',
-  },
-  cardImage: {
+  // NEW: Hero Image Section (replaces old cardTopSection)
+  heroImageSection: {
     width: '100%',
-    height: 100,
-    borderRadius: 8,
-    backgroundColor: '#F0F0F0',
+    position: 'relative', // For proper badge positioning
+    paddingHorizontal: 0, // Add horizontal padding so image isn't full width
+    paddingBottom: 16, // Add space below image
+    // Create strong "window frame" shadow effect
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 8,
   },
+  // Add new style for image container background
+  heroImageContainer: {
+    backgroundColor: '#F8F8F8', // Subtle background behind the image
+    borderRadius: 16, // Slightly larger radius than image
+    padding: 0, // Creates visible background border
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  heroImage: {
+    width: '100%',
+    height: 300, // Reduced from 200px to be less imposing
+    backgroundColor: '#F0F0F0',
+    borderRadius: 12, // Add rounded corners like other cards
+    // Strong border to create "photo frame" effect
+    borderWidth: 3,
+    borderColor: '#FFFFFF',
+    // Enhanced shadow for 3D "pop out" effect
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  heroEngagementOverlay: {
+    position: 'absolute',
+    bottom: 16,
+    right: 16,
+    flexDirection: 'row',
+    backgroundColor: 'transparent',
+    zIndex: 12,
+  },
+  heroEngagementBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    minHeight: 32,
+    minWidth: 34,
+    paddingVertical: 3,
+    paddingHorizontal: 6,
+    borderRadius: 18,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: 'rgba(0, 0, 0, 0.08)',
+    justifyContent: 'center',
+  },
+  heroEngagementBadgeSpacing: {
+    marginLeft: 3,
+  },
+  heroEngagementBadgeText: {
+    marginLeft: 4,
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#333333',
+  },
+  // Venue profile picture overlay - top left of hero image
+  venueProfileOverlay: {
+    position: 'absolute',
+    top: 12,
+    left: 12,
+    zIndex: 10,
+  },
+  venueProfileImageContainer: {
+    position: 'relative',
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#FFFFFF',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  venueProfileImageSmall: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+  },
+  venueFavoriteButtonOverlay: {
+    position: 'absolute',
+    bottom: -4,
+    right: -4,
+    zIndex: 11,
+  },
+  venueFavoriteButtonSmall: {
+    padding: 2,
+    borderRadius: 10,
+    backgroundColor: 'rgba(255, 255, 255, 0.95)',
+  },
+  // Content Section - Now below the hero image (updated from old contentSection)
+  contentSection: {
+    paddingHorizontal: 16, // Horizontal padding for edge spacing
+    paddingVertical: 12,
+    paddingTop: 4, // Reduced since we have spacing from heroImageSection
+    paddingBottom: 8, // Reduced to closer connect with description
+  },
+  // Added new description section that takes full width
   descriptionSection: {
-    paddingHorizontal: 16,
+    paddingHorizontal: 16, // Match horizontal padding with top section
     paddingBottom: 8,
   },
   cardTitle: {
@@ -2028,17 +3099,30 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 2,
   },
+  venueRowInteractive: {
+    paddingVertical: 2,
+    paddingHorizontal: 2,
+    borderRadius: 6,
+  },
   venueText: {
     fontSize: 13,
     color: '#666666',
     marginLeft: 4,
-    flex: 1,
+    marginRight: 6,
+    flexShrink: 1,
+    flexGrow: 0,
+  },
+  venueTextActive: {
+    color: BRAND.primaryDark,
   },
   addressText: {
     fontSize: 12,
     color: '#999999',
     marginLeft: 18,
     marginTop: 2,
+  },
+  venueChevron: {
+    marginLeft: 2,
   },
   dateTimeRow: {
     flexDirection: 'row',
@@ -2051,21 +3135,7 @@ const styles = StyleSheet.create({
     marginLeft: 4,
     flex: 1,
   },
-  engagementRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  metricItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginRight: 12,
-  },
-  metricText: {
-    fontSize: 12,
-    color: '#666666',
-    marginLeft: 3,
-  },
+  // (remove these three style entries entirely—no replacement needed)
   cardDescription: {
     fontSize: 14,
     color: '#555555',
@@ -2251,7 +3321,59 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#333333',
     marginBottom: 10,
-  }
+  },
+  backToTopButton: {
+    position: 'absolute',
+    bottom: 15, // Positioned above the tab bar
+    alignSelf: 'center',
+    zIndex: 1000,
+  },
+  backToTopButtonInner: {
+    backgroundColor: 'rgba(30, 144, 255, 0.9)', // Semi-transparent
+    borderWidth: 2,
+    borderColor: 'rgba(255, 255, 255, 0.3)',
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  viewportDivider: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginVertical: 24,
+    paddingHorizontal: 16,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: '#E0E0E0',
+  },
+  dividerTextContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    gap: 6,
+  },
+  dividerText: {
+    fontSize: 14,
+    color: '#999',
+    fontWeight: '500',
+  },
+    heroEngagementBadgeLiked: {
+    borderColor: BRAND.primary,
+    backgroundColor: '#EBF4FF',
+  },
+  heroEngagementBadgeInterested: {
+    borderColor: '#34A853',
+    backgroundColor: '#E8F5E9',
+  },
+
 });
 
 export default SpecialsScreen;

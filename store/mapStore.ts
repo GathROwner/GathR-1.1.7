@@ -1,14 +1,68 @@
 /**
  * Map store for the GathR application
  * Implements state management for map functionality, event data, and filtering
- * Uses discrete zoom thresholds for predictable clustering behavior
- */
+ /* ─────────────────────────────────────────────────────────────────────────────
+Map clustering architecture (banded thresholds + cached results)
+Purpose
+- Provide fast, predictable clustering that updates as the camera zoom changes,
+  without reclustering on every minor camera tick.
+
+Core concepts
+- zoomLevel (store): single source of truth for current map zoom.
+  → Updated by map screen (onCameraChanged) via setZoomLevel(zoom).
+  → Any failure to update zoomLevel will “freeze” clusters at startup band.
+- ZOOM_THRESHOLDS (number[]): ordered zoom breakpoints (e.g., [10, 12, 14, 16, 18]).
+  → We compute a thresholdIndex from zoomLevel (getThresholdIndexForZoom).
+  → Cluster params (radius, maxZoom, etc.) are chosen per band.
+- Caching: lastClusters + lastThresholdIndex (+ lastFilterSignature).
+  → If the current thresholdIndex and filters are unchanged, we can reuse lastClusters.
+  → This avoids expensive reclusters on tiny camera movements.
+
+Update triggers (high-level)
+- setZoomLevel(zoom): updates zoomLevel and immediately calls generateClusters(zoom).
+- generateClusters(zoom): picks thresholdIndex from zoom, compares with lastThresholdIndex,
+  checks filters, and either returns cached clusters or recomputes via clusterVenues(...).
+
+Performance guards (what to tune)
+- MIN_ZOOM_STEP_FOR_RECLUSTER (≈ 0.05–0.15): optional extra guard to recluster within a band
+  only when the zoom has moved meaningfully since last recompute. If set too high, UX feels sticky;
+  if set too low, extra work.
+- ZOOM_THRESHOLDS spacing: tighter bands → more frequent recomputes; looser bands → stickier feel.
+- CLUSTER_RADIUS_PX or per-band radius: larger radius merges more points (fewer clusters).
+
+Common pitfalls (read before changing)
+- ❗ If the map screen stops calling setZoomLevel(zoom) on camera changes, clusters will never update.
+- ❗ An overly aggressive early-return like:
+    if (!thresholdChanged && !filtersChanged) return lastClusters;
+  combined with no “within-band” zoom guard can make clustering feel frozen.
+- ❗ Don’t couple generateClusters to UI timing/debouncers that can suppress needed updates.
+
+Debugging (quick toggles)
+- DEBUG_CLUSTERING: when true, log zoom, thresholdIndex, cache hits/misses.
+  Example logs:
+    [Clustering] zoom=13.06 idx=2 reused=true filtersSame=true
+    [Clustering] zoom=14.02 idx=3 recompute radius=40px points=3,412
+
+Extension ideas (optional)
+- Continuous radius: derive radius from meters-per-pixel(zoom) instead of bands for smoother split/merge.
+- Spatial windowing: only recluster for tiles intersecting the viewport to reduce work on large datasets.
+
+Integration contract (map.tsx)
+- Map screen must call setZoomLevel(zoom) on meaningful camera deltas (≈ ≥ 0.06) to keep clusters in sync.
+- Filter changes should invalidate cache (update lastFilterSignature) and force a recompute.
+
+Last validated: 2025-09-04 • Owner: Map data/UX
+──────────────────────────────────────────────────────────────────────────── */
+
+
 
 import { create } from 'zustand';
 import { Event, Venue, Cluster, TimeStatus, InterestLevel } from '../types/events';
 import { FilterCriteria, TimeFilterType, TypeFilterCriteria } from '../types/filter';
 import { MapState } from '../types/store';
 import * as Location from 'expo-location';
+import Supercluster from 'supercluster';
+
 
 // Import centralized date utilities
 import { 
@@ -21,6 +75,22 @@ import {
 // Import default filter criteria
 import { DEFAULT_FILTER_CRITERIA } from '../types/filter';
 
+// Import cluster interaction tracking
+import { getHasNewContent } from './clusterInteractionStore';
+
+// Import unified events API (Firestore default, legacy fallback optional)
+import { dedupeEvents, fetchMinimalEvents } from '../lib/api/events';
+import {
+  areEventIdsEquivalent,
+  fetchFirestoreEventDetailsBatch,
+  toAppEventId,
+} from '../lib/api/firestoreEvents';
+import {
+  ENABLE_LEGACY_DETAILS_FALLBACK,
+  LEGACY_EVENTS_API_BASE,
+  USE_FIRESTORE_EVENTS,
+} from '../lib/config/backend';
+
 // Define zoom threshold bands and their corresponding clustering radii
 export interface ZoomThreshold {
   name: string;        // Human-readable name for the threshold
@@ -29,7 +99,25 @@ export interface ZoomThreshold {
   radius: number;      // Clustering radius in meters for this threshold
 }
 
-export const ZOOM_THRESHOLDS: ZoomThreshold[] = [
+ // ───── DEBUG: Map load instrumentation toggles & counters ─────
+ const DEBUG_MAP_LOAD = true;
+ let __ML_fetchCount = 0;
+ let __ML_lastFetchMs = 0;
+ let __ML_lastEventsBytes = 0;
+ let __ML_lastSpecialsBytes = 0;
+ let __ML_lastEventsCount = 0;
+ let __ML_lastSpecialsCount = 0;
+
+ let __ML_lastFilterMs = 0;
+ let __ML_lastFilterIn = 0;
+ let __ML_lastFilterOut = 0;
+
+ let __ML_lastClusterMs = 0;
+ let __ML_lastVenueCount = 0;
+ let __ML_lastClusterCount = 0;
+
+ // ────────────────────────────────────────────────────────────────
+ export const ZOOM_THRESHOLDS: ZoomThreshold[] = [
   { name: "Ultra-Close", minZoom: 18, maxZoom: 22.99, radius: 10 },     // 10m radius - Individual venues, even adjacent buildings
   { name: "Street",      minZoom: 15, maxZoom: 17.99, radius: 50 },     // 50m radius - Street section level
   { name: "Neighborhood", minZoom: 13, maxZoom: 14.99, radius: 200 },   // 200m radius - Neighborhood level
@@ -43,6 +131,11 @@ export const ZOOM_THRESHOLDS: ZoomThreshold[] = [
 let lastClusters: Cluster[] = [];         // Last generated clusters for potential reuse
 let currentThresholdIndex = 2;            // Default to Neighborhood level (index 2)
 let filtersChanged = true;                // Track if filters have changed
+
+// Supercluster caches
+let __scIndex: any | null = null;
+let __venueByKey: Map<string, Venue> = new Map();
+
 
 /**
  * Find the appropriate threshold index for a given zoom level
@@ -163,20 +256,30 @@ const doesEventMatchTypeFilters = (event: Event, typeFilters: TypeFilterCriteria
     // Continue to other filters
   } else if (typeFilters.timeFilter === TimeFilterType.NOW) {
     const isNow = isEventNow(
-      event.startDate, 
-      event.startTime, 
-      event.endDate || event.startDate, 
+      event.startDate,
+      event.startTime,
+      event.endDate || event.startDate,
       event.endTime || ''
     );
     if (!isNow) return false;
   } else if (typeFilters.timeFilter === TimeFilterType.TODAY) {
     const isToday = isEventHappeningToday(event);
     if (!isToday) return false;
+  } else if (typeFilters.timeFilter === TimeFilterType.TOMORROW) {
+    // Check if event starts tomorrow (local day)
+    const eventDate = new Date(`${event.startDate}T00:00:00`);
+    const tomorrow = new Date();
+    tomorrow.setHours(0, 0, 0, 0);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+
+    const isTomorrow = eventDate.getTime() === tomorrow.getTime();
+    if (!isTomorrow) return false;
   } else if (typeFilters.timeFilter === TimeFilterType.UPCOMING) {
     // UPCOMING should only show future events (not now or today)
     const timeStatus = getEventTimeStatus(event);
     if (timeStatus !== 'future') return false;
   }
+
   
   // Check category filter
   if (typeFilters.category && 
@@ -323,24 +426,33 @@ const calculateTimeFilterCounts = (
   });
   
   // Calculate counts for each time filter
-  const counts = {
-    [TimeFilterType.ALL]: baseEvents.length,
-    [TimeFilterType.NOW]: baseEvents.filter(event => 
-      isEventNow(
-        event.startDate, 
-        event.startTime, 
-        event.endDate || event.startDate, 
-        event.endTime || ''
-      )
-    ).length,
-    [TimeFilterType.TODAY]: baseEvents.filter(event => 
-      isEventHappeningToday(event)
-    ).length,
-    [TimeFilterType.UPCOMING]: baseEvents.filter(event => {
-      const timeStatus = getEventTimeStatus(event);
-      return timeStatus === 'future';
-    }).length
-  };
+// Calculate counts for each time filter
+const counts = {
+  [TimeFilterType.ALL]: baseEvents.length,
+  [TimeFilterType.NOW]: baseEvents.filter(event =>
+    isEventNow(
+      event.startDate,
+      event.startTime,
+      event.endDate || event.startDate,
+      event.endTime || ''
+    )
+  ).length,
+  [TimeFilterType.TODAY]: baseEvents.filter(event =>
+    isEventHappeningToday(event)
+  ).length,
+  [TimeFilterType.TOMORROW]: baseEvents.filter(event => {
+    const eventDate = new Date(`${event.startDate}T00:00:00`);
+    const tomorrow = new Date();
+    tomorrow.setHours(0, 0, 0, 0);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    return eventDate.getTime() === tomorrow.getTime();
+  }).length,
+  [TimeFilterType.UPCOMING]: baseEvents.filter(event => {
+    const timeStatus = getEventTimeStatus(event);
+    return timeStatus === 'future';
+  }).length
+};
+
   
   return counts;
 };
@@ -382,21 +494,31 @@ const calculateCategoryFilterCounts = (
         : currentCriteria.specialFilters;
       
       // Apply time filter logic
-      if (typeFilters.timeFilter === TimeFilterType.NOW) {
-        const isNow = isEventNow(
-          event.startDate, 
-          event.startTime, 
-          event.endDate || event.startDate, 
-          event.endTime || ''
-        );
-        if (!isNow) return false;
-      } else if (typeFilters.timeFilter === TimeFilterType.TODAY) {
-        const isToday = isEventHappeningToday(event);
-        if (!isToday) return false;
-      } else if (typeFilters.timeFilter === TimeFilterType.UPCOMING) {
-        const timeStatus = getEventTimeStatus(event);
-        if (timeStatus !== 'future') return false;
-      }
+// Apply time filter logic
+if (typeFilters.timeFilter === TimeFilterType.NOW) {
+  const isNow = isEventNow(
+    event.startDate,
+    event.startTime,
+    event.endDate || event.startDate,
+    event.endTime || ''
+  );
+  if (!isNow) return false;
+} else if (typeFilters.timeFilter === TimeFilterType.TODAY) {
+  const isToday = isEventHappeningToday(event);
+  if (!isToday) return false;
+} else if (typeFilters.timeFilter === TimeFilterType.TOMORROW) {
+  const eventDate = new Date(`${event.startDate}T00:00:00`);
+  const tomorrow = new Date();
+  tomorrow.setHours(0, 0, 0, 0);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+
+  const isTomorrow = eventDate.getTime() === tomorrow.getTime();
+  if (!isTomorrow) return false;
+} else if (typeFilters.timeFilter === TimeFilterType.UPCOMING) {
+  const timeStatus = getEventTimeStatus(event);
+  if (timeStatus !== 'future') return false;
+}
+
       // TimeFilterType.ALL requires no additional filtering
       
       // Apply search filter if active
@@ -421,215 +543,153 @@ const calculateCategoryFilterCounts = (
 
 /**
  * Cluster venues based on geographic proximity using discrete zoom thresholds
+ * Optimized with spatial grid indexing to reduce complexity from O(n²) to O(n)
  * Returns an array of Cluster objects
  */
 const clusterVenues = (venues: Venue[], zoom: number = 12): Cluster[] => {
-  // Return empty array for empty venues
   if (venues.length === 0) return [];
-  
-  // Determine the appropriate threshold for this zoom level
-  const thresholdIndex = getThresholdIndexForZoom(zoom);
-  const threshold = ZOOM_THRESHOLDS[thresholdIndex];
-  
-  console.log(`Current zoom: ${zoom.toFixed(1)}, threshold: ${threshold.name} (${threshold.radius}m radius)`);
-  
-  // Check if we've crossed a threshold boundary
-  const thresholdChanged = thresholdIndex !== currentThresholdIndex;
-  
-  // If threshold hasn't changed and filters haven't changed, reuse existing clusters
-  if (!thresholdChanged && !filtersChanged && lastClusters.length > 0) {
-    console.log(`No threshold change, reusing ${lastClusters.length} existing clusters`);
-    return lastClusters;
+
+  // Rebuild the index when filters/data changed or index is missing
+  if (!__scIndex || filtersChanged) {
+    __venueByKey = new Map(venues.map(v => [v.locationKey, v]));
+
+    const points = venues.map(v => ({
+      type: 'Feature' as const,
+      properties: { vid: v.locationKey },
+      geometry: { type: 'Point' as const, coordinates: [v.longitude, v.latitude] }
+    }));
+
+    __scIndex = new Supercluster({
+      minZoom: 0,
+      maxZoom: 16,
+      radius: 28,          // px — tune to taste, ~40–80 common
+      extent: 256,          // default; safe for RN
+      nodeSize: 16        // Smaller tree nodes
+    }).load(points);
   }
-  
-  // If we get here, we need to recalculate clusters
-  if (thresholdChanged) {
-    console.log(`Threshold changed from ${ZOOM_THRESHOLDS[currentThresholdIndex].name} to ${threshold.name} - reclustering`);
-    currentThresholdIndex = thresholdIndex;
-  } else if (filtersChanged) {
-    console.log(`Filters changed - reclustering`);
-  }
-  
-  // Get the clustering radius for the current threshold
-  const radius = threshold.radius;
-  
-  // Sort venues for consistent clustering
-  const sortedVenues = [...venues].sort((a, b) => {
-    if (a.latitude !== b.latitude) return a.latitude - b.latitude;
-    return a.longitude - b.longitude;
-  });
-  
-  // Distance cache for performance
-  const distanceCache = new Map<string, number>();
-  
-  // Function to get distance with caching
-  const getDistance = (venueA: Venue, venueB: Venue): number => {
-    if (venueA === venueB) return 0;
-    
-    const keyA = venueA.locationKey;
-    const keyB = venueB.locationKey;
-    const cacheKey = keyA < keyB ? `${keyA}|${keyB}` : `${keyB}|${keyA}`;
-    
-    if (distanceCache.has(cacheKey)) {
-      return distanceCache.get(cacheKey)!;
-    }
-    
-    const distance = calculateDistance(
-      venueA.latitude, venueA.longitude,
-      venueB.latitude, venueB.longitude
-    );
-    
-    distanceCache.set(cacheKey, distance);
-    return distance;
-  };
-  
-  // Keep track of venues we've already processed
-  const processedVenues = new Set<Venue>();
+
+  // Query clusters for the current zoom; world bbox (minimal change)
+  const z = Math.max(0, Math.min(22, Math.floor(zoom)));
+  const features = __scIndex.getClusters([-180, -85, 180, 85], z);
+
   const clusters: Cluster[] = [];
-  
-  // Process each venue
-  for (const venue of sortedVenues) {
-    if (processedVenues.has(venue)) continue;
-    
-    // Start a new cluster with this venue
-    const clusterVenues: Venue[] = [venue];
-    processedVenues.add(venue);
-    
-    // Find nearby venues within radius
-    for (const otherVenue of sortedVenues) {
-      if (venue === otherVenue || processedVenues.has(otherVenue)) continue;
-      
-      const distance = getDistance(venue, otherVenue);
-      
-      if (distance <= radius) {
-        clusterVenues.push(otherVenue);
-        processedVenues.add(otherVenue);
-      }
-    }
-    
-    // Calculate cluster properties
-    const clusterId = generateClusterId(clusterVenues);
-    const allEvents = clusterVenues.flatMap(venue => venue.events);
-    const eventCount = allEvents.filter(event => event.type === 'event').length;
-    const specialCount = allEvents.filter(event => event.type === 'special').length;
-    const categories = Array.from(new Set(allEvents.map(event => event.category)));
-    const timeStatus = determineClusterTimeStatus(clusterVenues);
-    const interestLevel = calculateInterestLevel(clusterVenues);
-    const isBroadcasting = timeStatus === 'now';
-    
-    // Add cluster to results
-    clusters.push({
-      id: clusterId,
-      clusterType: clusterVenues.length === 1 ? 'single' : 'multi',
-      venues: clusterVenues,
-      timeStatus,
-      interestLevel,
-      isBroadcasting,
-      eventCount,
-      specialCount,
-      categories
-    });
-  }
-  
-  // Verify all venues are accounted for
-  if (processedVenues.size !== venues.length) {
-    console.warn(`Not all venues assigned to clusters: ${processedVenues.size}/${venues.length}`);
-    
-    // Find and rescue unassigned venues
-    const unassignedVenues = venues.filter(venue => !processedVenues.has(venue));
-    
-    for (const orphanVenue of unassignedVenues) {
-      // Find the nearest cluster
-      let nearestClusterIndex = -1;
-      let nearestDistance = Infinity;
-      
-      for (let i = 0; i < clusters.length; i++) {
-        for (const clusterVenue of clusters[i].venues) {
-          const distance = getDistance(orphanVenue, clusterVenue);
-          if (distance < nearestDistance) {
-            nearestDistance = distance;
-            nearestClusterIndex = i;
-          }
-        }
-      }
-      
-      if (nearestClusterIndex !== -1) {
-        // Add orphaned venue to nearest cluster
-        const nearestCluster = clusters[nearestClusterIndex];
-        console.log(`Adding orphaned venue ${orphanVenue.venue} to nearest cluster`);
-        
-        // Update cluster with new venue
-        const updatedVenues = [...nearestCluster.venues, orphanVenue];
-        const allEvents = updatedVenues.flatMap(venue => venue.events);
-        const eventCount = allEvents.filter(event => event.type === 'event').length;
-        const specialCount = allEvents.filter(event => event.type === 'special').length;
-        const categories = Array.from(new Set(allEvents.map(event => event.category)));
-        const timeStatus = determineClusterTimeStatus(updatedVenues);
-        const interestLevel = calculateInterestLevel(updatedVenues);
-        const isBroadcasting = timeStatus === 'now';
-        
-        clusters[nearestClusterIndex] = {
-          ...nearestCluster,
-          venues: updatedVenues,
-          clusterType: updatedVenues.length === 1 ? 'single' : 'multi',
-          eventCount,
-          specialCount,
-          categories,
-          timeStatus,
-          interestLevel,
-          isBroadcasting
-        };
-      } else {
-        // Create a solo cluster as fallback
-        console.warn(`No nearest cluster found for orphaned venue ${orphanVenue.venue}`);
-        
-        const soloVenues = [orphanVenue];
-        const allEvents = orphanVenue.events;
-        const eventCount = allEvents.filter(event => event.type === 'event').length;
-        const specialCount = allEvents.filter(event => event.type === 'special').length;
-        const categories = Array.from(new Set(allEvents.map(event => event.category)));
-        const timeStatus = determineClusterTimeStatus(soloVenues);
-        const interestLevel = calculateInterestLevel(soloVenues);
-        const isBroadcasting = timeStatus === 'now';
-        
-        clusters.push({
-          id: generateClusterId(soloVenues),
-          clusterType: 'single',
-          venues: soloVenues,
-          timeStatus,
-          interestLevel,
-          isBroadcasting,
-          eventCount,
-          specialCount,
-          categories
-        });
-      }
+
+  for (const f of features) {
+    // Cluster feature
+    if ((f.properties as any).cluster) {
+      const cid = (f.properties as any).cluster_id;
+      // Pull all leaves to reconstruct venue list (keeps your Cluster shape intact)
+      const leaves = __scIndex.getLeaves(cid, Infinity);
+      const venuesInCluster = leaves
+        .map((leaf: any) => __venueByKey.get(leaf.properties.vid))
+        .filter(Boolean) as Venue[];
+
+      const allEvents = venuesInCluster.flatMap(v => v.events);
+      const eventCount = allEvents.filter(e => e.type === 'event').length;
+      const specialCount = allEvents.filter(e => e.type === 'special').length;
+      const categories = Array.from(new Set(allEvents.map(e => e.category)));
+      const timeStatus = determineClusterTimeStatus(venuesInCluster);
+      const interestLevel = calculateInterestLevel(venuesInCluster);
+      const isBroadcasting = timeStatus === 'now';
+
+      const clusterId = generateClusterId(venuesInCluster);
+
+      // For ALL clusters (single or multi-venue), check each venue individually
+      // Use ONLY venue.locationKey for stable tracking across zoom levels
+      // console.log(`[NewContent][Multi] Checking ${venuesInCluster.length} venue(s) in cluster ${clusterId}`);
+      const hasNewContent = venuesInCluster.some(venue => {
+        const venueEventIds = venue.events.map(e => e.id.toString());
+        const stableVenueId = venue.locationKey;
+        const venueHasNew = getHasNewContent(stableVenueId, venueEventIds);
+        // console.log(`  - Venue: ${venue.venue}, StableVenueID: ${stableVenueId}, EventIDs: [${venueEventIds.join(',')}], HasNew: ${venueHasNew}`);
+        return venueHasNew;
+      });
+      // console.log(`[NewContent][Multi] Final result: ${hasNewContent}`);
+
+      clusters.push({
+        id: clusterId,
+        clusterType: venuesInCluster.length === 1 ? 'single' : 'multi',
+        venues: venuesInCluster,
+        timeStatus,
+        interestLevel,
+        isBroadcasting,
+        eventCount,
+        specialCount,
+        categories,
+        hasNewContent
+      });
+    } else {
+      // Single point feature
+      const v = __venueByKey.get((f.properties as any).vid)!;
+      const allEvents = v.events;
+      const eventCount = allEvents.filter(e => e.type === 'event').length;
+      const specialCount = allEvents.filter(e => e.type === 'special').length;
+      const categories = Array.from(new Set(allEvents.map(e => e.category)));
+      const timeStatus = determineClusterTimeStatus([v]);
+      const interestLevel = calculateInterestLevel([v]);
+      const isBroadcasting = timeStatus === 'now';
+
+      const clusterId = generateClusterId([v]);
+      const allEventIds = allEvents.map(e => e.id.toString());
+      // Use ONLY venue.locationKey for stable tracking across zoom levels
+      const stableVenueId = v.locationKey;
+      const hasNewContent = getHasNewContent(stableVenueId, allEventIds);
+
+      // console.log(`[NewContent][Single] Venue: ${v.venue}, StableVenueID: ${stableVenueId}, EventIDs: [${allEventIds.join(',')}], HasNew: ${hasNewContent}`);
+
+      clusters.push({
+        id: clusterId,
+        clusterType: 'single',
+        venues: [v],
+        timeStatus,
+        interestLevel,
+        isBroadcasting,
+        eventCount,
+        specialCount,
+        categories,
+        hasNewContent
+      });
     }
   }
-  
-  // Reset filters changed flag
+
+  // Keep store semantics unchanged
   filtersChanged = false;
-  
-  // Store clusters for potential reuse
   lastClusters = clusters;
-  
-  console.log(`Generated ${clusters.length} clusters from ${venues.length} venues using ${threshold.name} threshold`);
+  currentThresholdIndex = getThresholdIndexForZoom(zoom);
+
+  console.log(`Generated ${clusters.length} clusters from ${venues.length} venues using supercluster @z=${z}`);
   return clusters;
 };
+
 
 /**
  * Create map store using Zustand
  */
 export const useMapStore = create<MapState>((set, get) => ({
   // Initial state
+  allEvents: [],  // Global cache populated by React Query
   events: [],
   specials: [],
   filteredEvents: [],
+
+  // Viewport-aware state
+  viewportEvents: [],
+  outsideViewportEvents: [],
+  onScreenEvents: [],  // Events visible on actual screen (filtered by screen coordinates)
+  viewportBbox: null,
+  viewportMetadata: {
+    wasCapped: false,
+    viewportCount: 0,
+    outsideViewportCount: 0,
+    lastFetchTimestamp: null,
+  },
+
   clusters: [],
   selectedVenue: null,
   selectedVenues: [],
   selectedCluster: null,
   isLoading: false,
+  lastFetchedAt: null,
   error: null,
   zoomLevel: 12,
   filterCriteria: DEFAULT_FILTER_CRITERIA,
@@ -647,6 +707,12 @@ export const useMapStore = create<MapState>((set, get) => ({
     specials: 0,
   },
   
+  // Close callout functionality
+  closeCalloutTrigger: 0,
+
+  // Lightbox state for event image viewing
+  selectedImageData: null,
+
   // Add the cluster visibility check utility
   shouldClusterBeVisible: shouldClusterBeVisible,
   
@@ -663,6 +729,23 @@ export const useMapStore = create<MapState>((set, get) => ({
     }));
   },
   
+  /**
+   * Trigger close callout when map tab is re-pressed
+   */
+  triggerCloseCallout: () => {
+    console.log(`[MapStore] Triggering close callout`);
+    set((state) => ({
+      closeCalloutTrigger: state.closeCalloutTrigger + 1,
+    }));
+  },
+
+  /**
+   * Set selected image data for lightbox
+   */
+  setSelectedImageData: (data) => {
+    set({ selectedImageData: data });
+  },
+
   /**
    * Set user location
    */
@@ -689,26 +772,66 @@ export const useMapStore = create<MapState>((set, get) => ({
    */
   setSearchQuery: (query: string) => {
     set({ searchQuery: query });
-    // Apply search filter to events
-    get().setTypeFilters('event', { search: query });
+
+    // Apply search to both types so lists & map stay consistent
+    get().setTypeFilters('event',   { search: query });
+    get().setTypeFilters('special', { search: query });
   },
-  
+
+  /**
+   * Set all events (global cache) - called by React Query prefetch
+   * This populates the global cache but does NOT affect viewport filtering
+   */
+  setAllEvents: (events) => {
+    // DEBUG: summarize address/coords in incoming batch
+    try {
+      const addrCount = Array.isArray(events) ? events.filter(e => e?.address && e.address !== 'N/A').length : 0;
+      const coordCount = Array.isArray(events) ? events.filter(e => e?.latitude != null && e?.longitude != null).length : 0;
+      console.log('[AddressFlow][setAllEvents] Global cache update', {
+        total: Array.isArray(events) ? events.length : -1,
+        withAddress: addrCount,
+        withCoords: coordCount,
+      });
+    } catch {}
+
+    // ONLY update the global cache - do NOT touch viewport data
+    set({
+      allEvents: events,
+    });
+  },
+
   /**
    * Set events and extract categories
+   * DEPRECATED: This function is being phased out in favor of viewport-based filtering
    */
-  setEvents: (events) => {
-    // Extract unique categories
-    const categories = Array.from(new Set(events.map(event => event.category)));
-    
-    set({ 
-      events,
-      categories
+ setEvents: (events) => {
+  // DEBUG: summarize address/coords in incoming batch
+  try {
+    const addrCount = Array.isArray(events) ? events.filter(e => e?.address && e.address !== 'N/A').length : 0;
+    const coordCount = Array.isArray(events) ? events.filter(e => e?.latitude != null && e?.longitude != null).length : 0;
+    console.log('[AddressFlow][setEvents]', {
+      total: Array.isArray(events) ? events.length : -1,
+      withAddress: addrCount,
+      withCoords: coordCount,
     });
-    
-    // Apply current filters and generate clusters
-    get().getFilteredEvents();
-    get().generateClusters();
-  },
+  } catch {}
+
+  const { filterCriteria, zoomLevel } = get();
+  
+  // Do ALL processing synchronously in one batch
+  const categories = Array.from(new Set(events.map(event => event.category)));
+  const filtered = filterEvents(events, filterCriteria);
+  const venues = groupEventsByVenue(filtered);
+  const clusters = clusterVenues(venues, zoomLevel);
+  
+  // Single store update - prevents render cascade
+  set({
+    events,
+    categories,
+    filteredEvents: filtered,
+    clusters
+  });
+},
   
   /**
    * Update filter criteria and apply filters
@@ -764,9 +887,61 @@ export const useMapStore = create<MapState>((set, get) => ({
   /**
    * Set selected cluster (for multi-venue support)
    */
-  selectCluster: (cluster) => {
-    set({ selectedCluster: cluster });
-  },
+selectCluster: (cluster) => {
+  set({ selectedCluster: cluster });
+  
+  if (cluster) {
+    const { events } = get();
+    const eventIds = cluster.venues.flatMap(venue => 
+      venue.events.map(event => event.id)
+    );
+    
+    // Debug: Check first few events for enhanced properties
+    console.log('CACHE DEBUG: Checking events for enhanced properties');
+    eventIds.slice(0, 3).forEach(id => {
+      const event = events.find(e => e.id === id);
+      if (event) {
+        console.log(`Event ${id}: has fullDescription=${!!(event as any).fullDescription}, has ticketLinkPosts=${!!(event as any).ticketLinkPosts}`);
+      }
+    });
+    
+const needsEnhancement = eventIds.some(id => {
+  const event = events.find(e => e.id === id);
+  if (!event) return false;
+  
+  // Check if event has been processed by enhancement API
+  // Events that have been enhanced will have these properties (even if empty)
+  const hasBeenEnhanced = event.hasOwnProperty('fullDescription') || 
+                          event.hasOwnProperty('ticketLinkPosts') || 
+                          event.hasOwnProperty('ticketLinkEvents');
+  
+  return !hasBeenEnhanced;
+});
+    
+    if (needsEnhancement) {
+      console.log('Fetching enhanced details for cluster');
+      // 🔧 FIX: Update the cluster after fetching details
+      get().fetchEventDetails(eventIds).then(() => {
+        // After fetching details, update the cluster with enhanced events
+        const { events: updatedEvents } = get();
+        const updatedCluster = {
+          ...cluster,
+          venues: cluster.venues.map(venue => ({
+            ...venue,
+            events: venue.events.map(event => {
+              const updatedEvent = updatedEvents.find(e => e.id === event.id);
+              return updatedEvent || event;
+            })
+          }))
+        };
+        console.log('CLUSTER UPDATED WITH ENHANCED EVENTS');
+        set({ selectedCluster: updatedCluster });
+      });
+    } else {
+      console.log('Enhanced details already cached, skipping fetch');
+    }
+  }
+},
   
   /**
    * Set selected venue (legacy support)
@@ -776,12 +951,17 @@ export const useMapStore = create<MapState>((set, get) => ({
       // Only update the selectedVenue, not the selectedVenues array
       set({ selectedVenue: venue });
     } else {
-      // When closing, clear all selections
-      set({ 
+      // When closing, clear all selections and refresh clusters
+      // to update "new content" indicators based on viewed venues
+      set({
         selectedVenue: null,
         selectedVenues: [],
-        selectedCluster: null 
+        selectedCluster: null
       });
+
+      // Trigger cluster regeneration to update hasNewContent flags
+      console.log('[ClusterRefresh] Callout closed - regenerating clusters to update indicators');
+      get().generateClusters();
     }
   },
   
@@ -792,88 +972,478 @@ export const useMapStore = create<MapState>((set, get) => ({
     set({ zoomLevel: zoom });
     get().generateClusters(zoom);
   },
+
+  /**
+   * Prefetch events if data is stale
+   */
+  prefetchIfStale: async (maxAgeMs: number = 60000) => {
+    const { isLoading, lastFetchedAt } = get();
+    const now = Date.now();
+    if (isLoading) return;
+    if (lastFetchedAt && (now - lastFetchedAt) < maxAgeMs) return;
+    await get().fetchEvents();
+  },
   
   /**
    * Fetch events from API
    */
-  fetchEvents: async () => {
-    set({ isLoading: true, error: null });
-    
-    try {
-      // Fetch events and specials separately
-      const eventsUrl = 'https://gathr-backend-951249927221.northamerica-northeast1.run.app/api/v2/events?type=event';
-      const specialsUrl = 'https://gathr-backend-951249927221.northamerica-northeast1.run.app/api/v2/events?type=special';
-      
-      // Make parallel requests for better performance
-      const [eventsResponse, specialsResponse] = await Promise.all([
-        fetch(eventsUrl),
-        fetch(specialsUrl)
-      ]);
-      
-      // Check for errors
-      if (!eventsResponse.ok) {
-        throw new Error(`Events API error: ${eventsResponse.status}`);
+fetchEvents: async () => {
+  const qc: any = (global as any)?.__RQ_CLIENT ?? null;
+  const queryKey = ['events-minimal'];
+  const STALE_MS = 1000 * 60 * 3; // 3 minutes default
+
+  // One-shot network fetch using unified API (Firestore default + optional legacy fallback)
+  const fetchFresh = async () => {
+    const __tFetchStart = Date.now();
+    if (DEBUG_MAP_LOAD) console.log('[MapLoad][fetch_start] Using unified API (Firestore default)');
+    __ML_fetchCount += 1;
+
+    // Use unified fetch that handles both data sources in parallel
+    const result = await fetchMinimalEvents();
+
+    __ML_lastFetchMs = Date.now() - __tFetchStart;
+    __ML_lastEventsCount = result.combinedData.filter((e: Event) => e.type === 'event').length;
+    __ML_lastSpecialsCount = result.combinedData.filter((e: Event) => e.type === 'special').length;
+
+    if (DEBUG_MAP_LOAD) {
+      console.log(`[MapLoad][fetch] done totalMs=${__ML_lastFetchMs} events=${__ML_lastEventsCount} specials=${__ML_lastSpecialsCount}`);
+      console.log(`[MapLoad][fetch] sources: googleSheets=${result.sources.googleSheets} firestore=${result.sources.firestore}`);
+
+      // Log sample event structure
+      if (result.combinedData.length > 0) {
+        const sampleEvent = result.combinedData[0];
+        const fieldSizes: Record<string, string> = {};
+        Object.keys(sampleEvent).forEach(key => {
+          const value = (sampleEvent as any)[key];
+          if (typeof value === 'string') {
+            fieldSizes[key] = value.length + ' chars';
+          } else if (value != null) {
+            fieldSizes[key] = typeof value;
+          }
+        });
+        console.log('[MapLoad][fetch_debug] Sample event field sizes:', fieldSizes);
+
+        // Log source distribution
+        const firestoreCount = result.combinedData.filter((e: Event) => e.source === 'firestore').length;
+        const googleSheetsCount = result.combinedData.filter((e: Event) => e.source === 'google_sheets').length;
+        console.log(`[MapLoad][fetch_debug] Source distribution: googleSheets=${googleSheetsCount} firestore=${firestoreCount}`);
       }
-      
-      if (!specialsResponse.ok) {
-        throw new Error(`Specials API error: ${specialsResponse.status}`);
-      }
-      
-      // Parse the response data
-      const eventsData = await eventsResponse.json();
-      const specialsData = await specialsResponse.json();
-      
-      // Process events and specials separately
-      const events = eventsData.map((event: any) => ({
-        ...event,
-        type: 'event'
-      }));
-      
-      const specials = specialsData.map((special: any) => ({
-        ...special,
-        type: 'special'
-      }));
-      
-      // Combine both data sets for filtering and clustering
-      const combinedData = [...events, ...specials];
-      
-      // Force reset filter criteria to ensure proper initialization
-      set({ 
-        events: events,
-        specials: specials, // Store specials separately
-        filterCriteria: DEFAULT_FILTER_CRITERIA
-      });
-      
-      // Mark filters as changed to force reclustering
+    }
+
+    return { combinedData: result.combinedData, fetchedAt: result.fetchedAt };
+  };
+
+  // CACHE-FIRST
+  const cached = qc?.getQueryData(queryKey) as { combinedData: any[] } | undefined;
+  if (cached?.combinedData?.length) {
+    filtersChanged = true; // force recluster
+    get().setAllEvents(cached.combinedData);
+    set({ isLoading: false, error: null, lastFetchedAt: Date.now() });
+
+    // Background refresh
+    qc!.fetchQuery({
+      queryKey,
+      queryFn: fetchFresh,
+      staleTime: STALE_MS,
+      gcTime: 1000 * 60 * 10,
+    }).then((fresh: { combinedData: any[]; fetchedAt: number }) => {
       filtersChanged = true;
-      
-      // Update events in store for filtering and clustering
-      get().setEvents(combinedData);
-      
-      set({ isLoading: false });
+      get().setAllEvents(fresh.combinedData);
+      set({ lastFetchedAt: Date.now() });
+    }).catch((err: unknown) => {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.warn('[MapStore] background events refresh error:', msg);
+    });
+
+
+    return;
+  }
+
+  // First load → foreground fetch
+  set({ isLoading: true, error: null });
+  try {
+    const fresh = qc
+      ? await qc.fetchQuery({ queryKey, queryFn: fetchFresh, staleTime: STALE_MS, gcTime: 1000 * 60 * 10 })
+      : await fetchFresh();
+
+    filtersChanged = true;
+    get().setAllEvents(fresh.combinedData);
+    set({ isLoading: false, lastFetchedAt: Date.now() });
+  } catch (error) {
+    set({
+      error: error instanceof Error ? error.message : 'Unknown error',
+      isLoading: false,
+    });
+    if (DEBUG_MAP_LOAD) console.log('[MapLoad][fetch] error', error);
+  }
+},
+
+  /**
+   * Fetch and partition events for the current viewport.
+   * Legacy viewport API is removed from the active path.
+   */
+  fetchViewportEvents: async (bbox: { west: number; south: number; east: number; north: number }) => {
+    const startedAt = Date.now();
+
+    try {
+      set({ error: null });
+
+      const filters = get().filterCriteria;
+      const typeParam = filters.showEvents && filters.showSpecials
+        ? 'both'
+        : filters.showEvents
+          ? 'event'
+          : filters.showSpecials
+            ? 'special'
+            : 'both';
+
+      const firestoreTypeFilter =
+        typeParam === 'event' ? true : typeParam === 'special' ? false : undefined;
+
+      const matchesTypeFilter = (event: Event): boolean => {
+        if (typeParam === 'event') return event.type === 'event';
+        if (typeParam === 'special') return event.type === 'special';
+        return true;
+      };
+
+      let candidateEvents = (get().allEvents || []).filter(matchesTypeFilter);
+
+      // Refresh from source when cache is empty for the requested type slice.
+      if (candidateEvents.length === 0) {
+        const fetchOptions =
+          typeof firestoreTypeFilter === 'boolean'
+            ? { isEvent: firestoreTypeFilter }
+            : {};
+
+        const result = await fetchMinimalEvents(fetchOptions);
+        const dedupedAll = dedupeEvents(result.combinedData);
+        candidateEvents = dedupedAll.filter(matchesTypeFilter);
+        get().setAllEvents(dedupedAll);
+        set({ lastFetchedAt: Date.now() });
+
+        if (DEBUG_MAP_LOAD) {
+          console.log('[MapLoad][viewport] Warmed candidate events from API:', {
+            firestoreDefault: USE_FIRESTORE_EVENTS,
+            fetched: dedupedAll.length,
+            requestedType: typeParam,
+            matchedTypeCount: candidateEvents.length,
+          });
+        }
+      }
+
+      const hasValidCoordinates = (event: Event): boolean => {
+        const lat = Number(event.latitude);
+        const lng = Number(event.longitude);
+        return Number.isFinite(lat) && Number.isFinite(lng) && !(lat === 0 && lng === 0);
+      };
+
+      const inBbox = (event: Event): boolean => {
+        const lat = Number(event.latitude);
+        const lng = Number(event.longitude);
+        return (
+          lat >= bbox.south &&
+          lat <= bbox.north &&
+          lng >= bbox.west &&
+          lng <= bbox.east
+        );
+      };
+
+      const coordinateEvents = candidateEvents.filter(hasValidCoordinates);
+      const viewportEvents = dedupeEvents(coordinateEvents.filter(inBbox));
+      const outsideViewportEvents = dedupeEvents(
+        coordinateEvents.filter((event) => !inBbox(event))
+      );
+      const allAvailableEvents = dedupeEvents([...viewportEvents, ...outsideViewportEvents]);
+      const filtered = filterEvents(allAvailableEvents, filters);
+
+      filtersChanged = true;
+
+      const onScreenEvents = viewportEvents.filter(inBbox);
+
+      if (DEBUG_MAP_LOAD) {
+        console.log('[MapLoad][viewport] Firestore client-side partition complete:', {
+          durationMs: Date.now() - startedAt,
+          requestedType: typeParam,
+          candidateEvents: candidateEvents.length,
+          coordinateEvents: coordinateEvents.length,
+          viewportCount: viewportEvents.length,
+          outsideViewportCount: outsideViewportEvents.length,
+          filteredCount: filtered.length,
+        });
+      }
+
+      set({
+        events: allAvailableEvents,
+        viewportEvents,
+        outsideViewportEvents,
+        onScreenEvents,
+        filteredEvents: filtered,
+        viewportBbox: bbox,
+        viewportMetadata: {
+          wasCapped: false,
+          viewportCount: viewportEvents.length,
+          outsideViewportCount: outsideViewportEvents.length,
+          lastFetchTimestamp: new Date().toISOString(),
+        },
+        isLoading: false,
+        lastFetchedAt: Date.now(),
+      });
+
+      get().generateClusters(get().zoomLevel);
     } catch (error) {
-      set({ 
-        error: error instanceof Error ? error.message : 'Unknown error', 
-        isLoading: false 
+      const errorMsg = error instanceof Error ? error.message : 'Unknown viewport fetch error';
+      console.error('[MapStore] Viewport fetch error:', errorMsg);
+      set({
+        error: errorMsg,
+        isLoading: false,
       });
     }
   },
+
+  /**
+   * Set viewport bounding box
+   */
+  setViewportBbox: (bbox: { west: number; south: number; east: number; north: number }) => {
+    set({ viewportBbox: bbox });
+  },
+
+  setOnScreenEvents: (events: Event[]) => {
+    set({ onScreenEvents: events });
+  },
+
+  /**
+   * Fetch detailed event data for lazy loading callouts
+   */
+fetchEventDetails: async (eventIds: (string | number)[]) => {
+  if (!eventIds || eventIds.length === 0) return;
+
+  const qc: any = (global as any)?.__RQ_CLIENT ?? null;
+  const normalizedIds = Array.from(
+    new Set(eventIds.map((id) => toAppEventId(id)).filter(Boolean))
+  );
+  const idsString = normalizedIds.join(',');
+  const key = ['event-details', [...normalizedIds].sort().join(',')];
+  const STALE_MS = 1000 * 60 * 5;
+
+  const dedupeByEquivalentId = (items: Event[]): Event[] => {
+    const deduped: Event[] = [];
+    for (const item of items) {
+      const existingIndex = deduped.findIndex((candidate) =>
+        areEventIdsEquivalent(candidate.id, item.id)
+      );
+      if (existingIndex >= 0) {
+        deduped[existingIndex] = item;
+      } else {
+        deduped.push(item);
+      }
+    }
+    return deduped;
+  };
+
+  const coerceDetailToEvent = (detail: any): Event => {
+    const eventType = detail?.type === 'special' ? 'special' : 'event';
+    return {
+      id: toAppEventId(detail?.id ?? ''),
+      type: eventType,
+      category: detail?.category || 'Other',
+      title: detail?.title || '',
+      description: detail?.fullDescription || detail?.description || '',
+      venue: detail?.venue || '',
+      address: detail?.address || '',
+      startDate: detail?.startDate || '',
+      endDate: detail?.endDate || detail?.startDate || '',
+      startTime: detail?.startTime || '',
+      endTime: detail?.endTime || '',
+      ticketPrice: detail?.ticketPrice || detail?.price || '',
+      profileUrl: detail?.profileUrl || '',
+      imageUrl: detail?.imageUrl || '',
+      SharedPostThumbnail: detail?.SharedPostThumbnail || '',
+      latitude: Number(detail?.latitude) || 0,
+      longitude: Number(detail?.longitude) || 0,
+      ticketLinkPosts: detail?.ticketLinkPosts || '',
+      ticketLinkEvents: detail?.ticketLinkEvents || '',
+      source: detail?.source || 'firestore',
+      likes: detail?.likes,
+      shares: detail?.shares,
+      interested: detail?.interested,
+      comments: detail?.comments,
+      topReactionsCount: detail?.topReactionsCount,
+      usersResponded: detail?.usersResponded,
+      mediaUrls: detail?.mediaUrls,
+      facebookUrl: detail?.facebookUrl,
+      eventType: detail?.eventType,
+      ageRestriction: detail?.ageRestriction,
+      isRecurring: detail?.isRecurring,
+      recurringPattern: detail?.recurringPattern,
+      isRecurringInstance: detail?.isRecurringInstance,
+      originalEventId: detail?.originalEventId ?? null,
+      venueRating: detail?.venueRating,
+      venuePhone: detail?.venuePhone,
+      venueWebsite: detail?.venueWebsite,
+      venueFacebookUrl: detail?.venueFacebookUrl,
+      venueInstagramUrl: detail?.venueInstagramUrl,
+      venueCategories: detail?.venueCategories,
+    };
+  };
+
+  const normalizeDetail = (detail: any): any | null => {
+    if (!detail || detail.id == null) return null;
+    const rawOriginalId =
+      detail.originalEventId ?? detail.metadata?.originalEventId ?? null;
+    return {
+      ...detail,
+      id: toAppEventId(detail.id),
+      description: detail.fullDescription || detail.description || '',
+      isRecurring: detail.isRecurring ?? detail.metadata?.isRecurring,
+      recurringPattern: detail.recurringPattern ?? detail.metadata?.recurringPattern,
+      isRecurringInstance:
+        detail.isRecurringInstance ?? detail.metadata?.isRecurringInstance,
+      originalEventId: rawOriginalId ? toAppEventId(rawOriginalId) : null,
+    };
+  };
+
+  const fetchLegacyDetails = async (): Promise<any[]> => {
+    const legacyIds = eventIds.map((id) => String(id)).filter(Boolean).join(',');
+    const url = `${LEGACY_EVENTS_API_BASE}/details?ids=${encodeURIComponent(legacyIds)}`;
+    const response = await fetch(url);
+    if (!response.ok) {
+      throw new Error(`Legacy details API error: ${response.status}`);
+    }
+
+    const payload = await response.json();
+    if (Array.isArray(payload)) return payload;
+    if (Array.isArray(payload?.data)) return payload.data;
+    return [];
+  };
+
+  const fetchFresh = async () => {
+    if (DEBUG_MAP_LOAD) {
+      console.log('[MapStore] Fetching event details from Firestore for ids:', idsString);
+    }
+
+    const firestoreDetails = await fetchFirestoreEventDetailsBatch(normalizedIds);
+    if (firestoreDetails.length > 0 || !ENABLE_LEGACY_DETAILS_FALLBACK) {
+      return firestoreDetails as any[];
+    }
+
+    console.warn(
+      '[MapStore] Firestore details returned no rows; trying legacy fallback because ENABLE_LEGACY_DETAILS_FALLBACK=true'
+    );
+    return fetchLegacyDetails();
+  };
+
+  const mergeIntoStore = (rawDetails: any[]) => {
+    const normalizedDetails = rawDetails
+      .map(normalizeDetail)
+      .filter((detail): detail is any => Boolean(detail));
+
+    if (normalizedDetails.length === 0) return;
+
+    const mergeCollection = (collection: Event[]): Event[] => {
+      const merged = collection.map((event) => {
+        const detail = normalizedDetails.find((candidate) =>
+          areEventIdsEquivalent(candidate.id, event.id)
+        );
+        if (!detail) return event;
+
+        return {
+          ...event,
+          ...detail,
+          // Keep stable event identity in current collection shape.
+          id: event.id,
+          type: event.type,
+          description: detail.fullDescription || detail.description || event.description,
+          ticketLinkPosts: detail.ticketLinkPosts ?? event.ticketLinkPosts,
+          ticketLinkEvents: detail.ticketLinkEvents ?? event.ticketLinkEvents,
+          isRecurring: detail.isRecurring ?? event.isRecurring,
+          recurringPattern: detail.recurringPattern ?? event.recurringPattern,
+          isRecurringInstance:
+            detail.isRecurringInstance ?? event.isRecurringInstance,
+          originalEventId: detail.originalEventId ?? event.originalEventId ?? null,
+        } as Event;
+      });
+
+      const extras = normalizedDetails
+        .filter(
+          (detail) =>
+            !merged.some((event) => areEventIdsEquivalent(event.id, detail.id))
+        )
+        .map((detail) => coerceDetailToEvent(detail));
+
+      return dedupeByEquivalentId([...merged, ...extras]);
+    };
+
+    const { events, allEvents } = get();
+    const nextEvents = mergeCollection(events);
+    const nextAllEvents = mergeCollection(allEvents);
+
+    set({
+      events: nextEvents,
+      allEvents: nextAllEvents,
+    });
+  };
+
+  const cached = qc?.getQueryData(key) as any[] | undefined;
+  if (cached?.length) {
+    if (DEBUG_MAP_LOAD) {
+      console.log('[MapStore] Using cached event details for', idsString);
+    }
+    mergeIntoStore(cached);
+
+    if (qc) {
+      qc.fetchQuery({
+        queryKey: key,
+        queryFn: fetchFresh,
+        staleTime: STALE_MS,
+        gcTime: 1000 * 60 * 10,
+      }).then((fresh: any[]) => {
+        mergeIntoStore(fresh);
+      }).catch((err: unknown) => {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.warn('[MapStore] details refresh error:', msg);
+      });
+    }
+    return;
+  }
+
+  try {
+    const fresh = qc
+      ? await qc.fetchQuery({
+          queryKey: key,
+          queryFn: fetchFresh,
+          staleTime: STALE_MS,
+          gcTime: 1000 * 60 * 10,
+        })
+      : await fetchFresh();
+    mergeIntoStore(fresh);
+  } catch (error) {
+    console.error('Error fetching event details:', error);
+  }
+},
+
   
   /**
    * Get filtered events based on current criteria
    */
   getFilteredEvents: () => {
     const { events, filterCriteria } = get();
-    
-    // Apply enhanced filtering logic with type-specific filters
+    const t0 = Date.now();
+
     const filtered = filterEvents(events, filterCriteria);
-    
-    // Set the filters changed flag to ensure clusters update
+
+    __ML_lastFilterMs = Date.now() - t0;
+    __ML_lastFilterIn = events.length;
+    __ML_lastFilterOut = filtered.length;
+    if (DEBUG_MAP_LOAD) {
+      const eventsIn = events.filter(e => e.type === 'event').length;
+      const specialsIn = events.length - eventsIn;
+      const eventsOut = filtered.filter(e => e.type === 'event').length;
+      const specialsOut = filtered.length - eventsOut;
+      console.log(`[MapLoad][filter] ms=${__ML_lastFilterMs} in=${__ML_lastFilterIn} (events=${eventsIn}, specials=${specialsIn}) out=${__ML_lastFilterOut} (events=${eventsOut}, specials=${specialsOut})`);
+    }
+
     filtersChanged = true;
-    
-    // Update filtered events in store
     set({ filteredEvents: filtered });
-    
     return filtered;
   },
   
@@ -883,30 +1453,57 @@ export const useMapStore = create<MapState>((set, get) => ({
   generateClusters: (zoom) => {
     const { filteredEvents, zoomLevel } = get();
     const currentZoom = zoom || zoomLevel;
-    
-    // Group events by venue
+    const t0 = Date.now();
+
     const venues = groupEventsByVenue(filteredEvents);
-    
-    // Cluster venues with discrete threshold-based algorithm
     const clusters = clusterVenues(venues, currentZoom);
-    
-    // Update clusters in store
-    set({ clusters });
+
+    __ML_lastVenueCount = venues.length;
+    __ML_lastClusterCount = clusters.length;
+    __ML_lastClusterMs = Date.now() - t0;
+
+    if (DEBUG_MAP_LOAD) {
+      // Determine threshold name for the current zoom
+      const idx = getThresholdIndexForZoom(currentZoom);
+      const thresholdName = ZOOM_THRESHOLDS[idx]?.name ?? `idx:${idx}`;
+      console.log(`[MapLoad][cluster] ms=${__ML_lastClusterMs} zoom=${currentZoom.toFixed(2)} threshold=${thresholdName} venues=${__ML_lastVenueCount} clusters=${__ML_lastClusterCount}`);
+    }
+
+    // Debug: per-zoom cluster vs point breakdown + "gap" detector
+const __multiCount = clusters.filter(c => c.clusterType === 'multi').length;
+const __singleCount = clusters.filter(c => c.clusterType === 'single').length;
+
+if (DEBUG_MAP_LOAD) {
+  console.log(
+    `[MapLoad][cluster_counts] z=${currentZoom.toFixed(2)} ` +
+    `multi=${__multiCount} single=${__singleCount} total=${clusters.length}`
+  );
+  // Detect UI-layer "gap": data exists but nothing rendered
+  if (clusters.length === 0 && filteredEvents.length > 0) {
+    console.warn(
+      '[ClusterGap] filteredEvents > 0 but zero clusters at this zoom — check layer filters/min/maxZoom.'
+    );
+  }
+}
+
+set({ clusters });
   },
   
   /**
    * Get time filter counts for current criteria
    */
   getTimeFilterCounts: (eventType: 'event' | 'special') => {
-    const { events, filterCriteria } = get();
-    return calculateTimeFilterCounts(events, filterCriteria, eventType);
+    const { onScreenEvents, filterCriteria } = get();
+    // Use ONLY on-screen events - counts should reflect what's actually visible on screen
+    return calculateTimeFilterCounts(onScreenEvents, filterCriteria, eventType);
   },
-  
+
   /**
-   * Get category filter counts for current criteria  
+   * Get category filter counts for current criteria
    */
   getCategoryFilterCounts: (eventType: 'event' | 'special') => {
-    const { events, filterCriteria } = get();
-    return calculateCategoryFilterCounts(events, filterCriteria, eventType);
+    const { onScreenEvents, filterCriteria } = get();
+    // Use ONLY on-screen events - counts should reflect what's actually visible on screen
+    return calculateCategoryFilterCounts(onScreenEvents, filterCriteria, eventType);
   }
 }))

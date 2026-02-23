@@ -1,0 +1,12 @@
+{
+  "name": "gathr-deeplink-service",
+  "version": "1.0.0",
+  "description": "Deep link service for GathR app",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2"
+  }
+}

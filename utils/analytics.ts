@@ -99,7 +99,7 @@ const logEvent = (eventName: string, parameters: BaseEventParams = {}): void => 
     
     // Log to console with timestamp and formatting
     const timestamp = new Date().toISOString();
-    console.log(`📊 Analytics Event [${timestamp}]: ${eventName}`, sanitizedParams);
+    //console.log(`📊 Analytics Event [${timestamp}]: ${eventName}`, sanitizedParams);
   } catch (error) {
     console.warn('Failed to log analytics event:', eventName, error instanceof Error ? error.message : 'Unknown error');
   }
@@ -381,7 +381,7 @@ const trackEngagementDepth = (screenName: string, timeSpent: number, engagementD
       interaction_tier: getInteractionTier(engagementData.interactions || 0)
     });
     
-    console.log('📊 Engagement Depth Tracked:', depthData);
+    //console.log('📊 Engagement Depth Tracked:', depthData);
   } catch (error) {
     console.warn('Failed to track engagement depth:', error instanceof Error ? error.message : 'Unknown error');
   }
@@ -429,7 +429,7 @@ const trackUserJourney = (journeyData: UserJourneyData): void => {
       });
     }
     
-    console.log('📊 User Journey Tracked:', enhancedJourneyData);
+    //console.log('📊 User Journey Tracked:', enhancedJourneyData);
   } catch (error) {
     console.warn('Failed to track user journey:', error instanceof Error ? error.message : 'Unknown error');
   }

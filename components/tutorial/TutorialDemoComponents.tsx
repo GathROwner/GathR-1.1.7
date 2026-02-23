@@ -289,9 +289,6 @@ export const IconLegendDemo: React.FC = () => (
           }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 1 }}>
               <TutorialBroadcastingEffect />
-              <View style={{ marginLeft: 4 }}>
-                <TutorialNBadge />
-              </View>
             </View>
             <Text style={{ 
               fontSize: 10, 
@@ -316,9 +313,6 @@ export const IconLegendDemo: React.FC = () => (
           }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 1 }}>
               <TutorialTodayTree />
-              <View style={{ marginLeft: 4 }}>
-                <TutorialTBadge />
-              </View>
             </View>
             <Text style={{ 
               fontSize: 10, 

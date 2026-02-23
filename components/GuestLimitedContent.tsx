@@ -267,7 +267,7 @@ export const GuestLimitedContent: React.FC<GuestLimitedContentProps> = ({
    * Render text content with appropriate limitations
    */
   const renderTextContent = () => {
-    if (!fullText) {
+    if (fullText == null) {
       console.warn('[GuestLimitedContent] fullText prop required for text content types');
       return children;
     }

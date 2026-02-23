@@ -7,11 +7,15 @@
     "development": {
       "developmentClient": true,
       "distribution": "internal",
+      "env": {
+        "SUPPRESS_XCODE_OUTPUT": "false"
+      },
       "ios": {
         "resourceClass": "m-medium"
       },
       "android": {
-        "buildType": "apk"
+        "buildType": "apk",
+        "resourceClass": "default"
       }
     },
     "preview": {
@@ -20,7 +24,8 @@
         "resourceClass": "m-medium"
       },
       "android": {
-        "buildType": "apk"
+        "buildType": "apk",
+        "resourceClass": "default"
       }
     },
     "production": {
@@ -28,6 +33,10 @@
       "autoIncrement": true,
       "ios": {
         "resourceClass": "m-medium"
+      },
+      "android": {
+        "buildType": "app-bundle",
+        "resourceClass": "medium"
       }
     }
   },

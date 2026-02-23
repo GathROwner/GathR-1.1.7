@@ -74,7 +74,15 @@ interface AnalyticsAPI {
   trackRevenueEvent: (revenue: number, currency: string, source: string) => void;
 }
 
+// ─────────────────────────────────────────────────────────────
+// Singleton guards to avoid duplicate listeners/screen events
+// (survive React 18 StrictMode double-mounts in development)
+let __analyticsInstanceCount = 0;
+let __hasAppStateListener = false;
+let __lastTrackedScreen: string | null = null;
+
 const useAnalytics = (): AnalyticsAPI => {
+
   // Session tracking references
   const sessionStartTime = useRef<number | null>(null);
   const currentScreen = useRef<string | null>(null);
@@ -170,9 +178,15 @@ const useAnalytics = (): AnalyticsAPI => {
   /**
    * Track screen view when pathname changes
    */
-  const trackCurrentScreen = useCallback((): void => {
-    try {
-      if (pathname && pathname !== currentScreen.current) {
+const trackCurrentScreen = useCallback((): void => {
+  try {
+    if (!pathname) return;
+
+    // De-dupe across multiple hook instances
+    if (__lastTrackedScreen === pathname) return;
+
+    if (pathname !== currentScreen.current) {
+
         const screenName = pathname === '/' ? 'home' : pathname.replace('/', '');
         
         // Track screen engagement for previous screen
@@ -191,13 +205,15 @@ const useAnalytics = (): AnalyticsAPI => {
           previous_screen: currentScreen.current || 'none'
         });
         
-        // Update tracking state
-        currentScreen.current = pathname;
-        screenEngagementStart.current = Date.now();
-        journeyPath.current.push(screenName);
-        touchpointCount.current += 1;
-        
-        console.log(`📺 Screen view tracked: ${screenName}`);
+// Update tracking state (module-wide + local)
+__lastTrackedScreen = pathname;
+currentScreen.current = pathname;
+screenEngagementStart.current = Date.now();
+journeyPath.current.push(screenName);
+touchpointCount.current += 1;
+
+console.log(`📺 Screen view tracked: ${screenName}`);
+
       }
     } catch (error) {
       console.warn('Error tracking screen view:', error instanceof Error ? error.message : 'Unknown error');
@@ -207,48 +223,64 @@ const useAnalytics = (): AnalyticsAPI => {
   /**
    * Initialize analytics tracking on component mount
    */
-  useEffect(() => {
-    try {
+useEffect(() => {
+  try {
+    __analyticsInstanceCount += 1;
+
+    // Only the first live instance sets up session + AppState listener
+    const isPrimary = !__hasAppStateListener;
+    if (isPrimary) {
       sessionStartTime.current = Date.now();
       engagementStartTime.current = Date.now();
       screenEngagementStart.current = Date.now();
-      
+
       Analytics.trackSessionStart();
-      
+
       appStateListener.current = AppState.addEventListener('change', handleAppStateChange);
-      
+      __hasAppStateListener = true;
+
       console.log('🚀 Enhanced Analytics hook initialized');
-      
-      return () => {
-        try {
+    }
+
+    return () => {
+      try {
+        __analyticsInstanceCount -= 1;
+
+        // Only tear down when the last instance unmounts
+        if (__analyticsInstanceCount <= 0) {
           if (appStateListener.current) {
             appStateListener.current.remove();
+            appStateListener.current = null;
           }
-          
+
           if (sessionStartTime.current) {
             const duration = getSessionDuration();
             const engagementMetrics = getEngagementMetrics();
-            
+
             Analytics.trackSessionEnd(duration);
-            
+
             // Track final engagement summary
-            if (engagementMetrics.timeSpent > 1000) { // Only track if meaningful engagement
+            if (engagementMetrics.timeSpent > 1000) {
               Analytics.trackEngagementDepth('app_cleanup', engagementMetrics.timeSpent, {
                 interactions: engagementMetrics.interactions,
                 featuresUsed: engagementMetrics.featuresUsed
               });
             }
           }
-          
+
           console.log('🔄 Enhanced Analytics hook cleaned up');
-        } catch (error) {
-          console.warn('Error during analytics cleanup:', error instanceof Error ? error.message : 'Unknown error');
+          __hasAppStateListener = false;
+          __lastTrackedScreen = null;
         }
-      };
-    } catch (error) {
-      console.warn('Error initializing enhanced analytics hook:', error instanceof Error ? error.message : 'Unknown error');
-    }
-  }, [handleAppStateChange, getSessionDuration, getEngagementMetrics]);
+      } catch (error) {
+        console.warn('Error during analytics cleanup:', error instanceof Error ? error.message : 'Unknown error');
+      }
+    };
+  } catch (error) {
+    console.warn('Error initializing enhanced analytics hook:', error instanceof Error ? error.message : 'Unknown error');
+  }
+}, [handleAppStateChange, getSessionDuration, getEngagementMetrics]);
+
   
   /**
    * Track screen views when pathname changes

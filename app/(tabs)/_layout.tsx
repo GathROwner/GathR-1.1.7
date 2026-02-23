@@ -1,9 +1,11 @@
+// app\(tabs)\_layout.tsx
+
 import { Tabs } from 'expo-router';
-import { TouchableOpacity, View, TextInput, Text } from 'react-native';
+import { TouchableOpacity, View, TextInput, Text, Animated, Image } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useMapStore } from '../../store/mapStore';
-import { Alert } from 'react-native';
+import { Alert, Keyboard } from 'react-native';
 import { useEffect, useState, useRef } from 'react';
 
 // ===============================================================
@@ -122,15 +124,93 @@ const HeaderTitle = ({ route }: { route: any }) => {
   }, []); // Keep dependency array empty - this was already correct
 
   if (!isHeaderSearchActive) {
-    const title = route.name === 'events' ? 'Events' : 'Specials';
-    return (
-      <Text style={{ color: '#FFFFFF', fontSize: 17, fontWeight: '600' }}>
-        {title}
-      </Text>
-    );
+    const hasQuery = (searchQuery ?? '').trim().length > 0;
+    if (hasQuery) {
+      // Compact inline pill replacing the title
+      return (
+        <TouchableOpacity
+          onPress={() => setHeaderSearchActive(true)}
+          activeOpacity={0.8}
+          style={{ maxWidth: '100%' }}
+        >
+          <View style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            paddingVertical: 4,
+            paddingHorizontal: 10,
+            borderRadius: 16,
+            backgroundColor: 'rgba(255,255,255,0.18)',
+            borderWidth: 1,
+            borderColor: 'rgba(255,255,255,0.45)',
+            shadowColor: '#000',
+            shadowOffset: { width: 0, height: 2 },
+            shadowOpacity: 0.16,
+            shadowRadius: 6,
+            elevation: 2,
+          }}>
+            <Ionicons name="search" size={16} color="#FFFFFF" style={{ marginRight: 6, opacity: 0.95 }} />
+            <Text
+              numberOfLines={1}
+              ellipsizeMode="tail"
+              style={{ color: '#FFFFFF', fontSize: 14, fontWeight: '700', maxWidth: 240, flexShrink: 1 }}
+            >
+              {searchQuery}
+            </Text>
+
+            <View style={{ marginLeft: 8, position: 'relative' }}>
+              {/* Match FilterPills.tsx styles.activeFilterDot exactly */}
+              <View
+                pointerEvents="none"
+                style={{
+                  position: 'absolute',
+                  top: -2,
+                  right: -2,
+                  width: 6,
+                  height: 6,
+                  borderRadius: 3,
+                  backgroundColor: '#FF3B30',
+                  borderWidth: 1,
+                  borderColor: 'rgba(255, 255, 255, 0.9)',
+                }}
+              />
+
+              <TouchableOpacity
+                onPress={(e) => { e.stopPropagation?.(); handleSearchClear(); }}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                style={{
+                  width: 16,
+                  height: 16,
+                  borderRadius: 8,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  backgroundColor: 'rgba(255, 255, 255, 0.2)',
+                }}
+              >
+                <Ionicons name="close" size={12} color="#FF3B30" />
+              </TouchableOpacity>
+            </View>
+          </View>
+        </TouchableOpacity>
+      );
+
+    }
+      return (
+        <View style={{ height: '100%', justifyContent: 'center', alignItems: 'center' }}>
+          <Image 
+            source={require('../../assets/GathR Text Logo.png')}
+            style={{ width: 105, height: 105, marginTop: -6 }}
+            resizeMode="contain"
+          />
+        </View>
+      );
   }
 
-  const placeholder = route.name === 'events' ? 'Search events...' : 'Search specials...';
+  const placeholder =
+    route.name === 'events'
+      ? 'Search events...'
+      : route.name === 'specials'
+      ? 'Search specials...'
+      : 'Search events & specials...';
 
   return (
     <View style={{ 
@@ -194,231 +274,457 @@ const HeaderTitle = ({ route }: { route: any }) => {
 
 export default function TabLayout() {
   const router = useRouter();
-  const { isHeaderSearchActive, setHeaderSearchActive, triggerScrollToTop } = useMapStore();
+  const { isHeaderSearchActive, setHeaderSearchActive, triggerScrollToTop, searchQuery } = useMapStore();
   const analytics = useAnalytics(); // RE-ENABLED
   
-  // ===============================================================
-  // GUEST LIMITATION SETUP FOR TAB INTERACTION TRACKING
-  // ===============================================================
   const { user } = useAuth();
   const isGuest = !user;
 
-  // Track navigation patterns
   const [navigationHistory, setNavigationHistory] = useState<string[]>([]);
   const [sessionTabSwitches, setSessionTabSwitches] = useState(0);
   const lastTabSwitch = useRef<number>(Date.now());
 
-  // Track profile button access - RE-ENABLED
+  // Tutorial awareness for profile button
+  const profileButtonRef = useRef<View>(null);
+  const profileButtonPulseAnim = useRef(new Animated.Value(1)).current;
+  const [profileButtonHighlighted, setProfileButtonHighlighted] = useState(false);
+
+  useEffect(() => {
+    let lastMeasurement: any = null;
+    let measurementCount = 0;
+    
+    const interval = setInterval(() => {
+      const globalFlag = (global as any).tutorialHighlightProfileFacebook || false;
+      if (globalFlag !== profileButtonHighlighted) {
+        setProfileButtonHighlighted(globalFlag);
+      }
+      if (globalFlag && profileButtonRef.current) {
+        profileButtonRef.current.measureInWindow((x: number, y: number, width: number, height: number) => {
+          // Add stability check to prevent measurement spam
+          const currentMeasurement = { x: Math.round(x), y: Math.round(y), width: Math.round(width), height: Math.round(height) };
+          
+          if (!lastMeasurement || 
+              Math.abs(currentMeasurement.x - lastMeasurement.x) > 2 ||
+              Math.abs(currentMeasurement.y - lastMeasurement.y) > 2 ||
+              Math.abs(currentMeasurement.width - lastMeasurement.width) > 2 ||
+              Math.abs(currentMeasurement.height - lastMeasurement.height) > 2) {
+            
+            lastMeasurement = currentMeasurement;
+            measurementCount++;
+            
+            // Only log first few measurements to prevent spam
+            if (measurementCount <= 3) {
+              console.log('Tutorial: Measured profile button:', currentMeasurement);
+            }
+            
+            (global as any).profileFacebookLayout = currentMeasurement;
+          }
+        });
+      }
+    }, 200);
+    return () => clearInterval(interval);
+  }, [profileButtonHighlighted]);
+
+  useEffect(() => {
+    if (profileButtonHighlighted) {
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(profileButtonPulseAnim, { toValue: 1.2, useNativeDriver: true, duration: 800 }),
+          Animated.timing(profileButtonPulseAnim, { toValue: 1, useNativeDriver: true, duration: 800 }),
+        ])
+      ).start();
+    } else {
+      profileButtonPulseAnim.stopAnimation();
+      profileButtonPulseAnim.setValue(1);
+    }
+  }, [profileButtonHighlighted]);
+
+  // --- START OF TUTORIAL COMPONENT ---
+  // This is the new, tutorial-aware button component for the Events tab.
+  const TutorialAwareTabBarButton = (props: any) => {
+    const { children, onPress, onLongPress } = props;
+    const viewRef = useRef<View>(null);
+    const pulseAnim = useRef(new Animated.Value(1)).current;
+    const [isHighlighted, setIsHighlighted] = useState(false);
+  
+    useEffect(() => {
+      const interval = setInterval(() => {
+        const globalFlag = (global as any).tutorialHighlightEventsTab || false;
+        if (globalFlag !== isHighlighted) {
+          setIsHighlighted(globalFlag);
+        }
+        if (globalFlag && viewRef.current) {
+          (viewRef.current as View).measure((_x, _y, width, height, pageX, pageY) => {
+            (global as any).eventsTabLayout = { x: pageX, y: pageY, width, height };
+          });
+        }
+      }, 200);
+      return () => clearInterval(interval);
+    }, [isHighlighted]);
+
+    // Tutorial-aware button component for the Specials tab.
+  const TutorialAwareSpecialsTabBarButton = (props: any) => {
+    const { children, onPress } = props;
+    const viewRef = useRef<View>(null);
+    const pulseAnim = useRef(new Animated.Value(1)).current;
+    const [isHighlighted, setIsHighlighted] = useState(false);
+  
+    useEffect(() => {
+      const interval = setInterval(() => {
+        const globalFlag = (global as any).tutorialHighlightSpecialsTab || false;
+        if (globalFlag !== isHighlighted) {
+          setIsHighlighted(globalFlag);
+        }
+        if (globalFlag && viewRef.current) {
+          (viewRef.current as View).measure((_x, _y, width, height, pageX, pageY) => {
+            (global as any).specialsTabLayout = { x: pageX, y: pageY, width, height };
+          });
+        }
+      }, 200);
+      return () => clearInterval(interval);
+    }, [isHighlighted]);
+  
+    useEffect(() => {
+      if (isHighlighted) {
+        Animated.loop(
+          Animated.sequence([
+            Animated.timing(pulseAnim, { toValue: 1.05, useNativeDriver: true, duration: 800 }),
+            Animated.timing(pulseAnim, { toValue: 1, useNativeDriver: true, duration: 800 }),
+          ])
+        ).start();
+      } else {
+        pulseAnim.stopAnimation();
+        pulseAnim.setValue(1);
+      }
+    }, [isHighlighted]);
+  
+    const tutorialHighlightStyle = {
+      shadowColor: '#FF6B35',
+      shadowOffset: { width: 0, height: 0 },
+      shadowOpacity: 0.9,
+      shadowRadius: 10,
+      elevation: 15,
+      borderWidth: 2,
+      borderColor: '#FF8C42',
+      borderRadius: 12,
+      backgroundColor: 'rgba(255, 255, 255, 0.9)',
+      zIndex: 99999,
+      transform: [{ scale: pulseAnim }],
+    };
+  
+    return (
+      <TouchableOpacity onPress={onPress} onLongPress={onLongPress} style={{ flex: 1 }}>
+        <Animated.View
+          ref={viewRef}
+          style={[
+            { flex: 1, justifyContent: 'center', alignItems: 'center' },
+            isHighlighted && tutorialHighlightStyle,
+          ]}
+        >
+          {children}
+        </Animated.View>
+      </TouchableOpacity>
+    );
+  };
+  
+    useEffect(() => {
+      if (isHighlighted) {
+        Animated.loop(
+          Animated.sequence([
+            Animated.timing(pulseAnim, { toValue: 1.05, useNativeDriver: true, duration: 800 }),
+            Animated.timing(pulseAnim, { toValue: 1, useNativeDriver: true, duration: 800 }),
+          ])
+        ).start();
+      } else {
+        pulseAnim.stopAnimation();
+        pulseAnim.setValue(1);
+      }
+    }, [isHighlighted]);
+  
+    const tutorialHighlightStyle = {
+    // The shadow creates a "glow" effect
+    shadowColor: '#FF6B35',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.9,
+    shadowRadius: 10,
+    elevation: 15, // Required for shadow on Android
+    
+    // A subtle border to define the edge
+    borderWidth: 2,
+    borderColor: '#FF8C42', // A slightly lighter orange for the border
+    borderRadius: 12,
+    backgroundColor: 'rgba(255, 255, 255, 0.9)', // A light background to make it pop
+
+    zIndex: 99999,
+    transform: [{ scale: pulseAnim }],
+  };
+  
+    return (
+      <TouchableOpacity onPress={onPress} style={{ flex: 1 }}>
+        <Animated.View
+          ref={viewRef}
+          style={[
+            { flex: 1, justifyContent: 'center', alignItems: 'center' },
+            isHighlighted && tutorialHighlightStyle,
+          ]}
+        >
+          {children}
+        </Animated.View>
+      </TouchableOpacity>
+    );
+  };
+  // --- END OF TUTORIAL COMPONENT ---
+
+  // Tutorial-aware button component for the Specials tab.
+  const TutorialAwareSpecialsTabBarButton = (props: any) => {
+    const { children, onPress, onLongPress } = props;
+    const viewRef = useRef<View>(null);
+    const pulseAnim = useRef(new Animated.Value(1)).current;
+    const [isHighlighted, setIsHighlighted] = useState(false);
+  
+    useEffect(() => {
+      const interval = setInterval(() => {
+        const globalFlag = (global as any).tutorialHighlightSpecialsTab || false;
+        if (globalFlag !== isHighlighted) {
+          setIsHighlighted(globalFlag);
+        }
+        if (globalFlag && viewRef.current) {
+          (viewRef.current as View).measure((_x, _y, width, height, pageX, pageY) => {
+            (global as any).specialsTabLayout = { x: pageX, y: pageY, width, height };
+          });
+        }
+      }, 200);
+      return () => clearInterval(interval);
+    }, [isHighlighted]);
+  
+    useEffect(() => {
+      if (isHighlighted) {
+        Animated.loop(
+          Animated.sequence([
+            Animated.timing(pulseAnim, { toValue: 1.05, useNativeDriver: true, duration: 800 }),
+            Animated.timing(pulseAnim, { toValue: 1, useNativeDriver: true, duration: 800 }),
+          ])
+        ).start();
+      } else {
+        pulseAnim.stopAnimation();
+        pulseAnim.setValue(1);
+      }
+    }, [isHighlighted]);
+  
+    const tutorialHighlightStyle = {
+      shadowColor: '#FF6B35',
+      shadowOffset: { width: 0, height: 0 },
+      shadowOpacity: 0.9,
+      shadowRadius: 10,
+      elevation: 15,
+      borderWidth: 2,
+      borderColor: '#FF8C42',
+      borderRadius: 12,
+      backgroundColor: 'rgba(255, 255, 255, 0.9)',
+      zIndex: 99999,
+      transform: [{ scale: pulseAnim }],
+    };
+  
+    return (
+      <TouchableOpacity onPress={onPress} onLongPress={onLongPress} style={{ flex: 1 }}>
+        <Animated.View
+          ref={viewRef}
+          style={[
+            { flex: 1, justifyContent: 'center', alignItems: 'center' },
+            isHighlighted && tutorialHighlightStyle,
+          ]}
+        >
+          {children}
+        </Animated.View>
+      </TouchableOpacity>
+    );
+  };
+
+
   const handleProfileButtonPress = () => {
-    const profileAccessTime = Date.now();
-    
-    // Track profile access analytics
-    analytics.trackUserAction('profile_access', {
-      access_method: 'header_button',
-      user_type: isGuest ? 'guest' : 'registered',
-      session_tab_switches: sessionTabSwitches,
-      navigation_history: navigationHistory.slice(-5).join(' -> ') // Last 5 screens
-    });
-    
-    analytics.trackFeatureEngagement('profile_button', {
-      access_time: new Date(profileAccessTime).toISOString(),
-      session_engagement: sessionTabSwitches > 3 ? 'high' : 'low'
-    });
-    
-    // Track navigation journey
-    analytics.trackUserAction('navigation_to_profile', {
-      from_screen: navigationHistory[navigationHistory.length - 1] || 'unknown',
-      navigation_depth: navigationHistory.length,
-      time_since_last_tab_switch: profileAccessTime - lastTabSwitch.current
-    });
-    
+    analytics.trackUserAction('profile_access', { access_method: 'header_button' });
     router.push('/profile');
   };
 
-  // Track search activation from header - RE-ENABLED
   const handleSearchActivation = () => {
-    const currentScreen = navigationHistory[navigationHistory.length - 1] || 'unknown';
-    
-    // Track search activation analytics
-    analytics.trackUserAction('header_search_activated', {
-      screen: currentScreen,
-      activation_method: 'header_search_button',
-      user_type: isGuest ? 'guest' : 'registered',
-      session_tab_switches: sessionTabSwitches
-    });
-    
-    analytics.trackFeatureEngagement('header_search_activation', {
-      screen: currentScreen,
-      session_activity: sessionTabSwitches > 2 ? 'active' : 'passive'
-    });
-    
+    analytics.trackUserAction('header_search_activated', {});
     setHeaderSearchActive(true);
   };
 
-  // Enhanced tab switch tracking
   const handleTabSwitch = (tabName: string, isFocused: boolean) => {
-    const switchTime = Date.now();
-    const timeSinceLastSwitch = switchTime - lastTabSwitch.current;
-    
-    // Update navigation tracking
-    setNavigationHistory(prev => [...prev.slice(-9), tabName]); // Keep last 10
+    // Dismiss header search on any tab interaction
+    setHeaderSearchActive(false);
+    Keyboard.dismiss();
+    setNavigationHistory(prev => [...prev.slice(-9), tabName]);
     setSessionTabSwitches(prev => prev + 1);
-    lastTabSwitch.current = switchTime;
+    lastTabSwitch.current = Date.now();
     
-    if (isFocused) {
-      // Track tab re-selection (double tap)
-      analytics?.trackUserAction('tab_reselection', {
-        tab: tabName,
-        user_type: isGuest ? 'guest' : 'registered',
-        time_since_last_switch: timeSinceLastSwitch,
-        session_tab_switches: sessionTabSwitches,
-        triggered_scroll_to_top: true
-      });
-      
-      analytics?.trackFeatureEngagement('tab_double_tap', {
-        tab: tabName,
-        session_activity: sessionTabSwitches > 3 ? 'high' : 'low'
-      });
-      
-      // Trigger scroll to top (only for scrollable tabs)
-      if (tabName === 'events' || tabName === 'specials') {
-        triggerScrollToTop(tabName);
-        
-        // FOR GUESTS ONLY: Track this as a tab selection interaction
-        if (isGuest && (tabName === 'events' || tabName === 'specials')) {
-          console.log(`[GuestLimitation] Tracking ${tabName} tab re-selection for guest`);
-          trackTabSelect(tabName);
-        }
-      }
-    } else {
-      // Track regular tab switch
-      const previousTab = navigationHistory[navigationHistory.length - 1];
-      
-      analytics?.trackUserAction('tab_switch', {
-        from_tab: previousTab || 'unknown',
-        to_tab: tabName,
-        user_type: isGuest ? 'guest' : 'registered',
-        time_since_last_switch: timeSinceLastSwitch,
-        session_tab_switches: sessionTabSwitches,
-        switch_speed: timeSinceLastSwitch < 2000 ? 'fast' : 'normal'
-      });
-      
-      // Track user journey patterns
-      analytics?.trackUserAction('navigation_pattern', {
-        current_tab: tabName,
-        previous_tab: previousTab,
-        navigation_sequence: navigationHistory.slice(-3).join(' -> '),
-        session_depth: navigationHistory.length,
-        user_engagement: sessionTabSwitches > 5 ? 'high' : sessionTabSwitches > 2 ? 'medium' : 'low'
-      });
-      
-      // Track content type switching patterns
-      if ((previousTab === 'events' && tabName === 'specials') || 
-          (previousTab === 'specials' && tabName === 'events')) {
-        analytics?.trackUserAction('content_type_switch', {
-          from_content: previousTab,
-          to_content: tabName,
-          switch_frequency: sessionTabSwitches,
-          comparative_browsing: true
-        });
+    if (isFocused && (tabName === 'events' || tabName === 'specials')) {
+      triggerScrollToTop(tabName);
+      if (isGuest) {
+        trackTabSelect(tabName);
       }
     }
   };
 
-  // Track session navigation patterns on app start - RE-ENABLED
   useEffect(() => {
-    analytics.trackUserAction('tab_layout_initialized', {
-      user_type: isGuest ? 'guest' : 'registered',
-      initialization_time: new Date().toISOString()
-    });
-    
-    // Set initial screen
-    setNavigationHistory(['events']); // Default start screen
-  }, []); // Keep dependency array empty - this was already correct
+    analytics.trackUserAction('tab_layout_initialized', {});
+    setNavigationHistory(['events']);
+  }, []);
 
   return (
     <Tabs screenOptions={({ route }) => ({
       headerRight: () => (
         !isHeaderSearchActive ? (
-          <TouchableOpacity 
-            onPress={handleProfileButtonPress} 
-            style={{ marginRight: 16 }}
-            testID="profile-button"
-          >
-            <Ionicons name="settings-outline" size={24} color="#FFFFFF" />
-          </TouchableOpacity>
+          <View style={{ marginRight: 16 }}>
+            <Animated.View
+              ref={profileButtonRef as any}
+              style={[
+                profileButtonHighlighted ? {
+                  shadowColor: '#FF6B35',
+                  shadowOffset: { width: 0, height: 0 },
+                  shadowOpacity: 0.9,
+                  shadowRadius: 12,
+                  elevation: 15,
+                  borderWidth: 3,
+                  borderColor: '#FF8C42',
+                  borderRadius: 20,
+                  backgroundColor: 'rgba(30, 144, 255, 0.3)',
+                  transform: [{ scale: profileButtonPulseAnim }],
+                } : {}
+              ]}
+              onLayout={() => {
+                // Immediate measurement for tutorial
+                if ((global as any).tutorialHighlightProfileFacebook && profileButtonRef.current) {
+                  profileButtonRef.current.measureInWindow((x: number, y: number, width: number, height: number) => {
+                    (global as any).profileFacebookLayout = { x, y, width, height };
+                  });
+                }
+              }}
+            >
+              <TouchableOpacity 
+                onPress={handleProfileButtonPress} 
+                style={{ padding: 5 }}
+                testID="profile-button"
+              >
+                <Ionicons name="settings-outline" size={24} color="#FFFFFF" />
+              </TouchableOpacity>
+            </Animated.View>
+          </View>
         ) : null
       ),
-      headerStyle: {
-        backgroundColor: '#1E90FF',
-      },
+      headerStyle: { backgroundColor: '#1E90FF' },
       headerTintColor: '#FFFFFF',
+      headerTitleAlign: 'center', // This fixes the Android centering issue
     })}>
       <Tabs.Screen
         name="events"
         options={({ route }) => ({
           title: 'Events',
           headerTitle: () => <HeaderTitle route={route} />,
-          tabBarIcon: ({ color }) => <Ionicons name="calendar" size={24} color={color} />,
-          headerLeft: () => (
+          tabBarActiveTintColor: '#007AFF',
+          tabBarInactiveTintColor: '#B0B0B0',
+          tabBarIcon: ({ color, focused }) => <Ionicons name={focused ? "calendar" : "calendar-outline"} size={24} color={color} />,
+          tabBarButton: (props) => <TutorialAwareTabBarButton {...props} />, // Use the tutorial-aware button
+           headerLeft: () => (
             !isHeaderSearchActive ? (
-              <TouchableOpacity 
-                onPress={handleSearchActivation} 
-                style={{ marginLeft: 16 }}
-              >
-                <Ionicons name="search" size={24} color="#FFFFFF" />
+              <TouchableOpacity onPress={handleSearchActivation} style={{ marginLeft: 16 }}>
+                <View
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    paddingVertical: 4,
+                    paddingHorizontal: 10,
+                    borderRadius: 16,
+                    backgroundColor: 'rgba(255,255,255,0.18)',
+                    borderWidth: 1,
+                    borderColor: 'rgba(255,255,255,0.45)',
+                    shadowColor: '#000',
+                    shadowOffset: { width: 0, height: 2 },
+                    shadowOpacity: 0.16,
+                    shadowRadius: 6,
+                    elevation: 2,
+                  }}
+                >
+                  <View>
+                    <Ionicons name="search" size={14} color="#FFFFFF" style={{ marginRight: 4, opacity: 0.95 }} />
+                    {(searchQuery?.trim()?.length ?? 0) > 0 && (
+                      <View style={{ position: 'absolute', right: -1, top: -1, width: 8, height: 8, borderRadius: 4, backgroundColor: '#FF6B35' }} />
+                    )}
+                  </View>
+                  <Text style={{ color: '#FFFFFF', fontSize: 12, fontWeight: '600', marginLeft: 2, opacity: 0.95 }}>
+                    Search
+                  </Text>
+                </View>
               </TouchableOpacity>
             ) : null
           ),
+
         })}
         listeners={({ navigation }) => ({
           tabPress: (e) => {
-            const isFocused = navigation.isFocused();
-            
-            if (isFocused) {
-              console.log('[TabNavigation] Events tab pressed while focused - triggering scroll to top');
-              handleTabSwitch('events', true);
-            } else {
-              // Track regular navigation to events tab
-              handleTabSwitch('events', false);
-            }
+            const focused = navigation.isFocused();
+            if (!focused) { useMapStore.getState().prefetchIfStale?.(180000); } // 3 min
+            handleTabSwitch('events', focused);
           },
-          focus: (e) => {
-            // Track screen focus for analytics
-            analytics.trackScreenView('events', {
-              navigation_method: 'tab_press',
-              user_type: isGuest ? 'guest' : 'registered',
-              session_tab_switches: sessionTabSwitches
-            });
-          }
+          tabLongPress: (e) => { useMapStore.getState().prefetchIfStale?.(180000); },
+          focus: (e) => { analytics.trackScreenView('events', {}); }
         })}
       />
       
       <Tabs.Screen
         name="map"
-        options={{
+        options={({ route }) => ({
           title: 'Map',
-          tabBarIcon: ({ color }) => <Ionicons name="map" size={24} color={color} />,
-        }}
+          headerTitle: () => <HeaderTitle route={route} />,
+          tabBarActiveTintColor: '#1A1A1A',
+          tabBarInactiveTintColor: '#B0B0B0',
+          headerLeft: () => (
+            !isHeaderSearchActive ? (
+              <TouchableOpacity onPress={handleSearchActivation} style={{ marginLeft: 16 }}>
+                <View
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    paddingVertical: 4,
+                    paddingHorizontal: 10,
+                    borderRadius: 16,
+                    backgroundColor: 'rgba(255,255,255,0.18)',
+                    borderWidth: 1,
+                    borderColor: 'rgba(255,255,255,0.45)',
+                    shadowColor: '#000',
+                    shadowOffset: { width: 0, height: 2 },
+                    shadowOpacity: 0.16,
+                    shadowRadius: 6,
+                    elevation: 2,
+                  }}
+                >
+                  <View>
+                    <Ionicons name="search" size={14} color="#FFFFFF" style={{ marginRight: 4, opacity: 0.95 }} />
+                    {(searchQuery?.trim()?.length ?? 0) > 0 && (
+                      <View style={{ position: 'absolute', right: -1, top: -1, width: 8, height: 8, borderRadius: 4, backgroundColor: '#FF6B35' }} />
+                    )}
+                  </View>
+                  <Text style={{ color: '#FFFFFF', fontSize: 12, fontWeight: '600', marginLeft: 2, opacity: 0.95 }}>
+                    Search
+                  </Text>
+                </View>
+              </TouchableOpacity>
+            ) : null
+          ),
+          tabBarIcon: ({ color, focused }) => <Ionicons name={focused ? "map" : "map-outline"} size={24} color={color} />,
+        })}
         listeners={({ navigation }) => ({
           tabPress: (e) => {
-            const isFocused = navigation.isFocused();
-            handleTabSwitch('map', isFocused);
+            const focused = navigation.isFocused();
+            if (focused) {
+              useMapStore.getState().triggerCloseCallout();
+            } else {
+              useMapStore.getState().prefetchIfStale?.(180000); // 3 min
+            }
+            handleTabSwitch('map', focused);
           },
-          focus: (e) => {
-            // Track map screen focus
-            analytics.trackScreenView('map', {
-              navigation_method: 'tab_press',
-              user_type: isGuest ? 'guest' : 'registered',
-              session_tab_switches: sessionTabSwitches
-            });
-            
-            // Track map-specific engagement
-            analytics.trackMapInteraction('screen_focus', {
-              access_method: 'tab_navigation',
-              session_activity: sessionTabSwitches > 2 ? 'active' : 'new'
-            });
-          }
+          focus: (e) => { analytics.trackScreenView('map', {}); }
         })}
       />
 
@@ -427,38 +733,63 @@ export default function TabLayout() {
         options={({ route }) => ({
           title: 'Specials',
           headerTitle: () => <HeaderTitle route={route} />,
-          tabBarIcon: ({ color }) => <Ionicons name="restaurant" size={24} color={color} />,
+          tabBarActiveTintColor: '#34A853',
+          tabBarInactiveTintColor: '#B0B0B0',
+          tabBarIcon: ({ color, focused }) => <Ionicons name={focused ? "restaurant" : "restaurant-outline"} size={24} color={color} />,
+          tabBarButton: (props) => <TutorialAwareSpecialsTabBarButton {...props} />, // Use the tutorial-aware button
           headerLeft: () => (
             !isHeaderSearchActive ? (
-              <TouchableOpacity 
-                onPress={handleSearchActivation} 
-                style={{ marginLeft: 16 }}
-              >
-                <Ionicons name="search" size={24} color="#FFFFFF" />
+              <TouchableOpacity onPress={handleSearchActivation} style={{ marginLeft: 16 }}>
+                <View
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    paddingVertical: 4,
+                    paddingHorizontal: 10,
+                    borderRadius: 16,
+                    backgroundColor: 'rgba(255,255,255,0.18)',
+                    borderWidth: 1,
+                    borderColor: 'rgba(255,255,255,0.45)',
+                    shadowColor: '#000',
+                    shadowOffset: { width: 0, height: 2 },
+                    shadowOpacity: 0.16,
+                    shadowRadius: 6,
+                    elevation: 2,
+                  }}
+                >
+                  <View>
+                    <Ionicons name="search" size={14} color="#FFFFFF" style={{ marginRight: 4, opacity: 0.95 }} />
+                    {(searchQuery?.trim()?.length ?? 0) > 0 && (
+                      <View
+                        style={{
+                          position: 'absolute',
+                          right: -1,
+                          top: -1,
+                          width: 8,
+                          height: 8,
+                          borderRadius: 4,
+                          backgroundColor: '#FF6B35',
+                        }}
+                      />
+                    )}
+                  </View>
+                  <Text style={{ color: '#FFFFFF', fontSize: 12, fontWeight: '600', marginLeft: 2, opacity: 0.95 }}>
+                    Search
+                  </Text>
+                </View>
               </TouchableOpacity>
             ) : null
           ),
+
         })}
         listeners={({ navigation }) => ({
           tabPress: (e) => {
-            const isFocused = navigation.isFocused();
-            
-            if (isFocused) {
-              console.log('[TabNavigation] Specials tab pressed while focused - triggering scroll to top');
-              handleTabSwitch('specials', true);
-            } else {
-              // Track regular navigation to specials tab
-              handleTabSwitch('specials', false);
-            }
+            const focused = navigation.isFocused();
+            if (!focused) { useMapStore.getState().prefetchIfStale?.(180000); } // 3 min
+            handleTabSwitch('specials', focused);
           },
-          focus: (e) => {
-            // Track screen focus for analytics
-            analytics.trackScreenView('specials', {
-              navigation_method: 'tab_press',
-              user_type: isGuest ? 'guest' : 'registered',
-              session_tab_switches: sessionTabSwitches
-            });
-          }
+          tabLongPress: (e) => { useMapStore.getState().prefetchIfStale?.(180000); },
+          focus: (e) => { analytics.trackScreenView('specials', {}); }
         })}
       />
     </Tabs>

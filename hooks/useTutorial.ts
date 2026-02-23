@@ -28,6 +28,8 @@ import {
   getPreviousStepIndex, 
   tutorialLog 
 } from '../utils/tutorialUtils';
+import { usePathname } from 'expo-router';
+import { amplitudeTrack } from '../lib/amplitudeAnalytics';
 
 /**
  * Main tutorial hook that manages all tutorial state and operations
@@ -38,6 +40,8 @@ export const useTutorial = (): TutorialManagerInterface => {
   const [isActive, setIsActive] = useState(false);
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
   const [currentSubStep, setCurrentSubStep] = useState(-1); // Start at -1 for multi-step tutorials
+  // Route where the overlay actually appears (preferred for from_screen)
+  const pathname = usePathname();
   const [tutorialStatus, setTutorialStatus] = useState<TutorialStatus | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
@@ -186,6 +190,21 @@ export const useTutorial = (): TutorialManagerInterface => {
       return;
     }
 
+    // 🎯 CALLOUT STATE MANAGEMENT: Handle callout collapse when transitioning TO filter-pills
+    const nextStepId = TUTORIAL_STEPS[stepIndex]?.id;
+    if (nextStepId === 'filter-pills') {
+      tutorialLog('Transitioning to filter-pills step - collapsing callout to normal state');
+      const setCalloutState = (global as any).setCalloutState;
+      if (setCalloutState) {
+        // Small delay to let current step finish, then collapse callout
+        setTimeout(() => {
+          setCalloutState('normal');
+        }, 200);
+      } else {
+        tutorialLog('Warning: setCalloutState function not available');
+      }
+    }
+
     // Update step position
     setCurrentStepIndex(stepIndex);
     setCurrentSubStep(subStep);
@@ -201,7 +220,7 @@ export const useTutorial = (): TutorialManagerInterface => {
     }
 
     tutorialLog(`Moved to step ${stepIndex}, substep ${subStep}`);
-  }, [currentStep, currentStepIndex, currentSubStep, tutorialStatus, saveTutorialStatus]);
+   }, [currentStep, currentStepIndex, currentSubStep, tutorialStatus, saveTutorialStatus]);
 
   /**
    * Move to the previous tutorial step or sub-step
@@ -220,13 +239,27 @@ export const useTutorial = (): TutorialManagerInterface => {
     const prevStepHasSubSteps = prevStep ? hasSubSteps(prevStep.id) : false;
     const prevStepSubStepsCount = prevStep?.subSteps?.length || 0;
 
-    // Calculate previous position
+     // Calculate previous position
     const { stepIndex, subStep } = getPreviousStepIndex(
       currentStepIndex,
       currentSubStep,
       prevStepHasSubSteps,
       prevStepSubStepsCount
     );
+
+    // 🎯 CALLOUT STATE MANAGEMENT: Handle callout expand when going back FROM filter-pills
+    if (currentStep?.id === 'filter-pills') {
+      tutorialLog('Going back from filter-pills step - expanding callout to previous state');
+      const setCalloutState = (global as any).setCalloutState;
+      if (setCalloutState) {
+        // Small delay to let step transition finish, then expand callout
+        setTimeout(() => {
+          setCalloutState('expanded');
+        }, 200);
+      } else {
+        tutorialLog('Warning: setCalloutState function not available');
+      }
+    }
 
     // Update step position
     setCurrentStepIndex(stepIndex);
@@ -242,44 +275,120 @@ export const useTutorial = (): TutorialManagerInterface => {
     }
 
     tutorialLog(`Moved to step ${stepIndex}, substep ${subStep}`);
-  }, [currentStepIndex, currentSubStep, tutorialStatus, saveTutorialStatus]);
+  }, [currentStepIndex, currentSubStep, currentStep, tutorialStatus, saveTutorialStatus]);
 
   /**
    * Skip the tutorial without completing it
    */
-  const skipTutorial = useCallback(() => {
-    tutorialLog('Skipping tutorial');
-    setIsActive(false);
-    
-    if (tutorialStatus) {
-      const skippedStatus = {
-        ...tutorialStatus,
-        completed: false, // Mark as skipped, not completed
-        currentStep: 0
-      };
-      saveTutorialStatus(skippedStatus);
-    }
-  }, [tutorialStatus, saveTutorialStatus]);
+const skipTutorial = useCallback(() => {
+  tutorialLog('Skipping tutorial');
+  setIsActive(false);
+  
+  // Clean up all tutorial highlight flags
+  tutorialLog('Cleaning up tutorial highlight flags on skip');
+  (global as any).tutorialHighlightFilterPills = false;
+  (global as any).tutorialHighlightEventDetails = false;
+  (global as any).tutorialHighlightVenueSelector = false;
+  (global as any).tutorialHighlightEventTabs = false;
+  (global as any).tutorialHighlightEventsTab = false;
+  (global as any).tutorialHighlightEventsListExplanation = false;
+  (global as any).tutorialHighlightEventsFilters = false;
+  (global as any).tutorialHighlightSpecialsTab = false;
+  (global as any).tutorialHighlightSpecialsListExplanation = false;
+  (global as any).tutorialHighlightSpecialsFilters = false;
+  (global as any).tutorialHighlightProfileFacebook = false;
+  (global as any).tutorialHighlightFacebookSubmission = false;
+  (global as any).facebookSubmissionStable = false;
+  (global as any).facebookSubmissionLayout = null;
+  
+  if (tutorialStatus) {
+    const skippedStatus = {
+      ...tutorialStatus,
+      completed: false, // Mark as skipped, not completed
+      currentStep: 0
+    };
+    saveTutorialStatus(skippedStatus);
+  }
+}, [tutorialStatus, saveTutorialStatus]);
 
   /**
    * Complete the tutorial and mark as finished
    */
-  const completeTutorial = useCallback(() => {
-    tutorialLog('Completing tutorial');
-    
-    const completedStatus: TutorialStatus = {
-      completed: true,
-      currentStep: TUTORIAL_STEPS.length,
-      completedSteps: TUTORIAL_STEPS.map(step => step.id)
-    };
-    
-    saveTutorialStatus(completedStatus);
-    
-    // Force tutorial to close immediately
-    setIsActive(false);
-    
-    tutorialLog('Tutorial marked as completed and deactivated');
-  }, [saveTutorialStatus]);
+const completeTutorial = useCallback(() => {
+  tutorialLog('Completing tutorial');
+
+  // 🔔 analytics: tutorial_completed (fires once on finish)
+  try {
+    const g: any = global as any;
+
+    const total = TUTORIAL_STEPS.length;
+    // Use current status to infer the last visible step (before completion bumps index)
+    const lastIndex = Math.min(
+      Math.max(0, (tutorialStatus?.currentStep ?? total - 1)),
+      total - 1
+    );
+    const lastKey = TUTORIAL_STEPS[lastIndex]?.id;
+
+    const dwellStart = g.__tutorialStepDwellStartTs;
+    const dwell = typeof dwellStart === 'number' ? Math.max(0, Date.now() - dwellStart) : 0;
+
+    const fromScreen = g.currentRouteName || '(unknown)';
+    const runInitiated = g.__tutorialRunUserInitiated === true;
+    const launchSource = g.__tutorialRunLaunchSource || 'unknown';
+    const isGuest = !auth.currentUser;
+
+    amplitudeTrack('tutorial_completed', {
+      tutorial_id: 'main_onboarding_v1',
+      tutorial_version: 1,
+      total_steps: total,
+      source: 'tutorial_system',
+      from_screen: pathname || fromScreen,
+
+
+      // last step context
+      step_index: lastIndex,
+      step_key: lastKey,
+      dwell_ms_on_step: dwell,
+
+      // run context
+      user_initiated: runInitiated,
+      launch_source: launchSource,
+      is_guest: isGuest,
+    });
+  } catch (e) {
+    console.log('[analytics] tutorial_completed failed:', e);
+  }
+  
+const completedStatus: TutorialStatus = {
+  completed: true,
+  currentStep: TUTORIAL_STEPS.length,
+  completedSteps: TUTORIAL_STEPS.map(step => step.id)
+};
+
+  // Clean up all tutorial highlight flags
+  tutorialLog('Cleaning up tutorial highlight flags on completion');
+  (global as any).tutorialHighlightFilterPills = false;
+  (global as any).tutorialHighlightEventDetails = false;
+  (global as any).tutorialHighlightVenueSelector = false;
+  (global as any).tutorialHighlightEventTabs = false;
+  (global as any).tutorialHighlightEventsTab = false;
+  (global as any).tutorialHighlightEventsListExplanation = false;
+  (global as any).tutorialHighlightEventsFilters = false;
+  (global as any).tutorialHighlightSpecialsTab = false;
+  (global as any).tutorialHighlightSpecialsListExplanation = false;
+  (global as any).tutorialHighlightSpecialsFilters = false;
+  (global as any).tutorialHighlightProfileFacebook = false;
+  (global as any).tutorialHighlightFacebookSubmission = false;
+  (global as any).facebookSubmissionStable = false;
+  (global as any).facebookSubmissionLayout = null;
+  
+  saveTutorialStatus(completedStatus);
+  
+  // Force tutorial to close immediately
+  setIsActive(false);
+  
+  tutorialLog('Tutorial marked as completed and deactivated');
+}, [saveTutorialStatus]);
 
   /**
    * Restart the tutorial from the beginning

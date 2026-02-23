@@ -5,6 +5,7 @@
 //              and determines when guest users should be prompted to register
 // FIXED: Applied module-level pattern to prevent rendering loops
 // ENHANCED: Added comprehensive Firebase Analytics integration
+// ENHANCED: Added Amplitude tracking for registration prompts
 // ===============================================================
 
 import { create } from 'zustand';
@@ -19,6 +20,7 @@ import {
 
 // 🔥 ANALYTICS INTEGRATION: Import analytics service
 import * as Analytics from '../utils/analytics';
+import { amplitudeTrack } from '../lib/amplitudeAnalytics';
 
 // Storage keys for persisting data across app sessions
 const STORAGE_KEYS = {
@@ -101,15 +103,18 @@ export const useGuestLimitationStore = create<GuestLimitationStore>((set, get) =
   // STATE PROPERTIES (CLEAN - NO SCROLL SESSIONS)
   // =============================================
   
-  // Core interaction tracking
-  interactionCount: 0,
-  hasSeenFirstPrompt: false,
-  isPromptVisible: false,
-  lastInteractionTime: Date.now(),
-  
-  // Session management
-  sessionStartTime: Date.now(),
-  totalSessionInteractions: 0,
+ // Core interaction tracking
+    interactionCount: 0,
+    hasSeenFirstPrompt: false,
+    isPromptVisible: false,
+    lastInteractionTime: Date.now(),
+
+    // Session management
+    sessionStartTime: Date.now(),
+    totalSessionInteractions: 0,
+
+    // Overlay close signal (for closing lightboxes/modals before navigation)
+    overlayCloseSignal: 0,
   
   // =============================================
   // CORE ACTION METHODS
@@ -124,7 +129,12 @@ export const useGuestLimitationStore = create<GuestLimitationStore>((set, get) =
     const config = DEFAULT_GUEST_LIMITATION_CONFIG;
     
     // Log the interaction for debugging
-    console.log(`[GuestLimitation] Interaction: ${type}, Count: ${state.interactionCount + 1}`);
+    console.log('[GuestLimitation] ========================================');
+    console.log(`[GuestLimitation] 🎯 Interaction Type: ${type}`);
+    console.log(`[GuestLimitation] 🎯 Current Count: ${state.interactionCount}`);
+    console.log(`[GuestLimitation] 🎯 New Count: ${state.interactionCount + 1}`);
+    console.log(`[GuestLimitation] 🎯 Limit: ${state.getInteractionLimit()}`);
+    console.log(`[GuestLimitation] 🎯 Has Seen First Prompt: ${state.hasSeenFirstPrompt}`);
     
     // Update interaction counts
     const newCount = state.interactionCount + 1;
@@ -175,6 +185,23 @@ export const useGuestLimitationStore = create<GuestLimitationStore>((set, get) =
         user_engagement_level: newTotalCount > 10 ? 'high' : newTotalCount > 5 ? 'medium' : 'low'
       });
       
+      // 📊 AMPLITUDE: Track what triggered the prompt
+      console.log('[GuestLimitation] 📊 AMPLITUDE: About to track guest_limitation_triggered');
+      const triggerPromptType = state.hasSeenFirstPrompt ? 'subsequent' : 'initial';
+      console.log('[GuestLimitation] 📊 Trigger Prompt Type:', triggerPromptType);
+      
+      amplitudeTrack('guest_limitation_triggered', {
+        trigger_interaction_type: type,
+        interaction_count: newCount,
+        interaction_limit: state.getInteractionLimit(),
+        prompt_type: triggerPromptType,
+        session_duration_seconds: Math.round((Date.now() - state.sessionStartTime) / 1000),
+        total_session_interactions: newTotalCount,
+        source: 'guest_limitation_system',
+        referrer_screen: 'unknown',
+      });
+      console.log('[GuestLimitation] 📊 AMPLITUDE: guest_limitation_triggered tracked');
+      
       state.showPrompt();
       return false; // Block the interaction
     }
@@ -218,7 +245,14 @@ export const useGuestLimitationStore = create<GuestLimitationStore>((set, get) =
     const state = get();
     const promptStartTime = Date.now();
     
+    // 🔍 CRITICAL: Capture prompt type BEFORE updating hasSeenFirstPrompt
+    const isFirstPrompt = !state.hasSeenFirstPrompt;
+    const promptType = isFirstPrompt ? 'initial' : 'subsequent';
+    
     console.log('[GuestLimitation] Showing prompt');
+    console.log('[GuestLimitation] 🎯 Prompt Type:', promptType);
+    console.log('[GuestLimitation] 🎯 Interaction Count:', state.interactionCount);
+    console.log('[GuestLimitation] 🎯 Had Seen First Prompt:', state.hasSeenFirstPrompt);
     
     set({ 
       isPromptVisible: true,
@@ -234,7 +268,7 @@ export const useGuestLimitationStore = create<GuestLimitationStore>((set, get) =
     
     // 🔥 ANALYTICS: Track prompt display with comprehensive context
     Analytics.logEvent('guest_prompt_shown', {
-      prompt_type: state.hasSeenFirstPrompt ? 'subsequent' : 'initial',
+      prompt_type: promptType,
       interaction_count: state.interactionCount,
       session_duration_ms: Date.now() - state.sessionStartTime,
       total_session_interactions: state.totalSessionInteractions,
@@ -246,8 +280,23 @@ export const useGuestLimitationStore = create<GuestLimitationStore>((set, get) =
     Analytics.trackFeatureEngagement('registration_prompt_displayed', {
       user_engagement_score: state.totalSessionInteractions,
       session_length_category: (Date.now() - state.sessionStartTime) > 300000 ? 'long' : 'short',
-      prompt_frequency: state.hasSeenFirstPrompt ? 'repeat' : 'first_time'
+      prompt_frequency: isFirstPrompt ? 'first_time' : 'repeat'
     });
+    
+    // 📊 AMPLITUDE: Track guest registration prompt shown
+    console.log('[GuestLimitation] 📊 AMPLITUDE: Tracking guest_registration_prompt_shown');
+    amplitudeTrack('guest_registration_prompt_shown', {
+      prompt_type: promptType,
+      interaction_count: state.interactionCount,
+      interaction_limit: state.getInteractionLimit(),
+      session_duration_seconds: Math.round((Date.now() - state.sessionStartTime) / 1000),
+      total_session_interactions: state.totalSessionInteractions,
+      daily_prompt_count: state._getDailyPromptCount(),
+      is_first_prompt: isFirstPrompt,
+      source: 'guest_limitation_system',
+      referrer_screen: 'unknown',
+    });
+    console.log('[GuestLimitation] 📊 AMPLITUDE: Tracking complete');
     
     // Set up analytics tracking for prompt interaction timing
     setTimeout(() => {
@@ -263,13 +312,19 @@ export const useGuestLimitationStore = create<GuestLimitationStore>((set, get) =
   /**
    * Hide the registration prompt overlay
    * 🔥 ENHANCED: Added analytics tracking for prompt outcomes
+   * @param trackDismissal - Whether to track this as a dismissal (false for conversions)
    */
-  hidePrompt: (): void => {
+  hidePrompt: (trackDismissal: boolean = true): void => {
     const state = get();
     const promptDisplayTime = Date.now() - state.lastInteractionTime;
     
-    console.log('[GuestLimitation] Hiding prompt');
+    console.log('[GuestLimitation] Hiding prompt, trackDismissal:', trackDismissal);
     set({ isPromptVisible: false });
+    
+    if (!trackDismissal) {
+      console.log('[GuestLimitation] Skipping dismissal tracking (conversion flow)');
+      return; // Don't track dismissal or reset counter for conversions
+    }
     
     // 🔥 ANALYTICS: Track prompt dismissal with interaction data
     Analytics.logEvent('guest_prompt_dismissed', {
@@ -479,6 +534,13 @@ export const useGuestLimitationStore = create<GuestLimitationStore>((set, get) =
       new_daily_count: get()._getDailyPromptCount() + 1,
       session_prompt_number: 1 // Would track multiple prompts per session
     });
+  },
+
+  // 🔔 Emit a global overlay close signal (used to close lightboxes before navigating to registration)
+  emitOverlayCloseSignal: (): void => {
+    set((state: any) => ({
+      overlayCloseSignal: (state?.overlayCloseSignal ?? 0) + 1,
+    }));
   },
   
   // =============================================

@@ -1,313 +1,527 @@
-import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Image, useWindowDimensions } from 'react-native';
-import { 
+import React, { useEffect, useRef } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  Pressable,
+  Image,
+  Animated,
+  Platform,
+  useColorScheme,
+} from 'react-native';
+import {
   NativeAdView,
-  NativeMediaView
+  NativeMediaView,
 } from 'react-native-google-mobile-ads';
 import { NativeAsset, NativeAssetType } from 'react-native-google-mobile-ads/src/ads/native-ad/NativeAsset';
+import { AdColors, AdSpacing, AdRadius, AdAnimations, type AdColorScheme } from '@/constants/AdTheme';
 
 interface NativeAdComponentProps {
   nativeAd: any;
   loading: boolean;
 }
 
-export default function NativeAdComponent({ nativeAd, loading }: NativeAdComponentProps) {
-  const { width } = useWindowDimensions();
-  
-  if (loading) {
-    return (
-      <View style={styles.adCard}>
-        <Text style={styles.loadingText}>Ad is loading...</Text>
-      </View>
+// Star Rating Component
+const StarRating = ({ rating, colors }: { rating: number; colors: typeof AdColors.light }) => {
+  if (!rating || rating <= 0) return null;
+
+  const fullStars = Math.floor(rating);
+  const hasHalfStar = rating - fullStars >= 0.5;
+  const emptyStars = 5 - fullStars - (hasHalfStar ? 1 : 0);
+
+  return (
+    <View style={styles.ratingContainer}>
+      {Array.from({ length: fullStars }).map((_, i) => (
+        <Text key={`full-${i}`} style={[styles.star, { color: colors.starActive }]}>
+          ★
+        </Text>
+      ))}
+      {hasHalfStar && (
+        <Text style={[styles.star, { color: colors.starActive }]}>★</Text>
+      )}
+      {Array.from({ length: emptyStars }).map((_, i) => (
+        <Text key={`empty-${i}`} style={[styles.star, { color: colors.starInactive }]}>
+          ☆
+        </Text>
+      ))}
+      <Text style={[styles.ratingText, { color: colors.metaText }]}>
+        {rating.toFixed(1)}
+      </Text>
+    </View>
+  );
+};
+
+// Loading Skeleton Component
+const AdSkeleton = ({ colors }: { colors: typeof AdColors.light }) => {
+  const shimmerAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    const shimmer = Animated.loop(
+      Animated.sequence([
+        Animated.timing(shimmerAnim, {
+          toValue: 1,
+          duration: 1000,
+          useNativeDriver: true,
+        }),
+        Animated.timing(shimmerAnim, {
+          toValue: 0,
+          duration: 1000,
+          useNativeDriver: true,
+        }),
+      ])
     );
+    shimmer.start();
+    return () => shimmer.stop();
+  }, []);
+
+  const opacity = shimmerAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0.5, 1],
+  });
+
+  return (
+    <View style={[styles.adCard, { backgroundColor: colors.cardBackground }]}>
+      {/* Header skeleton */}
+      <View style={styles.skeletonHeader}>
+        <Animated.View
+          style={[
+            styles.skeletonIcon,
+            { backgroundColor: colors.skeletonBase, opacity },
+          ]}
+        />
+        <View style={styles.skeletonHeaderText}>
+          <Animated.View
+            style={[
+              styles.skeletonLine,
+              { width: '60%', backgroundColor: colors.skeletonBase, opacity },
+            ]}
+          />
+          <Animated.View
+            style={[
+              styles.skeletonLineSmall,
+              { width: '40%', backgroundColor: colors.skeletonBase, opacity },
+            ]}
+          />
+        </View>
+      </View>
+
+      {/* Media skeleton */}
+      <Animated.View
+        style={[
+          styles.skeletonMedia,
+          { backgroundColor: colors.skeletonBase, opacity },
+        ]}
+      />
+
+      {/* Body skeleton */}
+      <View style={styles.skeletonBody}>
+        <Animated.View
+          style={[
+            styles.skeletonLine,
+            { width: '90%', backgroundColor: colors.skeletonBase, opacity },
+          ]}
+        />
+        <Animated.View
+          style={[
+            styles.skeletonLine,
+            { width: '70%', backgroundColor: colors.skeletonBase, opacity },
+          ]}
+        />
+      </View>
+
+      {/* CTA skeleton */}
+      <View style={styles.skeletonCta}>
+        <Animated.View
+          style={[
+            styles.skeletonButton,
+            { backgroundColor: colors.skeletonBase, opacity },
+          ]}
+        />
+      </View>
+    </View>
+  );
+};
+
+export default function NativeAdComponent({ nativeAd, loading }: NativeAdComponentProps) {
+  const colorScheme = (useColorScheme() ?? 'light') as AdColorScheme;
+  const colors = AdColors[colorScheme];
+
+  // Entrance animations
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(15)).current;
+
+  useEffect(() => {
+    if (nativeAd && !loading) {
+      Animated.parallel([
+        Animated.timing(fadeAnim, {
+          toValue: 1,
+          duration: AdAnimations.fadeIn,
+          useNativeDriver: true,
+        }),
+        Animated.spring(slideAnim, {
+          toValue: 0,
+          tension: 65,
+          friction: 10,
+          useNativeDriver: true,
+        }),
+      ]).start();
+    }
+  }, [nativeAd, loading]);
+
+  // Show skeleton while loading
+  if (loading) {
+    return <AdSkeleton colors={colors} />;
   }
 
   if (!nativeAd) {
     return null;
   }
 
-  // Safe text getter that ensures we have a string
+  // Safe text getter
   const getSafeText = (value: any): string => {
     if (value === null || value === undefined) return '';
     return typeof value === 'string' ? value : String(value);
   };
 
-  // Custom StarRating component
-  const StarRating = ({ rating }: { rating?: number }) => {
-    if (!rating || rating <= 0) return null;
-    
-    const fullStars = Math.floor(rating);
-    const halfStar = rating - fullStars >= 0.5;
-    const emptyStars = 5 - fullStars - (halfStar ? 1 : 0);
-    
-    return (
-      <View style={styles.ratingContainer}>
-        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-          {/* Full stars */}
-          {Array.from({ length: fullStars }).map((_, i) => (
-            <Text key={`full-${i}`} style={styles.starIcon}>★</Text>
-          ))}
-          
-          {/* Half star */}
-          {halfStar && (
-            <Text style={styles.starIcon}>☆</Text>
-          )}
-          
-          {/* Empty stars */}
-          {Array.from({ length: emptyStars }).map((_, i) => (
-            <Text key={`empty-${i}`} style={styles.emptyStarIcon}>☆</Text>
-          ))}
-          
-          {/* Rating number */}
-          <Text style={styles.ratingText}>
-            {" " + rating.toFixed(1)}
+  return (
+    <Animated.View
+      style={[
+        styles.animatedContainer,
+        {
+          opacity: fadeAnim,
+          transform: [{ translateY: slideAnim }],
+        },
+      ]}
+    >
+      <NativeAdView
+        style={[
+          styles.adCard,
+          {
+            backgroundColor: colors.cardBackground,
+            borderColor: colors.cardBorder,
+            shadowColor: colors.shadowColor,
+            shadowOpacity: colors.shadowOpacity,
+          },
+        ]}
+        nativeAd={nativeAd}
+      >
+        {/* Sponsored Badge - Subtle pill style */}
+        <View
+          style={[
+            styles.sponsoredBadge,
+            {
+              backgroundColor: colors.badgeBackground,
+              borderColor: colors.badgeBorder,
+            },
+          ]}
+        >
+          <Text style={[styles.sponsoredText, { color: colors.badgeText }]}>
+            Sponsored
           </Text>
         </View>
-      </View>
-    );
-  };
 
-  // Debug logging
-  console.log('🐛 NativeAd properties:', {
-    headline: nativeAd.headline,
-    advertiser: nativeAd.advertiser,
-    body: nativeAd.body,
-    callToAction: nativeAd.callToAction,
-    price: nativeAd.price,
-    store: nativeAd.store,
-    starRating: nativeAd.starRating
-  });
-
-  return (
-    <NativeAdView 
-      style={styles.adCard}
-      nativeAd={nativeAd}
-    >
-      {/* Ad Badge (Required for attribution) */}
-      <View style={styles.adBadgeContainer}>
-        <Text style={styles.adBadgeText}>Ad</Text>
-      </View>
-      
-      <View style={styles.contentContainer}>
-        {/* Headline and Advertiser Row */}
-        <View style={styles.headerRow}>
-          <View style={styles.headerTextColumn}>
+        {/* Header: Icon + Headline + Advertiser */}
+        <View style={styles.header}>
+          {nativeAd.icon?.url && (
+            <NativeAsset assetType={NativeAssetType.ICON}>
+              <Image
+                source={{ uri: nativeAd.icon.url }}
+                style={styles.iconImage}
+              />
+            </NativeAsset>
+          )}
+          <View style={styles.headerText}>
             {nativeAd.headline && (
               <NativeAsset assetType={NativeAssetType.HEADLINE}>
-                <Text style={styles.headline} numberOfLines={2}>
+                <Text
+                  style={[styles.headline, { color: colors.headline }]}
+                  numberOfLines={2}
+                >
                   {getSafeText(nativeAd.headline)}
                 </Text>
               </NativeAsset>
             )}
-            
             {nativeAd.advertiser && getSafeText(nativeAd.advertiser) && (
               <NativeAsset assetType={NativeAssetType.ADVERTISER}>
-                <Text style={styles.advertiser}>
+                <Text style={[styles.advertiser, { color: colors.advertiser }]}>
                   {getSafeText(nativeAd.advertiser)}
                 </Text>
               </NativeAsset>
             )}
           </View>
         </View>
-        
-        {/* Media View with fixed height */}
-        <View style={styles.mediaContainer}>
-          <NativeMediaView 
-            style={styles.mediaView} 
-            resizeMode="cover"
-          />
+
+        {/* Media - Full bleed social media style */}
+        {/* Show NativeMediaView if aspectRatio > 0 OR hasVideoContent (video ads may have aspectRatio=0) */}
+        {/* IMPORTANT: Override aspectRatio with undefined to prevent NativeMediaView from collapsing when aspectRatio=0 */}
+        <View style={[styles.mediaContainer, { backgroundColor: colors.mediaPlaceholder }]}>
+          {nativeAd.mediaContent && (nativeAd.mediaContent.aspectRatio > 0 || nativeAd.mediaContent.hasVideoContent) ? (
+            <NativeMediaView style={[styles.mediaView, { aspectRatio: undefined }]} resizeMode="cover" />
+          ) : (
+            /* Fallback only when there's no valid media content */
+            <View style={styles.mediaFallback}>
+              {nativeAd.icon?.url ? (
+                <Image
+                  source={{ uri: nativeAd.icon.url }}
+                  style={styles.mediaFallbackImage}
+                  resizeMode="contain"
+                />
+              ) : (
+                <Text style={[styles.mediaFallbackText, { color: colors.metaText }]}>
+                  {getSafeText(nativeAd.headline).charAt(0) || 'Ad'}
+                </Text>
+              )}
+            </View>
+          )}
         </View>
-        
-        {/* Body text (if available) */}
+
+        {/* Body text */}
         {nativeAd.body && getSafeText(nativeAd.body) && (
-          <NativeAsset assetType={NativeAssetType.BODY}>
-            <Text style={styles.body} numberOfLines={3}>
-              {getSafeText(nativeAd.body)}
-            </Text>
-          </NativeAsset>
+          <View style={styles.bodyContainer}>
+            <NativeAsset assetType={NativeAssetType.BODY}>
+              <Text
+                style={[styles.body, { color: colors.body }]}
+                numberOfLines={2}
+              >
+                {getSafeText(nativeAd.body)}
+              </Text>
+            </NativeAsset>
+          </View>
         )}
-        
-        {/* Store and Price Row - Now with custom star rating */}
+
+        {/* Info Row: Store, Price, Rating */}
         <View style={styles.infoRow}>
-          {nativeAd.store && getSafeText(nativeAd.store) && (
+          {getSafeText(nativeAd.store) ? (
             <NativeAsset assetType={NativeAssetType.STORE}>
-              <Text style={styles.storeText}>
+              <Text style={[styles.metaText, { color: colors.metaText }]}>
                 {getSafeText(nativeAd.store)}
               </Text>
             </NativeAsset>
-          )}
-          
-          {nativeAd.store && getSafeText(nativeAd.store) && nativeAd.price && getSafeText(nativeAd.price) && (
-            <Text style={styles.separator}>•</Text>
-          )}
-          
-          {nativeAd.price && getSafeText(nativeAd.price) && (
+          ) : null}
+          {getSafeText(nativeAd.store) && getSafeText(nativeAd.price) ? (
+            <Text style={[styles.metaSeparator, { color: colors.metaText }]}>
+              ·
+            </Text>
+          ) : null}
+          {getSafeText(nativeAd.price) ? (
             <NativeAsset assetType={NativeAssetType.PRICE}>
-              <Text style={styles.priceText}>
+              <Text style={[styles.metaText, { color: colors.metaText }]}>
                 {getSafeText(nativeAd.price)}
               </Text>
             </NativeAsset>
-          )}
-          
-          {/* Custom star rating - no NativeAsset wrapper */}
-          <StarRating rating={nativeAd.starRating} />
+          ) : null}
+          {nativeAd.starRating && nativeAd.starRating > 0 ? (
+            <StarRating rating={nativeAd.starRating} colors={colors} />
+          ) : null}
         </View>
-        
-        {/* Call to Action Button */}
+
+        {/* CTA Button - Modern with press feedback */}
         {nativeAd.callToAction && getSafeText(nativeAd.callToAction) && (
           <NativeAsset assetType={NativeAssetType.CALL_TO_ACTION}>
-            <TouchableOpacity 
-              style={styles.callToActionButton}
-              activeOpacity={0.8}
+            <Pressable
+              style={({ pressed }) => [
+                styles.ctaButton,
+                { backgroundColor: pressed ? colors.ctaPressed : colors.ctaBackground },
+                pressed && styles.ctaButtonPressed,
+              ]}
               disabled={true}
             >
-              <Text style={styles.callToActionText}>
+              <Text style={[styles.ctaText, { color: colors.ctaText }]}>
                 {getSafeText(nativeAd.callToAction)}
               </Text>
-            </TouchableOpacity>
+            </Pressable>
           </NativeAsset>
         )}
-      </View>
-    </NativeAdView>
+      </NativeAdView>
+    </Animated.View>
   );
 }
 
 const styles = StyleSheet.create({
+  animatedContainer: {
+    marginHorizontal: AdSpacing.md,
+    marginVertical: AdSpacing.sm,
+  },
   adCard: {
-    backgroundColor: '#F5F5F5',
-    borderRadius: 8,
-    margin: 12,
+    borderRadius: AdRadius.lg,
     overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: '#E0E0E0',
+    borderWidth: Platform.OS === 'android' ? 1 : 0,
+    // Shadow for iOS
+    shadowOffset: { width: 0, height: 2 },
+    shadowRadius: 8,
+    // Elevation for Android
+    elevation: 4,
   },
-  contentContainer: {
-    padding: 12,
-    width: '100%',
-  },
-  loadingText: {
-    textAlign: 'center',
-    padding: 16,
-    color: '#666',
-  },
-  adBadgeContainer: {
+
+  // Sponsored Badge
+  sponsoredBadge: {
     position: 'absolute',
-    top: 4,
-    left: 4,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 2,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    minWidth: 20,
-    minHeight: 20,
-    zIndex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 0.5,
-    borderColor: '#CCCCCC',
+    top: AdSpacing.sm,
+    left: AdSpacing.sm,
+    paddingHorizontal: AdSpacing.sm,
+    paddingVertical: AdSpacing.xs,
+    borderRadius: AdRadius.xs,
+    borderWidth: 1,
+    zIndex: 10,
   },
-  adBadgeText: {
-    color: '#666666',
-    fontSize: 12,
-    fontWeight: '600',
-    textAlign: 'center',
+  sponsoredText: {
+    fontSize: 11,
+    fontWeight: '500',
+    letterSpacing: 0.2,
   },
-  headerRow: {
+
+  // Header
+  header: {
     flexDirection: 'row',
-    marginTop: 20,
-    marginBottom: 8,
-    width: '100%',
-  },
-  headerTextColumn: {
-    flex: 1,
-    flexShrink: 1,
+    alignItems: 'flex-start',
+    paddingHorizontal: AdSpacing.lg,
+    paddingTop: AdSpacing.xl + AdSpacing.lg, // Extra space for badge
+    paddingBottom: AdSpacing.md,
   },
   iconImage: {
-    width: 40,
-    height: 40,
-    borderRadius: 6,
-    marginRight: 8,
+    width: 44,
+    height: 44,
+    borderRadius: AdRadius.sm,
+    marginRight: AdSpacing.md,
+  },
+  headerText: {
+    flex: 1,
+    justifyContent: 'center',
   },
   headline: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#333333',
-    marginBottom: 4,
+    lineHeight: 21,
+    marginBottom: AdSpacing.xs,
   },
   advertiser: {
-    fontSize: 14,
-    color: '#666666',
+    fontSize: 13,
+    fontWeight: '400',
   },
+
+  // Media - Full bleed
   mediaContainer: {
     width: '100%',
-    height: 180,
-    backgroundColor: '#EEEEEE',
-    borderRadius: 6,
-    marginVertical: 8,
-    overflow: 'hidden',
+    height: 200,
+    marginBottom: AdSpacing.md,
     justifyContent: 'center',
     alignItems: 'center',
   },
   mediaView: {
     width: '100%',
     height: '100%',
-    minWidth: 120,
-    minHeight: 120,
+  },
+  mediaFallback: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  mediaFallbackImage: {
+    width: 100,
+    height: 100,
+    borderRadius: AdRadius.lg,
+  },
+  mediaFallbackText: {
+    fontSize: 24,
+    fontWeight: '700',
+  },
+
+  // Body
+  bodyContainer: {
+    paddingHorizontal: AdSpacing.lg,
+    marginBottom: AdSpacing.sm,
   },
   body: {
     fontSize: 14,
-    color: '#333333',
     lineHeight: 20,
-    marginBottom: 8,
   },
+
+  // Info Row
   infoRow: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
     alignItems: 'center',
-    marginBottom: 8,
-    width: '100%',
+    flexWrap: 'wrap',
+    paddingHorizontal: AdSpacing.lg,
+    marginBottom: AdSpacing.md,
+    gap: AdSpacing.xs,
   },
-  storeText: {
+  metaText: {
     fontSize: 12,
-    color: '#666666',
   },
-  separator: {
+  metaSeparator: {
     fontSize: 12,
-    color: '#666666',
-    marginHorizontal: 4,
+    marginHorizontal: AdSpacing.xs,
   },
-  priceText: {
-    fontSize: 12,
-    color: '#666666',
-  },
+
+  // Rating
   ratingContainer: {
-    marginLeft: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginLeft: AdSpacing.sm,
   },
-  starIcon: {
+  star: {
     fontSize: 12,
-    color: '#f5a623',
-  },
-  emptyStarIcon: {
-    fontSize: 12,
-    color: '#ddd',
   },
   ratingText: {
     fontSize: 12,
-    color: '#666666',
-    marginLeft: 2,
+    marginLeft: AdSpacing.xs,
   },
-  callToActionButton: {
-    backgroundColor: '#1A73E8',
-    borderRadius: 4,
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    alignSelf: 'flex-start',
-    marginTop: 4,
+
+  // CTA Button
+  ctaButton: {
+    marginHorizontal: AdSpacing.lg,
+    marginBottom: AdSpacing.lg,
+    paddingVertical: AdSpacing.md,
+    borderRadius: AdRadius.md,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  callToActionText: {
-    color: '#FFFFFF',
-    fontSize: 14,
+  ctaButtonPressed: {
+    transform: [{ scale: 0.98 }],
+  },
+  ctaText: {
+    fontSize: 15,
     fontWeight: '600',
-    textAlign: 'center',
-  }
+  },
+
+  // Skeleton styles
+  skeletonHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: AdSpacing.lg,
+  },
+  skeletonIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: AdRadius.sm,
+    marginRight: AdSpacing.md,
+  },
+  skeletonHeaderText: {
+    flex: 1,
+    gap: AdSpacing.sm,
+  },
+  skeletonLine: {
+    height: 14,
+    borderRadius: AdRadius.xs,
+  },
+  skeletonLineSmall: {
+    height: 12,
+    borderRadius: AdRadius.xs,
+  },
+  skeletonMedia: {
+    width: '100%',
+    height: 200,
+  },
+  skeletonBody: {
+    padding: AdSpacing.lg,
+    gap: AdSpacing.sm,
+  },
+  skeletonCta: {
+    paddingHorizontal: AdSpacing.lg,
+    paddingBottom: AdSpacing.lg,
+  },
+  skeletonButton: {
+    height: 44,
+    borderRadius: AdRadius.md,
+  },
 });

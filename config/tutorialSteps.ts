@@ -42,7 +42,7 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
   
   {
     id: 'cluster-click',
-    title: 'Event Clusters - Tab the Marker!',
+    title: 'Event Clusters - Tap the Marker!',
     content: 'These numbered circles contain information about Events and Specials. \n',
     target: 'closest-cluster', // Will be dynamically set to nearest cluster
     placement: 'bottom',
@@ -55,8 +55,8 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
     title: 'Venue Selection',
     content: 'Venues inside the cluster will be listed here.',
     target: 'venue-selector',
-    placement: 'top',
-    sheetPosition: 'top',
+    placement: 'center',
+    sheetPosition: 'center',
     action: 'next'
   },
 
@@ -222,7 +222,7 @@ export const TUTORIAL_CONFIG = {
   
   // Colors
   SPOTLIGHT_COLOR: '#1E90FF',
-  OVERLAY_COLOR: 'rgba(0, 0, 0, 0.45)',
+  OVERLAY_COLOR: 'rgba(0, 0, 0, 0.85)',
   PRIMARY_COLOR: '#1E90FF',
   
   // Spacing and sizes

@@ -4,6 +4,7 @@
 // DESCRIPTION: This component displays an attractive overlay with registration
 //              benefits and direct access to the registration flow when users
 //              hit their interaction limit
+// ENHANCED: Added Amplitude tracking for all user actions
 // ===============================================================
 
 import React, { useEffect, useRef } from 'react';
@@ -20,9 +21,10 @@ import {
   SafeAreaView
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useRouter, usePathname } from 'expo-router';
 import { useGuestLimitationStore } from '../store/guestLimitationStore';
 import { DEFAULT_REGISTRATION_PROMPT_CONFIG } from '../types/guestLimitations';
+import { amplitudeTrack } from '../lib/amplitudeAnalytics';
 
 // Get device dimensions for responsive layout
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
@@ -66,7 +68,7 @@ interface RegistrationPromptProps {
  * - Responsive design
  * - Customizable content and styling
  * - Direct registration flow integration
- * - Analytics tracking ready
+ * - Complete Amplitude analytics tracking
  * 
  * Usage:
  * <RegistrationPrompt /> // Uses store state automatically
@@ -98,15 +100,29 @@ export const RegistrationPrompt: React.FC<RegistrationPromptProps> = ({
   // =============================================
   
   const router = useRouter();
+  const pathname = usePathname();
   const guestStore = useGuestLimitationStore();
   
   // Animation values
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(50)).current;
   const scaleAnim = useRef(new Animated.Value(0.9)).current;
+
+  // Prevent double navigation flicker
+  const navigatingRef = useRef(false);
   
   // Determine visibility from props or store
   const isVisible = visible !== undefined ? visible : guestStore.isPromptVisible;
+  
+  // Debug logging for visibility
+  useEffect(() => {
+    console.log('[RegistrationPrompt] 🔍 Visibility changed:', {
+      isVisible,
+      visibleProp: visible,
+      storeIsPromptVisible: guestStore.isPromptVisible,
+      source: visible !== undefined ? 'props' : 'store'
+    });
+  }, [isVisible, visible, guestStore.isPromptVisible]);
   
   // =============================================
   // ANIMATION EFFECTS
@@ -163,20 +179,58 @@ export const RegistrationPrompt: React.FC<RegistrationPromptProps> = ({
    * Takes user directly to registration screen
    */
   const handleRegisterPress = () => {
-    console.log('[RegistrationPrompt] Register button pressed');
+    console.log('[RegistrationPrompt] ========================================');
+    console.log('[RegistrationPrompt] 🎯 Register button pressed - CONVERSION FLOW');
     
-    if (onRegisterPress) {
-      onRegisterPress();
+    // 📊 AMPLITUDE: Track registration button click
+    amplitudeTrack('guest_prompt_register_clicked', {
+      prompt_type: guestStore.hasSeenFirstPrompt ? 'subsequent' : 'initial',
+      interaction_count: guestStore.interactionCount,
+      session_duration_seconds: Math.round((Date.now() - guestStore.sessionStartTime) / 1000),
+      total_session_interactions: guestStore.totalSessionInteractions,
+      source: 'registration_prompt',
+      referrer_screen: 'unknown',
+      action: 'register_now',
+    });
+    
+// Close prompt WITHOUT dismissal tracking (this is a conversion!)
+console.log('[RegistrationPrompt] 🔽 Closing prompt (NO dismissal tracking)');
+guestStore.hidePrompt(false); // false = don't track dismissal
+
+// ✅ Reset guest counters so returning-as-guest starts fresh
+try {
+  guestStore.resetInteractionCount?.();
+  guestStore.startNewSession?.();
+  console.log('[GuestLimitation] Reset after conversion: interactionCount=0, new session started');
+} catch (e) {
+  console.warn('[GuestLimitation] Reset after conversion failed:', e);
+}
+
+// 🔔 Tell any open lightboxes/modals to close before navigation
+if (typeof guestStore.emitOverlayCloseSignal === 'function') {
+  guestStore.emitOverlayCloseSignal();
+}
+
+    
+      if (onRegisterPress) {
+        console.log('[RegistrationPrompt] 🚀 Using custom onRegisterPress callback');      
+        onRegisterPress();
     } else {
-      // Navigate directly to registration screen (index.tsx)
-      router.push('/');
+      if (navigatingRef.current) {
+        console.log('[RegistrationPrompt] ⏳ Navigation already in progress; ignoring duplicate click');
+      } else {
+        navigatingRef.current = true;
+      if (pathname !== '/') {
+        console.log('[RegistrationPrompt] 🚀 Navigating to / (registration screen) [replace]');
+        router.replace('/');
+      } else {
+        console.log('[RegistrationPrompt] ✅ Already on /, skipping replace');
+      }
+
+      }
     }
-    
-    // Hide the prompt
-    handleDismiss();
-    
-    // Track registration attempt for analytics
-    // TODO: Add analytics tracking here
+
+    console.log('[RegistrationPrompt] ========================================');
   };
   
   /**
@@ -184,16 +238,33 @@ export const RegistrationPrompt: React.FC<RegistrationPromptProps> = ({
    * Hides the prompt and resets interaction counter
    */
   const handleDismiss = () => {
-    console.log('[RegistrationPrompt] Prompt dismissed');
+    console.log('[RegistrationPrompt] ----------------------------------------');
+    console.log('[RegistrationPrompt] 🔽 handleDismiss called');
+    console.log('[RegistrationPrompt] 🔍 Before dismiss - isVisible:', isVisible);
+    console.log('[RegistrationPrompt] 🔍 Before dismiss - Store isPromptVisible:', guestStore.isPromptVisible);
+    
+    // 📊 AMPLITUDE: Track prompt dismissal
+    amplitudeTrack('guest_prompt_dismissed', {
+      prompt_type: guestStore.hasSeenFirstPrompt ? 'subsequent' : 'initial',
+      interaction_count: guestStore.interactionCount,
+      session_duration_seconds: Math.round((Date.now() - guestStore.sessionStartTime) / 1000),
+      total_session_interactions: guestStore.totalSessionInteractions,
+      source: 'registration_prompt',
+      referrer_screen: 'unknown',
+      dismissal_method: 'direct_dismiss',
+    });
     
     if (onDismiss) {
+      console.log('[RegistrationPrompt] 🔽 Using custom onDismiss callback');
       onDismiss();
     } else {
-      guestStore.hidePrompt();
+      console.log('[RegistrationPrompt] 🔽 Calling guestStore.hidePrompt() WITH dismissal tracking');
+      guestStore.hidePrompt(); // Default true = track dismissal
+      console.log('[RegistrationPrompt] ✅ guestStore.hidePrompt() returned');
     }
     
-    // Track dismissal for analytics
-    // TODO: Add analytics tracking here
+    console.log('[RegistrationPrompt] 🔍 After dismiss - Store isPromptVisible:', guestStore.isPromptVisible);
+    console.log('[RegistrationPrompt] ----------------------------------------');
   };
   
   /**
@@ -201,6 +272,17 @@ export const RegistrationPrompt: React.FC<RegistrationPromptProps> = ({
    */
   const handleSecondaryPress = () => {
     console.log('[RegistrationPrompt] Secondary button pressed');
+    
+    // 📊 AMPLITUDE: Track secondary action (Maybe Later)
+    amplitudeTrack('guest_prompt_maybe_later_clicked', {
+      prompt_type: guestStore.hasSeenFirstPrompt ? 'subsequent' : 'initial',
+      interaction_count: guestStore.interactionCount,
+      session_duration_seconds: Math.round((Date.now() - guestStore.sessionStartTime) / 1000),
+      total_session_interactions: guestStore.totalSessionInteractions,
+      source: 'registration_prompt',
+      referrer_screen: 'unknown',
+      action: 'maybe_later',
+    });
     
     if (onSecondaryPress) {
       onSecondaryPress();
@@ -214,6 +296,17 @@ export const RegistrationPrompt: React.FC<RegistrationPromptProps> = ({
    */
   const handleBackdropPress = () => {
     if (backdropDismissible) {
+      // 📊 AMPLITUDE: Track backdrop dismissal
+      amplitudeTrack('guest_prompt_dismissed', {
+        prompt_type: guestStore.hasSeenFirstPrompt ? 'subsequent' : 'initial',
+        interaction_count: guestStore.interactionCount,
+        session_duration_seconds: Math.round((Date.now() - guestStore.sessionStartTime) / 1000),
+        total_session_interactions: guestStore.totalSessionInteractions,
+        source: 'registration_prompt',
+        referrer_screen: 'unknown',
+        dismissal_method: 'backdrop_tap',
+      });
+      
       handleDismiss();
     }
   };
