@@ -14,6 +14,26 @@ Important recent history:
 
 As of March 12, 2026, the bug is still under active triage.
 
+## Baseline Status - March 13, 2026
+
+The app is back to a good working baseline in `preview` builds.
+
+Restored and currently working:
+- map cluster taps open callouts reliably
+- hotspot tooltip path is working again
+- callout default state is expanded again
+- callout drag / resize behavior is restored
+- tutorial forward and backward flow around the `filter-pills` step is working again
+- `Events` and `Specials` tabs are rendering again
+
+Current important limitation:
+- native ads are only stable when rendered through the plain React fallback path
+- the SDK native wrapper path (`NativeAdView` / `NativeAsset` / `NativeMediaView`) still appears to be the remaining root issue
+
+Practical meaning:
+- map / callout / hotspot behavior is now considered stable enough to use as the current baseline
+- further investigation should focus on the native ad SDK rendering path in isolation, not on map selection or callout lifecycle
+
 ## Core User Symptom
 
 Main symptom:

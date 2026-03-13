@@ -10,7 +10,7 @@
  * Used by: TutorialManager and any components that need tutorial state
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { doc, updateDoc, getDoc } from 'firebase/firestore';
 import { auth, firestore } from '../config/firebaseConfig';
 import { 
@@ -30,11 +30,17 @@ import {
 } from '../utils/tutorialUtils';
 import { usePathname } from 'expo-router';
 import { amplitudeTrack } from '../lib/amplitudeAnalytics';
+import { useMapStore } from '../store/mapStore';
+import { Cluster, Venue } from '../types/events';
 
 /**
  * Main tutorial hook that manages all tutorial state and operations
  */
 export const useTutorial = (): TutorialManagerInterface => {
+  const filterPillsCalloutSnapshotRef = useRef<{
+    selectedVenues: Venue[];
+    selectedCluster: Cluster | null;
+  } | null>(null);
 
   // Core tutorial state
   const [isActive, setIsActive] = useState(false);
@@ -193,15 +199,22 @@ export const useTutorial = (): TutorialManagerInterface => {
     // 🎯 CALLOUT STATE MANAGEMENT: Handle callout collapse when transitioning TO filter-pills
     const nextStepId = TUTORIAL_STEPS[stepIndex]?.id;
     if (nextStepId === 'filter-pills') {
-      tutorialLog('Transitioning to filter-pills step - collapsing callout to normal state');
-      const setCalloutState = (global as any).setCalloutState;
-      if (setCalloutState) {
-        // Small delay to let current step finish, then collapse callout
+      const { selectedVenues, selectedCluster } = useMapStore.getState();
+      filterPillsCalloutSnapshotRef.current =
+        Array.isArray(selectedVenues) && selectedVenues.length > 0
+          ? {
+              selectedVenues: [...selectedVenues],
+              selectedCluster: selectedCluster ?? null,
+            }
+          : null;
+      tutorialLog('Transitioning to filter-pills step - closing callout to reveal filter pills');
+      const closeCallout = (global as any).closeCallout;
+      if (closeCallout) {
         setTimeout(() => {
-          setCalloutState('normal');
+          closeCallout();
         }, 200);
       } else {
-        tutorialLog('Warning: setCalloutState function not available');
+        tutorialLog('Warning: closeCallout function not available');
       }
     }
 
@@ -248,20 +261,22 @@ export const useTutorial = (): TutorialManagerInterface => {
     );
 
     // 🎯 CALLOUT STATE MANAGEMENT: Handle callout expand when going back FROM filter-pills
+    // Update step position
     if (currentStep?.id === 'filter-pills') {
-      tutorialLog('Going back from filter-pills step - expanding callout to previous state');
-      const setCalloutState = (global as any).setCalloutState;
-      if (setCalloutState) {
-        // Small delay to let step transition finish, then expand callout
+      const calloutSnapshot = filterPillsCalloutSnapshotRef.current;
+      if (calloutSnapshot?.selectedVenues?.length) {
+        tutorialLog('Going back from filter-pills step - restoring previous callout');
+        const { selectVenues, selectVenue, selectCluster } = useMapStore.getState();
         setTimeout(() => {
-          setCalloutState('expanded');
+          selectVenues(calloutSnapshot.selectedVenues);
+          selectCluster(calloutSnapshot.selectedCluster);
+          selectVenue(calloutSnapshot.selectedVenues[0] ?? null);
         }, 200);
       } else {
-        tutorialLog('Warning: setCalloutState function not available');
+        tutorialLog('Warning: no saved callout snapshot available for filter-pills back navigation');
       }
     }
 
-    // Update step position
     setCurrentStepIndex(stepIndex);
     setCurrentSubStep(subStep);
 

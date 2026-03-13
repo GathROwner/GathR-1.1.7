@@ -91,7 +91,7 @@ try {
 
 // Constants
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
-const HOTSPOT_HARD_DISABLED_FOR_PREVIEW_DEBUG = true;
+const HOTSPOT_HARD_DISABLED_FOR_PREVIEW_DEBUG = false;
 const STATIC_CALLOUT_ISOLATION_DEBUG = false;
 
 // Helper function to get color for time status
