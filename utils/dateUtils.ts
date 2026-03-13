@@ -480,8 +480,7 @@ export const isEventHappeningToday = (event: {
     
     const now = getNowInUserTimezone();
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const tomorrow = new Date(today);
-    tomorrow.setDate(tomorrow.getDate() + 1);
+    const todayIso = format(today, 'yyyy-MM-dd');
     
     // For multi-day events
     if (event.endDate && event.endDate !== event.startDate) {
@@ -491,10 +490,22 @@ export const isEventHappeningToday = (event: {
       // Check if it starts today
       const isStartToday = isToday(startDate);
       
-      // Or if it started in the past and is still ongoing
-      const isOngoing = startDate < today && endDate >= today;
-      
-      if (isStartToday || isOngoing) {
+      // Started before today and has not ended by date.
+      // If the event's final day is today, also respect endTime so overnight
+      // events (Fri 10pm -> Sat 1am) do not appear all Saturday.
+      const isOngoingByDate = startDate < today && endDate >= today;
+      if (isStartToday) {
+        return true;
+      }
+      if (isOngoingByDate) {
+        if (event.endDate === todayIso) {
+          const effectiveEndTime = event.endTime || '11:59 PM';
+          const endDateTime = parseDateTime(event.endDate, effectiveEndTime);
+          if (endDateTime) {
+            return now <= endDateTime;
+          }
+          return false;
+        }
         return true;
       }
     }

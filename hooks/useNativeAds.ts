@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { useAdPoolStore } from '../store/adPoolStore';
 import { NativeAd } from 'react-native-google-mobile-ads';
 
@@ -8,6 +8,43 @@ export type NativeAdData = {
 };
 
 export type AdDebugInfo = string[];
+
+const MAX_LOGGED_ADS = 5;
+
+const summarizeAd = (ad: NativeAd | null) => {
+  if (!ad) {
+    return {
+      id: 'null',
+      headline: '',
+      advertiser: '',
+      hasBody: false,
+      bodyLength: 0,
+      hasCTA: false,
+      hasIcon: false,
+      hasMediaContent: false,
+      aspectRatio: null as number | null,
+      store: '',
+      price: '',
+      starRating: null as number | null,
+    };
+  }
+
+  return {
+    id: `${ad.headline || ''}-${ad.advertiser || ''}-${ad.body || ''}`.toLowerCase().trim(),
+    headline: ad.headline || '',
+    advertiser: ad.advertiser || '',
+    hasBody: Boolean(ad.body),
+    bodyLength: ad.body?.length ?? 0,
+    hasCTA: Boolean(ad.callToAction),
+    hasIcon: Boolean(ad.icon?.url),
+    hasMediaContent: Boolean(ad.mediaContent),
+    aspectRatio:
+      typeof ad.mediaContent?.aspectRatio === 'number' ? ad.mediaContent.aspectRatio : null,
+    store: ad.store || '',
+    price: ad.price || '',
+    starRating: typeof ad.starRating === 'number' ? ad.starRating : null,
+  };
+};
 
 /**
  * Hook to get native ads from the centralized ad pool.
@@ -36,6 +73,8 @@ export default function useNativeAds(
   const refreshIfStale = useAdPoolStore((s) => s.refreshIfStale);
   const isLoading = useAdPoolStore((s) => s.isLoading[tabType]);
   const poolAds = useAdPoolStore((s) => (tabType === 'events' ? s.eventsAds : s.specialsAds));
+  const lastPoolSignatureRef = useRef('');
+  const lastSelectionSignatureRef = useRef('');
 
   const logMessage = (message: string) => {
     if (onDebugLog) {
@@ -45,8 +84,19 @@ export default function useNativeAds(
     console.log(`[useNativeAds ${tabType}]: ${message}`);
   };
 
+  const logStructured = (event: string, payload: Record<string, unknown>) => {
+    console.log(`[useNativeAds ${tabType}] ${event}`, payload);
+  };
+
   // Load ads on mount if pool is empty, or refresh if stale
   useEffect(() => {
+    logStructured('hook_mount_or_tab_change', {
+      tabType,
+      count,
+      startIndex,
+      poolSize: poolAds.length,
+      isLoading,
+    });
     if (poolAds.length === 0) {
       logMessage(`Pool empty - loading ads`);
       loadAds(tabType);
@@ -55,6 +105,30 @@ export default function useNativeAds(
       refreshIfStale(tabType);
     }
   }, [tabType]); // Only re-run when tabType changes
+
+  useEffect(() => {
+    const sample = poolAds.slice(0, MAX_LOGGED_ADS).map(summarizeAd);
+    const signature = JSON.stringify({
+      poolSize: poolAds.length,
+      isLoading,
+      sampleIds: sample.map((ad) => ad.id),
+    });
+
+    if (lastPoolSignatureRef.current === signature) {
+      return;
+    }
+
+    lastPoolSignatureRef.current = signature;
+    logStructured('pool_snapshot', {
+      tabType,
+      requestedCount: count,
+      startIndex,
+      poolSize: poolAds.length,
+      isLoading,
+      sampleSize: sample.length,
+      sample,
+    });
+  }, [count, isLoading, poolAds, startIndex, tabType]);
 
   // Convert pool ads to NativeAdData format
   // Memoize to prevent unnecessary re-renders
@@ -86,6 +160,37 @@ export default function useNativeAds(
 
     return result;
   }, [poolAds, count, isLoading, tabType, startIndex]);
+
+  useEffect(() => {
+    const selection = nativeAdsData.map((entry, index) => ({
+      slot: index,
+      loading: entry.loading,
+      ad: summarizeAd(entry.ad),
+    }));
+    const signature = JSON.stringify({
+      count,
+      startIndex,
+      selection: selection.map((entry) => ({
+        slot: entry.slot,
+        loading: entry.loading,
+        id: entry.ad.id,
+      })),
+    });
+
+    if (lastSelectionSignatureRef.current === signature) {
+      return;
+    }
+
+    lastSelectionSignatureRef.current = signature;
+    logStructured('selection_snapshot', {
+      tabType,
+      requestedCount: count,
+      startIndex,
+      poolSize: poolAds.length,
+      isLoading,
+      selection,
+    });
+  }, [count, isLoading, nativeAdsData, poolAds.length, startIndex, tabType]);
 
   return nativeAdsData;
 }

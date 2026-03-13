@@ -525,6 +525,35 @@ app.get('/health', (req, res) => {
   });
 });
 
+// Debug endpoint to check if public files are present
+app.get('/debug/files', (req, res) => {
+  const fs = require('fs');
+  const path = require('path');
+  try {
+    const publicPath = path.join(__dirname, 'public');
+    const fallbacksPath = path.join(publicPath, 'fallbacks');
+
+    const result = {
+      publicExists: fs.existsSync(publicPath),
+      fallbacksExists: fs.existsSync(fallbacksPath),
+      publicContents: [],
+      fallbacksContents: []
+    };
+
+    if (result.publicExists) {
+      result.publicContents = fs.readdirSync(publicPath);
+    }
+
+    if (result.fallbacksExists) {
+      result.fallbacksContents = fs.readdirSync(fallbacksPath);
+    }
+
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: String(error) });
+  }
+});
+
 app.listen(port, () => {
   console.log(`GathR Deep Link Service running on port ${port}`);
   console.log(`Backend preview source: ${CONFIG.backendBaseUrl}`);

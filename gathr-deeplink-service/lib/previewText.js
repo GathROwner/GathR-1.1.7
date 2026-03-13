@@ -71,7 +71,6 @@ function pickBestImageUrl(item) {
     item?.imageUrl,
     item?.relevantImageUrl,
     item?.SharedPostThumbnail,
-    item?.profileUrl,
   ];
 
   for (const candidate of candidates) {
@@ -79,32 +78,49 @@ function pickBestImageUrl(item) {
     if (/^https?:\/\//i.test(value)) return value;
   }
 
-  // If no image found, return fallback URL based on category and type
-  return getFallbackImageUrl(item?.category, item?.type);
+  // Prefer category/type fallback art for share previews instead of tiny venue/profile icons.
+  const categoryFallbackUrl = getFallbackImageUrl(item?.category, item?.type);
+  if (categoryFallbackUrl) {
+    return categoryFallbackUrl;
+  }
+
+  // Last resort: use profile/venue image if available.
+  const profileUrl = normalizeWhitespace(item?.profileUrl);
+  if (/^https?:\/\//i.test(profileUrl)) return profileUrl;
+
+  return '';
 }
 
 function getFallbackImageUrl(category, type) {
   const domain = process.env.LINK_DOMAIN || 'link.gathrapp.ca';
+  const normalizedCategory = normalizeWhitespace(category).toLowerCase();
 
-  // Category-specific fallbacks
+  // Category-specific fallbacks (normalized + aliases)
   const categoryMap = {
-    'Live Music': 'live-music.webp',
-    'Trivia Night': 'trivia-night.webp',
-    'Comedy': 'comedy.webp',
-    'Cinema': 'Cinema.webp',
-    'Workshops & Classes': 'workshops.webp',
-    'Religious': 'religious.webp',
-    'Sports': 'sports.webp',
-    'Family Friendly': 'family-friendly.webp',
-    'Social Gatherings & Parties': 'social-gatherings.webp',
-    'Happy Hour': 'happy-hour.webp',
-    'Wing Night': 'wing-night.webp',
-    'Food Special': 'food-special.webp',
-    'Drink Special': 'drink-special.webp',
+    'live music': 'live-music.webp',
+    'trivia night': 'trivia-night.webp',
+    'comedy': 'comedy.webp',
+    'cinema': 'Cinema.webp',
+    'workshops & classes': 'workshops.webp',
+    'workshops and classes': 'workshops.webp',
+    'workshops': 'workshops.webp',
+    'religious': 'religious.webp',
+    'sports': 'sports.webp',
+    'family friendly': 'family-friendly.webp',
+    'family-friendly': 'family-friendly.webp',
+    'social gatherings & parties': 'social-gatherings.webp',
+    'gatherings & parties': 'social-gatherings.webp',
+    'social gatherings': 'social-gatherings.webp',
+    'happy hour': 'happy-hour.webp',
+    'wing night': 'wing-night.webp',
+    'food special': 'food-special.webp',
+    'food_special': 'food-special.webp',
+    'drink special': 'drink-special.webp',
+    'drink_special': 'drink-special.webp',
   };
 
-  if (category && categoryMap[category]) {
-    return `https://${domain}/fallbacks/${categoryMap[category]}`;
+  if (normalizedCategory && categoryMap[normalizedCategory]) {
+    return `https://${domain}/fallbacks/${categoryMap[normalizedCategory]}`;
   }
 
   // Type defaults

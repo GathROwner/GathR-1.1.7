@@ -186,6 +186,8 @@ interface EventImageLightboxProps {
   events?: Event[];
   currentIndex?: number;
   onNavigate?: (index: number) => void;
+  // Optional callback when "View Venue" button is clicked
+  onViewVenue?: () => void;
 }
 
 const EventImageLightbox: React.FC<EventImageLightboxProps> = ({
@@ -197,6 +199,7 @@ const EventImageLightbox: React.FC<EventImageLightboxProps> = ({
   events,
   currentIndex,
   onNavigate,
+  onViewVenue,
 }) => {
   // Add store subscription to get fresh event data
   const storeEvents = useMapStore((state) => state.events);
@@ -837,18 +840,25 @@ const handleDirections = () => {
   const handleViewVenue = () => {
     if (!venue || !cluster) return;
 
+    // Call the optional callback (used by InterestsCarousel to record venue interaction)
+    onViewVenue?.();
+
     // Order venues with this venue first
     const otherVenues = cluster.venues.filter((v) => v.locationKey !== venue.locationKey);
     const sortedVenues = [venue, ...otherVenues];
 
-    // Open callout
-    selectVenues(sortedVenues);
-    selectCluster(cluster);
-    selectVenue(venue);
-
     // Close lightbox (both global state and via onClose callback)
     setSelectedImageData(null);
     onClose();
+
+    // Let the modal host dismiss before mutating the underlying callout tree.
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        selectVenues(sortedVenues);
+        selectCluster(cluster);
+        selectVenue(venue);
+      });
+    });
   };
 
 

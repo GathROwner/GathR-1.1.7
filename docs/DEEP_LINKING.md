@@ -319,6 +319,31 @@ Use this section when changing the deep link landing pages, preview metadata, or
 
 **Why this matters:** A previous update was deployed to the wrong project (`gathr-migrated`), which made the direct Cloud Run URL look correct while `link.gathrapp.ca` still served old code.
 
+### Critical Warning: Do Not Deploy Deep-Link Code to the Backend Service
+
+The deep-link service and backend API are different Cloud Run services.
+
+- **Deep-link service (shares / previews / landing pages):**
+  - project: `gathr-backend`
+  - service: `gathr-deeplink`
+  - region: `us-central1`
+- **Backend API (events / Firestore endpoints used by the app):**
+  - project: `gathr-migrated`
+  - service: `gathr-backend`
+  - region: `northamerica-northeast1`
+
+**Do NOT run this (WRONG - it overwrites the backend API with deep-link code):**
+
+```powershell
+gcloud run deploy gathr-backend --source . --region northamerica-northeast1 --project gathr-migrated
+```
+
+If you do this by accident, the app will stop loading events and will log:
+
+- `Cannot GET /api/v2/firestore/events`
+
+That happened before and required a backend revision rollback.
+
 ### Use the Correct Source Folder
 
 Deploy from:
@@ -355,6 +380,8 @@ You should see:
 
 From `C:\Windows\System32\GathR-Project\GathR\gathr-deeplink-service`:
 
+#### Standard deploy (recommended)
+
 ```powershell
 docker build -t gcr.io/gathr-backend/gathr-deeplink .
 docker push gcr.io/gathr-backend/gathr-deeplink
@@ -362,6 +389,37 @@ gcloud run deploy gathr-deeplink --image gcr.io/gathr-backend/gathr-deeplink --p
 ```
 
 **Recommended:** Always include `--project gathr-backend` explicitly (even if your active project is already set) to avoid deploying to the wrong project.
+
+#### Source deploy (alternative)
+
+Use this only if you intentionally want Cloud Run to build from source:
+
+```powershell
+gcloud run deploy gathr-deeplink --source . --platform managed --region us-central1 --allow-unauthenticated --project gathr-backend
+```
+
+#### Static asset changes (fallback images, `public/` files)
+
+If you changed files under `public/` (for example `public/fallbacks/*.webp`) and the live server still returns `404`, do a **no-cache Docker build** once:
+
+```powershell
+docker build --no-cache -t gcr.io/gathr-backend/gathr-deeplink .
+docker push gcr.io/gathr-backend/gathr-deeplink
+gcloud run deploy gathr-deeplink --image gcr.io/gathr-backend/gathr-deeplink --platform managed --region us-central1 --allow-unauthenticated --project gathr-backend
+```
+
+This was required once when `public/fallbacks/` existed locally but was missing from the running container due to a stale/cached image build.
+
+#### What each command does (quick explanation)
+
+1. `docker build ...`
+   - Builds the deep-link service container from `gathr-deeplink-service/Dockerfile`
+   - Packages `server.js`, `lib/*`, `assets/*`, and `public/*` (including fallback images)
+2. `docker push ...`
+   - Uploads the built image to Google Container Registry in the **correct project**
+3. `gcloud run deploy ... --image ...`
+   - Updates the Cloud Run **deep-link** service (`gathr-deeplink`) to use that image
+   - This is what updates `link.gathrapp.ca` (via Cloud Run domain mapping)
 
 ### Post-Deploy Verification (Required)
 
@@ -371,12 +429,14 @@ In PowerShell, use `curl.exe` (not `curl`) so PowerShell does not alias to `Invo
 curl.exe -s https://link.gathrapp.ca/health
 curl.exe -i https://link.gathrapp.ca/event/fb_1560964642333741_20260228
 curl.exe -i "https://link.gathrapp.ca/og/event/fb_1560964642333741_20260228.png?v=1"
+curl.exe -I https://link.gathrapp.ca/fallbacks/event-default.webp
 ```
 
 Expected results:
 - `/health` includes enhanced JSON (`backendBaseUrl`, `cacheStats`)
 - `/event/...` HTML contains event-specific OG tags (not generic `View on GathR`)
 - `/og/...png` returns `200 OK` with `content-type: image/png`
+- `/fallbacks/...webp` returns `200 OK` with `content-type: image/webp` (if using local fallback images)
 
 ### Preview Gotchas (Important)
 

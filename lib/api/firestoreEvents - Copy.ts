@@ -1,15 +1,52 @@
 /**
  * Firestore Events API Service
- * Handles fetching and pagination for Firestore-sourced events
+ * Handles fetching, filtering, and pagination for Firestore-sourced events.
  */
 
 import { Event } from '../../types/events';
 import { FirestoreEvent, FirestoreEventsResponse } from '../../types/firestore';
-
-const FIRESTORE_API_BASE = 'https://gathr-backend-924732524090.northamerica-northeast1.run.app/api/v2/firestore';
+import {
+  FIRESTORE_API_BASE,
+  FIRESTORE_INCLUDE_EXPIRED_DEFAULT,
+  FIRESTORE_MAX_PAGES,
+  FIRESTORE_PAGE_LIMIT,
+} from '../config/backend';
 
 // Debug flag for logging
 const DEBUG_FIRESTORE = __DEV__ ?? true;
+
+export interface FirestoreFetchOptions {
+  isEvent?: boolean;
+  startDate?: string;
+  endDate?: string;
+  includeExpired?: boolean;
+  maxPages?: number;
+  limit?: number;
+}
+
+interface FirestorePageRequest extends FirestoreFetchOptions {
+  startAfter?: string;
+}
+
+export const toFirestoreEventId = (eventId: string | number): string => {
+  const raw = String(eventId ?? '').trim();
+  if (!raw) return '';
+  return raw.startsWith('fb_') ? raw.slice(3) : raw;
+};
+
+export const toAppEventId = (eventId: string | number): string => {
+  const raw = String(eventId ?? '').trim();
+  if (!raw) return '';
+  return raw.startsWith('fb_') ? raw : `fb_${raw}`;
+};
+
+export const areEventIdsEquivalent = (
+  a: string | number | null | undefined,
+  b: string | number | null | undefined
+): boolean => {
+  if (a == null || b == null) return false;
+  return toFirestoreEventId(a) === toFirestoreEventId(b);
+};
 
 /**
  * Convert 24-hour time format to 12-hour format with AM/PM
@@ -19,42 +56,45 @@ const DEBUG_FIRESTORE = __DEV__ ?? true;
  */
 export function convert24to12Hour(time24: string): string {
   if (!time24) return '';
+  if (/am|pm/i.test(time24)) return time24;
 
   const parts = time24.split(':');
   if (parts.length < 2) return time24;
 
-  let hour = parseInt(parts[0], 10);
+  let hour = Number.parseInt(parts[0], 10);
   const minute = parts[1] || '00';
 
-  if (isNaN(hour)) return time24;
+  if (Number.isNaN(hour)) return time24;
 
   const period = hour >= 12 ? 'PM' : 'AM';
-  hour = hour % 12 || 12; // Convert 0 to 12, 13-23 to 1-11
+  hour = hour % 12 || 12;
 
   return `${hour}:${minute}:00 ${period}`;
 }
 
 /**
- * Normalize a Firestore event to match the unified Event interface
+ * Normalize a Firestore event to match the app Event interface.
  */
 export function normalizeFirestoreEvent(fsEvent: FirestoreEvent): Event {
-  // Extract coordinates with fallback
   const latitude = fsEvent.venueInfo?.coordinates?.latitude ?? 0;
   const longitude = fsEvent.venueInfo?.coordinates?.longitude ?? 0;
-
-  // Log events without valid coordinates (for debugging)
-  if (latitude === 0 && longitude === 0) {
-    if (DEBUG_FIRESTORE) {
-      console.log(`[Firestore] Event with no coordinates: ${fsEvent.id} - ${fsEvent.title}`);
-    }
-  }
-
-  // Get venue object if present (from single-event endpoint)
   const venue = fsEvent.venue;
 
+  if (latitude === 0 && longitude === 0 && DEBUG_FIRESTORE) {
+    console.log(`[Firestore] Event with no coordinates: ${fsEvent.id} - ${fsEvent.title}`);
+  }
+
+  const rawOriginalEventId = fsEvent.originalEventId ?? fsEvent.metadata?.originalEventId ?? null;
+
+  const rawDescription =
+    fsEvent.fullDescription ??
+    fsEvent.metadata?.fullDescription ??
+    fsEvent.description ??
+    '';
+
   return {
-    // ID: ensure it has fb_ prefix for identification
-    id: fsEvent.id.startsWith('fb_') ? fsEvent.id : `fb_${fsEvent.id}`,
+    // Preserve existing app expectation that Firestore IDs are namespaced.
+    id: toAppEventId(fsEvent.id),
 
     // Type mapping: isEvent=false -> 'special', otherwise 'event' (including null)
     type: fsEvent.isEvent === false ? 'special' : 'event',
@@ -65,7 +105,7 @@ export function normalizeFirestoreEvent(fsEvent: FirestoreEvent): Event {
     // Basic event info
     category: fsEvent.category || 'Other',
     title: fsEvent.title || '',
-    description: fsEvent.description || '',
+    description: rawDescription,
 
     // Venue info (flattened from nested structure)
     venue: fsEvent.venueInfo?.name || fsEvent.metadata?.venueName || venue?.pagename || 'Unknown Venue',
@@ -73,38 +113,43 @@ export function normalizeFirestoreEvent(fsEvent: FirestoreEvent): Event {
     latitude,
     longitude,
 
-    // Date/time (convert 24h to 12h format for consistency)
+    // Date/time
     startDate: fsEvent.startDate || '',
     startTime: convert24to12Hour(fsEvent.startTime),
     endDate: fsEvent.endDate || fsEvent.startDate || '',
     endTime: fsEvent.endTime ? convert24to12Hour(fsEvent.endTime) : '',
 
-    // Media - use venue.profileImage as fallback for profileUrl
+    // Media
     imageUrl: fsEvent.metadata?.image || '',
     profileUrl: fsEvent.metadata?.icon || venue?.profileImage || '',
     SharedPostThumbnail: '',
 
-    // Engagement metrics (from metadata)
+    // Engagement metrics
     likes: fsEvent.metadata?.likes ?? 0,
     shares: fsEvent.metadata?.shares ?? 0,
     comments: fsEvent.metadata?.comments ?? 0,
     topReactionsCount: fsEvent.metadata?.topReactionsCount ?? 0,
     usersResponded: fsEvent.metadata?.usersResponded ?? '0',
 
-    // Placeholder fields (match existing interface requirements)
+    // Ticketing
     ticketPrice: fsEvent.price || '',
-    ticketLinkPosts: '',
-    ticketLinkEvents: '',
+    ticketLinkPosts: fsEvent.ticketLinkPosts || fsEvent.metadata?.ticketLinkPosts || '',
+    ticketLinkEvents: fsEvent.ticketLinkEvents || fsEvent.metadata?.ticketLinkEvents || '',
 
-    // NEW: Additional media (multiple images)
+    // Additional media/details
     mediaUrls: fsEvent.metadata?.mediaUrls || [],
-
-    // NEW: Event details from metadata
     facebookUrl: fsEvent.metadata?.facebookUrl || '',
     eventType: fsEvent.metadata?.eventType || '',
     ageRestriction: fsEvent.metadata?.ageRestriction || '',
 
-    // NEW: Venue details (from venueInfo and venue object if present)
+    // Recurrence metadata (top-level backend contract, metadata fallback for safety)
+    isRecurring: fsEvent.isRecurring ?? fsEvent.metadata?.isRecurring ?? false,
+    recurringPattern: fsEvent.recurringPattern ?? fsEvent.metadata?.recurringPattern,
+    isRecurringInstance:
+      fsEvent.isRecurringInstance ?? fsEvent.metadata?.isRecurringInstance ?? false,
+    originalEventId: rawOriginalEventId ? toAppEventId(rawOriginalEventId) : null,
+
+    // Venue details
     venueWebsite: fsEvent.venueInfo?.website || venue?.website || '',
     venueRating: venue?.placeDetailsParsed?.rating ?? venue?.rating,
     venuePhone: venue?.placeDetailsParsed?.international_phone_number || venue?.phone || '',
@@ -115,21 +160,41 @@ export function normalizeFirestoreEvent(fsEvent: FirestoreEvent): Event {
 }
 
 /**
- * Fetch a single page of Firestore events
+ * Fetch a single page of Firestore events.
  */
-async function fetchFirestorePage(
-  startAfter?: string
-): Promise<FirestoreEventsResponse> {
-  // Build URL with optional pagination cursor
+async function fetchFirestorePage({
+  startAfter,
+  isEvent,
+  startDate,
+  endDate,
+  includeExpired,
+  limit,
+}: FirestorePageRequest): Promise<FirestoreEventsResponse> {
   const params = new URLSearchParams();
-  params.set('limit', '100'); // Max allowed by API
+  params.set('limit', String(limit ?? FIRESTORE_PAGE_LIMIT));
 
   if (startAfter) {
     params.set('startAfter', startAfter);
   }
 
-  const url = `${FIRESTORE_API_BASE}/events?${params.toString()}`;
+  if (typeof isEvent === 'boolean') {
+    params.set('isEvent', String(isEvent));
+  }
 
+  if (startDate) {
+    params.set('startDate', startDate);
+  }
+
+  if (endDate) {
+    params.set('endDate', endDate);
+  }
+
+  params.set(
+    'includeExpired',
+    String(includeExpired ?? FIRESTORE_INCLUDE_EXPIRED_DEFAULT)
+  );
+
+  const url = `${FIRESTORE_API_BASE}/events?${params.toString()}`;
   const t0 = Date.now();
   const response = await fetch(url);
 
@@ -141,14 +206,75 @@ async function fetchFirestorePage(
   const data: FirestoreEventsResponse = await response.json();
 
   if (DEBUG_FIRESTORE) {
-    console.log(`[Firestore][fetch] ms=${Date.now() - t0} events=${data.events?.length ?? 0} hasMore=${!!data.nextPageToken}`);
+    console.log(
+      `[Firestore][fetch] ms=${Date.now() - t0} events=${data.events?.length ?? 0} hasMore=${!!data.nextPageToken}`
+    );
   }
 
   return data;
 }
 
 /**
- * Venue contact info structure returned by fetchVenueDetails
+ * Fetch a single Firestore event by ID using the detail endpoint.
+ */
+export async function fetchFirestoreEventById(
+  eventId: string | number
+): Promise<Event | null> {
+  const firestoreId = toFirestoreEventId(eventId);
+  if (!firestoreId) return null;
+
+  const url = `${FIRESTORE_API_BASE}/events/${encodeURIComponent(firestoreId)}`;
+
+  try {
+    const t0 = Date.now();
+    const response = await fetch(url);
+
+    if (!response.ok) {
+      if (DEBUG_FIRESTORE) {
+        console.warn(`[Firestore][detail] Not found id=${firestoreId} status=${response.status}`);
+      }
+      return null;
+    }
+
+    const payload = await response.json();
+    const rawEvent = (payload?.event || payload) as FirestoreEvent | null;
+
+    if (!rawEvent || !rawEvent.id) {
+      if (DEBUG_FIRESTORE) {
+        console.warn(`[Firestore][detail] Unexpected payload for id=${firestoreId}`);
+      }
+      return null;
+    }
+
+    if (DEBUG_FIRESTORE) {
+      console.log(`[Firestore][detail] ms=${Date.now() - t0} id=${firestoreId}`);
+    }
+
+    return normalizeFirestoreEvent(rawEvent);
+  } catch (error) {
+    console.error('[Firestore] Error fetching event details:', error);
+    return null;
+  }
+}
+
+/**
+ * Fetch multiple Firestore event details.
+ */
+export async function fetchFirestoreEventDetailsBatch(
+  eventIds: Array<string | number>
+): Promise<Event[]> {
+  const uniqueIds = Array.from(
+    new Set(eventIds.map((id) => String(id ?? '').trim()).filter(Boolean))
+  );
+
+  if (uniqueIds.length === 0) return [];
+
+  const responses = await Promise.all(uniqueIds.map((id) => fetchFirestoreEventById(id)));
+  return responses.filter((event): event is Event => Boolean(event));
+}
+
+/**
+ * Venue contact info structure returned by fetchVenueDetails.
  */
 export interface VenueContactInfo {
   website?: string;
@@ -160,8 +286,7 @@ export interface VenueContactInfo {
 }
 
 /**
- * Fetch venue details by venue ID
- * Returns contact info (website, social links, phone, rating)
+ * Fetch venue details by venue ID.
  */
 export async function fetchVenueDetails(venueId: string): Promise<VenueContactInfo | null> {
   try {
@@ -176,7 +301,9 @@ export async function fetchVenueDetails(venueId: string): Promise<VenueContactIn
 
     if (!response.ok) {
       if (DEBUG_FIRESTORE) {
-        console.log(`[Firestore][fetchVenueDetails] Venue not found: ${venueId} (${response.status})`);
+        console.log(
+          `[Firestore][fetchVenueDetails] Venue not found: ${venueId} (${response.status})`
+        );
       }
       return null;
     }
@@ -184,10 +311,11 @@ export async function fetchVenueDetails(venueId: string): Promise<VenueContactIn
     const venue = await response.json();
 
     if (DEBUG_FIRESTORE) {
-      console.log(`[Firestore][fetchVenueDetails] ms=${Date.now() - t0} venue=${venue.pagename || venueId}`);
+      console.log(
+        `[Firestore][fetchVenueDetails] ms=${Date.now() - t0} venue=${venue.pagename || venueId}`
+      );
     }
 
-    // Extract contact info from venue object
     return {
       website: venue.website || venue.placeDetailsParsed?.website || undefined,
       facebook: venue.facebookUrl || undefined,
@@ -203,10 +331,11 @@ export async function fetchVenueDetails(venueId: string): Promise<VenueContactIn
 }
 
 /**
- * Fetch venue details by venue name (searches all venues)
- * Useful when we only have the venue name, not the ID
+ * Fetch venue details by venue name (searches all venues).
  */
-export async function fetchVenueDetailsByName(venueName: string): Promise<VenueContactInfo | null> {
+export async function fetchVenueDetailsByName(
+  venueName: string
+): Promise<VenueContactInfo | null> {
   try {
     const url = `${FIRESTORE_API_BASE}/venues`;
 
@@ -222,8 +351,6 @@ export async function fetchVenueDetailsByName(venueName: string): Promise<VenueC
     }
 
     const data = await response.json();
-
-    // API returns { venues: [...] } not a direct array
     const venues = data.venues || data;
 
     if (!Array.isArray(venues)) {
@@ -231,8 +358,6 @@ export async function fetchVenueDetailsByName(venueName: string): Promise<VenueC
       return null;
     }
 
-    // Find venue by name (case-insensitive partial match)
-    // Check both 'pagename' and 'title' fields as the API may use either
     const venueNameLower = venueName.toLowerCase();
     const matchedVenue = venues.find((v: any) => {
       const pagename = (v.pagename || '').toLowerCase();
@@ -256,16 +381,25 @@ export async function fetchVenueDetailsByName(venueName: string): Promise<VenueC
     }
 
     if (DEBUG_FIRESTORE) {
-      console.log(`[Firestore][fetchVenueDetailsByName] ms=${Date.now() - t0} matched=${matchedVenue.pagename || matchedVenue.title}`);
+      console.log(
+        `[Firestore][fetchVenueDetailsByName] ms=${Date.now() - t0} matched=${matchedVenue.pagename || matchedVenue.title}`
+      );
     }
 
     return {
       website: matchedVenue.website || matchedVenue.placeDetailsParsed?.website || undefined,
       facebook: matchedVenue.facebookUrl || undefined,
       instagram: matchedVenue.instagramUrl || undefined,
-      phone: matchedVenue.placeDetailsParsed?.international_phone_number || matchedVenue.phone || undefined,
+      phone:
+        matchedVenue.placeDetailsParsed?.international_phone_number ||
+        matchedVenue.phone ||
+        undefined,
       email: matchedVenue.email || undefined,
-      rating: matchedVenue.placeDetailsParsed?.rating ?? matchedVenue.rating ?? matchedVenue.ratingOverall ?? undefined,
+      rating:
+        matchedVenue.placeDetailsParsed?.rating ??
+        matchedVenue.rating ??
+        matchedVenue.ratingOverall ??
+        undefined,
     };
   } catch (error) {
     console.error('[Firestore] Error fetching venue by name:', error);
@@ -274,54 +408,64 @@ export async function fetchVenueDetailsByName(venueName: string): Promise<VenueC
 }
 
 /**
- * Fetch ALL Firestore events (handles pagination automatically)
- *
- * @param maxPages - Safety limit to prevent infinite loops (default: 10)
- * @returns Normalized Event[] array
+ * Fetch ALL Firestore events (handles pagination automatically).
  */
-export async function fetchAllFirestoreEvents(maxPages: number = 10): Promise<Event[]> {
+export async function fetchAllFirestoreEvents(
+  options: FirestoreFetchOptions = {}
+): Promise<Event[]> {
   const allRawEvents: FirestoreEvent[] = [];
-  let nextPageToken: string | undefined = undefined;
+  let nextPageToken: string | undefined;
   let pageCount = 0;
 
+  const maxPages = options.maxPages ?? FIRESTORE_MAX_PAGES;
   const t0 = Date.now();
 
   try {
     do {
-      const response = await fetchFirestorePage(nextPageToken);
+      const response = await fetchFirestorePage({
+        ...options,
+        startAfter: nextPageToken,
+      });
 
-      if (response.events && Array.isArray(response.events)) {
+      if (Array.isArray(response.events)) {
         allRawEvents.push(...response.events);
       }
 
       nextPageToken = response.nextPageToken;
-      pageCount++;
+      pageCount += 1;
 
-      // Safety check to prevent infinite loops
       if (pageCount >= maxPages) {
         console.warn(`[Firestore] Reached max page limit (${maxPages}), stopping pagination`);
         break;
       }
     } while (nextPageToken);
 
-    // Normalize all events to unified format
-    const normalizedEvents = allRawEvents.map(normalizeFirestoreEvent);
+    const byId = new Map<string, Event>();
+    for (const raw of allRawEvents) {
+      const normalized = normalizeFirestoreEvent(raw);
+      byId.set(String(normalized.id), normalized);
+    }
 
-    // Count events without coordinates (need backend fix)
-    const eventsWithoutCoords = normalizedEvents.filter(e => e.latitude === 0 && e.longitude === 0).length;
+    const normalizedEvents = Array.from(byId.values());
+    const eventsWithoutCoords = normalizedEvents.filter(
+      (e) => e.latitude === 0 && e.longitude === 0
+    ).length;
 
     if (DEBUG_FIRESTORE) {
-      console.log(`[Firestore][fetchAll] totalMs=${Date.now() - t0} pages=${pageCount} rawEvents=${allRawEvents.length} normalized=${normalizedEvents.length}`);
+      console.log(
+        `[Firestore][fetchAll] totalMs=${Date.now() - t0} pages=${pageCount} rawEvents=${allRawEvents.length} normalized=${normalizedEvents.length}`
+      );
       if (eventsWithoutCoords > 0) {
-        console.warn(`[Firestore] WARNING: ${eventsWithoutCoords}/${normalizedEvents.length} events have no coordinates (backend needs to return venueInfo.coordinates)`);
+        console.warn(
+          `[Firestore] WARNING: ${eventsWithoutCoords}/${normalizedEvents.length} events have no coordinates`
+        );
       }
     }
 
     return normalizedEvents;
-
   } catch (error) {
     console.error('[Firestore] Error fetching events:', error);
-    // Return empty array on error - graceful degradation
     return [];
   }
 }
+

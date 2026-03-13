@@ -2815,7 +2815,7 @@ const styles = StyleSheet.create({
   adContainer: {
     backgroundColor: '#FFFFFF',
     paddingBottom: 12,
-    marginHorizontal: 12, // Match card spacing
+    // marginHorizontal removed - inner component already has margins
     marginBottom: 12,
     borderRadius: 16,
     borderWidth: 2,

@@ -12,11 +12,18 @@ import {
 import { MaterialIcons, Ionicons } from '@expo/vector-icons';
 import { useIsFocused } from '@react-navigation/native';
 import { useMapStore } from '../../store';
+import { useUserPrefsStore } from '../../store/userPrefsStore';
 import { Event, Venue, Cluster } from '../../types/events';
-import { TimeFilterType } from '../../types/filter';
-import { isEventNow, getEventTimeStatus, isEventHappeningToday } from '../../utils/dateUtils';
+import { isEventNow, getEventTimeStatus } from '../../utils/dateUtils';
 import FallbackImage from '../common/FallbackImage';
 import EventImageLightbox from './EventImageLightbox';
+import { useClusterInteractionStore } from '../../store/clusterInteractionStore';
+import { doesEventMatchInterestCarouselActiveCategory } from '../../utils/interestCarouselFilterUtils';
+import { buildHotInterestCarouselEvents } from '../../utils/hotInterestCarouselUtils';
+import { registerMapTraceSampler, traceMapEvent } from '../../utils/mapTrace';
+
+const readAnimatedValue = (value: Animated.Value): number | string =>
+  typeof (value as any).__getValue === 'function' ? (value as any).__getValue() : 'unknown';
 
 // Constants from InterestFilterPills for consistency
 const EVENT_COLOR = '#64B5F6';
@@ -35,6 +42,60 @@ const DOT_SIZE_LARGE = 10;   // Fully visible cards
 const DOT_SIZE_MEDIUM = 7;   // Partially visible card (~70% of large)
 const DOT_SIZE_SMALL = 5;    // Off-screen cards
 const PAGINATION_HEIGHT = 20; // paddingVertical (8*2) + dot height (10)
+
+// New content indicator dot component (same as InterestFilterPills)
+const NewContentDot: React.FC = () => {
+  const pulseScale = useRef(new Animated.Value(1)).current;
+  const pulseOpacity = useRef(new Animated.Value(0.9)).current;
+
+  useEffect(() => {
+    const pulseAnimation = Animated.loop(
+      Animated.sequence([
+        Animated.parallel([
+          Animated.timing(pulseScale, {
+            toValue: 1.15,
+            duration: 1000,
+            useNativeDriver: true,
+          }),
+          Animated.timing(pulseOpacity, {
+            toValue: 1.0,
+            duration: 1000,
+            useNativeDriver: true,
+          }),
+        ]),
+        Animated.parallel([
+          Animated.timing(pulseScale, {
+            toValue: 1.0,
+            duration: 1000,
+            useNativeDriver: true,
+          }),
+          Animated.timing(pulseOpacity, {
+            toValue: 0.6,
+            duration: 1000,
+            useNativeDriver: true,
+          }),
+        ]),
+      ])
+    );
+
+    pulseAnimation.start();
+    return () => {
+      pulseAnimation.stop();
+    };
+  }, [pulseOpacity, pulseScale]);
+
+  return (
+    <Animated.View
+      style={[
+        styles.newDot,
+        {
+          opacity: pulseOpacity,
+          transform: [{ scale: pulseScale }],
+        },
+      ]}
+    />
+  );
+};
 
 // Category icon mapping (from InterestFilterPills)
 const getCategoryIconName = (category: string): string => {
@@ -126,7 +187,7 @@ const formatEventTime = (event: Event): string => {
 };
 
 // Event Card Component
-const EventCard = memo(({ event, onPress }: { event: Event; onPress: () => void }) => {
+const EventCard = memo(({ event, onPress, hasNewContent }: { event: Event; onPress: () => void; hasNewContent?: boolean }) => {
   const isNow = isEventNow(
     event.startDate,
     event.startTime,
@@ -172,6 +233,13 @@ const EventCard = memo(({ event, onPress }: { event: Event; onPress: () => void 
         {isNow && (
           <View style={styles.nowBadge}>
             <Text style={styles.nowText}>NOW</Text>
+          </View>
+        )}
+
+        {/* New Content Indicator */}
+        {hasNewContent && (
+          <View style={[styles.newDotWrapper, isNow && styles.newDotWrapperWithNow]}>
+            <NewContentDot />
           </View>
         )}
       </View>
@@ -280,9 +348,18 @@ const PaginationDots = memo(({
 
 PaginationDots.displayName = 'PaginationDots';
 
+type InterestsCarouselProps = {
+  hotModeActive?: boolean;
+  onDismissHotMode?: () => void;
+};
+
 // Main Carousel Component
-const InterestsCarousel: React.FC = () => {
+const InterestsCarousel: React.FC<InterestsCarouselProps> = ({
+  hotModeActive = false,
+  onDismissHotMode,
+}) => {
   const isFocused = useIsFocused();
+  const userInterests = useUserPrefsStore((s) => s.interests);
   const {
     onScreenEvents,
     filterCriteria,
@@ -291,81 +368,82 @@ const InterestsCarousel: React.FC = () => {
     setTypeFilters,
   } = useMapStore();
 
-  // Filter onScreenEvents by active category and time filters
-  // This replicates the filtering logic from mapStore's doesEventMatchTypeFilters
-  const carouselEvents = useMemo(() => {
-    // Check if either event or special category filter is active
-    const hasEventFilter = !!filterCriteria.eventFilters.category;
-    const hasSpecialFilter = !!filterCriteria.specialFilters.category;
+  // Get cluster interaction store for red dot tracking
+  const {
+    hasNewContent: checkHasNewContent,
+    recordInteraction,
+    interactions,
+    carouselViewedEventIds,
+    markCarouselEventViewed,
+    markCarouselEventsViewed,
+  } = useClusterInteractionStore();
 
-    if (!hasEventFilter && !hasSpecialFilter) {
-      return [];
-    }
-
-    return onScreenEvents.filter(event => {
-      // Determine which filter to use based on the event type
-      const typeFilters = event.type === 'event'
-        ? filterCriteria.eventFilters
-        : filterCriteria.specialFilters;
-
-      // Check if this type has an active category filter
-      if (!typeFilters.category) {
-        return false;
-      }
-
-      // Skip sentinel value used to hide opposite type
-      if (typeFilters.category.toLowerCase() === '__filter_pills_hide__') {
-        return false;
-      }
-
-      // Filter by category (case-insensitive exact match)
-      if (event.category.toLowerCase() !== typeFilters.category.toLowerCase()) {
-        return false;
-      }
-
-      // Filter by time (matching mapStore logic exactly)
-      if (typeFilters.timeFilter === TimeFilterType.ALL) {
-        // No time filtering - pass through
-      } else if (typeFilters.timeFilter === TimeFilterType.NOW) {
-        const isNow = isEventNow(
-          event.startDate,
-          event.startTime,
-          event.endDate || event.startDate,
-          event.endTime || ''
-        );
-        if (!isNow) return false;
-      } else if (typeFilters.timeFilter === TimeFilterType.TODAY) {
-        const isToday = isEventHappeningToday(event);
-        if (!isToday) return false;
-      } else if (typeFilters.timeFilter === TimeFilterType.TOMORROW) {
-        // Check if event starts tomorrow (local day)
-        const eventDate = new Date(`${event.startDate}T00:00:00`);
-        const tomorrow = new Date();
-        tomorrow.setHours(0, 0, 0, 0);
-        tomorrow.setDate(tomorrow.getDate() + 1);
-
-        const isTomorrow = eventDate.getTime() === tomorrow.getTime();
-        if (!isTomorrow) return false;
-      } else if (typeFilters.timeFilter === TimeFilterType.UPCOMING) {
-        // UPCOMING should only show future events (not now or today)
-        const timeStatus = getEventTimeStatus(event);
-        if (timeStatus !== 'future') return false;
-      }
-
-      // Filter by search (if active)
-      if (typeFilters.search && typeFilters.search.trim() !== '') {
-        const searchTerm = typeFilters.search.toLowerCase().trim();
-        const matchesSearch =
-          event.title.toLowerCase().includes(searchTerm) ||
-          event.description.toLowerCase().includes(searchTerm) ||
-          event.venue.toLowerCase().includes(searchTerm);
-
-        if (!matchesSearch) return false;
-      }
-
-      return true;
-    });
+  const categoryCarouselEvents = useMemo(() => {
+    return onScreenEvents.filter((event) =>
+      doesEventMatchInterestCarouselActiveCategory(event, filterCriteria)
+    );
   }, [onScreenEvents, filterCriteria]);
+
+  const hotCarouselEvents = useMemo(
+    () =>
+      buildHotInterestCarouselEvents({
+        onScreenEvents,
+        filterCriteria,
+        userInterests,
+      }),
+    [onScreenEvents, filterCriteria, userInterests]
+  );
+
+  // Only activate carousel for interest-pills filters, not filter-pills
+  const hasInterestPillCategoryFilter =
+    filterCriteria.eventFilters.categoryFilterSource === 'interest-pills' ||
+    filterCriteria.specialFilters.categoryFilterSource === 'interest-pills';
+
+  const activeMode: 'hot' | 'category' | null = hotModeActive
+    ? 'hot'
+    : hasInterestPillCategoryFilter
+    ? 'category'
+    : null;
+
+  const carouselEvents = activeMode === 'hot' ? hotCarouselEvents : categoryCarouselEvents;
+
+  // Determine which events have new content
+  // Map from event.id to boolean indicating if event is new
+  const eventNewContentMap = useMemo(() => {
+    const map = new Map<string | number, boolean>();
+
+    carouselEvents.forEach(event => {
+      // Find the cluster and venue this event belongs to
+      const cluster = clusters.find((c) =>
+        c.venues.some((v) => v.events.some((e) => e.id === event.id))
+      );
+
+      if (!cluster) {
+        map.set(event.id, false);
+        return;
+      }
+
+      const venue = cluster.venues.find((v) =>
+        v.events.some((e) => e.id === event.id)
+      );
+
+      if (!venue) {
+        map.set(event.id, false);
+        return;
+      }
+
+      // Use venue.locationKey as stable ID (same as EventCallout)
+      const stableVenueId = venue.locationKey;
+      const venueEventIds = venue.events.map(e => e.id.toString());
+
+      // Check if this venue has new content
+      const venueHasNew = checkHasNewContent(stableVenueId, venueEventIds);
+
+      map.set(event.id, venueHasNew);
+    });
+
+    return map;
+  }, [carouselEvents, clusters, checkHasNewContent, interactions]);
 
   // Local state for lightbox (not mapStore)
   const [selectedImageData, setSelectedImageData] = useState<{
@@ -381,12 +459,21 @@ const InterestsCarousel: React.FC = () => {
   const scrollX = useRef(new Animated.Value(0)).current; // Track horizontal scroll position
   const flatListRef = useRef<FlatList<Event>>(null); // Ref for scrolling carousel
 
-  // Dismissal handler - clears filters to hide carousel
+  // Dismissal handler - hot mode closes locally, category mode clears category filters.
   const handleDismiss = useCallback(() => {
-    // Clear both category filters (deselects the active pill)
-    setTypeFilters('event', { category: undefined });
-    setTypeFilters('special', { category: undefined });
-  }, [setTypeFilters]);
+    if (hotModeActive) {
+      onDismissHotMode?.();
+      return;
+    }
+
+    // Only clear category filters that were set by interest pills
+    if (filterCriteria.eventFilters.categoryFilterSource === 'interest-pills') {
+      setTypeFilters('event', { category: undefined });
+    }
+    if (filterCriteria.specialFilters.categoryFilterSource === 'interest-pills') {
+      setTypeFilters('special', { category: undefined });
+    }
+  }, [hotModeActive, onDismissHotMode, setTypeFilters, filterCriteria]);
 
   // PanResponder for swipe-down gesture (works anywhere in carousel)
   const panResponder = useMemo(
@@ -465,16 +552,74 @@ const InterestsCarousel: React.FC = () => {
     [handleDismiss, slideAnim, opacityAnim]
   );
 
-  // Determine if carousel should be visible
-  const hasActiveCategoryFilter =
-    !!filterCriteria.eventFilters.category ||
-    !!filterCriteria.specialFilters.category;
-
   const isVisible =
     isFocused &&
-    hasActiveCategoryFilter &&
+    !!activeMode &&
     carouselEvents.length > 0 &&
     !activeFilterPanel;
+
+  useEffect(() => {
+    traceMapEvent('interests_carousel_state_changed', {
+      activeMode: activeMode ?? 'none',
+      isVisible,
+      hotModeActive,
+      activeFilterPanel: activeFilterPanel ?? 'none',
+      carouselEventCount: carouselEvents.length,
+      hasSelectedImage: !!selectedImageData,
+    });
+
+    const delays = [100, 300, 700, 1500];
+    const timers = delays.map((delayMs) =>
+      setTimeout(() => {
+        traceMapEvent('interests_carousel_value_sampled', {
+          delayMs,
+          activeMode: activeMode ?? 'none',
+          isVisible,
+          slideY: readAnimatedValue(slideAnim),
+          opacity: readAnimatedValue(opacityAnim),
+          carouselEventCount: carouselEvents.length,
+          activeFilterPanel: activeFilterPanel ?? 'none',
+        });
+      }, delayMs)
+    );
+
+    return () => {
+      timers.forEach(clearTimeout);
+    };
+  }, [
+    activeFilterPanel,
+    activeMode,
+    carouselEvents.length,
+    hotModeActive,
+    isVisible,
+    opacityAnim,
+    selectedImageData,
+    slideAnim,
+  ]);
+
+  useEffect(() => {
+    return registerMapTraceSampler('interests_carousel', () => ({
+      activeMode: activeMode ?? 'none',
+      isVisible,
+      hotModeActive,
+      activeFilterPanel: activeFilterPanel ?? 'none',
+      slideY: readAnimatedValue(slideAnim),
+      opacity: readAnimatedValue(opacityAnim),
+      carouselEventCount: carouselEvents.length,
+      hasSelectedImage: !!selectedImageData,
+      isFocused,
+    }));
+  }, [
+    activeFilterPanel,
+    activeMode,
+    carouselEvents.length,
+    hotModeActive,
+    isFocused,
+    isVisible,
+    opacityAnim,
+    selectedImageData,
+    slideAnim,
+  ]);
 
   // Animate visibility
   useEffect(() => {
@@ -522,6 +667,10 @@ const InterestsCarousel: React.FC = () => {
 
     if (!venue) return;
 
+    // Track this individual event as viewed (for carousel red dot removal)
+    // This is event-level tracking, NOT venue-level
+    markCarouselEventViewed(event.id);
+
     // Set LOCAL state to show lightbox (not mapStore)
     setSelectedImageData({
       imageUrl: event.imageUrl || event.SharedPostThumbnail || '',
@@ -549,6 +698,9 @@ const InterestsCarousel: React.FC = () => {
 
     if (!venue) return;
 
+    // Track the new event as viewed when navigating
+    markCarouselEventViewed(event.id);
+
     setSelectedImageData({
       imageUrl: event.imageUrl || event.SharedPostThumbnail || '',
       event: event,
@@ -563,10 +715,25 @@ const InterestsCarousel: React.FC = () => {
       animated: true,
       viewPosition: 0.5, // Center the card in view
     });
-  }, [carouselEvents, clusters]);
+  }, [carouselEvents, clusters, markCarouselEventViewed]);
 
-  // Don't render if no active filter or no events
-  if (!hasActiveCategoryFilter || carouselEvents.length === 0) {
+  // Handle when user clicks "View Venue" in lightbox
+  // This should record venue-level interaction to clear all red dots for that venue
+  const handleViewVenueFromLightbox = useCallback(() => {
+    if (!selectedImageData) return;
+
+    const venue = selectedImageData.venue;
+    const stableVenueId = venue.locationKey;
+    const venueEventIds = venue.events.map(e => e.id.toString());
+
+    // Record venue-level interaction (persisted to AsyncStorage)
+    recordInteraction(stableVenueId, venueEventIds);
+
+    // Mark all events from this venue as viewed in local state
+    markCarouselEventsViewed(venue.events.map((e) => e.id));
+  }, [selectedImageData, recordInteraction, markCarouselEventsViewed]);
+
+  if (!isVisible && !selectedImageData) {
     return null;
   }
 
@@ -611,9 +778,35 @@ const InterestsCarousel: React.FC = () => {
             carouselEvents.length <= 2 && { flexGrow: 1, justifyContent: 'center' }
           ]}
           keyExtractor={(item) => `carousel-${item.id}`}
-          renderItem={({ item, index }) => (
-            <EventCard event={item} onPress={() => handleCardPress(item, index)} />
-          )}
+          renderItem={({ item, index }) => {
+            // Check if this event has new content and hasn't been viewed yet
+            const hasNew = eventNewContentMap.get(item.id) || false;
+
+            // Find venue for this event
+            const cluster = clusters.find((c) =>
+              c.venues.some((v) => v.events.some((e) => e.id === item.id))
+            );
+            const venue = cluster?.venues.find((v) =>
+              v.events.some((e) => e.id === item.id)
+            );
+
+            // Check if event has been viewed in two ways:
+            // 1. Event-level: User clicked this specific event's card in carousel
+            // 2. Venue-level: User viewed the full venue via EventCallout
+            const eventViewed = carouselViewedEventIds.has(item.id.toString());
+            const venueViewed = venue ? !checkHasNewContent(venue.locationKey, venue.events.map(e => e.id.toString())) : false;
+
+            const isViewed = eventViewed || venueViewed;
+            const showRedDot = hasNew && !isViewed;
+
+            return (
+              <EventCard
+                event={item}
+                onPress={() => handleCardPress(item, index)}
+                hasNewContent={showRedDot}
+              />
+            );
+          }}
           getItemLayout={(_data, index) => ({
             length: CARD_WIDTH + CARD_GAP,
             offset: (CARD_WIDTH + CARD_GAP) * index,
@@ -652,6 +845,7 @@ const InterestsCarousel: React.FC = () => {
             events={carouselEvents}
             currentIndex={selectedImageData.currentIndex}
             onNavigate={handleNavigate}
+            onViewVenue={handleViewVenueFromLightbox}
           />
         </Modal>
       )}
@@ -712,7 +906,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 6,
     right: 6,
-    backgroundColor: '#FF3B30',
+    backgroundColor: '#34A853',
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: 10,
@@ -795,6 +989,29 @@ const styles = StyleSheet.create({
   },
   paginationDot: {
     backgroundColor: '#333333',
+  },
+  // New content indicator
+  newDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#FF3B30',
+    borderWidth: 1,
+    borderColor: '#FFFFFF',
+  },
+  newDotWrapper: {
+    position: 'absolute',
+    top: 0,
+    right: 1,
+    width: 14,
+    height: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  // Position to left of NOW badge when it's present
+  newDotWrapperWithNow: {
+    top: 1,
+    right: 3, // Position to left of NOW badge (NOW badge width ~44px + 6px gap)
   },
 });
 

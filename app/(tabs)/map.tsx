@@ -16,6 +16,7 @@
 import React, { useEffect, useRef, useState, useMemo, useCallback } from 'react';
 import { View, Text, StyleSheet, Animated, Dimensions, PixelRatio, TouchableOpacity, Easing, Keyboard, Pressable, Image, Modal } from 'react-native';
 import * as Location from 'expo-location';
+import * as Haptics from 'expo-haptics';
 import MapboxGL from '@rnmapbox/maps';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
@@ -43,10 +44,13 @@ import FilterPills from '../../components/map/FilterPills';
 import MapLegend from '../../components/map/MapLegend';
 import InterestFilterPills from '../../components/map/InterestFilterPills';
 import InterestsCarousel from '../../components/map/InterestsCarousel';
+import HotFlamePill from '../../components/map/HotFlamePill';
 
 import EventCallout from '../../components/map/EventCallout';
 import EventImageLightbox from '../../components/map/EventImageLightbox';
 import HotspotHighlight from '../../components/map/HotspotHighlight';
+import MapTracePanel from '../../components/debug/MapTracePanel';
+import StaticDebugCallout from '../../components/map/StaticDebugCallout';
 
 // Import centralized date utilities
 import { 
@@ -70,6 +74,13 @@ import {
   type BoundingBox,
   type GeoCoordinate
 } from '../../utils/geoUtils';
+import {
+  MAP_TRACE_UI_ENABLED,
+  captureMapTraceSamplers,
+  registerMapTraceSampler,
+  setMapTraceSnapshot,
+  traceMapEvent,
+} from '../../utils/mapTrace';
 
 // Initialize Mapbox token
 try {
@@ -80,6 +91,8 @@ try {
 
 // Constants
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
+const HOTSPOT_HARD_DISABLED_FOR_PREVIEW_DEBUG = true;
+const STATIC_CALLOUT_ISOLATION_DEBUG = false;
 
 // Helper function to get color for time status
 const getTimeStatusColor = (timeStatus: TimeStatus): string => {
@@ -222,7 +235,7 @@ const BroadcastingEffect: React.FC<BroadcastingEffectProps> = ({ size, color }) 
         // Calculate opacity and scale based on animation progress
         const opacity = anim.interpolate({
           inputRange: [0, 0.3, 1],
-          outputRange: [0.6, 0.4, 0],
+          outputRange: [0, 0.4, 0], // Changed from [0.6, 0.4, 0] to start invisible
           extrapolate: 'clamp'
         });
         
@@ -533,9 +546,11 @@ const IndicatorDot: React.FC<IndicatorDotProps> = ({ hasNewContent, style }) => 
 interface TreeMarkerProps {
   cluster: Cluster;
   isSelected: boolean;
+  isProcessing?: boolean;
+  isReady?: boolean;
 }
 
-const TreeMarker: React.FC<TreeMarkerProps> = ({ cluster, isSelected }) => {
+const TreeMarker: React.FC<TreeMarkerProps> = ({ cluster, isSelected, isProcessing = false, isReady = true }) => {
   // Determine color based on time status
   const color = getTimeStatusColor(cluster.timeStatus);
 
@@ -578,7 +593,8 @@ const TreeMarker: React.FC<TreeMarkerProps> = ({ cluster, isSelected }) => {
             height: adjustedSize * 1.5,
             borderRadius: adjustedSize, // Circular shape
             justifyContent: 'center',
-            alignItems: 'center'
+            alignItems: 'center',
+            opacity: !isReady ? 0.4 : isProcessing ? 0.6 : 1, // Dim when not ready or processing
           }
         ]}
       >
@@ -705,7 +721,28 @@ const TreeMarker: React.FC<TreeMarkerProps> = ({ cluster, isSelected }) => {
           </View>
         )}
       </View>
-      
+
+      {/* Processing indicator - pulsing ring overlay */}
+      {isProcessing && (
+        <View
+          style={[
+            styles.processingRing,
+            {
+              position: 'absolute',
+              top: 0,
+              left: adjustedSize * 0.75,
+              width: adjustedSize * 1.5,
+              height: adjustedSize * 1.5,
+              borderRadius: adjustedSize,
+              borderWidth: 2,
+              borderColor: color,
+              backgroundColor: 'transparent',
+              opacity: 0.8,
+            }
+          ]}
+        />
+      )}
+
     </View>
   );
 };
@@ -770,7 +807,8 @@ const DeepLinkLightbox = () => {
 };
 
  // Main Map Screen component
- function MapScreen() {
+function MapScreen() {
+   const ActiveCalloutComponent = STATIC_CALLOUT_ISOLATION_DEBUG ? StaticDebugCallout : EventCallout;
    // ───── DEBUG: Map load session & timers ─────
    const DEBUG_MAP_LOAD = true;
    const __ml_sessionIdRef = React.useRef<string>(`ML-${Date.now()}`);
@@ -836,11 +874,14 @@ const computeStartCenter = (): [number, number] => {
     closeCalloutTrigger,
     triggerCloseCallout,
     isHeaderSearchActive,
-    setHeaderSearchActive
+    setHeaderSearchActive,
+    setTypeFilters
   } = useMapStore();
 
   // Is the bottom callout visible?
   const isCalloutOpen = !!selectedCluster || (Array.isArray(selectedVenues) && selectedVenues.length > 0);
+  const selectedVenueCount = Array.isArray(selectedVenues) ? selectedVenues.length : 0;
+  const selectedClusterId = selectedCluster?.id ?? null;
 
   // 🎯 TUTORIAL INTEGRATION: Make map store available globally
   useEffect(() => {
@@ -886,11 +927,122 @@ const computeStartCenter = (): [number, number] => {
   const [location, setLocation] = useState<Location.LocationObject | null>(null);
   const [locationPermissionGranted, setLocationPermissionGranted] = useState<boolean>(false);
   const [hasInitiallyPositioned, setHasInitiallyPositioned] = useState<boolean>(false);
+  const [processingClusterId, setProcessingClusterId] = useState<string | null>(null);
+  const [clustersReady, setClustersReady] = useState<boolean>(false);
+  const [isTracePanelVisible, setIsTracePanelVisible] = useState(false);
+  const [renderedCalloutVenues, setRenderedCalloutVenues] = useState<Venue[]>([]);
+  const [renderedCalloutCluster, setRenderedCalloutCluster] = useState<Cluster | null>(null);
+  const [calloutLayoutReadyKey, setCalloutLayoutReadyKey] = useState<string | null>(null);
   const cameraRef = useRef<MapboxGL.Camera>(null);
   const calloutAnimation = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
   const mapRef = useRef<MapboxGL.MapView>(null);
   const locationSubscription = useRef<Location.LocationSubscription | null>(null);
-  
+  const calloutAnimationRequestRef = useRef(0);
+
+  const renderedCalloutVenueCount = renderedCalloutVenues.length;
+  const renderedCalloutClusterId = renderedCalloutCluster?.id ?? null;
+  const hasRenderedCallout = renderedCalloutVenueCount > 0;
+  const selectedCalloutSignature = useMemo(
+    () =>
+      Array.isArray(selectedVenues) && selectedVenues.length > 0
+        ? selectedVenues.map((venue) => venue.locationKey).join('|')
+        : '',
+    [selectedVenues]
+  );
+  const renderedCalloutSignature = useMemo(
+    () =>
+      renderedCalloutVenues.length > 0
+        ? renderedCalloutVenues.map((venue) => venue.locationKey).join('|')
+        : '',
+    [renderedCalloutVenues]
+  );
+  const hasSelectedCalloutRendered =
+    selectedCalloutSignature !== '' && selectedCalloutSignature === renderedCalloutSignature;
+  const renderedCalloutPresentationKey = useMemo(
+    () => `${renderedCalloutClusterId ?? 'single'}::${renderedCalloutSignature || 'no-venues'}`,
+    [renderedCalloutClusterId, renderedCalloutSignature]
+  );
+  const isRenderedCalloutLayoutReady =
+    hasSelectedCalloutRendered && calloutLayoutReadyKey === renderedCalloutPresentationKey;
+  const shouldRenderAncillaryOverlays = !isCalloutOpen && !hasRenderedCallout;
+
+  // Hot interest carousel state (for HotFlamePill)
+  const [hotInterestCarouselActive, setHotInterestCarouselActive] = useState(false);
+  const hotInterestCarouselActiveRef = useRef(false);
+
+  useEffect(() => {
+    hotInterestCarouselActiveRef.current = hotInterestCarouselActive;
+  }, [hotInterestCarouselActive]);
+
+  useEffect(() => {
+    if (!isCalloutOpen && !hasRenderedCallout) {
+      return;
+    }
+
+    if (activeFilterPanel) {
+      traceMapEvent('callout_forced_filter_panel_close', {
+        activeFilterPanel,
+      });
+      setActiveFilterPanel(null);
+    }
+
+    if (hotInterestCarouselActiveRef.current) {
+      traceMapEvent('callout_forced_hot_interest_close', {
+        hotModeActive: true,
+      });
+      setHotInterestCarouselActive(false);
+    }
+  }, [activeFilterPanel, hasRenderedCallout, isCalloutOpen, setActiveFilterPanel]);
+
+  useEffect(() => {
+    traceMapEvent('map_screen_mounted');
+
+    return () => {
+      traceMapEvent('map_screen_unmounted');
+    };
+  }, []);
+
+  useEffect(() => {
+      setMapTraceSnapshot({
+        isGuest,
+        isLoading,
+        clustersReady,
+        clusterCount: clusters.length,
+      processingClusterId: processingClusterId ?? null,
+        selectedVenueCount,
+        selectedClusterId,
+        isCalloutOpen,
+        renderedCalloutVenueCount,
+        renderedCalloutClusterId,
+        hasRenderedCallout,
+        hasSelectedCalloutRendered,
+        calloutLayoutReady: isRenderedCalloutLayoutReady,
+        activeFilterPanel: activeFilterPanel ?? null,
+        hotspotFilterActive: hotInterestCarouselActive,
+        hasInitiallyPositioned,
+        locationPermissionGranted,
+        ignoreProgrammatic: ignoreProgrammaticCameraRef.current,
+    });
+  }, [
+    activeFilterPanel,
+    clusters.length,
+    clustersReady,
+    hasSelectedCalloutRendered,
+    hasInitiallyPositioned,
+    hasRenderedCallout,
+    hotInterestCarouselActive,
+    isRenderedCalloutLayoutReady,
+    isCalloutOpen,
+    isGuest,
+    isLoading,
+    locationPermissionGranted,
+    processingClusterId,
+    renderedCalloutClusterId,
+    renderedCalloutVenueCount,
+    selectedClusterId,
+    selectedVenueCount,
+  ]);
+
   // Filter pills auto-hide functionality
   const [isMapMoving, setIsMapMoving] = useState<boolean>(false);
 
@@ -900,6 +1052,130 @@ const computeStartCenter = (): [number, number] => {
 
   // Measure pill row height so we can hide exactly by its height
   const [pillsHeight, setPillsHeight] = useState<number>(56); // sensible default
+
+  useEffect(() => {
+    const readAnimatedValue = (value: Animated.Value): number | string =>
+      typeof (value as any).__getValue === 'function' ? (value as any).__getValue() : 'unknown';
+
+    return registerMapTraceSampler('map_callout', () => ({
+      calloutRequestId: calloutAnimationRequestRef.current,
+      calloutTranslateY: readAnimatedValue(calloutAnimation),
+      pillsTranslateY: readAnimatedValue(pillsAnimation),
+      pillsOpacity: readAnimatedValue(pillsOpacity),
+      selectedVenueCount,
+      renderedCalloutVenueCount,
+      selectedClusterId: selectedClusterId ?? 'none',
+      renderedCalloutClusterId: renderedCalloutClusterId ?? 'none',
+      hasRenderedCallout,
+      hasSelectedCalloutRendered,
+      calloutLayoutReady: isRenderedCalloutLayoutReady,
+      isCalloutOpen,
+      hotInterestCarouselActive,
+      activeFilterPanel: activeFilterPanel ?? 'none',
+      ignoreProgrammatic: ignoreProgrammaticCameraRef.current,
+      clustersReady,
+      isLoading,
+    }));
+  }, [
+    activeFilterPanel,
+    calloutAnimation,
+    clustersReady,
+    hasSelectedCalloutRendered,
+    hasRenderedCallout,
+    hotInterestCarouselActive,
+    isRenderedCalloutLayoutReady,
+    isCalloutOpen,
+    isLoading,
+    pillsAnimation,
+    pillsOpacity,
+    renderedCalloutClusterId,
+    renderedCalloutVenueCount,
+    selectedClusterId,
+    selectedVenueCount,
+  ]);
+
+  useEffect(() => {
+    traceMapEvent('map_loading_state_changed', {
+      isLoading,
+      clusterCount: clusters.length,
+    });
+  }, [clusters.length, isLoading]);
+
+  useEffect(() => {
+    traceMapEvent('clusters_ready_state_changed', {
+      clustersReady,
+      clusterCount: clusters.length,
+    });
+  }, [clusters.length, clustersReady]);
+
+  useEffect(() => {
+    traceMapEvent('callout_selection_state_changed', {
+      selectedVenueCount,
+      selectedClusterId: selectedClusterId ?? 'none',
+      isCalloutOpen,
+    });
+  }, [isCalloutOpen, selectedClusterId, selectedVenueCount]);
+
+  useEffect(() => {
+    traceMapEvent('processing_cluster_state_changed', {
+      processingClusterId: processingClusterId ?? 'none',
+    });
+  }, [processingClusterId]);
+
+  // Dismiss interest carousel (both hot mode and category filters)
+  const dismissInterestCarousel = useCallback((reason: string = 'unspecified') => {
+    const mapState = useMapStore.getState();
+    const liveFilterCriteria = mapState.filterCriteria;
+
+    const hasActiveCategoryFilter =
+      !!liveFilterCriteria.eventFilters.category ||
+      !!liveFilterCriteria.specialFilters.category;
+    const hotModeWasActive = hotInterestCarouselActiveRef.current;
+
+    if (!hotModeWasActive && !hasActiveCategoryFilter) {
+      return false;
+    }
+
+    if (hotModeWasActive) {
+      setHotInterestCarouselActive(false);
+    }
+
+    // Only clear category filters that were set by interest pills
+    if (liveFilterCriteria.eventFilters.categoryFilterSource === 'interest-pills') {
+      setTypeFilters('event', { category: undefined });
+    }
+    if (liveFilterCriteria.specialFilters.categoryFilterSource === 'interest-pills') {
+      setTypeFilters('special', { category: undefined });
+    }
+
+    return true;
+  }, [setTypeFilters]);
+
+  // Handle hot flame pill press
+  const handleHotFlamePress = useCallback(() => {
+    if (!hotInterestCarouselActive) {
+      // Hot mode is a separate interest carousel mode; clear category pill filters when activating it.
+      setTypeFilters('event', { category: undefined });
+      setTypeFilters('special', { category: undefined });
+    }
+
+    setHotInterestCarouselActive((prev) => !prev);
+  }, [hotInterestCarouselActive, setTypeFilters]);
+
+  // Auto-dismiss hot mode if category filter is activated
+  useEffect(() => {
+    const hasActiveCategoryFilter =
+      !!filterCriteria.eventFilters.category ||
+      !!filterCriteria.specialFilters.category;
+
+    if (hotInterestCarouselActive && hasActiveCategoryFilter) {
+      setHotInterestCarouselActive(false);
+    }
+  }, [
+    hotInterestCarouselActive,
+    filterCriteria.eventFilters.category,
+    filterCriteria.specialFilters.category,
+  ]);
 
   // Actual map viewport dimensions (accounting for header, tab bar, safe areas)
   const [mapDimensions, setMapDimensions] = useState<{ width: number; height: number } | null>(null);
@@ -956,6 +1232,16 @@ const logPills = (msg: string, ctx?: Record<string, any>) => {
 
   // Ignore non-user (programmatic) camera moves for a short window
   const ignoreProgrammaticCameraRef = useRef<boolean>(false);
+  const setIgnoreProgrammaticTrace = useCallback((value: boolean, reason: string) => {
+    ignoreProgrammaticCameraRef.current = value;
+    setMapTraceSnapshot({
+      ignoreProgrammatic: value,
+      ignoreProgrammaticReason: reason,
+    });
+    traceMapEvent(value ? 'ignore_programmatic_on' : 'ignore_programmatic_off', {
+      reason,
+    });
+  }, []);
 
   // Enable auto-hide only after initial camera settle
   const autoHideEnabledRef = useRef<boolean>(false);
@@ -1105,12 +1391,17 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
     // Only do this once when we first get a location
     if (location && !hasInitiallyPositioned && cameraRef.current) {
         // Ignore hides briefly while we move the camera programmatically
-    ignoreProgrammaticCameraRef.current = true;
+    setIgnoreProgrammaticTrace(true, 'initial_center');
     logPills('PROGRAMMATIC MOVE START (initial center) — suppress hides 800ms');
     setTimeout(() => {
-      ignoreProgrammaticCameraRef.current = false;
+      setIgnoreProgrammaticTrace(false, 'initial_center_complete');
       logPills('PROGRAMMATIC MOVE END (initial center)');
     }, 800);
+
+    traceMapEvent('initial_center_camera_move_started', {
+      latitude: location.coords.latitude,
+      longitude: location.coords.longitude,
+    });
 
 
     cameraRef.current.setCamera({
@@ -1227,6 +1518,8 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
             : 0
         });
       }
+
+      return;
     }
   }, [activeFilterPanel, analytics, zoomLevel, isGuest]); // 🔥 FULL DEPENDENCIES: Testing if this causes infinite loop
 
@@ -1275,19 +1568,108 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
           is_guest: isGuest
         });
       }
+
+      return;
     }
   }, [closeCalloutTrigger]); // Removed unnecessary dependencies
 
-  // Animate callout when selected venue changes
   useEffect(() => {
     if (selectedVenues && selectedVenues.length > 0) {
-      // Show callout (animate to bottom position)
-      Animated.spring(calloutAnimation, {
-        toValue: 0, // Position at bottom
-        useNativeDriver: true,
-        friction: 8,
-        tension: 40
-      }).start();
+      setCalloutLayoutReadyKey(null);
+      setRenderedCalloutVenues(selectedVenues);
+      setRenderedCalloutCluster(selectedCluster);
+    }
+  }, [selectedCluster, selectedVenues]);
+
+  // Parent callout lifecycle only mounts/dismisses the subtree.
+  // EventCallout owns the visible sheet presentation.
+  useEffect(() => {
+    const animationRequestId = ++calloutAnimationRequestRef.current;
+    const readCalloutAnimationValue = (): number | string =>
+      typeof (calloutAnimation as any).__getValue === 'function'
+        ? (calloutAnimation as any).__getValue()
+        : 'unknown';
+    traceMapEvent('callout_animation_request_started', {
+      requestId: animationRequestId,
+      selectedVenueCount,
+      renderedVenueCount: renderedCalloutVenues.length,
+      selectedClusterId: selectedClusterId ?? 'none',
+      renderedClusterId: renderedCalloutClusterId ?? 'none',
+    });
+    captureMapTraceSamplers('callout_animation_request', {
+      requestId: animationRequestId,
+      phase:
+        selectedVenues && selectedVenues.length > 0
+          ? 'open'
+          : renderedCalloutVenues.length > 0
+            ? 'close'
+            : 'idle',
+      delayMs: 0,
+    });
+    calloutAnimation.stopAnimation();
+    traceMapEvent('callout_animation_stop_requested', {
+      requestId: animationRequestId,
+      selectedVenueCount,
+      renderedVenueCount: renderedCalloutVenues.length,
+    });
+
+    if (selectedVenues && selectedVenues.length > 0) {
+      if (!hasSelectedCalloutRendered) {
+        calloutAnimation.setValue(SCREEN_HEIGHT);
+        traceMapEvent('callout_animation_reset_for_open', {
+          requestId: animationRequestId,
+          translateY: SCREEN_HEIGHT,
+        });
+        traceMapEvent('callout_animation_open_waiting_for_mount', {
+          requestId: animationRequestId,
+          selectedVenueCount: selectedVenues.length,
+          selectedClusterId: selectedClusterId ?? 'none',
+          selectedCalloutSignature: selectedCalloutSignature || 'none',
+          renderedCalloutSignature: renderedCalloutSignature || 'none',
+        });
+        return;
+      }
+
+      if (!isRenderedCalloutLayoutReady) {
+        calloutAnimation.setValue(SCREEN_HEIGHT);
+        traceMapEvent('callout_animation_open_waiting_for_layout', {
+          requestId: animationRequestId,
+          selectedVenueCount: selectedVenues.length,
+          selectedClusterId: selectedClusterId ?? 'none',
+          renderedClusterId: renderedCalloutClusterId ?? 'none',
+          renderedVenueCount: renderedCalloutVenues.length,
+          renderedCalloutPresentationKey,
+        });
+        return;
+      }
+
+      traceMapEvent('callout_animation_open_started', {
+        requestId: animationRequestId,
+        selectedVenueCount: selectedVenues.length,
+        selectedClusterId: selectedClusterId ?? 'none',
+        primaryVenue: selectedVenues[0]?.venue || 'unknown',
+      });
+      calloutAnimation.setValue(0);
+      traceMapEvent('callout_parent_presentation_applied', {
+        requestId: animationRequestId,
+        selectedVenueCount: selectedVenues.length,
+        selectedClusterId: selectedClusterId ?? 'none',
+        renderedCalloutPresentationKey,
+        translateY: readCalloutAnimationValue(),
+      });
+      traceMapEvent('callout_open_animation_finished', {
+        requestId: animationRequestId,
+        finished: true,
+        translateY: readCalloutAnimationValue(),
+        selectedVenueCount: selectedVenues.length,
+        selectedClusterId: selectedClusterId ?? 'none',
+        primaryVenue: selectedVenues[0]?.venue || 'unknown',
+      });
+      captureMapTraceSamplers('callout_animation_finished', {
+        requestId: animationRequestId,
+        phase: 'open',
+        finished: true,
+      });
 
       // 🔥 ANALYTICS: Track venue selection and callout display
       analytics.trackMapInteraction('venue_callout_opened', {
@@ -1299,7 +1681,7 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
       });
 
       // Track venue exploration details
-      selectedVenues.forEach((venue, index) => {
+      selectedVenues.forEach((venue) => {
         analytics.trackEventViewWithContext({
           id: `venue_${venue.locationKey}`,
           title: venue.venue,
@@ -1308,14 +1690,22 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
           venue: venue.venue
         });
       });
-} else {
-      // Hide callout (move off-screen)
-      Animated.spring(calloutAnimation, {
-        toValue: SCREEN_HEIGHT, // Move off-screen
-        useNativeDriver: true,
-        friction: 8,
-        tension: 40
-      }).start();
+      return;
+    }
+
+    if (renderedCalloutVenues.length > 0) {
+      traceMapEvent('callout_animation_close_started', {
+        requestId: animationRequestId,
+        selectedClusterId: renderedCalloutClusterId ?? 'none',
+        renderedVenueCount: renderedCalloutVenues.length,
+      });
+      calloutAnimation.setValue(SCREEN_HEIGHT);
+      traceMapEvent('callout_parent_presentation_clearing', {
+        requestId: animationRequestId,
+        renderedVenueCount: renderedCalloutVenues.length,
+        renderedClusterId: renderedCalloutClusterId ?? 'none',
+        translateY: readCalloutAnimationValue(),
+      });
 
       // 🔥 ANALYTICS: Track callout closure
       if (clusterOpenStartRef.current != null) {
@@ -1329,26 +1719,86 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
         clusterOpenStartRef.current = null;
         lastOpenedClusterIdRef.current = null;
       }
+      setRenderedCalloutVenues([]);
+      setRenderedCalloutCluster(null);
+      setCalloutLayoutReadyKey(null);
+
+      traceMapEvent('callout_close_animation_finished', {
+        requestId: animationRequestId,
+        finished: true,
+        renderedVenueCount: renderedCalloutVenues.length,
+        renderedClusterId: renderedCalloutClusterId ?? 'none',
+        translateY: readCalloutAnimationValue(),
+      });
+      captureMapTraceSamplers('callout_animation_finished', {
+        requestId: animationRequestId,
+        phase: 'close',
+        finished: true,
+      });
+      return;
     }
-  }, [selectedVenues, calloutAnimation]); // 🔥 STABLE: Only essential dependencies
+
+    calloutAnimation.setValue(SCREEN_HEIGHT);
+  }, [
+    calloutAnimation,
+    hasSelectedCalloutRendered,
+    isRenderedCalloutLayoutReady,
+    renderedCalloutClusterId,
+    renderedCalloutPresentationKey,
+    renderedCalloutSignature,
+    selectedCalloutSignature,
+    selectedClusterId,
+  ]); // Parent exposes a stable callout subtree once the selected content is ready
 
   useEffect(() => {
     // LOG: Map state changed - tracks selected venues and clusters for debugging venue selection flow
-    // console.log("MAP STATE CHANGED - selectedVenues:", 
+    // console.log("MAP STATE CHANGED - selectedVenues:",
     //             selectedVenues ? selectedVenues.length : 0,
     //             "venue names:", selectedVenues ? selectedVenues.map(v => v.venue).join(", ") : "none",
     //             "selectedCluster:", selectedCluster ? selectedCluster.id : "none");
   }, [selectedVenues, selectedCluster]);
 
+  // Enable cluster interaction after initial render completes
+  // This prevents taps during the heavy initial render from being delayed/queued
+  useEffect(() => {
+    if (!isLoading && clusters.length > 0 && !clustersReady) {
+      // Small delay to let React finish rendering and hydrating the cluster markers
+      traceMapEvent('clusters_ready_delay_started', {
+        clusterCount: clusters.length,
+        delayMs: 500,
+      });
+      const timer = setTimeout(() => {
+        console.log('[map] Clusters ready for interaction');
+        setClustersReady(true);
+        traceMapEvent('clusters_ready_delay_completed', {
+          clusterCount: clusters.length,
+        });
+      }, 500); // 500ms should be enough for initial render to complete
+
+      return () => clearTimeout(timer);
+    }
+
+    // Reset clustersReady when loading starts again
+    if (isLoading && clustersReady) {
+      setClustersReady(false);
+      traceMapEvent('clusters_ready_reset_for_loading');
+    }
+  }, [isLoading, clusters.length, clustersReady]);
+
   // Re-center the map on user location
   const handleRecenterPress = () => {
     if (location && cameraRef.current) {
-        ignoreProgrammaticCameraRef.current = true;
+        setIgnoreProgrammaticTrace(true, 'recenter');
     logPills('PROGRAMMATIC MOVE START (recenter) — suppress hides 800ms');
     setTimeout(() => {
-      ignoreProgrammaticCameraRef.current = false;
+      setIgnoreProgrammaticTrace(false, 'recenter_complete');
       logPills('PROGRAMMATIC MOVE END (recenter)');
     }, 800);
+
+    traceMapEvent('recenter_pressed', {
+      latitude: location.coords.latitude,
+      longitude: location.coords.longitude,
+    });
 
 
     cameraRef.current.setCamera({
@@ -1372,9 +1822,72 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
       });
     }
   };
-  
+
+  // Ref to prevent duplicate cluster clicks (rapid tapping)
+  const clusterProcessingRef = useRef<string | null>(null);
+  const clusterProcessingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   // Enhanced handleMarkerPress with comprehensive prioritization
   const handleMarkerPress = useCallback(async (cluster: Cluster): Promise<void> => {
+    traceMapEvent('marker_press_started', {
+      clusterId: cluster.id,
+      clusterType: cluster.clusterType,
+      venueCount: cluster.venues?.length ?? 0,
+      ignoreProgrammatic: ignoreProgrammaticCameraRef.current,
+      activeProcessingClusterId: clusterProcessingRef.current ?? 'none',
+      hasRenderedCallout,
+      renderedCalloutClusterId: renderedCalloutClusterId ?? 'none',
+    });
+    if (hasRenderedCallout) {
+      traceMapEvent('marker_press_blocked_callout_rendered', {
+        clusterId: cluster.id,
+        renderedCalloutClusterId: renderedCalloutClusterId ?? 'none',
+        renderedVenueCount: renderedCalloutVenueCount,
+      });
+      return;
+    }
+    // 🛡️ CLICK PREVENTION: Block rapid taps on same or different clusters
+    if (clusterProcessingRef.current !== null) {
+      console.log(`[map] Cluster tap blocked: already processing ${clusterProcessingRef.current}`);
+      traceMapEvent('marker_press_blocked_processing', {
+        clusterId: cluster.id,
+        processingClusterId: clusterProcessingRef.current,
+      });
+      return;
+    }
+
+    // 🛡️ HOTSPOT PREVENTION: Block clicks during programmatic camera animations
+    if (ignoreProgrammaticCameraRef.current) {
+      console.log('[map] Cluster tap blocked: camera animating');
+      traceMapEvent('marker_press_blocked_programmatic', {
+        clusterId: cluster.id,
+      });
+      return;
+    }
+
+    // 📳 HAPTIC FEEDBACK: Provide immediate tactile confirmation of tap
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {
+      // Silently fail if haptics not available (some devices/simulators)
+    });
+
+    // Mark this cluster as being processed (both ref and state)
+    clusterProcessingRef.current = cluster.id;
+    setProcessingClusterId(cluster.id);
+    console.log(`[map] Cluster processing started: ${cluster.id}`);
+    traceMapEvent('marker_processing_started', {
+      clusterId: cluster.id,
+    });
+
+    // Safety timeout: auto-clear guard after 1000ms to prevent deadlock
+    clusterProcessingTimeoutRef.current = setTimeout(() => {
+      console.log(`[map] Cluster processing auto-cleared (timeout): ${clusterProcessingRef.current}`);
+      traceMapEvent('marker_processing_timeout_cleared', {
+        clusterId: clusterProcessingRef.current ?? 'none',
+      });
+      clusterProcessingRef.current = null;
+      setProcessingClusterId(null);
+    }, 1000);
+
     // LOG: Processing cluster press - tracks which cluster was tapped and venue count
     console.log('[map] handleMarkerPress()', { cluster_id: cluster.id, type: cluster.clusterType, venue_count: cluster.venues?.length });
 
@@ -1585,6 +2098,12 @@ lastOpenedClusterIdRef.current = cluster.id;
 
       // For backward compatibility - select the first (most relevant) venue as primary
       selectVenue(sortedVenues[0]);
+      traceMapEvent('marker_press_selected', {
+        clusterId: cluster.id,
+        venueCount: sortedVenues.length,
+        selectedClusterId: cluster.clusterType === 'multi' ? cluster.id : 'none',
+        primaryVenue: sortedVenues[0]?.venue || 'unknown',
+      });
 
       // DEBUG LOG 4: Log which venue is selected when cluster opens (via map tap)
       console.log('[Hotspot] ===== Cluster opened via MAP tap =====');
@@ -1604,10 +2123,10 @@ lastOpenedClusterIdRef.current = cluster.id;
         : [cluster.venues[0].longitude, cluster.venues[0].latitude];
       
       // Move camera to the cluster
-            ignoreProgrammaticCameraRef.current = true;
+      setIgnoreProgrammaticTrace(true, 'cluster_tap_camera_move');
       logPills('PROGRAMMATIC MOVE START (cluster tap) — suppress hides 800ms');
       setTimeout(() => {
-        ignoreProgrammaticCameraRef.current = false;
+        setIgnoreProgrammaticTrace(false, 'cluster_tap_camera_move_complete');
         logPills('PROGRAMMATIC MOVE END (cluster tap)');
       }, 800);
 
@@ -1655,6 +2174,10 @@ lastOpenedClusterIdRef.current = cluster.id;
       
     } catch (error) {
       console.error("Error in handleMarkerPress:", error);
+      traceMapEvent('marker_press_error', {
+        clusterId: cluster.id,
+        message: error instanceof Error ? error.message : String(error),
+      });
       
       // 🔥 ANALYTICS: TEMPORARILY COMMENTED OUT
       // analytics.trackError('cluster_interaction_error',
@@ -1671,11 +2194,43 @@ lastOpenedClusterIdRef.current = cluster.id;
       selectVenues(defaultVenues);
       selectVenue(defaultVenues[0]);
       selectCluster(cluster.clusterType === 'multi' ? cluster : null);
+      traceMapEvent('marker_press_fallback_selected', {
+        clusterId: cluster.id,
+        venueCount: defaultVenues.length,
+        selectedClusterId: cluster.clusterType === 'multi' ? cluster.id : 'none',
+        primaryVenue: defaultVenues[0]?.venue || 'unknown',
+      });
+    } finally {
+      // 🛡️ CLEANUP: Clear processing guard after completion or error
+      if (clusterProcessingTimeoutRef.current) {
+        clearTimeout(clusterProcessingTimeoutRef.current);
+        clusterProcessingTimeoutRef.current = null;
+      }
+      console.log(`[map] Cluster processing completed: ${clusterProcessingRef.current}`);
+      traceMapEvent('marker_processing_completed', {
+        clusterId: clusterProcessingRef.current ?? cluster.id,
+      });
+      clusterProcessingRef.current = null;
+      setProcessingClusterId(null);
     }
-  }, [isGuest, trackInteraction, location]); // REMOVED analytics, zoomLevel dependencies
+  }, [
+    hasRenderedCallout,
+    isGuest,
+    location,
+    renderedCalloutClusterId,
+    renderedCalloutVenueCount,
+    trackInteraction,
+  ]); // REMOVED analytics, zoomLevel dependencies
 
   // Handle map press to close callout
   const handleMapPress = () => {
+    traceMapEvent('map_press_fired', {
+      hasActiveCallout: selectedVenueCount > 0,
+      selectedClusterId: selectedClusterId ?? 'none',
+      activeFilterPanel: activeFilterPanel ?? 'none',
+      ignoreProgrammatic: ignoreProgrammaticCameraRef.current,
+      processingClusterId: clusterProcessingRef.current ?? 'none',
+    });
     // 🔥 ANALYTICS: Track map exploration (tapping on empty areas)
     analytics.trackMapInteraction('map_exploration', {
       has_active_callout: !!(selectedVenues && selectedVenues.length > 0),
@@ -1694,13 +2249,22 @@ lastOpenedClusterIdRef.current = cluster.id;
       cancelEventsClearArmed('map-press');
     }
 
+    dismissInterestCarousel('map-press');
+
     // Only close if there's a callout currently open
     if (selectedVenues && selectedVenues.length > 0) {
+      traceMapEvent('map_press_closing_callout', {
+        selectedClusterId: selectedClusterId ?? 'none',
+        selectedVenueCount,
+      });
       selectVenue(null);
       // Analytics for callout closure tracked in useEffect above
     }
     // Close filter panel if open
     if (activeFilterPanel) {
+      traceMapEvent('map_press_closing_filter_panel', {
+        activeFilterPanel,
+      });
       setActiveFilterPanel(null);
       // Analytics for filter panel closure tracked in useEffect above
     }
@@ -2067,8 +2631,11 @@ const pitch: number | undefined = props.pitch ?? props.tilt;
 const isGesture = !!(props.gesture ?? props.isUserInteraction);
 if (isGesture && !userGestureSeenRef.current) {
   userGestureSeenRef.current = true;
-  ignoreProgrammaticCameraRef.current = false;
+  setIgnoreProgrammaticTrace(false, 'first_user_gesture');
   autoHideEnabledRef.current = true;
+  traceMapEvent('first_user_gesture_detected', {
+    zoom: typeof zoom === 'number' ? zoom : 'unknown',
+  });
   // logPills('USER GESTURE DETECTED — auto-hide enabled & programmatic off');
 }
 
@@ -2507,11 +3074,19 @@ if (reason === 'CLUSTER_COUNT_CHANGE') {
             anchor={{ x: 0.5, y: 1.0 }}
             
           >
-            <TouchableOpacity 
+            <TouchableOpacity
               onPress={() => handleMarkerPress(cluster)}
               testID={isClosestCluster ? "closest-cluster" : undefined}
+              disabled={!clustersReady || processingClusterId !== null || hasRenderedCallout}
+              activeOpacity={0.7}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             >
-              <TreeMarker cluster={cluster} isSelected={isSelected} />
+              <TreeMarker
+                cluster={cluster}
+                isSelected={isSelected}
+                isProcessing={processingClusterId === cluster.id}
+                isReady={clustersReady}
+              />
             </TouchableOpacity>
           </MapboxGL.MarkerView>
         );
@@ -2541,29 +3116,31 @@ if (reason === 'CLUSTER_COUNT_CHANGE') {
       )}
       {/* Add Filter Bar at the top */}
       {/* Filter pills overlay (floating) anchored under safe-area */}
-      <Animated.View
-      pointerEvents="box-none"
-      style={{
-        position: 'absolute',
-        left: 0,
-        right: 0,
-        top: TOP_OFFSET, // baseline + per-platform nudge
-        zIndex: 5,
-        transform: [{ translateY: pillsAnimation }],
-        opacity: pillsOpacity,
-      }}
-    >
-      <View
-        testID="filter-pills"
-        pointerEvents="auto"
-        onLayout={(e) => {
-          const h = e.nativeEvent.layout.height || 0;
-          if (h && Math.abs(h - pillsHeight) > 1) setPillsHeight(h);
-        }}
-      >
-        <FilterPills />
-      </View>
-    </Animated.View>
+      {shouldRenderAncillaryOverlays && (
+        <Animated.View
+          pointerEvents="box-none"
+          style={{
+            position: 'absolute',
+            left: 0,
+            right: 0,
+            top: TOP_OFFSET, // baseline + per-platform nudge
+            zIndex: 5,
+            transform: [{ translateY: pillsAnimation }],
+            opacity: pillsOpacity,
+          }}
+        >
+          <View
+            testID="filter-pills"
+            pointerEvents="auto"
+            onLayout={(e) => {
+              const h = e.nativeEvent.layout.height || 0;
+              if (h && Math.abs(h - pillsHeight) > 1) setPillsHeight(h);
+            }}
+          >
+            <FilterPills />
+          </View>
+        </Animated.View>
+      )}
 
 
 
@@ -2628,6 +3205,10 @@ onDidFinishLoadingMap={() => {
     is_guest: isGuest,
     has_location_permission: locationPermissionGranted
   });
+  traceMapEvent('map_loaded', {
+    isGuest,
+    hasLocationPermission: locationPermissionGranted,
+  });
 
   // Instantly set camera to the best-known start center (no fly animation)
   try {
@@ -2653,7 +3234,7 @@ onDidFinishLoadingMap={() => {
   // Do NOT allow hides until the first real user gesture
   userGestureSeenRef.current = false;
   autoHideEnabledRef.current = false;
-  ignoreProgrammaticCameraRef.current = true;
+  setIgnoreProgrammaticTrace(true, 'map_loaded_initial_lock');
 }}
 
 
@@ -2689,6 +3270,19 @@ onDidFinishLoadingMap={() => {
         {!isLoading && renderClusterMarkers()}
       </MapboxGL.MapView>
 
+      {MAP_TRACE_UI_ENABLED && (
+        <Pressable
+          style={styles.mapTraceTrigger}
+          delayLongPress={700}
+          onLongPress={() => {
+            traceMapEvent('trace_panel_opened', {
+              source: 'logo_long_press',
+            });
+            setIsTracePanelVisible(true);
+          }}
+        />
+      )}
+
             {/* GathR logo above Mapbox logo */}
       <View style={styles.mapLogoContainer} pointerEvents="none">
         <Image
@@ -2698,14 +3292,29 @@ onDidFinishLoadingMap={() => {
         />
       </View>
 
-      <MapLegend topOffset={80} rightOffset={10} />
+      {shouldRenderAncillaryOverlays && (
+        <>
+          <MapLegend topOffset={30} rightOffset={10} />
 
-      <View pointerEvents="box-none" style={styles.interestPillsContainer}>
-        <InterestFilterPills />
-      </View>
+          {/* Hot Flame Pill - shows "What's hot" filter in top-right */}
+          <HotFlamePill
+            top={134}
+            right={10}
+            isActive={hotInterestCarouselActive}
+            onPress={handleHotFlamePress}
+          />
 
-      {/* Interests Carousel - appears when interest pill is selected */}
-      <InterestsCarousel />
+          <View pointerEvents="box-none" style={styles.interestPillsContainer}>
+            <InterestFilterPills onPillInteraction={() => setHotInterestCarouselActive(false)} />
+          </View>
+
+          {/* Interests Carousel - appears when interest pill is selected */}
+          <InterestsCarousel
+            hotModeActive={hotInterestCarouselActive}
+            onDismissHotMode={() => setHotInterestCarouselActive(false)}
+          />
+        </>
+      )}
 
       <View style={styles.mapLogoContainer} pointerEvents="none">
         <Image
@@ -2728,8 +3337,27 @@ onDidFinishLoadingMap={() => {
           <Text>Loading map data...</Text>
         </View>
       )}
-      
-      {selectedVenues && selectedVenues.length > 0 && (
+
+      {/* Transparent overlay to block touches while clusters are not ready */}
+      {!isLoading && !clustersReady && (
+        <View
+          style={styles.clustersNotReadyOverlay}
+          pointerEvents="box-only"
+          onStartShouldSetResponder={() => true}
+          onResponderRelease={() => {
+            console.log('[map] Touch blocked: clusters not ready yet');
+            traceMapEvent('clusters_not_ready_overlay_tap_blocked', {
+              clusterCount: clusters.length,
+            });
+          }}
+        >
+          <View style={styles.clustersLoadingMessage}>
+            <Text style={styles.clustersLoadingText}>Loading Data...</Text>
+          </View>
+        </View>
+      )}
+
+      {hasRenderedCallout && (
         <>
           {/* Background overlay that SWALLOWS touches (prevents MapView onPress behind it) */
           /* ─────────────────────────────────────────────────────────────────────────────
@@ -2775,50 +3403,64 @@ Owner: Map UX stability on Android • Last validated: 2025-09-04
   onMoveShouldSetResponder={() => true}
   onResponderRelease={() => {
     // Tapping outside the sheet intentionally closes it
+    traceMapEvent('callout_overlay_tap_closed', {
+      selectedClusterId: renderedCalloutClusterId ?? 'none',
+      selectedVenueCount: renderedCalloutVenueCount,
+    });
     selectVenue(null);
   }}
 >
-  <Animated.View
-    style={[
-      StyleSheet.absoluteFillObject,
-      {
-        backgroundColor: 'black',
-        opacity: calloutAnimation.interpolate({
-          inputRange: [0, SCREEN_HEIGHT],
-          outputRange: [0.3, 0],
-          extrapolate: 'clamp'
-        })
-      }
-    ]}
-  />
+<Animated.View
+  style={[
+    StyleSheet.absoluteFillObject,
+    {
+      backgroundColor: 'rgba(0, 0, 0, 0.3)',
+    }
+  ]}
+/>
 </View>
 
           
           {/* Callout container */}
-          <Animated.View 
-            style={[
-              styles.calloutAnimatedContainer,
-              { transform: [{ translateY: calloutAnimation }] }
-            ]}
-          >
-            <EventCallout 
-              venues={selectedVenues}
-              cluster={selectedCluster}
+          <View style={styles.calloutAnimatedContainer}>
+            <ActiveCalloutComponent 
+              key={`${renderedCalloutClusterId ?? 'single'}::${renderedCalloutVenues.map((venue) => venue.locationKey).join('|') || 'no-venues'}`}
+              venues={renderedCalloutVenues}
+              cluster={renderedCalloutCluster}
               onClose={() => selectVenue(null)}
+              onLayoutReady={() => {
+                traceMapEvent('callout_child_layout_ready', {
+                  renderedClusterId: renderedCalloutClusterId ?? 'none',
+                  renderedVenueCount: renderedCalloutVenueCount,
+                  renderedCalloutPresentationKey,
+                });
+                setCalloutLayoutReadyKey((currentKey) =>
+                  currentKey === renderedCalloutPresentationKey ? currentKey : renderedCalloutPresentationKey
+                );
+              }}
               onEventSelected={handleEventSelected}
             />
-          </Animated.View>
+          </View>
         </>
       )}
       
-      {/* Daily hotspot highlight - shows most active cluster */}
-      <HotspotHighlight />
+      {/* Preview-debug gate: keep hotspot fully unmounted so its timers/camera flow cannot affect callout presentation. */}
+      {!HOTSPOT_HARD_DISABLED_FOR_PREVIEW_DEBUG && (
+        <HotspotHighlight ignoreProgrammaticCameraRef={ignoreProgrammaticCameraRef} />
+      )}
 
       {/* Guest limitation registration prompt - only for guests */}
       {isGuest && <RegistrationPrompt />}
 
       {/* Deep link lightbox - renders when globalSelectedImageData is set from deep link */}
       <DeepLinkLightbox />
+
+      {MAP_TRACE_UI_ENABLED && (
+        <MapTracePanel
+          visible={isTracePanelVisible}
+          onClose={() => setIsTracePanelVisible(false)}
+        />
+      )}
     </View>
   );
 }
@@ -2842,6 +3484,32 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255, 255, 255, 0.8)',
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  // Overlay to block touches while clusters are initializing (prevents queued taps)
+  clustersNotReadyOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'transparent',
+    zIndex: 100,
+    elevation: 100,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  // Loading message shown on the overlay
+  clustersLoadingMessage: {
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    elevation: 5,
+  },
+  clustersLoadingText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '500',
   },
   // Marker container - must be a single top-level view
   markerContainer: {
@@ -2898,7 +3566,6 @@ venueCountContainer: {
   alignItems: 'center',
   flexDirection: 'row', // horizontal alignment
   zIndex: 4,
-  
 },
 
   venueCountText: {
@@ -2990,6 +3657,11 @@ countText: {
     color: '#1565C0', // Dark blue text
     textAlign: 'center',
   },
+  // Processing ring indicator - shown when cluster is being tapped/processed
+  processingRing: {
+    position: 'absolute',
+    zIndex: 10,
+  },
   // Broadcasting effect styles
   broadcastContainer: {
     position: 'absolute',
@@ -3044,10 +3716,8 @@ countText: {
     textShadowRadius: 2,
   },
   calloutAnimatedContainer: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: 'flex-end',
     zIndex: 15,
   },
   // Re-center button styles
@@ -3089,6 +3759,14 @@ countText: {
     left: 10,
     bottom: 34, // sits just above the Mapbox logo area
     zIndex: 6,
+  },
+  mapTraceTrigger: {
+    position: 'absolute',
+    left: 2,
+    bottom: 24,
+    width: 40,
+    height: 40,
+    zIndex: 8,
   },
   mapLogo: {
     width: 20,

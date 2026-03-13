@@ -40,7 +40,11 @@ const BRAND_PRIMARY = '#1E90FF';
 const NOW_COLOR = '#FF5722';
 const TODAY_COLOR = '#F57C00';
 
-export const HotspotHighlight: React.FC = () => {
+interface HotspotHighlightProps {
+  ignoreProgrammaticCameraRef: React.MutableRefObject<boolean>;
+}
+
+export const HotspotHighlight: React.FC<HotspotHighlightProps> = ({ ignoreProgrammaticCameraRef }) => {
   const {
     shouldShow,
     targetCluster,
@@ -51,7 +55,7 @@ export const HotspotHighlight: React.FC = () => {
     dismiss,
     disablePermanently,
     onClusterTap,
-  } = useHotspotHighlight();
+  } = useHotspotHighlight(ignoreProgrammaticCameraRef);
 
   // Track screen position of the cluster
   const [highlightPosition, setHighlightPosition] = useState<{ x: number; y: number } | null>(null);
@@ -395,10 +399,13 @@ const styles = StyleSheet.create({
     marginTop: 8,
     paddingVertical: 6,
     paddingHorizontal: 12,
+    backgroundColor: 'rgba(255, 255, 255, 0.95)',
+    borderRadius: 6,
   },
   disableText: {
     fontSize: 12,
-    color: '#888',
+    color: '#1a1a1a',
+    fontWeight: '600',
     textDecorationLine: 'underline',
   },
   tooltipArrow: {
@@ -410,6 +417,10 @@ const styles = StyleSheet.create({
     borderLeftColor: 'transparent',
     borderRightColor: 'transparent',
     marginTop: -1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
   },
 });
 

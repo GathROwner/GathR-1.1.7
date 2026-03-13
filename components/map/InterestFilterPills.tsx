@@ -5,6 +5,8 @@ import { MaterialIcons, Ionicons } from '@expo/vector-icons';
 import { useIsFocused } from '@react-navigation/native';
 import { useMapStore } from '../../store';
 import { useUserPrefsStore } from '../../store/userPrefsStore';
+import { useClusterInteractionStore } from '../../store/clusterInteractionStore';
+import { doesEventMatchInterestCarouselBaseFilters } from '../../utils/interestCarouselFilterUtils';
 
 type PillItem = {
   label: string;
@@ -12,6 +14,7 @@ type PillItem = {
   type: 'event' | 'special';
   originalInterests: string[]; // Track original interest names for filtering
   hasNewContent?: boolean; // Whether this category has new content
+  newContentCount?: number; // Number of unseen "new" carousel cards in this pill
 };
 
 const ITEM_HEIGHT = 48; // Increased spacing between pills (36px pill + 12px gap)
@@ -115,18 +118,27 @@ const NewContentDot: React.FC = () => {
   );
 };
 
-const InterestFilterPills: React.FC = () => {
+type InterestFilterPillsProps = {
+  onPillInteraction?: () => void;
+};
+
+const InterestFilterPills: React.FC<InterestFilterPillsProps> = ({ onPillInteraction }) => {
   const userInterests = useUserPrefsStore((s) => s.interests);
   const isFocused = useIsFocused();
 
   const {
     filterCriteria,
     setTypeFilters,
-    setFilterCriteria,
     getCategoryFilterCounts,
     activeFilterPanel,
+    onScreenEvents,
     clusters,
   } = useMapStore();
+  const {
+    hasNewContent: checkHasNewContent,
+    carouselViewedEventIds,
+    interactions,
+  } = useClusterInteractionStore();
 
   const eventCounts = getCategoryFilterCounts('event');
   const specialCounts = getCategoryFilterCounts('special');
@@ -147,6 +159,43 @@ const InterestFilterPills: React.FC = () => {
     return result;
   }, [specialCounts]);
 
+  const newContentCountByInterestKey = useMemo(() => {
+    const counts: Record<string, number> = {};
+
+    const eligibleOnScreenEvents = onScreenEvents.filter((event) =>
+      doesEventMatchInterestCarouselBaseFilters(event, filterCriteria)
+    );
+
+    eligibleOnScreenEvents.forEach((event) => {
+      if (carouselViewedEventIds.has(event.id.toString())) {
+        return;
+      }
+
+      const cluster = clusters.find((c) =>
+        c.venues.some((v) => v.events.some((e) => e.id === event.id))
+      );
+      const venue = cluster?.venues.find((v) =>
+        v.events.some((e) => e.id === event.id)
+      );
+
+      if (!venue) {
+        return;
+      }
+
+      const venueEventIds = venue.events.map((e) => e.id.toString());
+      const venueHasNew = checkHasNewContent(venue.locationKey, venueEventIds);
+
+      if (!venueHasNew) {
+        return;
+      }
+
+      const categoryKey = normalize(event.category);
+      counts[categoryKey] = (counts[categoryKey] ?? 0) + 1;
+    });
+
+    return counts;
+  }, [onScreenEvents, filterCriteria, clusters, checkHasNewContent, carouselViewedEventIds, interactions]);
+
   const pills = useMemo<PillItem[]>(() => {
     if (!userInterests || userInterests.length === 0) return [];
 
@@ -157,36 +206,53 @@ const InterestFilterPills: React.FC = () => {
       const shortLabel = getShortLabel(interest);
       const eventCount = eventCountByKey[key] ?? 0;
       const specialCount = specialCountByKey[key] ?? 0;
+      const newContentCount = newContentCountByInterestKey[key] ?? 0;
 
       if (eventCount > 0 || specialCount > 0) {
-        // Check if any clusters with this category have new content
-        const hasNewContent = clusters.some(cluster =>
-          cluster.hasNewContent &&
-          cluster.categories.some(cat => normalize(cat) === key)
-        );
-
         const existingPill = pillMap.get(shortLabel);
 
         if (existingPill) {
           // Combine counts for same short label (e.g., "Drink" combines Happy Hour + Drink Specials)
           existingPill.count += (eventCount || specialCount);
           existingPill.originalInterests.push(interest);
-          // If any interest has new content, mark the whole pill as having new content
-          if (hasNewContent) existingPill.hasNewContent = true;
+          existingPill.newContentCount = (existingPill.newContentCount ?? 0) + newContentCount;
+          existingPill.hasNewContent = (existingPill.newContentCount ?? 0) > 0;
         } else {
           pillMap.set(shortLabel, {
             label: shortLabel,
             count: eventCount || specialCount,
             type: eventCount > 0 ? 'event' : 'special',
             originalInterests: [interest],
-            hasNewContent,
+            hasNewContent: newContentCount > 0,
+            newContentCount,
           });
         }
       }
     });
 
-    return Array.from(pillMap.values());
-  }, [userInterests, eventCountByKey, specialCountByKey, clusters]);
+    const pillArray = Array.from(pillMap.values());
+
+    // If a filter-pills category is active, only show pills matching that category
+    if (filterCriteria.eventFilters.categoryFilterSource === 'filter-pills' &&
+        filterCriteria.eventFilters.category) {
+      return pillArray.filter(pill =>
+        pill.originalInterests.some(interest =>
+          interest.toLowerCase() === filterCriteria.eventFilters.category?.toLowerCase()
+        )
+      );
+    }
+
+    if (filterCriteria.specialFilters.categoryFilterSource === 'filter-pills' &&
+        filterCriteria.specialFilters.category) {
+      return pillArray.filter(pill =>
+        pill.originalInterests.some(interest =>
+          interest.toLowerCase() === filterCriteria.specialFilters.category?.toLowerCase()
+        )
+      );
+    }
+
+    return pillArray;
+  }, [userInterests, eventCountByKey, specialCountByKey, newContentCountByInterestKey, filterCriteria]);
 
   const activeEventKey = normalize(filterCriteria.eventFilters.category || '');
   const activeSpecialKey = normalize(filterCriteria.specialFilters.category || '');
@@ -309,6 +375,7 @@ const InterestFilterPills: React.FC = () => {
       }
 
       if (clearArmed) {
+        onPillInteraction?.();
         setTypeFilters('event', { category: undefined });
         setTypeFilters('special', { category: undefined });
         cancelClearArmed();
@@ -317,27 +384,38 @@ const InterestFilterPills: React.FC = () => {
       }
 
       if (isActive(item)) {
+        onPillInteraction?.();
         setTypeFilters('event', { category: undefined });
         setTypeFilters('special', { category: undefined });
         scrollToCenteredIndex(highestCountIndex, true);
         return;
       }
 
+      onPillInteraction?.();
+
       // Clear both category filters
       setTypeFilters('event', { category: undefined });
       setTypeFilters('special', { category: undefined });
 
-      // Set the category filter for the selected type
-      setTypeFilters(item.type, { category: item.originalInterests[0] });
+      // Set the category filter for the selected type with interest-pills source
+      setTypeFilters(item.type, { category: item.originalInterests[0] }, 'interest-pills');
 
       // Set the opposite type's category to a special value that will never match
       // This ensures only the selected type shows on the map
       const oppositeType = item.type === 'event' ? 'special' : 'event';
-      setTypeFilters(oppositeType, { category: '__FILTER_PILLS_HIDE__' });
+      setTypeFilters(oppositeType, { category: '__FILTER_PILLS_HIDE__' }, 'interest-pills');
 
       scrollToCenteredIndex(index, true);
     },
-    [isActive, setTypeFilters, setFilterCriteria, scrollToCenteredIndex, highestCountIndex, clearArmed, cancelClearArmed]
+    [
+      isActive,
+      setTypeFilters,
+      scrollToCenteredIndex,
+      highestCountIndex,
+      clearArmed,
+      cancelClearArmed,
+      onPillInteraction,
+    ]
   );
 
   const fadeOutScrollbar = useCallback(() => {

@@ -109,3 +109,31 @@
   - Permissions: Requires location, calendar, and camera permissions
   - Firebase: Uses both web SDK (11.4.0) and React Native Firebase for native features
   - Ads Integration: Google Mobile Ads with SKAdNetwork configuration for iOS
+  - Haptic Feedback: Uses expo-haptics for tactile user feedback on cluster interactions
+
+  ## User Experience Features
+
+  ### Map Cluster Interactions
+  The map screen implements sophisticated click handling and visual feedback for event clusters:
+  - **Click Prevention**: Multi-layered guards prevent rapid-fire taps from causing flickering
+  - **Initialization State**: 500ms delay after clusters render before accepting taps (prevents queued inputs)
+  - **Visual Feedback**: Opacity changes (40% = not ready, 60% = processing, 100% = normal)
+  - **Haptic Feedback**: Light haptic tap on cluster press for immediate tactile response
+  - **Touch Blocking**: Transparent overlay during initialization captures/discards premature taps
+  - **Processing State**: Ref-based synchronous guards prevent duplicate simultaneous clicks
+
+  ### Daily Hotspot Feature
+  Automatically highlights the "hottest" cluster on first app launch each day:
+  - **Trigger Timing**: 300ms delay after clusters load (optimal for smooth positioning)
+  - **Auto-dismiss**: 7-second tooltip duration (balances readability and responsiveness)
+  - **Camera Animation**: Smooth zoom to hotspot coordinates with bounce easing
+  - **User Override**: Tapping any cluster dismisses hotspot without zoom-back
+  - **Analytics**: Tracks hotspot shown, dismissed, and cluster tapped events
+
+  For detailed technical documentation on map interactions, see [docs/MAP_CLUSTER_INTERACTION.md](docs/MAP_CLUSTER_INTERACTION.md).
+
+  ## AI Note: Production Logging
+
+  - Follow [docs/PRODUCTION_LOGGING_POLICY.md](docs/PRODUCTION_LOGGING_POLICY.md).
+  - Production builds strip debug `console.*` calls via Babel.
+  - Avoid adding high-frequency logs in map/camera loops unless strictly needed.

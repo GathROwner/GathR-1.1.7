@@ -98,14 +98,14 @@ const typeCategories = counts
       console.log(`[CategoryFilterOptions] Calling interaction tracking for category: ${category}`);
       onCategorySelect(category);
     }
-    
+
     // EXISTING: Apply the filter (toggle logic)
     const newCategory = activeCategory === category ? undefined : category;
     console.log(`[CategoryFilterOptions] Setting ${type} category filter to: ${newCategory || 'undefined'}`);
-    
-    setTypeFilters(type, { 
+
+    setTypeFilters(type, {
       category: newCategory
-    });
+    }, 'filter-pills');
   };
 
   return (

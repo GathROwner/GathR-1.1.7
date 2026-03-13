@@ -95,6 +95,7 @@ import useAnalytics from '../../hooks/useAnalytics';
 
 // Constants
 const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get('window');
+const SPECIALS_NATIVE_AD_PLACEHOLDER_DEBUG = false;
 
 // --- Local helpers for safe label/range handling and end-date suffix ---
 function partsFrom(base: string, range?: string) {
@@ -2592,10 +2593,24 @@ useEffect(() => {
           if (item.type === 'ad') {
             return (
               <View style={styles.adContainer}>
-                <NativeAdComponent
-                  nativeAd={item.data.ad}
-                  loading={item.data.loading}
-                />
+                {SPECIALS_NATIVE_AD_PLACEHOLDER_DEBUG ? (
+                  <View style={styles.placeholderAdCard}>
+                    <View style={styles.placeholderAdBadge}>
+                      <Text style={styles.placeholderAdBadgeText}>Sponsored</Text>
+                    </View>
+                    <View style={styles.placeholderAdContent}>
+                      <Text style={styles.placeholderAdTitle}>Specials Ad Placeholder</Text>
+                      <Text style={styles.placeholderAdBody}>
+                        Native ad view disabled here for preview isolation.
+                      </Text>
+                    </View>
+                  </View>
+                ) : (
+                  <NativeAdComponent
+                    nativeAd={item.data.ad}
+                    loading={item.data.loading}
+                  />
+                )}
               </View>
             );
           }
@@ -2760,6 +2775,42 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     paddingBottom: 12,
     marginBottom: 12, // Changed from borderBottomWidth to margin
+  },
+  placeholderAdCard: {
+    backgroundColor: '#FFF7ED',
+    borderWidth: 1,
+    borderColor: '#FED7AA',
+    borderRadius: 16,
+    padding: 16,
+    marginHorizontal: 16,
+  },
+  placeholderAdBadge: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#F97316',
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    marginBottom: 10,
+  },
+  placeholderAdBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.4,
+    textTransform: 'uppercase',
+  },
+  placeholderAdContent: {
+    gap: 6,
+  },
+  placeholderAdTitle: {
+    color: '#9A3412',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  placeholderAdBody: {
+    color: '#7C2D12',
+    fontSize: 14,
+    lineHeight: 20,
   },
   preferencesBar: {
     position: 'absolute',

@@ -16,9 +16,13 @@ interface ClusterInteraction {
 
 interface ClusterInteractionState {
   interactions: Map<string, ClusterInteraction>;
+  carouselViewedEventIds: Set<string>;
   recordInteraction: (clusterId: string, eventIds: string[]) => void;
   getLastInteraction: (clusterId: string) => ClusterInteraction | undefined;
   hasNewContent: (clusterId: string, currentEventIds: string[]) => boolean;
+  markCarouselEventViewed: (eventId: string | number) => void;
+  markCarouselEventsViewed: (eventIds: Array<string | number>) => void;
+  clearCarouselViewedEvents: () => void;
   clear: () => void;
 }
 
@@ -26,6 +30,7 @@ export const useClusterInteractionStore = create<ClusterInteractionState>()(
   persist(
     (set, get) => ({
       interactions: new Map(),
+      carouselViewedEventIds: new Set(),
 
       recordInteraction: (clusterId: string, eventIds: string[]) => {
         set((state) => {
@@ -58,8 +63,51 @@ export const useClusterInteractionStore = create<ClusterInteractionState>()(
         return hasNewEvents;
       },
 
+      markCarouselEventViewed: (eventId: string | number) => {
+        const eventIdString = eventId.toString();
+        set((state) => {
+          if (state.carouselViewedEventIds.has(eventIdString)) {
+            return state;
+          }
+          const nextViewed = new Set(state.carouselViewedEventIds);
+          nextViewed.add(eventIdString);
+          return { carouselViewedEventIds: nextViewed };
+        });
+      },
+
+      markCarouselEventsViewed: (eventIds: Array<string | number>) => {
+        if (eventIds.length === 0) return;
+        set((state) => {
+          let changed = false;
+          const nextViewed = new Set(state.carouselViewedEventIds);
+
+          eventIds.forEach((eventId) => {
+            const eventIdString = eventId.toString();
+            if (!nextViewed.has(eventIdString)) {
+              nextViewed.add(eventIdString);
+              changed = true;
+            }
+          });
+
+          if (!changed) {
+            return state;
+          }
+
+          return { carouselViewedEventIds: nextViewed };
+        });
+      },
+
+      clearCarouselViewedEvents: () => {
+        set((state) => {
+          if (state.carouselViewedEventIds.size === 0) {
+            return state;
+          }
+          return { carouselViewedEventIds: new Set() };
+        });
+      },
+
       clear: () => {
-        set({ interactions: new Map() });
+        set({ interactions: new Map(), carouselViewedEventIds: new Set() });
       },
     }),
     {

@@ -30,6 +30,7 @@ export interface FirestoreVenueInfo {
   category?: string;
   website?: string;
   coordinates: FirestoreCoordinates;
+  profileImage?: string;
 }
 
 /**
@@ -122,6 +123,10 @@ export interface FirestoreEvent {
   ticketLinkPosts?: string;
   ticketLinkEvents?: string;
   fullDescription?: string;
+  profileUrl?: string;
+  imageUrl?: string;
+  relevantImageUrl?: string;
+  SharedPostThumbnail?: string | null;
   metadata: FirestoreEventMetadata;
   venueInfo: FirestoreVenueInfo;
   // Full venue object (only present in single-event endpoint response)

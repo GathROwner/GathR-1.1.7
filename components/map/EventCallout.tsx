@@ -73,6 +73,7 @@ import {
   Animated,
   Dimensions,
   NativeSyntheticEvent,
+  LayoutChangeEvent,
   PanResponder,
   StatusBar,
   BackHandler,
@@ -128,6 +129,11 @@ import { fetchVenueDetailsByName, VenueContactInfo } from '../../lib/api/firesto
 // Import ad components and hooks
 import useNativeAds from '../../hooks/useNativeAds';
 import CompactNativeAdComponent from '../ads/CompactNativeAdComponent';
+import { traceMapEvent } from '../../utils/mapTrace';
+
+const EVENT_CALLOUT_SHELL_ISOLATION_DEBUG = false;
+const EVENT_CALLOUT_DISABLE_NATIVE_ADS_DEBUG = false;
+const EVENT_CALLOUT_PLACEHOLDER_AD_CARD_DEBUG = false;
 
 // ===============================================================
 // PRIORITY SYSTEM IMPORTS - FIXED
@@ -199,6 +205,25 @@ function partsFrom(base: string, range?: string) {
     }
   }
   return result;
+}
+
+function getEventStartDateSortKey(event: Event): number {
+  const dateValue = String(event?.startDate || '').trim();
+  if (!dateValue) return 0;
+  const parsed = Date.parse(`${dateValue}T00:00:00`);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function getPreferredVenueProfileImage(events: Event[]): string {
+  const candidates = (events || [])
+    .map((event) => ({
+      url: String(event?.profileUrl || '').trim(),
+      dateSortKey: getEventStartDateSortKey(event),
+    }))
+    .filter((item) => Boolean(item.url))
+    .sort((a, b) => b.dateSortKey - a.dateSortKey);
+
+  return candidates[0]?.url || '';
 }
 
 
@@ -770,7 +795,7 @@ const VenueSelector: React.FC<VenueSelectorProps> = ({
         {venues.map((venue, index) => {
           const events = venue.events.filter(event => event.type === 'event');
           const specials = venue.events.filter(event => event.type === 'special');
-          const profileImage = venue.events.find(event => event.profileUrl)?.profileUrl;
+          const profileImage = getPreferredVenueProfileImage(venue.events);
           
           // LOG: Venue option details - shows venue data for debugging venue selector options
           // console.log(`Venue option ${index}: ${venue.venue}, events: ${events.length}, specials: ${specials.length}, hasImage: ${!!profileImage}`);
@@ -1238,6 +1263,10 @@ const VenueInfoContent: React.FC<VenueInfoProps> = ({ venue }) => {
   const [isLoadingContact, setIsLoadingContact] = useState(true);
   const [fetchedContactInfo, setFetchedContactInfo] = useState<VenueContactInfo | null>(null);
   const [hasFetched, setHasFetched] = useState(false);
+  const [isAddressExpanded, setIsAddressExpanded] = useState(false);
+
+  // Get venue profile image using the same logic as the venue selector
+  const venueProfileImage = getPreferredVenueProfileImage(venue.events);
 
   // Extract venue contact info from any event at this venue (cached data)
   const cachedContactInfo = useMemo(() => {
@@ -1249,6 +1278,7 @@ const VenueInfoContent: React.FC<VenueInfoProps> = ({ venue }) => {
           instagram: event.venueInstagramUrl,
           phone: event.venuePhone,
           rating: event.venueRating,
+          // Note: profileImage is NOT cached from events - it comes from fetched venue details only
         };
       }
     }
@@ -1294,6 +1324,7 @@ const VenueInfoContent: React.FC<VenueInfoProps> = ({ venue }) => {
       phone: cachedContactInfo?.phone || fetchedContactInfo?.phone,
       email: fetchedContactInfo?.email,
       rating: cachedContactInfo?.rating || fetchedContactInfo?.rating,
+      profileImage: fetchedContactInfo?.profileImage,
     };
   }, [cachedContactInfo, fetchedContactInfo]);
 
@@ -1303,6 +1334,21 @@ const VenueInfoContent: React.FC<VenueInfoProps> = ({ venue }) => {
     venueContactInfo.instagram ||
     venueContactInfo.phone
   );
+
+  // Parse address to show only street when collapsed, full address when expanded
+  const { shortAddress, fullAddress } = useMemo(() => {
+    // Format: "123 Main St, City, Province, Postal Code, Country"
+    const addressParts = venue.address.split(',').map(part => part.trim());
+
+    if (addressParts.length <= 1) {
+      // If address has only one part, show it as is
+      return { shortAddress: venue.address, fullAddress: venue.address };
+    }
+
+    // Take only the first part (street address)
+    const short = addressParts[0];
+    return { shortAddress: short, fullAddress: venue.address };
+  }, [venue.address]);
 
   const handleDirections = () => {
     const destination = encodeURIComponent(`${venue.venue}, ${venue.address}`);
@@ -1392,20 +1438,49 @@ const VenueInfoContent: React.FC<VenueInfoProps> = ({ venue }) => {
       {/* Venue Header Card */}
       <View style={styles.venueHeaderCard}>
         <View style={styles.venueHeaderContent}>
-          <Text style={styles.venueName}>{venue.venue}</Text>
-          <View style={styles.venueAddressRow}>
-            <MaterialIcons name="place" size={16} color="#8E8E93" style={styles.venueAddressIcon} />
-            <Text style={styles.venueAddress}>{venue.address}</Text>
+          {/* Venue Profile Picture */}
+          <View style={styles.venueProfileContainer}>
+            <FallbackImage
+              imageUrl={venueProfileImage}
+              category="Venue"
+              type="event"
+              style={styles.venueProfilePicture}
+              fallbackType="profile"
+              resizeMode="cover"
+            />
           </View>
-          {venueContactInfo?.rating && (
-            <View style={styles.venueRatingRow}>
-              <View style={styles.venueRatingBadge}>
-                <MaterialIcons name="star" size={16} color="#FFB800" />
-                <Text style={styles.venueRatingText}>{venueContactInfo.rating.toFixed(1)}</Text>
+
+          {/* Venue Text Content */}
+          <View style={styles.venueTextContent}>
+            <Text style={styles.venueName}>{venue.venue}</Text>
+            <TouchableOpacity
+              style={styles.venueAddressRow}
+              onPress={() => setIsAddressExpanded(!isAddressExpanded)}
+              activeOpacity={0.7}
+            >
+              <MaterialIcons name="place" size={16} color="#8E8E93" style={styles.venueAddressIcon} />
+              <Text style={[styles.venueAddress, styles.venueAddressExpandable]}>
+                {isAddressExpanded ? fullAddress : shortAddress}
+              </Text>
+              {shortAddress !== fullAddress && (
+                <MaterialIcons
+                  name={isAddressExpanded ? "expand-less" : "expand-more"}
+                  size={18}
+                  color="#007AFF"
+                  style={styles.venueAddressChevron}
+                />
+              )}
+            </TouchableOpacity>
+            {venueContactInfo?.rating && (
+              <View style={styles.venueRatingRow}>
+                <View style={styles.venueRatingBadge}>
+                  <MaterialIcons name="star" size={16} color="#FFB800" />
+                  <Text style={styles.venueRatingText}>{venueContactInfo.rating.toFixed(1)}</Text>
+                </View>
+                <Text style={styles.venueRatingLabel}>Rating</Text>
               </View>
-              <Text style={styles.venueRatingLabel}>Rating</Text>
-            </View>
-          )}
+            )}
+          </View>
         </View>
       </View>
 
@@ -2331,13 +2406,15 @@ interface EventCalloutProps {
   cluster: Cluster | null;
   onClose: () => void;
   onEventSelected?: (event: Event) => void;
+  onLayoutReady?: () => void;
 }
 
 const EventCallout: React.FC<EventCalloutProps> = ({ 
   venues, 
   cluster,
   onClose,
-  onEventSelected 
+  onEventSelected,
+  onLayoutReady,
 }) => {
   // Add store subscription to get fresh event data
   const storeEvents = useMapStore((state) => state.events);
@@ -2610,6 +2687,7 @@ const [calloutState, setCalloutState] = useState<CalloutState>('expanded');
   const scrollViewRef = useRef<ScrollView>(null);
   const scrollYRef = useRef(0);  // Track current scroll position for gesture handling
   const currentStateRef = useRef<CalloutState>('expanded');
+  const hasReportedInitialLayoutRef = useRef(false);
   const [scrollProgress, setScrollProgress] = useState(0);
   const [canScrollMore, setCanScrollMore] = useState(false);
 
@@ -2628,7 +2706,7 @@ const [calloutState, setCalloutState] = useState<CalloutState>('expanded');
   
   // Change this: remove the calloutVisible state
   // Instead, use CSS to show/hide the callout when the lightbox is open
-  const isLightboxOpen = selectedImageData !== null;
+  const isLightboxOpen = !EVENT_CALLOUT_SHELL_ISOLATION_DEBUG && selectedImageData !== null;
   
   // Calculate the number of ads needed based on the content
   const calculateAdCount = useMemo(() => {
@@ -2660,7 +2738,12 @@ const [calloutState, setCalloutState] = useState<CalloutState>('expanded');
   
   // Load native ads for the current tab
   // Pass activeVenueIndex as startIndex so different venues show different ads from the pool
-  const nativeAds = useNativeAds(calculateAdCount, activeTab === 'events' ? 'events' : 'specials', activeVenueIndex);
+  const requestedNativeAdCount = EVENT_CALLOUT_DISABLE_NATIVE_ADS_DEBUG ? 0 : calculateAdCount;
+  const nativeAds = useNativeAds(
+    requestedNativeAdCount,
+    activeTab === 'events' ? 'events' : 'specials',
+    activeVenueIndex
+  );
   
   // Create mixed content arrays for events and specials tabs
   const mixedEventsContent = useMemo(() => {
@@ -2992,6 +3075,48 @@ try {
   
   const touchStartX = useRef(0);
   const touchStartY = useRef(0);
+
+  const readAnimatedNumeric = (value: Animated.Value): number | null => {
+    try {
+      const getValue = (value as any).__getValue;
+      if (typeof getValue !== 'function') {
+        return null;
+      }
+
+      const rawValue = getValue.call(value);
+      return typeof rawValue === 'number' ? Number(rawValue.toFixed(2)) : null;
+    } catch {
+      return null;
+    }
+  };
+
+  const getCalloutHeightForState = (state: CalloutState) => {
+    if (state === 'expanded') return CALLOUT_MAX_HEIGHT;
+    if (state === 'minimized') return CALLOUT_MIN_HEIGHT;
+    return CALLOUT_NORMAL_HEIGHT;
+  };
+
+  useEffect(() => {
+    traceMapEvent('event_callout_rendered', {
+      venueCount: venues.length,
+      clusterId: cluster?.id ?? 'none',
+      clusterType: cluster?.clusterType ?? 'single_venue',
+      activeVenueIndex,
+      activeVenue: activeVenue?.venue || 'unknown',
+      activeTab,
+      calloutState,
+      selectedEventId: selectedEvent?.id ?? 'none',
+    });
+  }, [
+    activeTab,
+    activeVenue?.venue,
+    activeVenueIndex,
+    calloutState,
+    cluster?.clusterType,
+    cluster?.id,
+    selectedEvent?.id,
+    venues.length,
+  ]);
   
 useEffect(() => {
   console.log("Venues changed, recalculating most relevant venue");
@@ -3118,8 +3243,96 @@ const navBarOffset = tabBarHeight + (insets?.bottom ?? 0);
 const bottomInset = Math.max(16, navBarOffset + 12); // pad list above the tab bar + a small buffer
 // Expanded snap offset: match prior behavior (safe-area + 22)
 const safeTopOffset = Math.max(0, (insets?.top ?? 0) + 22);
+const currentCalloutHeight = getCalloutHeightForState(calloutState);
+const CalloutContainerComponent: any = EVENT_CALLOUT_SHELL_ISOLATION_DEBUG ? View : Animated.View;
+const calloutContainerStyle = EVENT_CALLOUT_SHELL_ISOLATION_DEBUG
+  ? [
+      styles.calloutContainer,
+      {
+        height: currentCalloutHeight,
+        transform: [{ translateY: calloutState === 'expanded' ? safeTopOffset : 0 }],
+      },
+    ]
+  : [
+      styles.calloutContainer,
+      {
+        height: currentCalloutHeight,
+        transform: [{ translateY: translateY }],
+        opacity: isLightboxOpen ? 0.3 : 1,
+      }
+    ];
+
+useEffect(() => {
+  traceMapEvent('event_callout_visual_state_changed', {
+    clusterId: cluster?.id ?? 'none',
+    venueCount: venues.length,
+    activeTab,
+    calloutState,
+    activeVenueIndex,
+    selectedEventId: selectedEvent?.id ?? 'none',
+    currentTranslateY: readAnimatedNumeric(translateY),
+    currentBackgroundOpacity: readAnimatedNumeric(backgroundOpacity),
+    currentIndicatorRotation: readAnimatedNumeric(indicatorRotation),
+    computedHeight: currentCalloutHeight,
+    safeTopOffset,
+    navBarOffset,
+    bottomInset,
+  });
+
+  const delays = [100, 300, 700, 1500];
+  const timers = delays.map((delayMs) =>
+    setTimeout(() => {
+      traceMapEvent('event_callout_visual_probe', {
+        delayMs,
+        clusterId: cluster?.id ?? 'none',
+        venueCount: venues.length,
+        activeTab,
+        calloutState,
+        activeVenueIndex,
+        selectedEventId: selectedEvent?.id ?? 'none',
+        currentTranslateY: readAnimatedNumeric(translateY),
+        currentBackgroundOpacity: readAnimatedNumeric(backgroundOpacity),
+        currentIndicatorRotation: readAnimatedNumeric(indicatorRotation),
+        computedHeight: currentCalloutHeight,
+        safeTopOffset,
+        navBarOffset,
+        bottomInset,
+      });
+    }, delayMs)
+  );
+
+  return () => {
+    timers.forEach(clearTimeout);
+  };
+}, [
+  activeTab,
+  activeVenueIndex,
+  bottomInset,
+  calloutState,
+  cluster?.id,
+  currentCalloutHeight,
+  navBarOffset,
+  safeTopOffset,
+  selectedEvent?.id,
+  venues.length,
+]);
 
 const setCalloutStateWithAnimation = (state: CalloutState) => {
+  if (EVENT_CALLOUT_SHELL_ISOLATION_DEBUG) {
+    setCalloutState(state);
+    currentStateRef.current = state;
+    translateY.setValue(0);
+    backgroundOpacity.setValue(0);
+    indicatorRotation.setValue(state === 'expanded' ? 1 : 0);
+    traceMapEvent('event_callout_internal_animation_skipped', {
+      clusterId: cluster?.id ?? 'none',
+      venueCount: venues.length,
+      requestedState: state,
+      appliedState: state,
+      shellIsolation: true,
+    });
+    return;
+  }
 
 
 
@@ -3151,6 +3364,23 @@ const setCalloutStateWithAnimation = (state: CalloutState) => {
 }
     
     console.log('ANIMATION TARGETS - translateY:', targetTranslateY, 'opacity:', targetOpacity);
+    traceMapEvent('event_callout_internal_animation_started', {
+      clusterId: cluster?.id ?? 'none',
+      venueCount: venues.length,
+      fromState: calloutState,
+      toState: state,
+      currentStateRef: currentStateRef.current,
+      targetTranslateY,
+      targetOpacity,
+      targetRotation,
+      currentTranslateY: readAnimatedNumeric(translateY),
+      currentBackgroundOpacity: readAnimatedNumeric(backgroundOpacity),
+      currentIndicatorRotation: readAnimatedNumeric(indicatorRotation),
+      computedHeight: getCalloutHeightForState(state),
+      safeTopOffset,
+      navBarOffset,
+      bottomInset,
+    });
     
     Animated.parallel([
       Animated.spring(translateY, {
@@ -3168,7 +3398,23 @@ const setCalloutStateWithAnimation = (state: CalloutState) => {
         duration: 200,
         useNativeDriver: true
       })
-    ]).start();
+    ]).start(({ finished }) => {
+      traceMapEvent('event_callout_internal_animation_finished', {
+        clusterId: cluster?.id ?? 'none',
+        venueCount: venues.length,
+        targetState: state,
+        finished,
+        currentStateRef: currentStateRef.current,
+        targetTranslateY,
+        currentTranslateY: readAnimatedNumeric(translateY),
+        currentBackgroundOpacity: readAnimatedNumeric(backgroundOpacity),
+        currentIndicatorRotation: readAnimatedNumeric(indicatorRotation),
+        computedHeight: getCalloutHeightForState(currentStateRef.current),
+        safeTopOffset,
+        navBarOffset,
+        bottomInset,
+      });
+    });
   };
 
   // Attach the PanResponder to entire callout for swipe-from-anywhere
@@ -3271,6 +3517,7 @@ const setCalloutStateWithAnimation = (state: CalloutState) => {
       }
     })
   ).current;
+const shellPanHandlers = EVENT_CALLOUT_SHELL_ISOLATION_DEBUG ? {} : panResponder.panHandlers;
 
     useEffect(() => {
     const backHandler = BackHandler.addEventListener('hardwareBackPress', () => {
@@ -3317,12 +3564,40 @@ useEffect(() => {
 
 useEffect(() => {
   console.log("Initial callout animation effect");
-  // Align to sit just below the header/safe area instead of y=0
-  translateY.setValue(safeTopOffset);
-  if (currentStateRef.current !== 'expanded') {
-    setCalloutStateWithAnimation('expanded');
+  const initialCalloutState: CalloutState = 'expanded';
+  if (calloutState !== initialCalloutState) {
+    setCalloutState(initialCalloutState);
   }
-}, [safeTopOffset]);
+  currentStateRef.current = initialCalloutState;
+  traceMapEvent('event_callout_initial_positioning', {
+    clusterId: cluster?.id ?? 'none',
+    venueCount: venues.length,
+    calloutState: initialCalloutState,
+    currentStateRef: currentStateRef.current,
+    safeTopOffset,
+    currentTranslateY: readAnimatedNumeric(translateY),
+  });
+  const shouldAnimateToExpanded = false;
+  const initialTranslateY = initialCalloutState === 'expanded' ? safeTopOffset : 0;
+  const initialBackgroundOpacity = initialCalloutState === 'expanded' ? 0.5 : 0;
+  const initialIndicatorRotation = initialCalloutState === 'expanded' ? 1 : 0;
+
+  translateY.setValue(initialTranslateY);
+  backgroundOpacity.setValue(initialBackgroundOpacity);
+  indicatorRotation.setValue(initialIndicatorRotation);
+  traceMapEvent('event_callout_initial_position_applied', {
+    clusterId: cluster?.id ?? 'none',
+    venueCount: venues.length,
+    calloutState: initialCalloutState,
+    currentStateRef: currentStateRef.current,
+    safeTopOffset,
+    currentTranslateY: readAnimatedNumeric(translateY),
+    initialTranslateY,
+    initialBackgroundOpacity,
+    initialIndicatorRotation,
+    shouldAnimateToExpanded,
+  });
+}, [cluster?.id, safeTopOffset, venues.length]);
 
 
 
@@ -3360,14 +3635,29 @@ useEffect(() => {
   // Enhanced render function for content items (events and ads)
   const renderContentItem = (item: ContentItem, index: number) => {
     if (item.type === 'ad') {
-      // Render ad component
-      const adData = item.data as {ad: any; loading: boolean};
       return (
         <View key={`ad-${index}`} style={styles.adContainer}>
-          <CompactNativeAdComponent 
-            nativeAd={adData.ad}
-            loading={adData.loading}
-          />
+          {EVENT_CALLOUT_PLACEHOLDER_AD_CARD_DEBUG ? (
+            <View style={styles.placeholderAdCard}>
+              <View style={styles.placeholderAdBadge}>
+                <Text style={styles.placeholderAdBadgeText}>Sponsored</Text>
+              </View>
+              <View style={styles.placeholderAdContent}>
+                <MaterialIcons name="campaign" size={22} color="#6B7280" />
+                <View style={styles.placeholderAdTextGroup}>
+                  <Text style={styles.placeholderAdTitle}>Ad Slot Placeholder</Text>
+                  <Text style={styles.placeholderAdBody}>
+                    Callout native ad view disabled for preview isolation.
+                  </Text>
+                </View>
+              </View>
+            </View>
+          ) : (
+            <CompactNativeAdComponent 
+              nativeAd={(item.data as {ad: any; loading: boolean}).ad}
+              loading={(item.data as {ad: any; loading: boolean}).loading}
+            />
+          )}
         </View>
       );
     } else {
@@ -3412,33 +3702,58 @@ useEffect(() => {
 
   return (
     <>
-      <Animated.View 
-        style={[
-          styles.dimOverlay,
-          { opacity: backgroundOpacity }
-        ]} 
-        pointerEvents="none"
-      />
+      {!EVENT_CALLOUT_SHELL_ISOLATION_DEBUG && (
+        <Animated.View 
+          style={[
+            styles.dimOverlay,
+            { opacity: backgroundOpacity }
+          ]} 
+          pointerEvents="none"
+        />
+      )}
       
       {/* Always render the callout, but apply style changes when lightbox is open */}
-      <Animated.View
-        style={[
-          styles.calloutContainer,
-          {
-            height: calloutState === 'expanded' ? CALLOUT_MAX_HEIGHT :
-                  calloutState === 'minimized' ? CALLOUT_MIN_HEIGHT :
-                  CALLOUT_NORMAL_HEIGHT,
-            transform: [{ translateY: translateY }],
-            // Apply reduced opacity when lightbox is open
-            opacity: isLightboxOpen ? 0.3 : 1,
-            // Disable pointer events when lightbox is open
-            pointerEvents: isLightboxOpen ? 'none' : 'auto'
+      <CalloutContainerComponent
+        pointerEvents={isLightboxOpen ? 'none' : 'auto'}
+        style={calloutContainerStyle}
+        onLayout={(event: LayoutChangeEvent) => {
+          const { height, width, x, y } = event.nativeEvent.layout;
+          traceMapEvent('event_callout_on_layout', {
+            height,
+            width,
+            x,
+            y,
+            venueCount: venues.length,
+            clusterId: cluster?.id ?? 'none',
+            activeTab,
+            calloutState,
+            currentTranslateY: readAnimatedNumeric(translateY),
+            currentBackgroundOpacity: readAnimatedNumeric(backgroundOpacity),
+            currentIndicatorRotation: readAnimatedNumeric(indicatorRotation),
+            computedHeight: currentCalloutHeight,
+            safeTopOffset,
+            navBarOffset,
+            bottomInset,
+          });
+          if (!hasReportedInitialLayoutRef.current) {
+            hasReportedInitialLayoutRef.current = true;
+            traceMapEvent('event_callout_initial_layout_ready', {
+              height,
+              width,
+              x,
+              y,
+              venueCount: venues.length,
+              clusterId: cluster?.id ?? 'none',
+              activeTab,
+              calloutState,
+            });
+            onLayoutReady?.();
           }
-        ]}
+        }}
       >
         <View style={styles.compactHeaderContainer}>
           {/* Draggable area: Left section + Center (drag handle) */}
-          <View {...panResponder.panHandlers} style={styles.headerDraggableArea}>
+          <View {...shellPanHandlers} style={styles.headerDraggableArea}>
             <View style={styles.headerLeftSection}>
               <Text style={styles.venueTitleSmall} numberOfLines={1}>
                 {isMultiVenue 
@@ -3486,7 +3801,7 @@ useEffect(() => {
         </View>
         
         <Animated.View
-          {...panResponder.panHandlers}
+          {...shellPanHandlers}
           ref={venueSelectorRef}
           testID="venue-selector"
           style={[
@@ -3516,7 +3831,7 @@ useEffect(() => {
         <View style={styles.venueSelectorDivider} />
         
         <Animated.View
-          {...panResponder.panHandlers}
+          {...shellPanHandlers}
           ref={eventTabsRef}
           testID="event-tabs"
           data-testid="event-tabs"
@@ -3606,10 +3921,10 @@ useEffect(() => {
             </Animated.View>
           )}
         </View>
-      </Animated.View>
+      </CalloutContainerComponent>
 
       {/* Render the lightbox modal when needed - supports both local and global state */}
-      {(selectedImageData || globalSelectedImageData) && (
+      {!EVENT_CALLOUT_SHELL_ISOLATION_DEBUG && (selectedImageData || globalSelectedImageData) && (
         <Modal
           transparent={true}
           visible={true}
@@ -3933,6 +4248,53 @@ const styles = StyleSheet.create({
   // Ad container styling
   adContainer: {
     marginBottom: 12,
+  },
+  placeholderAdCard: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: '#D8E1EA',
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+  placeholderAdBadge: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#E2E8F0',
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    marginBottom: 10,
+  },
+  placeholderAdBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#475569',
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
+  },
+  placeholderAdContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  placeholderAdTextGroup: {
+    flex: 1,
+    marginLeft: 10,
+  },
+  placeholderAdTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#1F2937',
+    marginBottom: 4,
+  },
+  placeholderAdBody: {
+    fontSize: 13,
+    lineHeight: 18,
+    color: '#6B7280',
   },
   carouselContainer: {
     paddingHorizontal: 12,
@@ -4697,20 +5059,40 @@ const styles = StyleSheet.create({
     elevation: 3,
   },
   venueHeaderContent: {
-    alignItems: 'center',
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+  },
+  venueProfileContainer: {
+    marginRight: 12,
+  },
+  venueProfilePicture: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  venueTextContent: {
+    flex: 1,
+    justifyContent: 'center',
   },
   venueName: {
     fontSize: 22,
     fontWeight: '700',
     color: '#1A1A1A',
     marginBottom: 8,
-    textAlign: 'center',
+    textAlign: 'left',
     letterSpacing: -0.3,
   },
   venueAddressRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
+    justifyContent: 'flex-start',
     marginBottom: 12,
   },
   venueAddressIcon: {
@@ -4719,8 +5101,14 @@ const styles = StyleSheet.create({
   venueAddress: {
     fontSize: 14,
     color: '#8E8E93',
-    textAlign: 'center',
+    textAlign: 'left',
     flexShrink: 1,
+  },
+  venueAddressExpandable: {
+    color: '#007AFF',
+  },
+  venueAddressChevron: {
+    marginLeft: 4,
   },
   venueRatingRow: {
     flexDirection: 'row',

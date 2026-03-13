@@ -1,0 +1,10 @@
+# Exclude from Cloud Build upload
+node_modules/
+npm-debug.log
+.git/
+.gitignore
+README.md
+
+# IMPORTANT: Do NOT ignore public/ - we need the fallback images
+!public/
+!public/**

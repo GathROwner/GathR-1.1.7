@@ -3,7 +3,6 @@ import {
   View,
   Text,
   StyleSheet,
-  Pressable,
   Image,
   Animated,
   Platform,
@@ -12,14 +11,18 @@ import {
 import {
   NativeAdView,
   NativeMediaView,
+  NativeAsset,
+  NativeAssetType,
 } from 'react-native-google-mobile-ads';
-import { NativeAsset, NativeAssetType } from 'react-native-google-mobile-ads/src/ads/native-ad/NativeAsset';
 import { AdColors, AdSpacing, AdRadius, AdAnimations, type AdColorScheme } from '@/constants/AdTheme';
 
 interface NativeAdComponentProps {
   nativeAd: any;
   loading: boolean;
 }
+
+const NATIVE_AD_DISABLE_MEDIA_VIEW_DEBUG = true;
+const NATIVE_AD_DISABLE_WRAPPER_DEBUG = true;
 
 // Star Rating Component
 const StarRating = ({ rating, colors }: { rating: number; colors: typeof AdColors.light }) => {
@@ -183,6 +186,123 @@ export default function NativeAdComponent({ nativeAd, loading }: NativeAdCompone
     return typeof value === 'string' ? value : String(value);
   };
 
+  if (NATIVE_AD_DISABLE_WRAPPER_DEBUG) {
+    return (
+      <Animated.View
+        style={[
+          styles.animatedContainer,
+          {
+            opacity: fadeAnim,
+            transform: [{ translateY: slideAnim }],
+          },
+        ]}
+      >
+        <View
+          style={[
+            styles.adCard,
+            {
+              backgroundColor: colors.cardBackground,
+              borderColor: colors.cardBorder,
+              shadowColor: colors.shadowColor,
+              shadowOpacity: colors.shadowOpacity,
+            },
+          ]}
+        >
+          <View
+            style={[
+              styles.sponsoredBadge,
+              {
+                backgroundColor: colors.badgeBackground,
+                borderColor: colors.badgeBorder,
+              },
+            ]}
+          >
+            <Text style={[styles.sponsoredText, { color: colors.badgeText }]}>
+              Sponsored
+            </Text>
+          </View>
+
+          <View style={styles.header}>
+            {nativeAd.icon?.url ? (
+              <Image
+                source={{ uri: nativeAd.icon.url }}
+                style={styles.iconImage}
+              />
+            ) : null}
+            <View style={styles.headerText}>
+              {getSafeText(nativeAd.headline) ? (
+                <Text
+                  style={[styles.headline, { color: colors.headline }]}
+                  numberOfLines={2}
+                >
+                  {getSafeText(nativeAd.headline)}
+                </Text>
+              ) : null}
+              {getSafeText(nativeAd.advertiser) ? (
+                <Text style={[styles.advertiser, { color: colors.advertiser }]}>
+                  {getSafeText(nativeAd.advertiser)}
+                </Text>
+              ) : null}
+            </View>
+          </View>
+
+          <View style={[styles.mediaContainer, { backgroundColor: colors.mediaPlaceholder }]}>
+            <View style={styles.mediaFallback}>
+              {nativeAd.icon?.url ? (
+                <Image
+                  source={{ uri: nativeAd.icon.url }}
+                  style={styles.mediaFallbackImage}
+                  resizeMode="contain"
+                />
+              ) : (
+                <Text style={[styles.mediaFallbackText, { color: colors.metaText }]}>
+                  {getSafeText(nativeAd.headline).charAt(0) || 'Ad'}
+                </Text>
+              )}
+            </View>
+          </View>
+
+          {getSafeText(nativeAd.body) ? (
+            <View style={styles.bodyContainer}>
+              <Text style={[styles.body, { color: colors.body }]} numberOfLines={3}>
+                {getSafeText(nativeAd.body)}
+              </Text>
+            </View>
+          ) : null}
+
+          <View style={styles.infoRow}>
+            {getSafeText(nativeAd.store) ? (
+              <Text style={[styles.metaText, { color: colors.metaText }]}>
+                {getSafeText(nativeAd.store)}
+              </Text>
+            ) : null}
+            {getSafeText(nativeAd.store) && getSafeText(nativeAd.price) ? (
+              <Text style={[styles.metaSeparator, { color: colors.metaText }]}>
+                ·
+              </Text>
+            ) : null}
+            {getSafeText(nativeAd.price) ? (
+              <Text style={[styles.metaText, { color: colors.metaText }]}>
+                {getSafeText(nativeAd.price)}
+              </Text>
+            ) : null}
+            {nativeAd.starRating && nativeAd.starRating > 0 ? (
+              <StarRating rating={nativeAd.starRating} colors={colors} />
+            ) : null}
+          </View>
+
+          {getSafeText(nativeAd.callToAction) ? (
+            <View style={[styles.ctaButton, { backgroundColor: colors.ctaBackground }]}>
+              <Text style={[styles.ctaText, { color: colors.ctaText }]}>
+                {getSafeText(nativeAd.callToAction)}
+              </Text>
+            </View>
+          ) : null}
+        </View>
+      </Animated.View>
+    );
+  }
+
   return (
     <Animated.View
       style={[
@@ -252,10 +372,9 @@ export default function NativeAdComponent({ nativeAd, loading }: NativeAdCompone
         </View>
 
         {/* Media - Full bleed social media style */}
-        {/* Show NativeMediaView if aspectRatio > 0 OR hasVideoContent (video ads may have aspectRatio=0) */}
-        {/* IMPORTANT: Override aspectRatio with undefined to prevent NativeMediaView from collapsing when aspectRatio=0 */}
+        {/* Debug isolation: force fallback media rendering without NativeMediaView */}
         <View style={[styles.mediaContainer, { backgroundColor: colors.mediaPlaceholder }]}>
-          {nativeAd.mediaContent && (nativeAd.mediaContent.aspectRatio > 0 || nativeAd.mediaContent.hasVideoContent) ? (
+          {!NATIVE_AD_DISABLE_MEDIA_VIEW_DEBUG && nativeAd.mediaContent && (nativeAd.mediaContent.aspectRatio > 0 || nativeAd.mediaContent.hasVideoContent) ? (
             <NativeMediaView style={[styles.mediaView, { aspectRatio: undefined }]} resizeMode="cover" />
           ) : (
             /* Fallback only when there's no valid media content */
@@ -311,25 +430,28 @@ export default function NativeAdComponent({ nativeAd, loading }: NativeAdCompone
             </NativeAsset>
           ) : null}
           {nativeAd.starRating && nativeAd.starRating > 0 ? (
-            <StarRating rating={nativeAd.starRating} colors={colors} />
+            <NativeAsset assetType={NativeAssetType.STAR_RATING}>
+              <Text style={[styles.ratingText, { color: colors.metaText }]}>
+                {`${nativeAd.starRating.toFixed(1)}★`}
+              </Text>
+            </NativeAsset>
           ) : null}
         </View>
 
-        {/* CTA Button - Modern with press feedback */}
+        {/* CTA asset must be a direct child of NativeAsset */}
         {nativeAd.callToAction && getSafeText(nativeAd.callToAction) && (
           <NativeAsset assetType={NativeAssetType.CALL_TO_ACTION}>
-            <Pressable
-              style={({ pressed }) => [
-                styles.ctaButton,
-                { backgroundColor: pressed ? colors.ctaPressed : colors.ctaBackground },
-                pressed && styles.ctaButtonPressed,
+            <Text
+              style={[
+                styles.ctaAssetText,
+                {
+                  backgroundColor: colors.ctaBackground,
+                  color: colors.ctaText,
+                },
               ]}
-              disabled={true}
             >
-              <Text style={[styles.ctaText, { color: colors.ctaText }]}>
-                {getSafeText(nativeAd.callToAction)}
-              </Text>
-            </Pressable>
+              {getSafeText(nativeAd.callToAction)}
+            </Text>
           </NativeAsset>
         )}
       </NativeAdView>
@@ -339,7 +461,8 @@ export default function NativeAdComponent({ nativeAd, loading }: NativeAdCompone
 
 const styles = StyleSheet.create({
   animatedContainer: {
-    marginHorizontal: AdSpacing.md,
+    marginHorizontal: 2,
+    marginRight: 4,
     marginVertical: AdSpacing.sm,
   },
   adCard: {
@@ -404,6 +527,7 @@ const styles = StyleSheet.create({
     width: '100%',
     height: 200,
     marginBottom: AdSpacing.md,
+    overflow: 'hidden',
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -480,6 +604,15 @@ const styles = StyleSheet.create({
     transform: [{ scale: 0.98 }],
   },
   ctaText: {
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  ctaAssetText: {
+    marginHorizontal: AdSpacing.lg,
+    marginBottom: AdSpacing.lg,
+    paddingVertical: AdSpacing.md,
+    borderRadius: AdRadius.md,
+    textAlign: 'center',
     fontSize: 15,
     fontWeight: '600',
   },

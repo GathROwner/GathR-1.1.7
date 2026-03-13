@@ -46,6 +46,42 @@ import {
 // Get screen dimensions for responsive design
 const { width, height } = Dimensions.get('window');
 
+// Pulsing Hotspot Circle Icon Component
+const HotspotCircleIcon: React.FC<{ isActive: boolean }> = ({ isActive }) => {
+  const pulseAnim = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    const pulse = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulseAnim, {
+          toValue: 1.2,
+          duration: 1000,
+          useNativeDriver: true,
+        }),
+        Animated.timing(pulseAnim, {
+          toValue: 1,
+          duration: 1000,
+          useNativeDriver: true,
+        }),
+      ])
+    );
+    pulse.start();
+    return () => pulse.stop();
+  }, [pulseAnim]);
+
+  return (
+    <View style={styles.hotspotIconWrapper}>
+      <Animated.View
+        style={[
+          styles.hotspotCircle,
+          isActive && styles.hotspotCircleActive,
+          { transform: [{ scale: pulseAnim }] },
+        ]}
+      />
+    </View>
+  );
+};
+
 
 
 // Define brand colors
@@ -62,6 +98,73 @@ const BRAND = {
   text: '#333333',
   textLight: '#777777'
 };
+
+const PAGE_SUBMISSION_PRECHECK_BASE_URL = (
+  (typeof process !== 'undefined' && process?.env?.EXPO_PUBLIC_GATHR_BACKEND_URL) ||
+  'https://gathr-backend-924732524090.northamerica-northeast1.run.app'
+).replace(/\/+$/, '');
+
+type FacebookScrapeabilityPrecheckResult = {
+  success?: boolean;
+  status?: string;
+  reason?: string;
+  httpStatus?: number;
+  finalUrl?: string;
+  recommendation?: string;
+  warnSubmitter?: boolean;
+};
+
+const runFacebookScrapeabilityPrecheck = async (url: string): Promise<FacebookScrapeabilityPrecheckResult | null> => {
+  const baseUrl = String(PAGE_SUBMISSION_PRECHECK_BASE_URL || '').trim();
+  if (!baseUrl) return null;
+
+  try {
+    const endpoint = `${baseUrl}/api/facebook-page-scrapeability-check?url=${encodeURIComponent(url)}`;
+    const response = await fetch(endpoint, { method: 'GET' });
+    if (!response.ok) return null;
+    const payload = await response.json();
+    return (payload && typeof payload === 'object') ? payload : null;
+  } catch (error) {
+    console.warn('Facebook scrapeability precheck failed:', error);
+    return null;
+  }
+};
+
+const confirmSubmitWithScrapeabilityWarning = (check: FacebookScrapeabilityPrecheckResult): Promise<boolean> =>
+  new Promise((resolve) => {
+    let settled = false;
+    const finish = (value: boolean) => {
+      if (settled) return;
+      settled = true;
+      resolve(value);
+    };
+
+    const lines = [
+      'This Facebook page may not be publicly scrapeable (logged-out/public check failed).',
+      '',
+      'GathR may not be able to scrape posts from it even if you can view it while logged in.',
+    ];
+    if (check?.reason) {
+      lines.push('', `Check result: ${check.reason}`);
+    }
+    if (check?.httpStatus) {
+      lines.push(`HTTP status: ${check.httpStatus}`);
+    }
+    lines.push('', 'Submit anyway?');
+
+    Alert.alert(
+      'Scrapeability Warning',
+      lines.join('\n'),
+      [
+        { text: 'Cancel', style: 'cancel', onPress: () => finish(false) },
+        { text: 'Submit Anyway', onPress: () => finish(true) },
+      ],
+      {
+        cancelable: true,
+        onDismiss: () => finish(false),
+      }
+    );
+  });
 
 // Enhanced Facebook Page Submission Component  
 interface FacebookPageSubmissionProps {
@@ -116,13 +219,45 @@ const FacebookPageSubmission = React.forwardRef<View, FacebookPageSubmissionProp
     // Enhanced regex patterns for different Facebook URL formats
     const patterns = [
       /^https:\/\/(www\.)?facebook\.com\/[a-zA-Z0-9._-]+\/?$/,
+      /^https:\/\/(www\.)?facebook\.com\/people\/[^\/]+\/\d+\/?$/,
       /^https:\/\/(www\.)?facebook\.com\/pages\/[^\/]+\/\d+\/?$/,
       /^https:\/\/(www\.)?facebook\.com\/profile\.php\?id=\d+$/,
       /^facebook\.com\/[a-zA-Z0-9._-]+\/?$/,
-      /^www\.facebook\.com\/[a-zA-Z0-9._-]+\/?$/
+      /^facebook\.com\/people\/[^\/]+\/\d+\/?$/,
+      /^www\.facebook\.com\/[a-zA-Z0-9._-]+\/?$/,
+      /^www\.facebook\.com\/people\/[^\/]+\/\d+\/?$/
     ];
-    
-    return patterns.some(pattern => pattern.test(url.trim()));
+
+    const trimmed = url.trim();
+    const isPatternMatch = patterns.some(pattern => pattern.test(trimmed));
+    if (!isPatternMatch) return false;
+
+    // Guard: reject non-page Facebook paths that can appear after redirects.
+    try {
+      const withProtocol = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+      const parsed = new URL(withProtocol);
+      if (!/(\.|^)facebook\.com$/i.test(parsed.hostname)) return false;
+
+      const firstSegment = (parsed.pathname.split('/').filter(Boolean)[0] || '').toLowerCase();
+      const disallowed = new Set([
+        'login',
+        'checkpoint',
+        'recover',
+        'share',
+        'sharer',
+        'share.php',
+        'dialog',
+        'help',
+        'privacy',
+        'terms',
+        'l.php',
+      ]);
+      if (disallowed.has(firstSegment)) return false;
+    } catch (_) {
+      return false;
+    }
+
+    return true;
   };
 
   const normalizeFacebookUrl = (url: string): string => {
@@ -160,10 +295,61 @@ const FacebookPageSubmission = React.forwardRef<View, FacebookPageSubmissionProp
       
       // Verify it's a valid Facebook URL and extract clean format
       if (finalUrl.includes('facebook.com')) {
-        // Extract page name from URL
-        const match = finalUrl.match(/facebook\.com\/([^\/\?]+)/);
-        if (match && match[1]) {
-          return `https://www.facebook.com/${match[1]}`;
+        let parsed = new URL(finalUrl);
+        if (!/(\.|^)facebook\.com$/i.test(parsed.hostname)) {
+          return null;
+        }
+
+        let segments = parsed.pathname.split('/').filter(Boolean);
+        let first = (segments[0] || '').toLowerCase();
+
+        // If share resolution lands on login, try to recover the original target from next=...
+        if (first === 'login') {
+          const nextRaw = parsed.searchParams.get('next');
+          if (!nextRaw) return null;
+          try {
+            const decodedNext = decodeURIComponent(nextRaw);
+            const nextUrl = /^https?:\/\//i.test(decodedNext)
+              ? decodedNext
+              : `https://www.facebook.com${decodedNext.startsWith('/') ? '' : '/'}${decodedNext}`;
+            parsed = new URL(nextUrl);
+            if (!/(\.|^)facebook\.com$/i.test(parsed.hostname)) {
+              return null;
+            }
+            segments = parsed.pathname.split('/').filter(Boolean);
+            first = (segments[0] || '').toLowerCase();
+          } catch (_) {
+            return null;
+          }
+        }
+
+        // Keep profile.php?id=<id> form intact when that's the canonical landing URL.
+        if (parsed.pathname.toLowerCase() === '/profile.php') {
+          const profileId = parsed.searchParams.get('id');
+          if (profileId && /^\d+$/.test(profileId)) {
+            return `https://www.facebook.com/profile.php?id=${profileId}`;
+          }
+        }
+
+        // Never resolve to non-page endpoints.
+        const disallowed = new Set(['login', 'checkpoint', 'recover', 'share', 'sharer', 'share.php', 'dialog', 'help', 'privacy', 'terms', 'l.php']);
+        if (disallowed.has(first)) {
+          return null;
+        }
+
+        // Facebook sometimes resolves pages to /people/<display-name>/<id>/ paths.
+        // Returning just "/people" was the regression causing bad submissions.
+        if (first === 'people' && segments.length >= 3 && /^\d+$/.test(segments[2])) {
+          return `https://www.facebook.com/people/${segments[1]}/${segments[2]}`;
+        }
+
+        // Legacy pages format.
+        if (first === 'pages' && segments.length >= 3 && /^\d+$/.test(segments[2])) {
+          return `https://www.facebook.com/pages/${segments[1]}/${segments[2]}`;
+        }
+
+        if (segments.length > 0) {
+          return `https://www.facebook.com/${segments[0]}`;
         }
       }
       
@@ -240,10 +426,34 @@ const FacebookPageSubmission = React.forwardRef<View, FacebookPageSubmissionProp
       }
 
       const normalizedUrl = normalizeFacebookUrl(facebookUrl);
+      const scrapeabilityPrecheck = await runFacebookScrapeabilityPrecheck(facebookUrl.trim());
+      if (scrapeabilityPrecheck?.status === 'likely_not_public' || scrapeabilityPrecheck?.warnSubmitter) {
+        const proceedWithWarning = await confirmSubmitWithScrapeabilityWarning(scrapeabilityPrecheck);
+        if (!proceedWithWarning) {
+          setIsSubmitting(false);
+          return;
+        }
+      }
       
       // Check for duplicates (silently ignore)
       const isDuplicate = await checkDuplicate(normalizedUrl);
       if (isDuplicate) {
+        // Persist duplicate submit attempts so the daily counter survives reloads.
+        // Use a non-pending status so the backend approval-email listener ignores it.
+        await addDoc(collection(firestore, 'pageSubmissions'), {
+          url: facebookUrl.trim(),
+          normalizedUrl: normalizedUrl,
+          userId: currentUser.uid,
+          userEmail: currentUser.email,
+          submittedAt: serverTimestamp(),
+          status: 'duplicate',
+          duplicateDetected: true,
+          notes: 'Duplicate URL already submitted; counted toward daily limit',
+          submitterPrecheckStatus: scrapeabilityPrecheck?.status || null,
+          submitterPrecheckReason: scrapeabilityPrecheck?.reason || null,
+          submitterPrecheckHttpStatus: scrapeabilityPrecheck?.httpStatus || null,
+        });
+
         Alert.alert('Success', 'Thank you for your submission! We\'ll review it soon.');
         setFacebookUrl('');
         setDailyCount(prev => prev + 1);
@@ -259,7 +469,10 @@ const FacebookPageSubmission = React.forwardRef<View, FacebookPageSubmissionProp
         userId: currentUser.uid,
         userEmail: currentUser.email,
         submittedAt: serverTimestamp(),
-        status: 'pending'
+        status: 'pending',
+        submitterPrecheckStatus: scrapeabilityPrecheck?.status || null,
+        submitterPrecheckReason: scrapeabilityPrecheck?.reason || null,
+        submitterPrecheckHttpStatus: scrapeabilityPrecheck?.httpStatus || null,
       });
 
       // ðŸ”¥ ANALYTICS: Track Facebook page submission
@@ -1167,45 +1380,54 @@ const handleLogout = async () => {
               </View>
             ) : (
               <>
-                {/* Profile Management Buttons */}
-                <View style={styles.actionButtonsContainer}>
-                  <TouchableOpacity 
-                    style={styles.editButton} 
-                    onPress={() => setIsEditing(true)}
-                  >
-                    <Ionicons name="create-outline" size={20} color={BRAND.primary} style={styles.buttonIcon} />
-                    <Text style={styles.editButtonText}>Edit Profile</Text>
-                  </TouchableOpacity>
-                  
-                  {/* FIXED: Interest row with count moved outside button */}
-                  <View style={styles.interestsRow}>
-                    <TouchableOpacity 
-                      style={styles.interestsButton} 
+                {/* Action Buttons - 2x2 Grid */}
+                <View style={styles.buttonGridContainer}>
+                <View style={styles.buttonGrid}>
+                  {/* Row 1: Edit Profile + Manage Interests */}
+                  <View style={styles.buttonGridRow}>
+                    <TouchableOpacity
+                      style={[styles.gridButton, { paddingLeft: 24 }]}
+                      onPress={() => setIsEditing(true)}
+                    >
+                      <Ionicons name="create-outline" size={18} color={BRAND.primary} />
+                      <View style={[styles.buttonTextContainer, { marginLeft: -18 }]}>
+                        <Text style={styles.gridButtonText}>Edit Profile</Text>
+                        <Text style={styles.gridButtonSubtext}>Update your info</Text>
+                      </View>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={styles.gridButton}
                       onPress={handleInterests}
                     >
-                      <Ionicons name="pricetag-outline" size={20} color={BRAND.primary} style={styles.buttonIcon} />
-                      <Text style={styles.interestsButtonText}>Manage Interests</Text>
+                      <View style={styles.buttonIconContainer}>
+                        <Ionicons name="pricetag-outline" size={18} color={BRAND.primary} />
+                      </View>
+                      <View style={styles.buttonTextContainer}>
+                        <Text style={styles.gridButtonText}>Edit Interests</Text>
+                        <Text style={styles.gridButtonSubtext}>Manage categories</Text>
+                      </View>
+                      <View style={styles.buttonIconContainer}>
+                        <View style={styles.countBadge}>
+                          <Text style={styles.countNumber}>{userInterests.length}</Text>
+                        </View>
+                      </View>
                     </TouchableOpacity>
-                    
-                    {/* FIXED: Count badge outside button */}
-                    <View style={styles.countBadge}>
-                      <Text style={styles.countNumber}>{userInterests.length}</Text>
-                      <Text style={styles.countLabel}>Saved</Text>
-                    </View>
                   </View>
 
-                  {/* Tutorial Replay Button */}
-                  <TouchableOpacity 
-                    style={styles.tutorialButton} 
-                    onPress={() => {
-                      Alert.alert(
-                        'Replay Tutorial',
-                        'Would you like to replay the GathR tutorial? This will guide you through the app features again.',
-                        [
-                          { text: 'Cancel', style: 'cancel' },
-                          { 
-                            text: 'Start Tutorial', 
-onPress: () => {
+                  {/* Row 2: Replay Tutorial + Daily Hotspot */}
+                  <View style={styles.buttonGridRow}>
+                    <TouchableOpacity
+                      style={[styles.gridButton, { paddingLeft: 24 }]}
+                      onPress={() => {
+                        Alert.alert(
+                          'Replay Tutorial',
+                          'Would you like to replay the GathR tutorial? This will guide you through the app features again.',
+                          [
+                            { text: 'Cancel', style: 'cancel' },
+                            {
+                              text: 'Start Tutorial',
+                              onPress: () => {
   // ðŸ”” analytics: tutorial_restart_clicked (fires BEFORE overlay opens)
   try {
     const now = Date.now();
@@ -1245,40 +1467,41 @@ onPress: () => {
                       );
                     }}
                   >
-                    <Ionicons name="help-circle-outline" size={20} color={BRAND.primary} style={styles.buttonIcon} />
-                    <Text style={styles.tutorialButtonText}>Replay Tutorial</Text>
-                  </TouchableOpacity>
+                      <Ionicons name="help-circle-outline" size={18} color={BRAND.primary} />
+                      <View style={[styles.buttonTextContainer, { marginLeft: -14 }]}>
+                        <Text style={styles.gridButtonText}>Replay Tutorial</Text>
+                        <Text style={styles.gridButtonSubtext}>New user walkthrough</Text>
+                      </View>
+                    </TouchableOpacity>
 
-                  {/* Daily Hotspot Toggle */}
-                  <TouchableOpacity
-                    style={styles.hotspotToggle}
-                    onPress={handleToggleHotspot}
-                  >
-                    <View style={styles.hotspotToggleContent}>
-                      <Ionicons
-                        name="flame-outline"
-                        size={20}
-                        color={showDailyHotspot ? BRAND.primary : BRAND.gray}
-                        style={styles.buttonIcon}
-                      />
-                      <View style={styles.hotspotToggleText}>
-                        <Text style={[
-                          styles.hotspotToggleLabel,
-                          !showDailyHotspot && styles.hotspotToggleLabelDisabled
-                        ]}>
-                          Daily Hotspot
+                    <TouchableOpacity
+                      style={[
+                        styles.gridButton,
+                        !showDailyHotspot && { borderColor: BRAND.lightGray }
+                      ]}
+                      onPress={handleToggleHotspot}
+                    >
+                      <View style={styles.buttonIconContainer}>
+                        <HotspotCircleIcon isActive={showDailyHotspot} />
+                      </View>
+                      <View style={styles.buttonTextContainer}>
+                        <Text style={[styles.gridButtonText, !showDailyHotspot && { color: BRAND.gray }]}>
+                          Enable Hotspot
                         </Text>
-                        <Text style={styles.hotspotToggleDescription}>
-                          Highlight popular spots on map open
+                        <Text style={[styles.gridButtonSubtext, !showDailyHotspot && { color: BRAND.gray }]}>
+                          Daily highlights
                         </Text>
                       </View>
-                    </View>
-                    <Ionicons
-                      name={showDailyHotspot ? "checkmark-circle" : "ellipse-outline"}
-                      size={24}
-                      color={showDailyHotspot ? BRAND.primary : BRAND.gray}
-                    />
-                  </TouchableOpacity>
+                      <View style={styles.buttonIconContainer}>
+                        <Ionicons
+                          name={showDailyHotspot ? "checkmark-circle" : "ellipse-outline"}
+                          size={20}
+                          color={showDailyHotspot ? BRAND.primary : BRAND.gray}
+                        />
+                      </View>
+                    </TouchableOpacity>
+                  </View>
+                </View>
                 </View>
 
                 {/* Facebook Page Submission Component */}
@@ -1396,12 +1619,19 @@ onPress: () => {
 
 const submissionStyles = StyleSheet.create({
   container: {
-    backgroundColor: BRAND.background,
+    backgroundColor: 'rgba(30, 144, 255, 0.03)',
     borderRadius: 16,
     padding: 12,
     marginVertical: 12,
-    borderWidth: 1,
-    borderColor: BRAND.lightGray,
+    borderWidth: 1.5,
+    borderColor: BRAND.primary,
+    // Shadow for iOS
+    shadowColor: BRAND.primary,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 5,
+    // Shadow for Android
+    elevation: 4,
   },
   header: {
     flexDirection: 'row',
@@ -1700,6 +1930,102 @@ const styles = StyleSheet.create({
   actionButtonsContainer: {
     marginBottom: 16,
   },
+  buttonGridContainer: {
+    marginHorizontal: -24
+  ,
+    marginBottom: 16,
+  },
+  buttonGrid: {
+    gap: 8,
+    paddingHorizontal: 8,
+  },
+  buttonGridRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 8,
+    marginBottom: 8,
+  },
+  gridButton: {
+    flex: 1,
+    height: 56,
+    backgroundColor: 'rgba(30, 144, 255, 0.03)',
+    borderWidth: 1.5,
+    borderColor: BRAND.primary,
+    borderRadius: 28,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 4,
+    gap: 0,
+    // Shadow for iOS
+    shadowColor: BRAND.primary,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 5,
+    // Shadow for Android
+    elevation: 4,
+  },
+  gridButtonText: {
+    color: BRAND.primary,
+    fontWeight: '600',
+    fontSize: 13,
+    textAlign: 'center',
+  },
+  gridButtonSubtext: {
+    color: BRAND.gray,
+    fontSize: 9,
+    textAlign: 'center',
+    marginTop: 1,
+  },
+  buttonTextContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    flex: 1,
+  },
+  buttonIconContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    minWidth: 24,
+  },
+  interestsTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  countBadge: {
+    minWidth: 20,
+    height: 20,
+    borderRadius: 10,
+    paddingHorizontal: 6,
+    backgroundColor: BRAND.background,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: BRAND.primary,
+  },
+  countNumber: {
+    fontSize: 11,
+    fontWeight: 'bold',
+    color: BRAND.primary,
+  },
+  hotspotIconWrapper: {
+    width: 18,
+    height: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  hotspotCircle: {
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: 'transparent',
+    borderWidth: 2.5,
+    borderColor: '#F57C00',
+  },
+  hotspotCircleActive: {
+    borderColor: '#E65100',
+    borderWidth: 3,
+  },
   accountActionsContainer: {
   flexDirection: 'row', // Changed from 'column'
   justifyContent: 'space-between',
@@ -1743,77 +2069,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     fontSize: 16,
   },
-  editButton: {
-    height: 40,
-    backgroundColor: BRAND.white,
-    borderWidth: 1,
-    borderColor: BRAND.primary,
-    borderRadius: 30,
-    paddingVertical: 10,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 10,
-      ...(Platform.OS === 'android' ? { marginTop: 0 } : null),
-  },
-  editButtonText: {
-    color: BRAND.primary,
-    fontWeight: '600',
-    fontSize: 16,
-      ...(Platform.OS === 'android'
-    ? { includeFontPadding: false, textAlignVertical: 'center', lineHeight: 20 }
-    : null),
-  },
-  // FIXED: New interests row with button and count
-  interestsRow: {
-  flexDirection: 'row',
-  alignItems: 'center',
-  justifyContent: 'space-between',
-  marginBottom: 10, // REDUCED from 12 (if you haven't already)
-},
-
-interestsButton: {
-  flex: 1,
-  backgroundColor: BRAND.white,
-  borderWidth: 1,
-  borderColor: BRAND.primary,
-  borderRadius: 20, // REDUCED from 30 to match 40px height
-  paddingVertical: 10, // REDUCED from 14 to make height 40px
-  flexDirection: 'row',
-  alignItems: 'center',
-  justifyContent: 'center',
-  marginRight: 10,
-},
-  interestsButtonText: {
-  color: BRAND.primary,
-  fontWeight: '600',
-  fontSize: 15, // REDUCED from 16 to match other compact buttons
-},
-  // FIXED: Added count badge style
-  countBadge: {
-  alignItems: 'center',
-  backgroundColor: BRAND.background,
-  borderRadius: 12, // REDUCED from 16
-  paddingVertical: 6, // REDUCED from 8
-  paddingHorizontal: 10, // REDUCED from 12
-  shadowColor: '#000',
-  shadowOffset: { width: 0, height: 1 },
-  shadowOpacity: 0.05,
-  shadowRadius: 3,
-  elevation: 1,
-},
-
-countNumber: {
-  fontSize: 18, // REDUCED from 20
-  fontWeight: 'bold',
-  color: BRAND.primary,
-},
-
-countLabel: {
-  fontSize: 11, // REDUCED from 12
-  color: BRAND.textLight,
-  marginTop: 1, // REDUCED from 2
-},
   logoutButton: {
   backgroundColor: BRAND.primary,
   borderRadius: 20, // Matches the 40px height
@@ -1946,56 +2201,5 @@ countLabel: {
     color: BRAND.white,
     fontWeight: '600',
     fontSize: 16,
-  },
-  tutorialButton: {
-    height: 40,
-    backgroundColor: BRAND.white,
-    borderWidth: 1,
-    borderColor: BRAND.primary,
-    borderRadius: 20,
-    paddingVertical: 10,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 10,
-  },
-  tutorialButtonText: {
-    color: BRAND.primary,
-    fontWeight: '600',
-    fontSize: 15,
-  },
-  hotspotToggle: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: BRAND.white,
-    borderWidth: 1,
-    borderColor: BRAND.lightGray,
-    borderRadius: 12,
-    paddingVertical: 12,
-    paddingHorizontal: 14,
-    marginTop: 10,
-  },
-  hotspotToggleContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-  },
-  hotspotToggleText: {
-    marginLeft: 4,
-    flex: 1,
-  },
-  hotspotToggleLabel: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: BRAND.text,
-  },
-  hotspotToggleLabelDisabled: {
-    color: BRAND.gray,
-  },
-  hotspotToggleDescription: {
-    fontSize: 12,
-    color: BRAND.textLight,
-    marginTop: 2,
   },
 });

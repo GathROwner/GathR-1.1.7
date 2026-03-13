@@ -1,5 +1,5 @@
 import React, { useState, useRef, useMemo } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Animated, Platform } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Animated, Platform, PanResponder, PanResponderGestureState, Easing } from 'react-native';
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
@@ -8,7 +8,145 @@ import { TimeFilterType } from '../../types';
 import TimeFilterOptions from './TimeFilterOptions';
 import CategoryFilterOptions from './CategoryFilterOptions';
 import { isEventNow, isEventHappeningToday } from '../../utils/dateUtils';
+import { registerMapTraceSampler, traceMapEvent } from '../../utils/mapTrace';
 
+type CurtainPeekState = {
+  lastPeekTime: number;
+  peekCount: number;
+  isActive: boolean;
+};
+
+const INITIAL_CURTAIN_PEEK_STATE: CurtainPeekState = {
+  lastPeekTime: 0,
+  peekCount: 0,
+  isActive: false
+};
+
+const readAnimatedValue = (value: Animated.Value): number | string =>
+  typeof (value as any).__getValue === 'function' ? (value as any).__getValue() : 'unknown';
+
+type UseCurtainPeekTimingOptions = {
+  canTriggerPeek: boolean;
+  enabled: boolean;
+  filterSignature: string;
+  firstPeekDelayMaxMs: number;
+  firstPeekDelayMinMs: number;
+  hidePeek: () => void;
+  logLabel: string;
+  onTriggerPeek: () => void;
+  panelOpen: boolean;
+  peekState: CurtainPeekState;
+  repeatPeekDelayMaxMs: number;
+  repeatPeekDelayMinMs: number;
+  setPeekState: React.Dispatch<React.SetStateAction<CurtainPeekState>>;
+};
+
+const getRandomDelayMs = (minMs: number, maxMs: number) =>
+  minMs + Math.random() * (maxMs - minMs);
+
+const useCurtainPeekTiming = ({
+  canTriggerPeek,
+  enabled,
+  filterSignature,
+  firstPeekDelayMaxMs,
+  firstPeekDelayMinMs,
+  hidePeek,
+  logLabel,
+  onTriggerPeek,
+  panelOpen,
+  peekState,
+  repeatPeekDelayMaxMs,
+  repeatPeekDelayMinMs,
+  setPeekState
+}: UseCurtainPeekTimingOptions) => {
+  const canTriggerPeekRef = useRef(canTriggerPeek);
+  const lastFilterSignatureRef = useRef('');
+  const onTriggerPeekRef = useRef(onTriggerPeek);
+  const wasPanelOpenRef = useRef(panelOpen);
+
+  React.useEffect(() => {
+    canTriggerPeekRef.current = canTriggerPeek;
+  }, [canTriggerPeek]);
+
+  React.useEffect(() => {
+    onTriggerPeekRef.current = onTriggerPeek;
+  }, [onTriggerPeek]);
+
+  const resetPeekSequence = React.useCallback(() => {
+    hidePeek();
+    setPeekState(INITIAL_CURTAIN_PEEK_STATE);
+  }, [hidePeek, setPeekState]);
+
+  React.useEffect(() => {
+    if (!lastFilterSignatureRef.current) {
+      lastFilterSignatureRef.current = filterSignature;
+      return;
+    }
+
+    if (lastFilterSignatureRef.current === filterSignature) {
+      return;
+    }
+
+    lastFilterSignatureRef.current = filterSignature;
+    resetPeekSequence();
+  }, [filterSignature, resetPeekSequence]);
+
+  React.useEffect(() => {
+    if (wasPanelOpenRef.current === panelOpen) {
+      return;
+    }
+
+    wasPanelOpenRef.current = panelOpen;
+
+    if (enabled) {
+      resetPeekSequence();
+    }
+  }, [enabled, panelOpen, resetPeekSequence]);
+
+  React.useEffect(() => {
+    if (!enabled) {
+      resetPeekSequence();
+      return;
+    }
+
+    if (panelOpen || peekState.isActive) {
+      return;
+    }
+
+    const nextDelay =
+      peekState.peekCount === 0
+        ? getRandomDelayMs(firstPeekDelayMinMs, firstPeekDelayMaxMs)
+        : getRandomDelayMs(repeatPeekDelayMinMs, repeatPeekDelayMaxMs);
+    const now = Date.now();
+    const timeSinceLastPeek = peekState.lastPeekTime === 0 ? 0 : now - peekState.lastPeekTime;
+    const remainingDelay =
+      peekState.lastPeekTime === 0 ? nextDelay : Math.max(0, nextDelay - timeSinceLastPeek);
+
+    console.log(`🎭 ${logLabel} peek timer: next in ${Math.round(remainingDelay / 1000)}s (peek #${peekState.peekCount})`);
+
+    const peekTimer = setTimeout(() => {
+      if (canTriggerPeekRef.current) {
+        onTriggerPeekRef.current();
+      }
+    }, remainingDelay);
+
+    return () => clearTimeout(peekTimer);
+  }, [
+    enabled,
+    firstPeekDelayMaxMs,
+    firstPeekDelayMinMs,
+    logLabel,
+    panelOpen,
+    peekState.isActive,
+    peekState.lastPeekTime,
+    peekState.peekCount,
+    repeatPeekDelayMaxMs,
+    repeatPeekDelayMinMs,
+    resetPeekSequence
+  ]);
+
+  return { resetPeekSequence };
+};
 
 
 const FilterPills = () => {
@@ -30,6 +168,9 @@ const FilterPills = () => {
       console.log('🧯 activePanel opened while Events clear armed → cancelling armed state');
       cancelEventsClearArmed('panel-opened');
     }
+    traceMapEvent('filter_panel_changed', {
+      activePanel: activePanel ?? 'none',
+    });
   }, [activePanel]);
   
   // Separate opacity for each panel - both always rendered
@@ -42,6 +183,7 @@ const FilterPills = () => {
   const EVENTS_CLEAR_ARMED_AUTO_CANCEL_MS = 4000;
 
   const [eventsPillWidth, setEventsPillWidth] = React.useState(0);
+  const [eventsPillLayout, setEventsPillLayout] = React.useState({ x: 0, y: 0, width: 0, height: 0 });
   const [eventsClearArmed, setEventsClearArmed] = React.useState(false);
 
   const eventsClearFillAnim = useRef(new Animated.Value(0)).current;
@@ -52,32 +194,309 @@ const FilterPills = () => {
 
   // --- Specials Clear Logic ---
   const [specialsPillWidth, setSpecialsPillWidth] = React.useState(0);
+  const [specialsPillLayout, setSpecialsPillLayout] = React.useState({ x: 0, y: 0, width: 0, height: 0 });
   const [specialsClearArmed, setSpecialsClearArmed] = React.useState(false);
   const specialsClearFillAnim = useRef(new Animated.Value(0)).current;
   const specialsClearHoldInProgressRef = useRef(false);
   const specialsClearSuppressNextChevronPressRef = useRef(false);
   const specialsClearAutoCancelTimeoutRef = useRef<any>(null);
   const specialsClearArmedRef = useRef(false);
+  const [specialsCurtainPeekState, setSpecialsCurtainPeekState] =
+    useState<CurtainPeekState>(INITIAL_CURTAIN_PEEK_STATE);
+  const specialsCurtainPeekAnimActive = useRef(false);
+  const specialsCurtainSlideAnim = useRef(new Animated.Value(0)).current;
+  const specialsCurtainSwipeActive = useRef(false);
+  const specialsCurtainDragAnim = useRef(new Animated.Value(0)).current;
+  const specialsCurtainPeekAnimationRef = useRef<Animated.CompositeAnimation | null>(null);
+  const specialsCurtainClearTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const specialsCurtainPeekAutoHideTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const specialsCurtainProgressRef = useRef(0);
+  const [specialsCurtainIsInteractive, setSpecialsCurtainIsInteractive] = useState(false);
+  const specialsCurtainIsInteractiveRef = useRef(false);
+  const specialsPillHasActiveFiltersRef = useRef(false);
+
+  // --- Red Curtain Peek Animation ---
+  const [curtainPeekState, setCurtainPeekState] = useState<CurtainPeekState>(INITIAL_CURTAIN_PEEK_STATE);
+  const curtainPeekAnimActive = useRef(false);
+  const curtainSlideAnim = useRef(new Animated.Value(0)).current; // 0=off-screen right, 1=fully covering
+
+  // --- Red Curtain Swipe-to-Clear Gesture ---
+  const curtainSwipeActive = useRef(false);
+  const curtainDragAnim = useRef(new Animated.Value(0)).current; // Additional drag offset during swipe
+  const curtainPeekAnimationRef = useRef<Animated.CompositeAnimation | null>(null);
+  const curtainClearTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const curtainPeekAutoHideTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const curtainProgressRef = useRef(0);
+  const [curtainIsInteractive, setCurtainIsInteractive] = useState(false); // Track if curtain accepts gestures
+  const curtainIsInteractiveRef = useRef(false);
+  const eventsPillHasActiveFiltersRef = useRef(false);
+  const CURTAIN_HANDLE_WIDTH = 45;
+  const CURTAIN_CONTENT_START_X = 12;
+  const CURTAIN_CONTENT_LOCK_HALF_WIDTH = 28;
+  const CURTAIN_MIN_PEEK_COVERAGE = 60;
+  const CURTAIN_PEEK_FRACTION = 0.45;
+  const CURTAIN_SNAP_TOLERANCE_PX = 18;
+  const CURTAIN_CLEAR_HOLD_MS = 500;
+  const CURTAIN_PEEK_AUTO_HIDE_MS = 1800;
+  const SPECIALS_CURTAIN_TIMING_ENABLED = true;
 
   const setGlobalEventsClearGestureActive = (isActive: boolean) => {
     // We keep this global name so Map.tsx doesn't need to change
     (global as any).gathrEventsClearGestureActive = isActive;
   };
 
+  const setCurtainInteractive = (isInteractive: boolean) => {
+    curtainIsInteractiveRef.current = isInteractive;
+    setCurtainIsInteractive(isInteractive);
+  };
+
+  const setSpecialsCurtainInteractive = (isInteractive: boolean) => {
+    specialsCurtainIsInteractiveRef.current = isInteractive;
+    setSpecialsCurtainIsInteractive(isInteractive);
+  };
+
+  const getCurtainMetrics = () => {
+    const pillWidth = Math.max(CURTAIN_HANDLE_WIDTH, eventsPillLayout.width || 0);
+    const peekCoverage = Math.min(
+      pillWidth,
+      Math.max(CURTAIN_MIN_PEEK_COVERAGE, pillWidth * CURTAIN_PEEK_FRACTION)
+    );
+    const travelDistance = Math.max(0, pillWidth - CURTAIN_HANDLE_WIDTH);
+    const peekProgress = travelDistance === 0 ? 0 : (peekCoverage - CURTAIN_HANDLE_WIDTH) / travelDistance;
+
+    return {
+      pillWidth,
+      peekCoverage,
+      travelDistance,
+      peekProgress
+    };
+  };
+
+  const getSpecialsCurtainMetrics = React.useCallback(() => {
+    const pillWidth = Math.max(CURTAIN_HANDLE_WIDTH, specialsPillLayout.width || 0);
+    const peekCoverage = Math.min(
+      pillWidth,
+      Math.max(CURTAIN_MIN_PEEK_COVERAGE, pillWidth * CURTAIN_PEEK_FRACTION)
+    );
+    const travelDistance = Math.max(0, pillWidth - CURTAIN_HANDLE_WIDTH);
+    const peekProgress = travelDistance === 0 ? 0 : (peekCoverage - CURTAIN_HANDLE_WIDTH) / travelDistance;
+
+    return {
+      pillWidth,
+      peekCoverage,
+      travelDistance,
+      peekProgress
+    };
+  }, [specialsPillLayout.width]);
+
+  const getCoverageForProgress = (progress: number, travelDistance: number) =>
+    CURTAIN_HANDLE_WIDTH + (Math.max(0, Math.min(1, progress)) * travelDistance);
+
+  const getProgressForCoverage = (coverage: number, pillWidth: number, travelDistance: number) => {
+    const clampedCoverage = Math.max(CURTAIN_HANDLE_WIDTH, Math.min(pillWidth, coverage));
+
+    if (travelDistance === 0) {
+      return 0;
+    }
+
+    return (clampedCoverage - CURTAIN_HANDLE_WIDTH) / travelDistance;
+  };
+
+  const getCurtainCoverageForProgress = (progress: number) => {
+    const { travelDistance } = getCurtainMetrics();
+    return getCoverageForProgress(progress, travelDistance);
+  };
+
+  const getCurtainProgressForCoverage = (coverage: number) => {
+    const { pillWidth, travelDistance } = getCurtainMetrics();
+    return getProgressForCoverage(coverage, pillWidth, travelDistance);
+  };
+
+  const getSpecialsCurtainCoverageForProgress = (progress: number) => {
+    const { travelDistance } = getSpecialsCurtainMetrics();
+    return getCoverageForProgress(progress, travelDistance);
+  };
+
+  const getSpecialsCurtainProgressForCoverage = (coverage: number) => {
+    const { pillWidth, travelDistance } = getSpecialsCurtainMetrics();
+    return getProgressForCoverage(coverage, pillWidth, travelDistance);
+  };
+
+  const stopCurtainPeekAnimation = () => {
+    if (curtainPeekAnimationRef.current) {
+      curtainPeekAnimationRef.current.stop();
+      curtainPeekAnimationRef.current = null;
+    }
+  };
+
+  const stopSpecialsCurtainPeekAnimation = () => {
+    if (specialsCurtainPeekAnimationRef.current) {
+      specialsCurtainPeekAnimationRef.current.stop();
+      specialsCurtainPeekAnimationRef.current = null;
+    }
+  };
+
+  const clearCurtainPeekAutoHideTimeout = React.useCallback(() => {
+    if (curtainPeekAutoHideTimeoutRef.current) {
+      clearTimeout(curtainPeekAutoHideTimeoutRef.current);
+      curtainPeekAutoHideTimeoutRef.current = null;
+    }
+  }, []);
+
+  const clearSpecialsCurtainPeekAutoHideTimeout = React.useCallback(() => {
+    if (specialsCurtainPeekAutoHideTimeoutRef.current) {
+      clearTimeout(specialsCurtainPeekAutoHideTimeoutRef.current);
+      specialsCurtainPeekAutoHideTimeoutRef.current = null;
+    }
+  }, []);
+
+  const scheduleCurtainPeekAutoHide = (delayMs: number = CURTAIN_PEEK_AUTO_HIDE_MS) => {
+    clearCurtainPeekAutoHideTimeout();
+
+    curtainPeekAutoHideTimeoutRef.current = setTimeout(() => {
+      curtainPeekAutoHideTimeoutRef.current = null;
+
+      if (curtainSwipeActive.current || curtainPeekAnimActive.current) {
+        return;
+      }
+
+      setCurtainInteractive(false);
+      curtainDragAnim.stopAnimation();
+      curtainDragAnim.setValue(0);
+
+      Animated.timing(curtainSlideAnim, {
+        toValue: 0,
+        duration: 240,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: false
+      }).start(({ finished }) => {
+        if (!finished) {
+          return;
+        }
+
+        hideCurtain();
+      });
+    }, delayMs);
+  };
+
+  const hideCurtain = React.useCallback(() => {
+    if (curtainClearTimeoutRef.current) {
+      clearTimeout(curtainClearTimeoutRef.current);
+      curtainClearTimeoutRef.current = null;
+    }
+    clearCurtainPeekAutoHideTimeout();
+    curtainSlideAnim.stopAnimation();
+    curtainSlideAnim.setValue(0);
+    curtainDragAnim.stopAnimation();
+    curtainDragAnim.setValue(0);
+    curtainProgressRef.current = 0;
+    curtainPeekAnimActive.current = false;
+    setCurtainInteractive(false);
+    setCurtainPeekState(prev => ({ ...prev, isActive: false }));
+  }, [clearCurtainPeekAutoHideTimeout, curtainDragAnim, curtainSlideAnim]);
+
+  const hideSpecialsCurtain = React.useCallback(() => {
+    if (specialsCurtainClearTimeoutRef.current) {
+      clearTimeout(specialsCurtainClearTimeoutRef.current);
+      specialsCurtainClearTimeoutRef.current = null;
+    }
+    clearSpecialsCurtainPeekAutoHideTimeout();
+    stopSpecialsCurtainPeekAnimation();
+    specialsCurtainSlideAnim.stopAnimation();
+    specialsCurtainSlideAnim.setValue(0);
+    specialsCurtainDragAnim.stopAnimation();
+    specialsCurtainDragAnim.setValue(0);
+    specialsCurtainPeekAnimActive.current = false;
+    specialsCurtainProgressRef.current = 0;
+    setSpecialsCurtainInteractive(false);
+    setSpecialsCurtainPeekState(prev => ({ ...prev, isActive: false }));
+  }, [
+    clearSpecialsCurtainPeekAutoHideTimeout,
+    specialsCurtainDragAnim,
+    specialsCurtainSlideAnim
+  ]);
+
+  const scheduleSpecialsCurtainPeekAutoHide = React.useCallback((delayMs: number = CURTAIN_PEEK_AUTO_HIDE_MS) => {
+    clearSpecialsCurtainPeekAutoHideTimeout();
+
+    specialsCurtainPeekAutoHideTimeoutRef.current = setTimeout(() => {
+      specialsCurtainPeekAutoHideTimeoutRef.current = null;
+
+      if (specialsCurtainSwipeActive.current || specialsCurtainPeekAnimActive.current) {
+        return;
+      }
+
+      setSpecialsCurtainInteractive(false);
+      specialsCurtainDragAnim.stopAnimation();
+      specialsCurtainDragAnim.setValue(0);
+
+      Animated.timing(specialsCurtainSlideAnim, {
+        toValue: 0,
+        duration: 240,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: false
+      }).start(({ finished }) => {
+        if (!finished) {
+          return;
+        }
+
+        hideSpecialsCurtain();
+      });
+    }, delayMs);
+  }, [
+    clearSpecialsCurtainPeekAutoHideTimeout,
+    hideSpecialsCurtain,
+    specialsCurtainDragAnim,
+    specialsCurtainSlideAnim
+  ]);
+
   React.useEffect(() => {
     eventsClearArmedRef.current = eventsClearArmed;
     specialsClearArmedRef.current = specialsClearArmed;
     setGlobalEventsClearGestureActive(
       eventsClearArmed || eventsClearHoldInProgressRef.current || 
-      specialsClearArmed || specialsClearHoldInProgressRef.current
+      specialsClearArmed || specialsClearHoldInProgressRef.current ||
+      curtainPeekState.isActive || curtainIsInteractive ||
+      specialsCurtainPeekState.isActive || specialsCurtainIsInteractive
     );
-  }, [eventsClearArmed, specialsClearArmed]);
+  }, [
+    eventsClearArmed,
+    specialsClearArmed,
+    curtainPeekState.isActive,
+    curtainIsInteractive,
+    specialsCurtainPeekState.isActive,
+    specialsCurtainIsInteractive
+  ]);
+
+  React.useEffect(() => {
+    const listenerId = curtainSlideAnim.addListener(({ value }) => {
+      curtainProgressRef.current = value;
+    });
+
+    return () => {
+      curtainSlideAnim.removeListener(listenerId);
+    };
+  }, [curtainSlideAnim]);
+
+  React.useEffect(() => {
+    const listenerId = specialsCurtainSlideAnim.addListener(({ value }) => {
+      specialsCurtainProgressRef.current = value;
+    });
+
+    return () => {
+      specialsCurtainSlideAnim.removeListener(listenerId);
+    };
+  }, [specialsCurtainSlideAnim]);
 
   const cancelEventsClearArmed = (reason: string, resetSuppressNextChevronPress: boolean = true) => {
     // Always clear the timer, even if we're not currently armed.
     if (eventsClearAutoCancelTimeoutRef.current) {
       clearTimeout(eventsClearAutoCancelTimeoutRef.current);
       eventsClearAutoCancelTimeoutRef.current = null;
+    }
+
+    if (curtainPeekAnimActive.current || curtainPeekState.isActive || curtainIsInteractiveRef.current) {
+      hideCurtain();
     }
 
     if (!eventsClearArmedRef.current && !eventsClearHoldInProgressRef.current) {
@@ -130,7 +549,7 @@ React.useEffect(() => {
 
   const confirmClearEventsFilters = () => {
     console.log('🧹 CONFIRM: Clear Event filters');
-    setTypeFilters('event', { timeFilter: TimeFilterType.ALL, category: undefined });
+    setTypeFilters('event', { timeFilter: TimeFilterType.TODAY, category: undefined });
     cancelEventsClearArmed('confirmed-clear');
   };
 
@@ -138,6 +557,13 @@ React.useEffect(() => {
     if (specialsClearAutoCancelTimeoutRef.current) {
       clearTimeout(specialsClearAutoCancelTimeoutRef.current);
       specialsClearAutoCancelTimeoutRef.current = null;
+    }
+    if (
+      specialsCurtainPeekAnimActive.current ||
+      specialsCurtainPeekState.isActive ||
+      specialsCurtainIsInteractiveRef.current
+    ) {
+      hideSpecialsCurtain();
     }
     if (!specialsClearArmedRef.current && !specialsClearHoldInProgressRef.current) {
       setGlobalEventsClearGestureActive(false); // Fix: setGlobalEventsClearGestureActive
@@ -153,7 +579,7 @@ React.useEffect(() => {
 
   const confirmClearSpecialsFilters = () => {
     console.log('🧹 CONFIRM: Clear Special filters');
-    setTypeFilters('special', { timeFilter: TimeFilterType.ALL, category: undefined });
+    setTypeFilters('special', { timeFilter: TimeFilterType.TODAY, category: undefined });
     cancelSpecialsClearArmed('confirmed-clear');
   };
 
@@ -178,6 +604,427 @@ React.useEffect(() => {
       }, EVENTS_CLEAR_ARMED_AUTO_CANCEL_MS);
     });
   };
+
+  const triggerCurtainPeekAnimation = () => {
+    if (curtainPeekAnimActive.current || eventsClearArmedRef.current) {
+      console.log('⏭️ Curtain peek blocked (already active or armed)');
+      return;
+    }
+
+    console.log('🎭 Triggering red curtain peek animation');
+    const { peekProgress } = getCurtainMetrics();
+    stopCurtainPeekAnimation();
+    clearCurtainPeekAutoHideTimeout();
+    curtainPeekAnimActive.current = true;
+    setCurtainPeekState(prev => ({
+      ...prev,
+      isActive: true,
+      lastPeekTime: Date.now(),
+      peekCount: prev.peekCount + 1
+    }));
+    setCurtainInteractive(false);
+    curtainSlideAnim.setValue(0);
+    curtainDragAnim.setValue(0);
+
+    // Animation sequence:
+    // Elastic bounce in → settle with damping → slide out
+    // Uses bezier curves for smooth, fluid bouncy-ball motion
+
+    const peekAnimation = Animated.spring(curtainSlideAnim, {
+      toValue: peekProgress,
+      friction: 8,
+      tension: 70,
+      useNativeDriver: false
+    });
+
+    curtainPeekAnimationRef.current = peekAnimation;
+
+    peekAnimation.start(({ finished }) => {
+      curtainPeekAnimationRef.current = null;
+      if (!finished) {
+        return;
+      }
+      console.log('✅ Red curtain peek animation complete');
+      curtainPeekAnimActive.current = false;
+      curtainDragAnim.setValue(0);
+      curtainProgressRef.current = peekProgress;
+      setCurtainInteractive(true);
+      scheduleCurtainPeekAutoHide();
+    });
+
+    // Mark curtain as visible after bounce completes (600ms bounce + small buffer)
+    setTimeout(() => {
+      if (curtainPeekAnimActive.current) {
+        setCurtainInteractive(true);
+        console.log('✋ Curtain now visible and ready for swipe gestures');
+      }
+    }, 700);
+
+    // Light haptic feedback when curtain triggers
+    if (Platform.OS !== 'web') {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
+  };
+
+  const triggerSpecialsCurtainPeekAnimation = React.useCallback(() => {
+    if (specialsCurtainPeekAnimActive.current || specialsClearArmedRef.current) {
+      return;
+    }
+
+    const { peekProgress } = getSpecialsCurtainMetrics();
+    stopSpecialsCurtainPeekAnimation();
+    clearSpecialsCurtainPeekAutoHideTimeout();
+    specialsCurtainPeekAnimActive.current = true;
+    setSpecialsCurtainInteractive(false);
+    specialsCurtainSlideAnim.setValue(0);
+    specialsCurtainDragAnim.setValue(0);
+    setSpecialsCurtainPeekState(prev => ({
+      ...prev,
+      isActive: true,
+      lastPeekTime: Date.now(),
+      peekCount: prev.peekCount + 1
+    }));
+
+    const peekAnimation = Animated.spring(specialsCurtainSlideAnim, {
+      toValue: peekProgress,
+      friction: 8,
+      tension: 70,
+      useNativeDriver: false
+    });
+
+    specialsCurtainPeekAnimationRef.current = peekAnimation;
+
+    peekAnimation.start(({ finished }) => {
+      specialsCurtainPeekAnimationRef.current = null;
+      if (!finished) {
+        return;
+      }
+
+      specialsCurtainPeekAnimActive.current = false;
+      specialsCurtainDragAnim.setValue(0);
+      specialsCurtainProgressRef.current = peekProgress;
+      setSpecialsCurtainInteractive(true);
+      scheduleSpecialsCurtainPeekAutoHide();
+    });
+
+    setTimeout(() => {
+      if (specialsCurtainPeekAnimActive.current) {
+        setSpecialsCurtainInteractive(true);
+      }
+    }, 700);
+
+    if (Platform.OS !== 'web') {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
+  }, [
+    clearSpecialsCurtainPeekAutoHideTimeout,
+    getSpecialsCurtainMetrics,
+    scheduleSpecialsCurtainPeekAutoHide,
+    specialsCurtainDragAnim,
+    specialsCurtainSlideAnim
+  ]);
+
+  const handleSpecialsCurtainRelease = (gestureState: PanResponderGestureState) => {
+    if (!specialsCurtainSwipeActive.current) return;
+
+    const { pillWidth, peekProgress } = getSpecialsCurtainMetrics();
+    const dragOffset = Math.max(0, -gestureState.dx);
+    const baseCoverage = getSpecialsCurtainCoverageForProgress(
+      specialsCurtainProgressRef.current || peekProgress
+    );
+    const totalCoverage = Math.max(
+      CURTAIN_HANDLE_WIDTH,
+      Math.min(pillWidth, baseCoverage + dragOffset)
+    );
+    const shouldSnapClosed = totalCoverage >= pillWidth - CURTAIN_SNAP_TOLERANCE_PX;
+
+    if (shouldSnapClosed) {
+      const snapProgress = getSpecialsCurtainProgressForCoverage(totalCoverage);
+
+      specialsCurtainSlideAnim.setValue(snapProgress);
+      specialsCurtainDragAnim.setValue(0);
+      specialsCurtainProgressRef.current = snapProgress;
+
+      Animated.spring(specialsCurtainSlideAnim, {
+        toValue: 1,
+        friction: 7,
+        tension: 90,
+        useNativeDriver: false
+      }).start(({ finished }) => {
+        if (!finished) {
+          return;
+        }
+
+        specialsCurtainProgressRef.current = 1;
+        setSpecialsCurtainInteractive(false);
+
+        if (Platform.OS !== 'web') {
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        }
+
+        specialsCurtainClearTimeoutRef.current = setTimeout(() => {
+          hideSpecialsCurtain();
+          setSpecialsCurtainPeekState(INITIAL_CURTAIN_PEEK_STATE);
+          setTypeFilters('special', {
+            category: undefined,
+            timeFilter: TimeFilterType.TODAY
+          });
+        }, CURTAIN_CLEAR_HOLD_MS);
+      });
+    } else {
+      Animated.parallel([
+        Animated.spring(specialsCurtainSlideAnim, {
+          toValue: peekProgress,
+          friction: 8,
+          tension: 70,
+          useNativeDriver: false
+        }),
+        Animated.spring(specialsCurtainDragAnim, {
+          toValue: 0,
+          friction: 8,
+          tension: 80,
+          useNativeDriver: false
+        })
+      ]).start(() => {
+        specialsCurtainProgressRef.current = peekProgress;
+        scheduleSpecialsCurtainPeekAutoHide();
+      });
+    }
+  };
+
+  const specialsCurtainPanResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () =>
+        specialsCurtainIsInteractiveRef.current && specialsPillHasActiveFiltersRef.current,
+      onMoveShouldSetPanResponder: (_evt, gestureState) =>
+        gestureState.dx < -5 &&
+        specialsCurtainIsInteractiveRef.current &&
+        specialsPillHasActiveFiltersRef.current,
+      onStartShouldSetPanResponderCapture: () =>
+        specialsCurtainIsInteractiveRef.current && specialsPillHasActiveFiltersRef.current,
+      onMoveShouldSetPanResponderCapture: (_evt, gestureState) =>
+        gestureState.dx < -5 &&
+        specialsCurtainIsInteractiveRef.current &&
+        specialsPillHasActiveFiltersRef.current,
+      onPanResponderGrant: () => {
+        specialsCurtainSwipeActive.current = true;
+        stopSpecialsCurtainPeekAnimation();
+        clearSpecialsCurtainPeekAutoHideTimeout();
+
+        specialsCurtainSlideAnim.stopAnimation((value) => {
+          specialsCurtainProgressRef.current = value;
+        });
+        specialsCurtainDragAnim.stopAnimation();
+        specialsCurtainDragAnim.setValue(0);
+      },
+      onPanResponderMove: (_evt, gestureState) => {
+        if (!specialsCurtainSwipeActive.current) return;
+
+        const dragOffset = Math.max(0, -gestureState.dx);
+        specialsCurtainDragAnim.setValue(dragOffset);
+      },
+      onPanResponderRelease: (_evt, gestureState) => {
+        if (!specialsCurtainSwipeActive.current) return;
+
+        handleSpecialsCurtainRelease(gestureState);
+        specialsCurtainSwipeActive.current = false;
+      },
+      onPanResponderTerminate: () => {
+        Animated.spring(specialsCurtainDragAnim, {
+          toValue: 0,
+          friction: 8,
+          tension: 80,
+          useNativeDriver: false
+        }).start(() => {
+          scheduleSpecialsCurtainPeekAutoHide();
+        });
+
+        specialsCurtainSwipeActive.current = false;
+      },
+      onPanResponderTerminationRequest: () => false,
+      onShouldBlockNativeResponder: () => true
+    })
+  ).current;
+
+  const handleCurtainRelease = (gestureState: PanResponderGestureState) => {
+    if (!curtainSwipeActive.current) return;
+
+    const { pillWidth, peekProgress } = getCurtainMetrics();
+    const dragOffset = Math.max(0, -gestureState.dx);
+    const baseCoverage = getCurtainCoverageForProgress(curtainProgressRef.current || peekProgress);
+    const totalCoverage = Math.max(CURTAIN_HANDLE_WIDTH, Math.min(pillWidth, baseCoverage + dragOffset));
+    const shouldSnapClosed = totalCoverage >= pillWidth - CURTAIN_SNAP_TOLERANCE_PX;
+
+    if (shouldSnapClosed) {
+      const snapProgress = getCurtainProgressForCoverage(totalCoverage);
+
+      curtainSlideAnim.setValue(snapProgress);
+      curtainDragAnim.setValue(0);
+      curtainProgressRef.current = snapProgress;
+
+      Animated.spring(curtainSlideAnim, {
+        toValue: 1,
+        friction: 7,
+        tension: 90,
+        useNativeDriver: false
+      }).start(({ finished }) => {
+        if (!finished) {
+          return;
+        }
+
+        curtainProgressRef.current = 1;
+        setCurtainInteractive(false);
+
+        if (Platform.OS !== 'web') {
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        }
+
+        curtainClearTimeoutRef.current = setTimeout(() => {
+          resetEventsCurtainPeekSequence();
+          setTypeFilters('event', {
+            category: undefined,
+            timeFilter: TimeFilterType.TODAY
+          });
+        }, CURTAIN_CLEAR_HOLD_MS);
+      });
+    } else {
+      Animated.parallel([
+        Animated.spring(curtainSlideAnim, {
+          toValue: peekProgress,
+          friction: 8,
+          tension: 70,
+          useNativeDriver: false
+        }),
+        Animated.spring(curtainDragAnim, {
+          toValue: 0,
+          friction: 8,
+          tension: 80,
+          useNativeDriver: false
+        })
+      ]).start(() => {
+        curtainProgressRef.current = peekProgress;
+        scheduleCurtainPeekAutoHide();
+      });
+    }
+  };
+
+  // Create PanResponder for curtain swipe-to-clear gesture
+  const curtainPanResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => {
+        // Only activate if curtain is visible and settled
+        // This ensures we only capture gestures when curtain is fully visible
+        const shouldActivate = curtainIsInteractiveRef.current && eventsPillHasActiveFiltersRef.current;
+        if (shouldActivate) {
+          console.log('👆 PanResponder START should set: YES - curtain is visible');
+        }
+        return shouldActivate;
+      },
+      onMoveShouldSetPanResponder: (_evt, gestureState) => {
+        // Activate on leftward drag when curtain is visible.
+        const shouldActivate = gestureState.dx < -5 && curtainIsInteractiveRef.current && eventsPillHasActiveFiltersRef.current;
+        if (shouldActivate) {
+          console.log('👆 PanResponder MOVE should set: YES - drag detected, dx=' + gestureState.dx);
+        }
+        return shouldActivate;
+      },
+      onStartShouldSetPanResponderCapture: () =>
+        curtainIsInteractiveRef.current && eventsPillHasActiveFiltersRef.current,
+      onMoveShouldSetPanResponderCapture: (_evt, gestureState) =>
+        gestureState.dx < -5 && curtainIsInteractiveRef.current && eventsPillHasActiveFiltersRef.current,
+      onPanResponderGrant: (_evt, _gestureState) => {
+        console.log('👆 Curtain swipe started');
+        curtainSwipeActive.current = true;
+        stopCurtainPeekAnimation();
+        clearCurtainPeekAutoHideTimeout();
+
+        // Stop the automatic peek animation so user has full control
+        curtainSlideAnim.stopAnimation((value) => {
+          curtainProgressRef.current = value;
+        });
+        curtainDragAnim.stopAnimation();
+        curtainDragAnim.setValue(0);
+      },
+      onPanResponderMove: (_evt, gestureState) => {
+        if (!curtainSwipeActive.current) return;
+
+        // Dragging left increases the curtain coverage across the pill.
+        const dragOffset = Math.max(0, -gestureState.dx);
+        curtainDragAnim.setValue(dragOffset);
+
+        // Log every 10px to see drag progress
+        if (Math.floor(dragOffset / 10) !== Math.floor((dragOffset - 1) / 10)) {
+          console.log(`👉 Dragging curtain: ${Math.floor(dragOffset)}px`);
+        }
+
+      },
+      onPanResponderRelease: (_evt, gestureState) => {
+        if (!curtainSwipeActive.current) return;
+        handleCurtainRelease(gestureState);
+        curtainSwipeActive.current = false;
+        return;
+        /*
+        console.log(`👋 Curtain swipe released: dx=${dragOffset}px, threshold=${CURTAIN_SWIPE_THRESHOLD}px`);
+
+        if (shouldSnapClosed) {
+          // User swiped far enough - CLEAR THE FILTERS
+          console.log('✅ Curtain swipe successful - clearing event filters');
+
+          // Animate curtain sliding all the way off-screen
+          Animated.parallel([
+            Animated.timing(curtainSlideAnim, {
+              toValue: 0,
+              duration: 300,
+              useNativeDriver: true,
+              easing: Easing.out(Easing.cubic)
+            }),
+            Animated.timing(curtainDragAnim, {
+              toValue: 0,
+              duration: 300,
+              useNativeDriver: true
+            })
+          ]).start(() => {
+            // Clear category AND reset time filter to TODAY
+            console.log('🧹 Clearing event filters: category → undefined, timeFilter → TODAY');
+
+            // Reset curtain state
+            hideCurtain();
+            setCurtainPeekState({ lastPeekTime: 0, peekCount: 0, isActive: false });
+
+            setTypeFilters('event', {
+              category: undefined,
+              timeFilter: TimeFilterType.TODAY
+            });
+          });
+        } else {
+          // User didn't swipe far enough - snap back
+          console.log('↩️ Curtain swipe cancelled - snapping back');
+          Animated.spring(curtainDragAnim, {
+            toValue: 0,
+            friction: 8,
+            tension: 80,
+            useNativeDriver: true
+          }).start();
+        }
+
+        curtainSwipeActive.current = false;
+      },
+      onPanResponderTerminate: (evt, gestureState) => {
+        // Gesture was interrupted - snap back
+        console.log('⚠️ Curtain swipe interrupted');
+        Animated.spring(curtainDragAnim, {
+          toValue: 0,
+          friction: 8,
+          tension: 80,
+          useNativeDriver: true
+        }).start();
+        curtainSwipeActive.current = false;
+        */
+      },
+      onPanResponderTerminationRequest: () => false,
+      onShouldBlockNativeResponder: () => true
+    })
+  ).current;
 
   const startEventsHoldToArmClear = () => {
     if (!eventsPillHasActiveFilters) {
@@ -272,7 +1119,7 @@ React.useEffect(() => {
     }
     return () => tutorialPulseAnim.stopAnimation();
   }, [tutorialHighlight, tutorialPulseAnim]);
-  
+
   // Calculate counts from ONLY viewport data - updates as viewport changes
   const eventsData = useMemo(() => {
     return onScreenEvents.filter(e => e.type === 'event');
@@ -312,9 +1159,80 @@ React.useEffect(() => {
   // During a transition, treat the "target" panel as active for pointerEvents/zIndex logic
   const effectivePanel =
     isSwitchingPanels.current && switchingToPanel.current ? switchingToPanel.current : activePanel;
+  const showFilterOverlay = !!effectivePanel;
+  const showEventsPanel = effectivePanel === 'events';
+  const showSpecialsPanel = effectivePanel === 'specials';
+
+  React.useEffect(() => {
+    traceMapEvent('filter_panel_visual_state_changed', {
+      activePanel: activePanel ?? 'none',
+      effectivePanel: effectivePanel ?? 'none',
+      eventsOpacity: readAnimatedValue(eventsPanelOpacity),
+      specialsOpacity: readAnimatedValue(specialsPanelOpacity),
+      overlayOpacity: readAnimatedValue(overlayOpacity),
+    });
+
+    const sampleDelays = [100, 300, 700, 1500];
+    const timeouts = sampleDelays.map((delayMs) =>
+      setTimeout(() => {
+        traceMapEvent('filter_panel_visual_value_sampled', {
+          delayMs,
+          activePanel: activePanel ?? 'none',
+          effectivePanel: effectivePanel ?? 'none',
+          eventsOpacity: readAnimatedValue(eventsPanelOpacity),
+          specialsOpacity: readAnimatedValue(specialsPanelOpacity),
+          overlayOpacity: readAnimatedValue(overlayOpacity),
+        });
+      }, delayMs)
+    );
+
+    return () => {
+      timeouts.forEach(clearTimeout);
+    };
+  }, [activePanel, effectivePanel, eventsPanelOpacity, specialsPanelOpacity, overlayOpacity]);
+
+  React.useEffect(() => {
+    return registerMapTraceSampler('filter_pills', () => ({
+      activePanel: activePanel ?? 'none',
+      effectivePanel: effectivePanel ?? 'none',
+      eventsOpacity: readAnimatedValue(eventsPanelOpacity),
+      specialsOpacity: readAnimatedValue(specialsPanelOpacity),
+      overlayOpacity: readAnimatedValue(overlayOpacity),
+      eventsClearArmed,
+      specialsClearArmed,
+      curtainPeekActive: curtainPeekState.isActive,
+      specialsCurtainPeekActive: specialsCurtainPeekState.isActive,
+      curtainInteractive: curtainIsInteractive,
+      specialsCurtainInteractive: specialsCurtainIsInteractive,
+      eventTimeFilter: filterCriteria.eventFilters.timeFilter,
+      specialTimeFilter: filterCriteria.specialFilters.timeFilter,
+      eventCategory: filterCriteria.eventFilters.category ?? 'none',
+      specialCategory: filterCriteria.specialFilters.category ?? 'none',
+    }));
+  }, [
+    activePanel,
+    curtainIsInteractive,
+    curtainPeekState.isActive,
+    effectivePanel,
+    eventsClearArmed,
+    eventsPanelOpacity,
+    filterCriteria.eventFilters.category,
+    filterCriteria.eventFilters.timeFilter,
+    filterCriteria.specialFilters.category,
+    filterCriteria.specialFilters.timeFilter,
+    overlayOpacity,
+    specialsClearArmed,
+    specialsCurtainIsInteractive,
+    specialsCurtainPeekState.isActive,
+    specialsPanelOpacity,
+  ]);
 
   // Main toggle function - handles ALL scenarios
   const togglePanel = (panel: 'events' | 'specials' | null) => {
+    traceMapEvent('filter_panel_toggle_requested', {
+      requestedPanel: panel ?? 'none',
+      currentActivePanel: activePanel ?? 'none',
+    });
     console.log('🎯 togglePanel called:', { 
       requestedPanel: panel, 
       currentActivePanel: activePanel,
@@ -375,6 +1293,12 @@ React.useEffect(() => {
       } else {
         // OPEN Events (no panel currently open)
         console.log('✅ OPEN Events - No panel was open');
+
+        // Cancel curtain animation if active
+        if (curtainPeekAnimActive.current || curtainPeekState.isActive || curtainIsInteractiveRef.current) {
+          hideCurtain();
+        }
+
         setActivePanel('events');
         Animated.parallel([
           Animated.timing(eventsPanelOpacity, { toValue: 1, duration: 150, useNativeDriver: true }),
@@ -504,17 +1428,73 @@ React.useEffect(() => {
     return 'category';
    };
   
+  // Events pill has "clearable" active filters if:
+  // 1. A category is selected (any visible category), OR
+  // 2. Time filter is NOT "Today" (i.e., Now, Tomorrow, or Upcoming)
+  // This prevents the clear animation from showing on app startup when only "Today" is selected
   const eventsPillHasActiveFilters =
     filterCriteria.showEvents &&
     !isSentinelCategory(filterCriteria.eventFilters.category) &&
-    (filterCriteria.eventFilters.timeFilter !== TimeFilterType.ALL ||
-      isVisibleCategory(filterCriteria.eventFilters.category));
+    (isVisibleCategory(filterCriteria.eventFilters.category) ||
+     filterCriteria.eventFilters.timeFilter !== TimeFilterType.TODAY);
 
   const specialsPillHasActiveFilters =
     filterCriteria.showSpecials &&
     !isSentinelCategory(filterCriteria.specialFilters.category) &&
-    (filterCriteria.specialFilters.timeFilter !== TimeFilterType.ALL ||
+    (filterCriteria.specialFilters.timeFilter !== TimeFilterType.TODAY ||
       isVisibleCategory(filterCriteria.specialFilters.category));
+
+  React.useEffect(() => {
+    eventsPillHasActiveFiltersRef.current = eventsPillHasActiveFilters;
+    specialsPillHasActiveFiltersRef.current = specialsPillHasActiveFilters;
+  }, [eventsPillHasActiveFilters, specialsPillHasActiveFilters]);
+
+  const eventsPeekFilterSignature = [
+    filterCriteria.showEvents ? '1' : '0',
+    filterCriteria.eventFilters.timeFilter,
+    isSentinelCategory(filterCriteria.eventFilters.category) ? '' : (filterCriteria.eventFilters.category ?? '')
+  ].join('|');
+  const specialsPeekFilterSignature = [
+    filterCriteria.showSpecials ? '1' : '0',
+    filterCriteria.specialFilters.timeFilter,
+    isSentinelCategory(filterCriteria.specialFilters.category) ? '' : (filterCriteria.specialFilters.category ?? '')
+  ].join('|');
+  const { resetPeekSequence: resetEventsCurtainPeekSequence } = useCurtainPeekTiming({
+    canTriggerPeek:
+      eventsPillHasActiveFilters &&
+      !curtainPeekAnimActive.current &&
+      !eventsClearArmedRef.current,
+    enabled: eventsPillHasActiveFilters,
+    filterSignature: eventsPeekFilterSignature,
+    firstPeekDelayMaxMs: 5000,
+    firstPeekDelayMinMs: 3000,
+    hidePeek: hideCurtain,
+    logLabel: 'Events curtain',
+    onTriggerPeek: triggerCurtainPeekAnimation,
+    panelOpen: activePanel === 'events',
+    peekState: curtainPeekState,
+    repeatPeekDelayMaxMs: 120000,
+    repeatPeekDelayMinMs: 60000,
+    setPeekState: setCurtainPeekState
+  });
+  useCurtainPeekTiming({
+    canTriggerPeek:
+      specialsPillHasActiveFilters &&
+      !specialsCurtainPeekAnimActive.current &&
+      !specialsClearArmedRef.current,
+    enabled: SPECIALS_CURTAIN_TIMING_ENABLED && specialsPillHasActiveFilters,
+    filterSignature: specialsPeekFilterSignature,
+    firstPeekDelayMaxMs: 5000,
+    firstPeekDelayMinMs: 3000,
+    hidePeek: hideSpecialsCurtain,
+    logLabel: 'Specials curtain',
+    onTriggerPeek: triggerSpecialsCurtainPeekAnimation,
+    panelOpen: activePanel === 'specials',
+    peekState: specialsCurtainPeekState,
+    repeatPeekDelayMaxMs: 120000,
+    repeatPeekDelayMinMs: 60000,
+    setPeekState: setSpecialsCurtainPeekState
+  });
 
   React.useEffect(() => {
     if (eventsClearArmedRef.current && !eventsPillHasActiveFilters) {
@@ -526,6 +1506,68 @@ React.useEffect(() => {
   }, [eventsPillHasActiveFilters, specialsPillHasActiveFilters]);
   
   const viewRef = useRef<View>(null);
+  const {
+    pillWidth: curtainPillWidth,
+    travelDistance: curtainTravelDistance
+  } = getCurtainMetrics();
+  const {
+    pillWidth: specialsCurtainPillWidth,
+    travelDistance: specialsCurtainTravelDistance
+  } = getSpecialsCurtainMetrics();
+  const curtainContentLockLeft = Math.max(
+    CURTAIN_CONTENT_START_X,
+    (curtainPillWidth / 2) - CURTAIN_CONTENT_LOCK_HALF_WIDTH
+  );
+  const curtainContentLockCoverage = Math.min(
+    curtainPillWidth - 1,
+    Math.max(
+      CURTAIN_HANDLE_WIDTH + 1,
+      curtainPillWidth + CURTAIN_CONTENT_START_X - curtainContentLockLeft
+    )
+  );
+  const curtainContentLockOffset = Math.max(
+    0,
+    curtainPillWidth - curtainContentLockCoverage
+  );
+  const curtainCoverageAnim = Animated.add(
+    curtainSlideAnim.interpolate({
+      inputRange: [0, 1],
+      outputRange: [CURTAIN_HANDLE_WIDTH, curtainPillWidth]
+    }),
+    curtainDragAnim
+  );
+  const specialsCurtainContentLockLeft = Math.max(
+    CURTAIN_CONTENT_START_X,
+    (specialsCurtainPillWidth / 2) - CURTAIN_CONTENT_LOCK_HALF_WIDTH
+  );
+  const specialsCurtainContentLockCoverage = Math.min(
+    specialsCurtainPillWidth - 1,
+    Math.max(
+      CURTAIN_HANDLE_WIDTH + 1,
+      specialsCurtainPillWidth + CURTAIN_CONTENT_START_X - specialsCurtainContentLockLeft
+    )
+  );
+  const specialsCurtainContentLockOffset = Math.max(
+    0,
+    specialsCurtainPillWidth - specialsCurtainContentLockCoverage
+  );
+  const specialsCurtainCoverageAnim = Animated.add(
+    specialsCurtainSlideAnim.interpolate({
+      inputRange: [0, 1],
+      outputRange: [CURTAIN_HANDLE_WIDTH, specialsCurtainPillWidth]
+    }),
+    specialsCurtainDragAnim
+  );
+  const eventsPillTrailingContentOpacity = curtainSlideAnim.interpolate({
+    inputRange: [0, 0.12, 0.28, 1],
+    outputRange: [1, 1, 0, 0],
+    extrapolate: 'clamp'
+  });
+  const specialsPillTrailingContentOpacity = specialsCurtainSlideAnim.interpolate({
+    inputRange: [0, 0.12, 0.28, 1],
+    outputRange: [1, 1, 0, 0],
+    extrapolate: 'clamp'
+  });
 
   return (
     <View style={[styles.container, tutorialHighlight && { zIndex: 99999 }]}>
@@ -557,6 +1599,7 @@ React.useEffect(() => {
       >
         {/* Events Pill */}
         <TouchableOpacity
+          disabled={curtainPeekState.isActive}
           style={[
             styles.pill,
             styles.eventsPill,
@@ -564,10 +1607,12 @@ React.useEffect(() => {
             activePanel === 'events' && styles.activePill,
           ]}
           onLayout={(e) => {
-            const width = e?.nativeEvent?.layout?.width ?? 0;
+            const { x, y, width, height } = e.nativeEvent.layout;
             if (width && width !== eventsPillWidth) {
               setEventsPillWidth(width);
             }
+            // Capture full layout for curtain positioning
+            setEventsPillLayout({ x, y, width, height });
           }}
           onPress={() => {
             if (eventsClearArmed) {
@@ -590,6 +1635,7 @@ React.useEffect(() => {
               },
             ]}
           />
+          {/* Curtain removed from here - now rendered as sibling below */}
           {eventsClearArmed ? (
             <View style={styles.clearConfirmContainer}>
               <Ionicons
@@ -622,65 +1668,78 @@ React.useEffect(() => {
                   style={styles.categoryIconInPill}
                 />
               )}
-              <Text numberOfLines={1} style={[styles.pillText, !filterCriteria.showEvents && styles.inactiveText]}>
-                {filterCriteria.showEvents ? visibleEvents : 0}/{totalEvents}
-              </Text>
+              <Animated.View
+                style={{
+                  opacity: eventsPillTrailingContentOpacity
+                }}
+              >
+                <Text numberOfLines={1} style={[styles.pillText, !filterCriteria.showEvents && styles.inactiveText]}>
+                  {filterCriteria.showEvents ? visibleEvents : 0}/{totalEvents}
+                </Text>
+              </Animated.View>
             </>
           )}
-          <TouchableOpacity 
-            style={[
-              styles.filterIcon,
-              styles.filterIconContainer,
-              eventsPillHasActiveFilters && styles.filterIconContainerActive
-            ]}
-            delayLongPress={150}
-            onLongPress={() => {
-              if (eventsClearArmedRef.current) {
-                cancelEventsClearArmed('long-press-while-armed');
-                return;
-              }
-              startEventsHoldToArmClear();
+          <Animated.View
+            style={{
+              opacity: eventsPillTrailingContentOpacity
             }}
-            onPressOut={() => {
-              if (eventsClearHoldInProgressRef.current && !eventsClearArmedRef.current) {
-                cancelEventsClearArmed('released-before-armed', false);
-              }
-            }}
-            onPress={() => {
-              if (eventsClearSuppressNextChevronPressRef.current) {
-                console.log('🛑 Suppressing Events chevron press (hold gesture consumed it)');
-                eventsClearSuppressNextChevronPressRef.current = false;
-                return;
-              }
-
-              if (eventsClearArmedRef.current) {
-                console.log('🧯 Events chevron pressed while armed → cancel + open panel');
-                cancelEventsClearArmed('open-panel');
-                togglePanel('events');
-                return;
-              }
-
-              togglePanel('events');
-            }}
-            hitSlop={{ top: 10, right: 10, bottom: 10, left: 10 }}
           >
-            <Ionicons 
-              name={activePanel === 'events' ? "chevron-up" : "chevron-down"}
-              size={14} 
-              color={
-                !filterCriteria.showEvents
-                  ? "#ccc"
-                  : (eventsPillHasActiveFilters ? "#FF3B30" : "white")
-              } 
-            />
-            {eventsPillHasActiveFilters && (
-              <View pointerEvents="none" style={styles.activeFilterDot} />
-            )}
-          </TouchableOpacity>
+            <TouchableOpacity
+              style={[
+                styles.filterIcon,
+                styles.filterIconContainer,
+                eventsPillHasActiveFilters && styles.filterIconContainerActive
+              ]}
+              delayLongPress={150}
+              onLongPress={() => {
+                if (eventsClearArmedRef.current) {
+                  cancelEventsClearArmed('long-press-while-armed');
+                  return;
+                }
+                startEventsHoldToArmClear();
+              }}
+              onPressOut={() => {
+                if (eventsClearHoldInProgressRef.current && !eventsClearArmedRef.current) {
+                  cancelEventsClearArmed('released-before-armed', false);
+                }
+              }}
+              onPress={() => {
+                if (eventsClearSuppressNextChevronPressRef.current) {
+                  console.log('🛑 Suppressing Events chevron press (hold gesture consumed it)');
+                  eventsClearSuppressNextChevronPressRef.current = false;
+                  return;
+                }
+
+                if (eventsClearArmedRef.current) {
+                  console.log('🧯 Events chevron pressed while armed → cancel + open panel');
+                  cancelEventsClearArmed('open-panel');
+                  togglePanel('events');
+                  return;
+                }
+
+                togglePanel('events');
+              }}
+              hitSlop={{ top: 10, right: 10, bottom: 10, left: 10 }}
+            >
+              <Ionicons
+                name={activePanel === 'events' ? "chevron-up" : "chevron-down"}
+                size={14}
+                color={
+                  !filterCriteria.showEvents
+                    ? "#ccc"
+                    : (eventsPillHasActiveFilters ? "#FF3B30" : "white")
+                }
+              />
+              {eventsPillHasActiveFilters && (
+                <View pointerEvents="none" style={styles.activeFilterDot} />
+              )}
+            </TouchableOpacity>
+          </Animated.View>
         </TouchableOpacity>
-        
+
         {/* Specials Pill */}
-<TouchableOpacity 
+        <TouchableOpacity 
+          disabled={specialsCurtainPeekState.isActive}
           style={[
             styles.pill, 
             styles.specialsPill,
@@ -688,8 +1747,9 @@ React.useEffect(() => {
             activePanel === 'specials' && styles.activePill,
           ]}
           onLayout={(e) => {
-            const width = e?.nativeEvent?.layout?.width ?? 0;
+            const { x, y, width, height } = e.nativeEvent.layout;
             if (width && width !== specialsPillWidth) setSpecialsPillWidth(width);
+            setSpecialsPillLayout({ x, y, width, height });
           }}
           onPress={() => {
             if (specialsClearArmed) {
@@ -737,59 +1797,213 @@ React.useEffect(() => {
                   style={styles.categoryIconInPill}
                 />
               )}
-              <Text numberOfLines={1} style={[styles.pillText, !filterCriteria.showSpecials && styles.inactiveText]}>
-                {filterCriteria.showSpecials ? visibleSpecials : 0}/{totalSpecials}
-              </Text>
+              <Animated.View
+                style={{
+                  opacity: specialsPillTrailingContentOpacity
+                }}
+              >
+                <Text numberOfLines={1} style={[styles.pillText, !filterCriteria.showSpecials && styles.inactiveText]}>
+                  {filterCriteria.showSpecials ? visibleSpecials : 0}/{totalSpecials}
+                </Text>
+              </Animated.View>
             </>
           )}
-          <TouchableOpacity 
-            style={[
-              styles.filterIcon,
-              styles.filterIconContainer,
-              specialsPillHasActiveFilters && styles.filterIconContainerActive
-            ]}
-            delayLongPress={150}
-            onLongPress={() => {
-              if (specialsClearArmedRef.current) {
-                cancelSpecialsClearArmed('long-press-while-armed');
-                return;
-              }
-              startSpecialsHoldToArmClear();
+          <Animated.View
+            style={{
+              opacity: specialsPillTrailingContentOpacity
             }}
-            onPressOut={() => {
-              if (specialsClearHoldInProgressRef.current && !specialsClearArmedRef.current) {
-                cancelSpecialsClearArmed('released-before-armed', false);
-              }
-            }}
-            onPress={() => {
-              if (specialsClearSuppressNextChevronPressRef.current) {
-                specialsClearSuppressNextChevronPressRef.current = false;
-                return;
-              }
-              if (specialsClearArmedRef.current) {
-                cancelSpecialsClearArmed('open-panel');
-                togglePanel('specials');
-                return;
-              }
-              togglePanel('specials');
-            }}
-            hitSlop={{ top: 10, right: 10, bottom: 10, left: 10 }}
           >
-            <Ionicons 
-              name={activePanel === 'specials' ? "chevron-up" : "chevron-down"} 
-              size={14} 
-              color={!filterCriteria.showSpecials ? "#ccc" : (specialsPillHasActiveFilters ? "#FF3B30" : "white")} 
-            />
-            {specialsPillHasActiveFilters && (
-              <View pointerEvents="none" style={styles.activeFilterDot} />
-            )}
-          </TouchableOpacity>
+            <TouchableOpacity 
+              style={[
+                styles.filterIcon,
+                styles.filterIconContainer,
+                specialsPillHasActiveFilters && styles.filterIconContainerActive
+              ]}
+              delayLongPress={150}
+              onLongPress={() => {
+                if (specialsClearArmedRef.current) {
+                  cancelSpecialsClearArmed('long-press-while-armed');
+                  return;
+                }
+                startSpecialsHoldToArmClear();
+              }}
+              onPressOut={() => {
+                if (specialsClearHoldInProgressRef.current && !specialsClearArmedRef.current) {
+                  cancelSpecialsClearArmed('released-before-armed', false);
+                }
+              }}
+              onPress={() => {
+                if (specialsClearSuppressNextChevronPressRef.current) {
+                  specialsClearSuppressNextChevronPressRef.current = false;
+                  return;
+                }
+                if (specialsClearArmedRef.current) {
+                  cancelSpecialsClearArmed('open-panel');
+                  togglePanel('specials');
+                  return;
+                }
+                togglePanel('specials');
+              }}
+              hitSlop={{ top: 10, right: 10, bottom: 10, left: 10 }}
+            >
+              <Ionicons 
+                name={activePanel === 'specials' ? "chevron-up" : "chevron-down"} 
+                size={14} 
+                color={!filterCriteria.showSpecials ? "#ccc" : (specialsPillHasActiveFilters ? "#FF3B30" : "white")} 
+              />
+              {specialsPillHasActiveFilters && (
+                <View pointerEvents="none" style={styles.activeFilterDot} />
+              )}
+            </TouchableOpacity>
+          </Animated.View>
         </TouchableOpacity>
       </Animated.View>
-      
-      {/* Background Overlay - Always rendered */}
+
+      {/* Red Curtain Overlay - Rendered as sibling for proper touch handling */}
+      {curtainPeekState.isActive && (
+        <Animated.View
+          {...curtainPanResponder.panHandlers}
+          pointerEvents="box-only"
+          onTouchStart={() => {
+            console.log('🖐️ Touch detected on curtain overlay (sibling)!');
+            console.log('   curtainIsInteractive:', curtainIsInteractive);
+            console.log('   curtainVisible:', curtainPeekState.isActive);
+          }}
+          style={[
+            {
+              position: 'absolute',
+              zIndex: 30,
+              elevation: 30,
+              top: eventsPillLayout.y,
+              left: eventsPillLayout.x,
+              height: eventsPillLayout.height,
+              width: curtainPillWidth,
+              borderRadius: 16,
+              overflow: 'hidden',
+            }
+          ]}
+        >
+          <Animated.View
+            pointerEvents="none"
+            style={[
+              styles.redCurtainOverlay,
+              {
+                height: eventsPillLayout.height,
+                width: curtainPillWidth,
+                transform: [
+                  {
+                    translateX: Animated.add(
+                      curtainSlideAnim.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: [curtainTravelDistance, 0]
+                      }),
+                      Animated.multiply(curtainDragAnim, -1)
+                    )
+                  }
+                ]
+              }
+            ]}
+          >
+            <Animated.View
+              pointerEvents="none"
+              style={[
+                styles.curtainContentContainer,
+                {
+                  left: CURTAIN_CONTENT_START_X,
+                  transform: [
+                    {
+                      translateX: curtainCoverageAnim.interpolate({
+                        inputRange: [curtainContentLockCoverage, curtainPillWidth],
+                        outputRange: [0, curtainContentLockOffset],
+                        extrapolate: 'clamp'
+                      })
+                    }
+                  ]
+                }
+              ]}
+            >
+              <View style={styles.grabHandle}>
+                <View style={styles.grabHandleLine} />
+                <View style={styles.grabHandleLine} />
+                <View style={styles.grabHandleLine} />
+              </View>
+              <Text style={styles.curtainClearText}>Clear</Text>
+            </Animated.View>
+          </Animated.View>
+        </Animated.View>
+      )}
+
+      {specialsCurtainPeekState.isActive && (
+        <Animated.View
+          {...specialsCurtainPanResponder.panHandlers}
+          pointerEvents="box-only"
+          style={[
+            {
+              position: 'absolute',
+              zIndex: 30,
+              elevation: 30,
+              top: specialsPillLayout.y,
+              left: specialsPillLayout.x,
+              height: specialsPillLayout.height,
+              width: specialsCurtainPillWidth,
+              borderRadius: 16,
+              overflow: 'hidden',
+            }
+          ]}
+        >
+          <Animated.View
+            pointerEvents="none"
+            style={[
+              styles.redCurtainOverlay,
+              {
+                height: specialsPillLayout.height,
+                width: specialsCurtainPillWidth,
+                transform: [
+                  {
+                    translateX: Animated.add(
+                      specialsCurtainSlideAnim.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: [specialsCurtainTravelDistance, 0]
+                      }),
+                      Animated.multiply(specialsCurtainDragAnim, -1)
+                    )
+                  }
+                ]
+              }
+            ]}
+          >
+            <Animated.View
+              pointerEvents="none"
+              style={[
+                styles.curtainContentContainer,
+                {
+                  left: CURTAIN_CONTENT_START_X,
+                  transform: [
+                    {
+                      translateX: specialsCurtainCoverageAnim.interpolate({
+                        inputRange: [specialsCurtainContentLockCoverage, specialsCurtainPillWidth],
+                        outputRange: [0, specialsCurtainContentLockOffset],
+                        extrapolate: 'clamp'
+                      })
+                    }
+                  ]
+                }
+              ]}
+            >
+              <View style={styles.grabHandle}>
+                <View style={styles.grabHandleLine} />
+                <View style={styles.grabHandleLine} />
+                <View style={styles.grabHandleLine} />
+              </View>
+              <Text style={styles.curtainClearText}>Clear</Text>
+            </Animated.View>
+          </Animated.View>
+        </Animated.View>
+      )}
+
+      {showFilterOverlay && (
       <Animated.View
-        pointerEvents={effectivePanel ? 'auto' : 'none'}
+        pointerEvents="auto"
         style={[styles.filterBackgroundOverlay, { opacity: overlayOpacity }]}
       >
         <TouchableOpacity 
@@ -801,10 +2015,11 @@ React.useEffect(() => {
           }} 
         />
       </Animated.View>
+      )}
 
-      {/* Events Panel - Always rendered */}
+      {showEventsPanel && (
       <Animated.View
-        pointerEvents={effectivePanel === 'events' ? 'auto' : 'none'}
+        pointerEvents="auto"
         style={[styles.filterPanel, { opacity: eventsPanelOpacity }]}
       >
         <LinearGradient
@@ -853,11 +2068,11 @@ React.useEffect(() => {
           <CategoryFilterOptions type="event" counts={getCategoryFilterCounts('event')} />
         </View>
       </Animated.View>
+      )}
 
-      {/* Specials Panel - Always rendered */}
+      {showSpecialsPanel && (
       <Animated.View
-        pointerEvents={effectivePanel === 'specials' ? 'auto' : 'none'}
-
+        pointerEvents="auto"
         style={[styles.filterPanel, { opacity: specialsPanelOpacity }]}
       >
         <LinearGradient
@@ -879,8 +2094,8 @@ React.useEffect(() => {
         <View style={styles.filterSection}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>When</Text>
-            {filterCriteria.specialFilters.timeFilter !== TimeFilterType.ALL && (
-              <TouchableOpacity onPress={() => setTypeFilters('special', { timeFilter: TimeFilterType.ALL })}>
+            {filterCriteria.specialFilters.timeFilter !== TimeFilterType.TODAY && (
+              <TouchableOpacity onPress={() => setTypeFilters('special', { timeFilter: TimeFilterType.TODAY })}>
                 <Text style={styles.clearText}>Clear</Text>
               </TouchableOpacity>
             )}
@@ -888,7 +2103,10 @@ React.useEffect(() => {
           <TimeFilterOptions 
             selected={filterCriteria.specialFilters.timeFilter}
             onSelect={(timeFilter) => {
-              const newFilter = filterCriteria.specialFilters.timeFilter === timeFilter ? TimeFilterType.ALL : timeFilter;
+              const newFilter =
+                filterCriteria.specialFilters.timeFilter === timeFilter
+                  ? TimeFilterType.TODAY
+                  : timeFilter;
               setTypeFilters('special', { timeFilter: newFilter });
             }}
             counts={getTimeFilterCounts('special')}
@@ -906,6 +2124,7 @@ React.useEffect(() => {
           <CategoryFilterOptions type="special" counts={getCategoryFilterCounts('special')} />
         </View>
       </Animated.View>
+      )}
     </View>
   );
 };
@@ -1065,9 +2284,6 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
     borderRadius: 12,
-    ...(Platform.OS === 'ios' && {
-      backdropFilter: 'blur(10px)',
-    }),
   },
   panelHeader: {
     flexDirection: 'row',
@@ -1138,6 +2354,49 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     fontSize: 10,
     lineHeight: 11,
+  },
+  redCurtainOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(176, 0, 32, 0.92)', // Same red as hold-to-clear
+    borderTopLeftRadius: 16,
+    borderBottomLeftRadius: 16,
+    borderTopRightRadius: 16,
+    borderBottomRightRadius: 16,
+    justifyContent: 'center',
+    minWidth: 80, // Ensure it covers counts + chevron area
+    // Add left border to indicate separation/draggability
+    borderLeftWidth: 2,
+    borderLeftColor: 'rgba(255, 255, 255, 0.3)',
+  },
+  curtainContentContainer: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    zIndex: 2,
+  },
+  grabHandle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 2,
+  },
+  grabHandleLine: {
+    width: 2,
+    height: 12,
+    backgroundColor: 'rgba(255, 255, 255, 0.6)',
+    borderRadius: 1,
+  },
+  curtainClearText: {
+    fontSize: 12,
+    fontWeight: 'bold',
+    color: 'white',
   },
 });
 

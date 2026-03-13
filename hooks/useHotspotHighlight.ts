@@ -12,6 +12,7 @@
  */
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { AppState } from 'react-native';
 import { useMapStore } from '../store/mapStore';
 import {
   useUserPrefsStore,
@@ -22,6 +23,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { Cluster, TimeStatus } from '../types/events';
 import { amplitudeTrack } from '../lib/amplitudeAnalytics';
 import { isEventNow, isEventHappeningToday } from '../utils/dateUtils';
+import { setMapTraceSnapshot, traceMapEvent } from '../utils/mapTrace';
 
 interface HotspotHighlightState {
   shouldShow: boolean;
@@ -273,7 +275,9 @@ function generateTooltipText(cluster: Cluster): { text: string; subtext: string 
   };
 }
 
-export function useHotspotHighlight(): HotspotHighlightState & HotspotHighlightActions {
+export function useHotspotHighlight(
+  ignoreProgrammaticCameraRef: React.MutableRefObject<boolean>
+): HotspotHighlightState & HotspotHighlightActions {
   const { user } = useAuth();
   const { isActive: tutorialIsActive } = useTutorial();
   const clusters = useMapStore((state) => state.clusters);
@@ -306,30 +310,136 @@ export function useHotspotHighlight(): HotspotHighlightState & HotspotHighlightA
   const hasTriggeredRef = useRef(false);
   const dismissTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // DEBUG: Set to true to force hotspot to show every time (ignores date check)
-  const DEBUG_ALWAYS_SHOW = true; // TODO: Set to false before release
+  // Track if we should evaluate hotspot trigger (only on app foreground)
+  // This prevents hotspot from triggering when user enables it in settings
+  const canEvaluateTriggerRef = useRef(false);
+  const setHotspotProgrammaticLock = useCallback((value: boolean, reason: string) => {
+    ignoreProgrammaticCameraRef.current = value;
+    setMapTraceSnapshot({
+      ignoreProgrammatic: value,
+      ignoreProgrammaticReason: `hotspot_${reason}`,
+    });
+    traceMapEvent(value ? 'ignore_programmatic_on' : 'ignore_programmatic_off', {
+      reason: `hotspot_${reason}`,
+    });
+  }, [ignoreProgrammaticCameraRef]);
+
+  useEffect(() => {
+    setMapTraceSnapshot({
+      hotspotVisible: isVisible,
+      hotspotAnimating: isAnimating,
+      hotspotTargetClusterId: targetCluster?.id ?? null,
+      hotspotTooltipText: capturedTooltipText || null,
+    });
+  }, [capturedTooltipText, isAnimating, isVisible, targetCluster]);
+
+  // Listen for app state changes - only trigger hotspot on app foreground
+  useEffect(() => {
+    traceMapEvent('hotspot_hook_mounted', {
+      appState: AppState.currentState,
+    });
+
+    const subscription = AppState.addEventListener('change', (nextAppState) => {
+      if (nextAppState === 'active') {
+        // App came to foreground, allow evaluation
+        console.log('[Hotspot] App foregrounded - allowing hotspot evaluation');
+        canEvaluateTriggerRef.current = true;
+        traceMapEvent('hotspot_appstate_active');
+      } else if (nextAppState === 'background' || nextAppState === 'inactive') {
+        // App went to background, reset evaluation flag
+        console.log('[Hotspot] App backgrounded - resetting evaluation flag');
+        canEvaluateTriggerRef.current = false;
+        traceMapEvent('hotspot_appstate_inactive', {
+          appState: nextAppState,
+        });
+      }
+    });
+
+    // Initial mount counts as foreground
+    // Also log current state for debugging
+    const currentState = AppState.currentState;
+    console.log('[Hotspot] Hook mounted - AppState:', currentState);
+    canEvaluateTriggerRef.current = true;
+
+    return () => {
+      traceMapEvent('hotspot_hook_unmounted');
+      subscription.remove();
+    };
+  }, []);
+
+  // DEBUG FLAGS:
+  // - DEBUG_IGNORE_DATE: Set to true to bypass "already shown today" check (for testing)
+  // - Keep false in production to respect once-per-day logic
+  const DEBUG_IGNORE_DATE = false;
+
+  // Track previous value of showDailyHotspot to detect mid-session changes
+  const prevShowDailyHotspotRef = useRef(showDailyHotspot);
 
   // Calculate if we should show the hotspot
   const shouldShowHotspot = useMemo(() => {
+    console.log('[Hotspot] Evaluating shouldShowHotspot:', {
+      canEvaluate: canEvaluateTriggerRef.current,
+      tutorialActive: tutorialIsActive,
+      showDailyHotspot,
+      hotspotLastShownDate,
+      today: new Date().toISOString().split('T')[0],
+      clustersLength: clusters.length,
+      hasTriggered: hasTriggeredRef.current,
+    });
+
+    // 0a. Check if setting just changed - if so, reset evaluation flag and block
+    // This must happen BEFORE the evaluation window check to prevent race conditions
+    if (prevShowDailyHotspotRef.current !== showDailyHotspot) {
+      console.log('[Hotspot] ⚠️ Setting changed during evaluation - resetting evaluation flag');
+      canEvaluateTriggerRef.current = false;
+      prevShowDailyHotspotRef.current = showDailyHotspot;
+      return false;
+    }
+
+    // 0b. Must be in evaluation window (app foreground)
+    // This prevents hotspot from triggering when user enables it in settings mid-session
+    if (!canEvaluateTriggerRef.current) {
+      console.log('[Hotspot] ❌ Blocked: not in evaluation window (app not foregrounded)');
+      return false;
+    }
+
     // 1. Tutorial not active
-    if (tutorialIsActive) return false;
+    if (tutorialIsActive) {
+      console.log('[Hotspot] ❌ Blocked: tutorial active');
+      return false;
+    }
 
     // 2. User hasn't disabled it (for authenticated users)
     // Guests always see it (showDailyHotspot defaults to true)
-    if (user && !showDailyHotspot) return false;
+    if (user && !showDailyHotspot) {
+      console.log('[Hotspot] ❌ Blocked: user disabled hotspot');
+      return false;
+    }
 
-    // 3. Haven't shown today (skip check if DEBUG_ALWAYS_SHOW)
-    if (!DEBUG_ALWAYS_SHOW) {
+    // 3. Haven't shown today (skip check if DEBUG_IGNORE_DATE is true)
+    if (!DEBUG_IGNORE_DATE) {
       const today = new Date().toISOString().split('T')[0];
-      if (hotspotLastShownDate === today) return false;
+      if (hotspotLastShownDate === today) {
+        console.log('[Hotspot] ❌ Blocked: already shown today');
+        return false;
+      }
+    } else {
+      console.log('[Hotspot] ⚠️ DEBUG: Ignoring date check (DEBUG_IGNORE_DATE = true)');
     }
 
     // 4. Clusters are loaded
-    if (!clusters || clusters.length === 0) return false;
+    if (!clusters || clusters.length === 0) {
+      console.log('[Hotspot] ❌ Blocked: no clusters loaded');
+      return false;
+    }
 
     // 5. Haven't already triggered this session
-    if (hasTriggeredRef.current) return false;
+    if (hasTriggeredRef.current) {
+      console.log('[Hotspot] ❌ Blocked: already triggered this session');
+      return false;
+    }
 
+    console.log('[Hotspot] ✅ All checks passed - hotspot should trigger');
     return true;
   }, [tutorialIsActive, user, showDailyHotspot, hotspotLastShownDate, clusters]);
 
@@ -342,6 +452,11 @@ export function useHotspotHighlight(): HotspotHighlightState & HotspotHighlightA
    * Dismiss the hotspot and zoom back to original position
    */
   const dismiss = useCallback(() => {
+    traceMapEvent('hotspot_dismiss_requested', {
+      targetClusterId: targetCluster?.id ?? 'none',
+      hadOriginalCamera: !!originalCameraRef.current,
+    });
+
     // Clear auto-dismiss timeout
     if (dismissTimeoutRef.current) {
       clearTimeout(dismissTimeoutRef.current);
@@ -364,7 +479,7 @@ export function useHotspotHighlight(): HotspotHighlightState & HotspotHighlightA
         !isNaN(coords[0]) &&
         !isNaN(coords[1])
       ) {
-        (global as any).ignoreProgrammaticCameraRef = true;
+        setHotspotProgrammaticLock(true, 'dismiss_zoom_back');
 
         cameraRef.current.setCamera({
           centerCoordinate: coords,
@@ -373,7 +488,7 @@ export function useHotspotHighlight(): HotspotHighlightState & HotspotHighlightA
         });
 
         setTimeout(() => {
-          (global as any).ignoreProgrammaticCameraRef = false;
+          setHotspotProgrammaticLock(false, 'dismiss_zoom_back_complete');
         }, 900);
       }
     }
@@ -382,7 +497,7 @@ export function useHotspotHighlight(): HotspotHighlightState & HotspotHighlightA
     amplitudeTrack('hotspot_dismissed', {
       auto_dismissed: dismissTimeoutRef.current === null,
     });
-  }, []);
+  }, [setHotspotProgrammaticLock, targetCluster]);
 
   /**
    * Trigger the hotspot animation sequence
@@ -390,9 +505,13 @@ export function useHotspotHighlight(): HotspotHighlightState & HotspotHighlightA
   const triggerHotspot = useCallback(async () => {
     if (hasTriggeredRef.current) return;
     hasTriggeredRef.current = true;
+    traceMapEvent('hotspot_trigger_started', {
+      clusterCount: clusters.length,
+    });
 
     const hottest = findHottestCluster(clusters);
     if (!hottest) {
+      traceMapEvent('hotspot_trigger_aborted_no_cluster');
       return;
     }
 
@@ -456,6 +575,9 @@ export function useHotspotHighlight(): HotspotHighlightState & HotspotHighlightA
     const cameraRef = (global as any).mapCameraRef;
     if (!cameraRef?.current) {
       setIsVisible(true);
+      traceMapEvent('hotspot_visible_without_camera', {
+        clusterId: hottest.id,
+      });
       markHotspotShownToday();
       return;
     }
@@ -493,9 +615,13 @@ export function useHotspotHighlight(): HotspotHighlightState & HotspotHighlightA
     // Zoom to the hottest venue (not just first venue)
     if (hottestVenue) {
       setIsAnimating(true);
+      traceMapEvent('hotspot_camera_animation_started', {
+        clusterId: hottest.id,
+        venueName: hottestVenue.venue,
+      });
 
       // Set flag to prevent cluster regeneration during zoom (same as tutorial)
-      (global as any).ignoreProgrammaticCameraRef = true;
+      setHotspotProgrammaticLock(true, 'trigger_zoom_in');
 
       cameraRef.current.setCamera({
         centerCoordinate: [hottestVenue.longitude, hottestVenue.latitude],
@@ -505,7 +631,7 @@ export function useHotspotHighlight(): HotspotHighlightState & HotspotHighlightA
 
       // Wait for camera animation, then find cluster at zoomed level and show tooltip
       setTimeout(() => {
-        (global as any).ignoreProgrammaticCameraRef = false;
+        setHotspotProgrammaticLock(false, 'trigger_zoom_in_complete');
         setIsAnimating(false);
 
         // Find the cluster that contains the original hottest venue by name
@@ -595,7 +721,16 @@ export function useHotspotHighlight(): HotspotHighlightState & HotspotHighlightA
         }
 
         setIsVisible(true);
+        traceMapEvent('hotspot_visible', {
+          clusterId: clusterForTooltip.id,
+          venueCount: clusterForTooltip.venues?.length ?? 0,
+          tooltipText: text,
+        });
         markHotspotShownToday();
+
+        // Reset evaluation flag after trigger - prevents re-triggering until next foreground
+        canEvaluateTriggerRef.current = false;
+        console.log('[Hotspot] Evaluation flag reset - hotspot will not trigger again until next app foreground');
 
         // Track analytics
         amplitudeTrack('hotspot_shown', {
@@ -606,13 +741,16 @@ export function useHotspotHighlight(): HotspotHighlightState & HotspotHighlightA
           venue_name: clusterForTooltip.venues?.[0]?.venue || 'unknown',
         });
 
-        // Auto-dismiss after 10 seconds (increased from 5 for better readability)
+        // Auto-dismiss after 7 seconds
         dismissTimeoutRef.current = setTimeout(() => {
+          traceMapEvent('hotspot_auto_dismiss_timer_fired', {
+            clusterId: clusterForTooltip.id,
+          });
           dismiss();
-        }, 10000);
+        }, 7000);
       }, 1100);
     }
-  }, [clusters, userLocation, markHotspotShownToday, dismiss]);
+  }, [clusters, userLocation, markHotspotShownToday, dismiss, setHotspotProgrammaticLock]);
 
   /**
    * Disable hotspot permanently (user clicked "Don't show again")
@@ -643,6 +781,10 @@ export function useHotspotHighlight(): HotspotHighlightState & HotspotHighlightA
    * Handle tap on the tooltip (opens cluster callout like normal cluster tap)
    */
   const onClusterTap = useCallback(() => {
+    traceMapEvent('hotspot_tooltip_tapped', {
+      targetClusterId: targetCluster?.id ?? 'none',
+    });
+
     // Clear auto-dismiss
     if (dismissTimeoutRef.current) {
       clearTimeout(dismissTimeoutRef.current);
@@ -683,6 +825,13 @@ export function useHotspotHighlight(): HotspotHighlightState & HotspotHighlightA
         selectCluster(null);
       }
 
+      traceMapEvent('hotspot_tooltip_selected_cluster', {
+        targetClusterId: targetCluster.id,
+        venueCount: sortedVenues.length,
+        selectedClusterId: targetCluster.clusterType === 'multi' ? targetCluster.id : 'none',
+        primaryVenue: sortedVenues[0]?.venue || 'unknown',
+      });
+
     }
 
     // Don't zoom back - let them explore the cluster
@@ -696,10 +845,14 @@ export function useHotspotHighlight(): HotspotHighlightState & HotspotHighlightA
   // Trigger hotspot when conditions are met
   useEffect(() => {
     if (shouldShowHotspot && clusters.length > 0) {
-      // Small delay to let map settle after initial load
+      // 300ms delay to let clusters stabilize after initial load
+      traceMapEvent('hotspot_trigger_scheduled', {
+        clusterCount: clusters.length,
+        delayMs: 300,
+      });
       const timer = setTimeout(() => {
         triggerHotspot();
-      }, 1500);
+      }, 300);
 
       return () => clearTimeout(timer);
     }
@@ -711,6 +864,9 @@ export function useHotspotHighlight(): HotspotHighlightState & HotspotHighlightA
   useEffect(() => {
     // If hotspot is visible and user selected venues (tapped a cluster), hide the tooltip
     if (isVisible && selectedVenues && selectedVenues.length > 0) {
+      traceMapEvent('hotspot_hidden_for_cluster_selection', {
+        selectedVenueCount: selectedVenues.length,
+      });
 
       // Clear auto-dismiss timeout
       if (dismissTimeoutRef.current) {

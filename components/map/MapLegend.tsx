@@ -3,6 +3,7 @@ import { Animated, Pressable, StyleSheet, Text, TouchableOpacity, View, ViewStyl
 import { MaterialIcons } from '@expo/vector-icons';
 import { useIsFocused } from '@react-navigation/native';
 import { useMapStore } from '../../store';
+import { registerMapTraceSampler, traceMapEvent } from '../../utils/mapTrace';
 
 type MapLegendProps = {
   containerStyle?: ViewStyle;
@@ -10,6 +11,9 @@ type MapLegendProps = {
   topOffset?: number;
   bottomOffset?: number;
 };
+
+const readAnimatedValue = (value: Animated.Value): number | string =>
+  typeof (value as any).__getValue === 'function' ? (value as any).__getValue() : 'unknown';
 
 const PulseRing: React.FC<{ color: string; size: number }> = ({ color, size }) => {
   const [animations] = useState([new Animated.Value(0), new Animated.Value(0)]);
@@ -163,6 +167,57 @@ const MapLegend: React.FC<MapLegendProps> = ({
       useNativeDriver: true,
     }).start();
   }, [open, panelAnim]);
+
+  useEffect(() => {
+    traceMapEvent('map_legend_open_changed', {
+      open,
+      activeFilterPanel: activeFilterPanel ?? 'none',
+    });
+  }, [activeFilterPanel, open]);
+
+  useEffect(() => {
+    traceMapEvent('map_legend_visual_state_changed', {
+      open,
+      activeFilterPanel: activeFilterPanel ?? 'none',
+      panelValue: readAnimatedValue(panelAnim),
+      visibilityValue: readAnimatedValue(visibilityAnim),
+      isFocused,
+      isHidden: isHiddenRef.current,
+      lastPanelState: lastPanelStateRef.current ?? 'none',
+    });
+
+    const sampleDelays = [100, 300, 700, 1500];
+    const timeouts = sampleDelays.map((delayMs) =>
+      setTimeout(() => {
+        traceMapEvent('map_legend_visual_value_sampled', {
+          delayMs,
+          open,
+          activeFilterPanel: activeFilterPanel ?? 'none',
+          panelValue: readAnimatedValue(panelAnim),
+          visibilityValue: readAnimatedValue(visibilityAnim),
+          isFocused,
+          isHidden: isHiddenRef.current,
+          lastPanelState: lastPanelStateRef.current ?? 'none',
+        });
+      }, delayMs)
+    );
+
+    return () => {
+      timeouts.forEach(clearTimeout);
+    };
+  }, [activeFilterPanel, isFocused, open, panelAnim, visibilityAnim]);
+
+  useEffect(() => {
+    return registerMapTraceSampler('map_legend', () => ({
+      open,
+      activeFilterPanel: activeFilterPanel ?? 'none',
+      panelValue: readAnimatedValue(panelAnim),
+      visibilityValue: readAnimatedValue(visibilityAnim),
+      isFocused,
+      isHidden: isHiddenRef.current,
+      lastPanelState: lastPanelStateRef.current ?? 'none',
+    }));
+  }, [activeFilterPanel, isFocused, open, panelAnim, visibilityAnim]);
 
   useEffect(() => {
     if (!isFocused && open) setOpen(false);
@@ -331,7 +386,13 @@ const MapLegend: React.FC<MapLegendProps> = ({
 
         <TouchableOpacity
           style={[styles.button, styles.buttonFloating, buttonPlacement, open && styles.buttonActive]}
-          onPress={() => setOpen((prev) => !prev)}
+          onPress={() => {
+            traceMapEvent('map_legend_button_pressed', {
+              nextOpen: !open,
+              activeFilterPanel: activeFilterPanel ?? 'none',
+            });
+            setOpen((prev) => !prev);
+          }}
         >
           <MaterialIcons name="layers" size={18} color="#333" />
         </TouchableOpacity>

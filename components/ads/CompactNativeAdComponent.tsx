@@ -3,20 +3,21 @@ import {
   View,
   Text,
   StyleSheet,
-  Pressable,
   Image,
   Animated,
   Platform,
   useColorScheme,
 } from 'react-native';
-import { NativeAdView, NativeMediaView } from 'react-native-google-mobile-ads';
-import { NativeAsset, NativeAssetType } from 'react-native-google-mobile-ads/src/ads/native-ad/NativeAsset';
+import { NativeAdView, NativeMediaView, NativeAsset, NativeAssetType } from 'react-native-google-mobile-ads';
 import { AdColors, AdSpacing, AdRadius, AdAnimations, type AdColorScheme } from '@/constants/AdTheme';
 
 interface CompactNativeAdComponentProps {
   nativeAd: any;
   loading: boolean;
 }
+
+const COMPACT_NATIVE_AD_DISABLE_MEDIA_VIEW_DEBUG = true;
+const COMPACT_NATIVE_AD_DISABLE_WRAPPER_DEBUG = true;
 
 // Star Rating Component (Compact version)
 const StarRating = ({ rating, colors }: { rating: number; colors: typeof AdColors.light }) => {
@@ -157,6 +158,131 @@ export default function CompactNativeAdComponent({ nativeAd, loading }: CompactN
     return typeof value === 'string' ? value : String(value);
   };
 
+  if (COMPACT_NATIVE_AD_DISABLE_WRAPPER_DEBUG) {
+    return (
+      <Animated.View
+        style={[
+          styles.animatedContainer,
+          {
+            opacity: fadeAnim,
+            transform: [{ translateY: slideAnim }],
+          },
+        ]}
+      >
+        <View
+          style={[
+            styles.adCard,
+            {
+              backgroundColor: colors.cardBackground,
+              borderColor: colors.cardBorder,
+              shadowColor: colors.shadowColor,
+              shadowOpacity: colors.shadowOpacity,
+            },
+          ]}
+        >
+          <View
+            style={[
+              styles.sponsoredBadge,
+              {
+                backgroundColor: colors.badgeBackground,
+                borderColor: colors.badgeBorder,
+              },
+            ]}
+          >
+            <Text style={[styles.sponsoredText, { color: colors.badgeText }]}>
+              Sponsored
+            </Text>
+          </View>
+
+          <View style={styles.contentContainer}>
+            <View style={styles.headerRow}>
+              <View style={styles.headerLeft}>
+                {nativeAd.icon?.url ? (
+                  <Image
+                    source={{ uri: nativeAd.icon.url }}
+                    style={styles.iconImage}
+                  />
+                ) : null}
+                <View style={styles.headerTextColumn}>
+                  {getSafeText(nativeAd.headline) ? (
+                    <Text
+                      style={[styles.headline, { color: colors.headline }]}
+                      numberOfLines={1}
+                    >
+                      {getSafeText(nativeAd.headline)}
+                    </Text>
+                  ) : null}
+                  {getSafeText(nativeAd.advertiser) ? (
+                    <Text
+                      style={[styles.advertiser, { color: colors.advertiser }]}
+                      numberOfLines={1}
+                    >
+                      {getSafeText(nativeAd.advertiser)}
+                    </Text>
+                  ) : null}
+                </View>
+              </View>
+
+              {getSafeText(nativeAd.callToAction) ? (
+                <View style={[styles.ctaButton, { backgroundColor: colors.ctaBackground }]}>
+                  <Text style={[styles.ctaText, { color: colors.ctaText }]}>
+                    {getSafeText(nativeAd.callToAction)}
+                  </Text>
+                </View>
+              ) : null}
+            </View>
+
+            <View style={[styles.mediaContainer, { backgroundColor: colors.mediaPlaceholder }]}>
+              <View style={styles.mediaFallback}>
+                {nativeAd.icon?.url ? (
+                  <Image
+                    source={{ uri: nativeAd.icon.url }}
+                    style={styles.mediaFallbackImage}
+                    resizeMode="contain"
+                  />
+                ) : (
+                  <Text style={[styles.mediaFallbackText, { color: colors.metaText }]}>
+                    {getSafeText(nativeAd.headline).charAt(0) || 'Ad'}
+                  </Text>
+                )}
+              </View>
+            </View>
+
+            {getSafeText(nativeAd.body) ? (
+              <Text
+                style={[styles.body, { color: colors.body }]}
+                numberOfLines={2}
+              >
+                {getSafeText(nativeAd.body)}
+              </Text>
+            ) : null}
+
+            <View style={styles.infoRow}>
+              {getSafeText(nativeAd.store) ? (
+                <Text style={[styles.metaText, { color: colors.metaText }]}>
+                  {getSafeText(nativeAd.store)}
+                </Text>
+              ) : null}
+              {getSafeText(nativeAd.store) && getSafeText(nativeAd.price) ? (
+                <Text style={[styles.metaSeparator, { color: colors.metaText }]}>
+                  ·
+                </Text>
+              ) : null}
+              {getSafeText(nativeAd.price) ? (
+                <Text style={[styles.metaText, { color: colors.metaText }]}>
+                  {getSafeText(nativeAd.price)}
+                </Text>
+              ) : null}
+              {nativeAd.starRating && nativeAd.starRating > 0 ? (
+                <StarRating rating={nativeAd.starRating} colors={colors} />
+              ) : null}
+            </View>
+          </View>
+        </View>
+      </Animated.View>
+    );
+  }
+
   return (
     <Animated.View
       style={[
@@ -230,33 +356,28 @@ export default function CompactNativeAdComponent({ nativeAd, loading }: CompactN
               </View>
             </View>
 
-            {/* CTA in header for compact layout */}
+            {/* CTA asset must be a direct child of NativeAsset */}
             {nativeAd.callToAction && getSafeText(nativeAd.callToAction) && (
               <NativeAsset assetType={NativeAssetType.CALL_TO_ACTION}>
-                <Pressable
-                  style={({ pressed }) => [
-                    styles.ctaButton,
-                    { backgroundColor: pressed ? colors.ctaPressed : colors.ctaBackground },
-                    pressed && styles.ctaButtonPressed,
+                <Text
+                  style={[
+                    styles.ctaAssetText,
+                    {
+                      backgroundColor: colors.ctaBackground,
+                      color: colors.ctaText,
+                    },
                   ]}
-                  disabled={true}
                 >
-                  <Text
-                    style={[styles.ctaText, { color: colors.ctaText }]}
-                    numberOfLines={1}
-                  >
-                    {getSafeText(nativeAd.callToAction)}
-                  </Text>
-                </Pressable>
+                  {getSafeText(nativeAd.callToAction)}
+                </Text>
               </NativeAsset>
             )}
           </View>
 
           {/* Media - Compact height */}
-          {/* Show NativeMediaView if aspectRatio > 0 OR hasVideoContent (video ads may have aspectRatio=0) */}
-          {/* IMPORTANT: Override aspectRatio with undefined to prevent NativeMediaView from collapsing when aspectRatio=0 */}
+          {/* Debug isolation: force fallback media rendering without NativeMediaView */}
           <View style={[styles.mediaContainer, { backgroundColor: colors.mediaPlaceholder }]}>
-            {nativeAd.mediaContent && (nativeAd.mediaContent.aspectRatio > 0 || nativeAd.mediaContent.hasVideoContent) ? (
+            {!COMPACT_NATIVE_AD_DISABLE_MEDIA_VIEW_DEBUG && nativeAd.mediaContent && (nativeAd.mediaContent.aspectRatio > 0 || nativeAd.mediaContent.hasVideoContent) ? (
               <NativeMediaView
                 style={[styles.mediaView, { aspectRatio: undefined }]}
                 resizeMode="cover"
@@ -313,7 +434,11 @@ export default function CompactNativeAdComponent({ nativeAd, loading }: CompactN
               </NativeAsset>
             ) : null}
             {nativeAd.starRating && nativeAd.starRating > 0 ? (
-              <StarRating rating={nativeAd.starRating} colors={colors} />
+              <NativeAsset assetType={NativeAssetType.STAR_RATING}>
+                <Text style={[styles.ratingText, { color: colors.metaText }]}>
+                  {`${nativeAd.starRating.toFixed(1)}★`}
+                </Text>
+              </NativeAsset>
             ) : null}
           </View>
         </View>
@@ -403,6 +528,15 @@ const styles = StyleSheet.create({
   ctaText: {
     fontSize: 12,
     fontWeight: '600',
+  },
+  ctaAssetText: {
+    paddingVertical: AdSpacing.xs + 2,
+    paddingHorizontal: AdSpacing.md,
+    borderRadius: AdRadius.sm,
+    fontSize: 12,
+    fontWeight: '600',
+    textAlign: 'center',
+    overflow: 'hidden',
   },
 
   // Media - Compact

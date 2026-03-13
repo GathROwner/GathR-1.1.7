@@ -72,6 +72,18 @@ export function convert24to12Hour(time24: string): string {
   return `${hour}:${minute}:00 ${period}`;
 }
 
+const chooseProfileUrl = (
+  venueProfileImage: string,
+  eventProfileUrl: string
+): string => {
+  const venueUrl = String(venueProfileImage || '').trim();
+  const eventUrl = String(eventProfileUrl || '').trim();
+
+  // Venue profile is canonical and should win when available.
+  if (venueUrl) return venueUrl;
+  return eventUrl;
+};
+
 /**
  * Normalize a Firestore event to match the app Event interface.
  */
@@ -79,6 +91,15 @@ export function normalizeFirestoreEvent(fsEvent: FirestoreEvent): Event {
   const latitude = fsEvent.venueInfo?.coordinates?.latitude ?? 0;
   const longitude = fsEvent.venueInfo?.coordinates?.longitude ?? 0;
   const venue = fsEvent.venue;
+  const venueProfileImage = fsEvent.venueInfo?.profileImage || venue?.profileImage || '';
+  const rawEventProfileUrl = fsEvent.profileUrl || fsEvent.metadata?.icon || '';
+  const eventProfileUrl = chooseProfileUrl(venueProfileImage, rawEventProfileUrl);
+  const eventImageUrl =
+    fsEvent.imageUrl ||
+    fsEvent.relevantImageUrl ||
+    fsEvent.metadata?.image ||
+    '';
+  const sharedPostThumbnail = fsEvent.SharedPostThumbnail || '';
 
   if (latitude === 0 && longitude === 0 && DEBUG_FIRESTORE) {
     console.log(`[Firestore] Event with no coordinates: ${fsEvent.id} - ${fsEvent.title}`);
@@ -120,9 +141,9 @@ export function normalizeFirestoreEvent(fsEvent: FirestoreEvent): Event {
     endTime: fsEvent.endTime ? convert24to12Hour(fsEvent.endTime) : '',
 
     // Media
-    imageUrl: fsEvent.metadata?.image || '',
-    profileUrl: fsEvent.metadata?.icon || venue?.profileImage || '',
-    SharedPostThumbnail: '',
+    imageUrl: eventImageUrl,
+    profileUrl: eventProfileUrl,
+    SharedPostThumbnail: sharedPostThumbnail,
 
     // Engagement metrics
     likes: fsEvent.metadata?.likes ?? 0,
@@ -283,6 +304,7 @@ export interface VenueContactInfo {
   phone?: string;
   email?: string;
   rating?: number;
+  profileImage?: string;
 }
 
 /**
@@ -308,7 +330,8 @@ export async function fetchVenueDetails(venueId: string): Promise<VenueContactIn
       return null;
     }
 
-    const venue = await response.json();
+    const payload = await response.json();
+    const venue = payload?.venue || payload;
 
     if (DEBUG_FIRESTORE) {
       console.log(
@@ -323,6 +346,7 @@ export async function fetchVenueDetails(venueId: string): Promise<VenueContactIn
       phone: venue.placeDetailsParsed?.international_phone_number || venue.phone || undefined,
       email: venue.email || undefined,
       rating: venue.placeDetailsParsed?.rating ?? venue.rating ?? undefined,
+      profileImage: venue.profileImage || undefined,
     };
   } catch (error) {
     console.error('[Firestore] Error fetching venue details:', error);
@@ -400,6 +424,7 @@ export async function fetchVenueDetailsByName(
         matchedVenue.rating ??
         matchedVenue.ratingOverall ??
         undefined,
+      profileImage: matchedVenue.profileImage || undefined,
     };
   } catch (error) {
     console.error('[Firestore] Error fetching venue by name:', error);
@@ -468,4 +493,3 @@ export async function fetchAllFirestoreEvents(
     return [];
   }
 }
-

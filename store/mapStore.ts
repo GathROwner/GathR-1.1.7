@@ -855,23 +855,25 @@ export const useMapStore = create<MapState>((set, get) => ({
   /**
    * Update filters for a specific type (events or specials)
    */
-  setTypeFilters: (type: 'event' | 'special', typeFilters: Partial<TypeFilterCriteria>) => {
+  setTypeFilters: (type: 'event' | 'special', typeFilters: Partial<TypeFilterCriteria>, source?: 'filter-pills' | 'interest-pills') => {
     const currentCriteria = get().filterCriteria;
-    
+
     // Create new filter criteria with updated type-specific filters
-    const updatedCriteria = { 
+    const updatedCriteria = {
       ...currentCriteria,
       [type === 'event' ? 'eventFilters' : 'specialFilters']: {
         ...currentCriteria[type === 'event' ? 'eventFilters' : 'specialFilters'],
-        ...typeFilters
+        ...typeFilters,
+        // Set source if category is being set, clear if being cleared
+        categoryFilterSource: typeFilters.category !== undefined ? source : undefined
       }
     };
-    
+
     // Set the filters changed flag to true
     filtersChanged = true;
-    
+
     set({ filterCriteria: updatedCriteria });
-    
+
     // Apply updated filters and regenerate clusters
     get().getFilteredEvents();
     get().generateClusters();
@@ -1468,6 +1470,7 @@ fetchEventDetails: async (eventIds: (string | number)[]) => {
       const thresholdName = ZOOM_THRESHOLDS[idx]?.name ?? `idx:${idx}`;
       console.log(`[MapLoad][cluster] ms=${__ML_lastClusterMs} zoom=${currentZoom.toFixed(2)} threshold=${thresholdName} venues=${__ML_lastVenueCount} clusters=${__ML_lastClusterCount}`);
     }
+
 
     // Debug: per-zoom cluster vs point breakdown + "gap" detector
 const __multiCount = clusters.filter(c => c.clusterType === 'multi').length;

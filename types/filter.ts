@@ -24,13 +24,16 @@ export enum TimeFilterType {
 export interface TypeFilterCriteria {
   // Filter by time window
   timeFilter: TimeFilterType;
-  
+
   // Filter by category
   category?: string;
-  
+
+  // Track which component set the category filter (for carousel behavior)
+  categoryFilterSource?: 'filter-pills' | 'interest-pills';
+
   // Search text specific to this type (optional feature for future implementation)
   search?: string;
-  
+
   // Filter to show only saved events/specials
   savedOnly?: boolean;
 }
