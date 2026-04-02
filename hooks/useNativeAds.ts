@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { useIsFocused } from '@react-navigation/native';
 import { useAdPoolStore } from '../store/adPoolStore';
 import { NativeAd } from 'react-native-google-mobile-ads';
 
@@ -71,10 +72,19 @@ export default function useNativeAds(
   // Get pool store actions and state
   const loadAds = useAdPoolStore((s) => s.loadAds);
   const refreshIfStale = useAdPoolStore((s) => s.refreshIfStale);
+  const claimAds = useAdPoolStore((s) => s.claimAds);
+  const releaseAds = useAdPoolStore((s) => s.releaseAds);
   const isLoading = useAdPoolStore((s) => s.isLoading[tabType]);
   const poolAds = useAdPoolStore((s) => (tabType === 'events' ? s.eventsAds : s.specialsAds));
+  const ownerIdRef = useRef(`native-ads-${Math.random().toString(36).slice(2, 10)}`);
   const lastPoolSignatureRef = useRef('');
   const lastSelectionSignatureRef = useRef('');
+  const isFocused = useIsFocused();
+  const [nativeAdsData, setNativeAdsData] = useState<NativeAdData[]>(
+    Array(count)
+      .fill(0)
+      .map(() => ({ ad: null, loading: false }))
+  );
 
   const logMessage = (message: string) => {
     if (onDebugLog) {
@@ -94,9 +104,15 @@ export default function useNativeAds(
       tabType,
       count,
       startIndex,
+      ownerId: ownerIdRef.current,
+      isFocused,
       poolSize: poolAds.length,
       isLoading,
     });
+    if (!isFocused || count <= 0) {
+      releaseAds(tabType, ownerIdRef.current);
+      return;
+    }
     if (poolAds.length === 0) {
       logMessage(`Pool empty - loading ads`);
       loadAds(tabType);
@@ -104,7 +120,18 @@ export default function useNativeAds(
       logMessage(`Pool has ${poolAds.length} ads - checking freshness`);
       refreshIfStale(tabType);
     }
-  }, [tabType]); // Only re-run when tabType changes
+  }, [count, isFocused, loadAds, poolAds.length, refreshIfStale, releaseAds, tabType]);
+
+  useEffect(() => {
+    const ownerId = ownerIdRef.current;
+    return () => {
+      releaseAds(tabType, ownerId);
+      logStructured('hook_release', {
+        tabType,
+        ownerId,
+      });
+    };
+  }, [releaseAds, tabType]);
 
   useEffect(() => {
     const sample = poolAds.slice(0, MAX_LOGGED_ADS).map(summarizeAd);
@@ -130,36 +157,60 @@ export default function useNativeAds(
     });
   }, [count, isLoading, poolAds, startIndex, tabType]);
 
-  // Convert pool ads to NativeAdData format
-  // Memoize to prevent unnecessary re-renders
-  const nativeAdsData = useMemo<NativeAdData[]>(() => {
-    // If loading and no ads yet, return loading state
+  useEffect(() => {
+    const ownerId = ownerIdRef.current;
+
+    const updateIfChanged = (next: NativeAdData[]) => {
+      setNativeAdsData((prev) => {
+        const sameLength = prev.length === next.length;
+        const sameEntries =
+          sameLength &&
+          prev.every((entry, index) => {
+            const nextEntry = next[index];
+            return entry.loading === nextEntry.loading && entry.ad === nextEntry.ad;
+          });
+        return sameEntries ? prev : next;
+      });
+    };
+
+    if (!isFocused || count <= 0) {
+      releaseAds(tabType, ownerId);
+      logMessage(`Inactive - released ads for owner=${ownerId}`);
+      updateIfChanged(
+        Array(count)
+          .fill(0)
+          .map(() => ({ ad: null, loading: false }))
+      );
+      return;
+    }
+
     if (isLoading && poolAds.length === 0) {
-      logMessage(`Loading state - returning ${count} loading placeholders`);
-      return Array(count)
-        .fill(0)
-        .map(() => ({ ad: null, loading: true }));
+      logMessage(`Loading state - returning ${count} loading placeholders for owner=${ownerId}`);
+      updateIfChanged(
+        Array(count)
+          .fill(0)
+          .map(() => ({ ad: null, loading: true }))
+      );
+      return;
     }
 
-    // If no ads available (even after loading), return empty slots
     if (poolAds.length === 0) {
-      logMessage(`No ads available - returning ${count} empty slots`);
-      return Array(count)
-        .fill(0)
-        .map(() => ({ ad: null, loading: false }));
+      logMessage(`No ads available - returning ${count} empty slots for owner=${ownerId}`);
+      updateIfChanged(
+        Array(count)
+          .fill(0)
+          .map(() => ({ ad: null, loading: false }))
+      );
+      return;
     }
 
-    // Get ads from pool (with cycling if needed), starting from startIndex
-    // This allows different venue tabs to show different ads from the pool
-    const result: NativeAdData[] = [];
-    for (let i = 0; i < count; i++) {
-      const adIndex = (startIndex + i) % poolAds.length;
-      result.push({ ad: poolAds[adIndex], loading: false });
-    }
-    logMessage(`Returning ${result.length} ads from pool of ${poolAds.length} (startIndex=${startIndex})`);
-
-    return result;
-  }, [poolAds, count, isLoading, tabType, startIndex]);
+    const claimed = claimAds(tabType, ownerId, count, startIndex);
+    const next = claimed.map((ad) => ({ ad, loading: false }));
+    logMessage(
+      `Claimed ${claimed.filter(Boolean).length}/${count} ads from pool of ${poolAds.length} (startIndex=${startIndex}, owner=${ownerId})`
+    );
+    updateIfChanged(next);
+  }, [claimAds, count, isFocused, isLoading, poolAds, releaseAds, startIndex, tabType]);
 
   useEffect(() => {
     const selection = nativeAdsData.map((entry, index) => ({

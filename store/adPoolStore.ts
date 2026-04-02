@@ -64,6 +64,8 @@ interface AdPoolState {
   preloadAds: () => Promise<void>; // Eager startup preload
   getAdsForDisplay: (type: AdType, count: number) => NativeAd[];
   getAdAtIndex: (type: AdType, index: number) => NativeAd | null; // For venue-specific ads
+  claimAds: (type: AdType, ownerId: string, count: number, startIndex?: number) => (NativeAd | null)[];
+  releaseAds: (type: AdType, ownerId: string) => void;
   refreshIfStale: (type: AdType, maxAgeMs?: number) => Promise<void>;
   cleanup: () => void;
 }
@@ -73,10 +75,31 @@ const getAdId = (ad: NativeAd): string => {
   return `${ad.headline || ''}-${ad.advertiser || ''}-${ad.body || ''}`.toLowerCase().trim();
 };
 
+const adInstanceIds = new WeakMap<NativeAd, string>();
+let nextAdInstanceId = 1;
+
+const getAdInstanceId = (ad: NativeAd): string => {
+  const existing = adInstanceIds.get(ad);
+  if (existing) return existing;
+  const nextId = `${getAdId(ad)}::${nextAdInstanceId++}`;
+  adInstanceIds.set(ad, nextId);
+  return nextId;
+};
+
+const destroyAdSafely = (ad: NativeAd | null | undefined) => {
+  if (!ad) return;
+  try {
+    ad.destroy();
+  } catch {
+    // Ignore cleanup errors from native side
+  }
+};
+
 const summarizeAd = (ad: NativeAd | null) => {
   if (!ad) {
     return {
       id: 'null',
+      instanceId: 'null',
       headline: '',
       advertiser: '',
       hasBody: false,
@@ -94,6 +117,7 @@ const summarizeAd = (ad: NativeAd | null) => {
 
   return {
     id: getAdId(ad),
+    instanceId: getAdInstanceId(ad),
     headline: ad.headline || '',
     advertiser: ad.advertiser || '',
     hasBody: Boolean(ad.body),
@@ -126,6 +150,51 @@ const logPoolSnapshot = (type: AdType, ads: NativeAd[], reason: string) => {
     poolSize: ads.length,
     sampleSize: sample.length,
     sample,
+  });
+};
+
+const leasedAdOwners: Record<AdType, Record<string, string>> = {
+  events: {},
+  specials: {},
+};
+
+const ownerLeases: Record<AdType, Record<string, string[]>> = {
+  events: {},
+  specials: {},
+};
+
+const retiredAdsByType: Record<AdType, NativeAd[]> = {
+  events: [],
+  specials: [],
+};
+
+const findAdByInstanceId = (ads: NativeAd[], instanceId: string): NativeAd | null =>
+  ads.find((ad) => getAdInstanceId(ad) === instanceId) ?? null;
+
+const dedupeAdsByInstance = (ads: NativeAd[]): NativeAd[] => {
+  const seen = new Set<string>();
+  const deduped: NativeAd[] = [];
+  ads.forEach((ad) => {
+    const instanceId = getAdInstanceId(ad);
+    if (seen.has(instanceId)) return;
+    seen.add(instanceId);
+    deduped.push(ad);
+  });
+  return deduped;
+};
+
+const pruneRetiredAds = (type: AdType, activeAds: NativeAd[]) => {
+  const activeInstanceIds = new Set(activeAds.map(getAdInstanceId));
+  retiredAdsByType[type] = dedupeAdsByInstance(retiredAdsByType[type]).filter((ad) => {
+    const instanceId = getAdInstanceId(ad);
+    if (activeInstanceIds.has(instanceId)) {
+      return false;
+    }
+    if (leasedAdOwners[type][instanceId]) {
+      return true;
+    }
+    destroyAdSafely(ad);
+    return false;
   });
 };
 
@@ -279,20 +348,25 @@ export const useAdPoolStore = create<AdPoolState>((set, get) => ({
       }
     }
 
-    // Cleanup old ads before replacing
+    // Cleanup old ads before replacing. Claimed ads are retired instead of destroyed so
+    // mounted SDK views can keep owning them until release.
     const oldAds = type === 'events' ? get().eventsAds : get().specialsAds;
+    let retainedClaimedAds = 0;
     logAdPool(type, 'replacing_existing_pool', {
       oldPoolSize: oldAds.length,
       newPoolSize: loadedAds.length,
     });
     logPoolSnapshot(type, oldAds, 'before_replace');
     oldAds.forEach((ad) => {
-      try {
-        ad.destroy();
-      } catch (e) {
-        // Ignore cleanup errors
+      const instanceId = getAdInstanceId(ad);
+      if (leasedAdOwners[type][instanceId]) {
+        retiredAdsByType[type].push(ad);
+        retainedClaimedAds++;
+        return;
       }
+      destroyAdSafely(ad);
     });
+    pruneRetiredAds(type, loadedAds);
 
     // Update state with new ads
     if (type === 'events') {
@@ -313,6 +387,8 @@ export const useAdPoolStore = create<AdPoolState>((set, get) => ({
     logAdPool(type, 'load_completed', {
       loadedCount: loadedAds.length,
       attemptCount,
+      retainedClaimedAds,
+      retiredClaimedAds: retiredAdsByType[type].length,
     });
     logPoolSnapshot(type, loadedAds, 'load_completed');
     set((s) => ({ isPreloaded: { ...s.isPreloaded, [type]: true } }));
@@ -589,6 +665,92 @@ export const useAdPoolStore = create<AdPoolState>((set, get) => ({
     return ad;
   },
 
+  claimAds: (type: AdType, ownerId: string, count: number, startIndex: number = 0) => {
+    const state = get();
+    const activeAds = type === 'events' ? state.eventsAds : state.specialsAds;
+    const retiredAds = retiredAdsByType[type];
+    const previousClaimIds = ownerLeases[type][ownerId] ?? [];
+
+    const selectedAds: NativeAd[] = [];
+    const selectedInstanceIds = new Set<string>();
+
+    previousClaimIds.forEach((instanceId) => {
+      const retainedAd =
+        findAdByInstanceId(activeAds, instanceId) ?? findAdByInstanceId(retiredAds, instanceId);
+      if (!retainedAd) return;
+      selectedAds.push(retainedAd);
+      selectedInstanceIds.add(instanceId);
+    });
+
+    const rotatedActiveAds =
+      activeAds.length === 0
+        ? []
+        : Array.from({ length: activeAds.length }, (_, index) => activeAds[(startIndex + index) % activeAds.length]);
+
+    rotatedActiveAds.forEach((ad) => {
+      if (selectedAds.length >= count) return;
+      const instanceId = getAdInstanceId(ad);
+      if (selectedInstanceIds.has(instanceId)) return;
+      const currentOwner = leasedAdOwners[type][instanceId];
+      if (currentOwner && currentOwner !== ownerId) return;
+      selectedAds.push(ad);
+      selectedInstanceIds.add(instanceId);
+    });
+
+    previousClaimIds.forEach((instanceId) => {
+      if (selectedInstanceIds.has(instanceId)) return;
+      if (leasedAdOwners[type][instanceId] === ownerId) {
+        delete leasedAdOwners[type][instanceId];
+      }
+    });
+
+    const nextClaimIds = selectedAds.map(getAdInstanceId);
+    nextClaimIds.forEach((instanceId) => {
+      leasedAdOwners[type][instanceId] = ownerId;
+    });
+
+    if (nextClaimIds.length > 0) {
+      ownerLeases[type][ownerId] = nextClaimIds;
+    } else {
+      delete ownerLeases[type][ownerId];
+    }
+
+    pruneRetiredAds(type, activeAds);
+
+    logAdPool(type, 'claim_ads', {
+      ownerId,
+      requestedCount: count,
+      startIndex,
+      activePoolSize: activeAds.length,
+      retiredPoolSize: retiredAdsByType[type].length,
+      selectedCount: nextClaimIds.length,
+      selectedAds: selectedAds.slice(0, MAX_LOGGED_ADS).map(summarizeAd),
+    });
+
+    return Array.from({ length: count }, (_, index) => selectedAds[index] ?? null);
+  },
+
+  releaseAds: (type: AdType, ownerId: string) => {
+    const state = get();
+    const activeAds = type === 'events' ? state.eventsAds : state.specialsAds;
+    const claimIds = ownerLeases[type][ownerId] ?? [];
+
+    claimIds.forEach((instanceId) => {
+      if (leasedAdOwners[type][instanceId] === ownerId) {
+        delete leasedAdOwners[type][instanceId];
+      }
+    });
+    delete ownerLeases[type][ownerId];
+
+    pruneRetiredAds(type, activeAds);
+
+    logAdPool(type, 'release_ads', {
+      ownerId,
+      releasedCount: claimIds.length,
+      retiredPoolSize: retiredAdsByType[type].length,
+    });
+  },
+
   refreshIfStale: async (type: AdType, maxAgeMs: number = STALE_AGE_MS) => {
     const state = get();
     const currentAds = type === 'events' ? state.eventsAds : state.specialsAds;
@@ -623,16 +785,22 @@ export const useAdPoolStore = create<AdPoolState>((set, get) => ({
     logAdPool('events', 'cleanup_started', {
       eventsPoolSize: state.eventsAds.length,
       specialsPoolSize: state.specialsAds.length,
+      retiredEventsPoolSize: retiredAdsByType.events.length,
+      retiredSpecialsPoolSize: retiredAdsByType.specials.length,
     });
     logPoolSnapshot('events', state.eventsAds, 'cleanup_before_events');
     logPoolSnapshot('specials', state.specialsAds, 'cleanup_before_specials');
-    [...state.eventsAds, ...state.specialsAds].forEach((ad) => {
-      try {
-        ad.destroy();
-      } catch (e) {
-        // Ignore cleanup errors
+    [...state.eventsAds, ...state.specialsAds, ...retiredAdsByType.events, ...retiredAdsByType.specials].forEach(
+      (ad) => {
+        destroyAdSafely(ad);
       }
-    });
+    );
+    retiredAdsByType.events = [];
+    retiredAdsByType.specials = [];
+    leasedAdOwners.events = {};
+    leasedAdOwners.specials = {};
+    ownerLeases.events = {};
+    ownerLeases.specials = {};
     set({
       eventsAds: [],
       specialsAds: [],

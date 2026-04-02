@@ -22,11 +22,7 @@ import { setDoc, doc } from 'firebase/firestore';
 import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
 import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
-import mobileAds, { MaxAdContentRating } from 'react-native-google-mobile-ads';
 import { amplitudeMarkManualLogin } from '../lib/amplitudeAnalytics';
-
-// Import for tracking transparency
-import { requestTrackingPermissionsAsync } from 'expo-tracking-transparency';
 // Import analytics hook
 import useAnalytics from '../hooks/useAnalytics';
 
@@ -45,86 +41,7 @@ export default function Index() {
   // Initialize analytics
   const analytics = useAnalytics();
 
-   // Initialize AdMob with improved logging and tracking permission request
-   useEffect(() => {
-    console.log('Index component mounted - preparing AdMob initialization');
-    console.log('Is development environment:', __DEV__ ? 'YES' : 'NO');
-    
-    // Delay AdMob initialization to allow app to fully load first
-    const timer = setTimeout(async () => {
-      try {
-        console.log('Starting ATT permission request...');
-        // Request tracking permission (iOS 14.5+)
-        const { status } = await requestTrackingPermissionsAsync();
-        console.log(`Tracking permission status: ${status}`);
-        
-        // Track tracking permission result
-        analytics.logEvent('tracking_permission_response', {
-          permission_status: status,
-          platform: Platform.OS
-        });
-        
-        console.log('Setting up AdMob configuration...');
-        
-        // Configure AdMob with safer defaults for initial setup
-        await mobileAds().setRequestConfiguration({
-          // Set to G rated to reduce potential issues
-          maxAdContentRating: MaxAdContentRating.G,
-          // No test device identifiers for now - we'll enable this later if needed
-        });
-        
-        console.log('Starting AdMob initialization...');
-        const initResult = await mobileAds().initialize();
-        console.log('AdMob SDK initialized successfully', initResult);
-        
-        // Track AdMob initialization success
-        analytics.logEvent('admob_initialization', {
-          success: true,
-          platform: Platform.OS
-        });
-        
-        // Ensure audio is enabled (sometimes helps with initialization issues)
-        mobileAds().setAppMuted(false);
-        mobileAds().setAppVolume(1.0);
-        console.log('AdMob audio settings configured');
-        
-        // Log environment information to verify configuration
-        console.log('AdMob initialization complete with:');
-        console.log(`- Environment: ${__DEV__ ? 'DEVELOPMENT' : 'PRODUCTION'}`);
-        console.log(`- Platform: ${Platform.OS.toUpperCase()}`);
-        console.log(`- OS Version: ${Platform.Version}`);
-        console.log('- AdMob SDK is ready to serve ads');
-        
-      } catch (error) {
-        // More detailed error logging
-        console.error('Error initializing AdMob:', error);
-        console.error('Error details:', error instanceof Error ? {
-          message: error.message,
-          stack: error.stack,
-          name: error.name
-        } : 'Unknown error type');
-        
-        // Track AdMob initialization failure
-        analytics.trackError('admob_init', error instanceof Error ? error.message : 'Unknown error', {
-          platform: Platform.OS,
-          environment: __DEV__ ? 'development' : 'production'
-        });
-        
-        if (__DEV__) {
-          Alert.alert(
-            'AdMob Initialization Error',
-            `An error occurred during AdMob initialization: ${error instanceof Error ? error.message : 'Unknown error'}`,
-            [{ text: 'OK' }]
-          );
-        }
-      }
-    }, 2000); // 2 second delay to allow app to fully load
-    
-    return () => {
-      console.log('Index component unmounting - clearing AdMob initialization timer');
-      clearTimeout(timer);
-    };
-  }, []); // ← Fixed: Empty dependency array so AdMob only initializes ONCE
+  // AdMob SDK initialization moved to _layout.tsx to ensure it runs regardless of auth state
 
   // Separate useEffect for tracking screen view changes
   useEffect(() => {
@@ -263,9 +180,9 @@ export default function Index() {
 
       try {
         await amplitudeMarkManualLogin();
-const userCredential = await signInWithEmailAndPassword(auth, email, password);
+        const userCredential = await signInWithEmailAndPassword(auth, email, password);
         const duration = Date.now() - startTime;
-        
+
         // Track successful login
         analytics.trackUserLogin('email');
         analytics.initializeUser(userCredential.user.uid, {
@@ -273,13 +190,13 @@ const userCredential = await signInWithEmailAndPassword(auth, email, password);
           login_method: 'email',
           is_guest: false
         });
-        
+
         analytics.trackUserAction('login_success', {
           duration_ms: duration,
           user_id: userCredential.user.uid
         });
-        
-        router.replace('/(tabs)/map');
+
+        // Navigation is handled by _layout.tsx once onAuthStateChanged fires
       } catch (error: any) {
         const duration = Date.now() - startTime;
         const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';

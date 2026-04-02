@@ -51,6 +51,7 @@ import EventImageLightbox from '../../components/map/EventImageLightbox';
 import HotspotHighlight from '../../components/map/HotspotHighlight';
 import MapTracePanel from '../../components/debug/MapTracePanel';
 import StaticDebugCallout from '../../components/map/StaticDebugCallout';
+import CompactCalloutAdWarmup from '../../components/ads/CompactCalloutAdWarmup';
 
 // Import centralized date utilities
 import { 
@@ -906,23 +907,6 @@ const computeStartCenter = (): [number, number] => {
     };
   }, [clusters, selectedVenues, filterCriteria, zoomLevel]);
 
-  // Close filter panel and callouts when user switches away from map tab
-  useFocusEffect(
-    useCallback(() => {
-      return () => {
-        // This runs when the screen loses focus (user switches tabs)
-        if (activeFilterPanel) {
-          setActiveFilterPanel(null);
-        }
-        if (selectedVenues && selectedVenues.length > 0) {
-          selectVenue(null);
-        }
-      };
-    }, [activeFilterPanel, setActiveFilterPanel, selectedVenues, selectVenue])
-  );
-
-  
-
   // Local state for location and map
   const [location, setLocation] = useState<Location.LocationObject | null>(null);
   const [locationPermissionGranted, setLocationPermissionGranted] = useState<boolean>(false);
@@ -965,6 +949,33 @@ const computeStartCenter = (): [number, number] => {
   const isRenderedCalloutLayoutReady =
     hasSelectedCalloutRendered && calloutLayoutReadyKey === renderedCalloutPresentationKey;
   const shouldRenderAncillaryOverlays = !isCalloutOpen && !hasRenderedCallout;
+
+  // Close filter panel and callouts when user switches away from map tab.
+  // Clear both store selection and locally rendered callout state so the screen
+  // cannot come back with a stale mounted callout subtree.
+  useFocusEffect(
+    useCallback(() => {
+      return () => {
+        if (activeFilterPanel) {
+          setActiveFilterPanel(null);
+        }
+        if (selectedVenues && selectedVenues.length > 0) {
+          selectVenue(null);
+        }
+        setRenderedCalloutVenues([]);
+        setRenderedCalloutCluster(null);
+        setCalloutLayoutReadyKey(null);
+      };
+    }, [
+      activeFilterPanel,
+      selectedVenues,
+      selectVenue,
+      setActiveFilterPanel,
+      setRenderedCalloutCluster,
+      setRenderedCalloutVenues,
+      setCalloutLayoutReadyKey,
+    ])
+  );
 
   // Hot interest carousel state (for HotFlamePill)
   const [hotInterestCarouselActive, setHotInterestCarouselActive] = useState(false);
@@ -3448,6 +3459,8 @@ Owner: Map UX stability on Android • Last validated: 2025-09-04
       {!HOTSPOT_HARD_DISABLED_FOR_PREVIEW_DEBUG && (
         <HotspotHighlight ignoreProgrammaticCameraRef={ignoreProgrammaticCameraRef} />
       )}
+
+      <CompactCalloutAdWarmup />
 
       {/* Guest limitation registration prompt - only for guests */}
       {isGuest && <RegistrationPrompt />}

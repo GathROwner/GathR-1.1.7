@@ -50,6 +50,9 @@ import { useDeepLinking } from '../hooks/useDeepLinking';
   import { useMapStore } from '../store';
   // 📢 PERFORMANCE: Preload ad pool on app start
   import { useAdPoolStore } from '../store/adPoolStore';
+  // 📢 AdMob SDK initialization (moved from index.tsx to ensure it runs regardless of auth state)
+  import mobileAds, { MaxAdContentRating } from 'react-native-google-mobile-ads';
+  import { requestTrackingPermissionsAsync } from 'expo-tracking-transparency';
 
 
 /**
@@ -557,14 +560,44 @@ useEffect(() => {
     const queryClient = useQueryClient();
     const { setAllEvents } = useMapStore();
 
-    // 📢 PERFORMANCE: Preload ad pool on app start (before user opens callout)
+    // 📢 AdMob SDK initialization (moved from index.tsx to ensure it runs regardless of auth state)
+    // This must run before ad preloading can work
     useEffect(() => {
-      console.log('📢 Preloading ad pool on app start...');
-      // Small delay to let app finish initial render, then load ads in background
-      const adTimer = setTimeout(() => {
-        useAdPoolStore.getState().preloadAds();
-      }, 500);
-      return () => clearTimeout(adTimer);
+      const initAdMob = async () => {
+        try {
+          console.log('📢 Initializing AdMob SDK...');
+
+          // Request tracking permission on iOS (required for personalized ads)
+          if (Platform.OS === 'ios') {
+            const { status } = await requestTrackingPermissionsAsync();
+            console.log('Tracking permission status:', status);
+          }
+
+          // Configure AdMob with safer defaults
+          await mobileAds().setRequestConfiguration({
+            maxAdContentRating: MaxAdContentRating.G,
+          });
+
+          console.log('Starting AdMob initialization...');
+          const initResult = await mobileAds().initialize();
+          console.log('AdMob SDK initialized successfully', initResult);
+
+          // Ensure audio is enabled
+          mobileAds().setAppMuted(false);
+          mobileAds().setAppVolume(1.0);
+
+          // Now preload ads after SDK is ready
+          console.log('📢 Preloading ad pool after SDK init...');
+          useAdPoolStore.getState().preloadAds();
+
+        } catch (error) {
+          console.error('Error initializing AdMob:', error);
+        }
+      };
+
+      // Delay to allow app to settle before initializing ads
+      const timer = setTimeout(initAdMob, 2000);
+      return () => clearTimeout(timer);
     }, []);
 
     useEffect(() => {
@@ -804,7 +837,10 @@ useEffect(() => {
     SplashScreen.hideAsync();
 
     const inTabsGroup = segments[0] === '(tabs)';
-    const inAuthFlow = segments[0] === 'index' || segments[0] === 'interest-selection';
+    // segments is [] (empty) when on root login screen, not ['index']
+    const onLoginScreen = !segments[0] || segments[0] === 'index';
+    const onInterestSelection = segments[0] === 'interest-selection';
+    const inAuthFlow = onLoginScreen || onInterestSelection;
     const inProfileScreen = segments[0] === 'profile';
 
     // Only log when the actual UID changes (avoid 're-login' noise on tab/nav changes)
@@ -818,9 +854,13 @@ useEffect(() => {
 
 
   if (user) {
-    // User is authenticated
-    if (!inTabsGroup && !inProfileScreen && !inAuthFlow) {
-      // Redirect to main app only if we're not already there
+    // User is authenticated - redirect to main app if on login screen
+    // (but allow interest-selection to complete for new signups)
+    if (onLoginScreen) {
+      console.log('Redirecting authenticated user from login to main app');
+      safeReplace('/(tabs)/map');
+    } else if (!inTabsGroup && !inProfileScreen && !inAuthFlow) {
+      // Redirect from other non-app screens
       console.log('Redirecting authenticated user to main app');
       safeReplace('/(tabs)/map');
     }

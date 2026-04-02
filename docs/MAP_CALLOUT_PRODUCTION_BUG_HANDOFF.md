@@ -34,6 +34,27 @@ Practical meaning:
 - map / callout / hotspot behavior is now considered stable enough to use as the current baseline
 - further investigation should focus on the native ad SDK rendering path in isolation, not on map selection or callout lifecycle
 
+## Working Branch Note - March 15, 2026
+
+Keep the current local branch state as a good working baseline.
+
+What is now working well:
+- map callouts open reliably again in `preview`
+- `Events` and `Specials` tabs are working with the consolidated full-size SDK ad card
+- exhaustive list filtering is working again
+- hotspot behavior is restored
+- stale callout state on `Map -> Specials -> Map` is fixed
+- compact callout ads are largely stabilized, including the initial default-tab blank-state fix
+
+What still exists but is considered secondary / acceptable for this branch:
+- compact callout ads can still show an occasional cold-start first-open edge case
+- compact callout ad render timing is improved but not instant
+- a separate login freeze bug was observed on fresh reinstall/login, but that appears to be a different issue from the original map/callout bug
+
+Practical meaning:
+- this branch should be treated as the current best working branch
+- future work should branch from here rather than from older experimental states
+
 ## Core User Symptom
 
 Main symptom:

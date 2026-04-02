@@ -1500,6 +1500,19 @@ const handleLogout = async () => {
                         />
                       </View>
                     </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={styles.gridButton}
+                      onPress={() => router.push('/native-ad-lab')}
+                    >
+                      <View style={styles.buttonIconContainer}>
+                        <Ionicons name="flask-outline" size={20} color={BRAND.primary} />
+                      </View>
+                      <View style={styles.buttonTextContainer}>
+                        <Text style={styles.gridButtonText}>Ad SDK Lab</Text>
+                        <Text style={styles.gridButtonSubtext}>Isolated wrapper test</Text>
+                      </View>
+                    </TouchableOpacity>
                   </View>
                 </View>
                 </View>

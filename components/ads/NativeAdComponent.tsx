@@ -19,6 +19,7 @@ import { AdColors, AdSpacing, AdRadius, AdAnimations, type AdColorScheme } from 
 interface NativeAdComponentProps {
   nativeAd: any;
   loading: boolean;
+  useSdkWrapper?: boolean;
 }
 
 const NATIVE_AD_DISABLE_MEDIA_VIEW_DEBUG = true;
@@ -145,9 +146,14 @@ const AdSkeleton = ({ colors }: { colors: typeof AdColors.light }) => {
   );
 };
 
-export default function NativeAdComponent({ nativeAd, loading }: NativeAdComponentProps) {
+export default function NativeAdComponent({
+  nativeAd,
+  loading,
+  useSdkWrapper = false,
+}: NativeAdComponentProps) {
   const colorScheme = (useColorScheme() ?? 'light') as AdColorScheme;
   const colors = AdColors[colorScheme];
+  const shouldUseSdkWrapper = useSdkWrapper;
 
   // Entrance animations
   const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -186,7 +192,7 @@ export default function NativeAdComponent({ nativeAd, loading }: NativeAdCompone
     return typeof value === 'string' ? value : String(value);
   };
 
-  if (NATIVE_AD_DISABLE_WRAPPER_DEBUG) {
+  if (!shouldUseSdkWrapper) {
     return (
       <Animated.View
         style={[

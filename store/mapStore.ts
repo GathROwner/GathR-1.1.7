@@ -249,7 +249,7 @@ const calculateInterestLevel = (venues: Venue[]): InterestLevel => {
 /**
  * Determines if an event matches the given type-specific filters
  */
-const doesEventMatchTypeFilters = (event: Event, typeFilters: TypeFilterCriteria): boolean => {
+export const doesEventMatchTypeFilters = (event: Event, typeFilters: TypeFilterCriteria): boolean => {
   // Check time filter
   if (typeFilters.timeFilter === TimeFilterType.ALL) {
     // No time filtering - show all events

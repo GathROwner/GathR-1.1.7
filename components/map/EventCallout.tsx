@@ -80,7 +80,7 @@ import {
   Modal,
   Alert,
   GestureResponderEvent,
-  ActivityIndicator
+  ActivityIndicator,
 } from 'react-native';
 import * as Calendar from 'expo-calendar';
 import { MaterialIcons, Ionicons, FontAwesome } from '@expo/vector-icons';
@@ -129,11 +129,13 @@ import { fetchVenueDetailsByName, VenueContactInfo } from '../../lib/api/firesto
 // Import ad components and hooks
 import useNativeAds from '../../hooks/useNativeAds';
 import CompactNativeAdComponent from '../ads/CompactNativeAdComponent';
+import CompactSdkAdCard from '../ads/CompactSdkAdCard';
 import { traceMapEvent } from '../../utils/mapTrace';
 
 const EVENT_CALLOUT_SHELL_ISOLATION_DEBUG = false;
 const EVENT_CALLOUT_DISABLE_NATIVE_ADS_DEBUG = false;
 const EVENT_CALLOUT_PLACEHOLDER_AD_CARD_DEBUG = false;
+let compactSdkUnlockedForSession = true;
 
 // ===============================================================
 // PRIORITY SYSTEM IMPORTS - FIXED
@@ -576,7 +578,30 @@ type ContentItem = {
   data: Event | {
     ad: any;
     loading: boolean;
+    key: string;
+    allowMedia: boolean;
   };
+};
+
+const getAdContentKey = (
+  entry: { ad: any; loading: boolean },
+  occurrenceIndex: number
+) => {
+  const ad = entry.ad;
+  const headline = typeof ad?.headline === 'string' ? ad.headline : 'none';
+  const advertiser = typeof ad?.advertiser === 'string' ? ad.advertiser : 'none';
+  const body = typeof ad?.body === 'string' ? ad.body : 'none';
+  return `ad-${occurrenceIndex}-${headline}-${advertiser}-${body}`
+    .toLowerCase()
+    .replace(/\s+/g, '-');
+};
+
+const getAdContentSignature = (entry: { ad: any; loading: boolean }) => {
+  const ad = entry.ad;
+  const headline = typeof ad?.headline === 'string' ? ad.headline : 'none';
+  const advertiser = typeof ad?.advertiser === 'string' ? ad.advertiser : 'none';
+  const body = typeof ad?.body === 'string' ? ad.body : 'none';
+  return `${headline}::${advertiser}::${body}`.toLowerCase().trim();
 };
 
 // Helper function to mix content items with ads
@@ -597,9 +622,14 @@ const mixContentWithAds = (
     
     // Append one ad if available
     if (ads.length > 0) {
+      const selectedAd = ads[0];
       result.push({
         type: 'ad',
-        data: ads[0]
+        data: {
+          ...selectedAd,
+          key: getAdContentKey(selectedAd, 0),
+          allowMedia: true,
+        }
       });
     }
     
@@ -609,6 +639,7 @@ const mixContentWithAds = (
   // For multiple items (insert an ad after every second item)
   const result: ContentItem[] = [];
   let adIndex = 0;
+  const adOccurrenceCounts = new Map<string, number>();
   
   contentItems.forEach((item, index) => {
     // Add the content item
@@ -619,9 +650,17 @@ const mixContentWithAds = (
     
     // After every second item, add an ad (cycle through available ads)
     if ((index + 1) % 2 === 0 && ads.length > 0) {
+      const selectedAd = ads[adIndex % ads.length];
+      const adSignature = getAdContentSignature(selectedAd);
+      const nextOccurrence = (adOccurrenceCounts.get(adSignature) ?? 0) + 1;
+      adOccurrenceCounts.set(adSignature, nextOccurrence);
       result.push({
         type: 'ad',
-        data: ads[adIndex % ads.length] // Cycle through ads when we run out
+        data: {
+          ...selectedAd,
+          key: getAdContentKey(selectedAd, adIndex),
+          allowMedia: nextOccurrence === 1,
+        }
       });
       adIndex++;
     }
@@ -2667,6 +2706,7 @@ const activeVenue = reorderedVenues[activeVenueIndex];
   };
   
 const [activeTab, setActiveTab] = useState<TabType>(getInitialActiveTab());
+const initialAutoOpenTabRef = useRef<TabType>(getInitialActiveTab());
 const [selectedEvent, setSelectedEvent] = useState<Event | null>(
   hasEvents ? events[0] : (hasSpecials ? specials[0] : null)
 );
@@ -2688,6 +2728,13 @@ const [calloutState, setCalloutState] = useState<CalloutState>('expanded');
   const scrollYRef = useRef(0);  // Track current scroll position for gesture handling
   const currentStateRef = useRef<CalloutState>('expanded');
   const hasReportedInitialLayoutRef = useRef(false);
+  const [calloutLayoutReady, setCalloutLayoutReady] = useState(false);
+  const hasExitedInitialCompactTabRef = useRef(false);
+  const [initialCompactTabLayoutSettled, setInitialCompactTabLayoutSettled] = useState(false);
+  const [compactSdkUnlocked, setCompactSdkUnlocked] = useState(compactSdkUnlockedForSession);
+  const [compactTabRenderMode, setCompactTabRenderMode] = useState<'fallback' | 'sdk' | null>(null);
+  const [sdkCompactRenderVersion, setSdkCompactRenderVersion] = useState(0);
+  const lastSdkCompactReadySignatureRef = useRef<string>('');
   const [scrollProgress, setScrollProgress] = useState(0);
   const [canScrollMore, setCanScrollMore] = useState(false);
 
@@ -2703,6 +2750,10 @@ const [calloutState, setCalloutState] = useState<CalloutState>('expanded');
     imageUrl: string;
     event: Event;
   } | null>(null);
+  const unlockCompactSdk = () => {
+    compactSdkUnlockedForSession = true;
+    setCompactSdkUnlocked(true);
+  };
   
   // Change this: remove the calloutVisible state
   // Instead, use CSS to show/hide the callout when the lightbox is open
@@ -2743,6 +2794,18 @@ const [calloutState, setCalloutState] = useState<CalloutState>('expanded');
     requestedNativeAdCount,
     activeTab === 'events' ? 'events' : 'specials',
     activeVenueIndex
+  );
+  const activeNativeAdsReadySignature = useMemo(
+    () =>
+      nativeAds
+        .map((entry, index) => {
+          if (entry.loading || !entry.ad) {
+            return `${index}:loading`;
+          }
+          return `${index}:${getAdContentSignature(entry)}`;
+        })
+        .join('|'),
+    [nativeAds]
   );
   
   // Create mixed content arrays for events and specials tabs
@@ -2804,6 +2867,7 @@ console.log('ATTEMPTING to set selectedImageData state...');
 const handleVenueSelect = (index: number) => {
   console.log(`[GuestLimitation] Venue change: ${activeVenueIndex} → ${index}`);
   
+  unlockCompactSdk();
   // Track venue change interaction for guests
   if (isGuest && !trackInteraction(InteractionType.CLUSTER_VENUE_CHANGE)) {
     console.log('[GuestLimitation] Venue change interaction blocked - allowing action but prompt should show');
@@ -2886,7 +2950,9 @@ const handleVenueSelect = (index: number) => {
    */
 const handleTabChange = (tab: TabType) => {
   console.log(`[GuestLimitation] Tab change: ${activeTab} → ${tab}`);
+  setCompactTabRenderMode(null);
   
+  unlockCompactSdk();
   // Track tab change interaction for guests
   if (isGuest && !trackInteraction(InteractionType.CLUSTER_TAB_CHANGE)) {
     console.log('[GuestLimitation] Tab change interaction blocked - allowing action but prompt should show');
@@ -3262,6 +3328,11 @@ const calloutContainerStyle = EVENT_CALLOUT_SHELL_ISOLATION_DEBUG
       }
     ];
 
+const needsInitialCompactLayoutGate =
+  !hasExitedInitialCompactTabRef.current &&
+  (activeTab === 'events' || activeTab === 'specials') &&
+  activeTab === initialAutoOpenTabRef.current;
+
 useEffect(() => {
   traceMapEvent('event_callout_visual_state_changed', {
     clusterId: cluster?.id ?? 'none',
@@ -3315,6 +3386,117 @@ useEffect(() => {
   safeTopOffset,
   selectedEvent?.id,
   venues.length,
+]);
+
+useEffect(() => {
+  if (!hasExitedInitialCompactTabRef.current && activeTab !== initialAutoOpenTabRef.current) {
+    hasExitedInitialCompactTabRef.current = true;
+    setInitialCompactTabLayoutSettled(false);
+  }
+}, [activeTab]);
+
+useEffect(() => {
+  if (!needsInitialCompactLayoutGate) {
+    setInitialCompactTabLayoutSettled(false);
+    return;
+  }
+  if (!calloutLayoutReady || calloutState === 'minimized') {
+    return;
+  }
+
+  setInitialCompactTabLayoutSettled(false);
+  let cancelled = false;
+  let firstFrame: number | null = null;
+  let secondFrame: number | null = null;
+  let timeoutId: ReturnType<typeof setTimeout> | null = null;
+
+  firstFrame = requestAnimationFrame(() => {
+    secondFrame = requestAnimationFrame(() => {
+      timeoutId = setTimeout(() => {
+        if (!cancelled) {
+          setInitialCompactTabLayoutSettled(true);
+        }
+      }, 100);
+    });
+  });
+
+  return () => {
+    cancelled = true;
+    if (firstFrame !== null) {
+      cancelAnimationFrame(firstFrame);
+    }
+    if (secondFrame !== null) {
+      cancelAnimationFrame(secondFrame);
+    }
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+    }
+  };
+}, [
+  activeTab,
+  activeVenueIndex,
+  calloutLayoutReady,
+  calloutState,
+  cluster?.id,
+  needsInitialCompactLayoutGate,
+]);
+
+useEffect(() => {
+  setCompactTabRenderMode(null);
+  lastSdkCompactReadySignatureRef.current = '';
+  setSdkCompactRenderVersion(0);
+
+  if (activeTab !== 'events' && activeTab !== 'specials') {
+    return;
+  }
+  if (!compactSdkUnlocked) {
+    return;
+  }
+  if (!calloutLayoutReady || calloutState === 'minimized') {
+    return;
+  }
+  if (needsInitialCompactLayoutGate && !initialCompactTabLayoutSettled) {
+    return;
+  }
+  if (!nativeAds.some(entry => entry.ad && !entry.loading)) {
+    return;
+  }
+
+  const timeoutId = setTimeout(() => {
+    setCompactTabRenderMode('sdk');
+  }, 1);
+
+  return () => {
+    clearTimeout(timeoutId);
+  };
+}, [
+  activeTab,
+  activeVenueIndex,
+  calloutLayoutReady,
+  calloutState,
+  cluster?.id,
+  compactSdkUnlocked,
+  initialCompactTabLayoutSettled,
+  nativeAds,
+  needsInitialCompactLayoutGate,
+]);
+
+useEffect(() => {
+  if (compactTabRenderMode !== 'sdk') return;
+  if (activeTab !== 'events' && activeTab !== 'specials') return;
+  if (!calloutLayoutReady) return;
+  if (!nativeAds.some(entry => entry.ad && !entry.loading)) return;
+
+  if (lastSdkCompactReadySignatureRef.current === activeNativeAdsReadySignature) {
+    return;
+  }
+  lastSdkCompactReadySignatureRef.current = activeNativeAdsReadySignature;
+}, [
+  activeNativeAdsReadySignature,
+  activeTab,
+  calloutLayoutReady,
+  compactTabRenderMode,
+  nativeAds,
 ]);
 
 const setCalloutStateWithAnimation = (state: CalloutState) => {
@@ -3485,6 +3667,7 @@ const setCalloutStateWithAnimation = (state: CalloutState) => {
         console.log('RELEASE - dy:', dy.toFixed(2), 'vy:', vy.toFixed(2), 'current state:', currentStateRef.current);
         if (currentStateRef.current === 'minimized' && dy > 10) {
           console.log('CLOSING callout');
+          setCompactTabRenderMode(null);
           onClose();
           return;
         }
@@ -3537,7 +3720,10 @@ const onCloseRef = useRef(onClose);
 
 useEffect(() => {
   setCalloutStateRef.current = setCalloutStateWithAnimation;
-  onCloseRef.current = onClose;
+  onCloseRef.current = () => {
+    setCompactTabRenderMode(null);
+    onClose();
+  };
 }, [setCalloutStateWithAnimation, onClose]);
 
 useEffect(() => {
@@ -3635,8 +3821,16 @@ useEffect(() => {
   // Enhanced render function for content items (events and ads)
   const renderContentItem = (item: ContentItem, index: number) => {
     if (item.type === 'ad') {
+      const adData = item.data as {
+        ad: any;
+        loading: boolean;
+        key: string;
+        allowMedia: boolean;
+      };
+      const renderMode = compactTabRenderMode;
+      const adCardKey = `${adData.key}-${activeTab}-${activeVenueIndex}-${sdkCompactRenderVersion}-${renderMode ?? 'pending'}`;
       return (
-        <View key={`ad-${index}`} style={styles.adContainer}>
+        <View key={adData.key} style={styles.adContainer}>
           {EVENT_CALLOUT_PLACEHOLDER_AD_CARD_DEBUG ? (
             <View style={styles.placeholderAdCard}>
               <View style={styles.placeholderAdBadge}>
@@ -3652,10 +3846,24 @@ useEffect(() => {
                 </View>
               </View>
             </View>
+          ) : renderMode === 'sdk' ? (
+            <CompactSdkAdCard
+              key={adCardKey}
+              nativeAd={adData.ad}
+              loading={adData.loading}
+              allowMedia={adData.allowMedia}
+            />
+          ) : renderMode === 'fallback' ? (
+            <CompactNativeAdComponent
+              key={adCardKey}
+              nativeAd={adData.ad}
+              loading={adData.loading}
+            />
           ) : (
-            <CompactNativeAdComponent 
-              nativeAd={(item.data as {ad: any; loading: boolean}).ad}
-              loading={(item.data as {ad: any; loading: boolean}).loading}
+            <CompactNativeAdComponent
+              key={adCardKey}
+              nativeAd={adData.ad}
+              loading={true}
             />
           )}
         </View>
@@ -3718,6 +3926,9 @@ useEffect(() => {
         style={calloutContainerStyle}
         onLayout={(event: LayoutChangeEvent) => {
           const { height, width, x, y } = event.nativeEvent.layout;
+          if (!calloutLayoutReady) {
+            setCalloutLayoutReady(true);
+          }
           traceMapEvent('event_callout_on_layout', {
             height,
             width,
@@ -3789,6 +4000,7 @@ useEffect(() => {
             <TouchableOpacity 
               onPress={() => {
                 console.log("ðŸ”´ CALLOUT DEBUG: CLOSE BUTTON PRESSED");
+                setCompactTabRenderMode(null);
                 onClose();
                 console.log("ðŸ”´ CALLOUT DEBUG: After onClose() call");
               }} 

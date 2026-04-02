@@ -37,7 +37,7 @@ import CategoryFilterOptions from '../../components/map/CategoryFilterOptions';
 
 // Import components
 import EventImageLightbox from '../../components/map/EventImageLightbox';
-import NativeAdComponent from '../../components/ads/NativeAdComponent';
+import FullSizeSdkAdCard, { FULL_SIZE_SDK_AD_ROW_HEIGHT } from '../../components/ads/FullSizeSdkAdCard';
 
 // Import utilities
 import {
@@ -64,7 +64,7 @@ import {
   createLocationKeyFromEvent
 } from '../../utils/priorityUtils';
 import * as userService from '../../services/userService';
-import { calculateDistance } from '../../store/mapStore';
+import { calculateDistance, doesEventMatchTypeFilters } from '../../store/mapStore';
 import { useUserPrefsStore } from '../../store/userPrefsStore';
 import { areEventIdsEquivalent } from '../../lib/api/firestoreEvents';
 
@@ -2012,22 +2012,7 @@ useEffect(() => {
       filtered = filtered.filter(e => isEventSaved(e));
     }
 
-    const timeFilter = filterCriteria.specialFilters.timeFilter;
-    if (timeFilter === 'now') {
-            filtered = filtered.filter(e => isEventNow(e.startDate, e.startTime, e.endDate, e.endTime));
-    } else if (timeFilter === 'today') {
-      filtered = filtered.filter(e => isEventHappeningToday(e));
-    }
-
-    // Apply search filter if active
-    const searchTerm = filterCriteria.specialFilters.search?.toLowerCase().trim();
-    if (searchTerm) {
-      filtered = filtered.filter(e =>
-        e.title.toLowerCase().includes(searchTerm) ||
-        e.description.toLowerCase().includes(searchTerm) ||
-        e.venue.toLowerCase().includes(searchTerm)
-      );
-    }
+    filtered = filtered.filter(e => doesEventMatchTypeFilters(e, filterCriteria.specialFilters));
 
     return filtered;
   }, [viewportEvents, filterCriteria, savedEvents]);
@@ -2040,22 +2025,7 @@ useEffect(() => {
       filtered = filtered.filter(e => isEventSaved(e));
     }
 
-    const timeFilter = filterCriteria.specialFilters.timeFilter;
-    if (timeFilter === 'now') {
-            filtered = filtered.filter(e => isEventNow(e.startDate, e.startTime, e.endDate, e.endTime));
-    } else if (timeFilter === 'today') {
-      filtered = filtered.filter(e => isEventHappeningToday(e));
-    }
-
-    // Apply search filter if active
-    const searchTerm = filterCriteria.specialFilters.search?.toLowerCase().trim();
-    if (searchTerm) {
-      filtered = filtered.filter(e =>
-        e.title.toLowerCase().includes(searchTerm) ||
-        e.description.toLowerCase().includes(searchTerm) ||
-        e.venue.toLowerCase().includes(searchTerm)
-      );
-    }
+    filtered = filtered.filter(e => doesEventMatchTypeFilters(e, filterCriteria.specialFilters));
 
     return filtered;
   }, [outsideViewportEvents, filterCriteria, savedEvents]);
@@ -2211,15 +2181,39 @@ useEffect(() => {
     data: {
       ad: any;
       loading: boolean;
+      key: string;
+      allowMedia: boolean;
     };
   };
   
   type ListItem = SpecialListItem | DividerItem | AdListItem;
+
+  const getAdListKey = useCallback(
+    (entry: { ad: any; loading: boolean }, occurrenceIndex: number) => {
+      const ad = entry.ad;
+      const headline = typeof ad?.headline === 'string' ? ad.headline : 'none';
+      const advertiser = typeof ad?.advertiser === 'string' ? ad.advertiser : 'none';
+      const body = typeof ad?.body === 'string' ? ad.body : 'none';
+      return `ad-${occurrenceIndex}-${headline}-${advertiser}-${body}`
+        .toLowerCase()
+        .replace(/\s+/g, '-');
+    },
+    []
+  );
+
+  const getAdSignature = useCallback((entry: { ad: any; loading: boolean }) => {
+    const ad = entry.ad;
+    const headline = typeof ad?.headline === 'string' ? ad.headline : 'none';
+    const advertiser = typeof ad?.advertiser === 'string' ? ad.advertiser : 'none';
+    const body = typeof ad?.body === 'string' ? ad.body : 'none';
+    return `${headline}::${advertiser}::${body}`.toLowerCase().trim();
+  }, []);
   
   const specialsWithAds = useMemo<ListItem[]>(() => {
     const result: ListItem[] = [];
     const adFrequency = 4;
     let adIndex = 0;
+    const adOccurrenceCounts = new Map<string, number>();
 
     // Add viewport specials with ads
     sortedViewportSpecials.forEach((special, index) => {
@@ -2229,9 +2223,17 @@ useEffect(() => {
       if ((index + 1) % adFrequency === 0 && nativeAds.length > 0) {
         const validAds = nativeAds.filter(ad => ad.ad !== null && !ad.loading);
         if (validAds.length > 0) {
+          const selectedAd = validAds[adIndex % validAds.length];
+          const adSignature = getAdSignature(selectedAd);
+          const nextOccurrence = (adOccurrenceCounts.get(adSignature) ?? 0) + 1;
+          adOccurrenceCounts.set(adSignature, nextOccurrence);
           result.push({
             type: 'ad',
-            data: validAds[adIndex % validAds.length]
+            data: {
+              ...selectedAd,
+              key: getAdListKey(selectedAd, adIndex),
+              allowMedia: nextOccurrence === 1,
+            }
           });
           adIndex++;
         }
@@ -2258,9 +2260,17 @@ useEffect(() => {
       if ((index + 1) % adFrequency === 0 && nativeAds.length > 0) {
         const validAds = nativeAds.filter(ad => ad.ad !== null && !ad.loading);
         if (validAds.length > 0) {
+          const selectedAd = validAds[adIndex % validAds.length];
+          const adSignature = getAdSignature(selectedAd);
+          const nextOccurrence = (adOccurrenceCounts.get(adSignature) ?? 0) + 1;
+          adOccurrenceCounts.set(adSignature, nextOccurrence);
           result.push({
             type: 'ad',
-            data: validAds[adIndex % validAds.length]
+            data: {
+              ...selectedAd,
+              key: getAdListKey(selectedAd, adIndex),
+              allowMedia: nextOccurrence === 1,
+            }
           });
           adIndex++;
         }
@@ -2271,15 +2281,23 @@ useEffect(() => {
     if (sortedViewportSpecials.length > 0 && sortedViewportSpecials.length < adFrequency && nativeAds.length > 0 && sortedOutsideViewportSpecials.length === 0) {
       const validAds = nativeAds.filter(ad => ad.ad !== null && !ad.loading);
       if (validAds.length > 0) {
+        const selectedAd = validAds[0];
+        const adSignature = getAdSignature(selectedAd);
+        const nextOccurrence = (adOccurrenceCounts.get(adSignature) ?? 0) + 1;
+        adOccurrenceCounts.set(adSignature, nextOccurrence);
         result.push({
           type: 'ad',
-          data: validAds[0]
+          data: {
+            ...selectedAd,
+            key: getAdListKey(selectedAd, adIndex),
+            allowMedia: nextOccurrence === 1,
+          }
         });
       }
     }
 
     return result;
-  }, [sortedViewportSpecials, sortedOutsideViewportSpecials, nativeAds, outsideViewportLoadCount]);
+  }, [getAdListKey, getAdSignature, sortedViewportSpecials, sortedOutsideViewportSpecials, nativeAds, outsideViewportLoadCount]);
   
   // Track special priority effectiveness
   useEffect(() => {
@@ -2573,7 +2591,7 @@ useEffect(() => {
         data={specialsWithAds}
         keyExtractor={(item, index) => {
           if (item.type === 'special') return `special-${item.data.id}`;
-          if (item.type === 'ad') return `ad-${index}`;
+          if (item.type === 'ad') return item.data.key;
           if (item.type === 'divider') return `divider-${index}`;
           return `item-${index}`;
         }}
@@ -2606,9 +2624,11 @@ useEffect(() => {
                     </View>
                   </View>
                 ) : (
-                  <NativeAdComponent
+                  <FullSizeSdkAdCard
+                    key={item.data.key}
                     nativeAd={item.data.ad}
                     loading={item.data.loading}
+                    allowMedia={item.data.allowMedia}
                   />
                 )}
               </View>
@@ -2772,9 +2792,11 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   adContainer: {
+    height: FULL_SIZE_SDK_AD_ROW_HEIGHT,
     backgroundColor: '#FFFFFF',
     paddingBottom: 12,
     marginBottom: 12, // Changed from borderBottomWidth to margin
+    overflow: 'hidden',
   },
   placeholderAdCard: {
     backgroundColor: '#FFF7ED',

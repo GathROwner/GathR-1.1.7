@@ -80,7 +80,11 @@ export interface MapState {
   setAllEvents: (events: Event[]) => void;  // For React Query global cache
   setEvents: (events: Event[]) => void;  // Deprecated - use setAllEvents
   setFilterCriteria: (criteria: Partial<FilterCriteria>) => void;
-  setTypeFilters: (type: 'event' | 'special', typeFilters: Partial<TypeFilterCriteria>) => void;
+  setTypeFilters: (
+    type: 'event' | 'special',
+    typeFilters: Partial<TypeFilterCriteria>,
+    source?: 'filter-pills' | 'interest-pills'
+  ) => void;
   selectVenue: (venue: Venue | null) => void;
   selectVenues: (venues: Venue[]) => void;
   selectCluster: (cluster: Cluster | null) => void;
