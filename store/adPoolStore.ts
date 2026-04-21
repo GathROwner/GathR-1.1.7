@@ -46,7 +46,7 @@ const DEFAULT_POOL_SIZE = 15; // Load up to 15 ads per type
 const INITIAL_FAST_LOAD = 3; // Load this many ads quickly first
 const MAX_ATTEMPTS = 20; // More attempts than before
 const STALE_AGE_MS = 5 * 60 * 1000; // 5 minutes
-const AD_POOL_DEBUG_ENABLED = true;
+const AD_POOL_DEBUG_ENABLED = false;
 const MAX_LOGGED_ADS = 5;
 
 type AdType = 'events' | 'specials';

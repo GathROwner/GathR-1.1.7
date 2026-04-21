@@ -46,6 +46,9 @@ import {
 // Get screen dimensions for responsive design
 const { width, height } = Dimensions.get('window');
 
+// Admin debug features - set to false for production builds
+const SHOW_AD_SDK_LAB = false;
+
 // Pulsing Hotspot Circle Icon Component
 const HotspotCircleIcon: React.FC<{ isActive: boolean }> = ({ isActive }) => {
   const pulseAnim = useRef(new Animated.Value(1)).current;
@@ -1501,18 +1504,20 @@ const handleLogout = async () => {
                       </View>
                     </TouchableOpacity>
 
-                    <TouchableOpacity
-                      style={styles.gridButton}
-                      onPress={() => router.push('/native-ad-lab')}
-                    >
-                      <View style={styles.buttonIconContainer}>
-                        <Ionicons name="flask-outline" size={20} color={BRAND.primary} />
-                      </View>
-                      <View style={styles.buttonTextContainer}>
-                        <Text style={styles.gridButtonText}>Ad SDK Lab</Text>
-                        <Text style={styles.gridButtonSubtext}>Isolated wrapper test</Text>
-                      </View>
-                    </TouchableOpacity>
+                    {SHOW_AD_SDK_LAB && (
+                      <TouchableOpacity
+                        style={styles.gridButton}
+                        onPress={() => router.push('/native-ad-lab')}
+                      >
+                        <View style={styles.buttonIconContainer}>
+                          <Ionicons name="flask-outline" size={20} color={BRAND.primary} />
+                        </View>
+                        <View style={styles.buttonTextContainer}>
+                          <Text style={styles.gridButtonText}>Ad SDK Lab</Text>
+                          <Text style={styles.gridButtonSubtext}>Isolated wrapper test</Text>
+                        </View>
+                      </TouchableOpacity>
+                    )}
                   </View>
                 </View>
                 </View>

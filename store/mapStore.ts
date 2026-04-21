@@ -100,7 +100,7 @@ export interface ZoomThreshold {
 }
 
  // ───── DEBUG: Map load instrumentation toggles & counters ─────
- const DEBUG_MAP_LOAD = true;
+ const DEBUG_MAP_LOAD = false;
  let __ML_fetchCount = 0;
  let __ML_lastFetchMs = 0;
  let __ML_lastEventsBytes = 0;
@@ -657,7 +657,8 @@ const clusterVenues = (venues: Venue[], zoom: number = 12): Cluster[] => {
   lastClusters = clusters;
   currentThresholdIndex = getThresholdIndexForZoom(zoom);
 
-  console.log(`Generated ${clusters.length} clusters from ${venues.length} venues using supercluster @z=${z}`);
+  // Disabled for performance - console.log is slow in React Native
+  // console.log(`Generated ${clusters.length} clusters from ${venues.length} venues using supercluster @z=${z}`);
   return clusters;
 };
 
@@ -890,58 +891,43 @@ export const useMapStore = create<MapState>((set, get) => ({
    * Set selected cluster (for multi-venue support)
    */
 selectCluster: (cluster) => {
+  // Set selected cluster immediately for instant visual feedback
   set({ selectedCluster: cluster });
-  
+
+  // Defer enhancement checking to not block touch response
   if (cluster) {
-    const { events } = get();
-    const eventIds = cluster.venues.flatMap(venue => 
-      venue.events.map(event => event.id)
-    );
-    
-    // Debug: Check first few events for enhanced properties
-    console.log('CACHE DEBUG: Checking events for enhanced properties');
-    eventIds.slice(0, 3).forEach(id => {
-      const event = events.find(e => e.id === id);
-      if (event) {
-        console.log(`Event ${id}: has fullDescription=${!!(event as any).fullDescription}, has ticketLinkPosts=${!!(event as any).ticketLinkPosts}`);
-      }
-    });
-    
-const needsEnhancement = eventIds.some(id => {
-  const event = events.find(e => e.id === id);
-  if (!event) return false;
-  
-  // Check if event has been processed by enhancement API
-  // Events that have been enhanced will have these properties (even if empty)
-  const hasBeenEnhanced = event.hasOwnProperty('fullDescription') || 
-                          event.hasOwnProperty('ticketLinkPosts') || 
-                          event.hasOwnProperty('ticketLinkEvents');
-  
-  return !hasBeenEnhanced;
-});
-    
-    if (needsEnhancement) {
-      console.log('Fetching enhanced details for cluster');
-      // 🔧 FIX: Update the cluster after fetching details
-      get().fetchEventDetails(eventIds).then(() => {
-        // After fetching details, update the cluster with enhanced events
-        const { events: updatedEvents } = get();
-        const updatedCluster = {
-          ...cluster,
-          venues: cluster.venues.map(venue => ({
-            ...venue,
-            events: venue.events.map(event => {
-              const updatedEvent = updatedEvents.find(e => e.id === event.id);
-              return updatedEvent || event;
-            })
-          }))
-        };
-        console.log('CLUSTER UPDATED WITH ENHANCED EVENTS');
-        set({ selectedCluster: updatedCluster });
+    setTimeout(() => {
+      const { events } = get();
+      const eventIds = cluster.venues.flatMap(venue =>
+        venue.events.map(event => event.id)
+      );
+
+      const needsEnhancement = eventIds.some(id => {
+        const event = events.find(e => e.id === id);
+        if (!event) return false;
+        const hasBeenEnhanced = event.hasOwnProperty('fullDescription') ||
+                                event.hasOwnProperty('ticketLinkPosts') ||
+                                event.hasOwnProperty('ticketLinkEvents');
+        return !hasBeenEnhanced;
       });
-    } else {
-      console.log('Enhanced details already cached, skipping fetch');
-    }
+
+      if (needsEnhancement) {
+        get().fetchEventDetails(eventIds).then(() => {
+          const { events: updatedEvents } = get();
+          const updatedCluster = {
+            ...cluster,
+            venues: cluster.venues.map(venue => ({
+              ...venue,
+              events: venue.events.map(event => {
+                const updatedEvent = updatedEvents.find(e => e.id === event.id);
+                return updatedEvent || event;
+              })
+            }))
+          };
+          set({ selectedCluster: updatedCluster });
+        });
+      }
+    }, 0);
   }
 },
   

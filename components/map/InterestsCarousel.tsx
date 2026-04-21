@@ -454,6 +454,9 @@ const InterestsCarousel: React.FC<InterestsCarouselProps> = ({
     currentIndex: number;
   } | null>(null);
 
+  // Track whether component should render (stays true during exit animation)
+  const [shouldRender, setShouldRender] = useState(false);
+
   const slideAnim = useRef(new Animated.Value(150)).current; // Start off-screen
   const opacityAnim = useRef(new Animated.Value(0)).current;
   const scrollX = useRef(new Animated.Value(0)).current; // Track horizontal scroll position
@@ -621,9 +624,11 @@ const InterestsCarousel: React.FC<InterestsCarouselProps> = ({
     slideAnim,
   ]);
 
-  // Animate visibility
+  // Animate visibility - keep component mounted during exit animation
   useEffect(() => {
     if (isVisible) {
+      // Immediately render, then animate in
+      setShouldRender(true);
       Animated.parallel([
         Animated.timing(slideAnim, {
           toValue: 0,
@@ -636,21 +641,26 @@ const InterestsCarousel: React.FC<InterestsCarouselProps> = ({
           useNativeDriver: true,
         }),
       ]).start();
-    } else {
+    } else if (shouldRender) {
+      // Animate out, then unmount
       Animated.parallel([
         Animated.timing(slideAnim, {
           toValue: 150,
-          duration: 200,
+          duration: 280,
           useNativeDriver: true,
         }),
         Animated.timing(opacityAnim, {
           toValue: 0,
-          duration: 200,
+          duration: 280,
           useNativeDriver: true,
         }),
-      ]).start();
+      ]).start(({ finished }) => {
+        if (finished) {
+          setShouldRender(false);
+        }
+      });
     }
-  }, [isVisible, slideAnim, opacityAnim]);
+  }, [isVisible, slideAnim, opacityAnim, shouldRender]);
 
   // Handle card press - open lightbox with event details
   const handleCardPress = (event: Event, index: number) => {
@@ -733,7 +743,7 @@ const InterestsCarousel: React.FC<InterestsCarouselProps> = ({
     markCarouselEventsViewed(venue.events.map((e) => e.id));
   }, [selectedImageData, recordInteraction, markCarouselEventsViewed]);
 
-  if (!isVisible && !selectedImageData) {
+  if (!shouldRender && !selectedImageData) {
     return null;
   }
 

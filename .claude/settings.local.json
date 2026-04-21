@@ -46,7 +46,12 @@
       "Bash(gcloud storage buckets list:*)",
       "Bash(pkill:*)",
       "Bash(taskkill:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(xargs:*)",
+      "Bash(git push:*)",
+      "Bash(tee:*)",
+      "Bash(npm run lint:*)"
     ]
   }
 }

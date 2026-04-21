@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 type TracePrimitive = string | number | boolean | null;
 
 // Flip these to true for a future production-style debugging session.
-export const MAP_TRACE_ENABLED = true;
+export const MAP_TRACE_ENABLED = false;
 export const MAP_TRACE_UI_ENABLED = MAP_TRACE_ENABLED;
 
 export interface MapTraceEntry {

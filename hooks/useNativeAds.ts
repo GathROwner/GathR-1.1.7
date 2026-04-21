@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { InteractionManager } from 'react-native';
 import { useIsFocused } from '@react-navigation/native';
 import { useAdPoolStore } from '../store/adPoolStore';
 import { NativeAd } from 'react-native-google-mobile-ads';
@@ -10,6 +11,8 @@ export type NativeAdData = {
 
 export type AdDebugInfo = string[];
 
+// Disable verbose logging in production - console.log is slow in React Native
+const DEBUG_ADS = false;
 const MAX_LOGGED_ADS = 5;
 
 const summarizeAd = (ad: NativeAd | null) => {
@@ -90,15 +93,20 @@ export default function useNativeAds(
     if (onDebugLog) {
       onDebugLog(`[ADMOB ${tabType}]: ${message}`);
     }
-    // Also log to console for debugging
-    console.log(`[useNativeAds ${tabType}]: ${message}`);
+    // Only log to console when debugging - console.log is slow in React Native
+    if (DEBUG_ADS) {
+      console.log(`[useNativeAds ${tabType}]: ${message}`);
+    }
   };
 
   const logStructured = (event: string, payload: Record<string, unknown>) => {
-    console.log(`[useNativeAds ${tabType}] ${event}`, payload);
+    if (DEBUG_ADS) {
+      console.log(`[useNativeAds ${tabType}] ${event}`, payload);
+    }
   };
 
   // Load ads on mount if pool is empty, or refresh if stale
+  // Deferred to not block tab switches
   useEffect(() => {
     logStructured('hook_mount_or_tab_change', {
       tabType,
@@ -109,17 +117,22 @@ export default function useNativeAds(
       poolSize: poolAds.length,
       isLoading,
     });
-    if (!isFocused || count <= 0) {
-      releaseAds(tabType, ownerIdRef.current);
-      return;
-    }
-    if (poolAds.length === 0) {
-      logMessage(`Pool empty - loading ads`);
-      loadAds(tabType);
-    } else {
-      logMessage(`Pool has ${poolAds.length} ads - checking freshness`);
-      refreshIfStale(tabType);
-    }
+
+    const handle = InteractionManager.runAfterInteractions(() => {
+      if (!isFocused || count <= 0) {
+        releaseAds(tabType, ownerIdRef.current);
+        return;
+      }
+      if (poolAds.length === 0) {
+        logMessage(`Pool empty - loading ads`);
+        loadAds(tabType);
+      } else {
+        logMessage(`Pool has ${poolAds.length} ads - checking freshness`);
+        refreshIfStale(tabType);
+      }
+    });
+
+    return () => handle.cancel();
   }, [count, isFocused, loadAds, poolAds.length, refreshIfStale, releaseAds, tabType]);
 
   useEffect(() => {
@@ -173,43 +186,49 @@ export default function useNativeAds(
       });
     };
 
-    if (!isFocused || count <= 0) {
-      releaseAds(tabType, ownerId);
-      logMessage(`Inactive - released ads for owner=${ownerId}`);
-      updateIfChanged(
-        Array(count)
-          .fill(0)
-          .map(() => ({ ad: null, loading: false }))
-      );
-      return;
-    }
+    // Defer ad state updates to not block tab switches
+    // This prevents cascading useMemo recomputations during navigation
+    const handle = InteractionManager.runAfterInteractions(() => {
+      if (!isFocused || count <= 0) {
+        releaseAds(tabType, ownerId);
+        logMessage(`Inactive - released ads for owner=${ownerId}`);
+        updateIfChanged(
+          Array(count)
+            .fill(0)
+            .map(() => ({ ad: null, loading: false }))
+        );
+        return;
+      }
 
-    if (isLoading && poolAds.length === 0) {
-      logMessage(`Loading state - returning ${count} loading placeholders for owner=${ownerId}`);
-      updateIfChanged(
-        Array(count)
-          .fill(0)
-          .map(() => ({ ad: null, loading: true }))
-      );
-      return;
-    }
+      if (isLoading && poolAds.length === 0) {
+        logMessage(`Loading state - returning ${count} loading placeholders for owner=${ownerId}`);
+        updateIfChanged(
+          Array(count)
+            .fill(0)
+            .map(() => ({ ad: null, loading: true }))
+        );
+        return;
+      }
 
-    if (poolAds.length === 0) {
-      logMessage(`No ads available - returning ${count} empty slots for owner=${ownerId}`);
-      updateIfChanged(
-        Array(count)
-          .fill(0)
-          .map(() => ({ ad: null, loading: false }))
-      );
-      return;
-    }
+      if (poolAds.length === 0) {
+        logMessage(`No ads available - returning ${count} empty slots for owner=${ownerId}`);
+        updateIfChanged(
+          Array(count)
+            .fill(0)
+            .map(() => ({ ad: null, loading: false }))
+        );
+        return;
+      }
 
-    const claimed = claimAds(tabType, ownerId, count, startIndex);
-    const next = claimed.map((ad) => ({ ad, loading: false }));
-    logMessage(
-      `Claimed ${claimed.filter(Boolean).length}/${count} ads from pool of ${poolAds.length} (startIndex=${startIndex}, owner=${ownerId})`
-    );
-    updateIfChanged(next);
+      const claimed = claimAds(tabType, ownerId, count, startIndex);
+      const next = claimed.map((ad) => ({ ad, loading: false }));
+      logMessage(
+        `Claimed ${claimed.filter(Boolean).length}/${count} ads from pool of ${poolAds.length} (startIndex=${startIndex}, owner=${ownerId})`
+      );
+      updateIfChanged(next);
+    });
+
+    return () => handle.cancel();
   }, [claimAds, count, isFocused, isLoading, poolAds, releaseAds, startIndex, tabType]);
 
   useEffect(() => {

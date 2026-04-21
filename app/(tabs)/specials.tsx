@@ -1,13 +1,13 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { 
-  View, 
-  Text, 
-  StyleSheet, 
-  FlatList, 
-  ActivityIndicator, 
-  TouchableOpacity, 
-  Animated, 
-  Dimensions, 
+import {
+  View,
+  Text,
+  StyleSheet,
+  FlatList,
+  ActivityIndicator,
+  TouchableOpacity,
+  Animated,
+  Dimensions,
   ScrollView,
   Modal,
   Share,
@@ -17,7 +17,8 @@ import {
   TextInput,
   Alert,
   Keyboard,
-  Pressable
+  Pressable,
+  InteractionManager
 } from 'react-native';
 import { MaterialIcons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
@@ -1380,6 +1381,18 @@ const result = await userService.toggleSavedEvent(event.id, {
   );
 };
 
+// Memoize EventListItem to prevent re-renders when props don't change
+const MemoizedEventListItem = React.memo(EventListItem, (prevProps, nextProps) => {
+  // Only re-render if these specific props change
+  return (
+    prevProps.event.id === nextProps.event.id &&
+    prevProps.matchesUserInterests === nextProps.matchesUserInterests &&
+    prevProps.isSaved === nextProps.isSaved &&
+    prevProps.isGuest === nextProps.isGuest &&
+    prevProps.isFirstItem === nextProps.isFirstItem
+  );
+});
+
 // Main Specials Screen component
 function SpecialsScreen() {
 
@@ -1412,36 +1425,41 @@ function SpecialsScreen() {
   
   
   // Track screen focus for session analytics - RE-ENABLED
+  // Deferred with InteractionManager to not block tab switch
   useFocusEffect(
     useCallback(() => {
       const startTime = Date.now();
-      
-      analytics.trackScreenView('specials', {
-        content_type: 'special_list',
-        user_type: isGuest ? 'guest' : 'registered'
+
+      InteractionManager.runAfterInteractions(() => {
+        analytics.trackScreenView('specials', {
+          content_type: 'special_list',
+          user_type: isGuest ? 'guest' : 'registered'
+        });
       });
-      
+
       // Return cleanup function to track time spent
       return () => {
         const timeSpent = Date.now() - startTime;
-        analytics.trackEngagementDepth('specials', timeSpent, {
-          interactions: 0,
-          featuresUsed: ['special_list']
+        InteractionManager.runAfterInteractions(() => {
+          analytics.trackEngagementDepth('specials', timeSpent, {
+            interactions: 0,
+            featuresUsed: ['special_list']
+          });
         });
       };
     }, []) // Keep dependency array empty - this prevents the infinite loop
   );
 
-  // Tutorial auto-advancement detection
+  // Tutorial auto-advancement detection - deferred with InteractionManager
   useFocusEffect(
     useCallback(() => {
-      setTimeout(() => {
+      InteractionManager.runAfterInteractions(() => {
         console.log('🔍 SPECIALS SCREEN: Screen focused, checking for tutorial');
         if ((global as any).onSpecialsScreenNavigated) {
           console.log('🔍 SPECIALS SCREEN: Calling tutorial advancement');
           (global as any).onSpecialsScreenNavigated();
         }
-      }, 100);
+      });
     }, [])
   );
 
@@ -1461,27 +1479,26 @@ function SpecialsScreen() {
   const isGuest = !user;
   const { trackInteraction } = useGuestInteraction();
 
-  // Store integration
-  const {
-    events,
-    filteredEvents,
-    viewportEvents,
-    outsideViewportEvents,
-    viewportMetadata,
-    isLoading,
-    error,
-    fetchEvents,
-    fetchEventDetails,
-    setTypeFilters,
-    categories,
-    filterCriteria,
-    userLocation,
-    getTimeFilterCounts,
-    getCategoryFilterCounts,
-    scrollTriggers,
-    isHeaderSearchActive,
-    setHeaderSearchActive
-  } = useMapStore();
+  // Store integration - individual selectors to prevent infinite loops
+  // (Combined object selectors with shallow cause getSnapshot caching issues)
+  const events = useMapStore((state) => state.events);
+  const filteredEvents = useMapStore((state) => state.filteredEvents);
+  const viewportEvents = useMapStore((state) => state.viewportEvents);
+  const outsideViewportEvents = useMapStore((state) => state.outsideViewportEvents);
+  const viewportMetadata = useMapStore((state) => state.viewportMetadata);
+  const isLoading = useMapStore((state) => state.isLoading);
+  const error = useMapStore((state) => state.error);
+  const fetchEvents = useMapStore((state) => state.fetchEvents);
+  const fetchEventDetails = useMapStore((state) => state.fetchEventDetails);
+  const setTypeFilters = useMapStore((state) => state.setTypeFilters);
+  const categories = useMapStore((state) => state.categories);
+  const filterCriteria = useMapStore((state) => state.filterCriteria);
+  const userLocation = useMapStore((state) => state.userLocation);
+  const getTimeFilterCounts = useMapStore((state) => state.getTimeFilterCounts);
+  const getCategoryFilterCounts = useMapStore((state) => state.getCategoryFilterCounts);
+  const scrollTriggers = useMapStore((state) => state.scrollTriggers);
+  const isHeaderSearchActive = useMapStore((state) => state.isHeaderSearchActive);
+  const setHeaderSearchActive = useMapStore((state) => state.setHeaderSearchActive);
 
   // --- Prefetch confirmation (specials) ---
   // Logs once on mount if cache already warm, and whenever events change.
@@ -1492,10 +1509,19 @@ function SpecialsScreen() {
     }
   }, [events]);
 
-  // Helper function to get updated event data from store
-  const getUpdatedEvent = (eventId: string | number) => {
-    return events.find((candidate) => areEventIdsEquivalent(candidate.id, eventId));
-  };
+  // Memoized event lookup Map for O(1) access instead of O(n) find
+  const eventLookupMap = useMemo(() => {
+    const map = new Map<string, Event>();
+    events.forEach(event => {
+      map.set(String(event.id), event);
+    });
+    return map;
+  }, [events]);
+
+  // Helper function to get updated event data from store - now O(1)
+  const getUpdatedEvent = useCallback((eventId: string | number) => {
+    return eventLookupMap.get(String(eventId));
+  }, [eventLookupMap]);
 
   // State management
   const [scrollY] = useState(new Animated.Value(0));
@@ -1532,14 +1558,17 @@ function SpecialsScreen() {
   }, [scrollTriggers.specials]); // Remove analytics from dependency array
 
   // Screen focus detection and tab interaction tracking
+  // Deferred with InteractionManager to not block tab switch
   useFocusEffect(
     React.useCallback(() => {
-      console.log('[GuestLimitation] Specials screen gained focus');
-      
-      if (isGuest) {
-        console.log('[GuestLimitation] Tracking Specials tab selection for guest');
-        trackTabSelect('specials');
-      }
+      InteractionManager.runAfterInteractions(() => {
+        console.log('[GuestLimitation] Specials screen gained focus');
+
+        if (isGuest) {
+          console.log('[GuestLimitation] Tracking Specials tab selection for guest');
+          trackTabSelect('specials');
+        }
+      });
     }, [isGuest])
   );
   
@@ -1678,52 +1707,49 @@ function SpecialsScreen() {
   
   // Removed Firebase listener - now handled centrally in AuthProvider.
   
-  // Fetch specials data
+  // Fetch specials data - deferred to not block initial render
   useEffect(() => {
     if (events.length === 0) {
-      const startTime = Date.now();
-      setListLoadTime(startTime);
-      
-      fetchEvents().then(() => {
-        const loadTime = Date.now() - startTime;
-        
-        // Track specials list load performance
-        analytics.trackPerformance('specials_list_load', loadTime, {
-          specials_count: events.filter(e => e.type === 'special').length,
-          content_type: 'specials'
+      // Defer fetch to next tick so it doesn't block touch interactions
+      setTimeout(() => {
+        const startTime = Date.now();
+        setListLoadTime(startTime);
+
+        fetchEvents().then(() => {
+          const loadTime = Date.now() - startTime;
+          analytics.trackPerformance('specials_list_load', loadTime, {
+            specials_count: events.filter(e => e.type === 'special').length,
+            content_type: 'specials'
+          });
+          setListLoadTime(loadTime);
+        }).catch((error) => {
+          analytics.trackError('specials_list_load_failed', error.message, {
+            user_action: 'fetch_specials'
+          });
         });
-        
-        setListLoadTime(loadTime);
-      }).catch((error) => {
-        analytics.trackError('specials_list_load_failed', error.message, {
-          user_action: 'fetch_specials'
-        });
-      });
+      }, 0);
     }
   }, [events, fetchEvents]); // Remove analytics from dependency array
   
 // NEW: Fetch enhanced details for specials that haven't been processed yet
 useEffect(() => {
   if (events.length > 0) {
-    const specialIds = events
-      .filter(event => event.type === 'special')
-      .filter(event => {
-        // Check if special has been processed by enhancement API
-        // Specials that have been enhanced will have these properties (even if empty)
-        const hasBeenEnhanced = event.hasOwnProperty('fullDescription') || 
-                                event.hasOwnProperty('ticketLinkPosts') || 
-                                event.hasOwnProperty('ticketLinkEvents');
-        
-        return !hasBeenEnhanced;
-      })
-      .map(event => event.id);
-    
-    if (specialIds.length > 0) {
-      console.log('Specials tab: Fetching enhanced details for', specialIds.length, 'specials');
-      fetchEventDetails(specialIds);
-    } else {
-      console.log('Specials tab: All specials already have enhanced details, skipping fetch');
-    }
+    // Defer heavy filtering to not block render
+    setTimeout(() => {
+      const specialIds = events
+        .filter(event => event.type === 'special')
+        .filter(event => {
+          const hasBeenEnhanced = event.hasOwnProperty('fullDescription') ||
+                                  event.hasOwnProperty('ticketLinkPosts') ||
+                                  event.hasOwnProperty('ticketLinkEvents');
+          return !hasBeenEnhanced;
+        })
+        .map(event => event.id);
+
+      if (specialIds.length > 0) {
+        fetchEventDetails(specialIds);
+      }
+    }, 0);
   }
 }, [events.length]); // Trigger when events count changes
   
@@ -2148,15 +2174,24 @@ useEffect(() => {
     return sortedSpecials;
   };
 
-  // Apply priority sorting to viewport section
+  // Apply priority sorting to viewport section (small, sorts immediately)
   const sortedViewportSpecials = useMemo(() => {
     return sortAndPrioritizeSpecials(filteredViewportSpecials);
   }, [filteredViewportSpecials, userLocation, savedEvents, favoriteVenues]);
 
-  // Apply priority sorting to outside-viewport section
+  // Lazy-sort outside-viewport specials: only sort what we need for display
+  // This prevents sorting hundreds of specials when FlatList only shows 10 initially
   const sortedOutsideViewportSpecials = useMemo(() => {
-    return sortAndPrioritizeSpecials(filteredOutsideViewportSpecials);
-  }, [filteredOutsideViewportSpecials, userLocation, savedEvents, favoriteVenues]);
+    // Only sort up to what we're displaying + one batch ahead for smooth scrolling
+    const maxToSort = outsideViewportLoadCount + 20; // loadMoreBatchSize buffer
+    if (filteredOutsideViewportSpecials.length <= maxToSort) {
+      // Small list, sort all of it
+      return sortAndPrioritizeSpecials(filteredOutsideViewportSpecials);
+    }
+    // Large list: sort only what we need
+    const specialsToSort = filteredOutsideViewportSpecials.slice(0, maxToSort);
+    return sortAndPrioritizeSpecials(specialsToSort);
+  }, [filteredOutsideViewportSpecials, outsideViewportLoadCount, userLocation, savedEvents, favoriteVenues]);
 
   // State for pagination of outside-viewport specials
   const [outsideViewportLoadCount, setOutsideViewportLoadCount] = useState(10);
@@ -2241,12 +2276,13 @@ useEffect(() => {
     });
 
     // Add divider if outside-viewport specials exist
-    if (sortedOutsideViewportSpecials.length > 0) {
+    // Use filteredOutsideViewportSpecials.length for accurate total count
+    if (filteredOutsideViewportSpecials.length > 0) {
       result.push({
         type: 'divider',
         data: {
           message: 'Specials outside your current map view',
-          count: sortedOutsideViewportSpecials.length
+          count: filteredOutsideViewportSpecials.length
         }
       });
     }
@@ -2297,8 +2333,60 @@ useEffect(() => {
     }
 
     return result;
-  }, [getAdListKey, getAdSignature, sortedViewportSpecials, sortedOutsideViewportSpecials, nativeAds, outsideViewportLoadCount]);
-  
+  }, [getAdListKey, getAdSignature, sortedViewportSpecials, sortedOutsideViewportSpecials, filteredOutsideViewportSpecials.length, nativeAds, outsideViewportLoadCount]);
+
+  // Pre-compute lookup Sets for O(1) access during render
+  const interestMatchSet = useMemo(() => {
+    if (!userInterests || userInterests.length === 0) return new Set<string>();
+    const lowerInterests = userInterests.map(i => i.toLowerCase());
+    const matchingIds = new Set<string>();
+    specialsWithAds.forEach(item => {
+      if (item.type === 'special' && lowerInterests.includes(item.data.category.toLowerCase())) {
+        matchingIds.add(String(item.data.id));
+      }
+    });
+    return matchingIds;
+  }, [specialsWithAds, userInterests]);
+
+  const savedEventSet = useMemo(() => {
+    return new Set(savedEvents || []);
+  }, [savedEvents]);
+
+  // Find first special index once instead of O(n) for each item
+  const firstSpecialIndex = useMemo(() => {
+    return specialsWithAds.findIndex(item => item.type === 'special');
+  }, [specialsWithAds]);
+
+  // Memoized FlatList callbacks to prevent unnecessary re-renders
+  const keyExtractor = useCallback((item: any, index: number) => {
+    if (item.type === 'special') return `special-${item.data.id}`;
+    if (item.type === 'ad') return item.data.key;
+    if (item.type === 'divider') return `divider-${index}`;
+    return `item-${index}`;
+  }, []);
+
+  const listEmptyComponent = useMemo(() => (
+    <View style={styles.emptyContainer}>
+      <Text style={styles.statusText}>
+        No specials match your current filters
+      </Text>
+    </View>
+  ), []);
+
+  const handleEndReached = useCallback(() => {
+    handleLoadMoreOutsideViewport();
+    analytics.trackUserAction('specials_list_end_reached', {
+      screen: 'specials',
+      total_items: specialsWithAds.length,
+      scroll_engagement: 'high'
+    });
+  }, [specialsWithAds.length, analytics, handleLoadMoreOutsideViewport]);
+
+  const contentContainerStyleMemo = useMemo(() => [
+    styles.listContent,
+    { paddingTop: Math.max(headerHeight, 120) + (showBanner ? 35 : 0) + 8 }
+  ], [headerHeight, showBanner]);
+
   // Track special priority effectiveness
   useEffect(() => {
     if (sortedViewportSpecials.length > 0) {
@@ -2589,20 +2677,10 @@ useEffect(() => {
       <FlatList
         ref={flatListRef}
         data={specialsWithAds}
-        keyExtractor={(item, index) => {
-          if (item.type === 'special') return `special-${item.data.id}`;
-          if (item.type === 'ad') return item.data.key;
-          if (item.type === 'divider') return `divider-${index}`;
-          return `item-${index}`;
-        }}
+        keyExtractor={keyExtractor}
         onScroll={handleScroll}
         scrollEventThrottle={16}
-        contentContainerStyle={[
-          styles.listContent,
-          { 
-            paddingTop: Math.max(headerHeight, 120) + (showBanner ? 35 : 0) + 8 // Added +8 for breathing room
-          }
-        ]}
+        contentContainerStyle={contentContainerStyleMemo}
         renderItem={({ item, index }) => {
           if (item.type === 'divider') {
             return <DividerComponent message={item.data.message} count={item.data.count} />;
@@ -2636,44 +2714,35 @@ useEffect(() => {
           }
 
           // item.type === 'special'
-          // Find the index of this special in the original specials array to determine if it's first
-          const specialIndex = specialsWithAds.slice(0, index + 1).filter(i => i.type === 'special').length - 1;
-          const isFirstSpecialItem = specialIndex === 0;
+          // Use pre-computed firstSpecialIndex (O(1)) instead of slice+filter (O(n))
+          const isFirstSpecialItem = index === firstSpecialIndex;
+          const specialId = String(item.data.id);
+          const specialData = getUpdatedEvent(item.data.id) || item.data;
 
           return (
-            <EventListItem
-              event={getUpdatedEvent(item.data.id) || item.data}
-              onPress={() => handleEventPress(getUpdatedEvent(item.data.id) || item.data)}
+            <MemoizedEventListItem
+              event={specialData}
+              onPress={() => handleEventPress(specialData)}
               onImagePress={handleImagePress}
-              isSaved={isEventSaved(item.data)}
-              matchesUserInterests={matchesUserInterests(item.data)}
+              isSaved={savedEventSet.has(specialId)}
+              matchesUserInterests={interestMatchSet.has(specialId)}
               isGuest={isGuest}
-              analytics={analytics} // Pass analytics hook directly
-              isFirstItem={isFirstSpecialItem} // NEW: Only first special gets tutorial
+              analytics={analytics}
+              isFirstItem={isFirstSpecialItem}
             />
           );
         }}
-        ListEmptyComponent={
-          <View style={styles.emptyContainer}>
-            <Text style={styles.statusText}>
-              No specials match your current filters
-            </Text>
-          </View>
-        }
-        onEndReached={() => {
-          // Load more outside-viewport specials
-          handleLoadMoreOutsideViewport();
-
-          // Track specials list end reached
-          analytics.trackUserAction('specials_list_end_reached', {
-            screen: 'specials',
-            total_items: specialsWithAds.length,
-            scroll_engagement: 'high'
-          });
-        }}
+        ListEmptyComponent={listEmptyComponent}
+        onEndReached={handleEndReached}
         onEndReachedThreshold={0.5}
+        // Performance optimizations for large lists
+        removeClippedSubviews={true}
+        maxToRenderPerBatch={10}
+        windowSize={5}
+        initialNumToRender={10}
+        updateCellsBatchingPeriod={50}
       />
-      
+
       {/* Special details bottom sheet */}
       {detailsVisible && selectedEvent && (
         <Animated.View 

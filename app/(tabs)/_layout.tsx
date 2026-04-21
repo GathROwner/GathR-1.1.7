@@ -1,7 +1,7 @@
 // app\(tabs)\_layout.tsx
 
 import { Tabs } from 'expo-router';
-import { TouchableOpacity, View, TextInput, Text, Animated, Image } from 'react-native';
+import { TouchableOpacity, View, TextInput, Text, Animated, Image, InteractionManager } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useMapStore } from '../../store/mapStore';
@@ -21,7 +21,11 @@ import useAnalytics from '../../hooks/useAnalytics';
 
 // Custom Header Title Component with Analytics - RE-ENABLED
 const HeaderTitle = ({ route }: { route: any }) => {
-  const { isHeaderSearchActive, setHeaderSearchActive, searchQuery, setSearchQuery } = useMapStore();
+  // Select only state values with shallow comparison, get setters directly
+  const isHeaderSearchActive = useMapStore((state) => state.isHeaderSearchActive);
+  const searchQuery = useMapStore((state) => state.searchQuery);
+  const setHeaderSearchActive = useMapStore((state) => state.setHeaderSearchActive);
+  const setSearchQuery = useMapStore((state) => state.setSearchQuery);
   const analytics = useAnalytics(); // RE-ENABLED
   const searchStartTime = useRef<number | null>(null);
   const [searchSessionActive, setSearchSessionActive] = useState(false);
@@ -274,7 +278,11 @@ const HeaderTitle = ({ route }: { route: any }) => {
 
 export default function TabLayout() {
   const router = useRouter();
-  const { isHeaderSearchActive, setHeaderSearchActive, triggerScrollToTop, searchQuery } = useMapStore();
+  // Select only state values, get setters/actions directly
+  const isHeaderSearchActive = useMapStore((state) => state.isHeaderSearchActive);
+  const searchQuery = useMapStore((state) => state.searchQuery);
+  const setHeaderSearchActive = useMapStore((state) => state.setHeaderSearchActive);
+  const triggerScrollToTop = useMapStore((state) => state.triggerScrollToTop);
   const analytics = useAnalytics(); // RE-ENABLED
   
   const { user } = useAuth();
@@ -321,7 +329,7 @@ export default function TabLayout() {
           }
         });
       }
-    }, 200);
+    }, 500);
     return () => clearInterval(interval);
   }, [profileButtonHighlighted]);
 
@@ -358,7 +366,7 @@ export default function TabLayout() {
             (global as any).eventsTabLayout = { x: pageX, y: pageY, width, height };
           });
         }
-      }, 200);
+      }, 500);
       return () => clearInterval(interval);
     }, [isHighlighted]);
   
@@ -428,7 +436,7 @@ export default function TabLayout() {
             (global as any).specialsTabLayout = { x: pageX, y: pageY, width, height };
           });
         }
-      }, 200);
+      }, 500);
       return () => clearInterval(interval);
     }, [isHighlighted]);
   
@@ -487,19 +495,22 @@ export default function TabLayout() {
   };
 
   const handleTabSwitch = (tabName: string, isFocused: boolean) => {
-    // Dismiss header search on any tab interaction
-    setHeaderSearchActive(false);
-    Keyboard.dismiss();
-    setNavigationHistory(prev => [...prev.slice(-9), tabName]);
-    setSessionTabSwitches(prev => prev + 1);
-    lastTabSwitch.current = Date.now();
-    
-    if (isFocused && (tabName === 'events' || tabName === 'specials')) {
-      triggerScrollToTop(tabName);
-      if (isGuest) {
-        trackTabSelect(tabName);
+    // Defer ALL operations until after UI interactions complete
+    // This gives priority to the tab switch animation
+    InteractionManager.runAfterInteractions(() => {
+      setHeaderSearchActive(false);
+      Keyboard.dismiss();
+      setNavigationHistory(prev => [...prev.slice(-9), tabName]);
+      setSessionTabSwitches(prev => prev + 1);
+      lastTabSwitch.current = Date.now();
+
+      if (isFocused && (tabName === 'events' || tabName === 'specials')) {
+        triggerScrollToTop(tabName);
+        if (isGuest) {
+          trackTabSelect(tabName);
+        }
       }
-    }
+    });
   };
 
   useEffect(() => {
@@ -551,6 +562,8 @@ export default function TabLayout() {
       headerStyle: { backgroundColor: '#1E90FF' },
       headerTintColor: '#FFFFFF',
       headerTitleAlign: 'center', // This fixes the Android centering issue
+      animation: 'none', // Disabled for faster tab switches (was 'fade')
+      lazy: false, // Keep screens mounted for faster switching (they're already loaded)
     })}>
       <Tabs.Screen
         name="events"
@@ -599,11 +612,12 @@ export default function TabLayout() {
         listeners={({ navigation }) => ({
           tabPress: (e) => {
             const focused = navigation.isFocused();
-            if (!focused) { useMapStore.getState().prefetchIfStale?.(180000); } // 3 min
             handleTabSwitch('events', focused);
+            // Defer data prefetch until after tab animation
+            if (!focused) { InteractionManager.runAfterInteractions(() => useMapStore.getState().prefetchIfStale?.(180000)); }
           },
-          tabLongPress: (e) => { useMapStore.getState().prefetchIfStale?.(180000); },
-          focus: (e) => { analytics.trackScreenView('events', {}); }
+          tabLongPress: (e) => { InteractionManager.runAfterInteractions(() => useMapStore.getState().prefetchIfStale?.(180000)); },
+          focus: (e) => { InteractionManager.runAfterInteractions(() => analytics.trackScreenView('events', {})); }
         })}
       />
       
@@ -652,14 +666,17 @@ export default function TabLayout() {
         listeners={({ navigation }) => ({
           tabPress: (e) => {
             const focused = navigation.isFocused();
-            if (focused) {
-              useMapStore.getState().triggerCloseCallout();
-            } else {
-              useMapStore.getState().prefetchIfStale?.(180000); // 3 min
-            }
             handleTabSwitch('map', focused);
+            // Defer store operations until after tab animation
+            InteractionManager.runAfterInteractions(() => {
+              if (focused) {
+                useMapStore.getState().triggerCloseCallout();
+              } else {
+                useMapStore.getState().prefetchIfStale?.(180000);
+              }
+            });
           },
-          focus: (e) => { analytics.trackScreenView('map', {}); }
+          focus: (e) => { InteractionManager.runAfterInteractions(() => analytics.trackScreenView('map', {})); }
         })}
       />
 
@@ -720,11 +737,12 @@ export default function TabLayout() {
         listeners={({ navigation }) => ({
           tabPress: (e) => {
             const focused = navigation.isFocused();
-            if (!focused) { useMapStore.getState().prefetchIfStale?.(180000); } // 3 min
             handleTabSwitch('specials', focused);
+            // Defer data prefetch until after tab animation
+            if (!focused) { InteractionManager.runAfterInteractions(() => useMapStore.getState().prefetchIfStale?.(180000)); }
           },
-          tabLongPress: (e) => { useMapStore.getState().prefetchIfStale?.(180000); },
-          focus: (e) => { analytics.trackScreenView('specials', {}); }
+          tabLongPress: (e) => { InteractionManager.runAfterInteractions(() => useMapStore.getState().prefetchIfStale?.(180000)); },
+          focus: (e) => { InteractionManager.runAfterInteractions(() => analytics.trackScreenView('specials', {})); }
         })}
       />
     </Tabs>

@@ -14,12 +14,12 @@
  */
 
 import React, { useEffect, useRef, useState, useMemo, useCallback } from 'react';
-import { View, Text, StyleSheet, Animated, Dimensions, PixelRatio, TouchableOpacity, Easing, Keyboard, Pressable, Image, Modal } from 'react-native';
+import { View, Text, StyleSheet, Animated, Dimensions, PixelRatio, TouchableOpacity, Easing, Keyboard, Pressable, Image, Modal, InteractionManager } from 'react-native';
 import * as Location from 'expo-location';
 import * as Haptics from 'expo-haptics';
 import MapboxGL from '@rnmapbox/maps';
 import { MaterialIcons } from '@expo/vector-icons';
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect, useIsFocused } from '@react-navigation/native';
 import { Platform } from 'react-native';
 
 
@@ -551,7 +551,7 @@ interface TreeMarkerProps {
   isReady?: boolean;
 }
 
-const TreeMarker: React.FC<TreeMarkerProps> = ({ cluster, isSelected, isProcessing = false, isReady = true }) => {
+const TreeMarker: React.FC<TreeMarkerProps> = React.memo(({ cluster, isSelected, isProcessing = false, isReady = true }) => {
   // Determine color based on time status
   const color = getTimeStatusColor(cluster.timeStatus);
 
@@ -746,7 +746,19 @@ const TreeMarker: React.FC<TreeMarkerProps> = ({ cluster, isSelected, isProcessi
 
     </View>
   );
-};
+}, (prevProps, nextProps) => {
+  // Custom comparison - only re-render if these specific props change
+  return (
+    prevProps.cluster.id === nextProps.cluster.id &&
+    prevProps.cluster.timeStatus === nextProps.cluster.timeStatus &&
+    prevProps.cluster.interestLevel === nextProps.cluster.interestLevel &&
+    prevProps.cluster.eventCount === nextProps.cluster.eventCount &&
+    prevProps.cluster.specialCount === nextProps.cluster.specialCount &&
+    prevProps.isSelected === nextProps.isSelected &&
+    prevProps.isProcessing === nextProps.isProcessing &&
+    prevProps.isReady === nextProps.isReady
+  );
+});
 
 // Re-center button component
 const RecenterButton: React.FC<{ 
@@ -848,36 +860,38 @@ const computeStartCenter = (): [number, number] => {
   // Guest limitation hook - only for guests
   const { trackInteraction } = useGuestInteraction();
 
-  // Use the map store
-  const {
-    clusters,
-    events,
-    viewportEvents,
-    selectedVenue,
-    selectedVenues,
-    selectedCluster,
-    isLoading,
-    error,
-    fetchEvents,
-    fetchViewportEvents,
-    prefetchIfStale,
-    selectVenue,
-    selectVenues,
-    selectCluster,
-    setZoomLevel,
-    generateClusters,
-    filterCriteria,
-    zoomLevel,
-    shouldClusterBeVisible,
-    setUserLocation,
-    activeFilterPanel,
-    setActiveFilterPanel,
-    closeCalloutTrigger,
-    triggerCloseCallout,
-    isHeaderSearchActive,
-    setHeaderSearchActive,
-    setTypeFilters
-  } = useMapStore();
+  // Focus state - skip expensive renders when Map tab is not visible
+  const isFocused = useIsFocused();
+
+  // Use the map store - individual selectors to prevent infinite loops
+  // (Combined object selectors with shallow cause getSnapshot caching issues)
+  const clusters = useMapStore((state) => state.clusters);
+  const events = useMapStore((state) => state.events);
+  const viewportEvents = useMapStore((state) => state.viewportEvents);
+  const selectedVenue = useMapStore((state) => state.selectedVenue);
+  const selectedVenues = useMapStore((state) => state.selectedVenues);
+  const selectedCluster = useMapStore((state) => state.selectedCluster);
+  const isLoading = useMapStore((state) => state.isLoading);
+  const error = useMapStore((state) => state.error);
+  const fetchEvents = useMapStore((state) => state.fetchEvents);
+  const fetchViewportEvents = useMapStore((state) => state.fetchViewportEvents);
+  const prefetchIfStale = useMapStore((state) => state.prefetchIfStale);
+  const selectVenue = useMapStore((state) => state.selectVenue);
+  const selectVenues = useMapStore((state) => state.selectVenues);
+  const selectCluster = useMapStore((state) => state.selectCluster);
+  const setZoomLevel = useMapStore((state) => state.setZoomLevel);
+  const generateClusters = useMapStore((state) => state.generateClusters);
+  const filterCriteria = useMapStore((state) => state.filterCriteria);
+  const zoomLevel = useMapStore((state) => state.zoomLevel);
+  const shouldClusterBeVisible = useMapStore((state) => state.shouldClusterBeVisible);
+  const setUserLocation = useMapStore((state) => state.setUserLocation);
+  const activeFilterPanel = useMapStore((state) => state.activeFilterPanel);
+  const setActiveFilterPanel = useMapStore((state) => state.setActiveFilterPanel);
+  const closeCalloutTrigger = useMapStore((state) => state.closeCalloutTrigger);
+  const triggerCloseCallout = useMapStore((state) => state.triggerCloseCallout);
+  const isHeaderSearchActive = useMapStore((state) => state.isHeaderSearchActive);
+  const setHeaderSearchActive = useMapStore((state) => state.setHeaderSearchActive);
+  const setTypeFilters = useMapStore((state) => state.setTypeFilters);
 
   // Is the bottom callout visible?
   const isCalloutOpen = !!selectedCluster || (Array.isArray(selectedVenues) && selectedVenues.length > 0);
@@ -953,18 +967,24 @@ const computeStartCenter = (): [number, number] => {
   // Close filter panel and callouts when user switches away from map tab.
   // Clear both store selection and locally rendered callout state so the screen
   // cannot come back with a stale mounted callout subtree.
+  // DEFERRED: These mutations are deferred to after tab animation to prevent
+  // blocking the JS thread during tab switches.
   useFocusEffect(
     useCallback(() => {
       return () => {
-        if (activeFilterPanel) {
-          setActiveFilterPanel(null);
-        }
-        if (selectedVenues && selectedVenues.length > 0) {
-          selectVenue(null);
-        }
-        setRenderedCalloutVenues([]);
-        setRenderedCalloutCluster(null);
-        setCalloutLayoutReadyKey(null);
+        // Defer cleanup to after tab animation completes
+        // This prevents 5 state mutations from blocking the JS thread
+        InteractionManager.runAfterInteractions(() => {
+          if (activeFilterPanel) {
+            setActiveFilterPanel(null);
+          }
+          if (selectedVenues && selectedVenues.length > 0) {
+            selectVenue(null);
+          }
+          setRenderedCalloutVenues([]);
+          setRenderedCalloutCluster(null);
+          setCalloutLayoutReadyKey(null);
+        });
       };
     }, [
       activeFilterPanel,
@@ -1467,16 +1487,19 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
 
     if (eventsLen > 0) {
       console.log('[MapScreen] Using preloaded events on mount — generating clusters now');
-      try {
-        generateClusters();
-        // Log the cluster count after the store updates on the next tick
-        setTimeout(() => {
-          const afterClusters = Array.isArray(clusters) ? clusters.length : 0;
-          console.log('[MapScreen] generateClusters() invoked; clusters now =', afterClusters);
-        }, 0);
-      } catch (err) {
-        console.error('[MapScreen] generateClusters() error:', err);
-      }
+      // Defer cluster generation to not block initial render
+      setTimeout(() => {
+        try {
+          generateClusters();
+          // Log the cluster count after the store updates on the next tick
+          setTimeout(() => {
+            const afterClusters = Array.isArray(clusters) ? clusters.length : 0;
+            console.log('[MapScreen] generateClusters() invoked; clusters now =', afterClusters);
+          }, 0);
+        } catch (err) {
+          console.error('[MapScreen] generateClusters() error:', err);
+        }
+      }, 0);
       return;
     }
 
@@ -2949,6 +2972,12 @@ Clustering refresh: keep zoom → store → recluster in sync
 
   // Render cluster markers on the map with improved stability
   const renderClusterMarkers = () => {
+    // Skip expensive cluster rendering when Map tab is not visible
+    // This prevents 30+ TreeMarker re-renders during tab switches
+    if (!isFocused) {
+      return null;
+    }
+
   // DEBUG T5 (first render call)
   if (DEBUG_MAP_LOAD && !__ml_firstMarkersLoggedRef.current) {
     __ml_firstMarkersLoggedRef.current = true;
@@ -3413,12 +3442,19 @@ Owner: Map UX stability on Android • Last validated: 2025-09-04
   onStartShouldSetResponder={() => true}
   onMoveShouldSetResponder={() => true}
   onResponderRelease={() => {
-    // Tapping outside the sheet intentionally closes it
+    // Tapping outside the sheet intentionally closes it with animation
+    console.log('OVERLAY TAP - dismissing callout with animation');
     traceMapEvent('callout_overlay_tap_closed', {
       selectedClusterId: renderedCalloutClusterId ?? 'none',
       selectedVenueCount: renderedCalloutVenueCount,
     });
-    selectVenue(null);
+    // Use global closeCallout to trigger animated close
+    if ((global as any).closeCallout) {
+      (global as any).closeCallout();
+    } else {
+      // Fallback if callout hasn't exposed the function yet
+      selectVenue(null);
+    }
   }}
 >
 <Animated.View
@@ -3432,8 +3468,8 @@ Owner: Map UX stability on Android • Last validated: 2025-09-04
 </View>
 
           
-          {/* Callout container */}
-          <View style={styles.calloutAnimatedContainer}>
+          {/* Callout container - box-none allows taps to pass through to overlay below */}
+          <View style={styles.calloutAnimatedContainer} pointerEvents="box-none">
             <ActiveCalloutComponent 
               key={`${renderedCalloutClusterId ?? 'single'}::${renderedCalloutVenues.map((venue) => venue.locationKey).join('|') || 'no-venues'}`}
               venues={renderedCalloutVenues}

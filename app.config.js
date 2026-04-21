@@ -4,7 +4,7 @@ module.exports = ({ config }) => ({
 
   name: "GathR",
   slug: "gathr",
-  version: "1.1.6",
+  version: "1.1.7",
   orientation: "portrait",
   scheme: "gathr",
   userInterfaceStyle: "automatic",
@@ -90,7 +90,7 @@ module.exports = ({ config }) => ({
       "WRITE_CALENDAR",
       "com.google.android.gms.permission.AD_ID"
     ],
-    versionCode: 6,
+    versionCode: 7,
     // Deep linking: App Links for Android
     intentFilters: [
       {

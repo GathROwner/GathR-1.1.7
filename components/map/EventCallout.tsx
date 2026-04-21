@@ -15,7 +15,7 @@
  * RESULT:
  *   Reliable vertical scrolling in the callout on Android, with header drag + tutorial behaviors intact.
  */
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
@@ -78,6 +78,8 @@ import {
   StatusBar,
   BackHandler,
   Modal,
+  LayoutAnimation,
+  UIManager,
   Alert,
   GestureResponderEvent,
   ActivityIndicator,
@@ -122,6 +124,7 @@ import {
   combineDateAndTime
 } from '../../utils/dateUtils';
 import { buildGathrSharePayload } from '../../utils/shareUtils';
+import * as Haptics from 'expo-haptics';
 
 // Import for lazy-loading venue details
 import { fetchVenueDetailsByName, VenueContactInfo } from '../../lib/api/firestoreEvents';
@@ -136,6 +139,11 @@ const EVENT_CALLOUT_SHELL_ISOLATION_DEBUG = false;
 const EVENT_CALLOUT_DISABLE_NATIVE_ADS_DEBUG = false;
 const EVENT_CALLOUT_PLACEHOLDER_AD_CARD_DEBUG = false;
 let compactSdkUnlockedForSession = true;
+
+// Enable LayoutAnimation on Android
+if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
 
 // ===============================================================
 // PRIORITY SYSTEM IMPORTS - FIXED
@@ -254,6 +262,8 @@ const CALLOUT_MIN_HEIGHT = 300;
 const CALLOUT_MAX_HEIGHT = SCREEN_HEIGHT - 100; // Nearly full screen
 const DRAG_THRESHOLD = 50;
 const VELOCITY_THRESHOLD = 0.3;
+const LARGE_SWIPE_DISTANCE = 250;  // Pixels for "large" swipe to dismiss (increased for better differentiation)
+const LARGE_SWIPE_VELOCITY = 1.5;  // Fast swipe velocity to dismiss (increased - normal swipes are ~0.3-0.8)
 
 // Define brand colors for consistency with events tab
 const BRAND = {
@@ -877,8 +887,16 @@ const VenueSelector: React.FC<VenueSelectorProps> = ({
       />
     )}
 
+    {/* Gray overlay for inactive venues - creates desaturated effect */}
+    {activeVenueIndex !== index && (
+      <View style={styles.venueImageGrayOverlay} />
+    )}
+
     {/* Favorite venue button - positioned in top-right corner */}
-    <View style={styles.venueFavoriteButtonContainer}>
+    <View style={[
+      styles.venueFavoriteButtonContainer,
+      activeVenueIndex !== index && { opacity: 0.4 }
+    ]}>
       <VenueFavoriteButton
         locationKey={venue.locationKey}
         venueName={venue.venue}
@@ -915,16 +933,16 @@ const VenueSelector: React.FC<VenueSelectorProps> = ({
 
 <View style={styles.venueItemCounts}>
                 {events.length > 0 && (
-                  <View style={styles.countContainer}>
-                    <Text style={styles.countText}>{events.length}</Text>
-                    <MaterialIcons name="event" size={14} color="#666666" />
+                  <View style={[styles.countContainer, activeVenueIndex !== index && styles.countContainerInactive]}>
+                    <Text style={[styles.countText, activeVenueIndex !== index && styles.countTextInactive]}>{events.length}</Text>
+                    <MaterialIcons name="event" size={14} color={activeVenueIndex === index ? '#666666' : 'rgba(0, 0, 0, 0.45)'} />
                   </View>
                 )}
-                
+
                 {specials.length > 0 && (
-                  <View style={styles.countContainer}>
-                    <Text style={styles.countText}>{specials.length}</Text>
-                    <MaterialIcons name="restaurant" size={14} color="#666666" />
+                  <View style={[styles.countContainer, activeVenueIndex !== index && styles.countContainerInactive]}>
+                    <Text style={[styles.countText, activeVenueIndex !== index && styles.countTextInactive]}>{specials.length}</Text>
+                    <MaterialIcons name="restaurant" size={14} color={activeVenueIndex === index ? '#666666' : 'rgba(0, 0, 0, 0.45)'} />
                   </View>
                 )}
               </View>
@@ -957,46 +975,50 @@ const EventTabs: React.FC<EventTabsProps> = ({
   return (
     <View style={styles.tabContainer}>
       {eventCount > 0 && (
-        <TouchableOpacity 
+        <TouchableOpacity
           style={[
-            styles.tabPill, 
+            styles.tabPill,
+            activeTab !== 'events' && styles.inactiveEventsTabPill,
             activeTab === 'events' && styles.activeTabPill
-          ]} 
+          ]}
           onPress={() => onChangeTab('events')}
           activeOpacity={0.7}
         >
-          <MaterialIcons 
-            name="event" 
-            size={16} 
-            color={activeTab === 'events' ? '#FFFFFF' : '#666666'} 
+          <MaterialIcons
+            name="event"
+            size={16}
+            color={activeTab === 'events' ? '#FFFFFF' : '#1E90FF'}
             style={styles.tabIcon}
           />
           <Text style={[
-            styles.tabPillText, 
+            styles.tabPillText,
+            activeTab !== 'events' && { color: '#1E90FF' },
             activeTab === 'events' && styles.activeTabPillText
           ]}>
             Events ({eventCount})
           </Text>
         </TouchableOpacity>
       )}
-      
+
       {specialCount > 0 && (
-        <TouchableOpacity 
+        <TouchableOpacity
           style={[
-            styles.tabPill, 
-            activeTab === 'specials' && styles.activeTabPill
-          ]} 
+            styles.tabPill,
+            activeTab !== 'specials' && styles.inactiveSpecialsTabPill,
+            activeTab === 'specials' && styles.activeSpecialsTabPill
+          ]}
           onPress={() => onChangeTab('specials')}
           activeOpacity={0.7}
         >
-          <MaterialIcons 
-            name="restaurant" 
-            size={16} 
-            color={activeTab === 'specials' ? '#FFFFFF' : '#666666'} 
+          <MaterialIcons
+            name="restaurant"
+            size={16}
+            color={activeTab === 'specials' ? '#FFFFFF' : '#34A853'}
             style={styles.tabIcon}
           />
           <Text style={[
-            styles.tabPillText, 
+            styles.tabPillText,
+            activeTab !== 'specials' && { color: '#34A853' },
             activeTab === 'specials' && styles.activeTabPillText
           ]}>
             Specials ({specialCount})
@@ -1004,22 +1026,24 @@ const EventTabs: React.FC<EventTabsProps> = ({
         </TouchableOpacity>
       )}
       
-      <TouchableOpacity 
+      <TouchableOpacity
         style={[
-          styles.tabPill, 
-          activeTab === 'venue' && styles.activeTabPill
-        ]} 
+          styles.tabPill,
+          activeTab !== 'venue' && styles.inactiveVenueTabPill,
+          activeTab === 'venue' && styles.activeVenueTabPill
+        ]}
         onPress={() => onChangeTab('venue')}
         activeOpacity={0.7}
       >
-        <MaterialIcons 
-          name="place" 
-          size={16} 
-          color={activeTab === 'venue' ? '#FFFFFF' : '#666666'} 
+        <MaterialIcons
+          name="place"
+          size={16}
+          color={activeTab === 'venue' ? '#FFFFFF' : '#8E8E93'}
           style={styles.tabIcon}
         />
         <Text style={[
-          styles.tabPillText, 
+          styles.tabPillText,
+          activeTab !== 'venue' && { color: '#8E8E93' },
           activeTab === 'venue' && styles.activeTabPillText
         ]}>
           Venue Info
@@ -2941,10 +2965,14 @@ const handleVenueSelect = (index: number) => {
     recordInteraction(stableVenueId, venueEventIds);
   }
   
+  // Animate the layout change and provide haptic feedback
+  LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+
   // Proceed with venue change
   setActiveVenueIndex(index);
 };
-  
+
   /**
    * Handle tab change with guest limitation tracking
    */
@@ -3011,7 +3039,11 @@ try {
     newSet.delete(newScrollKey); // Remove if exists so first scroll in new tab counts
     return newSet;
   });
-  
+
+  // Animate the layout change and provide haptic feedback
+  LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+
   // Proceed with tab change
   setActiveTab(tab);
 };
@@ -3536,12 +3568,12 @@ const setCalloutStateWithAnimation = (state: CalloutState) => {
 
   case 'minimized':
     targetTranslateY = CALLOUT_NORMAL_HEIGHT - CALLOUT_MIN_HEIGHT; // Back to original value
-    targetOpacity = 0;
+    targetOpacity = 0.5;
     targetRotation = 0;
     break;
   default: // normal
     targetTranslateY = 0; // Keep this at 0
-    targetOpacity = 0;
+    targetOpacity = 0.5; // Keep overlay dark in normal state too
     targetRotation = 0;
 }
     
@@ -3598,6 +3630,28 @@ const setCalloutStateWithAnimation = (state: CalloutState) => {
       });
     });
   };
+
+  // Animated close function - slides callout down before unmounting
+  const animateClose = useCallback(() => {
+    console.log('ANIMATE CLOSE - sliding callout down');
+    Animated.parallel([
+      Animated.timing(translateY, {
+        toValue: SCREEN_HEIGHT,
+        duration: 250,
+        useNativeDriver: true,
+      }),
+      Animated.timing(backgroundOpacity, {
+        toValue: 0,
+        duration: 200,
+        useNativeDriver: true,
+      }),
+    ]).start(({ finished }) => {
+      if (finished) {
+        setCompactTabRenderMode(null);
+        onClose();
+      }
+    });
+  }, [onClose, translateY, backgroundOpacity]);
 
   // Attach the PanResponder to entire callout for swipe-from-anywhere
   const panResponder = useRef(
@@ -3659,18 +3713,36 @@ const setCalloutStateWithAnimation = (state: CalloutState) => {
         indicatorRotation.setValue(rotation);
       },
       onPanResponderRelease: (_, gestureState) => {
-  // Keep ScrollView state untouched; header pan shouldn’t globally enable/disable inner scrolling
+  // Keep ScrollView state untouched; header pan shouldn't globally enable/disable inner scrolling
 
         translateY.flattenOffset();
         setScrollEnabled(true);
         const { dy, vy } = gestureState;
         console.log('RELEASE - dy:', dy.toFixed(2), 'vy:', vy.toFixed(2), 'current state:', currentStateRef.current);
-        if (currentStateRef.current === 'minimized' && dy > 10) {
-          console.log('CLOSING callout');
-          setCompactTabRenderMode(null);
-          onClose();
+
+        // === LARGE SWIPE DOWN from ANY state → dismiss callout ===
+        if (dy > LARGE_SWIPE_DISTANCE || vy > LARGE_SWIPE_VELOCITY) {
+          console.log('LARGE SWIPE DOWN - dismissing callout (dy:', dy.toFixed(2), 'vy:', vy.toFixed(2), ')');
+          animateClose();
           return;
         }
+
+        // === LARGE SWIPE UP from minimized → jump directly to expanded ===
+        if (currentStateRef.current === 'minimized' &&
+            (dy < -LARGE_SWIPE_DISTANCE || vy < -LARGE_SWIPE_VELOCITY)) {
+          console.log('LARGE SWIPE UP from minimized - jumping to expanded (dy:', dy.toFixed(2), 'vy:', vy.toFixed(2), ')');
+          setCalloutStateWithAnimation('expanded');
+          return;
+        }
+
+        // === Small down drag from minimized → dismiss ===
+        if (currentStateRef.current === 'minimized' && dy > 10) {
+          console.log('CLOSING callout from minimized');
+          animateClose();
+          return;
+        }
+
+        // === Incremental state transitions ===
         let targetState = currentStateRef.current;
         if (Math.abs(vy) > VELOCITY_THRESHOLD) {
           console.log('VELOCITY-BASED decision - threshold exceeded:', Math.abs(vy), '>', VELOCITY_THRESHOLD);
@@ -3720,11 +3792,8 @@ const onCloseRef = useRef(onClose);
 
 useEffect(() => {
   setCalloutStateRef.current = setCalloutStateWithAnimation;
-  onCloseRef.current = () => {
-    setCompactTabRenderMode(null);
-    onClose();
-  };
-}, [setCalloutStateWithAnimation, onClose]);
+  onCloseRef.current = animateClose;
+}, [setCalloutStateWithAnimation, animateClose]);
 
 useEffect(() => {
   // @ts-ignore - Add wrappers to global for tutorial system access
@@ -3763,14 +3832,30 @@ useEffect(() => {
     safeTopOffset,
     currentTranslateY: readAnimatedNumeric(translateY),
   });
-  const shouldAnimateToExpanded = false;
   const initialTranslateY = initialCalloutState === 'expanded' ? safeTopOffset : 0;
   const initialBackgroundOpacity = initialCalloutState === 'expanded' ? 0.5 : 0;
   const initialIndicatorRotation = initialCalloutState === 'expanded' ? 1 : 0;
 
-  translateY.setValue(initialTranslateY);
-  backgroundOpacity.setValue(initialBackgroundOpacity);
+  // Start off-screen (at bottom) for entrance animation
+  translateY.setValue(SCREEN_HEIGHT);
+  backgroundOpacity.setValue(0);
   indicatorRotation.setValue(initialIndicatorRotation);
+
+  // Animate callout sliding up from bottom
+  Animated.parallel([
+    Animated.spring(translateY, {
+      toValue: initialTranslateY,
+      useNativeDriver: true,
+      tension: 65,
+      friction: 11,
+    }),
+    Animated.timing(backgroundOpacity, {
+      toValue: initialBackgroundOpacity,
+      duration: 300,
+      useNativeDriver: true,
+    }),
+  ]).start();
+
   traceMapEvent('event_callout_initial_position_applied', {
     clusterId: cluster?.id ?? 'none',
     venueCount: venues.length,
@@ -3781,7 +3866,7 @@ useEffect(() => {
     initialTranslateY,
     initialBackgroundOpacity,
     initialIndicatorRotation,
-    shouldAnimateToExpanded,
+    animatedEntrance: true,
   });
 }, [cluster?.id, safeTopOffset, venues.length]);
 
@@ -3983,7 +4068,7 @@ useEffect(() => {
               <View style={styles.handleContainer}>
                 <View style={styles.handle} />
                 <Animated.View style={{ transform: [{ rotateZ }], marginTop: -2 }}>
-                  <MaterialIcons name="keyboard-arrow-up" size={20} color="#999999" />
+                  <MaterialIcons name="keyboard-arrow-up" size={20} color="rgba(255, 255, 255, 0.85)" />
                 </Animated.View>
               </View>
             </View>
@@ -3997,14 +4082,12 @@ useEffect(() => {
             >
               <MaterialIcons name="unfold-less" size={18} color="#666666" />
             </TouchableOpacity>
-            <TouchableOpacity 
+            <TouchableOpacity
               onPress={() => {
-                console.log("ðŸ”´ CALLOUT DEBUG: CLOSE BUTTON PRESSED");
-                setCompactTabRenderMode(null);
-                onClose();
-                console.log("ðŸ”´ CALLOUT DEBUG: After onClose() call");
-              }} 
-              style={styles.closeButton} 
+                console.log("CLOSE BUTTON PRESSED - animating close");
+                animateClose();
+              }}
+              style={styles.closeButton}
               activeOpacity={0.7}
             >
               <MaterialIcons name="close" size={22} color="#666666" />
@@ -4259,8 +4342,8 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    // SOLID: Clean white background (no translucency)
-    backgroundColor: '#FBF9F3',
+    // Transparent to see map through header
+    backgroundColor: 'transparent',
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     // Soft inner highlight for premium edge
@@ -4285,10 +4368,9 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     justifyContent: 'space-between',
     alignItems: 'center',
-    // Glass divider: subtle, translucent
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(0, 0, 0, 0.06)',
-    backgroundColor: 'rgba(255, 255, 255, 0.25)', // Slight top gradient layer
+    borderBottomColor: 'rgba(0, 0, 0, 0.03)', // Very subtle divider
+    backgroundColor: 'transparent', // Transparent - map shows through
   },
   // New wrapper for the draggable area (left + center)
   headerDraggableArea: {
@@ -4325,12 +4407,12 @@ const styles = StyleSheet.create({
     width: 40,
     height: 5,
     borderRadius: 2.5,
-    backgroundColor: 'rgba(0, 0, 0, 0.15)', // More translucent, modern
+    backgroundColor: 'rgba(255, 255, 255, 0.7)', // Light - visible over darkened map
   },
   venueTitleSmall: {
     fontSize: 11,
     fontWeight: '600',
-    color: '#333333',
+    color: 'rgba(255, 255, 255, 0.85)', // Light - visible over darkened map
     textAlign: 'center',
   },
   resetButton: {
@@ -4339,10 +4421,10 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.06)', // Translucent glass button
+    backgroundColor: '#FBF9F3', // Solid background - visible over map
     marginRight: 8,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.3)',
+    borderColor: 'rgba(0, 0, 0, 0.1)',
   },
   closeButton: {
     width: 28,
@@ -4350,10 +4432,10 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.06)', // Translucent glass button
+    backgroundColor: '#FBF9F3', // Solid background - visible over map
     zIndex: 10,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.3)',
+    borderColor: 'rgba(0, 0, 0, 0.1)',
   },
   venueSelectorDivider: {
     height: 1,
@@ -4365,7 +4447,7 @@ const styles = StyleSheet.create({
 },
   tabContainer: {
   flexDirection: 'row',
-  backgroundColor: 'rgba(0, 0, 0, 0.03)', // Very subtle glass tint
+  backgroundColor: 'transparent',
   paddingHorizontal: 2,
   paddingVertical: 2,
   justifyContent: 'space-around',
@@ -4381,20 +4463,21 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
     paddingHorizontal: 4,
     borderRadius: 20,
-    backgroundColor: 'rgba(255, 255, 255, 0.5)', // Glass inactive state
+    backgroundColor: '#FBF9F3', // Solid background - readable over map
     borderWidth: 1,
     borderColor: 'rgba(0, 0, 0, 0.08)',
     minHeight: 30,
   },
   activeTabPill: {
-    backgroundColor: 'rgba(30, 144, 255, 0.95)', // Blue accent only when active
-    borderColor: 'rgba(30, 144, 255, 0.3)',
+    backgroundColor: '#1E90FF', // Solid blue when active
+    borderColor: 'rgba(30, 144, 255, 0.4)',
     borderWidth: 1.5,
     shadowColor: '#1E90FF',
     shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.25,
-    shadowRadius: 6,
-    elevation: 4,
+    shadowOpacity: 0.35, // Stronger glow
+    shadowRadius: 8,
+    elevation: 5,
+    transform: [{ scale: 1.02 }], // Slight grow effect
   },
   tabIcon: {
     marginRight: 4,
@@ -4402,16 +4485,54 @@ const styles = StyleSheet.create({
   tabPillText: {
     fontSize: 11,
     fontWeight: '600',
-    color: 'rgba(0, 0, 0, 0.65)', // Softer neutral text
+    color: 'rgba(0, 0, 0, 0.45)', // More faded inactive text
   },
   activeTabPillText: {
     color: '#FFFFFF',
     fontWeight: '700',
     letterSpacing: 0.3, // Slight spacing for premium feel
   },
+  // Inactive tab tints
+  inactiveEventsTabPill: {
+    backgroundColor: '#E8F4FD', // Light blue tint
+    borderColor: 'rgba(30, 144, 255, 0.15)',
+  },
+  inactiveSpecialsTabPill: {
+    backgroundColor: '#E6F4EA', // Light green tint
+    borderColor: 'rgba(52, 168, 83, 0.15)',
+  },
+  // Active specials tab (green instead of blue)
+  activeSpecialsTabPill: {
+    backgroundColor: '#34A853', // GathR green
+    borderColor: 'rgba(52, 168, 83, 0.4)',
+    borderWidth: 1.5,
+    shadowColor: '#34A853',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.35,
+    shadowRadius: 8,
+    elevation: 5,
+    transform: [{ scale: 1.02 }],
+  },
+  // Venue tab styles
+  inactiveVenueTabPill: {
+    backgroundColor: '#F0F0F0', // Light grey tint
+    borderColor: 'rgba(0, 0, 0, 0.08)',
+  },
+  activeVenueTabPill: {
+    backgroundColor: '#8E8E93', // Medium grey - similar weight to blue/green
+    borderColor: 'rgba(142, 142, 147, 0.4)',
+    borderWidth: 1.5,
+    shadowColor: '#8E8E93',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.35,
+    shadowRadius: 8,
+    elevation: 5,
+    transform: [{ scale: 1.02 }],
+  },
   contentContainer: {
     flex: 1,
     overflow: 'hidden',
+    backgroundColor: 'transparent',
   },
   scrollContentContainer: {
     flexGrow: 1,
@@ -4515,12 +4636,12 @@ const styles = StyleSheet.create({
   eventCard: {
     width: 200,
     height: 120,
-    backgroundColor: 'rgba(255, 255, 255, 0.7)', // Frosted glass
+    backgroundColor: '#FBF9F3', // Solid background - readable over map
     borderRadius: 16,
     marginRight: 12,
     padding: 12,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.4)',
+    borderColor: 'rgba(0, 0, 0, 0.08)',
     position: 'relative',
     overflow: 'hidden',
     // Soft floating shadow
@@ -4531,9 +4652,9 @@ const styles = StyleSheet.create({
     elevation: 3,
   },
   selectedEventCard: {
-    borderColor: 'rgba(30, 144, 255, 0.6)',
+    borderColor: '#1E90FF',
     borderWidth: 2,
-    backgroundColor: 'rgba(30, 144, 255, 0.1)', // Subtle blue glass tint
+    backgroundColor: '#E8F4FD', // Solid light blue
     shadowColor: '#1E90FF',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.2,
@@ -4590,7 +4711,7 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   venueSelectorWrapper: {
-    backgroundColor: 'rgba(0, 0, 0, 0.02)', // Near-transparent glass layer
+    backgroundColor: 'transparent',
     paddingVertical: 2,
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(0, 0, 0, 0.05)',
@@ -4606,36 +4727,38 @@ const styles = StyleSheet.create({
   },
   venueOption: {
   flexGrow: 1,
-  width: 90,
+  width: 95, // Moderate inactive size, selected grows to 105px
   marginHorizontal: 2,
   alignItems: 'center',
-  backgroundColor: 'rgba(255, 255, 255, 0.65)', // Frosted glass card
+  backgroundColor: '#FBF9F3', // Solid background - readable over map
   borderRadius: 14,
   paddingTop: 2,
   paddingHorizontal: 2,
   paddingBottom: 2,
   borderWidth: 1,
-  borderColor: 'rgba(255, 255, 255, 0.35)',
+  borderColor: 'rgba(0, 0, 0, 0.06)',
   justifyContent: 'space-between',
   // Subtle shadow for depth
   shadowColor: '#000',
-  shadowOffset: { width: 0, height: 2 },
-  shadowOpacity: 0.06,
-  shadowRadius: 4,
-  elevation: 2,
+  shadowOffset: { width: 0, height: 1 },
+  shadowOpacity: 0.04,
+  shadowRadius: 3,
+  elevation: 1,
   },
   singleVenueOption: {
     width: 150,
   },
   venueOptionActive: {
-    borderColor: 'rgba(30, 144, 255, 0.5)', // Blue accent for active
-    backgroundColor: 'rgba(30, 144, 255, 0.08)', // Very subtle blue tint
-    borderWidth: 2,
+    width: 165, // Larger when active (35% bigger than inactive 85px)
+    opacity: 1, // Full brightness
+    borderColor: '#1E90FF', // Solid blue border
+    backgroundColor: '#E8F4FD', // Solid light blue - readable over map
+    borderWidth: 2.5,
     shadowColor: '#1E90FF',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.15,
-    shadowRadius: 6,
-    elevation: 4,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 6,
   },
   venueOptionName: {
     fontSize: 12,
@@ -4654,6 +4777,15 @@ const styles = StyleSheet.create({
     height: 40,
     borderRadius: 20,
     backgroundColor: '#F0F0F0',
+  },
+  venueImageGrayOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(128, 128, 128, 0.60)', // Stronger grayscale effect
+    borderRadius: 20,
   },
   venueImageContainer: {
     position: 'relative',
@@ -4722,6 +4854,12 @@ const styles = StyleSheet.create({
     color: '#666666',
     marginRight: 2,
   },
+  countTextInactive: {
+    opacity: 0.65,
+  },
+  countContainerInactive: {
+    opacity: 0.75,
+  },
   multiEventsContainer: {
     padding: 0, // Remove padding to allow full-width cards
     marginTop: -4, // Add margin above the card list for separation
@@ -4733,13 +4871,13 @@ const styles = StyleSheet.create({
   },
   // Removed cardDivider - now using borderBottom on each card like events tab
   specialCard: {
-    backgroundColor: 'rgba(255, 255, 255, 0.75)', // Frosted glass surface
+    backgroundColor: '#FBF9F3', // Solid background - readable over map
     paddingBottom: 0,
     overflow: 'hidden',
     position: 'relative',
     borderRadius: 18,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.45)',
+    borderColor: 'rgba(0, 0, 0, 0.08)',
     marginHorizontal: 2,
     marginBottom: 6,
     // Modern floating shadow
@@ -4752,7 +4890,7 @@ const styles = StyleSheet.create({
   nowSpecialCard: {
     borderLeftColor: '#34A853',
     borderLeftWidth: 4,
-    backgroundColor: 'rgba(52, 168, 83, 0.06)', // Subtle green glass tint
+    backgroundColor: '#E6F4EA', // Solid light green
     shadowColor: '#34A853',
     shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.12,
@@ -4761,7 +4899,7 @@ const styles = StyleSheet.create({
   interestMatchCard: {
     borderLeftColor: '#1E90FF',
     borderLeftWidth: 4,
-    backgroundColor: 'rgba(30, 144, 255, 0.05)', // Subtle blue glass tint
+    backgroundColor: '#E8F4FD', // Solid light blue
     shadowColor: '#1E90FF',
     shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.12,

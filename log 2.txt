@@ -1,126 +1,414 @@
-LOG  [GeoUtils] 📦 Resulting bbox: {"east": -63.10030513215601, "north": 46.28233910431045, "south": 46.218896198939674, "west": -63.15373139440966}
- LOG  [OnScreen] Filtering events: {"bbox": {"east": "-63.1003", "north": "46.2823", "south": "46.2189", "west": "-63.1537"}, "filteredOut": 14, "onScreenEventsCount": 149, "sampleEvents": [{"id": "fb_hRhz43uot33ZTa5OIuj7", "inBounds": true, "lat": "46.2366", "latCalc": "46.2366 >= 46.2189 && <= 46.2823", "latOk": true, "lng": "-63.1284", "lngCalc": "-63.1284 >= -63.1537 && <= -63.1003", "lngOk": true}, {"id": "fb_370832720a22", "inBounds": true, "lat": "46.2337", "latCalc": "46.2337 >= 46.2189 && <= 46.2823", "latOk": true, "lng": "-63.1273", "lngCalc": "-63.1273 >= -63.1537 && <= -63.1003", "lngOk": true}, {"id": "fb_rkeZ2YdpLweVDwLHVUkA", "inBounds": true, "lat": "46.2337", "latCalc": "46.2337 >= 46.2189 && <= 46.2823", "latOk": true, "lng": "-63.1273", "lngCalc": "-63.1273 >= -63.1537 && <= -63.1003", "lngOk": true}], "viewportEventsCount": 163}
- LOG  [Viewport] Bbox changed: {"new": {"east": -63.1003, "north": 46.28234, "south": 46.21889, "west": -63.15374}, "old": {"east": -63.09045, "north": 46.31276, "south": 46.23096, "west": -63.15937}, "userGestureSeen": false}
- LOG  [FilterPills] Counts updated: {"activeTimeFilter": "today", "eventFilterCounts": {"all": 141, "now": 3, "today": 4, "tomorrow": 8, "upcoming": 137}, "onScreenEventsCount": 149, "specialFilterCounts": {"all": 8, "now": 0, "today": 0, "tomorrow": 1, "upcoming": 8}, "totalEvents": 141, "totalSpecials": 8, "visibleEvents": 4, "visibleSpecials": 0}
- LOG  [TreeMarker] Cluster baba's lounge | charlottetown pe_181 great george st_charlottetown|the guild_111 queen street charlottetown_pe|trailside music hall_155 kent st_charlottetown has 4 Firestore events
- LOG  [TreeMarker] Cluster harleys pub and perk | mildmay on_87 elora st_mildmay has 1 Firestore events
- LOG  [TreeMarker] Cluster brothers 2 restaurant | summerside pe_618 water st e_summerside has 1 Firestore events
- LOG  Generated 3 clusters from 5 venues using supercluster @z=12
- LOG  [MapLoad][cluster] ms=1 zoom=12.90 threshold=District venues=5 clusters=3
- LOG  [MapLoad][cluster_counts] z=12.90 multi=1 single=2 total=3
- LOG  [OnScreen] Camera tick: {"centerArr": -63.1278585004936, "hasCenter": true, "hasZoom": true, "mapHeight": 690.3333129882812, "mapWidth": 402, "pixelRatio": 3, "usingActualMapDimensions": true, "windowHeight": 874, "windowWidth": 402, "zoom": 12.898114574197916}
- LOG  [GeoUtils] 🗺️ getViewportBoundingBox: {"bufferMultiplier": 1, "bufferedHalfHeightKm": "2.45", "buf feredHalfWidthKm": "1.43", "center": {"latitude": 46.24215137860214, "longitude": -63.1278585004936}, "halfHeightKm": "2.45", "halfWidthKm": "1.43", "viewportSize": "402x690.3333129882812", "zoom": 12.898114574197916}
- LOG  [GeoUtils] 📦 Resulting bbox: {"east": -63.10934411837621, "north": 46.26414033014908, "south": 46.22016242705519, "west": -63.146372882611}
- LOG  [OnScreen] Filtering events: {"bbox": {"east": "-63.1093", "north": "46.2641", "south": "46.2202", "west": "-63.1464"}, "filteredOut": 19, "onScreenEventsCount": 144, "sampleEvents": [{"id": "fb_hRhz43uot33ZTa5OIuj7", "inBounds": true, "lat": "46.2366", "latCalc": "46.2366 >= 46.2202 && <= 46.2641", "latOk": true, "lng": "-63.1284", "lngCalc": "-63.1284 >= -63.1464 && <= -63.1093", "lngOk": true}, {"id": "fb_370832720a22", "inBounds": true, "lat": "46.2337", "latCalc": "46.2337 >= 46.2202 && <= 46.2641", "latOk": true, "lng": "-63.1273", "lngCalc": "-63.1273 >= -63.1464 && <= -63.1093", "lngOk": true}, {"id": "fb_rkeZ2YdpLweVDwLHVUkA", "inBounds": true, "lat": "46.2337", "latCalc": "46.2337 >= 46.2202 && <= 46.2641", "latOk": true, "lng": "-63.1273", "lngCalc": "-63.1273 >= -63.1464 && <= -63.1093", "lngOk": true}], "viewportEventsCount": 163}
- LOG  [Viewport] Bbox changed: {"new": {"east": -63.10934, "north": 46.26415, "south": 46.22016, "west": -63.14638}, "old": {"east": -63.09045, "north": 46.31276, "south": 46.23096, "west": -63.15937}, "userGestureSeen": false}
- LOG  [Viewport] THROTTLED fetch (immediate): {"roundedBbox": {"east": -63.10934, "north": 46.26415, "south": 46.22016, "west": -63.14638}, "timeSinceLastFetch": 507}
- LOG  [MapLoad][viewport] Firestore client-side partition complete: {"candidateEvents": 303, "coordinateEvents": 296, "durationMs": 36, "filteredCount": 6, "outsideViewportCount": 152, "requestedType": "both", "viewportCount": 144}
- LOG  Generated 3 clusters from 5 venues using supercluster @z=12
- LOG  [MapLoad][cluster] ms=1 zoom=12.90 threshold=District venues=5 clusters=3
- LOG  [MapLoad][cluster_counts] z=12.90 multi=1 single=2 total=3
- LOG  [FilterPills] Counts updated: {"activeTimeFilter": "today", "eventFilterCounts": {"all": 136, "now": 3, "today": 4, "tomorrow": 8, "upcoming": 132}, "onScreenEventsCount": 144, "specialFilterCounts": {"all": 8, "now": 0, "today": 0, "tomorrow": 1, "upcoming": 8}, "totalEvents": 136, "totalSpecials": 8, "visibleEvents": 4, "visibleSpecials": 0}
- LOG  [TreeMarker] Cluster baba's lounge | charlottetown pe_181 great george st_charlottetown|the guild_111 queen street charlottetown_pe|trailside music hall_155 kent st_charlottetown has 4 Firestore events
- LOG  [TreeMarker] Cluster harleys pub and perk | mildmay on_87 elora st_mildmay has 1 Firestore events
- LOG  [TreeMarker] Cluster brothers 2 restaurant | summerside pe_618 water st e_summerside has 1 Firestore events
- LOG  [FilterPills] Counts updated: {"activeTimeFilter": "today", "eventFilterCounts": {"all": 136, "now": 3, "today": 4, "tomorrow": 8, "upcoming": 132}, "onScreenEventsCount": 144, "specialFilterCounts": {"all": 8, "now": 0, "today": 0, "tomorrow": 1, "upcoming": 8}, "totalEvents": 136, "totalSpecials": 8, "visibleEvents": 4, "visibleSpecials": 0}
- LOG  [FilterPills] Counts updated: {"activeTimeFilter": "today", "eventFilterCounts": {"all": 136, "now": 3, "today": 4, "tomorrow": 8, "upcoming": 132}, "onScreenEventsCount": 144, "specialFilterCounts": {"all": 8, "now": 0, "today": 0, "tomorrow": 1, "upcoming": 8}, "totalEvents": 136, "totalSpecials": 8, "visibleEvents": 4, "visibleSpecials": 0}
- LOG  [TreeMarker] Cluster baba's lounge | charlottetown pe_181 great george st_charlottetown|the guild_111 queen street charlottetown_pe|trailside music hall_155 kent st_charlottetown has 4 Firestore events
- LOG  [TreeMarker] Cluster harleys pub and perk | mildmay on_87 elora st_mildmay has 1 Firestore events
- LOG  [TreeMarker] Cluster brothers 2 restaurant | summerside pe_618 water st e_summerside has 1 Firestore events
- LOG  [FilterPills] Counts updated: {"activeTimeFilter": "today", "eventFilterCounts": {"all": 136, "now": 3, "today": 4, "tomorrow": 8, "upcoming": 132}, "onScreenEventsCount": 144, "specialFilterCounts": {"all": 8, "now": 0, "today": 0, "tomorrow": 1, "upcoming": 8}, "totalEvents": 136, "totalSpecials": 8, "visibleEvents": 4, "visibleSpecials": 0}
- LOG  [TreeMarker] Cluster baba's lounge | charlottetown pe_181 great george st_charlottetown|the guild_111 queen street charlottetown_pe|trailside music hall_155 kent st_charlottetown has 4 Firestore events
- LOG  [TreeMarker] Cluster harleys pub and perk | mildmay on_87 elora st_mildmay has 1 Firestore events
- LOG  [TreeMarker] Cluster brothers 2 restaurant | summerside pe_618 water st e_summerside has 1 Firestore events
- LOG  Generated 4 clusters from 5 venues using supercluster @z=14
- LOG  [MapLoad][cluster] ms=0 zoom=14.40 threshold=Neighborhood venues=5 clusters=4
- LOG  [MapLoad][cluster_counts] z=14.40 multi=1 single=3 total=4
- LOG  [OnScreen] Camera tick: {"centerArr": -63.12841040000002, "hasCenter": true, "hasZoom": true, "mapHeight": 690.3333129882812, "mapWidth": 402, "pixelRatio": 3, "usingActualMapDimensions": true, "windowHeight": 874, "windowWidth": 402, "zoom": 14.4}
- LOG  [GeoUtils] 🗺️ getViewportBoundingBox: {"bufferMultiplier": 1, "bufferedHalfHeightKm": "0.86", "buf feredHalfWidthKm": "0.50", "center": {"latitude": 46.23658969999998, "longitude": -63.12841040000002}, "halfHeightKm": "0.86", "halfWidthKm": "0.50", "viewportSize": "402x690.3333129882812", "zoom": 14.4}
- LOG  [GeoUtils] 📦 Resulting bbox: {"east": -63.121873126428966, "north": 46.24435460202463, "south": 46.228824797975335, "west": -63.13494767357108}
- LOG  [OnScreen] Filtering events: {"bbox": {"east": "-63.1219", "north": "46.2444", "south": "46.2288", "west": "-63.1349"}, "filteredOut": 29, "onScreenEventsCount": 115, "sampleEvents": [{"id": "fb_hRhz43uot33ZTa5OIuj7", "inBounds": true, "lat": "46.2366", "latCalc": "46.2366 >= 46.2288 && <= 46.2444", "latOk": true, "lng": "-63.1284", "lngCalc": "-63.1284 >= -63.1349 && <= -63.1219", "lngOk": true}, {"id": "fb_370832720a22", "inBounds": true, "lat": "46.2337", "latCalc": "46.2337 >= 46.2288 && <= 46.2444", "latOk": true, "lng": "-63.1273", "lngCalc": "-63.1273 >= -63.1349 && <= -63.1219", "lngOk": true}, {"id": "fb_rkeZ2YdpLweVDwLHVUkA", "inBounds": true, "lat": "46.2337", "latCalc": "46.2337 >= 46.2288 && <= 46.2444", "latOk": true, "lng": "-63.1273", "lngCalc": "-63.1273 >= -63.1349 && <= -63.1219", "lngOk": true}], "viewportEventsCount": 144}
- LOG  [Viewport] Bbox changed: {"new": {"east": -63.12187, "north": 46.24436, "south": 46.22882, "west": -63.13495}, "old": {"east": -63.10934, "north": 46.26415, "south": 46.22016, "west": -63.14638}, "userGestureSeen": false}
- LOG  [Viewport] THROTTLED fetch (immediate): {"roundedBbox": {"east": -63.12187, "north": 46.24436, "south": 46.22882, "west": -63.13495}, "timeSinceLastFetch": 652}
- LOG  [MapLoad][viewport] Firestore client-side partition complete: {"candidateEvents": 303, "coordinateEvents": 296, "durationMs": 37, "filteredCount": 6, "outsideViewportCount": 181, "requestedType": "both", "viewportCount": 115}
- LOG  Generated 4 clusters from 5 venues using supercluster @z=14
- LOG  [MapLoad][cluster] ms=0 zoom=14.40 threshold=Neighborhood venues=5 clusters=4
- LOG  [MapLoad][cluster_counts] z=14.40 multi=1 single=3 total=4
- LOG  VISIBILITY RECALCULATED (THRESHOLD_CHANGE): 4/4 clusters visible
- LOG  [FilterPills] Counts updated: {"activeTimeFilter": "today", "eventFilterCounts": {"all": 112, "now": 3, "today": 4, "tomorrow": 6, "upcoming": 108}, "onScreenEventsCount": 115, "specialFilterCounts": {"all": 3, "now": 0, "today": 0, "tomorrow": 1, "upcoming": 3}, "totalEvents": 112, "totalSpecials": 3, "visibleEvents": 4, "visibleSpecials": 0}
- LOG  [TreeMarker] Cluster baba's lounge | charlottetown pe_181 great george st_charlottetown|trailside music hall_155 kent st_charlottetown has 2 Firestore events
- LOG  [TreeMarker] Cluster the guild_111 queen street charlottetown_pe has 2 Firestore events
- LOG  [TreeMarker] Cluster harleys pub and perk | mildmay on_87 elora st_mildmay has 1 Firestore events
- LOG  [TreeMarker] Cluster brothers 2 restaurant | summerside pe_618 water st e_summerside has 1 Firestore events
- LOG  [FilterPills] Counts updated: {"activeTimeFilter": "today", "eventFilterCounts": {"all": 112, "now": 3, "today": 4, "tomorrow": 6, "upcoming": 108}, "onScreenEventsCount": 115, "specialFilterCounts": {"all": 3, "now": 0, "today": 0, "tomorrow": 1, "upcoming": 3}, "totalEvents": 112, "totalSpecials": 3, "visibleEvents": 4, "visibleSpecials": 0}
- LOG  [FilterPills] Counts updated: {"activeTimeFilter": "today", "eventFilterCounts": {"all": 112, "now": 3, "today": 4, "tomorrow": 6, "upcoming": 108}, "onScreenEventsCount": 115, "specialFilterCounts": {"all": 3, "now": 0, "today": 0, "tomorrow": 1, "upcoming": 3}, "totalEvents": 112, "totalSpecials": 3, "visibleEvents": 4, "visibleSpecials": 0}
- LOG  [FilterPills] Counts updated: {"activeTimeFilter": "today", "eventFilterCounts": {"all": 112, "now": 3, "today": 4, "tomorrow": 6, "upcoming": 108}, "onScreenEventsCount": 115, "specialFilterCounts": {"all": 3, "now": 0, "today": 0, "tomorrow": 1, "upcoming": 3}, "totalEvents": 112, "totalSpecials": 3, "visibleEvents": 4, "visibleSpecials": 0}
- LOG  [Hotspot] Found cluster containing "Baba's Lounge | Charlottetown PE" with 2 venues
+iOS Bundled 221ms node_modules\expo-router\entry.js (1 module)
+ LOG  [BackendConfig] Using backend base URL: https://gathr-backend-924732524090.northamerica-northeast1.run.app
+ LOG  🔍 FIREBASE DEBUG: Starting analytics initialization...
+ LOG  🔍 FIREBASE DEBUG: Analytics isSupported() result: false
+ LOG  ❌ FIREBASE DEBUG: Analytics is not supported on this platform
+ INFO
+ 💡 JavaScript logs will be removed from Metro in React Native 0.77! Please use React Native DevTools as your default tool. Tip: Type j in the terminal to open (requires Google Chrome or Microsoft Edge).
+ LOG  📢 Preloading ad pool on app start...
+ LOG  ðŸš€ Preloading event data on app start (React Query)â€¦
+ LOG  AuthProvider: Setting up authentication listener
+ LOG  AuthProvider: Auth state changed No user
+ LOG  🚀 Enhanced Analytics hook initialized
+ LOG  📺 Screen view tracked: home
+ LOG  Index component mounted - preparing AdMob initialization
+ LOG  Is development environment: YES
+ LOG  🧹 Tutorial inactive - clearing spotlight config
+ LOG  ðŸ” EVENTS DETECTION EFFECT: {"currentStepId": "welcome", "isActive": false, "isEventsTab": false}
+ LOG  ðŸ” EVENTS DETECTION: Not setting up (conditions not met)
+ LOG  [GathR Tutorial] Global tutorial functions exposed {"autoTriggerGathRTutorial": "available", "manualTriggerGathRTutorial": "available", "restartGathRTutorial": "available", "triggerGathRTutorial": "available", "tutorialOverlayForModal": "available"}
+ LOG  Nav check â€” segments: []
+ LOG  Redirecting unauthenticated user to login
+ LOG  [AppState] Change detected: {"prev": "active", "status": "inactive"}
+ LOG  📱 App went to background - session ended (0s)
+ LOG  [AdPool] 🚀 Starting eager preload on app startup...
+ LOG  [AdPool] Phase 1: Loading 3 events ads quickly...
+ LOG  [AdPool] Phase 1: Loading 3 specials ads quickly...
+ LOG  [notifications] Post-event attendance category registered
+ LOG  [AppState] Change detected: {"prev": "inactive", "status": "active"}
+ LOG  [AppState] App came to foreground
+ LOG  📱 App became active - session started
+ LOG  🔍 FIREBASE DEBUG: Final analytics instance: null
+ LOG  🔍 FIREBASE DEBUG: Final analytics type: object
+ LOG  🔍 FIREBASE DEBUG: Analytics is null? true
+ LOG  🔍 FIREBASE DEBUG: Analytics is undefined? false
+ LOG  Starting ATT permission request...
+ LOG  [AppState] Change detected: {"prev": "active", "status": "inactive"}
+ LOG  📱 App went to background - session ended (0s)
+ LOG  [Firestore][fetch] ms=2316 events=100 hasMore=true
+ LOG  [Firestore][fetch] ms=490 events=100 hasMore=true
+ LOG  Tracking permission status: granted
+ LOG  Setting up AdMob configuration...
+ LOG  Starting AdMob initialization...
+ LOG  AdMob SDK initialized successfully [{"description": "<GADAdapterStatus: 0x13803d380; state = Ready>", "name": "GADMobileAds", "state": 1}]
+ LOG  AdMob audio settings configured
+ LOG  AdMob initialization complete with:
+ LOG  - Environment: DEVELOPMENT
+ LOG  - Platform: IOS
+ LOG  - OS Version: 26.2.1
+ LOG  - AdMob SDK is ready to serve ads
+ LOG  [AppState] Change detected: {"prev": "inactive", "status": "active"}
+ LOG  [AppState] App came to foreground
+ LOG  📱 App became active - session started
+ LOG  [Firestore][fetch] ms=887 events=100 hasMore=true
+ LOG  [Firestore][fetch] ms=336 events=100 hasMore=true
+ LOG  [Firestore][fetch] ms=320 events=100 hasMore=true
+ LOG  [Firestore][fetch] ms=345 events=83 hasMore=false
+ LOG  [Firestore] Event with no coordinates: IYmAH12F8oQ5G2PKwsAJ - Youth Drop-In (Summerside)
+ LOG  [Firestore] Event with no coordinates: mri54K1qohn1ilcSrZXl - Youth Drop-In (Summerside)
+ LOG  [Firestore][fetchAll] totalMs=4704 pages=6 rawEvents=583 normalized=583
+ WARN  [Firestore] WARNING: 2/583 events have no coordinates
+ LOG  [fetchMinimalEvents] Firestore default path totalMs=4716 events=579
+ LOG  [RQ Prefetch] Fetched fresh data from server in 4726 ms | items = 579 | events = 435 | specials = 144
+ LOG  [AddressFlow][setAllEvents] Global cache update {"total": 579, "withAddress": 579, "withCoords": 579}
+ LOG  [AddressFlow][NetworkFetch] {"total": 579, "withAddress": 579, "withCoords": 579}
+ LOG  [AddressFlow][NetworkFetch] sampleWithAddress {"address": "185 Kent St, Charlottetown, PE C1A 1P1", "id": "fb_QfvbO6de4qIU8stkAtuv", "venue": "Hunter's Ale House"}
+ LOG  [RQ Foreground] Fetched fresh data from server in 3572 ms | items = 579 | events = 435 | specials = 144
+ LOG  [AddressFlow][setAllEvents] Global cache update {"total": 579, "withAddress": 579, "withCoords": 579}
+ LOG  [RQ Foreground] Fetched fresh data from server in 1088 ms | items = 579 | events = 435 | specials = 144
+ LOG  [AddressFlow][setAllEvents] Global cache update {"total": 579, "withAddress": 579, "withCoords": 579}
+ LOG  [AppState] Change detected: {"prev": "active", "status": "inactive"}
+ LOG  📱 App went to background - session ended (2s)
+ LOG  AuthProvider: Auth state changed User logged in
+ LOG  [GathR Tutorial] Global tutorial functions exposed {"autoTriggerGathRTutorial": "available", "manualTriggerGathRTutorial": "available", "restartGathRTutorial": "available", "triggerGathRTutorial": "available", "tutorialOverlayForModal": "available"}
+ LOG  Auth state changed: logged in
+ LOG  Nav check â€” segments: []
+ LOG  Redirecting authenticated user to main app
+ LOG  VISIBILITY RECALCULATED (FIRST_RENDER): 0/0 clusters visible
+ LOG  [FilterPills] Counts updated: {"activeTimeFilter": "today", "eventFilterCounts": {"all": 0, "now": 0, "today": 0, "tomorrow": 0, "upcoming": 0}, "onScreenEventsCount": 0, "specialFilterCounts": {"all": 0, "now": 0, "today": 0, "tomorrow": 0, "upcoming": 0}, "totalEvents": 0, "totalSpecials": 0, "visibleEvents": 0, "visibleSpecials": 0}
+ LOG  🔄 Enhanced Analytics hook cleaned up
+ LOG  Index component unmounting - clearing AdMob initialization timer
+ LOG  🚀 Enhanced Analytics hook initialized
+ LOG  📺 Screen view tracked: map
+ LOG  📊 activePanel changed to: null
+ LOG  🔄 activePanel set to null externally, closing animations
+ LOG  [GuestLimitation] Initializing from storage
+ LOG  [MapScreen] Mount: events = 0 cached clusters = 0 isLoading = false
+ LOG  [MapScreen] No preloaded events on mount — invoking prefetchIfStale(0)
+ LOG  [AddressFlow][setAllEvents] Global cache update {"total": 579, "withAddress": 579, "withCoords": 579}
+ LOG  [MapLoad][cluster] ms=0 zoom=12.00 threshold=District venues=0 clusters=0
+ LOG  [MapLoad][cluster_counts] z=12.00 multi=0 single=0 total=0
+ LOG  VISIBILITY RECALCULATED (FIRST_RENDER): 0/0 clusters visible
+ LOG  [FilterPills] Counts updated: {"activeTimeFilter": "today", "eventFilterCounts": {"all": 0, "now": 0, "today": 0, "tomorrow": 0, "upcoming": 0}, "onScreenEventsCount": 0, "specialFilterCounts": {"all": 0, "now": 0, "today": 0, "tomorrow": 0, "upcoming": 0}, "totalEvents": 0, "totalSpecials": 0, "visibleEvents": 0, "visibleSpecials": 0}
+ LOG  [GathR Tutorial] Global tutorial functions exposed {"autoTriggerGathRTutorial": "available", "manualTriggerGathRTutorial": "available", "restartGathRTutorial": "available", "triggerGathRTutorial": "available", "tutorialOverlayForModal": "available"}
+ LOG  Nav check â€” segments: ["(tabs)", "map"]
+ LOG  [GathR Tutorial] Loading tutorial status for user: odDPRQwbUmQlZz4bzdGf5fYxeeB2
+ LOG  [GathR Tutorial] Loading tutorial status for user: odDPRQwbUmQlZz4bzdGf5fYxeeB2
+ LOG  [AddressFlow][setAllEvents] Global cache update {"total": 579, "withAddress": 579, "withCoords": 579}
+ LOG  VISIBILITY RECALCULATED (FIRST_RENDER): 0/0 clusters visible
+ LOG  [FilterPills] Counts updated: {"activeTimeFilter": "today", "eventFilterCounts": {"all": 0, "now": 0, "today": 0, "tomorrow": 0, "upcoming": 0}, "onScreenEventsCount": 0, "specialFilterCounts": {"all": 0, "now": 0, "today": 0, "tomorrow": 0, "upcoming": 0}, "totalEvents": 0, "totalSpecials": 0, "visibleEvents": 0, "visibleSpecials": 0}
+ LOG  VISIBILITY RECALCULATED (FIRST_RENDER): 0/0 clusters visible
+ LOG  [FilterPills] Counts updated: {"activeTimeFilter": "today", "eventFilterCounts": {"all": 0, "now": 0, "today": 0, "tomorrow": 0, "upcoming": 0}, "onScreenEventsCount": 0, "specialFilterCounts": {"all": 0, "now": 0, "today": 0, "tomorrow": 0, "upcoming": 0}, "totalEvents": 0, "totalSpecials": 0, "visibleEvents": 0, "visibleSpecials": 0}
+ LOG  👤 Analytics User Initialized: odDPRQwbUmQlZz4bzdGf5fYxeeB2 {"email": "craig@burgoyneinsurance.ca", "is_guest": false, "login_method": "email"}
+ LOG  VISIBILITY RECALCULATED (FIRST_RENDER): 0/0 clusters visible
+ LOG  [FilterPills] Counts updated: {"activeTimeFilter": "today", "eventFilterCounts": {"all": 0, "now": 0, "today": 0, "tomorrow": 0, "upcoming": 0}, "onScreenEventsCount": 0, "specialFilterCounts": {"all": 0, "now": 0, "today": 0, "tomorrow": 0, "upcoming": 0}, "totalEvents": 0, "totalSpecials": 0, "visibleEvents": 0, "visibleSpecials": 0}
+ LOG  [MapScreen] prefetchIfStale(0) finished in 173 ms
+ LOG  VISIBILITY RECALCULATED (FIRST_RENDER): 0/0 clusters visible
+ LOG  [FilterPills] Counts updated: {"activeTimeFilter": "today", "eventFilterCounts": {"all": 0, "now": 0, "today": 0, "tomorrow": 0, "upcoming": 0}, "onScreenEventsCount": 0, "specialFilterCounts": {"all": 0, "now": 0, "today": 0, "tomorrow": 0, "upcoming": 0}, "totalEvents": 0, "totalSpecials": 0, "visibleEvents": 0, "visibleSpecials": 0}
+ LOG  [GuestLimitation] Initialized - Count: 0, HasSeenPrompt: false
+ LOG  VISIBILITY RECALCULATED (FIRST_RENDER): 0/0 clusters visible
+ LOG  [FilterPills] Counts updated: {"activeTimeFilter": "today", "eventFilterCounts": {"all": 0, "now": 0, "today": 0, "tomorrow": 0, "upcoming": 0}, "onScreenEventsCount": 0, "specialFilterCounts": {"all": 0, "now": 0, "today": 0, "tomorrow": 0, "upcoming": 0}, "totalEvents": 0, "totalSpecials": 0, "visibleEvents": 0, "visibleSpecials": 0}
+ LOG  [FilterPills] Counts updated: {"activeTimeFilter": "today", "eventFilterCounts": {"all": 0, "now": 0, "today": 0, "tomorrow": 0, "upcoming": 0}, "onScreenEventsCount": 0, "specialFilterCounts": {"all": 0, "now": 0, "today": 0, "tomorrow": 0, "upcoming": 0}, "totalEvents": 0, "totalSpecials": 0, "visibleEvents": 0, "visibleSpecials": 0}
+ LOG  [FilterPills] Counts updated: {"activeTimeFilter": "today", "eventFilterCounts": {"all": 0, "now": 0, "today": 0, "tomorrow": 0, "upcoming": 0}, "onScreenEventsCount": 0, "specialFilterCounts": {"all": 0, "now": 0, "today": 0, "tomorrow": 0, "upcoming": 0}, "totalEvents": 0, "totalSpecials": 0, "visibleEvents": 0, "visibleSpecials": 0}
+ LOG  VISIBILITY RECALCULATED (FIRST_RENDER): 0/0 clusters visible
+ LOG  [FilterPills] Counts updated: {"activeTimeFilter": "today", "eventFilterCounts": {"all": 0, "now": 0, "today": 0, "tomorrow": 0, "upcoming": 0}, "onScreenEventsCount": 0, "specialFilterCounts": {"all": 0, "now": 0, "today": 0, "tomorrow": 0, "upcoming": 0}, "totalEvents": 0, "totalSpecials": 0, "visibleEvents": 0, "visibleSpecials": 0}
+ LOG  [OnScreen] Camera tick: {"centerArr": -63.1276, "hasCenter": true, "hasZoom": true, "mapHeight": 690.3333129882812, "mapWidth": 402, "pixelRatio": 3, "usingActualMapDimensions": true, "windowHeight": 874, "windowWidth": 402, "zoom": 12}
+ LOG  [GeoUtils] 🗺️ getViewportBoundingBox: {"bufferMultiplier": 1, "bufferedHalfHeightKm": "4.56", "buf feredHalfWidthKm": "2.66", "center": {"latitude": 46.23360000000001, "longitude": -63.1276}, "halfHeightKm": "4.56", "halfWidthKm": "2.66", "viewportSize": "402x690.3333129882812", "zoom": 12}
+ LOG  [GeoUtils] 📦 Resulting bbox: {"east": -63.09309606323242, "north": 46.27458563141459, "south": 46.19261436858543, "west": -63.16210393676758}
+ LOG  [OnScreen] Filtering events: {"bbox": {"east": "-63.0931", "north": "46.2746", "south": "46.1926", "west": "-63.1621"}, "filteredOut": 0, "onScreenEventsCount": 0, "sampleEvents": [], "viewportEventsCount": 0}
+ LOG  VISIBILITY RECALCULATED (FIRST_RENDER): 0/0 clusters visible
+ LOG  [FilterPills] Counts updated: {"activeTimeFilter": "today", "eventFilterCounts": {"all": 0, "now": 0, "today": 0, "tomorrow": 0, "upcoming": 0}, "onScreenEventsCount": 0, "specialFilterCounts": {"all": 0, "now": 0, "today": 0, "tomorrow": 0, "upcoming": 0}, "totalEvents": 0, "totalSpecials": 0, "visibleEvents": 0, "visibleSpecials": 0}
+ LOG  [MapView] onLayout (absolute): {"absX": 0, "absY": 100.66666412353516, "height": 690.3333129882812, "width": 402, "windowHeight": 874, "windowWidth": 402}
+ LOG  [OnScreen] Camera tick: {"centerArr": -63.1276, "hasCenter": true, "hasZoom": true, "mapHeight": 690.3333129882812, "mapWidth": 402, "pixelRatio": 3, "usingActualMapDimensions": true, "windowHeight": 874, "windowWidth": 402, "zoom": 12}
+ LOG  [GeoUtils] 🗺️ getViewportBoundingBox: {"bufferMultiplier": 1, "bufferedHalfHeightKm": "4.56", "buf feredHalfWidthKm": "2.66", "center": {"latitude": 46.23360000000001, "longitude": -63.1276}, "halfHeightKm": "4.56", "halfWidthKm": "2.66", "viewportSize": "402x690.3333129882812", "zoom": 12}
+ LOG  [GeoUtils] 📦 Resulting bbox: {"east": -63.09309606323242, "north": 46.27458563141459, "south": 46.19261436858543, "west": -63.16210393676758}
+ LOG  [OnScreen] Filtering events: {"bbox": {"east": "-63.0931", "north": "46.2746", "south": "46.1926", "west": "-63.1621"}, "filteredOut": 0, "onScreenEventsCount": 0, "sampleEvents": [], "viewportEventsCount": 0}
+ LOG  VISIBILITY RECALCULATED (FIRST_RENDER): 0/0 clusters visible
+ LOG  [FilterPills] Counts updated: {"activeTimeFilter": "today", "eventFilterCounts": {"all": 0, "now": 0, "today": 0, "tomorrow": 0, "upcoming": 0}, "onScreenEventsCount": 0, "specialFilterCounts": {"all": 0, "now": 0, "today": 0, "tomorrow": 0, "upcoming": 0}, "totalEvents": 0, "totalSpecials": 0, "visibleEvents": 0, "visibleSpecials": 0}
+ LOG  [GathR Tutorial] Tutorial status loaded: {"completed": true, "completedSteps": ["welcome", "cluster-click", "callout-venue-selector", "callout-tabs", "callout-event-details", "filter-pills", "clear-filters", "events-tab", "events-list-explanation", "events-filters", "specials-tab", "specials-list-explanation", "specials-filters", "profile-facebook", "facebook-submission", "completion"], "currentStep": 16, "lastTutorialDate": {"nanoseconds": 550000000, "seconds": 1772289503, "type": "firestore/timestamp/1.0"}}
+ LOG  ðŸ” EVENTS DETECTION EFFECT: {"currentStepId": "welcome", "isActive": false, "isEventsTab": false}
+ LOG  ðŸ” EVENTS DETECTION: Not setting up (conditions not met)
+ LOG  [GathR Tutorial] Global tutorial functions exposed {"autoTriggerGathRTutorial": "available", "manualTriggerGathRTutorial": "available", "restartGathRTutorial": "available", "triggerGathRTutorial": "available", "tutorialOverlayForModal": "available"}
+ LOG  [GathR Tutorial] Tutorial status loaded: {"completed": true, "completedSteps": ["welcome", "cluster-click", "callout-venue-selector", "callout-tabs", "callout-event-details", "filter-pills", "clear-filters", "events-tab", "events-list-explanation", "events-filters", "specials-tab", "specials-list-explanation", "specials-filters", "profile-facebook", "facebook-submission", "completion"], "currentStep": 16, "lastTutorialDate": {"nanoseconds": 550000000, "seconds": 1772289503, "type": "firestore/timestamp/1.0"}}
+ LOG  VISIBILITY RECALCULATED (FIRST_RENDER): 0/0 clusters visible
+ LOG  [FilterPills] Counts updated: {"activeTimeFilter": "today", "eventFilterCounts": {"all": 0, "now": 0, "today": 0, "tomorrow": 0, "upcoming": 0}, "onScreenEventsCount": 0, "specialFilterCounts": {"all": 0, "now": 0, "today": 0, "tomorrow": 0, "upcoming": 0}, "totalEvents": 0, "totalSpecials": 0, "visibleEvents": 0, "visibleSpecials": 0}
+ LOG  VISIBILITY RECALCULATED (FIRST_RENDER): 0/0 clusters visible
+ LOG  [FilterPills] Counts updated: {"activeTimeFilter": "today", "eventFilterCounts": {"all": 0, "now": 0, "today": 0, "tomorrow": 0, "upcoming": 0}, "onScreenEventsCount": 0, "specialFilterCounts": {"all": 0, "now": 0, "today": 0, "tomorrow": 0, "upcoming": 0}, "totalEvents": 0, "totalSpecials": 0, "visibleEvents": 0, "visibleSpecials": 0}
+ LOG  [GeoUtils] 🗺️ getViewportBoundingBox: {"bufferMultiplier": 1, "bufferedHalfHeightKm": "5.77", "buf feredHalfWidthKm": "2.65", "center": {"latitude": 46.27239363258876, "longitude": -63.124851715838695}, "halfHeightKm": "5.77", "halfWidthKm": "2.65", "viewportSize": "402x874", "zoom": 12}
+ LOG  [GeoUtils] 📦 Resulting bbox: {"east": -63.09034777907112, "north": 46.32424700772509, "south": 46.22054025745243, "west": -63.15935565260627}
+ LOG  [MapLoad][viewport] Firestore client-side partition complete: {"candidateEvents": 579, "coordinateEvents": 577, "durationMs": 78, "filteredCount": 37, "outsideViewportCount": 230, "requestedType": "both", "viewportCount": 347}
+ LOG  Generated 11 clusters from 26 venues using supercluster @z=12
+ LOG  [MapLoad][cluster] ms=6 zoom=12.00 threshold=District venues=26 clusters=11
+ LOG  [MapLoad][cluster_counts] z=12.00 multi=4 single=7 total=11
+ LOG  VISIBILITY RECALCULATED (CLUSTER_COUNT_CHANGE): 11/11 clusters visible
+ LOG  === CLUSTER COUNT CHANGE DEBUG ===
+ LOG  All clusters: [{"id": "a&w restaurants_650 ", "type": "multi", "venues": 2}, {"id": "baba's lounge_181 gr", "type": "multi", "venues": 13}, {"id": "razzy's road house_1", "type": "single", "venues": 1}, {"id": "spicey chef charlott", "type": "single", "venues": 1}, {"id": "fritz chocolates_554", "type": "single", "venues": 1}, {"id": "souris show hall_5 c", "type": "multi", "venues": 2}, {"id": "brothers 2 restauran", "type": "multi", "venues": 2}, {"id": "eastern kings sports", "type": "single", "venues": 1}, {"id": "harleys pub and perk", "type": "single", "venues": 1}, {"id": "mill river resort_18", "type": "single", "venues": 1}, {"id": "copper bottom brewin", "type": "single", "venues": 1}]
+ LOG  Visible clusters: [{"id": "a&w restaurants_650 ", "type": "multi", "venues": 2}, {"id": "baba's lounge_181 gr", "type": "multi", "venues": 13}, {"id": "razzy's road house_1", "type": "single", "venues": 1}, {"id": "spicey chef charlott", "type": "single", "venues": 1}, {"id": "fritz chocolates_554", "type": "single", "venues": 1}, {"id": "souris show hall_5 c", "type": "multi", "venues": 2}, {"id": "brothers 2 restauran", "type": "multi", "venues": 2}, {"id": "eastern kings sports", "type": "single", "venues": 1}, {"id": "harleys pub and perk", "type": "single", "venues": 1}, {"id": "mill river resort_18", "type": "single", "venues": 1}, {"id": "copper bottom brewin", "type": "single", "venues": 1}]
+ LOG  Filtered out clusters: []
+ LOG  ================================
+ LOG  [FilterPills] Counts updated: {"activeTimeFilter": "today", "eventFilterCounts": {"all": 273, "now": 12, "today": 15, "tomorrow": 27, "upcoming": 258}, "onScreenEventsCount": 347, "specialFilterCounts": {"all": 74, "now": 1, "today": 8, "tomorrow": 7, "upcoming": 66}, "totalEvents": 273, "totalSpecials": 74, "visibleEvents": 15, "visibleSpecials": 8}
+ LOG  [TreeMarker] Cluster a&w restaurants_650 university ave_charlottetown|sport pei | charlottetown_40 enman crescent_charlottetown has 3 Firestore events
+ LOG  [TreeMarker] Cluster baba's lounge_181 great george st_charlottetown|charlottetown library learning centre_dominion building_97|city cinema_64 king st_charlottetown|hopyard_151 kent st_charlottetown|hunter's ale house_185 kent st_charlottetown|key murray law_80 grafton street_charlottetown|the confederation court mall_134 kent st_charlottetown|the cork & cast_146 richmond st_charlottetown|the factory_189 kent st_charlottetown|the island restro & bar_43 queen street_charlottetown|the old triangle charlottetown_189 great george st_charlottetown|timothy's world coffee (charlottetown)_154 great george street._charlottetown|trailside music hall_155 kent st_charlottetown has 17 Firestore events
+ LOG  [TreeMarker] Cluster razzy's road house_161 st. peter's rd._charlottetown has 1 Firestore events
+ LOG  [TreeMarker] Cluster spicey chef charlottetown_85 belvedere ave_charlottetown has 2 Firestore events
+ LOG  [TreeMarker] Cluster fritz chocolates_5549 st. peters rd_saint has 1 Firestore events
+ LOG  [TreeMarker] Cluster souris show hall_5 church avenue_souris|tipsy farmers_120 main street_souris has 5 Firestore events
+ LOG  [TreeMarker] Cluster brothers 2 restaurant_618 water st e_summerside|harbourfront theatre_124 heather moyse dr_summerside has 4 Firestore events
+ LOG  [TreeMarker] Cluster eastern kings sportsplex_203 main street_souris has 1 Firestore events
+ LOG  [TreeMarker] Cluster harleys pub and perk_87 elora st_mildmay has 1 Firestore events
+ LOG  [TreeMarker] Cluster mill river resort_180 mill river resort rd #136_woodstock has 1 Firestore events
+ LOG  [TreeMarker] Cluster copper bottom brewing_567 main st_montague has 1 Firestore events
+ LOG  [AppState] Change detected: {"prev": "inactive", "status": "active"}
+ LOG  [AppState] App came to foreground
+ LOG  📱 App became active - session started
+ LOG  [RQ Foreground] Used fresh cache (no network) | items = 579 | events = 435 | specials = 144
+ LOG  [AddressFlow][setAllEvents] Global cache update {"total": 579, "withAddress": 579, "withCoords": 579}
+ LOG  [FilterPills] Counts updated: {"activeTimeFilter": "today", "eventFilterCounts": {"all": 273, "now": 12, "today": 15, "tomorrow": 27, "upcoming": 258}, "onScreenEventsCount": 347, "specialFilterCounts": {"all": 74, "now": 1, "today": 8, "tomorrow": 7, "upcoming": 66}, "totalEvents": 273, "totalSpecials": 74, "visibleEvents": 15, "visibleSpecials": 8}
+ LOG  [TreeMarker] Cluster a&w restaurants_650 university ave_charlottetown|sport pei | charlottetown_40 enman crescent_charlottetown has 3 Firestore events
+ LOG  [TreeMarker] Cluster baba's lounge_181 great george st_charlottetown|charlottetown library learning centre_dominion building_97|city cinema_64 king st_charlottetown|hopyard_151 kent st_charlottetown|hunter's ale house_185 kent st_charlottetown|key murray law_80 grafton street_charlottetown|the confederation court mall_134 kent st_charlottetown|the cork & cast_146 richmond st_charlottetown|the factory_189 kent st_charlottetown|the island restro & bar_43 queen street_charlottetown|the old triangle charlottetown_189 great george st_charlottetown|timothy's world coffee (charlottetown)_154 great george street._charlottetown|trailside music hall_155 kent st_charlottetown has 17 Firestore events
+ LOG  [TreeMarker] Cluster razzy's road house_161 st. peter's rd._charlottetown has 1 Firestore events
+ LOG  [TreeMarker] Cluster spicey chef charlottetown_85 belvedere ave_charlottetown has 2 Firestore events
+ LOG  [TreeMarker] Cluster fritz chocolates_5549 st. peters rd_saint has 1 Firestore events
+ LOG  [TreeMarker] Cluster souris show hall_5 church avenue_souris|tipsy farmers_120 main street_souris has 5 Firestore events
+ LOG  [TreeMarker] Cluster brothers 2 restaurant_618 water st e_summerside|harbourfront theatre_124 heather moyse dr_summerside has 4 Firestore events
+ LOG  [TreeMarker] Cluster eastern kings sportsplex_203 main street_souris has 1 Firestore events
+ LOG  [TreeMarker] Cluster harleys pub and perk_87 elora st_mildmay has 1 Firestore events
+ LOG  [TreeMarker] Cluster mill river resort_180 mill river resort rd #136_woodstock has 1 Firestore events
+ LOG  [TreeMarker] Cluster copper bottom brewing_567 main st_montague has 1 Firestore events
+ LOG  [FilterPills] Counts updated: {"activeTimeFilter": "today", "eventFilterCounts": {"all": 273, "now": 12, "today": 15, "tomorrow": 27, "upcoming": 258}, "onScreenEventsCount": 347, "specialFilterCounts": {"all": 74, "now": 1, "today": 8, "tomorrow": 7, "upcoming": 66}, "totalEvents": 273, "totalSpecials": 74, "visibleEvents": 15, "visibleSpecials": 8}
+ LOG  [TreeMarker] Cluster a&w restaurants_650 university ave_charlottetown|sport pei | charlottetown_40 enman crescent_charlottetown has 3 Firestore events
+ LOG  [TreeMarker] Cluster baba's lounge_181 great george st_charlottetown|charlottetown library learning centre_dominion building_97|city cinema_64 king st_charlottetown|hopyard_151 kent st_charlottetown|hunter's ale house_185 kent st_charlottetown|key murray law_80 grafton street_charlottetown|the confederation court mall_134 kent st_charlottetown|the cork & cast_146 richmond st_charlottetown|the factory_189 kent st_charlottetown|the island restro & bar_43 queen street_charlottetown|the old triangle charlottetown_189 great george st_charlottetown|timothy's world coffee (charlottetown)_154 great george street._charlottetown|trailside music hall_155 kent st_charlottetown has 17 Firestore events
+ LOG  [TreeMarker] Cluster razzy's road house_161 st. peter's rd._charlottetown has 1 Firestore events
+ LOG  [TreeMarker] Cluster spicey chef charlottetown_85 belvedere ave_charlottetown has 2 Firestore events
+ LOG  [TreeMarker] Cluster fritz chocolates_5549 st. peters rd_saint has 1 Firestore events
+ LOG  [TreeMarker] Cluster souris show hall_5 church avenue_souris|tipsy farmers_120 main street_souris has 5 Firestore events
+ LOG  [TreeMarker] Cluster brothers 2 restaurant_618 water st e_summerside|harbourfront theatre_124 heather moyse dr_summerside has 4 Firestore events
+ LOG  [TreeMarker] Cluster eastern kings sportsplex_203 main street_souris has 1 Firestore events
+ LOG  [TreeMarker] Cluster harleys pub and perk_87 elora st_mildmay has 1 Firestore events
+ LOG  [TreeMarker] Cluster mill river resort_180 mill river resort rd #136_woodstock has 1 Firestore events
+ LOG  [TreeMarker] Cluster copper bottom brewing_567 main st_montague has 1 Firestore events
+ LOG  [FilterPills] Counts updated: {"activeTimeFilter": "today", "eventFilterCounts": {"all": 273, "now": 12, "today": 15, "tomorrow": 27, "upcoming": 258}, "onScreenEventsCount": 347, "specialFilterCounts": {"all": 74, "now": 1, "today": 8, "tomorrow": 7, "upcoming": 66}, "totalEvents": 273, "totalSpecials": 74, "visibleEvents": 15, "visibleSpecials": 8}
+ LOG  [TreeMarker] Cluster a&w restaurants_650 university ave_charlottetown|sport pei | charlottetown_40 enman crescent_charlottetown has 3 Firestore events
+ LOG  [TreeMarker] Cluster baba's lounge_181 great george st_charlottetown|charlottetown library learning centre_dominion building_97|city cinema_64 king st_charlottetown|hopyard_151 kent st_charlottetown|hunter's ale house_185 kent st_charlottetown|key murray law_80 grafton street_charlottetown|the confederation court mall_134 kent st_charlottetown|the cork & cast_146 richmond st_charlottetown|the factory_189 kent st_charlottetown|the island restro & bar_43 queen street_charlottetown|the old triangle charlottetown_189 great george st_charlottetown|timothy's world coffee (charlottetown)_154 great george street._charlottetown|trailside music hall_155 kent st_charlottetown has 17 Firestore events
+ LOG  [TreeMarker] Cluster razzy's road house_161 st. peter's rd._charlottetown has 1 Firestore events
+ LOG  [TreeMarker] Cluster spicey chef charlottetown_85 belvedere ave_charlottetown has 2 Firestore events
+ LOG  [TreeMarker] Cluster fritz chocolates_5549 st. peters rd_saint has 1 Firestore events
+ LOG  [TreeMarker] Cluster souris show hall_5 church avenue_souris|tipsy farmers_120 main street_souris has 5 Firestore events
+ LOG  [TreeMarker] Cluster brothers 2 restaurant_618 water st e_summerside|harbourfront theatre_124 heather moyse dr_summerside has 4 Firestore events
+ LOG  [TreeMarker] Cluster eastern kings sportsplex_203 main street_souris has 1 Firestore events
+ LOG  [TreeMarker] Cluster harleys pub and perk_87 elora st_mildmay has 1 Firestore events
+ LOG  [TreeMarker] Cluster mill river resort_180 mill river resort rd #136_woodstock has 1 Firestore events
+ LOG  [TreeMarker] Cluster copper bottom brewing_567 main st_montague has 1 Firestore events
+ LOG  [AdPool] Phase 1 ✅ events ad 1/3: "Zen Word®"
+ LOG  [AdPool] Phase 1 ✅ specials ad 1/3: "Zen Word®"
+ LOG  [FilterPills] Counts updated: {"activeTimeFilter": "today", "eventFilterCounts": {"all": 273, "now": 12, "today": 15, "tomorrow": 27, "upcoming": 258}, "onScreenEventsCount": 347, "specialFilterCounts": {"all": 74, "now": 1, "today": 8, "tomorrow": 7, "upcoming": 66}, "totalEvents": 273, "totalSpecials": 74, "visibleEvents": 15, "visibleSpecials": 8}
+ LOG  [FilterPills] Counts updated: {"activeTimeFilter": "today", "eventFilterCounts": {"all": 273, "now": 12, "today": 15, "tomorrow": 27, "upcoming": 258}, "onScreenEventsCount": 347, "specialFilterCounts": {"all": 74, "now": 1, "today": 8, "tomorrow": 7, "upcoming": 66}, "totalEvents": 273, "totalSpecials": 74, "visibleEvents": 15, "visibleSpecials": 8}
+ LOG  [OnScreen] Camera tick: {"centerArr": -63.1248517158387, "hasCenter": true, "hasZoom": true, "mapHeight": 690.3333129882812, "mapWidth": 402, "pixelRatio": 3, "usingActualMapDimensions": true, "windowHeight": 874, "windowWidth": 402, "zoom": 12}
+ LOG  [GeoUtils] 🗺️ getViewportBoundingBox: {"bufferMultiplier": 1, "bufferedHalfHeightKm": "4.56", "buf feredHalfWidthKm": "2.65", "center": {"latitude": 46.27239363258873, "longitude": -63.1248517158387}, "halfHeightKm": "4.56", "halfWidthKm": "2.65", "viewportSize": "402x690.3333129882812", "zoom": 12}
+ LOG  [GeoUtils] 📦 Resulting bbox: {"east": -63.090347779071124, "north": 46.31335028275748, "south": 46.23143698241998, "west": -63.15935565260628}
+ LOG  [OnScreen] Filtering events: {"bbox": {"east": "-63.0903", "north": "46.3134", "south": "46.2314", "west": "-63.1594"}, "filteredOut": 10, "onScreenEventsCount": 337, "sampleEvents": [{"id": "fb_QfvbO6de4qIU8stkAtuv", "inBounds": true, "lat": "46.2374", "latCalc": "46.2374 >= 46.2314 && <= 46.3134", "latOk": true, "lng": "-63.1261", "lngCalc": "-63.1261 >= -63.1594 && <= -63.0903", "lngOk": true}, {"id": "fb_1560964642333741_20260307", "inBounds": true, "lat": "46.2461", "latCalc": "46.2461 >= 46.2314 && <= 46.3134", "latOk": true, "lng": "-63.1166", "lngCalc": "-63.1166 >= -63.1594 && <= -63.0903", "lngOk": true}, {"id": "fb_1371885074736511_20260311", "inBounds": true, "lat": "46.2615", "latCalc": "46.2615 >= 46.2314 && <= 46.3134", "latOk": true, "lng": "-63.1188", "lngCalc": "-63.1188 >= -63.1594 && <= -63.0903", "lngOk": true}], "viewportEventsCount": 347}
+ LOG  [MapLoad][viewport] Firestore client-side partition complete: {"candidateEvents": 579, "coordinateEvents": 577, "durationMs": 78, "filteredCount": 37, "outsideViewportCount": 240, "requestedType": "both", "viewportCount": 337}
+ LOG  Generated 11 clusters from 26 venues using supercluster @z=12
+ LOG  [MapLoad][cluster] ms=3 zoom=12.00 threshold=District venues=26 clusters=11
+ LOG  [MapLoad][cluster_counts] z=12.00 multi=4 single=7 total=11
+ LOG  [FilterPills] Counts updated: {"activeTimeFilter": "today", "eventFilterCounts": {"all": 272, "now": 12, "today": 15, "tomorrow": 27, "upcoming": 257}, "onScreenEventsCount": 337, "specialFilterCounts": {"all": 65, "now": 1, "today": 8, "tomorrow": 7, "upcoming": 57}, "totalEvents": 272, "totalSpecials": 65, "visibleEvents": 15, "visibleSpecials": 8}
+ LOG  [TreeMarker] Cluster a&w restaurants_650 university ave_charlottetown|sport pei | charlottetown_40 enman crescent_charlottetown has 3 Firestore events
+ LOG  [TreeMarker] Cluster baba's lounge_181 great george st_charlottetown|charlottetown library learning centre_dominion building_97|city cinema_64 king st_charlottetown|hopyard_151 kent st_charlottetown|hunter's ale house_185 kent st_charlottetown|key murray law_80 grafton street_charlottetown|the confederation court mall_134 kent st_charlottetown|the cork & cast_146 richmond st_charlottetown|the factory_189 kent st_charlottetown|the island restro & bar_43 queen street_charlottetown|the old triangle charlottetown_189 great george st_charlottetown|timothy's world coffee (charlottetown)_154 great george street._charlottetown|trailside music hall_155 kent st_charlottetown has 17 Firestore events
+ LOG  [TreeMarker] Cluster razzy's road house_161 st. peter's rd._charlottetown has 1 Firestore events
+ LOG  [TreeMarker] Cluster spicey chef charlottetown_85 belvedere ave_charlottetown has 2 Firestore events
+ LOG  [TreeMarker] Cluster fritz chocolates_5549 st. peters rd_saint has 1 Firestore events
+ LOG  [TreeMarker] Cluster souris show hall_5 church avenue_souris|tipsy farmers_120 main street_souris has 5 Firestore events
+ LOG  [TreeMarker] Cluster brothers 2 restaurant_618 water st e_summerside|harbourfront theatre_124 heather moyse dr_summerside has 4 Firestore events
+ LOG  [TreeMarker] Cluster eastern kings sportsplex_203 main street_souris has 1 Firestore events
+ LOG  [TreeMarker] Cluster harleys pub and perk_87 elora st_mildmay has 1 Firestore events
+ LOG  [TreeMarker] Cluster mill river resort_180 mill river resort rd #136_woodstock has 1 Firestore events
+ LOG  [TreeMarker] Cluster copper bottom brewing_567 main st_montague has 1 Firestore events
+ LOG  Generated 11 clusters from 26 venues using supercluster @z=12
+ LOG  [MapLoad][cluster] ms=4 zoom=12.00 threshold=District venues=26 clusters=11
+ LOG  [MapLoad][cluster_counts] z=12.00 multi=4 single=7 total=11
+ LOG  [FilterPills] Counts updated: {"activeTimeFilter": "today", "eventFilterCounts": {"all": 272, "now": 12, "today": 15, "tomorrow": 27, "upcoming": 257}, "onScreenEventsCount": 337, "specialFilterCounts": {"all": 65, "now": 1, "today": 8, "tomorrow": 7, "upcoming": 57}, "totalEvents": 272, "totalSpecials": 65, "visibleEvents": 15, "visibleSpecials": 8}
+ LOG  [TreeMarker] Cluster a&w restaurants_650 university ave_charlottetown|sport pei | charlottetown_40 enman crescent_charlottetown has 3 Firestore events
+ LOG  [TreeMarker] Cluster baba's lounge_181 great george st_charlottetown|charlottetown library learning centre_dominion building_97|city cinema_64 king st_charlottetown|hopyard_151 kent st_charlottetown|hunter's ale house_185 kent st_charlottetown|key murray law_80 grafton street_charlottetown|the confederation court mall_134 kent st_charlottetown|the cork & cast_146 richmond st_charlottetown|the factory_189 kent st_charlottetown|the island restro & bar_43 queen street_charlottetown|the old triangle charlottetown_189 great george st_charlottetown|timothy's world coffee (charlottetown)_154 great george street._charlottetown|trailside music hall_155 kent st_charlottetown has 17 Firestore events
+ LOG  [TreeMarker] Cluster razzy's road house_161 st. peter's rd._charlottetown has 1 Firestore events
+ LOG  [TreeMarker] Cluster spicey chef charlottetown_85 belvedere ave_charlottetown has 2 Firestore events
+ LOG  [TreeMarker] Cluster fritz chocolates_5549 st. peters rd_saint has 1 Firestore events
+ LOG  [TreeMarker] Cluster souris show hall_5 church avenue_souris|tipsy farmers_120 main street_souris has 5 Firestore events
+ LOG  [TreeMarker] Cluster brothers 2 restaurant_618 water st e_summerside|harbourfront theatre_124 heather moyse dr_summerside has 4 Firestore events
+ LOG  [TreeMarker] Cluster eastern kings sportsplex_203 main street_souris has 1 Firestore events
+ LOG  [TreeMarker] Cluster harleys pub and perk_87 elora st_mildmay has 1 Firestore events
+ LOG  [TreeMarker] Cluster mill river resort_180 mill river resort rd #136_woodstock has 1 Firestore events
+ LOG  [TreeMarker] Cluster copper bottom brewing_567 main st_montague has 1 Firestore events
+ LOG  [FilterPills] Counts updated: {"activeTimeFilter": "today", "eventFilterCounts": {"all": 272, "now": 12, "today": 15, "tomorrow": 27, "upcoming": 257}, "onScreenEventsCount": 337, "specialFilterCounts": {"all": 65, "now": 1, "today": 8, "tomorrow": 7, "upcoming": 57}, "totalEvents": 272, "totalSpecials": 65, "visibleEvents": 15, "visibleSpecials": 8}
+ LOG  [FilterPills] Counts updated: {"activeTimeFilter": "today", "eventFilterCounts": {"all": 272, "now": 12, "today": 15, "tomorrow": 27, "upcoming": 257}, "onScreenEventsCount": 337, "specialFilterCounts": {"all": 65, "now": 1, "today": 8, "tomorrow": 7, "upcoming": 57}, "totalEvents": 272, "totalSpecials": 65, "visibleEvents": 15, "visibleSpecials": 8}
+ LOG  [OnScreen] Camera tick: {"centerArr": -63.1248517158387, "hasCenter": true, "hasZoom": true, "mapHeight": 690.3333129882812, "mapWidth": 402, "pixelRatio": 3, "usingActualMapDimensions": true, "windowHeight": 874, "windowWidth": 402, "zoom": 12}
+ LOG  [GeoUtils] 🗺️ getViewportBoundingBox: {"bufferMultiplier": 1, "bufferedHalfHeightKm": "4.56", "buf feredHalfWidthKm": "2.65", "center": {"latitude": 46.27239363258873, "longitude": -63.1248517158387}, "halfHeightKm": "4.56", "halfWidthKm": "2.65", "viewportSize": "402x690.3333129882812", "zoom": 12}
+ LOG  [GeoUtils] 📦 Resulting bbox: {"east": -63.090347779071124, "north": 46.31335028275748, "south": 46.23143698241998, "west": -63.15935565260628}
+ LOG  [OnScreen] Filtering events: {"bbox": {"east": "-63.0903", "north": "46.3134", "south": "46.2314", "west": "-63.1594"}, "filteredOut": 0, "onScreenEventsCount": 337, "sampleEvents": [{"id": "fb_QfvbO6de4qIU8stkAtuv", "inBounds": true, "lat": "46.2374", "latCalc": "46.2374 >= 46.2314 && <= 46.3134", "latOk": true, "lng": "-63.1261", "lngCalc": "-63.1261 >= -63.1594 && <= -63.0903", "lngOk": true}, {"id": "fb_1560964642333741_20260307", "inBounds": true, "lat": "46.2461", "latCalc": "46.2461 >= 46.2314 && <= 46.3134", "latOk": true, "lng": "-63.1166", "lngCalc": "-63.1166 >= -63.1594 && <= -63.0903", "lngOk": true}, {"id": "fb_1371885074736511_20260311", "inBounds": true, "lat": "46.2615", "latCalc": "46.2615 >= 46.2314 && <= 46.3134", "latOk": true, "lng": "-63.1188", "lngCalc": "-63.1188 >= -63.1594 && <= -63.0903", "lngOk": true}], "viewportEventsCount": 337}
+ LOG  [FilterPills] Counts updated: {"activeTimeFilter": "today", "eventFilterCounts": {"all": 272, "now": 12, "today": 15, "tomorrow": 27, "upcoming": 257}, "onScreenEventsCount": 337, "specialFilterCounts": {"all": 65, "now": 1, "today": 8, "tomorrow": 7, "upcoming": 57}, "totalEvents": 272, "totalSpecials": 65, "visibleEvents": 15, "visibleSpecials": 8}
+ LOG  [TreeMarker] Cluster a&w restaurants_650 university ave_charlottetown|sport pei | charlottetown_40 enman crescent_charlottetown has 3 Firestore events
+ LOG  [TreeMarker] Cluster baba's lounge_181 great george st_charlottetown|charlottetown library learning centre_dominion building_97|city cinema_64 king st_charlottetown|hopyard_151 kent st_charlottetown|hunter's ale house_185 kent st_charlottetown|key murray law_80 grafton street_charlottetown|the confederation court mall_134 kent st_charlottetown|the cork & cast_146 richmond st_charlottetown|the factory_189 kent st_charlottetown|the island restro & bar_43 queen street_charlottetown|the old triangle charlottetown_189 great george st_charlottetown|timothy's world coffee (charlottetown)_154 great george street._charlottetown|trailside music hall_155 kent st_charlottetown has 17 Firestore events
+ LOG  [TreeMarker] Cluster razzy's road house_161 st. peter's rd._charlottetown has 1 Firestore events
+ LOG  [TreeMarker] Cluster spicey chef charlottetown_85 belvedere ave_charlottetown has 2 Firestore events
+ LOG  [TreeMarker] Cluster fritz chocolates_5549 st. peters rd_saint has 1 Firestore events
+ LOG  [TreeMarker] Cluster souris show hall_5 church avenue_souris|tipsy farmers_120 main street_souris has 5 Firestore events
+ LOG  [TreeMarker] Cluster brothers 2 restaurant_618 water st e_summerside|harbourfront theatre_124 heather moyse dr_summerside has 4 Firestore events
+ LOG  [TreeMarker] Cluster eastern kings sportsplex_203 main street_souris has 1 Firestore events
+ LOG  [TreeMarker] Cluster harleys pub and perk_87 elora st_mildmay has 1 Firestore events
+ LOG  [TreeMarker] Cluster mill river resort_180 mill river resort rd #136_woodstock has 1 Firestore events
+ LOG  [TreeMarker] Cluster copper bottom brewing_567 main st_montague has 1 Firestore events
+ LOG  [Hotspot] ===== Finding hottest cluster =====
+ LOG  [Hotspot] Total clusters: 11
+ LOG  [Hotspot] Clusters with content: 11
+ LOG  [Hotspot] Cluster 0: timeStatus=now, events=1, specials=2, venues=2, firstVenue=A&W Restaurants
+ LOG  [Hotspot] Cluster 1: timeStatus=now, events=14, specials=3, venues=13, firstVenue=Timothy's World Coffee (Charlottetown)
+ LOG  [Hotspot] Cluster 2: timeStatus=now, events=0, specials=1, venues=1, firstVenue=Razzy's Road House
+ LOG  [Hotspot] Cluster 3: timeStatus=today, events=0, specials=2, venues=1, firstVenue=Spicey Chef Charlottetown
+ LOG  [Hotspot] Cluster 4: timeStatus=today, events=0, specials=1, venues=1, firstVenue=Fritz Chocolates
+ LOG  [Hotspot] Cluster 5: timeStatus=now, events=5, specials=0, venues=2, firstVenue=Souris Show Hall
+ LOG  [Hotspot] Cluster 6: timeStatus=now, events=4, specials=0, venues=2, firstVenue=Harbourfront Theatre
+ LOG  [Hotspot] Cluster 7: timeStatus=now, events=1, specials=0, venues=1, firstVenue=Eastern Kings Sportsplex
+ LOG  [Hotspot] Cluster 8: timeStatus=today, events=0, specials=1, venues=1, firstVenue=Harleys Pub and Perk
+ LOG  [Hotspot] Cluster 9: timeStatus=now, events=1, specials=0, venues=1, firstVenue=Mill River Resort
+ LOG  [Hotspot] Cluster 10: timeStatus=now, events=1, specials=0, venues=1, firstVenue=Copper Bottom Brewing
+ LOG  [Hotspot] ===== Winner =====
+ LOG  [Hotspot] Selected: timeStatus=now, events=14, specials=3, firstVenue=Timothy's World Coffee (Charlottetown)
+ LOG  [Hotspot] Selected hottest venue: Trailside Music Hall (fav=true, now=3, today=0, total=3) from 13 venues
+ LOG  [Hotspot] ===== All venues in cluster (sorted by relevance) =====
+ LOG  [Hotspot]   1. Trailside Music Hall: fav=true, now=3, today=0, total=3
+ LOG  [Hotspot]      - "Ben Caplan w/ Special guest Zebedee" (Live Music) | 2026-03-05 6:00:00 PM-1:00:00 AM | isNow=true
+ LOG  [Hotspot]      - "Ben Caplan" (Live Music) | 2026-03-05 8:00:00 PM-1:00:00 AM | isNow=true
+ LOG  [Hotspot]      - "Ben Caplan (Solo) with support Zebedee" (Live Music) | 2026-03-05 8:00:00 PM-1:00:00 AM | isNow=true
+ LOG  [Hotspot]   2. Baba's Lounge: fav=true, now=1, today=0, total=1
+ LOG  [Hotspot]      - "Island Jazz ft. SOPA Get Real" (Live Music) | 2026-03-05 8:00:00 PM-1:00:00 AM | isNow=true
+ LOG  [Hotspot]   3. The Cork & Cast: fav=true, now=0, today=1, total=1
+ LOG  [Hotspot]      - "Two Can for $70 (+HST)" (Food Special) | 2026-03-03 4:00:00 PM-9:00:00 PM | isNow=false
+ LOG  [Hotspot]   4. The Old Triangle Charlottetown: fav=false, now=1, today=0, total=1
+ LOG  [Hotspot]      - "Schooner Sessions" (Live Music) | 2026-03-05 7:00:00 PM-1:00:00 AM | isNow=true
+ LOG  [Hotspot]   5. HopYard: fav=false, now=1, today=0, total=1
+ LOG  [Hotspot]      - "Brewery Battle (Round 4: Moth Lane vs Bogside)" (Sports) | 2026-03-05 12:00:00 PM-11:00:00 PM | isNow=true
+ LOG  [Hotspot]   6. Charlottetown Library Learning Centre: fav=false, now=3, today=0, total=3
+ LOG  [Hotspot]      - "Library Teen Volunteer & Leadership" (Gatherings & Parties) | 2026-03-05 3:00:00 PM-11:00:00 PM | isNow=true
+ LOG  [Hotspot]      - "EAL Conversation Circle with IRSA" (Gatherings & Parties) | 2026-03-05 6:00:00 PM-11:00:00 PM | isNow=true
+ LOG  [Hotspot]      - "PEERS Alliance Tabletop Roleplaying Games" (Gatherings & Parties) | 2026-03-05 6:00:00 PM-11:00:00 PM | isNow=true
+ LOG  [Hotspot]   7. Timothy's World Coffee (Charlottetown): fav=false, now=0, today=1, total=1
+ LOG  [Hotspot]      - "2 Can Dine for $22" (Food Special) | 2026-03-03 7:00:00 AM-9:00:00 PM | isNow=false
+ LOG  [Hotspot]   8. Key Murray Law: fav=false, now=0, today=1, total=1
+ LOG  [Hotspot]      - "Summerside Rotary Club’s Annual Mardi Gras Curling Funspiel" (Sports) | 2026-03-05 - | isNow=false
+ LOG  [Hotspot]   9. Hunter's Ale House: fav=false, now=0, today=1, total=1
+ LOG  [Hotspot]      - "Ryan Merry" (Live Music) | 2026-03-05 11:00:00 PM-1:00:00 AM | isNow=false
+ LOG  [Hotspot]   10. The Island Restro & Bar: fav=false, now=0, today=1, total=1
+ LOG  [Hotspot]      - "Best Combo Offer (Indo-Chinese combo) – starting from $14.99" (Food Special) | 2026-03-01 12:00:00 PM-9:00:00 PM | isNow=false
+ LOG  [Hotspot]   11. The Factory: fav=false, now=1, today=0, total=1
+ LOG  [Hotspot]      - "Karaoke" (Karaoke) | 2026-03-05 10:00:00 PM-1:00:00 AM | isNow=true
+ LOG  [Hotspot]   12. City Cinema: fav=false, now=1, today=0, total=1
+ LOG  [Hotspot]      - "Midwinter Break" (Cinema) | 2026-03-05 7:00:00 PM-11:00:00 PM | isNow=true
+ LOG  [Hotspot]   13. The Confederation Court Mall: fav=false, now=0, today=1, total=1
+ LOG  [Hotspot]      - "Beginner Linocut Printmaking Workshop" (Workshops & Classes) | 2026-03-05 6:00:00 PM-6:00:00 PM | isNow=false
+ LOG  [Hotspot] ===== Hottest Event =====
+ LOG  [Hotspot] Hottest event: "Ben Caplan w/ Special guest Zebedee" (Live Music)
+ LOG  [Hotspot]   Venue: Trailside Music Hall
+ LOG  [Hotspot]   Date: 2026-03-05 6:00:00 PM-1:00:00 AM
+ LOG  [Hotspot]   Is happening NOW: true
+ LOG  [OnScreen] Camera tick: {"centerArr": -63.124953487078805, "hasCenter": true, "hasZoom": true, "mapHeight": 690.3333129882812, "mapWidth": 402, "pixelRatio": 3, "usingActualMapDimensions": true, "windowHeight": 874, "windowWidth": 402, "zoom": 12.006045197050332}
+ LOG  [GeoUtils] 🗺️ getViewportBoundingBox: {"bufferMultiplier": 1, "bufferedHalfHeightKm": "4.54", "buf feredHalfWidthKm": "2.64", "center": {"latitude": 46.27104737990338, "longitude": -63.124953487078805}, "halfHeightKm": "4.54", "halfWidthKm": "2.64", "viewportSize": "402x690.3333129882812", "zoom": 12.006045197050332}
+ LOG  [GeoUtils] 📦 Resulting bbox: {"east": -63.090593826611475, "north": 46.311833773950184, "south": 46.230260985856575, "west": -63.159313147546136}
+ LOG  [OnScreen] Filtering events: {"bbox": {"east": "-63.0906", "north": "46.3118", "south": "46.2303", "west": "-63.1593"}, "filteredOut": 0, "onScreenEventsCount": 337, "sampleEvents": [{"id": "fb_QfvbO6de4qIU8stkAtuv", "inBounds": true, "lat": "46.2374", "latCalc": "46.2374 >= 46.2303 && <= 46.3118", "latOk": true, "lng": "-63.1261", "lngCalc": "-63.1261 >= -63.1593 && <= -63.0906", "lngOk": true}, {"id": "fb_1560964642333741_20260307", "inBounds": true, "lat": "46.2461", "latCalc": "46.2461 >= 46.2303 && <= 46.3118", "latOk": true, "lng": "-63.1166", "lngCalc": "-63.1166 >= -63.1593 && <= -63.0906", "lngOk": true}, {"id": "fb_1371885074736511_20260311", "inBounds": true, "lat": "46.2615", "latCalc": "46.2615 >= 46.2303 && <= 46.3118", "latOk": true, "lng": "-63.1188", "lngCalc": "-63.1188 >= -63.1593 && <= -63.0906", "lngOk": true}], "viewportEventsCount": 337}
+ LOG  [MapLoad][viewport] Firestore client-side partition complete: {"candidateEvents": 579, "coordinateEvents": 577, "durationMs": 82, "filteredCount": 37, "outsideViewportCount": 230, "requestedType": "both", "viewportCount": 347}
+ LOG  Generated 11 clusters from 26 venues using supercluster @z=12
+ LOG  [MapLoad][cluster] ms=4 zoom=12.00 threshold=District venues=26 clusters=11
+ LOG  [MapLoad][cluster_counts] z=12.00 multi=4 single=7 total=11
+ LOG  [FilterPills] Counts updated: {"activeTimeFilter": "today", "eventFilterCounts": {"all": 273, "now": 12, "today": 15, "tomorrow": 27, "upcoming": 258}, "onScreenEventsCount": 347, "specialFilterCounts": {"all": 74, "now": 1, "today": 8, "tomorrow": 7, "upcoming": 66}, "totalEvents": 273, "totalSpecials": 74, "visibleEvents": 15, "visibleSpecials": 8}
+ LOG  [TreeMarker] Cluster a&w restaurants_650 university ave_charlottetown|sport pei | charlottetown_40 enman crescent_charlottetown has 3 Firestore events
+ LOG  [TreeMarker] Cluster baba's lounge_181 great george st_charlottetown|charlottetown library learning centre_dominion building_97|city cinema_64 king st_charlottetown|hopyard_151 kent st_charlottetown|hunter's ale house_185 kent st_charlottetown|key murray law_80 grafton street_charlottetown|the confederation court mall_134 kent st_charlottetown|the cork & cast_146 richmond st_charlottetown|the factory_189 kent st_charlottetown|the island restro & bar_43 queen street_charlottetown|the old triangle charlottetown_189 great george st_charlottetown|timothy's world coffee (charlottetown)_154 great george street._charlottetown|trailside music hall_155 kent st_charlottetown has 17 Firestore events
+ LOG  [TreeMarker] Cluster razzy's road house_161 st. peter's rd._charlottetown has 1 Firestore events
+ LOG  [TreeMarker] Cluster spicey chef charlottetown_85 belvedere ave_charlottetown has 2 Firestore events
+ LOG  [TreeMarker] Cluster fritz chocolates_5549 st. peters rd_saint has 1 Firestore events
+ LOG  [TreeMarker] Cluster souris show hall_5 church avenue_souris|tipsy farmers_120 main street_souris has 5 Firestore events
+ LOG  [TreeMarker] Cluster brothers 2 restaurant_618 water st e_summerside|harbourfront theatre_124 heather moyse dr_summerside has 4 Firestore events
+ LOG  [TreeMarker] Cluster eastern kings sportsplex_203 main street_souris has 1 Firestore events
+ LOG  [TreeMarker] Cluster harleys pub and perk_87 elora st_mildmay has 1 Firestore events
+ LOG  [TreeMarker] Cluster mill river resort_180 mill river resort rd #136_woodstock has 1 Firestore events
+ LOG  [TreeMarker] Cluster copper bottom brewing_567 main st_montague has 1 Firestore events
+ LOG  [OnScreen] Camera tick: {"centerArr": -63.127446102248236, "hasCenter": true, "hasZoom": true, "mapHeight": 690.3333129882812, "mapWidth": 402, "pixelRatio": 3, "usingActualMapDimensions": true, "windowHeight": 874, "windowWidth": 402, "zoom": 13.663164192995657}
+ LOG  [GeoUtils] 🗺️ getViewportBoundingBox: {"bufferMultiplier": 1, "bufferedHalfHeightKm": "1.44", "buf feredHalfWidthKm": "0.84", "center": {"latitude": 46.238064186295624, "longitude": -63.127446102248236}, "halfHeightKm": "1.44", "halfWidthKm": "0.84", "viewportSize": "402x690.3333129882812", "zoom": 13.663164192995657}
+ LOG  [GeoUtils] 📦 Resulting bbox: {"east": -63.1165516264251, "north": 46.25100417777067, "south": 46.22512419482058, "west": -63.13834057807137}
+ LOG  [OnScreen] Filtering events: {"bbox": {"east": "-63.1166", "north": "46.2510", "south": "46.2251", "west": "-63.1383"}, "filteredOut": 83, "onScreenEventsCount": 264, "sampleEvents": [{"id": "fb_QfvbO6de4qIU8stkAtuv", "inBounds": true, "lat": "46.2374", "latCalc": "46.2374 >= 46.2251 && <= 46.2510", "latOk": true, "lng": "-63.1261", "lngCalc": "-63.1261 >= -63.1383 && <= -63.1166", "lngOk": true}, {"id": "fb_1560964642333741_20260307", "inBounds": true, "lat": "46.2461", "latCalc": "46.2461 >= 46.2251 && <= 46.2510", "latOk": true, "lng": "-63.1166", "lngCalc": "-63.1166 >= -63.1383 && <= -63.1166", "lngOk": true}, {"id": "fb_1371885074736511_20260311", "inBounds": false, "lat": "46.2615", "latCalc": "46.2615 >= 46.2251 && <= 46.2510", "latOk": false, "lng": "-63.1188", "lngCalc": "-63.1188 >= -63.1383 && <= -63.1166", "lngOk": true}], "viewportEventsCount": 347}
+ LOG  [MapLoad][viewport] Firestore client-side partition complete: {"candidateEvents": 579, "coordinateEvents": 577, "durationMs": 82, "filteredCount": 37, "outsideViewportCount": 313, "requestedType": "both", "viewportCount": 264}
+ LOG  Generated 11 clusters from 26 venues using supercluster @z=12
+ LOG  [MapLoad][cluster] ms=4 zoom=12.00 threshold=District venues=26 clusters=11
+ LOG  [MapLoad][cluster_counts] z=12.00 multi=4 single=7 total=11
+ LOG  [FilterPills] Counts updated: {"activeTimeFilter": "today", "eventFilterCounts": {"all": 218, "now": 11, "today": 14, "tomorrow": 27, "upcoming": 204}, "onScreenEventsCount": 264, "specialFilterCounts": {"all": 46, "now": 0, "today": 3, "tomorrow": 5, "upcoming": 43}, "totalEvents": 218, "totalSpecials": 46, "visibleEvents": 14, "visibleSpecials": 3}
+ LOG  [TreeMarker] Cluster baba's lounge_181 great george st_charlottetown|charlottetown library learning centre_dominion building_97|city cinema_64 king st_charlottetown|hopyard_151 kent st_charlottetown|hunter's ale house_185 kent st_charlottetown|key murray law_80 grafton street_charlottetown|the confederation court mall_134 kent st_charlottetown|the cork & cast_146 richmond st_charlottetown|the factory_189 kent st_charlottetown|the island restro & bar_43 queen street_charlottetown|the old triangle charlottetown_189 great george st_charlottetown|timothy's world coffee (charlottetown)_154 great george street._charlottetown|trailside music hall_155 kent st_charlottetown has 17 Firestore events
+ LOG  [TreeMarker] Cluster fritz chocolates_5549 st. peters rd_saint has 1 Firestore events
+ LOG  [TreeMarker] Cluster a&w restaurants_650 university ave_charlottetown|sport pei | charlottetown_40 enman crescent_charlottetown has 3 Firestore events
+ LOG  [TreeMarker] Cluster souris show hall_5 church avenue_souris|tipsy farmers_120 main street_souris has 5 Firestore events
+ LOG  [TreeMarker] Cluster razzy's road house_161 st. peter's rd._charlottetown has 1 Firestore events
+ LOG  [TreeMarker] Cluster brothers 2 restaurant_618 water st e_summerside|harbourfront theatre_124 heather moyse dr_summerside has 4 Firestore events
+ LOG  [TreeMarker] Cluster eastern kings sportsplex_203 main street_souris has 1 Firestore events
+ LOG  [TreeMarker] Cluster spicey chef charlottetown_85 belvedere ave_charlottetown has 2 Firestore events
+ LOG  [TreeMarker] Cluster harleys pub and perk_87 elora st_mildmay has 1 Firestore events
+ LOG  [TreeMarker] Cluster mill river resort_180 mill river resort rd #136_woodstock has 1 Firestore events
+ LOG  [TreeMarker] Cluster copper bottom brewing_567 main st_montague has 1 Firestore events
+ LOG  [FilterPills] Counts updated: {"activeTimeFilter": "today", "eventFilterCounts": {"all": 218, "now": 11, "today": 14, "tomorrow": 27, "upcoming": 204}, "onScreenEventsCount": 264, "specialFilterCounts": {"all": 46, "now": 0, "today": 3, "tomorrow": 5, "upcoming": 43}, "totalEvents": 218, "totalSpecials": 46, "visibleEvents": 14, "visibleSpecials": 3}
+ LOG  [FilterPills] Counts updated: {"activeTimeFilter": "today", "eventFilterCounts": {"all": 218, "now": 11, "today": 14, "tomorrow": 27, "upcoming": 204}, "onScreenEventsCount": 264, "specialFilterCounts": {"all": 46, "now": 0, "today": 3, "tomorrow": 5, "upcoming": 43}, "totalEvents": 218, "totalSpecials": 46, "visibleEvents": 14, "visibleSpecials": 3}
+ LOG  Generated 15 clusters from 26 venues using supercluster @z=14
+ LOG  [MapLoad][cluster] ms=5 zoom=14.40 threshold=Neighborhood venues=26 clusters=15
+ LOG  [MapLoad][cluster_counts] z=14.40 multi=6 single=9 total=15
+ LOG  [OnScreen] Camera tick: {"centerArr": -63.127546800000005, "hasCenter": true, "hasZoom": true, "mapHeight": 690.3333129882812, "mapWidth": 402, "pixelRatio": 3, "usingActualMapDimensions": true, "windowHeight": 874, "windowWidth": 402, "zoom": 14.4}
+ LOG  [GeoUtils] 🗺️ getViewportBoundingBox: {"bufferMultiplier": 1, "bufferedHalfHeightKm": "0.86", "buf feredHalfWidthKm": "0.50", "center": {"latitude": 46.236731299999995, "longitude": -63.127546800000005}, "halfHeightKm": "0.86", "halfWidthKm": "0.50", "viewportSize": "402x690.3333129882812", "zoom": 14.4}
+ LOG  [GeoUtils] 📦 Resulting bbox: {"east": -63.12100952642895, "north": 46.2444961819878, "south": 46.22896641801219, "west": -63.13408407357106}
+ LOG  [OnScreen] Filtering events: {"bbox": {"east": "-63.1210", "north": "46.2445", "south": "46.2290", "west": "-63.1341"}, "filteredOut": 41, "onScreenEventsCount": 223, "sampleEvents": [{"id": "fb_QfvbO6de4qIU8stkAtuv", "inBounds": true, "lat": "46.2374", "latCalc": "46.2374 >= 46.2290 && <= 46.2445", "latOk": true, "lng": "-63.1261", "lngCalc": "-63.1261 >= -63.1341 && <= -63.1210", "lngOk": true}, {"id": "fb_1560964642333741_20260307", "inBounds": false, "lat": "46.2461", "latCalc": "46.2461 >= 46.2290 && <= 46.2445", "latOk": false, "lng": "-63.1166", "lngCalc": "-63.1166 >= -63.1341 && <= -63.1210", "lngOk": false}, {"id": "fb_122161630568910683_20260311", "inBounds": true, "lat": "46.2349", "latCalc": "46.2349 >= 46.2290 && <= 46.2445", "latOk": true, "lng": "-63.1276", "lngCalc": "-63.1276 >= -63.1341 && <= -63.1210", "lngOk": true}], "viewportEventsCount": 264}
+ LOG  [MapLoad][viewport] Firestore client-side partition complete: {"candidateEvents": 579, "coordinateEvents": 577, "durationMs": 83, "filteredCount": 37, "outsideViewportCount": 354, "requestedType": "both", "viewportCount": 223}
+ LOG  Generated 15 clusters from 26 venues using supercluster @z=14
+ LOG  [MapLoad][cluster] ms=5 zoom=14.40 threshold=Neighborhood venues=26 clusters=15
+ LOG  [MapLoad][cluster_counts] z=14.40 multi=6 single=9 total=15
+ LOG  VISIBILITY RECALCULATED (THRESHOLD_CHANGE): 15/15 clusters visible
+ LOG  [FilterPills] Counts updated: {"activeTimeFilter": "today", "eventFilterCounts": {"all": 190, "now": 11, "today": 14, "tomorrow": 23, "upcoming": 176}, "onScreenEventsCount": 223, "specialFilterCounts": {"all": 33, "now": 0, "today": 3, "tomorrow": 1, "upcoming": 30}, "totalEvents": 190, "totalSpecials": 33, "visibleEvents": 14, "visibleSpecials": 3}
+ LOG  [TreeMarker] Cluster baba's lounge_181 great george st_charlottetown|charlottetown library learning centre_dominion building_97|hopyard_151 kent st_charlottetown|the confederation court mall_134 kent st_charlottetown|the old triangle charlottetown_189 great george st_charlottetown|timothy's world coffee (charlottetown)_154 great george street._charlottetown|trailside music hall_155 kent st_charlottetown has 11 Firestore events
+ LOG  [TreeMarker] Cluster city cinema_64 king st_charlottetown|the island restro & bar_43 queen street_charlottetown has 2 Firestore events
+ LOG  [TreeMarker] Cluster key murray law_80 grafton street_charlottetown|the cork & cast_146 richmond st_charlottetown has 2 Firestore events
+ LOG  [TreeMarker] Cluster hunter's ale house_185 kent st_charlottetown|the factory_189 kent st_charlottetown has 2 Firestore events
+ LOG  [TreeMarker] Cluster fritz chocolates_5549 st. peters rd_saint has 1 Firestore events
+ LOG  [TreeMarker] Cluster a&w restaurants_650 university ave_charlottetown has 2 Firestore events
+ LOG  [TreeMarker] Cluster souris show hall_5 church avenue_souris|tipsy farmers_120 main street_souris has 5 Firestore events
+ LOG  [TreeMarker] Cluster razzy's road house_161 st. peter's rd._charlottetown has 1 Firestore events
+ LOG  [TreeMarker] Cluster brothers 2 restaurant_618 water st e_summerside|harbourfront theatre_124 heather moyse dr_summerside has 4 Firestore events
+ LOG  [TreeMarker] Cluster eastern kings sportsplex_203 main street_souris has 1 Firestore events
+ LOG  [TreeMarker] Cluster spicey chef charlottetown_85 belvedere ave_charlottetown has 2 Firestore events
+ LOG  [TreeMarker] Cluster harleys pub and perk_87 elora st_mildmay has 1 Firestore events
+ LOG  [TreeMarker] Cluster mill river resort_180 mill river resort rd #136_woodstock has 1 Firestore events
+ LOG  [TreeMarker] Cluster sport pei | charlottetown_40 enman crescent_charlottetown has 1 Firestore events
+ LOG  [TreeMarker] Cluster copper bottom brewing_567 main st_montague has 1 Firestore events
+ LOG  [FilterPills] Counts updated: {"activeTimeFilter": "today", "eventFilterCounts": {"all": 190, "now": 11, "today": 14, "tomorrow": 23, "upcoming": 176}, "onScreenEventsCount": 223, "specialFilterCounts": {"all": 33, "now": 0, "today": 3, "tomorrow": 1, "upcoming": 30}, "totalEvents": 190, "totalSpecials": 33, "visibleEvents": 14, "visibleSpecials": 3}
+ LOG  [FilterPills] Counts updated: {"activeTimeFilter": "today", "eventFilterCounts": {"all": 190, "now": 11, "today": 14, "tomorrow": 23, "upcoming": 176}, "onScreenEventsCount": 223, "specialFilterCounts": {"all": 33, "now": 0, "today": 3, "tomorrow": 1, "upcoming": 30}, "totalEvents": 190, "totalSpecials": 33, "visibleEvents": 14, "visibleSpecials": 3}
+ LOG  [FilterPills] Counts updated: {"activeTimeFilter": "today", "eventFilterCounts": {"all": 190, "now": 11, "today": 14, "tomorrow": 23, "upcoming": 176}, "onScreenEventsCount": 223, "specialFilterCounts": {"all": 33, "now": 0, "today": 3, "tomorrow": 1, "upcoming": 30}, "totalEvents": 190, "totalSpecials": 33, "visibleEvents": 14, "visibleSpecials": 3}
+ LOG  [FilterPills] Counts updated: {"activeTimeFilter": "today", "eventFilterCounts": {"all": 190, "now": 11, "today": 14, "tomorrow": 23, "upcoming": 176}, "onScreenEventsCount": 223, "specialFilterCounts": {"all": 33, "now": 0, "today": 3, "tomorrow": 1, "upcoming": 30}, "totalEvents": 190, "totalSpecials": 33, "visibleEvents": 14, "visibleSpecials": 3}
+ LOG  [Hotspot] Found cluster containing "Trailside Music Hall" with 7 venues
  LOG  [Hotspot] ===== Tooltip Text =====
- LOG  [Hotspot] Tooltip: "1 event now, 1 later today" / "Tap to explore"
+ LOG  [Hotspot] Tooltip: "9 events now, 2 later today" / "Tap to explore"
  LOG  [Hotspot] ===== Cluster after zoom (used for tooltip) =====
- LOG  [Hotspot] Zoomed cluster: timeStatus=now, events=2, venues=2
- LOG  [Hotspot]   Venue 1: Baba's Lounge | Charlottetown PE (1 events)
- LOG  [Hotspot]      - "Caitlin Robinson & Friends — New Original Music" (Live Music)
- LOG  [Hotspot]   Venue 2: Trailside Music Hall (1 events)
- LOG  [Hotspot]      - "41 After Hours Band" (Live Music)
- LOG  [Hotspot] Updated targetCoords to cluster centroid: lat=46.236578, lon=-63.127868
- LOG  [MapLoad][ML-1771633041063] T1b map_idle +5323ms
- LOG  [Hotspot] ===== Cluster opened via tooltip tap =====
- LOG  [Hotspot] Target cluster: timeStatus=now, venues=2
- LOG  [Hotspot] Hottest venue (will be selected): Baba's Lounge | Charlottetown PE (now=1, today=0, total=1)
- LOG  [Hotspot]   Venue 1: Baba's Lounge | Charlottetown PE (now=1, today=0, total=1)
- LOG  [Hotspot]   Venue 2: Trailside Music Hall (now=0, today=1, total=1)
- LOG  CACHE DEBUG: Checking events for enhanced properties
- LOG  Event fb_hRhz43uot33ZTa5OIuj7: has fullDescription=false, has ticketLinkPosts=false
- LOG  Event fb_3297a4545320: has fullDescription=false, has ticketLinkPosts=false
- LOG  Enhanced details already cached, skipping fetch
- LOG  [FilterPills] Counts updated: {"activeTimeFilter": "today", "eventFilterCounts": {"all": 112, "now": 3, "today": 4, "tomorrow": 6, "upcoming": 108}, "onScreenEventsCount": 115, "specialFilterCounts": {"all": 3, "now": 0, "today": 0, "tomorrow": 1, "upcoming": 3}, "totalEvents": 112, "totalSpecials": 3, "visibleEvents": 4, "visibleSpecials": 0}
- LOG  [TreeMarker] Cluster baba's lounge | charlottetown pe_181 great george st_charlottetown|trailside music hall_155 kent st_charlottetown has 2 Firestore events
- LOG  [TreeMarker] Cluster the guild_111 queen street charlottetown_pe has 2 Firestore events
- LOG  [TreeMarker] Cluster harleys pub and perk | mildmay on_87 elora st_mildmay has 1 Firestore events
- LOG  [TreeMarker] Cluster brothers 2 restaurant | summerside pe_618 water st e_summerside has 1 Firestore events
- LOG  Found favorite venue with 'happening now' content at index 0: Baba's Lounge | Charlottetown PE
- LOG  Calculated 1 ads needed for events tab with 1 items (minimal content)
- LOG  [VenueNewContent] Baba's Lounge | Charlottetown PE: false
- LOG  [VenueNewContent] Trailside Music Hall: false
- LOG  Venues changed, recalculating most relevant venue
- LOG  Venue change effect triggered - activeVenueIndex: 0
- LOG  [Final Sort Order] ["Caitlin Robinson & Friends — New Original Music: fb_hRhz43uot33ZTa5OIuj7 (score: 600)"]
- LOG  Default event unchanged; skipping setSelectedEvent
- LOG  selectedImageData CHANGED: null
- LOG  [Tutorial] Callout state function exposed globally
- LOG  Initial callout animation effect
- LOG  [VenueNewContent] Baba's Lounge | Charlottetown PE: false
- LOG  [VenueNewContent] Trailside Music Hall: false
- LOG  [MapLoad][ML-1771633041063] T1b map_idle +6875ms
- LOG  [VenueNewContent] Baba's Lounge | Charlottetown PE: false
- LOG  [VenueNewContent] Trailside Music Hall: false
- LOG  [CompactNativeAdComponent] Media debug: {"aspectRatio": 0, "firstImageUrl": undefined, "hasImages": false, "hasMediaContent": true, "hasVideoContent": true, "imagesCount": undefined}
- LOG  [VenueNewContent] Baba's Lounge | Charlottetown PE: false
- LOG  [VenueNewContent] Trailside Music Hall: false
- LOG  [VenueNewContent] Baba's Lounge | Charlottetown PE: false
- LOG  [VenueNewContent] Trailside Music Hall: false
- LOG  [VenueNewContent] Baba's Lounge | Charlottetown PE: false
- LOG  [VenueNewContent] Trailside Music Hall: false
- LOG  [VenueNewContent] Baba's Lounge | Charlottetown PE: false
- LOG  [VenueNewContent] Trailside Music Hall: false
- LOG  [VenueNewContent] Baba's Lounge | Charlottetown PE: false
- LOG  [VenueNewContent] Trailside Music Hall: false
- LOG  [VenueNewContent] Baba's Lounge | Charlottetown PE: false
- LOG  [VenueNewContent] Trailside Music Hall: false
- LOG  [VenueNewContent] Baba's Lounge | Charlottetown PE: false
- LOG  [VenueNewContent] Trailside Music Hall: false
- LOG  [VenueNewContent] Baba's Lounge | Charlottetown PE: false
- LOG  [VenueNewContent] Trailside Music Hall: false
- LOG  [VenueNewContent] Baba's Lounge | Charlottetown PE: false
- LOG  [VenueNewContent] Trailside Music Hall: false
- LOG  [VenueNewContent] Baba's Lounge | Charlottetown PE: false
- LOG  [VenueNewContent] Trailside Music Hall: false
- LOG  [ScrollEngagement] User scrolled ≥150px in venue: Baba's Lounge | Charlottetown PE, StableVenueID: baba's lounge | charlottetown pe_181 great george st_charlottetown
- LOG  [VenueNewContent] Baba's Lounge | Charlottetown PE: false
- LOG  [VenueNewContent] Trailside Music Hall: false
- LOG  [VenueNewContent] Baba's Lounge | Charlottetown PE: false
- LOG  [VenueNewContent] Trailside Music Hall: false
- LOG  [VenueNewContent] Baba's Lounge | Charlottetown PE: false
- LOG  [VenueNewContent] Trailside Music Hall: false
- LOG  [VenueNewContent] Baba's Lounge | Charlottetown PE: false
- LOG  [VenueNewContent] Trailside Music Hall: false
+ LOG  [Hotspot] Zoomed cluster: timeStatus=now, events=10, venues=7
+ LOG  [Hotspot]   Venue 1: Trailside Music Hall (3 events)
+ LOG  [Hotspot]      - "Ben Caplan w/ Special guest Zebedee" (Live Music)
+ LOG  [Hotspot]      - "Ben Caplan" (Live Music)
+ LOG  [Hotspot]      - "Ben Caplan (Solo) with support Zebedee" (Live Music)
+ LOG  [Hotspot]   Venue 2: HopYard (1 events)
+ LOG  [Hotspot]      - "Brewery Battle (Round 4: Moth Lane vs Bogside)" (Sports)
+ LOG  [Hotspot]   Venue 3: Baba's Lounge (1 events)
+ LOG  [Hotspot]      - "Island Jazz ft. SOPA Get Real" (Live Music)
+ LOG  [Hotspot]   Venue 4: Timothy's World Coffee (Charlottetown) (1 events)
+ LOG  [Hotspot]      - "2 Can Dine for $22" (Food Special)
+ LOG  [Hotspot]   Venue 5: The Old Triangle Charlottetown (1 events)
+ LOG  [Hotspot]      - "Schooner Sessions" (Live Music)
+ LOG  [Hotspot]   Venue 6: The Confederation Court Mall (1 events)
+ LOG  [Hotspot]      - "Beginner Linocut Printmaking Workshop" (Workshops & Classes)
+ LOG  [Hotspot]   Venue 7: Charlottetown Library Learning Centre (3 events)
+ LOG  [Hotspot]      - "Library Teen Volunteer & Leadership" (Gatherings & Parties)
+ LOG  [Hotspot]      - "EAL Conversation Circle with IRSA" (Gatherings & Parties)
+ LOG  [Hotspot]      - "PEERS Alliance Tabletop Roleplaying Games" (Gatherings & Parties)
+ LOG  [Hotspot] Updated targetCoords to cluster centroid: lat=46.236015, lon=-63.128064
+ LOG  [AdPool] Phase 1 complete: 1 specials ads ready for display
+ LOG  [AdPool] Phase 2: Loading 14 more specials ads in background...
+ LOG  [AdPool] Phase 1 complete: 1 events ads ready for display
+ LOG  [AdPool] Phase 2: Loading 14 more events ads in background...
+ LOG  [OnScreen] Camera tick: {"centerArr": -63.12754389078847, "hasCenter": true, "hasZoom": true, "mapHeight": 690.3333129882812, "mapWidth": 402, "pixelRatio": 3, "usingActualMapDimensions": true, "windowHeight": 874, "windowWidth": 402, "zoom": 14.363302981368443}

@@ -1140,17 +1140,17 @@ React.useEffect(() => {
   const visibleEvents = eventFilterCounts[filterCriteria.eventFilters.timeFilter];
   const visibleSpecials = specialFilterCounts[filterCriteria.specialFilters.timeFilter];
 
-  // Debug logging for FilterPills
-  console.log('[FilterPills] Counts updated:', {
-    onScreenEventsCount: onScreenEvents.length,
-    totalEvents,
-    totalSpecials,
-    visibleEvents,
-    visibleSpecials,
-    activeTimeFilter: filterCriteria.eventFilters.timeFilter,
-    eventFilterCounts,
-    specialFilterCounts
-  });
+  // Debug logging for FilterPills (disabled - runs on every render)
+  // console.log('[FilterPills] Counts updated:', {
+  //   onScreenEventsCount: onScreenEvents.length,
+  //   totalEvents,
+  //   totalSpecials,
+  //   visibleEvents,
+  //   visibleSpecials,
+  //   activeTimeFilter: filterCriteria.eventFilters.timeFilter,
+  //   eventFilterCounts,
+  //   specialFilterCounts
+  // });
   
   // Ref to prevent map from closing during panel transitions
   const isSwitchingPanels = useRef(false);
@@ -1249,9 +1249,9 @@ React.useEffect(() => {
       console.log('❌ CLOSE ALL - Setting activePanel to null');
       setActivePanel(null);
       Animated.parallel([
-        Animated.timing(eventsPanelOpacity, { toValue: 0, duration: 0, useNativeDriver: true }),
-        Animated.timing(specialsPanelOpacity, { toValue: 0, duration: 0, useNativeDriver: true }),
-        Animated.timing(overlayOpacity, { toValue: 0, duration: 0, useNativeDriver: true })
+        Animated.timing(eventsPanelOpacity, { toValue: 0, duration: 150, useNativeDriver: true }),
+        Animated.timing(specialsPanelOpacity, { toValue: 0, duration: 150, useNativeDriver: true }),
+        Animated.timing(overlayOpacity, { toValue: 0, duration: 150, useNativeDriver: true })
       ]).start(() => {
         console.log('✅ CLOSE ALL animation complete');
       });
@@ -1261,8 +1261,8 @@ React.useEffect(() => {
         console.log('❌ CLOSE Events - Same chevron clicked');
         setActivePanel(null);
         Animated.parallel([
-          Animated.timing(eventsPanelOpacity, { toValue: 0, duration: 0, useNativeDriver: true }),
-          Animated.timing(overlayOpacity, { toValue: 0, duration: 0, useNativeDriver: true })
+          Animated.timing(eventsPanelOpacity, { toValue: 0, duration: 150, useNativeDriver: true }),
+          Animated.timing(overlayOpacity, { toValue: 0, duration: 150, useNativeDriver: true })
         ]).start(() => {
           console.log('✅ CLOSE Events animation complete');
         });
@@ -1313,8 +1313,8 @@ React.useEffect(() => {
         console.log('❌ CLOSE Specials - Same chevron clicked');
         setActivePanel(null);
         Animated.parallel([
-          Animated.timing(specialsPanelOpacity, { toValue: 0, duration: 0, useNativeDriver: true }),
-          Animated.timing(overlayOpacity, { toValue: 0, duration: 0, useNativeDriver: true })
+          Animated.timing(specialsPanelOpacity, { toValue: 0, duration: 150, useNativeDriver: true }),
+          Animated.timing(overlayOpacity, { toValue: 0, duration: 150, useNativeDriver: true })
         ]).start(() => {
           console.log('✅ CLOSE Specials animation complete');
         });
@@ -1366,9 +1366,9 @@ React.useEffect(() => {
     if (activePanel === null && !isSwitchingPanels.current) {
       console.log('🔄 activePanel set to null externally, closing animations');
       Animated.parallel([
-        Animated.timing(eventsPanelOpacity, { toValue: 0, duration: 0, useNativeDriver: true }),
-        Animated.timing(specialsPanelOpacity, { toValue: 0, duration: 0, useNativeDriver: true }),
-        Animated.timing(overlayOpacity, { toValue: 0, duration: 0, useNativeDriver: true })
+        Animated.timing(eventsPanelOpacity, { toValue: 0, duration: 150, useNativeDriver: true }),
+        Animated.timing(specialsPanelOpacity, { toValue: 0, duration: 150, useNativeDriver: true }),
+        Animated.timing(overlayOpacity, { toValue: 0, duration: 150, useNativeDriver: true })
       ]).start();
     }
   }, [activePanel]);
