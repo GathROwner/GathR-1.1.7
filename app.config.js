@@ -23,6 +23,9 @@ module.exports = ({ config }) => ({
   assetBundlePatterns: ["**/*"],
 
   ios: {
+    // rnmapbox/maps 10.3.0 dropped old-architecture support on iOS.
+    // Keep Android on legacy architecture for now, but allow iOS to build.
+    newArchEnabled: true,
     supportsTablet: true,
     bundleIdentifier: "com.craigb.gathr",
     buildNumber: "1",
@@ -77,6 +80,7 @@ module.exports = ({ config }) => ({
   },
 
   android: {
+    newArchEnabled: true,
     icon: "./assets/icon.png",
     adaptiveIcon: {
       foregroundImage: "./assets/adaptive-icon.png",
@@ -89,6 +93,12 @@ module.exports = ({ config }) => ({
       "READ_CALENDAR",
       "WRITE_CALENDAR",
       "com.google.android.gms.permission.AD_ID"
+    ],
+    blockedPermissions: [
+      "android.permission.READ_EXTERNAL_STORAGE",
+      "android.permission.WRITE_EXTERNAL_STORAGE",
+      "android.permission.RECORD_AUDIO",
+      "android.permission.SYSTEM_ALERT_WINDOW"
     ],
     versionCode: 7,
     // Deep linking: App Links for Android
@@ -117,22 +127,24 @@ module.exports = ({ config }) => ({
     bundler: "metro"
   },
 
-  newArchEnabled: false,  // Disable New Architecture for Mapbox compatibility
+  newArchEnabled: true,  // SDK 54 defaults to New Architecture; keep Android aligned with rnmapbox 10.3.0's Fabric-first runtime.
 
 plugins: [
     [
       "expo-build-properties",
       {
         "ios": {
+          "deploymentTarget": "15.1",
           "useFrameworks": "static",
+          "forceStaticLinking": ["RNFBApp", "RNFBAnalytics"],
           "podfileProperties": { 
             "use_modular_headers!": true 
           }
         },
         "android": {
-            "compileSdkVersion": 35,
-            "targetSdkVersion": 35,
-          "kotlinVersion": "1.9.25"
+          "buildToolsVersion": "36.0.0",
+          "compileSdkVersion": 36,
+          "targetSdkVersion": 36
         }
       }
     ],
@@ -146,8 +158,10 @@ plugins: [
     ],
 
     "expo-asset",
+    "expo-font",
     "expo-router",
     "expo-tracking-transparency",
+    "expo-web-browser",
 
     [
       "react-native-google-mobile-ads",
@@ -178,11 +192,13 @@ plugins: [
         photosPermission:
           "Allow GathR to access your photos for profile images.",
         cameraPermission:
-          "Allow GathR to use your camera for profile images."
+          "Allow GathR to use your camera for profile images.",
+        microphonePermission: false
       }
     ],
 
-    // Research-confirmed working combination
+    // SDK 54 / RN 0.81 path: let rnmapbox/maps use its current native defaults,
+    // which now target the newer Mapbox Android artifacts required for 16 KB support.
     [
       "@rnmapbox/maps",
       {

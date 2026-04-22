@@ -1,0 +1,31 @@
+diff --git a/node_modules/@rnmapbox/maps/android/src/main/java/com/rnmapbox/rnmbx/utils/ViewTagResolver.kt b/node_modules/@rnmapbox/maps/android/src/main/java/com/rnmapbox/rnmbx/utils/ViewTagResolver.kt
+index 0bedfdb..43862b3 100644
+--- a/node_modules/@rnmapbox/maps/android/src/main/java/com/rnmapbox/rnmbx/utils/ViewTagResolver.kt
++++ b/node_modules/@rnmapbox/maps/android/src/main/java/com/rnmapbox/rnmbx/utils/ViewTagResolver.kt
+@@ -21,6 +21,7 @@ open class ViewTagResolver(val context: ReactApplicationContext) {
+     private val createdViews: HashSet<Int> = hashSetOf<Int>()
+     private val viewWaiters: HashMap<Int, MutableList<ViewTagWaiter<View?>>> = hashMapOf()
+     private val handler = android.os.Handler(android.os.Looper.getMainLooper())
++    private var didLogDefaultUiManagerFallback = false
+ 
+     private fun <V>addWaiter(viewTag: Int, reject: Promise?, fn: (V) -> Unit) {
+         val waiter = ViewTagWaiter<View?>({ view ->
+@@ -58,7 +59,17 @@ open class ViewTagResolver(val context: ReactApplicationContext) {
+     }
+ 
+     private val manager : UIManager
+-        get() = UIManagerHelper.getUIManager(context, UIManagerType.FABRIC)!!
++        get() {
++            UIManagerHelper.getUIManager(context, UIManagerType.FABRIC)?.let { return it }
++            UIManagerHelper.getUIManager(context, UIManagerType.DEFAULT)?.let {
++                if (!didLogDefaultUiManagerFallback) {
++                    didLogDefaultUiManagerFallback = true
++                    Logger.w(LOG_TAG, "Fabric UIManager unavailable; falling back to DEFAULT UIManager")
++                }
++                return it
++            }
++            throw IllegalStateException("Unable to resolve UIManager for ViewTagResolver")
++        }
+ 
+     // calls on UiQueueThread with resolved view
+     fun <V>withViewResolved(viewTag: Int, reject: Promise? = null, fn: (V) -> Unit) {

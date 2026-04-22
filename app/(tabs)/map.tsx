@@ -19,7 +19,7 @@ import * as Location from 'expo-location';
 import * as Haptics from 'expo-haptics';
 import MapboxGL from '@rnmapbox/maps';
 import { MaterialIcons } from '@expo/vector-icons';
-import { useFocusEffect, useIsFocused } from '@react-navigation/native';
+import { useIsFocused } from '@react-navigation/native';
 import { Platform } from 'react-native';
 
 
@@ -94,6 +94,9 @@ try {
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 const HOTSPOT_HARD_DISABLED_FOR_PREVIEW_DEBUG = false;
 const STATIC_CALLOUT_ISOLATION_DEBUG = false;
+const IOS_CALLOUT_NATIVE_AD_ISOLATION_DEBUG = Platform.OS === 'ios';
+const ANDROID_MAPBOX_STARTUP_ISOLATION_DEBUG = false;
+const ANDROID_CLUSTER_MARKERVIEW_ISOLATION_DEBUG = false;
 
 // Helper function to get color for time status
 const getTimeStatusColor = (timeStatus: TimeStatus): string => {
@@ -936,6 +939,7 @@ const computeStartCenter = (): [number, number] => {
   const mapRef = useRef<MapboxGL.MapView>(null);
   const locationSubscription = useRef<Location.LocationSubscription | null>(null);
   const calloutAnimationRequestRef = useRef(0);
+  const calloutOpenTouchGuardUntilRef = useRef(0);
 
   const renderedCalloutVenueCount = renderedCalloutVenues.length;
   const renderedCalloutClusterId = renderedCalloutCluster?.id ?? null;
@@ -962,40 +966,67 @@ const computeStartCenter = (): [number, number] => {
   );
   const isRenderedCalloutLayoutReady =
     hasSelectedCalloutRendered && calloutLayoutReadyKey === renderedCalloutPresentationKey;
-  const shouldRenderAncillaryOverlays = !isCalloutOpen && !hasRenderedCallout;
-
-  // Close filter panel and callouts when user switches away from map tab.
-  // Clear both store selection and locally rendered callout state so the screen
-  // cannot come back with a stale mounted callout subtree.
-  // DEFERRED: These mutations are deferred to after tab animation to prevent
-  // blocking the JS thread during tab switches.
-  useFocusEffect(
-    useCallback(() => {
-      return () => {
-        // Defer cleanup to after tab animation completes
-        // This prevents 5 state mutations from blocking the JS thread
-        InteractionManager.runAfterInteractions(() => {
-          if (activeFilterPanel) {
-            setActiveFilterPanel(null);
-          }
-          if (selectedVenues && selectedVenues.length > 0) {
-            selectVenue(null);
-          }
-          setRenderedCalloutVenues([]);
-          setRenderedCalloutCluster(null);
-          setCalloutLayoutReadyKey(null);
-        });
-      };
-    }, [
-      activeFilterPanel,
-      selectedVenues,
-      selectVenue,
-      setActiveFilterPanel,
-      setRenderedCalloutCluster,
-      setRenderedCalloutVenues,
-      setCalloutLayoutReadyKey,
-    ])
+  const presentedCalloutVenues =
+    Array.isArray(selectedVenues) && selectedVenues.length > 0
+      ? selectedVenues
+      : renderedCalloutVenues;
+  const presentedCalloutCluster =
+    Array.isArray(selectedVenues) && selectedVenues.length > 0
+      ? selectedCluster
+      : renderedCalloutCluster;
+  const presentedCalloutVenueCount = presentedCalloutVenues.length;
+  const presentedCalloutClusterId = presentedCalloutCluster?.id ?? null;
+  const hasPresentedCallout = presentedCalloutVenueCount > 0;
+  const presentedCalloutSignature = useMemo(
+    () =>
+      presentedCalloutVenues.length > 0
+        ? presentedCalloutVenues.map((venue) => venue.locationKey).join('|')
+        : '',
+    [presentedCalloutVenues]
   );
+  const presentedCalloutPresentationKey = useMemo(
+    () => `${presentedCalloutClusterId ?? 'single'}::${presentedCalloutSignature || 'no-venues'}`,
+    [presentedCalloutClusterId, presentedCalloutSignature]
+  );
+  const shouldRenderAncillaryOverlays = !isCalloutOpen && !hasPresentedCallout;
+
+  // Close filter panel and callouts only when the map tab actually loses focus.
+  // A useFocusEffect cleanup tied to selectedVenues was firing during selection
+  // changes and immediately tearing down a freshly opened callout on Android.
+  useEffect(() => {
+    if (isFocused) {
+      return;
+    }
+
+    const cleanupTask = InteractionManager.runAfterInteractions(() => {
+      console.log('[MapFocusCleanup] clearing map-only UI after blur', {
+        activeFilterPanel: activeFilterPanel ?? 'none',
+        selectedVenueCount: Array.isArray(selectedVenues) ? selectedVenues.length : 0,
+      });
+      if (activeFilterPanel) {
+        setActiveFilterPanel(null);
+      }
+      if (selectedVenues && selectedVenues.length > 0) {
+        selectVenue(null);
+      }
+      setRenderedCalloutVenues([]);
+      setRenderedCalloutCluster(null);
+      setCalloutLayoutReadyKey(null);
+    });
+
+    return () => {
+      cleanupTask.cancel?.();
+    };
+  }, [
+    activeFilterPanel,
+    isFocused,
+    selectedVenues,
+    selectVenue,
+    setActiveFilterPanel,
+    setRenderedCalloutCluster,
+    setRenderedCalloutVenues,
+    setCalloutLayoutReadyKey,
+  ]);
 
   // Hot interest carousel state (for HotFlamePill)
   const [hotInterestCarouselActive, setHotInterestCarouselActive] = useState(false);
@@ -1140,6 +1171,11 @@ const computeStartCenter = (): [number, number] => {
   }, [clusters.length, clustersReady]);
 
   useEffect(() => {
+    console.log('[CalloutProbe] store selection changed', {
+      selectedVenueCount,
+      selectedClusterId: selectedClusterId ?? 'none',
+      isCalloutOpen,
+    });
     traceMapEvent('callout_selection_state_changed', {
       selectedVenueCount,
       selectedClusterId: selectedClusterId ?? 'none',
@@ -1593,7 +1629,7 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
       
       // Close any open callouts
       if (selectedVenues && selectedVenues.length > 0) {
-        selectVenue(null); // This will clear all selections
+      closeCallout('tab-repress-trigger'); // This will clear all selections
         
         // 🔥 ANALYTICS: Track callout closure via tab re-press
         analytics.trackMapInteraction('callout_closed_via_tab_repress', {
@@ -1609,11 +1645,62 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
 
   useEffect(() => {
     if (selectedVenues && selectedVenues.length > 0) {
+      calloutOpenTouchGuardUntilRef.current = Date.now() + 900;
+      console.log('[CalloutProbe] arming map press guard', {
+        until: calloutOpenTouchGuardUntilRef.current,
+        selectedVenueCount: selectedVenues.length,
+        selectedClusterId: selectedCluster?.id ?? 'none',
+      });
+      console.log('[CalloutProbe] promoting selected venues to rendered callout', {
+        selectedVenueCount: selectedVenues.length,
+        selectedClusterId: selectedCluster?.id ?? 'none',
+        venueNames: selectedVenues.slice(0, 5).map((venue) => venue.venue).join(' | '),
+      });
       setCalloutLayoutReadyKey(null);
       setRenderedCalloutVenues(selectedVenues);
       setRenderedCalloutCluster(selectedCluster);
+      return;
     }
+    calloutOpenTouchGuardUntilRef.current = 0;
+    console.log('[CalloutProbe] selected venues empty', {
+      selectedClusterId: selectedCluster?.id ?? 'none',
+    });
   }, [selectedCluster, selectedVenues]);
+
+  useEffect(() => {
+    console.log('[CalloutProbe] rendered callout state changed', {
+      renderedVenueCount: renderedCalloutVenues.length,
+      renderedClusterId: renderedCalloutClusterId ?? 'none',
+      hasRenderedCallout,
+      calloutLayoutReadyKey: calloutLayoutReadyKey ?? 'none',
+    });
+  }, [
+    calloutLayoutReadyKey,
+    hasRenderedCallout,
+    renderedCalloutClusterId,
+    renderedCalloutVenues.length,
+  ]);
+
+  const closeCallout = useCallback((reason: string) => {
+    console.log('[CalloutProbe] closeCallout', {
+      reason,
+      selectedVenueCount,
+      selectedClusterId: selectedClusterId ?? 'none',
+      renderedVenueCount: renderedCalloutVenues.length,
+      renderedClusterId: renderedCalloutClusterId ?? 'none',
+      ignoreProgrammatic: ignoreProgrammaticCameraRef.current,
+      calloutLayoutReady: isRenderedCalloutLayoutReady,
+      guardRemainingMs: Math.max(0, calloutOpenTouchGuardUntilRef.current - Date.now()),
+    });
+    selectVenue(null);
+  }, [
+    isRenderedCalloutLayoutReady,
+    renderedCalloutClusterId,
+    renderedCalloutVenues.length,
+    selectedClusterId,
+    selectedVenueCount,
+    selectVenue,
+  ]);
 
   // Parent callout lifecycle only mounts/dismisses the subtree.
   // EventCallout owns the visible sheet presentation.
@@ -2258,6 +2345,32 @@ lastOpenedClusterIdRef.current = cluster.id;
 
   // Handle map press to close callout
   const handleMapPress = () => {
+    const guardRemainingMs = Math.max(0, calloutOpenTouchGuardUntilRef.current - Date.now());
+    console.log('[CalloutProbe] handleMapPress fired', {
+      selectedVenueCount,
+      selectedClusterId: selectedClusterId ?? 'none',
+      ignoreProgrammatic: ignoreProgrammaticCameraRef.current,
+      calloutLayoutReady: isRenderedCalloutLayoutReady,
+      guardRemainingMs,
+    });
+
+    if (ignoreProgrammaticCameraRef.current) {
+      console.log('[CalloutProbe] handleMapPress ignored during programmatic camera move');
+      return;
+    }
+
+    if (selectedVenues && selectedVenues.length > 0 && !isRenderedCalloutLayoutReady) {
+      console.log('[CalloutProbe] handleMapPress ignored while callout layout is pending');
+      return;
+    }
+
+    if (guardRemainingMs > 0) {
+      console.log('[CalloutProbe] handleMapPress ignored by post-open guard', {
+        guardRemainingMs,
+      });
+      return;
+    }
+
     traceMapEvent('map_press_fired', {
       hasActiveCallout: selectedVenueCount > 0,
       selectedClusterId: selectedClusterId ?? 'none',
@@ -2291,7 +2404,7 @@ lastOpenedClusterIdRef.current = cluster.id;
         selectedClusterId: selectedClusterId ?? 'none',
         selectedVenueCount,
       });
-      selectVenue(null);
+      closeCallout('map-press');
       // Analytics for callout closure tracked in useEffect above
     }
     // Close filter panel if open
@@ -3145,6 +3258,37 @@ if (reason === 'CLUSTER_COUNT_CHANGE') {
     );
   }
 
+  const renderCalloutPresentation = (content: React.ReactNode) => {
+    console.log('[CalloutProbe] renderCalloutPresentation', {
+      platform: Platform.OS,
+      hasRenderedCallout,
+      hasPresentedCallout,
+      renderedVenueCount: renderedCalloutVenues.length,
+      renderedClusterId: renderedCalloutClusterId ?? 'none',
+      presentedVenueCount: presentedCalloutVenueCount,
+      presentedClusterId: presentedCalloutClusterId ?? 'none',
+    });
+    if (Platform.OS !== 'ios') {
+      return content;
+    }
+
+    return (
+      <Modal
+        transparent={true}
+        visible={true}
+        animationType="none"
+        onRequestClose={() => closeCallout('modal-request-close')}
+        presentationStyle="overFullScreen"
+        statusBarTranslucent={true}
+        hardwareAccelerated={true}
+      >
+        <View style={styles.calloutModalContent}>
+          {content}
+        </View>
+      </Modal>
+    );
+  };
+
   // Render the map
   return (
     <View style={styles.container}>
@@ -3184,8 +3328,15 @@ if (reason === 'CLUSTER_COUNT_CHANGE') {
 
 
 
-      
-      <MapboxGL.MapView
+      {ANDROID_MAPBOX_STARTUP_ISOLATION_DEBUG ? (
+        <View style={[styles.map, styles.androidMapIsolationCard]}>
+          <Text style={styles.androidMapIsolationTitle}>Android Map Isolation Mode</Text>
+          <Text style={styles.androidMapIsolationBody}>
+            Mapbox rendering is temporarily disabled in the dev build to isolate the startup crash.
+          </Text>
+        </View>
+      ) : (
+        <MapboxGL.MapView
         ref={mapRef}
         style={styles.map}
         styleURL={MapboxGL.StyleURL.Street}
@@ -3307,8 +3458,9 @@ onDidFinishLoadingMap={() => {
         )}
         
         {/* Render event markers */}
-        {!isLoading && renderClusterMarkers()}
+        {!isLoading && !ANDROID_CLUSTER_MARKERVIEW_ISOLATION_DEBUG && renderClusterMarkers()}
       </MapboxGL.MapView>
+      )}
 
       {MAP_TRACE_UI_ENABLED && (
         <Pressable
@@ -3321,6 +3473,12 @@ onDidFinishLoadingMap={() => {
             setIsTracePanelVisible(true);
           }}
         />
+      )}
+
+      {ANDROID_CLUSTER_MARKERVIEW_ISOLATION_DEBUG && (
+        <View pointerEvents="none" style={styles.androidMarkerIsolationBadge}>
+          <Text style={styles.androidMarkerIsolationBadgeText}>Android dev: cluster markers disabled</Text>
+        </View>
       )}
 
             {/* GathR logo above Mapbox logo */}
@@ -3397,7 +3555,7 @@ onDidFinishLoadingMap={() => {
         </View>
       )}
 
-      {hasRenderedCallout && (
+      {hasPresentedCallout && renderCalloutPresentation(
         <>
           {/* Background overlay that SWALLOWS touches (prevents MapView onPress behind it) */
           /* ─────────────────────────────────────────────────────────────────────────────
@@ -3445,15 +3603,15 @@ Owner: Map UX stability on Android • Last validated: 2025-09-04
     // Tapping outside the sheet intentionally closes it with animation
     console.log('OVERLAY TAP - dismissing callout with animation');
     traceMapEvent('callout_overlay_tap_closed', {
-      selectedClusterId: renderedCalloutClusterId ?? 'none',
-      selectedVenueCount: renderedCalloutVenueCount,
+      selectedClusterId: presentedCalloutClusterId ?? 'none',
+      selectedVenueCount: presentedCalloutVenueCount,
     });
     // Use global closeCallout to trigger animated close
     if ((global as any).closeCallout) {
       (global as any).closeCallout();
     } else {
       // Fallback if callout hasn't exposed the function yet
-      selectVenue(null);
+      closeCallout('overlay-fallback-close');
     }
   }}
 >
@@ -3471,18 +3629,18 @@ Owner: Map UX stability on Android • Last validated: 2025-09-04
           {/* Callout container - box-none allows taps to pass through to overlay below */}
           <View style={styles.calloutAnimatedContainer} pointerEvents="box-none">
             <ActiveCalloutComponent 
-              key={`${renderedCalloutClusterId ?? 'single'}::${renderedCalloutVenues.map((venue) => venue.locationKey).join('|') || 'no-venues'}`}
-              venues={renderedCalloutVenues}
-              cluster={renderedCalloutCluster}
-              onClose={() => selectVenue(null)}
+              key={presentedCalloutPresentationKey}
+              venues={presentedCalloutVenues}
+              cluster={presentedCalloutCluster}
+              onClose={() => closeCallout('callout-onClose-prop')}
               onLayoutReady={() => {
                 traceMapEvent('callout_child_layout_ready', {
-                  renderedClusterId: renderedCalloutClusterId ?? 'none',
-                  renderedVenueCount: renderedCalloutVenueCount,
-                  renderedCalloutPresentationKey,
+                  renderedClusterId: presentedCalloutClusterId ?? 'none',
+                  renderedVenueCount: presentedCalloutVenueCount,
+                  renderedCalloutPresentationKey: presentedCalloutPresentationKey,
                 });
                 setCalloutLayoutReadyKey((currentKey) =>
-                  currentKey === renderedCalloutPresentationKey ? currentKey : renderedCalloutPresentationKey
+                  currentKey === presentedCalloutPresentationKey ? currentKey : presentedCalloutPresentationKey
                 );
               }}
               onEventSelected={handleEventSelected}
@@ -3496,7 +3654,7 @@ Owner: Map UX stability on Android • Last validated: 2025-09-04
         <HotspotHighlight ignoreProgrammaticCameraRef={ignoreProgrammaticCameraRef} />
       )}
 
-      <CompactCalloutAdWarmup />
+      {!IOS_CALLOUT_NATIVE_AD_ISOLATION_DEBUG && <CompactCalloutAdWarmup />}
 
       {/* Guest limitation registration prompt - only for guests */}
       {isGuest && <RegistrationPrompt />}
@@ -3521,6 +3679,25 @@ const styles = StyleSheet.create({
   },
   map: {
     flex: 1,
+  },
+  androidMapIsolationCard: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 24,
+    backgroundColor: '#F5F3E8',
+  },
+  androidMapIsolationTitle: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: '#1F2937',
+    marginBottom: 12,
+    textAlign: 'center',
+  },
+  androidMapIsolationBody: {
+    fontSize: 15,
+    lineHeight: 22,
+    color: '#4B5563',
+    textAlign: 'center',
   },
   errorText: {
     flex: 1,
@@ -3769,6 +3946,9 @@ countText: {
     justifyContent: 'flex-end',
     zIndex: 15,
   },
+  calloutModalContent: {
+    flex: 1,
+  },
   // Re-center button styles
   recenterButton: {
     position: 'absolute',
@@ -3802,6 +3982,21 @@ countText: {
     justifyContent: 'center',
     alignItems: 'flex-end',
     zIndex: 11,
+  },
+  androidMarkerIsolationBadge: {
+    position: 'absolute',
+    top: 84,
+    alignSelf: 'center',
+    backgroundColor: 'rgba(17, 24, 39, 0.88)',
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    zIndex: 12,
+  },
+  androidMarkerIsolationBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '600',
   },
   mapLogoContainer: {
     position: 'absolute',

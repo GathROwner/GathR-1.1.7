@@ -21,13 +21,31 @@ const StaticDebugCallout: React.FC<StaticDebugCalloutProps> = ({
   const hasReportedLayoutRef = useRef(false);
   const totalItems = venues.reduce((sum, venue) => sum + venue.events.length, 0);
 
+  console.log('[StaticDebugCallout] render', {
+    venueCount: venues.length,
+    totalItems,
+    clusterId: cluster?.id ?? 'none',
+  });
+
   useEffect(() => {
+    console.log('[StaticDebugCallout] mounted', {
+      venueCount: venues.length,
+      totalItems,
+      clusterId: cluster?.id ?? 'none',
+    });
     traceMapEvent('static_debug_callout_rendered', {
       venueCount: venues.length,
       totalItems,
       clusterId: cluster?.id ?? 'none',
       venueNames: venues.map((venue) => venue.venue).join(' | ') || 'none',
     });
+    return () => {
+      console.log('[StaticDebugCallout] unmounted', {
+        venueCount: venues.length,
+        totalItems,
+        clusterId: cluster?.id ?? 'none',
+      });
+    };
   }, [cluster?.id, totalItems, venues]);
 
   return (
@@ -36,6 +54,15 @@ const StaticDebugCallout: React.FC<StaticDebugCalloutProps> = ({
         style={styles.sheet}
         onLayout={(event) => {
           const { height, width, x, y } = event.nativeEvent.layout;
+          console.log('[StaticDebugCallout] layout', {
+            height,
+            width,
+            x,
+            y,
+            venueCount: venues.length,
+            totalItems,
+            clusterId: cluster?.id ?? 'none',
+          });
           traceMapEvent('static_debug_callout_on_layout', {
             height,
             width,

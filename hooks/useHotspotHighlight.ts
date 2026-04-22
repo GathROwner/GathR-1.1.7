@@ -45,6 +45,14 @@ interface OriginalCameraPosition {
   zoom: number;
 }
 
+const HOTSPOT_VERBOSE_DEBUG = false;
+
+function hotspotDebugLog(...args: unknown[]) {
+  if (__DEV__ && HOTSPOT_VERBOSE_DEBUG) {
+    console.log(...args);
+  }
+}
+
 /**
  * Helper to determine a venue's "hotness" based on event timing.
  * Used for sorting venues within a cluster by priority.
@@ -154,11 +162,11 @@ function findHottestCluster(clusters: Cluster[]): Cluster | null {
   if (withContent.length === 0) return null;
 
   // DEBUG: Log all clusters being considered
-  console.log('[Hotspot] ===== Finding hottest cluster =====');
-  console.log('[Hotspot] Total clusters:', clusters.length);
-  console.log('[Hotspot] Clusters with content:', withContent.length);
+  hotspotDebugLog('[Hotspot] ===== Finding hottest cluster =====');
+  hotspotDebugLog('[Hotspot] Total clusters:', clusters.length);
+  hotspotDebugLog('[Hotspot] Clusters with content:', withContent.length);
   withContent.forEach((c, i) => {
-    console.log(`[Hotspot] Cluster ${i}: timeStatus=${c.timeStatus}, events=${c.eventCount}, specials=${c.specialCount}, venues=${c.venues?.length}, firstVenue=${c.venues?.[0]?.venue}`);
+    hotspotDebugLog(`[Hotspot] Cluster ${i}: timeStatus=${c.timeStatus}, events=${c.eventCount}, specials=${c.specialCount}, venues=${c.venues?.length}, firstVenue=${c.venues?.[0]?.venue}`);
   });
 
   // Sort by priority
@@ -180,8 +188,8 @@ function findHottestCluster(clusters: Cluster[]): Cluster | null {
 
   // DEBUG: Log the winner
   const winner = sorted[0];
-  console.log('[Hotspot] ===== Winner =====');
-  console.log(`[Hotspot] Selected: timeStatus=${winner.timeStatus}, events=${winner.eventCount}, specials=${winner.specialCount}, firstVenue=${winner.venues?.[0]?.venue}`);
+  hotspotDebugLog('[Hotspot] ===== Winner =====');
+  hotspotDebugLog(`[Hotspot] Selected: timeStatus=${winner.timeStatus}, events=${winner.eventCount}, specials=${winner.specialCount}, firstVenue=${winner.venues?.[0]?.venue}`);
 
   return sorted[0];
 }
@@ -342,12 +350,12 @@ export function useHotspotHighlight(
     const subscription = AppState.addEventListener('change', (nextAppState) => {
       if (nextAppState === 'active') {
         // App came to foreground, allow evaluation
-        console.log('[Hotspot] App foregrounded - allowing hotspot evaluation');
+        hotspotDebugLog('[Hotspot] App foregrounded - allowing hotspot evaluation');
         canEvaluateTriggerRef.current = true;
         traceMapEvent('hotspot_appstate_active');
       } else if (nextAppState === 'background' || nextAppState === 'inactive') {
         // App went to background, reset evaluation flag
-        console.log('[Hotspot] App backgrounded - resetting evaluation flag');
+        hotspotDebugLog('[Hotspot] App backgrounded - resetting evaluation flag');
         canEvaluateTriggerRef.current = false;
         traceMapEvent('hotspot_appstate_inactive', {
           appState: nextAppState,
@@ -358,7 +366,7 @@ export function useHotspotHighlight(
     // Initial mount counts as foreground
     // Also log current state for debugging
     const currentState = AppState.currentState;
-    console.log('[Hotspot] Hook mounted - AppState:', currentState);
+    hotspotDebugLog('[Hotspot] Hook mounted - AppState:', currentState);
     canEvaluateTriggerRef.current = true;
 
     return () => {
@@ -377,7 +385,7 @@ export function useHotspotHighlight(
 
   // Calculate if we should show the hotspot
   const shouldShowHotspot = useMemo(() => {
-    console.log('[Hotspot] Evaluating shouldShowHotspot:', {
+    hotspotDebugLog('[Hotspot] Evaluating shouldShowHotspot:', {
       canEvaluate: canEvaluateTriggerRef.current,
       tutorialActive: tutorialIsActive,
       showDailyHotspot,
@@ -390,7 +398,7 @@ export function useHotspotHighlight(
     // 0a. Check if setting just changed - if so, reset evaluation flag and block
     // This must happen BEFORE the evaluation window check to prevent race conditions
     if (prevShowDailyHotspotRef.current !== showDailyHotspot) {
-      console.log('[Hotspot] ⚠️ Setting changed during evaluation - resetting evaluation flag');
+      hotspotDebugLog('[Hotspot] Setting changed during evaluation - resetting evaluation flag');
       canEvaluateTriggerRef.current = false;
       prevShowDailyHotspotRef.current = showDailyHotspot;
       return false;
@@ -399,20 +407,20 @@ export function useHotspotHighlight(
     // 0b. Must be in evaluation window (app foreground)
     // This prevents hotspot from triggering when user enables it in settings mid-session
     if (!canEvaluateTriggerRef.current) {
-      console.log('[Hotspot] ❌ Blocked: not in evaluation window (app not foregrounded)');
+      hotspotDebugLog('[Hotspot] Blocked: not in evaluation window (app not foregrounded)');
       return false;
     }
 
     // 1. Tutorial not active
     if (tutorialIsActive) {
-      console.log('[Hotspot] ❌ Blocked: tutorial active');
+      hotspotDebugLog('[Hotspot] Blocked: tutorial active');
       return false;
     }
 
     // 2. User hasn't disabled it (for authenticated users)
     // Guests always see it (showDailyHotspot defaults to true)
     if (user && !showDailyHotspot) {
-      console.log('[Hotspot] ❌ Blocked: user disabled hotspot');
+      hotspotDebugLog('[Hotspot] Blocked: user disabled hotspot');
       return false;
     }
 
@@ -420,28 +428,54 @@ export function useHotspotHighlight(
     if (!DEBUG_IGNORE_DATE) {
       const today = new Date().toISOString().split('T')[0];
       if (hotspotLastShownDate === today) {
-        console.log('[Hotspot] ❌ Blocked: already shown today');
+        hotspotDebugLog('[Hotspot] Blocked: already shown today');
         return false;
       }
     } else {
-      console.log('[Hotspot] ⚠️ DEBUG: Ignoring date check (DEBUG_IGNORE_DATE = true)');
+      hotspotDebugLog('[Hotspot] DEBUG: Ignoring date check (DEBUG_IGNORE_DATE = true)');
     }
 
     // 4. Clusters are loaded
     if (!clusters || clusters.length === 0) {
-      console.log('[Hotspot] ❌ Blocked: no clusters loaded');
+      hotspotDebugLog('[Hotspot] Blocked: no clusters loaded');
       return false;
     }
 
     // 5. Haven't already triggered this session
     if (hasTriggeredRef.current) {
-      console.log('[Hotspot] ❌ Blocked: already triggered this session');
+      hotspotDebugLog('[Hotspot] Blocked: already triggered this session');
       return false;
     }
 
-    console.log('[Hotspot] ✅ All checks passed - hotspot should trigger');
+    hotspotDebugLog('[Hotspot] All checks passed - hotspot should trigger');
     return true;
   }, [tutorialIsActive, user, showDailyHotspot, hotspotLastShownDate, clusters]);
+
+  useEffect(() => {
+    if (!__DEV__) {
+      return;
+    }
+
+    const today = new Date().toISOString().split('T')[0];
+    console.log('[HotspotEligibility]', {
+      shouldShowHotspot,
+      tutorialIsActive,
+      showDailyHotspot,
+      hotspotLastShownDate: hotspotLastShownDate ?? 'none',
+      today,
+      clusterCount: clusters.length,
+      canEvaluateTrigger: canEvaluateTriggerRef.current,
+      hasTriggeredThisSession: hasTriggeredRef.current,
+      appState: AppState.currentState,
+      blockedBecauseAlreadyShownToday: hotspotLastShownDate === today,
+    });
+  }, [
+    clusters.length,
+    hotspotLastShownDate,
+    shouldShowHotspot,
+    showDailyHotspot,
+    tutorialIsActive,
+  ]);
 
   // Tooltip text is now captured in triggerHotspot BEFORE zoom occurs
   // This avoids issues where cluster splits apart at higher zoom levels
@@ -525,18 +559,18 @@ export function useHotspotHighlight(
     if (hottestVenue && sortedVenues.length > 1) {
       const hotness = getVenueHotness(hottestVenue);
       const isFav = hottestVenue.locationKey ? favoriteVenues.includes(hottestVenue.locationKey) : false;
-      console.log(`[Hotspot] Selected hottest venue: ${hottestVenue.venue} (fav=${isFav}, now=${hotness.nowCount}, today=${hotness.todayCount}, total=${hotness.total}) from ${hottest.venues?.length || 0} venues`);
+      hotspotDebugLog(`[Hotspot] Selected hottest venue: ${hottestVenue.venue} (fav=${isFav}, now=${hotness.nowCount}, today=${hotness.todayCount}, total=${hotness.total}) from ${hottest.venues?.length || 0} venues`);
 
       // DEBUG: Log all venues with their hotness scores for comparison
-      console.log('[Hotspot] ===== All venues in cluster (sorted by relevance) =====');
+      hotspotDebugLog('[Hotspot] ===== All venues in cluster (sorted by relevance) =====');
       sortedVenues.forEach((v, idx) => {
         const vHot = getVenueHotness(v);
         const vIsFav = v.locationKey ? favoriteVenues.includes(v.locationKey) : false;
-        console.log(`[Hotspot]   ${idx + 1}. ${v.venue}: fav=${vIsFav}, now=${vHot.nowCount}, today=${vHot.todayCount}, total=${vHot.total}`);
+        hotspotDebugLog(`[Hotspot]   ${idx + 1}. ${v.venue}: fav=${vIsFav}, now=${vHot.nowCount}, today=${vHot.todayCount}, total=${vHot.total}`);
         // Log events at this venue
         (v.events || []).forEach((evt: any) => {
           const evtIsNow = isEventNow(evt.startDate, evt.startTime, evt.endDate, evt.endTime);
-          console.log(`[Hotspot]      - "${evt.title}" (${evt.category}) | ${evt.startDate} ${evt.startTime}-${evt.endTime} | isNow=${evtIsNow}`);
+          hotspotDebugLog(`[Hotspot]      - "${evt.title}" (${evt.category}) | ${evt.startDate} ${evt.startTime}-${evt.endTime} | isNow=${evtIsNow}`);
         });
       });
     }
@@ -562,12 +596,12 @@ export function useHotspotHighlight(
         if (!hottestEvent) hottestEvent = evt;
       }
       if (hottestEvent) {
-        console.log('[Hotspot] ===== Hottest Event =====');
-        console.log(`[Hotspot] Hottest event: "${hottestEvent.title}" (${hottestEvent.category})`);
-        console.log(`[Hotspot]   Venue: ${hottestVenue.venue}`);
-        console.log(`[Hotspot]   Date: ${hottestEvent.startDate} ${hottestEvent.startTime}-${hottestEvent.endTime}`);
+        hotspotDebugLog('[Hotspot] ===== Hottest Event =====');
+        hotspotDebugLog(`[Hotspot] Hottest event: "${hottestEvent.title}" (${hottestEvent.category})`);
+        hotspotDebugLog(`[Hotspot]   Venue: ${hottestVenue.venue}`);
+        hotspotDebugLog(`[Hotspot]   Date: ${hottestEvent.startDate} ${hottestEvent.startTime}-${hottestEvent.endTime}`);
         const evtIsNow = isEventNow(hottestEvent.startDate, hottestEvent.startTime, hottestEvent.endDate, hottestEvent.endTime);
-        console.log(`[Hotspot]   Is happening NOW: ${evtIsNow}`);
+        hotspotDebugLog(`[Hotspot]   Is happening NOW: ${evtIsNow}`);
       }
     }
 
@@ -647,14 +681,14 @@ export function useHotspotHighlight(
             const hasVenue = c.venues?.some(v => v.venue === targetVenueName);
             if (hasVenue) {
               zoomedCluster = c;
-              console.log(`[Hotspot] Found cluster containing "${targetVenueName}" with ${c.venues?.length} venues`);
+              hotspotDebugLog(`[Hotspot] Found cluster containing "${targetVenueName}" with ${c.venues?.length} venues`);
               break;
             }
           }
 
           // Fallback: if venue not found (shouldn't happen), use distance-based search
           if (!zoomedCluster && targetCoordsRef.current) {
-            console.log(`[Hotspot] Warning: Could not find cluster containing "${targetVenueName}", falling back to distance search`);
+            hotspotDebugLog(`[Hotspot] Warning: Could not find cluster containing "${targetVenueName}", falling back to distance search`);
             const targetLon = targetCoordsRef.current.longitude;
             const targetLat = targetCoordsRef.current.latitude;
             let minDist = Infinity;
@@ -681,16 +715,16 @@ export function useHotspotHighlight(
         setCapturedTooltipSubtext(subtext);
 
         // DEBUG LOG 1: Log the actual tooltip text
-        console.log('[Hotspot] ===== Tooltip Text =====');
-        console.log(`[Hotspot] Tooltip: "${text}" / "${subtext}"`);
+        hotspotDebugLog('[Hotspot] ===== Tooltip Text =====');
+        hotspotDebugLog(`[Hotspot] Tooltip: "${text}" / "${subtext}"`);
 
         // DEBUG LOG 3: Log the cluster after zooming in
-        console.log('[Hotspot] ===== Cluster after zoom (used for tooltip) =====');
-        console.log(`[Hotspot] Zoomed cluster: timeStatus=${clusterForTooltip.timeStatus}, events=${clusterForTooltip.eventCount}, venues=${clusterForTooltip.venues?.length}`);
+        hotspotDebugLog('[Hotspot] ===== Cluster after zoom (used for tooltip) =====');
+        hotspotDebugLog(`[Hotspot] Zoomed cluster: timeStatus=${clusterForTooltip.timeStatus}, events=${clusterForTooltip.eventCount}, venues=${clusterForTooltip.venues?.length}`);
         clusterForTooltip.venues?.forEach((v, idx) => {
-          console.log(`[Hotspot]   Venue ${idx + 1}: ${v.venue} (${v.events?.length || 0} events)`);
+          hotspotDebugLog(`[Hotspot]   Venue ${idx + 1}: ${v.venue} (${v.events?.length || 0} events)`);
           (v.events || []).forEach((evt: any) => {
-            console.log(`[Hotspot]      - "${evt.title}" (${evt.category})`);
+            hotspotDebugLog(`[Hotspot]      - "${evt.title}" (${evt.category})`);
           });
         });
 
@@ -716,7 +750,7 @@ export function useHotspotHighlight(
               longitude: centroidLon,
             };
 
-            console.log(`[Hotspot] Updated targetCoords to cluster centroid: lat=${centroidLat.toFixed(6)}, lon=${centroidLon.toFixed(6)}`);
+            hotspotDebugLog(`[Hotspot] Updated targetCoords to cluster centroid: lat=${centroidLat.toFixed(6)}, lon=${centroidLon.toFixed(6)}`);
           }
         }
 
@@ -730,7 +764,7 @@ export function useHotspotHighlight(
 
         // Reset evaluation flag after trigger - prevents re-triggering until next foreground
         canEvaluateTriggerRef.current = false;
-        console.log('[Hotspot] Evaluation flag reset - hotspot will not trigger again until next app foreground');
+        hotspotDebugLog('[Hotspot] Evaluation flag reset - hotspot will not trigger again until next app foreground');
 
         // Track analytics
         amplitudeTrack('hotspot_shown', {
@@ -764,7 +798,7 @@ export function useHotspotHighlight(
       try {
         await updateShowDailyHotspot(user.uid, false);
       } catch (e) {
-        console.log('[Hotspot] Failed to persist setting:', e);
+        console.warn('[Hotspot] Failed to persist setting:', e);
       }
     }
 
@@ -803,13 +837,13 @@ export function useHotspotHighlight(
       const sortedVenues = sortVenuesByRelevance(targetCluster.venues, favoriteVenues, userInterests);
 
       // DEBUG LOG 4: Log which venue is selected when cluster opens (via tooltip tap)
-      console.log('[Hotspot] ===== Cluster opened via tooltip tap =====');
-      console.log(`[Hotspot] Target cluster: timeStatus=${targetCluster.timeStatus}, venues=${targetCluster.venues.length}`);
+      hotspotDebugLog('[Hotspot] ===== Cluster opened via tooltip tap =====');
+      hotspotDebugLog(`[Hotspot] Target cluster: timeStatus=${targetCluster.timeStatus}, venues=${targetCluster.venues.length}`);
       const selectedHotness = getVenueHotness(sortedVenues[0]);
-      console.log(`[Hotspot] Hottest venue (will be selected): ${sortedVenues[0]?.venue} (now=${selectedHotness.nowCount}, today=${selectedHotness.todayCount}, total=${selectedHotness.total})`);
+      hotspotDebugLog(`[Hotspot] Hottest venue (will be selected): ${sortedVenues[0]?.venue} (now=${selectedHotness.nowCount}, today=${selectedHotness.todayCount}, total=${selectedHotness.total})`);
       sortedVenues.forEach((v, idx) => {
         const vHot = getVenueHotness(v);
-        console.log(`[Hotspot]   Venue ${idx + 1}: ${v.venue} (now=${vHot.nowCount}, today=${vHot.todayCount}, total=${vHot.total})`);
+        hotspotDebugLog(`[Hotspot]   Venue ${idx + 1}: ${v.venue} (now=${vHot.nowCount}, today=${vHot.todayCount}, total=${vHot.total})`);
       });
 
       // Select venues with hottest first

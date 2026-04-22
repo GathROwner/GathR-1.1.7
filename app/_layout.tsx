@@ -150,6 +150,8 @@ Notifications.setNotificationHandler({
         });
         return {
           shouldShowAlert: false,
+          shouldShowBanner: false,
+          shouldShowList: false,
           shouldPlaySound: false,
           shouldSetBadge: false,
         };
@@ -159,6 +161,8 @@ Notifications.setNotificationHandler({
     // Normal path (on-time or no scheduledFor info)
     return {
       shouldShowAlert: true,
+      shouldShowBanner: true,
+      shouldShowList: true,
       shouldPlaySound: true,
       shouldSetBadge: false,
     };

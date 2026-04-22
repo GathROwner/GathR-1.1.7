@@ -100,6 +100,7 @@ import { amplitudeTrack } from '../../lib/amplitudeAnalytics';
 
 // Constants
 const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get('window');
+const COLLAPSIBLE_HEADER_TOP_MARGIN = 3;
 
 type UserPrefsState = {
   interests: string[];
@@ -1607,6 +1608,8 @@ useEffect(() => {
   // Performance tracking
   const [listLoadTime, setListLoadTime] = useState<number | null>(null);
   const [scrollStartTime, setScrollStartTime] = useState<number | null>(null);
+  const collapsibleHeaderTop = COLLAPSIBLE_HEADER_TOP_MARGIN;
+  const effectiveHeaderStackHeight = collapsibleHeaderTop + Math.max(headerHeight, 120);
 
   // Scroll to top functionality
   useEffect(() => {
@@ -2233,6 +2236,14 @@ setSelectedImageData({ imageUrl, event });
     return sortAndPrioritizeEvents(filteredViewportEvents);
   }, [filteredViewportEvents, userLocation, userInterests, savedEvents, favoriteVenues]);
 
+  // State for pagination of outside-viewport events
+  const [outsideViewportLoadCount, setOutsideViewportLoadCount] = useState(10);
+  const loadMoreBatchSize = 20;
+
+  const handleLoadMoreOutsideViewport = useCallback(() => {
+    setOutsideViewportLoadCount(prev => prev + loadMoreBatchSize);
+  }, []);
+
   // Lazy-sort outside-viewport events: only sort what we need for display
   // This prevents sorting 800+ events when FlatList only shows 10 initially
   const sortedOutsideViewportEvents = useMemo(() => {
@@ -2248,10 +2259,6 @@ setSelectedImageData({ imageUrl, event });
     return sortAndPrioritizeEvents(eventsToSort);
   }, [filteredOutsideViewportEvents, outsideViewportLoadCount, userLocation, userInterests, savedEvents, favoriteVenues]);
 
-  // State for pagination of outside-viewport events
-  const [outsideViewportLoadCount, setOutsideViewportLoadCount] = useState(10);
-  const loadMoreBatchSize = 20;
-  
   // Create events with ads list
   type EventListItem = {
     type: 'event';
@@ -2439,8 +2446,8 @@ setSelectedImageData({ imageUrl, event });
 
   const contentContainerStyleMemo = useMemo(() => [
     styles.listContent,
-    { paddingTop: Math.max(headerHeight, 120) + (showBanner ? 35 : 0) + 8 }
-  ], [headerHeight, showBanner]);
+    { paddingTop: effectiveHeaderStackHeight + (showBanner ? 35 : 0) + 8 }
+  ], [effectiveHeaderStackHeight, showBanner]);
 
   // Track priority effectiveness
   useEffect(() => {
@@ -2520,11 +2527,6 @@ setSelectedImageData({ imageUrl, event });
     );
   };
 
-  // Handle loading more outside-viewport events
-  const handleLoadMoreOutsideViewport = useCallback(() => {
-    setOutsideViewportLoadCount(prev => prev + loadMoreBatchSize);
-  }, []);
-
   return (
     <View style={styles.container}>
       {isHeaderSearchActive && (
@@ -2537,6 +2539,7 @@ setSelectedImageData({ imageUrl, event });
       <Animated.View 
         style={[
           styles.collapsibleHeader,
+          { top: collapsibleHeaderTop },
           { transform: [{ translateY: headerTranslateY }] }
         ]}
         onLayout={(event) => {
@@ -2717,7 +2720,7 @@ setSelectedImageData({ imageUrl, event });
           styles.preferencesBar, 
           { 
             opacity: fadeAnim,
-            top: Math.max(headerHeight, 120)
+            top: effectiveHeaderStackHeight
           }
         ]}>
           <Text style={styles.preferencesText}>
@@ -2862,10 +2865,12 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#FFFFFF',
     paddingTop: 3,
+    // Keep the collapsible filter overlay clipped to the scene so it can tuck
+    // under the navigator header instead of visually painting over it on iOS.
+    overflow: 'hidden',
   },
   collapsibleHeader: {
     position: 'absolute',
-    top: 3,
     left: 0,
     right: 0,
     backgroundColor: '#FFFFFF',

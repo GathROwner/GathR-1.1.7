@@ -137,6 +137,9 @@ import { traceMapEvent } from '../../utils/mapTrace';
 
 const EVENT_CALLOUT_SHELL_ISOLATION_DEBUG = false;
 const EVENT_CALLOUT_DISABLE_NATIVE_ADS_DEBUG = false;
+// Keep compact iOS callout ads on the plain React renderer. The NativeAdView
+// path was the historically fragile piece in preview/release-style builds.
+const EVENT_CALLOUT_FORCE_COMPACT_FALLBACK_ON_IOS = Platform.OS === 'ios';
 const EVENT_CALLOUT_PLACEHOLDER_AD_CARD_DEBUG = false;
 let compactSdkUnlockedForSession = true;
 
@@ -1740,8 +1743,7 @@ const SpecialCard: React.FC<SpecialCardProps> = ({
   const timeStatus = getEventTimeStatus(event);
 
   // --- Start of Tutorial Logic ---
-  // FIX 1: Correctly type the ref for Animated.View
-  const viewRef = useRef<React.ElementRef<typeof Animated.View>>(null);
+  const viewRef = useRef<View | null>(null);
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const [isHighlighted, setIsHighlighted] = useState(false);
 
@@ -1757,8 +1759,7 @@ const SpecialCard: React.FC<SpecialCardProps> = ({
         
         // Continuously re-measure the component to fix alignment issues
         if (globalFlag && viewRef.current) {
-          // Add '(as View)' to explicitly tell TypeScript that .measure exists
-          (viewRef.current as View).measure((_x: number, _y: number, width: number, height: number, pageX: number, pageY: number) => {
+          viewRef.current.measure((_x: number, _y: number, width: number, height: number, pageX: number, pageY: number) => {
             (global as any).eventDetailsLayout = { x: pageX, y: pageY, width, height };
           });
         }
@@ -2122,7 +2123,9 @@ useUserPrefsStore.getState().setAll({ savedEvents: next });
   
   return (
     <Animated.View
-      ref={viewRef}
+      ref={(node) => {
+        viewRef.current = node as View | null;
+      }}
       style={[
         styles.specialCard,
         timeStatus === 'now' && styles.nowSpecialCard,
@@ -2518,8 +2521,8 @@ const EventCallout: React.FC<EventCalloutProps> = ({
   // });
 
   // --- Start of Tutorial Logic for Venue Selector & Tabs ---
-  const venueSelectorRef = useRef<React.ElementRef<typeof Animated.View>>(null);
-  const eventTabsRef = useRef<React.ElementRef<typeof Animated.View>>(null);
+  const venueSelectorRef = useRef<View | null>(null);
+  const eventTabsRef = useRef<View | null>(null);
 
   const [isVenueSelectorHighlighted, setVenueSelectorHighlighted] = useState(false);
   const [isEventTabsHighlighted, setEventTabsHighlighted] = useState(false);
@@ -2535,7 +2538,7 @@ const EventCallout: React.FC<EventCalloutProps> = ({
         setVenueSelectorHighlighted(flag);
       }
       if (flag && venueSelectorRef.current) {
-        (venueSelectorRef.current as View).measure((_x: number, _y: number, width: number, height: number, pageX: number, pageY: number) => {
+        venueSelectorRef.current.measure((_x: number, _y: number, width: number, height: number, pageX: number, pageY: number) => {
           (global as any).venueSelectorLayout = { x: pageX, y: pageY, width, height };
         });
       }
@@ -2551,7 +2554,7 @@ const EventCallout: React.FC<EventCalloutProps> = ({
         setEventTabsHighlighted(flag);
       }
       if (flag && eventTabsRef.current) {
-        (eventTabsRef.current as View).measure((_x: number, _y: number, width: number, height: number, pageX: number, pageY: number) => {
+        eventTabsRef.current.measure((_x: number, _y: number, width: number, height: number, pageX: number, pageY: number) => {
           (global as any).eventTabsLayout = { x: pageX, y: pageY, width, height };
         });
       }
@@ -3341,14 +3344,29 @@ const navBarOffset = tabBarHeight + (insets?.bottom ?? 0);
 const bottomInset = Math.max(16, navBarOffset + 12); // pad list above the tab bar + a small buffer
 // Expanded snap offset: match prior behavior (safe-area + 22)
 const safeTopOffset = Math.max(0, (insets?.top ?? 0) + 22);
+// iOS preview/store builds have a long-standing callout visibility bug where the
+// state updates and dismissal overlay render, but the animated sheet itself can
+// fail to paint. Use a static absolute presentation on iOS and keep the animated
+// transform path on Android, where it is needed for the established sheet UX.
+const useStaticIosCalloutPresentation = Platform.OS === 'ios' && !EVENT_CALLOUT_SHELL_ISOLATION_DEBUG;
 const currentCalloutHeight = getCalloutHeightForState(calloutState);
-const CalloutContainerComponent: any = EVENT_CALLOUT_SHELL_ISOLATION_DEBUG ? View : Animated.View;
+const CalloutContainerComponent: any =
+  EVENT_CALLOUT_SHELL_ISOLATION_DEBUG || useStaticIosCalloutPresentation ? View : Animated.View;
 const calloutContainerStyle = EVENT_CALLOUT_SHELL_ISOLATION_DEBUG
   ? [
       styles.calloutContainer,
       {
         height: currentCalloutHeight,
         transform: [{ translateY: calloutState === 'expanded' ? safeTopOffset : 0 }],
+      },
+    ]
+  : useStaticIosCalloutPresentation
+  ? [
+      styles.calloutContainer,
+      styles.calloutContainerIosStatic,
+      {
+        height: currentCalloutHeight,
+        opacity: isLightboxOpen ? 0.3 : 1,
       },
     ]
   : [
@@ -3490,6 +3508,12 @@ useEffect(() => {
   if (needsInitialCompactLayoutGate && !initialCompactTabLayoutSettled) {
     return;
   }
+
+  if (EVENT_CALLOUT_FORCE_COMPACT_FALLBACK_ON_IOS) {
+    setCompactTabRenderMode('fallback');
+    return;
+  }
+
   if (!nativeAds.some(entry => entry.ad && !entry.loading)) {
     return;
   }
@@ -3532,18 +3556,19 @@ useEffect(() => {
 ]);
 
 const setCalloutStateWithAnimation = (state: CalloutState) => {
-  if (EVENT_CALLOUT_SHELL_ISOLATION_DEBUG) {
+  if (EVENT_CALLOUT_SHELL_ISOLATION_DEBUG || useStaticIosCalloutPresentation) {
     setCalloutState(state);
     currentStateRef.current = state;
     translateY.setValue(0);
-    backgroundOpacity.setValue(0);
+    backgroundOpacity.setValue(state === 'expanded' || state === 'normal' || state === 'minimized' ? 0.5 : 0);
     indicatorRotation.setValue(state === 'expanded' ? 1 : 0);
     traceMapEvent('event_callout_internal_animation_skipped', {
       clusterId: cluster?.id ?? 'none',
       venueCount: venues.length,
       requestedState: state,
       appliedState: state,
-      shellIsolation: true,
+      shellIsolation: EVENT_CALLOUT_SHELL_ISOLATION_DEBUG,
+      staticIosPresentation: useStaticIosCalloutPresentation,
     });
     return;
   }
@@ -3633,6 +3658,12 @@ const setCalloutStateWithAnimation = (state: CalloutState) => {
 
   // Animated close function - slides callout down before unmounting
   const animateClose = useCallback(() => {
+    if (useStaticIosCalloutPresentation) {
+      console.log('ANIMATE CLOSE - static iOS close path');
+      setCompactTabRenderMode(null);
+      onClose();
+      return;
+    }
     console.log('ANIMATE CLOSE - sliding callout down');
     Animated.parallel([
       Animated.timing(translateY, {
@@ -3651,7 +3682,7 @@ const setCalloutStateWithAnimation = (state: CalloutState) => {
         onClose();
       }
     });
-  }, [onClose, translateY, backgroundOpacity]);
+  }, [backgroundOpacity, onClose, translateY, useStaticIosCalloutPresentation]);
 
   // Attach the PanResponder to entire callout for swipe-from-anywhere
   const panResponder = useRef(
@@ -3836,6 +3867,26 @@ useEffect(() => {
   const initialBackgroundOpacity = initialCalloutState === 'expanded' ? 0.5 : 0;
   const initialIndicatorRotation = initialCalloutState === 'expanded' ? 1 : 0;
 
+  if (useStaticIosCalloutPresentation) {
+    translateY.setValue(0);
+    backgroundOpacity.setValue(initialBackgroundOpacity);
+    indicatorRotation.setValue(initialIndicatorRotation);
+    traceMapEvent('event_callout_initial_position_applied', {
+      clusterId: cluster?.id ?? 'none',
+      venueCount: venues.length,
+      calloutState: initialCalloutState,
+      currentStateRef: currentStateRef.current,
+      safeTopOffset,
+      currentTranslateY: readAnimatedNumeric(translateY),
+      initialTranslateY: 0,
+      initialBackgroundOpacity,
+      initialIndicatorRotation,
+      animatedEntrance: false,
+      staticIosPresentation: true,
+    });
+    return;
+  }
+
   // Start off-screen (at bottom) for entrance animation
   translateY.setValue(SCREEN_HEIGHT);
   backgroundOpacity.setValue(0);
@@ -3868,7 +3919,7 @@ useEffect(() => {
     initialIndicatorRotation,
     animatedEntrance: true,
   });
-}, [cluster?.id, safeTopOffset, venues.length]);
+}, [cluster?.id, safeTopOffset, useStaticIosCalloutPresentation, venues.length]);
 
 
 
@@ -4097,7 +4148,9 @@ useEffect(() => {
         
         <Animated.View
           {...shellPanHandlers}
-          ref={venueSelectorRef}
+          ref={(node) => {
+            venueSelectorRef.current = node as View | null;
+          }}
           testID="venue-selector"
           style={[
             isVenueSelectorHighlighted && tutorialHighlightStyle,
@@ -4127,7 +4180,9 @@ useEffect(() => {
         
         <Animated.View
           {...shellPanHandlers}
-          ref={eventTabsRef}
+          ref={(node) => {
+            eventTabsRef.current = node as View | null;
+          }}
           testID="event-tabs"
           data-testid="event-tabs"
           style={[
@@ -4361,6 +4416,9 @@ const styles = StyleSheet.create({
     elevation: 14,
     zIndex: 5, 
     overflow: 'hidden',
+  },
+  calloutContainerIosStatic: {
+    zIndex: 25,
   },
   compactHeaderContainer: {
     flexDirection: 'row',

@@ -97,6 +97,7 @@ import useAnalytics from '../../hooks/useAnalytics';
 // Constants
 const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get('window');
 const SPECIALS_NATIVE_AD_PLACEHOLDER_DEBUG = false;
+const COLLAPSIBLE_HEADER_TOP_MARGIN = 3;
 
 // --- Local helpers for safe label/range handling and end-date suffix ---
 function partsFrom(base: string, range?: string) {
@@ -1538,6 +1539,8 @@ function SpecialsScreen() {
   // Performance tracking for specials
   const [listLoadTime, setListLoadTime] = useState<number | null>(null);
   const [scrollStartTime, setScrollStartTime] = useState<number | null>(null);
+  const collapsibleHeaderTop = COLLAPSIBLE_HEADER_TOP_MARGIN;
+  const effectiveHeaderStackHeight = collapsibleHeaderTop + Math.max(headerHeight, 120);
 
   // Scroll to top functionality
   useEffect(() => {
@@ -2179,6 +2182,14 @@ useEffect(() => {
     return sortAndPrioritizeSpecials(filteredViewportSpecials);
   }, [filteredViewportSpecials, userLocation, savedEvents, favoriteVenues]);
 
+  // State for pagination of outside-viewport specials
+  const [outsideViewportLoadCount, setOutsideViewportLoadCount] = useState(10);
+  const loadMoreBatchSize = 20;
+
+  const handleLoadMoreOutsideViewport = useCallback(() => {
+    setOutsideViewportLoadCount(prev => prev + loadMoreBatchSize);
+  }, []);
+
   // Lazy-sort outside-viewport specials: only sort what we need for display
   // This prevents sorting hundreds of specials when FlatList only shows 10 initially
   const sortedOutsideViewportSpecials = useMemo(() => {
@@ -2192,10 +2203,6 @@ useEffect(() => {
     const specialsToSort = filteredOutsideViewportSpecials.slice(0, maxToSort);
     return sortAndPrioritizeSpecials(specialsToSort);
   }, [filteredOutsideViewportSpecials, outsideViewportLoadCount, userLocation, savedEvents, favoriteVenues]);
-
-  // State for pagination of outside-viewport specials
-  const [outsideViewportLoadCount, setOutsideViewportLoadCount] = useState(10);
-  const loadMoreBatchSize = 20;
 
   // Create specials with ads list
   type SpecialListItem = {
@@ -2384,8 +2391,8 @@ useEffect(() => {
 
   const contentContainerStyleMemo = useMemo(() => [
     styles.listContent,
-    { paddingTop: Math.max(headerHeight, 120) + (showBanner ? 35 : 0) + 8 }
-  ], [headerHeight, showBanner]);
+    { paddingTop: effectiveHeaderStackHeight + (showBanner ? 35 : 0) + 8 }
+  ], [effectiveHeaderStackHeight, showBanner]);
 
   // Track special priority effectiveness
   useEffect(() => {
@@ -2465,11 +2472,6 @@ useEffect(() => {
     );
   };
 
-  // Handle loading more outside-viewport specials
-  const handleLoadMoreOutsideViewport = useCallback(() => {
-    setOutsideViewportLoadCount(prev => prev + loadMoreBatchSize);
-  }, []);
-
   return (
     <View style={styles.container}>
       {isHeaderSearchActive && (
@@ -2482,6 +2484,7 @@ useEffect(() => {
       <Animated.View 
         style={[
           styles.collapsibleHeader,
+          { top: collapsibleHeaderTop },
           { transform: [{ translateY: headerTranslateY }] }
         ]}
         onLayout={(event) => {
@@ -2664,7 +2667,7 @@ useEffect(() => {
           styles.preferencesBar, 
           { 
             opacity: fadeAnim,
-            top: Math.max(headerHeight, 120)
+            top: effectiveHeaderStackHeight
           }
         ]}>
           <Text style={styles.preferencesText}>
@@ -2820,10 +2823,12 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#FFFFFF',
     paddingTop: 3,
+    // Keep the collapsible filter overlay clipped to the scene so it can tuck
+    // under the navigator header instead of visually painting over it on iOS.
+    overflow: 'hidden',
   },
   collapsibleHeader: {
     position: 'absolute',
-    top: 3,
     left: 0,
     right: 0,
     backgroundColor: '#FFFFFF',

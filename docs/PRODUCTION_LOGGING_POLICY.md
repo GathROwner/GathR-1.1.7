@@ -22,7 +22,7 @@ This project strips debug `console.*` calls from production bundles via Babel.
 3. For noisy debug logs in hot paths, prefer:
    - temporary local debugging, or
    - `if (__DEV__)` guards when clarity is needed.
-4. Keep `react-native-reanimated/plugin` last in Babel plugins.
+4. If `react-native-reanimated` is added back later, keep its Babel plugin last.
 
 ## Verification
 
