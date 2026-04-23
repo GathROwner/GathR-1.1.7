@@ -1,5 +1,5 @@
-import React from 'react';
-import { Image, StyleSheet, Text, View, useColorScheme } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { Image, Platform, StyleSheet, Text, View, useColorScheme } from 'react-native';
 import {
   NativeAdView,
   NativeAsset,
@@ -21,6 +21,49 @@ export default function CompactSdkAdCard({
 }: CompactSdkAdCardProps) {
   const colorScheme = (useColorScheme() ?? 'light') as AdColorScheme;
   const colors = AdColors[colorScheme];
+  const [sdkMountReady, setSdkMountReady] = useState(Platform.OS !== 'ios');
+
+  useEffect(() => {
+    if (loading || !nativeAd) {
+      setSdkMountReady(Platform.OS !== 'ios');
+      return;
+    }
+
+    if (Platform.OS !== 'ios') {
+      setSdkMountReady(true);
+      return;
+    }
+
+    let cancelled = false;
+    let firstFrame: number | null = null;
+    let secondFrame: number | null = null;
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
+
+    setSdkMountReady(false);
+
+    firstFrame = requestAnimationFrame(() => {
+      secondFrame = requestAnimationFrame(() => {
+        timeoutId = setTimeout(() => {
+          if (!cancelled) {
+            setSdkMountReady(true);
+          }
+        }, 60);
+      });
+    });
+
+    return () => {
+      cancelled = true;
+      if (firstFrame !== null) {
+        cancelAnimationFrame(firstFrame);
+      }
+      if (secondFrame !== null) {
+        cancelAnimationFrame(secondFrame);
+      }
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
+    };
+  }, [loading, nativeAd]);
 
   if (loading) {
     return (
@@ -62,6 +105,103 @@ export default function CompactSdkAdCard({
       nativeAd.mediaContent &&
       (nativeAd.mediaContent.aspectRatio > 0 || nativeAd.mediaContent.hasVideoContent)
   );
+
+  const renderPlainFallbackCard = () => (
+    <View
+      style={[
+        styles.card,
+        {
+          backgroundColor: colors.cardBackground,
+          borderColor: colors.cardBorder,
+          shadowColor: colors.shadowColor,
+          shadowOpacity: colors.shadowOpacity,
+        },
+      ]}
+    >
+      <View
+        style={[
+          styles.contentContainer,
+          {
+            backgroundColor: colors.cardBackground,
+          },
+        ]}
+      >
+        <View style={styles.badgeRow}>
+          <Text
+            style={[
+              styles.badgeText,
+              styles.plainSponsoredText,
+              {
+                color: colors.badgeText,
+                backgroundColor: colors.badgeBackground,
+                borderColor: colors.badgeBorder,
+              },
+            ]}
+          >
+            Sponsored
+          </Text>
+        </View>
+
+        <View style={styles.headerRow}>
+          <View style={styles.headerLeft}>
+            {iconUrl ? (
+              <Image source={{ uri: iconUrl }} style={styles.iconImage} />
+            ) : (
+              <View
+                style={[styles.iconPlaceholder, { backgroundColor: colors.mediaPlaceholder }]}
+              />
+            )}
+            <View style={styles.headerTextColumn}>
+              {headline ? (
+                <Text style={[styles.headline, { color: colors.headline }]} numberOfLines={1}>
+                  {headline}
+                </Text>
+              ) : null}
+              {advertiser ? (
+                <Text style={[styles.advertiser, { color: colors.advertiser }]} numberOfLines={1}>
+                  {advertiser}
+                </Text>
+              ) : null}
+            </View>
+          </View>
+          {cta ? (
+            <Text
+              style={[
+                styles.ctaText,
+                {
+                  backgroundColor: colors.ctaBackground,
+                  color: colors.ctaText,
+                },
+              ]}
+              numberOfLines={1}
+            >
+              {cta}
+            </Text>
+          ) : null}
+        </View>
+
+        <View style={[styles.mediaContainer, { backgroundColor: colors.mediaPlaceholder }]}>
+          {iconUrl ? (
+            <Image source={{ uri: iconUrl }} style={styles.mediaFallbackImage} resizeMode="contain" />
+          ) : (
+            <Text style={[styles.mediaFallbackText, { color: colors.metaText }]}>
+              {headline.charAt(0) || 'A'}
+            </Text>
+          )}
+        </View>
+
+        {body ? (
+          <Text style={[styles.body, { color: colors.body }]} numberOfLines={2}>
+            {body}
+          </Text>
+        ) : null}
+      </View>
+    </View>
+  );
+
+  if (!sdkMountReady) {
+    return renderPlainFallbackCard();
+  }
 
   return (
     <NativeAdView
@@ -189,6 +329,10 @@ const styles = StyleSheet.create({
   contentContainer: {
     padding: AdSpacing.sm,
   },
+  badgeRow: {
+    alignItems: 'flex-start',
+    marginBottom: AdSpacing.xs,
+  },
   headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -226,6 +370,15 @@ const styles = StyleSheet.create({
   advertiser: {
     fontSize: 11,
     fontWeight: '400',
+  },
+  plainSponsoredText: {
+    borderWidth: 1,
+    borderRadius: 999,
+    overflow: 'hidden',
+    paddingHorizontal: AdSpacing.xs + 2,
+    paddingVertical: 2,
+    fontSize: 11,
+    fontWeight: '700',
   },
   mediaContainer: {
     width: '100%',

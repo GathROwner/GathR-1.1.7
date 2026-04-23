@@ -137,9 +137,10 @@ import { traceMapEvent } from '../../utils/mapTrace';
 
 const EVENT_CALLOUT_SHELL_ISOLATION_DEBUG = false;
 const EVENT_CALLOUT_DISABLE_NATIVE_ADS_DEBUG = false;
-// Keep compact iOS callout ads on the plain React renderer. The NativeAdView
-// path was the historically fragile piece in preview/release-style builds.
-const EVENT_CALLOUT_FORCE_COMPACT_FALLBACK_ON_IOS = Platform.OS === 'ios';
+// Re-enable the compact SDK card on iOS now that the callout path is stable.
+// CompactSdkAdCard still defers NativeAdView mounting locally so the wrapper
+// does not attach during the initial callout layout-settling phase.
+const EVENT_CALLOUT_FORCE_COMPACT_FALLBACK_ON_IOS = false;
 const EVENT_CALLOUT_PLACEHOLDER_AD_CARD_DEBUG = false;
 let compactSdkUnlockedForSession = true;
 
