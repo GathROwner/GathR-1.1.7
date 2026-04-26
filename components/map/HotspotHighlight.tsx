@@ -20,7 +20,6 @@ import {
   TouchableOpacity,
   Dimensions,
   Platform,
-  PixelRatio,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useHotspotHighlight } from '../../hooks/useHotspotHighlight';
@@ -77,7 +76,9 @@ export const HotspotHighlight: React.FC<HotspotHighlightProps> = ({ ignoreProgra
     }
 
     try {
-      // getPointInView converts [longitude, latitude] to [x, y] screen pixels
+      // getPointInView converts [longitude, latitude] to [x, y] coordinates
+      // relative to the MapView. React Native styles also use layout units, so
+      // do not multiply by PixelRatio here.
       let screenPoint = await mapViewRef.current.getPointInView([
         targetCoordinates.longitude,
         targetCoordinates.latitude,
@@ -86,15 +87,25 @@ export const HotspotHighlight: React.FC<HotspotHighlightProps> = ({ ignoreProgra
       if (screenPoint && Array.isArray(screenPoint) && screenPoint.length === 2) {
         let [x, y] = screenPoint;
 
-        // Android requires pixel ratio adjustment per Mapbox docs
         if (Platform.OS === 'android') {
-          x *= PixelRatio.get();
-          y *= PixelRatio.get();
-
-          // On Android, add offset for MapView's position in the screen
+          // On Android this overlay is screen-absolute while getPointInView is
+          // MapView-relative, so offset by the measured MapView position.
           const layout = (global as any).mapViewLayout;
-          if (layout && typeof layout.absoluteY === 'number') {
-            y += layout.absoluteY;
+          if (layout) {
+            const offsetX =
+              typeof layout.absoluteX === 'number'
+                ? layout.absoluteX
+                : typeof layout.x === 'number'
+                ? layout.x
+                : 0;
+            const offsetY =
+              typeof layout.absoluteY === 'number'
+                ? layout.absoluteY
+                : typeof layout.y === 'number'
+                ? layout.y
+                : 0;
+            x += offsetX;
+            y += offsetY;
           }
         }
         // On iOS, getPointInView appears to return screen-absolute coordinates
@@ -308,6 +319,7 @@ const styles = StyleSheet.create({
   container: {
     ...StyleSheet.absoluteFillObject,
     zIndex: 1000,
+    elevation: 1000,
   },
   highlightContainer: {
     position: 'absolute',

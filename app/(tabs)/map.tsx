@@ -97,6 +97,7 @@ const STATIC_CALLOUT_ISOLATION_DEBUG = false;
 const IOS_CALLOUT_NATIVE_AD_ISOLATION_DEBUG = Platform.OS === 'ios';
 const ANDROID_MAPBOX_STARTUP_ISOLATION_DEBUG = false;
 const ANDROID_CLUSTER_MARKERVIEW_ISOLATION_DEBUG = false;
+const DEBUG_TREE_MARKER_EVENTS = false;
 
 // Helper function to get color for time status
 const getTimeStatusColor = (timeStatus: TimeStatus): string => {
@@ -571,7 +572,7 @@ const TreeMarker: React.FC<TreeMarkerProps> = React.memo(({ cluster, isSelected,
   );
 
   // DEBUG: Log clusters with Firestore events
-  if (hasFirestoreEvents) {
+  if (DEBUG_TREE_MARKER_EVENTS && hasFirestoreEvents) {
     const fsEventCount = cluster.venues.reduce((count, venue) =>
       count + venue.events.filter(e => e.source === 'firestore').length, 0);
     console.log(`[TreeMarker] Cluster ${cluster.id} has ${fsEventCount} Firestore events`);
@@ -827,6 +828,7 @@ function MapScreen() {
    const ActiveCalloutComponent = STATIC_CALLOUT_ISOLATION_DEBUG ? StaticDebugCallout : EventCallout;
    // ───── DEBUG: Map load session & timers ─────
    const DEBUG_MAP_LOAD = true;
+   const DEBUG_CAMERA_TICKS = false;
    const __ml_sessionIdRef = React.useRef<string>(`ML-${Date.now()}`);
    const __ml_t0Ref = React.useRef<number>(Date.now());
 const __ml_firstMarkersLoggedRef = React.useRef<boolean>(false);
@@ -940,6 +942,12 @@ const computeStartCenter = (): [number, number] => {
   const locationSubscription = useRef<Location.LocationSubscription | null>(null);
   const calloutAnimationRequestRef = useRef(0);
   const calloutOpenTouchGuardUntilRef = useRef(0);
+
+  // Make these ref objects available during the first passive-effect flush.
+  // The daily hotspot can trigger synchronously on Android, before the older
+  // global-ref effect above has run.
+  (global as any).mapCameraRef = cameraRef;
+  (global as any).mapViewRef = mapRef;
 
   const renderedCalloutVenueCount = renderedCalloutVenues.length;
   const renderedCalloutClusterId = renderedCalloutCluster?.id ?? null;
@@ -2786,6 +2794,7 @@ if (isGesture && !userGestureSeenRef.current) {
   // logPills('USER GESTURE DETECTED — auto-hide enabled & programmatic off');
 }
 
+  const isProgrammaticCameraMove = ignoreProgrammaticCameraRef.current && !isGesture;
 
   // Center from props or geometry
   const centerArr: [number, number] | undefined =
@@ -2841,7 +2850,7 @@ Clustering refresh: keep zoom → store → recluster in sync
       lastZoomLevel.current = zoom;
 
       // Don't trigger cluster regeneration during programmatic camera moves
-      if (!ignoreProgrammaticCameraRef.current) {
+      if (!isProgrammaticCameraMove) {
         try {
           setZoomLevel(zoom); // triggers generateClusters(zoom) in the store
         } catch (e) {
@@ -2859,6 +2868,14 @@ Clustering refresh: keep zoom → store → recluster in sync
   - Debounces fetch requests (500ms) to prevent excessive API calls
   - Only triggers after user has interacted with map
   ──────────────────────────────────────────────────────────────────────────── */
+    // Programmatic camera animations (hotspot, tutorial, recenter, cluster tap) should not
+    // run viewport filtering/fetch work on every animation frame. That JS-thread work can
+    // delay the hotspot's 1100ms follow-up timer by many seconds on slower Android devices.
+    if (isProgrammaticCameraMove) {
+      lastCameraChangeRef.current = now;
+      return;
+    }
+
   const { width: windowWidth, height: windowHeight } = Dimensions.get('window');
   const pixelRatio = PixelRatio.get();
 
@@ -2866,18 +2883,20 @@ Clustering refresh: keep zoom → store → recluster in sync
   const width = mapDimensions?.width ?? windowWidth;
   const height = mapDimensions?.height ?? windowHeight;
 
-  console.log('[OnScreen] Camera tick:', {
-    centerArr: centerArr?.[0],
-    zoom,
-    hasCenter: !!centerArr,
-    hasZoom: typeof zoom === 'number',
-    windowWidth,
-    windowHeight,
-    mapWidth: width,
-    mapHeight: height,
-    usingActualMapDimensions: !!mapDimensions,
-    pixelRatio
-  });
+  if (DEBUG_CAMERA_TICKS) {
+    console.log('[OnScreen] Camera tick:', {
+      centerArr: centerArr?.[0],
+      zoom,
+      hasCenter: !!centerArr,
+      hasZoom: typeof zoom === 'number',
+      windowWidth,
+      windowHeight,
+      mapWidth: width,
+      mapHeight: height,
+      usingActualMapDimensions: !!mapDimensions,
+      pixelRatio
+    });
+  }
 
   if (centerArr && typeof zoom === 'number') {
     const center: GeoCoordinate = {
@@ -2887,7 +2906,7 @@ Clustering refresh: keep zoom → store → recluster in sync
 
     // Calculate viewport bounding box (no buffer - exact viewport)
     const bbox = getViewportBoundingBox(center, zoom, width, height, 1.0);
-    const roundedBbox = roundBoundingBoxForCache(bbox, 5);  // 5 decimals = ~1m resolution (very frequent updates)
+    const roundedBbox = roundBoundingBoxForCache(bbox, 3);  // ~110m resolution; avoids fetch churn from tiny camera drift
 
     // Filter viewportEvents to only those visible on actual screen
     const currentViewportEvents = useMapStore.getState().viewportEvents || [];
@@ -2920,18 +2939,20 @@ Clustering refresh: keep zoom → store → recluster in sync
       };
     });
 
-    console.log('[OnScreen] Filtering events:', {
-      viewportEventsCount: currentViewportEvents.length,
-      onScreenEventsCount: onScreenEvents.length,
-      filteredOut: currentViewportEvents.length - onScreenEvents.length,
-      bbox: {
-        south: bbox.south.toFixed(4),
-        north: bbox.north.toFixed(4),
-        west: bbox.west.toFixed(4),
-        east: bbox.east.toFixed(4)
-      },
-      sampleEvents: sampleFiltered
-    });
+    if (DEBUG_CAMERA_TICKS) {
+      console.log('[OnScreen] Filtering events:', {
+        viewportEventsCount: currentViewportEvents.length,
+        onScreenEventsCount: onScreenEvents.length,
+        filteredOut: currentViewportEvents.length - onScreenEvents.length,
+        bbox: {
+          south: bbox.south.toFixed(4),
+          north: bbox.north.toFixed(4),
+          west: bbox.west.toFixed(4),
+          east: bbox.east.toFixed(4)
+        },
+        sampleEvents: sampleFiltered
+      });
+    }
 
     // Update store with on-screen events on every camera change
     useMapStore.getState().setOnScreenEvents(onScreenEvents);
@@ -2941,7 +2962,7 @@ Clustering refresh: keep zoom → store → recluster in sync
       JSON.stringify(roundedBbox) !== JSON.stringify(lastViewportBboxRef.current);
 
     // Debug viewport change detection
-    if (DEBUG_MAP_LOAD && bboxChanged) {
+    if (DEBUG_CAMERA_TICKS && bboxChanged) {
       console.log('[Viewport] Bbox changed:', {
         old: lastViewportBboxRef.current,
         new: roundedBbox,
@@ -2967,7 +2988,7 @@ Clustering refresh: keep zoom → store → recluster in sync
 
       // THROTTLE: If enough time has passed since last fetch, fetch immediately
       if (timeSinceLastFetch >= THROTTLE_INTERVAL) {
-        if (DEBUG_MAP_LOAD) {
+        if (DEBUG_CAMERA_TICKS) {
           console.log('[Viewport] THROTTLED fetch (immediate):', { roundedBbox, timeSinceLastFetch });
         }
         lastViewportBboxRef.current = roundedBbox;
@@ -2976,7 +2997,7 @@ Clustering refresh: keep zoom → store → recluster in sync
       } else {
         // DEBOUNCE: Schedule a fetch after movement stops for final accuracy
         viewportFetchTimeoutRef.current = setTimeout(() => {
-          if (DEBUG_MAP_LOAD) {
+          if (DEBUG_CAMERA_TICKS) {
             console.log('[Viewport] DEBOUNCED fetch (after stop):', roundedBbox);
           }
           lastViewportBboxRef.current = roundedBbox;
@@ -3154,9 +3175,11 @@ const reason = visibleClusterIds.current.size === 0 ? 'FIRST_RENDER' :
               filterChanged ? 'FILTER_CHANGE' : 
               clusterCountChanged ? 'CLUSTER_COUNT_CHANGE' : 'UNKNOWN';
       
-     console.log(`VISIBILITY RECALCULATED (${reason}): ${visibleClusters.length}/${clusters.length} clusters visible`);
+     if (DEBUG_CAMERA_TICKS) {
+       console.log(`VISIBILITY RECALCULATED (${reason}): ${visibleClusters.length}/${clusters.length} clusters visible`);
+     }
      // Debug individual cluster visibility
-if (reason === 'CLUSTER_COUNT_CHANGE') {
+if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
   console.log('=== CLUSTER COUNT CHANGE DEBUG ===');
   console.log('All clusters:', clusters.map(c => ({ id: c.id.substring(0, 20), venues: c.venues.length, type: c.clusterType })));
   console.log('Visible clusters:', visibleClusters.map(c => ({ id: c.id.substring(0, 20), venues: c.venues.length, type: c.clusterType })));
@@ -3355,7 +3378,14 @@ onLayout={(event) => {
   const nativeHandle = (mapRef.current as any)?._nativeRef;
   if (nativeHandle?.measureInWindow) {
     nativeHandle.measureInWindow((absX: number, absY: number, absWidth: number, absHeight: number) => {
-      (global as any).mapViewLayout = { width: absWidth, height: absHeight, x: absX, y: absY, absoluteY: absY };
+      (global as any).mapViewLayout = {
+        width: absWidth,
+        height: absHeight,
+        x: absX,
+        y: absY,
+        absoluteX: absX,
+        absoluteY: absY,
+      };
       console.log('[MapView] onLayout (absolute):', { width: absWidth, height: absHeight, absX, absY, windowWidth: Dimensions.get('window').width, windowHeight: Dimensions.get('window').height });
     });
   } else {

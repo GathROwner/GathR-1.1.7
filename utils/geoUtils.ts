@@ -18,6 +18,7 @@ const EARTH_RADIUS_METERS = 6378137;
  * Each zoom level doubles the pixels (halves the scale)
  */
 const METERS_PER_PIXEL_AT_ZOOM_0 = (2 * Math.PI * EARTH_RADIUS_METERS) / 512;
+const DEBUG_VIEWPORT_BBOX = false;
 
 /**
  * Bounding box representing a geographic rectangle
@@ -167,6 +168,7 @@ export function getViewportBoundingBox(
     north: clamp(center.latitude + latOffsetDegrees, -90, 90),
   };
 
+  if (DEBUG_VIEWPORT_BBOX) {
   console.log(`[GeoUtils] 🗺️ getViewportBoundingBox:`, {
     center,
     zoom,
@@ -179,6 +181,7 @@ export function getViewportBoundingBox(
   });
 
   console.log(`[GeoUtils] 📦 Resulting bbox:`, bbox);
+  }
   return bbox;
 }
 

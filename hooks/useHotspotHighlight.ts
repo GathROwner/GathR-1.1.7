@@ -12,7 +12,7 @@
  */
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { AppState } from 'react-native';
+import { AppState, Platform } from 'react-native';
 import { useMapStore } from '../store/mapStore';
 import {
   useUserPrefsStore,
@@ -46,6 +46,7 @@ interface OriginalCameraPosition {
 }
 
 const HOTSPOT_VERBOSE_DEBUG = false;
+const HOTSPOT_TRIGGER_DELAY_MS = Platform.OS === 'android' ? 0 : 300;
 
 function hotspotDebugLog(...args: unknown[]) {
   if (__DEV__ && HOTSPOT_VERBOSE_DEBUG) {
@@ -316,6 +317,8 @@ export function useHotspotHighlight(
   // Track original camera position for zoom-back
   const originalCameraRef = useRef<OriginalCameraPosition | null>(null);
   const hasTriggeredRef = useRef(false);
+  const triggerTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const cameraRefRetryCountRef = useRef(0);
   const dismissTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Track if we should evaluate hotspot trigger (only on app foreground)
@@ -608,6 +611,25 @@ export function useHotspotHighlight(
     // Get camera ref from global (same pattern as tutorial)
     const cameraRef = (global as any).mapCameraRef;
     if (!cameraRef?.current) {
+      hasTriggeredRef.current = false;
+      cameraRefRetryCountRef.current += 1;
+
+      if (cameraRefRetryCountRef.current <= 20) {
+        if (__DEV__) {
+          console.log('[HotspotTiming] camera ref unavailable; retrying', {
+            attempt: cameraRefRetryCountRef.current,
+          });
+        }
+        triggerTimerRef.current = setTimeout(() => {
+          triggerTimerRef.current = null;
+          triggerHotspot();
+        }, 250);
+        return;
+      }
+
+      if (__DEV__) {
+        console.log('[HotspotTiming] camera ref unavailable; showing without camera after retries');
+      }
       setIsVisible(true);
       traceMapEvent('hotspot_visible_without_camera', {
         clusterId: hottest.id,
@@ -615,6 +637,7 @@ export function useHotspotHighlight(
       markHotspotShownToday();
       return;
     }
+    cameraRefRetryCountRef.current = 0;
 
     // Save original camera position
     try {
@@ -663,7 +686,48 @@ export function useHotspotHighlight(
         animationDuration: 1000,
       });
 
-      // Wait for camera animation, then find cluster at zoomed level and show tooltip
+      // Show immediately using the original hotspot cluster. On slower Android devices,
+      // the follow-up timer can be delayed by startup/map work, so do not block the
+      // user-visible highlight on the zoomed-cluster refinement.
+      const initialTooltip = generateTooltipText(hottest);
+      setCapturedTooltipText(initialTooltip.text);
+      setCapturedTooltipSubtext(initialTooltip.subtext);
+      setIsVisible(true);
+      traceMapEvent('hotspot_visible_initial', {
+        clusterId: hottest.id,
+        venueCount: hottest.venues?.length ?? 0,
+        tooltipText: initialTooltip.text,
+      });
+      if (__DEV__) {
+        console.log('[HotspotTiming] visible initial', {
+          clusterId: hottest.id,
+          tooltipText: initialTooltip.text,
+        });
+      }
+      markHotspotShownToday();
+
+      // Reset evaluation flag after trigger - prevents re-triggering until next foreground
+      canEvaluateTriggerRef.current = false;
+      hotspotDebugLog('[Hotspot] Evaluation flag reset - hotspot will not trigger again until next app foreground');
+
+      // Track analytics
+      amplitudeTrack('hotspot_shown', {
+        cluster_id: hottest.id,
+        time_status: hottest.timeStatus,
+        event_count: hottest.eventCount,
+        special_count: hottest.specialCount,
+        venue_name: hottest.venues?.[0]?.venue || 'unknown',
+      });
+
+      // Auto-dismiss after 7 seconds
+      dismissTimeoutRef.current = setTimeout(() => {
+        traceMapEvent('hotspot_auto_dismiss_timer_fired', {
+          clusterId: hottest.id,
+        });
+        dismiss();
+      }, 7000);
+
+      // Wait for camera animation, then refine to the zoomed cluster/centroid.
       setTimeout(() => {
         setHotspotProgrammaticLock(false, 'trigger_zoom_in_complete');
         setIsAnimating(false);
@@ -753,35 +817,11 @@ export function useHotspotHighlight(
             hotspotDebugLog(`[Hotspot] Updated targetCoords to cluster centroid: lat=${centroidLat.toFixed(6)}, lon=${centroidLon.toFixed(6)}`);
           }
         }
-
-        setIsVisible(true);
-        traceMapEvent('hotspot_visible', {
+        traceMapEvent('hotspot_refined_after_zoom', {
           clusterId: clusterForTooltip.id,
           venueCount: clusterForTooltip.venues?.length ?? 0,
           tooltipText: text,
         });
-        markHotspotShownToday();
-
-        // Reset evaluation flag after trigger - prevents re-triggering until next foreground
-        canEvaluateTriggerRef.current = false;
-        hotspotDebugLog('[Hotspot] Evaluation flag reset - hotspot will not trigger again until next app foreground');
-
-        // Track analytics
-        amplitudeTrack('hotspot_shown', {
-          cluster_id: clusterForTooltip.id,
-          time_status: clusterForTooltip.timeStatus,
-          event_count: clusterForTooltip.eventCount,
-          special_count: clusterForTooltip.specialCount,
-          venue_name: clusterForTooltip.venues?.[0]?.venue || 'unknown',
-        });
-
-        // Auto-dismiss after 7 seconds
-        dismissTimeoutRef.current = setTimeout(() => {
-          traceMapEvent('hotspot_auto_dismiss_timer_fired', {
-            clusterId: clusterForTooltip.id,
-          });
-          dismiss();
-        }, 7000);
       }, 1100);
     }
   }, [clusters, userLocation, markHotspotShownToday, dismiss, setHotspotProgrammaticLock]);
@@ -878,17 +918,45 @@ export function useHotspotHighlight(
 
   // Trigger hotspot when conditions are met
   useEffect(() => {
-    if (shouldShowHotspot && clusters.length > 0) {
-      // 300ms delay to let clusters stabilize after initial load
+    if (
+      shouldShowHotspot &&
+      clusters.length > 0 &&
+      !hasTriggeredRef.current &&
+      !triggerTimerRef.current
+    ) {
+      // Keep this timer stable once scheduled so normal cluster re-renders/camera
+      // ticks do not keep canceling the daily hotspot on slower Android devices.
       traceMapEvent('hotspot_trigger_scheduled', {
         clusterCount: clusters.length,
-        delayMs: 300,
+        delayMs: HOTSPOT_TRIGGER_DELAY_MS,
       });
-      const timer = setTimeout(() => {
-        triggerHotspot();
-      }, 300);
+      if (__DEV__) {
+        console.log('[HotspotTiming] trigger scheduled', {
+          clusterCount: clusters.length,
+          delayMs: HOTSPOT_TRIGGER_DELAY_MS,
+        });
+      }
 
-      return () => clearTimeout(timer);
+      const fireTrigger = () => {
+        if (__DEV__) {
+          console.log('[HotspotTiming] trigger timer fired');
+        }
+        triggerHotspot();
+      };
+
+      if (HOTSPOT_TRIGGER_DELAY_MS === 0) {
+        fireTrigger();
+      } else {
+        triggerTimerRef.current = setTimeout(() => {
+          triggerTimerRef.current = null;
+          fireTrigger();
+        }, HOTSPOT_TRIGGER_DELAY_MS);
+      }
+    }
+
+    if ((!shouldShowHotspot || clusters.length === 0 || hasTriggeredRef.current) && triggerTimerRef.current) {
+      clearTimeout(triggerTimerRef.current);
+      triggerTimerRef.current = null;
     }
   }, [shouldShowHotspot, clusters.length, triggerHotspot]);
 
@@ -916,6 +984,10 @@ export function useHotspotHighlight(
   // Cleanup on unmount
   useEffect(() => {
     return () => {
+      if (triggerTimerRef.current) {
+        clearTimeout(triggerTimerRef.current);
+        triggerTimerRef.current = null;
+      }
       if (dismissTimeoutRef.current) {
         clearTimeout(dismissTimeoutRef.current);
       }
