@@ -325,9 +325,16 @@ export function useHotspotHighlight(
   const cameraRefRetryCountRef = useRef(0);
   const dismissTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Track if we should evaluate hotspot trigger (only on app foreground)
-  // This prevents hotspot from triggering when user enables it in settings
-  const canEvaluateTriggerRef = useRef(false);
+  // Track if we should evaluate hotspot trigger (only on app foreground).
+  // This has to be state because eligibility is read during render; a ref-only
+  // update will not re-run the trigger after the hook mounts.
+  const initialCanEvaluateTrigger = AppState.currentState === 'active';
+  const [canEvaluateTrigger, setCanEvaluateTriggerState] = useState(initialCanEvaluateTrigger);
+  const canEvaluateTriggerRef = useRef(initialCanEvaluateTrigger);
+  const setCanEvaluateTriggerFlag = useCallback((value: boolean) => {
+    canEvaluateTriggerRef.current = value;
+    setCanEvaluateTriggerState((current) => (current === value ? current : value));
+  }, []);
   const setHotspotProgrammaticLock = useCallback((value: boolean, reason: string) => {
     ignoreProgrammaticCameraRef.current = value;
     setMapTraceSnapshot({
@@ -358,12 +365,12 @@ export function useHotspotHighlight(
       if (nextAppState === 'active') {
         // App came to foreground, allow evaluation
         hotspotDebugLog('[Hotspot] App foregrounded - allowing hotspot evaluation');
-        canEvaluateTriggerRef.current = true;
+        setCanEvaluateTriggerFlag(true);
         traceMapEvent('hotspot_appstate_active');
       } else if (nextAppState === 'background' || nextAppState === 'inactive') {
         // App went to background, reset evaluation flag
         hotspotDebugLog('[Hotspot] App backgrounded - resetting evaluation flag');
-        canEvaluateTriggerRef.current = false;
+        setCanEvaluateTriggerFlag(false);
         traceMapEvent('hotspot_appstate_inactive', {
           appState: nextAppState,
         });
@@ -374,13 +381,13 @@ export function useHotspotHighlight(
     // Also log current state for debugging
     const currentState = AppState.currentState;
     hotspotDebugLog('[Hotspot] Hook mounted - AppState:', currentState);
-    canEvaluateTriggerRef.current = true;
+    setCanEvaluateTriggerFlag(currentState === 'active');
 
     return () => {
       traceMapEvent('hotspot_hook_unmounted');
       subscription.remove();
     };
-  }, []);
+  }, [setCanEvaluateTriggerFlag]);
 
   // DEBUG FLAGS:
   // - DEBUG_IGNORE_DATE: Set to true to bypass "already shown today" check (for testing)
@@ -392,28 +399,29 @@ export function useHotspotHighlight(
 
   // Calculate if we should show the hotspot
   const shouldShowHotspot = useMemo(() => {
+    const hotspotSettingChanged = prevShowDailyHotspotRef.current !== showDailyHotspot;
+
     hotspotDebugLog('[Hotspot] Evaluating shouldShowHotspot:', {
-      canEvaluate: canEvaluateTriggerRef.current,
+      canEvaluate: canEvaluateTrigger,
       tutorialActive: tutorialIsActive,
       showDailyHotspot,
       hotspotLastShownDate,
       today: new Date().toISOString().split('T')[0],
       clustersLength: clusters.length,
       hasTriggered: hasTriggeredRef.current,
+      hotspotSettingChanged,
     });
 
     // 0a. Check if setting just changed - if so, reset evaluation flag and block
     // This must happen BEFORE the evaluation window check to prevent race conditions
-    if (prevShowDailyHotspotRef.current !== showDailyHotspot) {
+    if (hotspotSettingChanged) {
       hotspotDebugLog('[Hotspot] Setting changed during evaluation - resetting evaluation flag');
-      canEvaluateTriggerRef.current = false;
-      prevShowDailyHotspotRef.current = showDailyHotspot;
       return false;
     }
 
     // 0b. Must be in evaluation window (app foreground)
     // This prevents hotspot from triggering when user enables it in settings mid-session
-    if (!canEvaluateTriggerRef.current) {
+    if (!canEvaluateTrigger) {
       hotspotDebugLog('[Hotspot] Blocked: not in evaluation window (app not foregrounded)');
       return false;
     }
@@ -456,7 +464,17 @@ export function useHotspotHighlight(
 
     hotspotDebugLog('[Hotspot] All checks passed - hotspot should trigger');
     return true;
-  }, [tutorialIsActive, user, showDailyHotspot, hotspotLastShownDate, clusters]);
+  }, [canEvaluateTrigger, tutorialIsActive, user, showDailyHotspot, hotspotLastShownDate, clusters]);
+
+  useEffect(() => {
+    if (prevShowDailyHotspotRef.current === showDailyHotspot) {
+      return;
+    }
+
+    hotspotDebugLog('[Hotspot] Setting changed - resetting evaluation flag');
+    prevShowDailyHotspotRef.current = showDailyHotspot;
+    setCanEvaluateTriggerFlag(false);
+  }, [showDailyHotspot, setCanEvaluateTriggerFlag]);
 
   useEffect(() => {
     if (!__DEV__) {
@@ -552,7 +570,7 @@ export function useHotspotHighlight(
 
     // Reset evaluation only after the user-visible overlay is genuinely on
     // screen. This avoids consuming the daily hotspot behind first-run prompts.
-    canEvaluateTriggerRef.current = false;
+    setCanEvaluateTriggerFlag(false);
     hotspotDebugLog('[Hotspot] Evaluation flag reset after overlay position ready');
 
     const source = visibleSourceRef.current || 'camera_ready';
@@ -574,7 +592,7 @@ export function useHotspotHighlight(
       dismissTimeoutRef.current = null;
       dismiss();
     }, 7000);
-  }, [dismiss, isVisible, markHotspotShownToday, targetCluster]);
+  }, [dismiss, isVisible, markHotspotShownToday, setCanEvaluateTriggerFlag, targetCluster]);
 
   /**
    * Trigger the hotspot animation sequence
