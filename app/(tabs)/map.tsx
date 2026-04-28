@@ -3574,6 +3574,13 @@ onMapIdle={() => {
     const delta = t1b - __ml_t0Ref.current;
     console.log(`[MapLoad][${__ml_sessionIdRef.current}] T1b map_idle +${delta}ms`);
   }
+  const hotspotCameraIdleCallback = (global as any).mapHotspotCameraIdleCallback;
+  if (typeof hotspotCameraIdleCallback === 'function') {
+    if (Platform.OS === 'android') {
+      console.warn('[GathRHotspotTiming]', 'map_idle_callback_invoked', JSON.stringify({}));
+    }
+    hotspotCameraIdleCallback();
+  }
 }}
 
 onDidFinishRenderingFrameFully={() => {

@@ -48,7 +48,9 @@ interface OriginalCameraPosition {
 
 const HOTSPOT_VERBOSE_DEBUG = false;
 const HOTSPOT_TRIGGER_DELAY_MS = 0;
-const DEFER_HOTSPOT_VISIBILITY_UNTIL_REFINED = Platform.OS === 'ios';
+const HOTSPOT_CAMERA_ZOOM_LEVEL = 14.4;
+const HOTSPOT_CAMERA_ANIMATION_MS = 1000;
+const DEFER_HOTSPOT_VISIBILITY_UNTIL_REFINED = Platform.OS === 'ios' || Platform.OS === 'android';
 const ANDROID_HOTSPOT_TIMING_DIAGNOSTICS = Platform.OS === 'android';
 
 function hotspotDebugLog(...args: unknown[]) {
@@ -324,6 +326,9 @@ export function useHotspotHighlight(
   const overlayPositionReadyRef = useRef(false);
   const visibleSourceRef = useRef<'camera_ready' | 'camera_unavailable' | 'camera_retry' | null>(null);
   const triggerTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const cameraRetryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const cameraFinalizeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hotspotCameraIdleCallbackRef = useRef<(() => void) | null>(null);
   const cameraRefRetryCountRef = useRef(0);
   const dismissTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hotspotTimingStartRef = useRef<number | null>(null);
@@ -359,6 +364,39 @@ export function useHotspotHighlight(
       reason: `hotspot_${reason}`,
     });
   }, [ignoreProgrammaticCameraRef]);
+
+  const clearCameraFinalizeTimer = useCallback(() => {
+    if (cameraFinalizeTimerRef.current) {
+      clearTimeout(cameraFinalizeTimerRef.current);
+      cameraFinalizeTimerRef.current = null;
+    }
+  }, []);
+
+  const clearCameraRetryTimer = useCallback(() => {
+    if (cameraRetryTimerRef.current) {
+      clearTimeout(cameraRetryTimerRef.current);
+      cameraRetryTimerRef.current = null;
+    }
+  }, []);
+
+  const clearHotspotCameraIdleCallback = useCallback(() => {
+    const globalAny = global as any;
+    if (
+      hotspotCameraIdleCallbackRef.current &&
+      globalAny.mapHotspotCameraIdleCallback === hotspotCameraIdleCallbackRef.current
+    ) {
+      delete globalAny.mapHotspotCameraIdleCallback;
+    }
+    hotspotCameraIdleCallbackRef.current = null;
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      clearCameraRetryTimer();
+      clearCameraFinalizeTimer();
+      clearHotspotCameraIdleCallback();
+    };
+  }, [clearCameraFinalizeTimer, clearCameraRetryTimer, clearHotspotCameraIdleCallback]);
 
   useEffect(() => {
     setMapTraceSnapshot({
@@ -801,31 +839,35 @@ export function useHotspotHighlight(
       // Set flag to prevent cluster regeneration during zoom (same as tutorial)
       setHotspotProgrammaticLock(true, 'trigger_zoom_in');
 
-      cameraRef.current.setCamera({
-        centerCoordinate: [hottestVenue.longitude, hottestVenue.latitude],
-        zoomLevel: 14.4, // Same zoom as tutorial for consistency
-        animationDuration: 1000,
-      });
+      let cameraFinalized = false;
 
-      // Android keeps the immediate initial highlight because the follow-up timer
-      // can be delayed by startup/map work on slower tablets. iOS waits for the
-      // zoomed-cluster refinement so the ring does not flash at the pre-zoom
-      // venue coordinate before snapping to the final cluster.
-      if (!DEFER_HOTSPOT_VISIBILITY_UNTIL_REFINED) {
-        showInitialHotspot(source);
-      } else {
-        logAndroidHotspotTiming('visibility_deferred_until_refined', {
-          source,
-        });
-      }
+      const finalizeCameraAnimation = (completionSource: 'map_idle' | 'timer') => {
+        if (cameraFinalized) {
+          return;
+        }
 
-      // Wait for camera animation, then refine to the zoomed cluster/centroid.
-      setTimeout(() => {
-        logAndroidHotspotTiming('refinement_timer_fired', {
+        cameraFinalized = true;
+        clearCameraFinalizeTimer();
+        clearHotspotCameraIdleCallback();
+        logAndroidHotspotTiming('camera_animation_finalize_started', {
           source,
+          completionSource,
+          targetZoom: HOTSPOT_CAMERA_ZOOM_LEVEL,
         });
-        setHotspotProgrammaticLock(false, 'trigger_zoom_in_complete');
+
+        setHotspotProgrammaticLock(false, `trigger_zoom_in_complete_${completionSource}`);
         setIsAnimating(false);
+
+        // During the programmatic camera move, camera-change handling suppresses
+        // reclustering. Recompute the target zoom cluster synchronously here so
+        // the ring and tooltip use the split marker the user will see.
+        try {
+          useMapStore.getState().setZoomLevel(HOTSPOT_CAMERA_ZOOM_LEVEL);
+        } catch (e) {
+          logAndroidHotspotTiming('refinement_zoom_sync_failed', {
+            error: e instanceof Error ? e.message : String(e),
+          });
+        }
 
         // Find the cluster that contains the original hottest venue by name
         // This ensures we highlight the correct cluster even after splitting at higher zoom
@@ -871,6 +913,7 @@ export function useHotspotHighlight(
         const clusterForTooltip = zoomedCluster || hottest;
         logAndroidHotspotTiming('refinement_cluster_resolved', {
           source,
+          completionSource,
           currentClusterCount: currentClusters.length,
           zoomedClusterFound: !!zoomedCluster,
           targetVenueName: hottestVenueNameRef.current ?? 'none',
@@ -930,12 +973,54 @@ export function useHotspotHighlight(
           clusterId: clusterForTooltip.id,
           venueCount: clusterForTooltip.venues?.length ?? 0,
           tooltipText: text,
+          completionSource,
         });
 
         if (DEFER_HOTSPOT_VISIBILITY_UNTIL_REFINED) {
           showHotspot(clusterForTooltip, source, 'hotspot_visible_refined');
         }
-      }, 1100);
+      };
+
+      const cameraAnimationStartedAt = Date.now();
+      const idleCallback = () => {
+        const elapsed = Date.now() - cameraAnimationStartedAt;
+        if (elapsed < 300) {
+          logAndroidHotspotTiming('camera_idle_ignored_too_early', {
+            elapsedMs: elapsed,
+          });
+          return;
+        }
+        finalizeCameraAnimation('map_idle');
+      };
+
+      hotspotCameraIdleCallbackRef.current = idleCallback;
+      (global as any).mapHotspotCameraIdleCallback = idleCallback;
+
+      cameraRef.current.setCamera({
+        centerCoordinate: [hottestVenue.longitude, hottestVenue.latitude],
+        zoomLevel: HOTSPOT_CAMERA_ZOOM_LEVEL, // Same zoom as tutorial for consistency
+        animationDuration: HOTSPOT_CAMERA_ANIMATION_MS,
+      });
+
+      // Wait for the zoomed-cluster refinement so the ring does not flash at
+      // the pre-zoom venue coordinate before snapping to the final marker.
+      if (!DEFER_HOTSPOT_VISIBILITY_UNTIL_REFINED) {
+        showInitialHotspot(source);
+      } else {
+        logAndroidHotspotTiming('visibility_deferred_until_refined', {
+          source,
+        });
+      }
+
+      // Fallback for platforms/builds where Mapbox does not emit a usable idle
+      // callback. On the Samsung tablet this timer can slip badly, so map-idle
+      // is the primary path.
+      cameraFinalizeTimerRef.current = setTimeout(() => {
+        logAndroidHotspotTiming('refinement_timer_fired', {
+          source,
+        });
+        finalizeCameraAnimation('timer');
+      }, HOTSPOT_CAMERA_ANIMATION_MS + 100);
       return true;
     };
 
@@ -969,25 +1054,35 @@ export function useHotspotHighlight(
           attempt,
         });
       }
-      triggerTimerRef.current = setTimeout(() => {
-        triggerTimerRef.current = null;
+      cameraRetryTimerRef.current = setTimeout(() => {
+        cameraRetryTimerRef.current = null;
         retryCameraAnimation(attempt + 1);
       }, 250);
     };
 
-    // Get camera ref from global (same pattern as tutorial). Do not hold the
-    // visible hotspot hostage on this ref; retry the zoom separately.
+    // Get camera ref from global (same pattern as tutorial). Keep the visible
+    // hotspot hidden until the camera is ready so Android cannot flash the ring
+    // at the unrefined venue coordinate.
     const cameraRef = (global as any).mapCameraRef;
     if (!cameraRef?.current) {
       logAndroidHotspotTiming('camera_ref_unavailable_initial');
-      showInitialHotspot('camera_unavailable');
       retryCameraAnimation(1);
       return;
     }
 
     cameraRefRetryCountRef.current = 0;
     startHotspotCameraAnimation(cameraRef, 'camera_ready');
-  }, [clusters, userLocation, markHotspotShownToday, dismiss, logAndroidHotspotTiming, setHotspotProgrammaticLock]);
+  }, [
+    clearCameraFinalizeTimer,
+    clearCameraRetryTimer,
+    clearHotspotCameraIdleCallback,
+    clusters,
+    favoriteVenues,
+    logAndroidHotspotTiming,
+    setHotspotProgrammaticLock,
+    userInterests,
+    userLocation,
+  ]);
 
   /**
    * Disable hotspot permanently (user clicked "Don't show again")

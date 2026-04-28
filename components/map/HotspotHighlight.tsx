@@ -195,9 +195,11 @@ export const HotspotHighlight: React.FC<HotspotHighlightProps> = ({ ignoreProgra
     }
   }, [shouldShow]);
 
-  // Update position when showing or animating, poll during animation for smooth tracking
+  // Update position only after the hotspot is actually visible. On slower
+  // Android devices, polling Mapbox projection during the camera animation can
+  // backlog the JS/native bridge and delay the refinement timer by many seconds.
   useEffect(() => {
-    if (!shouldShow && !isAnimating) {
+    if (!shouldShow) {
       return;
     }
 
