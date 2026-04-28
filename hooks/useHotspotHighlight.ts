@@ -48,6 +48,7 @@ interface OriginalCameraPosition {
 
 const HOTSPOT_VERBOSE_DEBUG = false;
 const HOTSPOT_TRIGGER_DELAY_MS = 0;
+const DEFER_HOTSPOT_VISIBILITY_UNTIL_REFINED = Platform.OS === 'ios';
 
 function hotspotDebugLog(...args: unknown[]) {
   if (__DEV__ && HOTSPOT_VERBOSE_DEBUG) {
@@ -698,7 +699,11 @@ export function useHotspotHighlight(
       }
     };
 
-    const showInitialHotspot = (source: 'camera_ready' | 'camera_unavailable' | 'camera_retry') => {
+    const showHotspot = (
+      clusterForTooltip: Cluster,
+      source: 'camera_ready' | 'camera_unavailable' | 'camera_retry',
+      traceLabel: string
+    ) => {
       if (initialHotspotShownRef.current) {
         return;
       }
@@ -706,23 +711,29 @@ export function useHotspotHighlight(
       initialHotspotShownRef.current = true;
       overlayPositionReadyRef.current = false;
       visibleSourceRef.current = source;
-      const initialTooltip = generateTooltipText(hottest);
-      setCapturedTooltipText(initialTooltip.text);
-      setCapturedTooltipSubtext(initialTooltip.subtext);
+      const tooltip = generateTooltipText(clusterForTooltip);
+      setTargetCluster(clusterForTooltip);
+      setCapturedTooltipText(tooltip.text);
+      setCapturedTooltipSubtext(tooltip.subtext);
       setIsVisible(true);
-      traceMapEvent('hotspot_visible_initial', {
-        clusterId: hottest.id,
-        venueCount: hottest.venues?.length ?? 0,
-        tooltipText: initialTooltip.text,
+      traceMapEvent(traceLabel, {
+        clusterId: clusterForTooltip.id,
+        venueCount: clusterForTooltip.venues?.length ?? 0,
+        tooltipText: tooltip.text,
         source,
       });
       if (__DEV__) {
-        console.log('[HotspotTiming] visible initial', {
-          clusterId: hottest.id,
-          tooltipText: initialTooltip.text,
+        console.log('[HotspotTiming] visible', {
+          clusterId: clusterForTooltip.id,
+          tooltipText: tooltip.text,
           source,
+          traceLabel,
         });
       }
+    };
+
+    const showInitialHotspot = (source: 'camera_ready' | 'camera_unavailable' | 'camera_retry') => {
+      showHotspot(hottest, source, 'hotspot_visible_initial');
     };
 
     const startHotspotCameraAnimation = (
@@ -750,10 +761,13 @@ export function useHotspotHighlight(
         animationDuration: 1000,
       });
 
-      // Show immediately using the original hotspot cluster. On slower Android devices,
-      // the follow-up timer can be delayed by startup/map work, so do not block the
-      // user-visible highlight on the zoomed-cluster refinement.
-      showInitialHotspot(source);
+      // Android keeps the immediate initial highlight because the follow-up timer
+      // can be delayed by startup/map work on slower tablets. iOS waits for the
+      // zoomed-cluster refinement so the ring does not flash at the pre-zoom
+      // venue coordinate before snapping to the final cluster.
+      if (!DEFER_HOTSPOT_VISIBILITY_UNTIL_REFINED) {
+        showInitialHotspot(source);
+      }
 
       // Wait for camera animation, then refine to the zoomed cluster/centroid.
       setTimeout(() => {
@@ -850,6 +864,10 @@ export function useHotspotHighlight(
           venueCount: clusterForTooltip.venues?.length ?? 0,
           tooltipText: text,
         });
+
+        if (DEFER_HOTSPOT_VISIBILITY_UNTIL_REFINED) {
+          showHotspot(clusterForTooltip, source, 'hotspot_visible_refined');
+        }
       }, 1100);
       return true;
     };
