@@ -29,6 +29,15 @@ const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const HIGHLIGHT_SIZE = 140;
 const PULSE_MAX_SCALE = 1.4;
 const POSITION_POLL_MS = 100;
+const ANDROID_HOTSPOT_OVERLAY_DIAGNOSTICS = Platform.OS === 'android';
+
+const logAndroidHotspotOverlayTiming = (label: string, details?: Record<string, unknown>) => {
+  if (!ANDROID_HOTSPOT_OVERLAY_DIAGNOSTICS) {
+    return;
+  }
+
+  console.warn('[GathRHotspotOverlay]', label, JSON.stringify(details ?? {}));
+};
 
 // Marker icons have their anchor at the bottom, so the visual center
 // of the icon is above the geographic coordinate. Offset upward to
@@ -70,18 +79,26 @@ export const HotspotHighlight: React.FC<HotspotHighlightProps> = ({ ignoreProgra
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const tooltipSlideAnim = useRef(new Animated.Value(-50)).current;
   const positionLogRef = useRef(false);
+  const positionUnavailableLogRef = useRef(false);
 
   // Use Mapbox's getPointInView to convert geo coordinates to screen position
   const updatePosition = useCallback(async () => {
     const mapViewRef = (global as any).mapViewRef;
     if (!mapViewRef?.current || !targetCoordinates) {
-      if (__DEV__ && shouldShow && !positionLogRef.current) {
-        console.log('[HotspotOverlay] position unavailable', {
+      if (shouldShow && !positionUnavailableLogRef.current) {
+        logAndroidHotspotOverlayTiming('position_unavailable', {
           hasMapViewRef: !!mapViewRef,
           hasMapViewCurrent: !!mapViewRef?.current,
           hasTargetCoordinates: !!targetCoordinates,
         });
-        positionLogRef.current = true;
+        if (__DEV__) {
+          console.log('[HotspotOverlay] position unavailable', {
+            hasMapViewRef: !!mapViewRef,
+            hasMapViewCurrent: !!mapViewRef?.current,
+            hasTargetCoordinates: !!targetCoordinates,
+          });
+        }
+        positionUnavailableLogRef.current = true;
       }
       return;
     }
@@ -109,9 +126,9 @@ export const HotspotHighlight: React.FC<HotspotHighlightProps> = ({ ignoreProgra
         y += MARKER_ICON_OFFSET_Y;
 
         setHighlightPosition({ x, y });
-        if (__DEV__ && shouldShow && !positionLogRef.current) {
+        if (shouldShow && !positionLogRef.current) {
           const layout = (global as any).mapViewLayout;
-          console.log('[HotspotOverlay] position ready', {
+          logAndroidHotspotOverlayTiming('position_ready', {
             rawX,
             rawY,
             x,
@@ -121,7 +138,21 @@ export const HotspotHighlight: React.FC<HotspotHighlightProps> = ({ ignoreProgra
             layout,
             targetCoordinates,
             positionReady,
+            isAnimating,
           });
+          if (__DEV__) {
+            console.log('[HotspotOverlay] position ready', {
+              rawX,
+              rawY,
+              x,
+              y,
+              screenWidth: SCREEN_WIDTH,
+              screenHeight: SCREEN_HEIGHT,
+              layout,
+              targetCoordinates,
+              positionReady,
+            });
+          }
           positionLogRef.current = true;
         }
 
@@ -133,11 +164,17 @@ export const HotspotHighlight: React.FC<HotspotHighlightProps> = ({ ignoreProgra
         }
       }
     } catch (e) {
-      if (__DEV__ && shouldShow && !positionLogRef.current) {
-        console.log('[HotspotOverlay] position projection failed', {
+      if (shouldShow && !positionLogRef.current) {
+        logAndroidHotspotOverlayTiming('position_projection_failed', {
           error: e instanceof Error ? e.message : String(e),
           targetCoordinates,
         });
+        if (__DEV__) {
+          console.log('[HotspotOverlay] position projection failed', {
+            error: e instanceof Error ? e.message : String(e),
+            targetCoordinates,
+          });
+        }
         positionLogRef.current = true;
       }
       // Fallback to screen center if projection fails
@@ -147,13 +184,14 @@ export const HotspotHighlight: React.FC<HotspotHighlightProps> = ({ ignoreProgra
         setHighlightPosition({ x: SCREEN_WIDTH / 2, y: centerY });
       }
     }
-  }, [targetCoordinates, shouldShow, positionReady, onOverlayPositionReady]);
+  }, [targetCoordinates, shouldShow, positionReady, isAnimating, onOverlayPositionReady]);
 
   // Reset positionReady when the spotlight is hidden
   useEffect(() => {
     if (!shouldShow) {
       setPositionReady(false);
       positionLogRef.current = false;
+      positionUnavailableLogRef.current = false;
     }
   }, [shouldShow]);
 

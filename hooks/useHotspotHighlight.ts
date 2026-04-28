@@ -49,6 +49,7 @@ interface OriginalCameraPosition {
 const HOTSPOT_VERBOSE_DEBUG = false;
 const HOTSPOT_TRIGGER_DELAY_MS = 0;
 const DEFER_HOTSPOT_VISIBILITY_UNTIL_REFINED = Platform.OS === 'ios';
+const ANDROID_HOTSPOT_TIMING_DIAGNOSTICS = Platform.OS === 'android';
 
 function hotspotDebugLog(...args: unknown[]) {
   if (__DEV__ && HOTSPOT_VERBOSE_DEBUG) {
@@ -325,6 +326,18 @@ export function useHotspotHighlight(
   const triggerTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const cameraRefRetryCountRef = useRef(0);
   const dismissTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hotspotTimingStartRef = useRef<number | null>(null);
+  const logAndroidHotspotTiming = useCallback((label: string, details?: Record<string, unknown>) => {
+    if (!ANDROID_HOTSPOT_TIMING_DIAGNOSTICS) {
+      return;
+    }
+
+    const startedAt = hotspotTimingStartRef.current;
+    console.warn('[GathRHotspotTiming]', label, JSON.stringify({
+      sinceTriggerMs: startedAt ? Date.now() - startedAt : null,
+      ...(details ?? {}),
+    }));
+  }, []);
 
   // Track if we should evaluate hotspot trigger (only on app foreground).
   // This has to be state because eligibility is read during render; a ref-only
@@ -567,6 +580,10 @@ export function useHotspotHighlight(
     }
 
     overlayPositionReadyRef.current = true;
+    logAndroidHotspotTiming('overlay_position_ready_callback', {
+      targetClusterId: targetCluster.id,
+      venueCount: targetCluster.venues?.length ?? 0,
+    });
     markHotspotShownToday();
 
     // Reset evaluation only after the user-visible overlay is genuinely on
@@ -593,7 +610,7 @@ export function useHotspotHighlight(
       dismissTimeoutRef.current = null;
       dismiss();
     }, 7000);
-  }, [dismiss, isVisible, markHotspotShownToday, setCanEvaluateTriggerFlag, targetCluster]);
+  }, [dismiss, isVisible, logAndroidHotspotTiming, markHotspotShownToday, setCanEvaluateTriggerFlag, targetCluster]);
 
   /**
    * Trigger the hotspot animation sequence
@@ -601,14 +618,19 @@ export function useHotspotHighlight(
   const triggerHotspot = useCallback(async () => {
     if (hasTriggeredRef.current) return;
     hasTriggeredRef.current = true;
+    hotspotTimingStartRef.current = Date.now();
     overlayPositionReadyRef.current = false;
     visibleSourceRef.current = null;
+    logAndroidHotspotTiming('trigger_started', {
+      clusterCount: clusters.length,
+    });
     traceMapEvent('hotspot_trigger_started', {
       clusterCount: clusters.length,
     });
 
     const hottest = findHottestCluster(clusters);
     if (!hottest) {
+      logAndroidHotspotTiming('trigger_aborted_no_cluster');
       traceMapEvent('hotspot_trigger_aborted_no_cluster');
       return;
     }
@@ -619,6 +641,15 @@ export function useHotspotHighlight(
     // Score = favoriteVenue(500) + interest(100) + time(10/5/1)
     const sortedVenues = hottest.venues ? sortVenuesByRelevance(hottest.venues, favoriteVenues, userInterests) : [];
     const hottestVenue = sortedVenues[0] || hottest.venues?.[0];
+    logAndroidHotspotTiming('hottest_cluster_selected', {
+      clusterId: hottest.id,
+      clusterVenueCount: hottest.venues?.length ?? 0,
+      eventCount: hottest.eventCount,
+      specialCount: hottest.specialCount,
+      hottestVenueName: hottestVenue?.venue ?? 'none',
+      hottestVenueLatitude: hottestVenue?.latitude ?? null,
+      hottestVenueLongitude: hottestVenue?.longitude ?? null,
+    });
 
     if (hottestVenue && sortedVenues.length > 1) {
       const hotness = getVenueHotness(hottestVenue);
@@ -716,6 +747,13 @@ export function useHotspotHighlight(
       setCapturedTooltipText(tooltip.text);
       setCapturedTooltipSubtext(tooltip.subtext);
       setIsVisible(true);
+      logAndroidHotspotTiming('visible_state_set', {
+        traceLabel,
+        clusterId: clusterForTooltip.id,
+        venueCount: clusterForTooltip.venues?.length ?? 0,
+        targetLatitude: targetCoordsRef.current?.latitude ?? null,
+        targetLongitude: targetCoordsRef.current?.longitude ?? null,
+      });
       traceMapEvent(traceLabel, {
         clusterId: clusterForTooltip.id,
         venueCount: clusterForTooltip.venues?.length ?? 0,
@@ -746,6 +784,14 @@ export function useHotspotHighlight(
 
       captureOriginalCameraPosition();
       setIsAnimating(true);
+      logAndroidHotspotTiming('camera_animation_started', {
+        clusterId: hottest.id,
+        venueName: hottestVenue.venue,
+        targetLatitude: hottestVenue.latitude,
+        targetLongitude: hottestVenue.longitude,
+        source,
+        deferredUntilRefined: DEFER_HOTSPOT_VISIBILITY_UNTIL_REFINED,
+      });
       traceMapEvent('hotspot_camera_animation_started', {
         clusterId: hottest.id,
         venueName: hottestVenue.venue,
@@ -767,10 +813,17 @@ export function useHotspotHighlight(
       // venue coordinate before snapping to the final cluster.
       if (!DEFER_HOTSPOT_VISIBILITY_UNTIL_REFINED) {
         showInitialHotspot(source);
+      } else {
+        logAndroidHotspotTiming('visibility_deferred_until_refined', {
+          source,
+        });
       }
 
       // Wait for camera animation, then refine to the zoomed cluster/centroid.
       setTimeout(() => {
+        logAndroidHotspotTiming('refinement_timer_fired', {
+          source,
+        });
         setHotspotProgrammaticLock(false, 'trigger_zoom_in_complete');
         setIsAnimating(false);
 
@@ -816,6 +869,14 @@ export function useHotspotHighlight(
 
         // Generate tooltip from the zoomed-in cluster (or fall back to original)
         const clusterForTooltip = zoomedCluster || hottest;
+        logAndroidHotspotTiming('refinement_cluster_resolved', {
+          source,
+          currentClusterCount: currentClusters.length,
+          zoomedClusterFound: !!zoomedCluster,
+          targetVenueName: hottestVenueNameRef.current ?? 'none',
+          clusterId: clusterForTooltip.id,
+          venueCount: clusterForTooltip.venues?.length ?? 0,
+        });
         const { text, subtext } = generateTooltipText(clusterForTooltip);
         setCapturedTooltipText(text);
         setCapturedTooltipSubtext(subtext);
@@ -855,6 +916,12 @@ export function useHotspotHighlight(
               latitude: centroidLat,
               longitude: centroidLon,
             };
+            logAndroidHotspotTiming('refinement_target_coords_updated', {
+              clusterId: zoomedCluster.id,
+              centroidLatitude: centroidLat,
+              centroidLongitude: centroidLon,
+              venueCount: zoomedCluster.venues.length,
+            });
 
             hotspotDebugLog(`[Hotspot] Updated targetCoords to cluster centroid: lat=${centroidLat.toFixed(6)}, lon=${centroidLon.toFixed(6)}`);
           }
@@ -876,11 +943,17 @@ export function useHotspotHighlight(
       const retryCameraRef = (global as any).mapCameraRef;
       if (retryCameraRef?.current) {
         cameraRefRetryCountRef.current = 0;
+        logAndroidHotspotTiming('camera_ref_retry_ready', {
+          attempt,
+        });
         startHotspotCameraAnimation(retryCameraRef, 'camera_retry');
         return;
       }
 
       if (attempt > 20) {
+        logAndroidHotspotTiming('camera_ref_retry_abandoned', {
+          attempts: attempt - 1,
+        });
         if (__DEV__) {
           console.log('[HotspotTiming] camera ref unavailable; keeping initial hotspot without camera');
         }
@@ -906,6 +979,7 @@ export function useHotspotHighlight(
     // visible hotspot hostage on this ref; retry the zoom separately.
     const cameraRef = (global as any).mapCameraRef;
     if (!cameraRef?.current) {
+      logAndroidHotspotTiming('camera_ref_unavailable_initial');
       showInitialHotspot('camera_unavailable');
       retryCameraAnimation(1);
       return;
@@ -913,7 +987,7 @@ export function useHotspotHighlight(
 
     cameraRefRetryCountRef.current = 0;
     startHotspotCameraAnimation(cameraRef, 'camera_ready');
-  }, [clusters, userLocation, markHotspotShownToday, dismiss, setHotspotProgrammaticLock]);
+  }, [clusters, userLocation, markHotspotShownToday, dismiss, logAndroidHotspotTiming, setHotspotProgrammaticLock]);
 
   /**
    * Disable hotspot permanently (user clicked "Don't show again")
@@ -1019,6 +1093,10 @@ export function useHotspotHighlight(
         clusterCount: clusters.length,
         delayMs: HOTSPOT_TRIGGER_DELAY_MS,
       });
+      logAndroidHotspotTiming('trigger_scheduled', {
+        clusterCount: clusters.length,
+        delayMs: HOTSPOT_TRIGGER_DELAY_MS,
+      });
       if (__DEV__) {
         console.log('[HotspotTiming] trigger scheduled', {
           clusterCount: clusters.length,
@@ -1027,6 +1105,7 @@ export function useHotspotHighlight(
       }
 
       const fireTrigger = () => {
+        logAndroidHotspotTiming('trigger_timer_fired');
         if (__DEV__) {
           console.log('[HotspotTiming] trigger timer fired');
         }
@@ -1047,7 +1126,7 @@ export function useHotspotHighlight(
       clearTimeout(triggerTimerRef.current);
       triggerTimerRef.current = null;
     }
-  }, [shouldShowHotspot, clusters.length, triggerHotspot]);
+  }, [shouldShowHotspot, clusters.length, logAndroidHotspotTiming, triggerHotspot]);
 
   // Watch for cluster selection on the map (user tapped a cluster directly)
   // When this happens, hide the hotspot tooltip without zooming back

@@ -875,6 +875,17 @@ const __ml_firstClustersReadyRef = React.useRef<boolean>(false);
 const __ml_userStartAppliedRef = React.useRef<boolean>(false);
 const __ml_styleReadyRef = React.useRef<boolean>(true);  // Set to true since callbacks don't work
 const __ml_initialSnapDoneRef = React.useRef<boolean>(false);
+const ANDROID_STARTUP_TIMING_DIAGNOSTICS = Platform.OS === 'android';
+const logAndroidStartupTiming = (label: string, details?: Record<string, unknown>) => {
+  if (!ANDROID_STARTUP_TIMING_DIAGNOSTICS) {
+    return;
+  }
+
+  console.warn('[GathRStartupTiming]', label, JSON.stringify({
+    elapsedMs: Date.now() - __ml_t0Ref.current,
+    ...(details ?? {}),
+  }));
+};
 
 // Preferred starting zoom (city-level)
 const START_ZOOM = 12;
@@ -1930,6 +1941,9 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
   // startup timer routinely fired several seconds late on the Samsung tablet.
   useEffect(() => {
     if (!isLoading && clusters.length > 0 && !clustersReady) {
+      logAndroidStartupTiming('clusters_ready_immediate_started', {
+        clusterCount: clusters.length,
+      });
       traceMapEvent('clusters_ready_immediate_started', {
         clusterCount: clusters.length,
         delayMs: 0,
@@ -1937,6 +1951,9 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
       console.log('[map] Clusters ready for interaction');
       setClustersReady(true);
       traceMapEvent('clusters_ready_immediate_completed', {
+        clusterCount: clusters.length,
+      });
+      logAndroidStartupTiming('clusters_ready_immediate_completed', {
         clusterCount: clusters.length,
       });
       return;
@@ -1967,6 +1984,10 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
 
     if (!STAGE_CLUSTER_MARKERS_ON_STARTUP) {
       setFullClusterMarkersEnabled(true);
+      logAndroidStartupTiming('full_cluster_markers_enabled_immediate', {
+        clusterCount: clusters.length,
+        platform: Platform.OS,
+      });
       traceMapEvent('full_cluster_markers_enabled_immediate', {
         clusterCount: clusters.length,
         platform: Platform.OS,
@@ -1983,10 +2004,19 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
       delayMs: FULL_CLUSTER_MARKER_DELAY_MS,
       startupLimit: STARTUP_CLUSTER_MARKER_LIMIT,
     });
+    logAndroidStartupTiming('full_cluster_markers_delay_started', {
+      clusterCount: clusters.length,
+      delayMs: FULL_CLUSTER_MARKER_DELAY_MS,
+      startupLimit: STARTUP_CLUSTER_MARKER_LIMIT,
+    });
 
     const timer = setTimeout(() => {
       setFullClusterMarkersEnabled(true);
       traceMapEvent('full_cluster_markers_enabled', {
+        clusterCount: clusters.length,
+        startupLimit: STARTUP_CLUSTER_MARKER_LIMIT,
+      });
+      logAndroidStartupTiming('full_cluster_markers_enabled', {
         clusterCount: clusters.length,
         startupLimit: STARTUP_CLUSTER_MARKER_LIMIT,
       });
@@ -2017,10 +2047,17 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
       clusterCount: clusters.length,
       delayMs: RICH_CLUSTER_MARKER_DELAY_MS,
     });
+    logAndroidStartupTiming('rich_cluster_markers_delay_started', {
+      clusterCount: clusters.length,
+      delayMs: RICH_CLUSTER_MARKER_DELAY_MS,
+    });
 
     const timer = setTimeout(() => {
       setRichClusterMarkersEnabled(true);
       traceMapEvent('rich_cluster_markers_enabled', {
+        clusterCount: clusters.length,
+      });
+      logAndroidStartupTiming('rich_cluster_markers_enabled', {
         clusterCount: clusters.length,
       });
       if (DEBUG_MAP_LOAD) {
