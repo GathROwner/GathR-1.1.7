@@ -959,19 +959,28 @@ const computeStartCenter = (): [number, number] => {
       filterCriteria,
       zoomLevel
     };
-    
-    // 🎯 TUTORIAL INTEGRATION: Expose camera ref for tutorial repositioning
-    (global as any).mapCameraRef = cameraRef;
+    return () => {
+      delete (global as any).mapStore;
+    };
+  }, [clusters, selectedVenues, filterCriteria, zoomLevel]);
 
-    // 🎯 HOTSPOT: Expose mapRef for getPointInView coordinate projection
+  // Keep tutorial/hotspot refs stable across normal cluster/filter/zoom updates.
+  // Android hotspot startup can hit a passive-effect cleanup window if these
+  // globals are deleted every time mapStore refreshes.
+  useEffect(() => {
+    (global as any).mapCameraRef = cameraRef;
     (global as any).mapViewRef = mapRef;
 
     return () => {
-      delete (global as any).mapStore;
-      delete (global as any).mapCameraRef;
-      delete (global as any).mapViewRef;
+      const globalAny = global as any;
+      if (globalAny.mapCameraRef === cameraRef) {
+        delete globalAny.mapCameraRef;
+      }
+      if (globalAny.mapViewRef === mapRef) {
+        delete globalAny.mapViewRef;
+      }
     };
-  }, [clusters, selectedVenues, filterCriteria, zoomLevel]);
+  }, []);
 
   // Local state for location and map
   const [location, setLocation] = useState<Location.LocationObject | null>(null);
