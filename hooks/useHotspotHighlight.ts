@@ -38,6 +38,7 @@ interface HotspotHighlightActions {
   dismiss: () => void;
   disablePermanently: () => void;
   onClusterTap: () => void;
+  onOverlayPositionReady: () => void;
 }
 
 interface OriginalCameraPosition {
@@ -318,6 +319,8 @@ export function useHotspotHighlight(
   const originalCameraRef = useRef<OriginalCameraPosition | null>(null);
   const hasTriggeredRef = useRef(false);
   const initialHotspotShownRef = useRef(false);
+  const overlayPositionReadyRef = useRef(false);
+  const visibleSourceRef = useRef<'camera_ready' | 'camera_unavailable' | 'camera_retry' | null>(null);
   const triggerTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const cameraRefRetryCountRef = useRef(0);
   const dismissTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -502,6 +505,8 @@ export function useHotspotHighlight(
     }
 
     setIsVisible(false);
+    overlayPositionReadyRef.current = false;
+    visibleSourceRef.current = null;
 
     // Zoom back to original position
     const cameraRef = (global as any).mapCameraRef;
@@ -537,12 +542,48 @@ export function useHotspotHighlight(
     });
   }, [setHotspotProgrammaticLock, targetCluster]);
 
+  const onOverlayPositionReady = useCallback(() => {
+    if (!isVisible || !targetCluster || overlayPositionReadyRef.current) {
+      return;
+    }
+
+    overlayPositionReadyRef.current = true;
+    markHotspotShownToday();
+
+    // Reset evaluation only after the user-visible overlay is genuinely on
+    // screen. This avoids consuming the daily hotspot behind first-run prompts.
+    canEvaluateTriggerRef.current = false;
+    hotspotDebugLog('[Hotspot] Evaluation flag reset after overlay position ready');
+
+    const source = visibleSourceRef.current || 'camera_ready';
+
+    amplitudeTrack('hotspot_shown', {
+      cluster_id: targetCluster.id,
+      time_status: targetCluster.timeStatus,
+      event_count: targetCluster.eventCount,
+      special_count: targetCluster.specialCount,
+      venue_name: targetCluster.venues?.[0]?.venue || 'unknown',
+      source,
+    });
+
+    dismissTimeoutRef.current = setTimeout(() => {
+      traceMapEvent('hotspot_auto_dismiss_timer_fired', {
+        clusterId: targetCluster.id,
+        delayMs: 7000,
+      });
+      dismissTimeoutRef.current = null;
+      dismiss();
+    }, 7000);
+  }, [dismiss, isVisible, markHotspotShownToday, targetCluster]);
+
   /**
    * Trigger the hotspot animation sequence
    */
   const triggerHotspot = useCallback(async () => {
     if (hasTriggeredRef.current) return;
     hasTriggeredRef.current = true;
+    overlayPositionReadyRef.current = false;
+    visibleSourceRef.current = null;
     traceMapEvent('hotspot_trigger_started', {
       clusterCount: clusters.length,
     });
@@ -645,6 +686,8 @@ export function useHotspotHighlight(
       }
 
       initialHotspotShownRef.current = true;
+      overlayPositionReadyRef.current = false;
+      visibleSourceRef.current = source;
       const initialTooltip = generateTooltipText(hottest);
       setCapturedTooltipText(initialTooltip.text);
       setCapturedTooltipSubtext(initialTooltip.subtext);
@@ -662,33 +705,6 @@ export function useHotspotHighlight(
           source,
         });
       }
-      markHotspotShownToday();
-
-      // Reset evaluation flag after trigger - prevents re-triggering until next foreground
-      canEvaluateTriggerRef.current = false;
-      hotspotDebugLog('[Hotspot] Evaluation flag reset - hotspot will not trigger again until next app foreground');
-
-      // Track analytics
-      amplitudeTrack('hotspot_shown', {
-        cluster_id: hottest.id,
-        time_status: hottest.timeStatus,
-        event_count: hottest.eventCount,
-        special_count: hottest.specialCount,
-        venue_name: hottest.venues?.[0]?.venue || 'unknown',
-        source,
-      });
-
-      const autoDismissDelayMs = source === 'camera_unavailable' ? 16000 : 7000;
-
-      // Auto-dismiss after the user has had time to see it. When the camera ref
-      // is late on Android, overlay projection can lag the logical visible state.
-      dismissTimeoutRef.current = setTimeout(() => {
-        traceMapEvent('hotspot_auto_dismiss_timer_fired', {
-          clusterId: hottest.id,
-          delayMs: autoDismissDelayMs,
-        });
-        dismiss();
-      }, autoDismissDelayMs);
     };
 
     const startHotspotCameraAnimation = (
@@ -1041,5 +1057,6 @@ export function useHotspotHighlight(
     dismiss,
     disablePermanently,
     onClusterTap,
+    onOverlayPositionReady,
   };
 }

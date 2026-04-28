@@ -55,6 +55,7 @@ export const HotspotHighlight: React.FC<HotspotHighlightProps> = ({ ignoreProgra
     dismiss,
     disablePermanently,
     onClusterTap,
+    onOverlayPositionReady,
   } = useHotspotHighlight(ignoreProgrammaticCameraRef);
 
   // Track screen position of the cluster
@@ -128,6 +129,7 @@ export const HotspotHighlight: React.FC<HotspotHighlightProps> = ({ ignoreProgra
         // This ensures the spotlight doesn't appear until after the centroid is calculated
         if (shouldShow && !positionReady) {
           setPositionReady(true);
+          onOverlayPositionReady();
         }
       }
     } catch (e) {
@@ -145,7 +147,7 @@ export const HotspotHighlight: React.FC<HotspotHighlightProps> = ({ ignoreProgra
         setHighlightPosition({ x: SCREEN_WIDTH / 2, y: centerY });
       }
     }
-  }, [targetCoordinates, shouldShow, positionReady]);
+  }, [targetCoordinates, shouldShow, positionReady, onOverlayPositionReady]);
 
   // Reset positionReady when the spotlight is hidden
   useEffect(() => {

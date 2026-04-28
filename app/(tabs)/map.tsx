@@ -3805,7 +3805,7 @@ Owner: Map UX stability on Android • Last validated: 2025-09-04
       )}
       
       {/* Preview-debug gate: keep hotspot fully unmounted so its timers/camera flow cannot affect callout presentation. */}
-      {!HOTSPOT_HARD_DISABLED_FOR_PREVIEW_DEBUG && (
+      {!HOTSPOT_HARD_DISABLED_FOR_PREVIEW_DEBUG && clustersReady && !isLoading && (
         <HotspotHighlight ignoreProgrammaticCameraRef={ignoreProgrammaticCameraRef} />
       )}
 
