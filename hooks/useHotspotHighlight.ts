@@ -317,6 +317,7 @@ export function useHotspotHighlight(
   // Track original camera position for zoom-back
   const originalCameraRef = useRef<OriginalCameraPosition | null>(null);
   const hasTriggeredRef = useRef(false);
+  const initialHotspotShownRef = useRef(false);
   const triggerTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const cameraRefRetryCountRef = useRef(0);
   const dismissTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -608,87 +609,42 @@ export function useHotspotHighlight(
       }
     }
 
-    // Get camera ref from global (same pattern as tutorial)
-    const cameraRef = (global as any).mapCameraRef;
-    if (!cameraRef?.current) {
-      hasTriggeredRef.current = false;
-      cameraRefRetryCountRef.current += 1;
+    const captureOriginalCameraPosition = () => {
+      try {
+        const mapStore = useMapStore.getState();
 
-      if (cameraRefRetryCountRef.current <= 20) {
-        if (__DEV__) {
-          console.log('[HotspotTiming] camera ref unavailable; retrying', {
-            attempt: cameraRefRetryCountRef.current,
-          });
-        }
-        triggerTimerRef.current = setTimeout(() => {
-          triggerTimerRef.current = null;
-          triggerHotspot();
-        }, 250);
+        // Validate userLocation coordinates are actual numbers
+        // userLocation is a Location.LocationObject, so coords are under .coords
+        const hasValidUserLocation = userLocation &&
+          userLocation.coords &&
+          typeof userLocation.coords.longitude === 'number' &&
+          typeof userLocation.coords.latitude === 'number' &&
+          !isNaN(userLocation.coords.longitude) &&
+          !isNaN(userLocation.coords.latitude);
+
+        const coordinates: [number, number] = hasValidUserLocation
+          ? [userLocation.coords.longitude, userLocation.coords.latitude]
+          : [-63.1276, 46.2336]; // Default to Halifax/PEI area
+
+        originalCameraRef.current = {
+          coordinates,
+          zoom: mapStore?.zoomLevel || 12,
+        };
+      } catch (e) {
+        // Set fallback so we don't crash on zoom-back
+        originalCameraRef.current = {
+          coordinates: [-63.1276, 46.2336],
+          zoom: 12,
+        };
+      }
+    };
+
+    const showInitialHotspot = (source: 'camera_ready' | 'camera_unavailable' | 'camera_retry') => {
+      if (initialHotspotShownRef.current) {
         return;
       }
 
-      if (__DEV__) {
-        console.log('[HotspotTiming] camera ref unavailable; showing without camera after retries');
-      }
-      setIsVisible(true);
-      traceMapEvent('hotspot_visible_without_camera', {
-        clusterId: hottest.id,
-      });
-      markHotspotShownToday();
-      return;
-    }
-    cameraRefRetryCountRef.current = 0;
-
-    // Save original camera position
-    try {
-      const mapStore = useMapStore.getState();
-
-      // Validate userLocation coordinates are actual numbers
-      // userLocation is a Location.LocationObject, so coords are under .coords
-      const hasValidUserLocation = userLocation &&
-        userLocation.coords &&
-        typeof userLocation.coords.longitude === 'number' &&
-        typeof userLocation.coords.latitude === 'number' &&
-        !isNaN(userLocation.coords.longitude) &&
-        !isNaN(userLocation.coords.latitude);
-
-      const coordinates: [number, number] = hasValidUserLocation
-        ? [userLocation.coords.longitude, userLocation.coords.latitude]
-        : [-63.1276, 46.2336]; // Default to Halifax/PEI area
-
-      originalCameraRef.current = {
-        coordinates,
-        zoom: mapStore?.zoomLevel || 12,
-      };
-
-    } catch (e) {
-      // Set fallback so we don't crash on zoom-back
-      originalCameraRef.current = {
-        coordinates: [-63.1276, 46.2336],
-        zoom: 12,
-      };
-    }
-
-    // Zoom to the hottest venue (not just first venue)
-    if (hottestVenue) {
-      setIsAnimating(true);
-      traceMapEvent('hotspot_camera_animation_started', {
-        clusterId: hottest.id,
-        venueName: hottestVenue.venue,
-      });
-
-      // Set flag to prevent cluster regeneration during zoom (same as tutorial)
-      setHotspotProgrammaticLock(true, 'trigger_zoom_in');
-
-      cameraRef.current.setCamera({
-        centerCoordinate: [hottestVenue.longitude, hottestVenue.latitude],
-        zoomLevel: 14.4, // Same zoom as tutorial for consistency
-        animationDuration: 1000,
-      });
-
-      // Show immediately using the original hotspot cluster. On slower Android devices,
-      // the follow-up timer can be delayed by startup/map work, so do not block the
-      // user-visible highlight on the zoomed-cluster refinement.
+      initialHotspotShownRef.current = true;
       const initialTooltip = generateTooltipText(hottest);
       setCapturedTooltipText(initialTooltip.text);
       setCapturedTooltipSubtext(initialTooltip.subtext);
@@ -697,11 +653,13 @@ export function useHotspotHighlight(
         clusterId: hottest.id,
         venueCount: hottest.venues?.length ?? 0,
         tooltipText: initialTooltip.text,
+        source,
       });
       if (__DEV__) {
         console.log('[HotspotTiming] visible initial', {
           clusterId: hottest.id,
           tooltipText: initialTooltip.text,
+          source,
         });
       }
       markHotspotShownToday();
@@ -717,15 +675,51 @@ export function useHotspotHighlight(
         event_count: hottest.eventCount,
         special_count: hottest.specialCount,
         venue_name: hottest.venues?.[0]?.venue || 'unknown',
+        source,
       });
 
-      // Auto-dismiss after 7 seconds
+      const autoDismissDelayMs = source === 'camera_unavailable' ? 16000 : 7000;
+
+      // Auto-dismiss after the user has had time to see it. When the camera ref
+      // is late on Android, overlay projection can lag the logical visible state.
       dismissTimeoutRef.current = setTimeout(() => {
         traceMapEvent('hotspot_auto_dismiss_timer_fired', {
           clusterId: hottest.id,
+          delayMs: autoDismissDelayMs,
         });
         dismiss();
-      }, 7000);
+      }, autoDismissDelayMs);
+    };
+
+    const startHotspotCameraAnimation = (
+      cameraRef: React.MutableRefObject<any>,
+      source: 'camera_ready' | 'camera_retry'
+    ) => {
+      if (!hottestVenue) {
+        return false;
+      }
+
+      captureOriginalCameraPosition();
+      setIsAnimating(true);
+      traceMapEvent('hotspot_camera_animation_started', {
+        clusterId: hottest.id,
+        venueName: hottestVenue.venue,
+        source,
+      });
+
+      // Set flag to prevent cluster regeneration during zoom (same as tutorial)
+      setHotspotProgrammaticLock(true, 'trigger_zoom_in');
+
+      cameraRef.current.setCamera({
+        centerCoordinate: [hottestVenue.longitude, hottestVenue.latitude],
+        zoomLevel: 14.4, // Same zoom as tutorial for consistency
+        animationDuration: 1000,
+      });
+
+      // Show immediately using the original hotspot cluster. On slower Android devices,
+      // the follow-up timer can be delayed by startup/map work, so do not block the
+      // user-visible highlight on the zoomed-cluster refinement.
+      showInitialHotspot(source);
 
       // Wait for camera animation, then refine to the zoomed cluster/centroid.
       setTimeout(() => {
@@ -823,7 +817,50 @@ export function useHotspotHighlight(
           tooltipText: text,
         });
       }, 1100);
+      return true;
+    };
+
+    const retryCameraAnimation = (attempt: number) => {
+      const retryCameraRef = (global as any).mapCameraRef;
+      if (retryCameraRef?.current) {
+        cameraRefRetryCountRef.current = 0;
+        startHotspotCameraAnimation(retryCameraRef, 'camera_retry');
+        return;
+      }
+
+      if (attempt > 20) {
+        if (__DEV__) {
+          console.log('[HotspotTiming] camera ref unavailable; keeping initial hotspot without camera');
+        }
+        traceMapEvent('hotspot_camera_retry_abandoned', {
+          clusterId: hottest.id,
+          attempts: attempt - 1,
+        });
+        return;
+      }
+
+      if (__DEV__) {
+        console.log('[HotspotTiming] camera ref unavailable; retrying zoom', {
+          attempt,
+        });
+      }
+      triggerTimerRef.current = setTimeout(() => {
+        triggerTimerRef.current = null;
+        retryCameraAnimation(attempt + 1);
+      }, 250);
+    };
+
+    // Get camera ref from global (same pattern as tutorial). Do not hold the
+    // visible hotspot hostage on this ref; retry the zoom separately.
+    const cameraRef = (global as any).mapCameraRef;
+    if (!cameraRef?.current) {
+      showInitialHotspot('camera_unavailable');
+      retryCameraAnimation(1);
+      return;
     }
+
+    cameraRefRetryCountRef.current = 0;
+    startHotspotCameraAnimation(cameraRef, 'camera_ready');
   }, [clusters, userLocation, markHotspotShownToday, dismiss, setHotspotProgrammaticLock]);
 
   /**

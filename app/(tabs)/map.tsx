@@ -98,6 +98,35 @@ const IOS_CALLOUT_NATIVE_AD_ISOLATION_DEBUG = Platform.OS === 'ios';
 const ANDROID_MAPBOX_STARTUP_ISOLATION_DEBUG = false;
 const ANDROID_CLUSTER_MARKERVIEW_ISOLATION_DEBUG = false;
 const DEBUG_TREE_MARKER_EVENTS = false;
+const STARTUP_CLUSTER_MARKER_LIMIT = 12;
+const FULL_CLUSTER_MARKER_DELAY_MS = 10000;
+const RICH_CLUSTER_MARKER_DELAY_MS = 12000;
+
+const getStartupClusterScore = (cluster: Cluster): number => {
+  const statusScore =
+    cluster.timeStatus === 'now'
+      ? 100000
+      : cluster.timeStatus === 'today'
+      ? 50000
+      : 0;
+  const contentScore = ((cluster.eventCount || 0) + (cluster.specialCount || 0)) * 100;
+  return statusScore + contentScore + (cluster.venues?.length || 0);
+};
+
+const pickStartupClusters = (clusters: Cluster[], limit: number): Cluster[] => {
+  if (clusters.length <= limit) {
+    return clusters;
+  }
+
+  const startupClusterIds = new Set(
+    [...clusters]
+      .sort((a, b) => getStartupClusterScore(b) - getStartupClusterScore(a))
+      .slice(0, limit)
+      .map(cluster => cluster.id)
+  );
+
+  return clusters.filter(cluster => startupClusterIds.has(cluster.id));
+};
 
 // Helper function to get color for time status
 const getTimeStatusColor = (timeStatus: TimeStatus): string => {
@@ -553,9 +582,10 @@ interface TreeMarkerProps {
   isSelected: boolean;
   isProcessing?: boolean;
   isReady?: boolean;
+  detailsEnabled?: boolean;
 }
 
-const TreeMarker: React.FC<TreeMarkerProps> = React.memo(({ cluster, isSelected, isProcessing = false, isReady = true }) => {
+const TreeMarker: React.FC<TreeMarkerProps> = React.memo(({ cluster, isSelected, isProcessing = false, isReady = true, detailsEnabled = true }) => {
   // Determine color based on time status
   const color = getTimeStatusColor(cluster.timeStatus);
 
@@ -567,9 +597,11 @@ const TreeMarker: React.FC<TreeMarkerProps> = React.memo(({ cluster, isSelected,
   const adjustedSize = size * scaleFactor;
 
   // Check if cluster contains Firestore-sourced events
-  const hasFirestoreEvents = cluster.venues.some(venue =>
-    venue.events.some(event => event.source === 'firestore')
-  );
+  const hasFirestoreEvents = detailsEnabled
+    ? cluster.venues.some(venue =>
+        venue.events.some(event => event.source === 'firestore')
+      )
+    : false;
 
   // DEBUG: Log clusters with Firestore events
   if (DEBUG_TREE_MARKER_EVENTS && hasFirestoreEvents) {
@@ -581,10 +613,10 @@ const TreeMarker: React.FC<TreeMarkerProps> = React.memo(({ cluster, isSelected,
   return (
     <View style={styles.markerWrapper}>
       {/* Category Carousel - positioned above the tree */}
-      <CategoryCarousel cluster={cluster} size={adjustedSize} />
+      {detailsEnabled && <CategoryCarousel cluster={cluster} size={adjustedSize} />}
 
       {/* Broadcasting effect for 'now' events */}
-      {cluster.isBroadcasting && (
+      {detailsEnabled && cluster.isBroadcasting && (
         <BroadcastingEffect size={adjustedSize} color={color} />
       )}
 
@@ -640,19 +672,21 @@ const TreeMarker: React.FC<TreeMarkerProps> = React.memo(({ cluster, isSelected,
         </View>
 
         {/* New content indicator - animated red dot */}
-        <IndicatorDot
-          hasNewContent={cluster.hasNewContent || false}
-          style={[
-            styles.newContentDot,
-            {
-              width: adjustedSize * 0.5,
-              height: adjustedSize * 0.5,
-              borderRadius: adjustedSize * 0.25,
-              top: -(adjustedSize * 0.15),
-              right: -(adjustedSize * 0.15),
-            }
-          ]}
-        />
+        {detailsEnabled && cluster.hasNewContent && (
+          <IndicatorDot
+            hasNewContent
+            style={[
+              styles.newContentDot,
+              {
+                width: adjustedSize * 0.5,
+                height: adjustedSize * 0.5,
+                borderRadius: adjustedSize * 0.25,
+                top: -(adjustedSize * 0.15),
+                right: -(adjustedSize * 0.15),
+              }
+            ]}
+          />
+        )}
 
         {/* Firestore source indicator - subtle "F" badge in top-left */}
         {hasFirestoreEvents && (
@@ -760,7 +794,8 @@ const TreeMarker: React.FC<TreeMarkerProps> = React.memo(({ cluster, isSelected,
     prevProps.cluster.specialCount === nextProps.cluster.specialCount &&
     prevProps.isSelected === nextProps.isSelected &&
     prevProps.isProcessing === nextProps.isProcessing &&
-    prevProps.isReady === nextProps.isReady
+    prevProps.isReady === nextProps.isReady &&
+    prevProps.detailsEnabled === nextProps.detailsEnabled
   );
 });
 
@@ -932,6 +967,8 @@ const computeStartCenter = (): [number, number] => {
   const [hasInitiallyPositioned, setHasInitiallyPositioned] = useState<boolean>(false);
   const [processingClusterId, setProcessingClusterId] = useState<string | null>(null);
   const [clustersReady, setClustersReady] = useState<boolean>(false);
+  const [fullClusterMarkersEnabled, setFullClusterMarkersEnabled] = useState<boolean>(false);
+  const [richClusterMarkersEnabled, setRichClusterMarkersEnabled] = useState<boolean>(false);
   const [isTracePanelVisible, setIsTracePanelVisible] = useState(false);
   const [renderedCalloutVenues, setRenderedCalloutVenues] = useState<Venue[]>([]);
   const [renderedCalloutCluster, setRenderedCalloutCluster] = useState<Cluster | null>(null);
@@ -1336,6 +1373,7 @@ const currentThresholdIndex = useRef<number>(getThresholdIndexForZoom(zoomLevel)
 const visibleClusterIds = useRef<Set<string>>(new Set());
 const previousFilterCriteria = useRef<FilterCriteria>(filterCriteria);
 const previousClusterCount = useRef<number>(0);
+const startupMarkerSubsetLoggedRef = useRef<boolean>(false);
 
   // 🔥 ANALYTICS: Add refs for tracking performance and behavior
 const mapInteractionStartTime = useRef<number | null>(null);
@@ -1887,24 +1925,20 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
     //             "selectedCluster:", selectedCluster ? selectedCluster.id : "none");
   }, [selectedVenues, selectedCluster]);
 
-  // Enable cluster interaction after initial render completes
-  // This prevents taps during the heavy initial render from being delayed/queued
+  // Enable cluster interaction as soon as clusters are available. The previous
+  // startup timer routinely fired several seconds late on the Samsung tablet.
   useEffect(() => {
     if (!isLoading && clusters.length > 0 && !clustersReady) {
-      // Small delay to let React finish rendering and hydrating the cluster markers
-      traceMapEvent('clusters_ready_delay_started', {
+      traceMapEvent('clusters_ready_immediate_started', {
         clusterCount: clusters.length,
-        delayMs: 500,
+        delayMs: 0,
       });
-      const timer = setTimeout(() => {
-        console.log('[map] Clusters ready for interaction');
-        setClustersReady(true);
-        traceMapEvent('clusters_ready_delay_completed', {
-          clusterCount: clusters.length,
-        });
-      }, 500); // 500ms should be enough for initial render to complete
-
-      return () => clearTimeout(timer);
+      console.log('[map] Clusters ready for interaction');
+      setClustersReady(true);
+      traceMapEvent('clusters_ready_immediate_completed', {
+        clusterCount: clusters.length,
+      });
+      return;
     }
 
     // Reset clustersReady when loading starts again
@@ -1913,6 +1947,79 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
       traceMapEvent('clusters_ready_reset_for_loading');
     }
   }, [isLoading, clusters.length, clustersReady]);
+
+  // Keep startup MarkerView work low on slower Android devices. The first pass
+  // renders only a priority subset, then restores the full custom marker set.
+  useEffect(() => {
+    if (isLoading || clusters.length === 0 || !clustersReady) {
+      if (fullClusterMarkersEnabled) {
+        setFullClusterMarkersEnabled(false);
+        traceMapEvent('full_cluster_markers_reset');
+      }
+      if (richClusterMarkersEnabled) {
+        setRichClusterMarkersEnabled(false);
+        traceMapEvent('rich_cluster_markers_reset');
+      }
+      return;
+    }
+
+    if (fullClusterMarkersEnabled) {
+      return;
+    }
+
+    traceMapEvent('full_cluster_markers_delay_started', {
+      clusterCount: clusters.length,
+      delayMs: FULL_CLUSTER_MARKER_DELAY_MS,
+      startupLimit: STARTUP_CLUSTER_MARKER_LIMIT,
+    });
+
+    const timer = setTimeout(() => {
+      setFullClusterMarkersEnabled(true);
+      traceMapEvent('full_cluster_markers_enabled', {
+        clusterCount: clusters.length,
+        startupLimit: STARTUP_CLUSTER_MARKER_LIMIT,
+      });
+      if (DEBUG_MAP_LOAD) {
+        const delta = Date.now() - __ml_t0Ref.current;
+        console.log(`[MapLoad][${__ml_sessionIdRef.current}] T5d full_cluster_markers_enabled +${delta}ms (clusters=${clusters.length})`);
+      }
+    }, FULL_CLUSTER_MARKER_DELAY_MS);
+
+    return () => clearTimeout(timer);
+  }, [clusters.length, clustersReady, fullClusterMarkersEnabled, isLoading, richClusterMarkersEnabled]);
+
+  // Restore animated/rich marker children after the full MarkerView set is back.
+  useEffect(() => {
+    if (isLoading || clusters.length === 0 || !clustersReady || !fullClusterMarkersEnabled) {
+      if (richClusterMarkersEnabled) {
+        setRichClusterMarkersEnabled(false);
+        traceMapEvent('rich_cluster_markers_reset');
+      }
+      return;
+    }
+
+    if (richClusterMarkersEnabled) {
+      return;
+    }
+
+    traceMapEvent('rich_cluster_markers_delay_started', {
+      clusterCount: clusters.length,
+      delayMs: RICH_CLUSTER_MARKER_DELAY_MS,
+    });
+
+    const timer = setTimeout(() => {
+      setRichClusterMarkersEnabled(true);
+      traceMapEvent('rich_cluster_markers_enabled', {
+        clusterCount: clusters.length,
+      });
+      if (DEBUG_MAP_LOAD) {
+        const delta = Date.now() - __ml_t0Ref.current;
+        console.log(`[MapLoad][${__ml_sessionIdRef.current}] T5e rich_marker_details_enabled +${delta}ms (clusters=${clusters.length})`);
+      }
+    }, RICH_CLUSTER_MARKER_DELAY_MS);
+
+    return () => clearTimeout(timer);
+  }, [clusters.length, clustersReady, fullClusterMarkersEnabled, isLoading, richClusterMarkersEnabled]);
 
   // Re-center the map on user location
   const handleRecenterPress = () => {
@@ -3216,9 +3323,26 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
      // console.log(`STABLE VISIBILITY: Using ${visibleClusterIds.current.size}/${clusters.length} previously visible clusters`);
     }
     
-    // Render only clusters that we've determined should be visible
-    return clusters
-      .filter(cluster => visibleClusterIds.current.has(cluster.id))
+    // Render only clusters that we've determined should be visible. During
+    // startup, cap MarkerViews to the highest-priority clusters so the hotspot
+    // path is not competing with every custom marker at once.
+    const visibleClustersForRender = clusters.filter(cluster => visibleClusterIds.current.has(cluster.id));
+    const clustersForRender = fullClusterMarkersEnabled
+      ? visibleClustersForRender
+      : pickStartupClusters(visibleClustersForRender, STARTUP_CLUSTER_MARKER_LIMIT);
+
+    if (
+      DEBUG_MAP_LOAD &&
+      !fullClusterMarkersEnabled &&
+      !startupMarkerSubsetLoggedRef.current &&
+      visibleClustersForRender.length > clustersForRender.length
+    ) {
+      startupMarkerSubsetLoggedRef.current = true;
+      const delta = Date.now() - __ml_t0Ref.current;
+      console.log(`[MapLoad][${__ml_sessionIdRef.current}] startup_marker_subset_rendered +${delta}ms (visible=${visibleClustersForRender.length}, rendered=${clustersForRender.length})`);
+    }
+
+    return clustersForRender
       .map((cluster: Cluster, index: number) => {
         // Calculate the coordinates for the cluster
         const coordinates =
@@ -3262,6 +3386,7 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
                 isSelected={isSelected}
                 isProcessing={processingClusterId === cluster.id}
                 isReady={clustersReady}
+                detailsEnabled={richClusterMarkersEnabled}
               />
             </TouchableOpacity>
           </MapboxGL.MarkerView>

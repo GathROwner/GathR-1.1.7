@@ -563,7 +563,9 @@ export default function TabLayout() {
       headerTintColor: '#FFFFFF',
       headerTitleAlign: 'center', // This fixes the Android centering issue
       animation: 'none', // Disabled for faster tab switches (was 'fade')
-      lazy: false, // Keep screens mounted for faster switching (they're already loaded)
+      // Keep startup focused on the active tab. Eager-mounting Events and
+      // Specials competes with Map hotspot startup on slower Android tablets.
+      lazy: true,
     })}>
       <Tabs.Screen
         name="events"

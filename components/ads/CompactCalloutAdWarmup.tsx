@@ -1,17 +1,39 @@
 import React, { useEffect, useState } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { InteractionManager, Platform, StyleSheet, View } from 'react-native';
 import useNativeAds from '../../hooks/useNativeAds';
 import CompactSdkAdCard from './CompactSdkAdCard';
 
 let compactCalloutWarmupDone = false;
+const ANDROID_CALLOUT_AD_WARMUP_DELAY_MS = 45000;
 
 export default function CompactCalloutAdWarmup() {
   const [done, setDone] = useState(compactCalloutWarmupDone);
-  const eventAds = useNativeAds(done ? 0 : 1, 'events', 0);
-  const specialAds = useNativeAds(done ? 0 : 1, 'specials', 0);
+  const [warmupEnabled, setWarmupEnabled] = useState(Platform.OS !== 'android');
+  const shouldWarmup = warmupEnabled && !done;
+  const eventAds = useNativeAds(shouldWarmup ? 1 : 0, 'events', 0);
+  const specialAds = useNativeAds(shouldWarmup ? 1 : 0, 'specials', 0);
 
   const eventEntry = eventAds[0] ?? { ad: null, loading: false };
   const specialEntry = specialAds[0] ?? { ad: null, loading: false };
+
+  useEffect(() => {
+    if (warmupEnabled || done || Platform.OS !== 'android') {
+      return;
+    }
+
+    // Keep native ad/WebView warmup out of the Android map/hotspot startup path.
+    let interactionTask: { cancel?: () => void } | null = null;
+    const timer = setTimeout(() => {
+      interactionTask = InteractionManager.runAfterInteractions(() => {
+        setWarmupEnabled(true);
+      });
+    }, ANDROID_CALLOUT_AD_WARMUP_DELAY_MS);
+
+    return () => {
+      clearTimeout(timer);
+      interactionTask?.cancel?.();
+    };
+  }, [done, warmupEnabled]);
 
   useEffect(() => {
     if (done) {
@@ -35,7 +57,7 @@ export default function CompactCalloutAdWarmup() {
     };
   }, [done, eventEntry.ad, eventEntry.loading, specialEntry.ad, specialEntry.loading]);
 
-  if (done) {
+  if (!warmupEnabled || done) {
     return null;
   }
 

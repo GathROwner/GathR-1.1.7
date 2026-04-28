@@ -26,6 +26,8 @@ ios/
 npm-debug.*
 yarn-debug.*
 yarn-error.*
+artifacts/
+metro-android-debug.out.log
 
 # macOS
 .DS_Store

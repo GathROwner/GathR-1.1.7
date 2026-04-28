@@ -28,6 +28,7 @@ const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 const HIGHLIGHT_SIZE = 140;
 const PULSE_MAX_SCALE = 1.4;
+const POSITION_POLL_MS = 100;
 
 // Marker icons have their anchor at the bottom, so the visual center
 // of the icon is above the geographic coordinate. Offset upward to
@@ -67,11 +68,20 @@ export const HotspotHighlight: React.FC<HotspotHighlightProps> = ({ ignoreProgra
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const tooltipSlideAnim = useRef(new Animated.Value(-50)).current;
+  const positionLogRef = useRef(false);
 
   // Use Mapbox's getPointInView to convert geo coordinates to screen position
   const updatePosition = useCallback(async () => {
     const mapViewRef = (global as any).mapViewRef;
     if (!mapViewRef?.current || !targetCoordinates) {
+      if (__DEV__ && shouldShow && !positionLogRef.current) {
+        console.log('[HotspotOverlay] position unavailable', {
+          hasMapViewRef: !!mapViewRef,
+          hasMapViewCurrent: !!mapViewRef?.current,
+          hasTargetCoordinates: !!targetCoordinates,
+        });
+        positionLogRef.current = true;
+      }
       return;
     }
 
@@ -85,36 +95,34 @@ export const HotspotHighlight: React.FC<HotspotHighlightProps> = ({ ignoreProgra
       ]);
 
       if (screenPoint && Array.isArray(screenPoint) && screenPoint.length === 2) {
-        let [x, y] = screenPoint;
+        const [rawX, rawY] = screenPoint;
+        let x = rawX;
+        let y = rawY;
 
-        if (Platform.OS === 'android') {
-          // On Android this overlay is screen-absolute while getPointInView is
-          // MapView-relative, so offset by the measured MapView position.
-          const layout = (global as any).mapViewLayout;
-          if (layout) {
-            const offsetX =
-              typeof layout.absoluteX === 'number'
-                ? layout.absoluteX
-                : typeof layout.x === 'number'
-                ? layout.x
-                : 0;
-            const offsetY =
-              typeof layout.absoluteY === 'number'
-                ? layout.absoluteY
-                : typeof layout.y === 'number'
-                ? layout.y
-                : 0;
-            x += offsetX;
-            y += offsetY;
-          }
-        }
-        // On iOS, getPointInView appears to return screen-absolute coordinates
-        // so we don't need to add the absoluteY offset
+        // The overlay is rendered in the same screen content container as the
+        // MapView, so Mapbox's MapView-relative projection already matches this
+        // absolute overlay. Adding measureInWindow().absoluteY double-counts
+        // the tab header on Android and pushes the ring below the marker.
 
         // Apply marker icon offset to center on the visual icon rather than the coordinate
         y += MARKER_ICON_OFFSET_Y;
 
         setHighlightPosition({ x, y });
+        if (__DEV__ && shouldShow && !positionLogRef.current) {
+          const layout = (global as any).mapViewLayout;
+          console.log('[HotspotOverlay] position ready', {
+            rawX,
+            rawY,
+            x,
+            y,
+            screenWidth: SCREEN_WIDTH,
+            screenHeight: SCREEN_HEIGHT,
+            layout,
+            targetCoordinates,
+            positionReady,
+          });
+          positionLogRef.current = true;
+        }
 
         // Mark position as ready once we have a valid position and shouldShow is true
         // This ensures the spotlight doesn't appear until after the centroid is calculated
@@ -123,6 +131,13 @@ export const HotspotHighlight: React.FC<HotspotHighlightProps> = ({ ignoreProgra
         }
       }
     } catch (e) {
+      if (__DEV__ && shouldShow && !positionLogRef.current) {
+        console.log('[HotspotOverlay] position projection failed', {
+          error: e instanceof Error ? e.message : String(e),
+          targetCoordinates,
+        });
+        positionLogRef.current = true;
+      }
       // Fallback to screen center if projection fails
       const layout = (global as any).mapViewLayout;
       if (layout) {
@@ -136,6 +151,7 @@ export const HotspotHighlight: React.FC<HotspotHighlightProps> = ({ ignoreProgra
   useEffect(() => {
     if (!shouldShow) {
       setPositionReady(false);
+      positionLogRef.current = false;
     }
   }, [shouldShow]);
 
@@ -148,12 +164,17 @@ export const HotspotHighlight: React.FC<HotspotHighlightProps> = ({ ignoreProgra
     // Initial position update
     updatePosition();
 
-    // Poll for position updates during animation and while showing
-    // This ensures the circle tracks the cluster during zoom animations
-    const interval = setInterval(updatePosition, 50);
+    // Poll only until the first valid projection, or while a camera animation is
+    // active. Keeping this at 50ms for the full tooltip lifetime adds JS/native
+    // bridge work exactly when the startup trace is already JS-saturated.
+    if (positionReady && !isAnimating) {
+      return;
+    }
+
+    const interval = setInterval(updatePosition, POSITION_POLL_MS);
 
     return () => clearInterval(interval);
-  }, [shouldShow, isAnimating, updatePosition]);
+  }, [shouldShow, isAnimating, positionReady, updatePosition]);
 
   // Fade in/out effect
   useEffect(() => {

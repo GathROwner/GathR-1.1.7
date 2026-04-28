@@ -79,6 +79,82 @@ Known unrelated validation issue:
 
 - `npm run lint` / `expo lint` had a pre-existing lint failure in `components/map/EventCallout.tsx` around `Unexpected var, use let or const instead`.
 
+## April 27 Marker Startup Experiment
+
+Branch:
+
+`codex/marker-startup-lightweight-experiment`
+
+Metro/dev-client setup:
+
+- Metro port: `8082`
+- ADB serial: `R52T302EBZR`
+- Package: `com.craigb.gathr`
+- Hotspot reset date for test runs: `2026-04-26`
+
+Measured runs:
+
+| Run | Change under test | Key result |
+| --- | --- | --- |
+| `run12-hotspot-overlay-log-20260427` | checkpoint behavior with overlay projection logging | `T5b +11.8s`, `T5c +24.6s`, hotspot visible state about `+34.6s`; screenshot confirmed tooltip/ring |
+| `run14-lightweight-freshmetro-20260427` | deferred rich marker children on fresh Metro | `T5b +10.6s`, `T5c +22.1s`, hotspot visible state about `+31.7s` |
+| `run16-marker-subset-20260427` | 12 startup MarkerViews, full markers later | `T5b +10.8s`, `T5c +21.6s`, hotspot visible state about `+30.7s`, full markers about `+49.1s`, rich details about `+66.0s` |
+| `run17-marker-subset-4-20260427` | 4 startup MarkerViews | similar hotspot timing to 12 markers; too sparse visually for little gain |
+| `run19-no-cluster-markerviews-20260427` | MarkerView isolation disabled all cluster markers | overlay projection still around `+29.7s`; this argues MarkerView count is not the main remaining wall |
+| `run20-immediate-clusters-ready-20260427` | immediate cluster-ready gate, 12 startup markers | loading overlay drops earlier, hotspot visible state about `+21.1s`, overlay projection about `+30.7s`; screenshot confirmed tooltip/ring |
+
+Current conclusion:
+
+- Keep the custom React Native marker design.
+- Defer rich marker children during startup; this is a small but real win.
+- A limited startup MarkerView subset does not create a drastic speedup by itself. A 12-marker startup subset is less visually disruptive than 4 and performs similarly.
+- The bigger remaining delay is Mapbox projection/readiness and startup JS work around the hotspot overlay, not just the custom marker tree.
+- A Mapbox-native cluster layer replacement is paused because it cannot safely reproduce the current marker/callout visual behavior without a larger redesign.
+
+## April 27 Perfetto Findings
+
+Artifacts:
+
+- Trace: `artifacts/hotspot-tablet-run/run22-perfetto-hotspot-largebuffer-20260427/gathr-hotspot-run22-largebuffer-20260427.pftrace`
+- Summary: `artifacts/hotspot-tablet-run/run22-perfetto-hotspot-largebuffer-20260427/perfetto-run22-summary.txt`
+- Logcat: `artifacts/hotspot-tablet-run/run22-perfetto-hotspot-largebuffer-20260427/logcat-run22.txt`
+- Secondary simpleperf run: `artifacts/hotspot-tablet-run/run24-simpleperf-hotspot-20260427/` (directional only; the flow was not a clean map startup because the dev launcher/login overlay interfered)
+
+Key timing anchors from run22:
+
+- `T5 first_render`: app `+11ms`, trace about `+19.6s`
+- `T5b first_clusters`: app `+11755ms`, trace about `+31.3s`
+- `T5c clusters_ready`: app `+23003ms`, trace about `+42.6s`
+- hotspot overlay position ready: trace about `+52.6s`
+- `T5d full_cluster_markers_enabled`: app `+42711ms`
+
+Main trace finding:
+
+- The JS thread (`mqt_v_js`) is the dominant wall: `66.7s` CPU in a `75.7s` trace.
+- During `first_clusters -> clusters_ready`, JS used `11.24s` CPU in an `11.25s` wall window.
+- During `clusters_ready -> overlay_ready`, JS used `10.04s` CPU in a `10.04s` wall window.
+- `MapboxRenderThread` only used `0.92s` CPU across the whole trace, so native Mapbox rendering is not the main remaining bottleneck.
+- A large React Native mount burst appears around trace `+44.1s`: `Choreographer#doFrame` about `1.74s`, `MountItemDispatcher::mountViews` about `1.70s`, `UPDATE_STATE numInstructions=595`, and `UPDATE_LAYOUT numInstructions=1171`.
+
+Experiment added after this trace:
+
+- `app/(tabs)/_layout.tsx`: switch tab screens back to lazy mounting so Events/Specials do not mount during the active Map startup.
+- `app/_layout.tsx`: defer Android AdMob/WebView/ad-pool startup to `45s` and run it after interactions. iOS keeps the existing `2s` delay.
+- `components/map/HotspotHighlight.tsx`: reduce `getPointInView` polling to `100ms` and stop polling once the first valid position is ready unless the hotspot camera animation is active.
+- `components/ads/CompactCalloutAdWarmup.tsx`: defer Android compact callout ad warmup for `45s` after Map mount. Run27 showed this component still triggered `[AdPool] Loading 15 events ads...` and `[AdPool] Loading 15 specials ads...` during map startup even after the root AdMob delay.
+
+Follow-up tablet run:
+
+- `run27-cold-guest-tap-startup-20260427`: guest mode is not persisted across force-stop, so this run launched cold, tapped `Continue as Guest`, then measured map startup.
+- Run27 timing after Map mount: `T5b first_clusters +4883ms`, hotspot visible initial about `+11609ms`, `T5c clusters_ready +11622ms`, overlay position ready about `+15684ms`, `T5d full_cluster_markers_enabled +24748ms`, `T5e rich_marker_details_enabled +39110ms`.
+- Run27 screenshot `screen-07.png` confirmed the hotspot tooltip/ring rendered.
+- `run28-cold-guesttap-adwarmup-deferred-20260427`: validated the compact callout ad warmup deferral. Early `[AdPool] Loading 15 events ads...` and `[AdPool] Loading 15 specials ads...` calls were gone from map startup.
+- Run28 timing after Map mount: `T1 map_loaded +2509ms`, `T5b first_clusters +4504ms`, `startup_marker_subset_rendered +4506ms`, hotspot visible initial about `+10038ms`, `T5c clusters_ready +10049ms`, overlay position ready about `+12170ms`, `T5d full_cluster_markers_enabled +21114ms`, `T5e rich_marker_details_enabled +35192ms`.
+- Run28 screenshot `screen-06.png` confirmed the hotspot tooltip/ring rendered.
+- `run30-hotspot-alignment-offset-fix-20260427`: fixed hotspot ring alignment on Android. Run29 showed the ring below the cluster because `HotspotHighlight` added `mapViewLayout.absoluteY` to `getPointInView()` output, double-counting the tab header. The fix keeps the marker visual offset but no longer adds the MapView absolute window offset.
+- Run30 timing after Map mount stayed in the same improved range: `T5b first_clusters +4985ms`, `T5c clusters_ready +10257ms`, overlay position ready about `+12313ms`, `T5d full_cluster_markers_enabled +21228ms`, `T5e rich_marker_details_enabled +35102ms`.
+- Run30 screenshot `screen-06.png` confirmed the hotspot ring now surrounds the selected cluster instead of sitting below it.
+
 ## Next Live Tablet Pass
 
 When the tablet is charged:
@@ -101,7 +177,13 @@ When the tablet is charged:
    - hotspot visible under 45 seconds on the Samsung tablet
    - no startup crash or stuck permissions/dev-mode prompt
 
-## Mapbox-Layer Experiment Plan
+## Mapbox-Layer Experiment Status
+
+Status: paused.
+
+The user does not want to give up the existing custom marker/callout behavior. The April 27 no-MarkerView isolation run also showed that removing cluster MarkerViews entirely did not move overlay projection below the roughly 30-second wall, so a Mapbox-native cluster layer rewrite is no longer the next best bet for this issue.
+
+Historical plan kept here for reference:
 
 Start the experiment from the checkpoint branch, not directly from the main upgrade branch.
 
@@ -120,8 +202,8 @@ Approach:
 
 Expected benefit:
 
-- The likely bottleneck is the initial React Native `MarkerView` commit on the tablet.
-- Moving clusters to Mapbox-native layers should reduce the `first_clusters -> clusters_ready` gap.
+- Original hypothesis: the initial React Native `MarkerView` commit was the likely tablet bottleneck.
+- Current evidence: MarkerViews are not the main remaining blocker for the hotspot overlay timing.
 
 Measurement targets:
 

@@ -24,7 +24,7 @@ import { Stack, useRouter, useSegments, usePathname } from 'expo-router';
 import { useGuestLimitationStore } from '../store/guestLimitationStore';
 
 import { useEffect, useRef } from 'react';
-import { View, ActivityIndicator, StyleSheet, Alert, Platform } from 'react-native';
+import { View, ActivityIndicator, StyleSheet, Alert, Platform, InteractionManager } from 'react-native';
 import * as SplashScreen from 'expo-splash-screen';
 import { AuthProvider, useAuth } from '../contexts/AuthContext';
 // ðŸŽ¯ TUTORIAL INTEGRATION: Import TutorialManager
@@ -73,6 +73,7 @@ const asyncStoragePersister = createAsyncStoragePersister({
 
 // â±ï¸ Live refresh cadence (adjust as desired; backend updates a few times/day)
 const LIVE_REFRESH_MS = 10 * 60 * 1000; // 10 minutes
+const ADMOB_STARTUP_DELAY_MS = Platform.OS === 'android' ? 45000 : 2000;
 
 
 // Prevent auto-hiding splash screen
@@ -599,9 +600,18 @@ useEffect(() => {
         }
       };
 
-      // Delay to allow app to settle before initializing ads
-      const timer = setTimeout(initAdMob, 2000);
-      return () => clearTimeout(timer);
+      // Keep Android map/hotspot startup clear of WebView/ad-pool work. The
+      // tablet trace showed AdMob/Chromium startup competing in the same window.
+      let interactionTask: { cancel?: () => void } | null = null;
+      const timer = setTimeout(() => {
+        interactionTask = InteractionManager.runAfterInteractions(() => {
+          initAdMob();
+        });
+      }, ADMOB_STARTUP_DELAY_MS);
+      return () => {
+        clearTimeout(timer);
+        interactionTask?.cancel?.();
+      };
     }, []);
 
     useEffect(() => {
