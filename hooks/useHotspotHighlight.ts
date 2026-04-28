@@ -328,6 +328,7 @@ export function useHotspotHighlight(
   const triggerTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const cameraRetryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const cameraFinalizeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hotspotCameraReadyCallbackRef = useRef<(() => void) | null>(null);
   const hotspotCameraIdleCallbackRef = useRef<(() => void) | null>(null);
   const cameraRefRetryCountRef = useRef(0);
   const dismissTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -390,13 +391,30 @@ export function useHotspotHighlight(
     hotspotCameraIdleCallbackRef.current = null;
   }, []);
 
+  const clearHotspotCameraReadyCallback = useCallback(() => {
+    const globalAny = global as any;
+    if (
+      hotspotCameraReadyCallbackRef.current &&
+      globalAny.mapHotspotCameraReadyCallback === hotspotCameraReadyCallbackRef.current
+    ) {
+      delete globalAny.mapHotspotCameraReadyCallback;
+    }
+    hotspotCameraReadyCallbackRef.current = null;
+  }, []);
+
   useEffect(() => {
     return () => {
       clearCameraRetryTimer();
       clearCameraFinalizeTimer();
+      clearHotspotCameraReadyCallback();
       clearHotspotCameraIdleCallback();
     };
-  }, [clearCameraFinalizeTimer, clearCameraRetryTimer, clearHotspotCameraIdleCallback]);
+  }, [
+    clearCameraFinalizeTimer,
+    clearCameraRetryTimer,
+    clearHotspotCameraIdleCallback,
+    clearHotspotCameraReadyCallback,
+  ]);
 
   useEffect(() => {
     setMapTraceSnapshot({
@@ -1028,6 +1046,8 @@ export function useHotspotHighlight(
       const retryCameraRef = (global as any).mapCameraRef;
       if (retryCameraRef?.current) {
         cameraRefRetryCountRef.current = 0;
+        clearCameraRetryTimer();
+        clearHotspotCameraReadyCallback();
         logAndroidHotspotTiming('camera_ref_retry_ready', {
           attempt,
         });
@@ -1066,6 +1086,12 @@ export function useHotspotHighlight(
     const cameraRef = (global as any).mapCameraRef;
     if (!cameraRef?.current) {
       logAndroidHotspotTiming('camera_ref_unavailable_initial');
+      const readyCallback = () => {
+        logAndroidHotspotTiming('camera_ref_ready_callback_invoked');
+        retryCameraAnimation(1);
+      };
+      hotspotCameraReadyCallbackRef.current = readyCallback;
+      (global as any).mapHotspotCameraReadyCallback = readyCallback;
       retryCameraAnimation(1);
       return;
     }
@@ -1076,6 +1102,7 @@ export function useHotspotHighlight(
     clearCameraFinalizeTimer,
     clearCameraRetryTimer,
     clearHotspotCameraIdleCallback,
+    clearHotspotCameraReadyCallback,
     clusters,
     favoriteVenues,
     logAndroidHotspotTiming,

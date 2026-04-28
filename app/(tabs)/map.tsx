@@ -3259,6 +3259,20 @@ Clustering refresh: keep zoom → store → recluster in sync
     console.log('Selected event:', event.title);
   };
 
+  const notifyHotspotCameraReady = useCallback((source: string) => {
+    const hotspotCameraReadyCallback = (global as any).mapHotspotCameraReadyCallback;
+    if (typeof hotspotCameraReadyCallback !== 'function' || !cameraRef.current) {
+      return;
+    }
+
+    if (Platform.OS === 'android') {
+      console.warn('[GathRHotspotTiming]', 'map_camera_ready_callback_invoked', JSON.stringify({
+        source,
+      }));
+    }
+    hotspotCameraReadyCallback();
+  }, []);
+
   // Render cluster markers on the map with improved stability
   const renderClusterMarkers = () => {
     // Skip expensive cluster rendering when Map tab is not visible
@@ -3569,6 +3583,7 @@ onLayout={(event) => {
   }
 }}
 onMapIdle={() => {
+  notifyHotspotCameraReady('map_idle');
   if (DEBUG_MAP_LOAD) {
     const t1b = Date.now();
     const delta = t1b - __ml_t0Ref.current;
@@ -3584,6 +3599,7 @@ onMapIdle={() => {
 }}
 
 onDidFinishRenderingFrameFully={() => {
+  notifyHotspotCameraReady('rendering_frame_fully');
   if (DEBUG_MAP_LOAD && !__ml_firstFrameLoggedRef.current) {
     __ml_firstFrameLoggedRef.current = true;
     const t1bf = Date.now();
@@ -3594,6 +3610,8 @@ onDidFinishRenderingFrameFully={() => {
 
 
 onDidFinishLoadingMap={() => {
+  notifyHotspotCameraReady('map_loaded');
+
   // Mark style ready on a supported callback (don’t depend on unsupported events)
   if (!__ml_styleReadyRef.current) __ml_styleReadyRef.current = true;
 
