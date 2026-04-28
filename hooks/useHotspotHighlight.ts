@@ -47,7 +47,7 @@ interface OriginalCameraPosition {
 }
 
 const HOTSPOT_VERBOSE_DEBUG = false;
-const HOTSPOT_TRIGGER_DELAY_MS = Platform.OS === 'android' ? 0 : 300;
+const HOTSPOT_TRIGGER_DELAY_MS = 0;
 
 function hotspotDebugLog(...args: unknown[]) {
   if (__DEV__ && HOTSPOT_VERBOSE_DEBUG) {
