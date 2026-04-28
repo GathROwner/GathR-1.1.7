@@ -49,7 +49,8 @@ interface OriginalCameraPosition {
 const HOTSPOT_VERBOSE_DEBUG = false;
 const HOTSPOT_TRIGGER_DELAY_MS = 0;
 const HOTSPOT_CAMERA_ZOOM_LEVEL = 14.4;
-const HOTSPOT_CAMERA_ANIMATION_MS = 1000;
+const HOTSPOT_CAMERA_ANIMATION_MS = Platform.OS === 'android' ? 0 : 1000;
+const HOTSPOT_MIN_CAMERA_IDLE_MS = Platform.OS === 'android' ? 0 : 300;
 const DEFER_HOTSPOT_VISIBILITY_UNTIL_REFINED = Platform.OS === 'ios' || Platform.OS === 'android';
 const ANDROID_HOTSPOT_TIMING_DIAGNOSTICS = Platform.OS === 'android';
 
@@ -846,6 +847,7 @@ export function useHotspotHighlight(
         targetLatitude: hottestVenue.latitude,
         targetLongitude: hottestVenue.longitude,
         source,
+        animationDurationMs: HOTSPOT_CAMERA_ANIMATION_MS,
         deferredUntilRefined: DEFER_HOTSPOT_VISIBILITY_UNTIL_REFINED,
       });
       traceMapEvent('hotspot_camera_animation_started', {
@@ -1002,9 +1004,10 @@ export function useHotspotHighlight(
       const cameraAnimationStartedAt = Date.now();
       const idleCallback = () => {
         const elapsed = Date.now() - cameraAnimationStartedAt;
-        if (elapsed < 300) {
+        if (elapsed < HOTSPOT_MIN_CAMERA_IDLE_MS) {
           logAndroidHotspotTiming('camera_idle_ignored_too_early', {
             elapsedMs: elapsed,
+            minIdleMs: HOTSPOT_MIN_CAMERA_IDLE_MS,
           });
           return;
         }
