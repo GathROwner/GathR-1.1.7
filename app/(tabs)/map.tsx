@@ -98,6 +98,7 @@ const IOS_CALLOUT_NATIVE_AD_ISOLATION_DEBUG = Platform.OS === 'ios';
 const ANDROID_MAPBOX_STARTUP_ISOLATION_DEBUG = false;
 const ANDROID_CLUSTER_MARKERVIEW_ISOLATION_DEBUG = false;
 const DEBUG_TREE_MARKER_EVENTS = false;
+const STAGE_CLUSTER_MARKERS_ON_STARTUP = Platform.OS === 'android';
 const STARTUP_CLUSTER_MARKER_LIMIT = 12;
 const FULL_CLUSTER_MARKER_DELAY_MS = 10000;
 const RICH_CLUSTER_MARKER_DELAY_MS = 12000;
@@ -1948,8 +1949,9 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
     }
   }, [isLoading, clusters.length, clustersReady]);
 
-  // Keep startup MarkerView work low on slower Android devices. The first pass
-  // renders only a priority subset, then restores the full custom marker set.
+  // Keep startup MarkerView work low on slower Android devices. iOS renders the
+  // full custom marker set immediately because the visible fill-in is too
+  // noticeable there.
   useEffect(() => {
     if (isLoading || clusters.length === 0 || !clustersReady) {
       if (fullClusterMarkersEnabled) {
@@ -1960,6 +1962,15 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
         setRichClusterMarkersEnabled(false);
         traceMapEvent('rich_cluster_markers_reset');
       }
+      return;
+    }
+
+    if (!STAGE_CLUSTER_MARKERS_ON_STARTUP) {
+      setFullClusterMarkersEnabled(true);
+      traceMapEvent('full_cluster_markers_enabled_immediate', {
+        clusterCount: clusters.length,
+        platform: Platform.OS,
+      });
       return;
     }
 
@@ -3323,17 +3334,18 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
      // console.log(`STABLE VISIBILITY: Using ${visibleClusterIds.current.size}/${clusters.length} previously visible clusters`);
     }
     
-    // Render only clusters that we've determined should be visible. During
+    // Render only clusters that we've determined should be visible. On Android
     // startup, cap MarkerViews to the highest-priority clusters so the hotspot
     // path is not competing with every custom marker at once.
     const visibleClustersForRender = clusters.filter(cluster => visibleClusterIds.current.has(cluster.id));
-    const clustersForRender = fullClusterMarkersEnabled
+    const shouldUseStartupClusterSubset = STAGE_CLUSTER_MARKERS_ON_STARTUP && !fullClusterMarkersEnabled;
+    const clustersForRender = !shouldUseStartupClusterSubset
       ? visibleClustersForRender
       : pickStartupClusters(visibleClustersForRender, STARTUP_CLUSTER_MARKER_LIMIT);
 
     if (
       DEBUG_MAP_LOAD &&
-      !fullClusterMarkersEnabled &&
+      shouldUseStartupClusterSubset &&
       !startupMarkerSubsetLoggedRef.current &&
       visibleClustersForRender.length > clustersForRender.length
     ) {
