@@ -101,7 +101,7 @@ const DEBUG_TREE_MARKER_EVENTS = false;
 const STAGE_CLUSTER_MARKERS_ON_STARTUP = Platform.OS === 'android';
 const STARTUP_CLUSTER_MARKER_LIMIT = 12;
 const FULL_CLUSTER_MARKER_DELAY_MS = 10000;
-const RICH_CLUSTER_MARKER_DELAY_MS = Platform.OS === 'ios' ? 500 : 12000;
+const RICH_CLUSTER_MARKER_DELAY_MS = Platform.OS === 'ios' ? 0 : 12000;
 
 const getStartupClusterScore = (cluster: Cluster): number => {
   const statusScore =
