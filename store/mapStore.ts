@@ -1479,6 +1479,12 @@ if (DEBUG_MAP_LOAD) {
 
 set({ clusters });
   },
+
+  getClustersForZoom: (zoom) => {
+    const { filteredEvents } = get();
+    const venues = groupEventsByVenue(filteredEvents);
+    return clusterVenues(venues, zoom);
+  },
   
   /**
    * Get time filter counts for current criteria

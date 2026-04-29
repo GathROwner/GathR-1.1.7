@@ -53,6 +53,7 @@ const HOTSPOT_CAMERA_ANIMATION_MS = Platform.OS === 'android' ? 0 : 1000;
 const HOTSPOT_MIN_CAMERA_IDLE_MS = Platform.OS === 'android' ? 0 : 300;
 const DEFER_HOTSPOT_VISIBILITY_UNTIL_REFINED = Platform.OS === 'ios' || Platform.OS === 'android';
 const ANDROID_HOTSPOT_TIMING_DIAGNOSTICS = Platform.OS === 'android';
+const ANDROID_CLUSTER_STORE_SYNC_BACKUP_MS = 8000;
 
 function hotspotDebugLog(...args: unknown[]) {
   if (__DEV__ && HOTSPOT_VERBOSE_DEBUG) {
@@ -329,6 +330,9 @@ export function useHotspotHighlight(
   const triggerTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const cameraRetryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const cameraFinalizeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const deferredClusterSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingClusterStoreSyncRef = useRef(false);
+  const pendingClusterUnlockReasonRef = useRef<string | null>(null);
   const hotspotCameraReadyCallbackRef = useRef<(() => void) | null>(null);
   const hotspotCameraIdleCallbackRef = useRef<(() => void) | null>(null);
   const cameraRefRetryCountRef = useRef(0);
@@ -366,6 +370,32 @@ export function useHotspotHighlight(
       reason: `hotspot_${reason}`,
     });
   }, [ignoreProgrammaticCameraRef]);
+  const flushPendingClusterStoreSync = useCallback((source: 'overlay_ready' | 'backup_timer') => {
+    if (!pendingClusterStoreSyncRef.current) {
+      return;
+    }
+
+    pendingClusterStoreSyncRef.current = false;
+    if (deferredClusterSyncTimerRef.current) {
+      clearTimeout(deferredClusterSyncTimerRef.current);
+      deferredClusterSyncTimerRef.current = null;
+    }
+
+    logAndroidHotspotTiming('deferred_cluster_store_sync_started', {
+      source,
+      targetZoom: HOTSPOT_CAMERA_ZOOM_LEVEL,
+    });
+    useMapStore.getState().setZoomLevel(HOTSPOT_CAMERA_ZOOM_LEVEL);
+    logAndroidHotspotTiming('deferred_cluster_store_sync_completed', {
+      source,
+      clusterCount: useMapStore.getState().clusters.length,
+    });
+
+    const unlockReason =
+      pendingClusterUnlockReasonRef.current ?? `trigger_zoom_in_complete_${source}`;
+    pendingClusterUnlockReasonRef.current = null;
+    setHotspotProgrammaticLock(false, unlockReason);
+  }, [logAndroidHotspotTiming, setHotspotProgrammaticLock]);
 
   const clearCameraFinalizeTimer = useCallback(() => {
     if (cameraFinalizeTimerRef.current) {
@@ -667,7 +697,17 @@ export function useHotspotHighlight(
       dismissTimeoutRef.current = null;
       dismiss();
     }, 7000);
-  }, [dismiss, isVisible, logAndroidHotspotTiming, markHotspotShownToday, setCanEvaluateTriggerFlag, targetCluster]);
+
+    flushPendingClusterStoreSync('overlay_ready');
+  }, [
+    dismiss,
+    flushPendingClusterStoreSync,
+    isVisible,
+    logAndroidHotspotTiming,
+    markHotspotShownToday,
+    setCanEvaluateTriggerFlag,
+    targetCluster,
+  ]);
 
   /**
    * Trigger the hotspot animation sequence
@@ -875,23 +915,46 @@ export function useHotspotHighlight(
           targetZoom: HOTSPOT_CAMERA_ZOOM_LEVEL,
         });
 
-        setHotspotProgrammaticLock(false, `trigger_zoom_in_complete_${completionSource}`);
+        const shouldDeferProgrammaticUnlock = Platform.OS === 'android';
+        const releaseProgrammaticLock = (reasonSuffix = '') => {
+          setHotspotProgrammaticLock(
+            false,
+            `trigger_zoom_in_complete_${completionSource}${reasonSuffix}`
+          );
+        };
+
+        if (!shouldDeferProgrammaticUnlock) {
+          releaseProgrammaticLock();
+        }
         setIsAnimating(false);
 
         // During the programmatic camera move, camera-change handling suppresses
-        // reclustering. Recompute the target zoom cluster synchronously here so
-        // the ring and tooltip use the split marker the user will see.
+        // reclustering. Android computes the target zoom cluster without first
+        // publishing it to the map UI so the overlay can paint before MarkerView
+        // work starts.
+        let currentClusters = useMapStore.getState().clusters;
+        let shouldSyncClusterStoreAfterVisible = false;
         try {
-          useMapStore.getState().setZoomLevel(HOTSPOT_CAMERA_ZOOM_LEVEL);
+          if (Platform.OS === 'android') {
+            currentClusters = useMapStore.getState().getClustersForZoom(HOTSPOT_CAMERA_ZOOM_LEVEL);
+            shouldSyncClusterStoreAfterVisible = true;
+            logAndroidHotspotTiming('refinement_clusters_previewed', {
+              currentClusterCount: currentClusters.length,
+              targetZoom: HOTSPOT_CAMERA_ZOOM_LEVEL,
+            });
+          } else {
+            useMapStore.getState().setZoomLevel(HOTSPOT_CAMERA_ZOOM_LEVEL);
+            currentClusters = useMapStore.getState().clusters;
+          }
         } catch (e) {
           logAndroidHotspotTiming('refinement_zoom_sync_failed', {
             error: e instanceof Error ? e.message : String(e),
           });
+          currentClusters = useMapStore.getState().clusters;
         }
 
         // Find the cluster that contains the original hottest venue by name
         // This ensures we highlight the correct cluster even after splitting at higher zoom
-        const currentClusters = useMapStore.getState().clusters;
         let zoomedCluster: Cluster | null = null;
 
         if (hottestVenueNameRef.current && currentClusters.length > 0) {
@@ -986,6 +1049,19 @@ export function useHotspotHighlight(
               venueCount: zoomedCluster.venues.length,
             });
 
+            if (Platform.OS === 'android' && cameraRef.current) {
+              cameraRef.current.setCamera({
+                centerCoordinate: [centroidLon, centroidLat],
+                zoomLevel: HOTSPOT_CAMERA_ZOOM_LEVEL,
+                animationDuration: 0,
+              });
+              logAndroidHotspotTiming('camera_recentered_to_refined_cluster', {
+                clusterId: zoomedCluster.id,
+                centroidLatitude: centroidLat,
+                centroidLongitude: centroidLon,
+              });
+            }
+
             hotspotDebugLog(`[Hotspot] Updated targetCoords to cluster centroid: lat=${centroidLat.toFixed(6)}, lon=${centroidLon.toFixed(6)}`);
           }
         }
@@ -998,6 +1074,21 @@ export function useHotspotHighlight(
 
         if (DEFER_HOTSPOT_VISIBILITY_UNTIL_REFINED) {
           showHotspot(clusterForTooltip, source, 'hotspot_visible_refined');
+        }
+
+        if (shouldSyncClusterStoreAfterVisible) {
+          pendingClusterStoreSyncRef.current = true;
+          pendingClusterUnlockReasonRef.current =
+            `trigger_zoom_in_complete_${completionSource}_overlay_ready_sync`;
+          if (deferredClusterSyncTimerRef.current) {
+            clearTimeout(deferredClusterSyncTimerRef.current);
+          }
+          deferredClusterSyncTimerRef.current = setTimeout(() => {
+            deferredClusterSyncTimerRef.current = null;
+            flushPendingClusterStoreSync('backup_timer');
+          }, ANDROID_CLUSTER_STORE_SYNC_BACKUP_MS);
+        } else if (shouldDeferProgrammaticUnlock) {
+          releaseProgrammaticLock('_fallback');
         }
       };
 
@@ -1106,6 +1197,7 @@ export function useHotspotHighlight(
     clearCameraRetryTimer,
     clearHotspotCameraIdleCallback,
     clearHotspotCameraReadyCallback,
+    flushPendingClusterStoreSync,
     clusters,
     favoriteVenues,
     logAndroidHotspotTiming,
@@ -1284,6 +1376,13 @@ export function useHotspotHighlight(
       if (dismissTimeoutRef.current) {
         clearTimeout(dismissTimeoutRef.current);
       }
+      if (deferredClusterSyncTimerRef.current) {
+        clearTimeout(deferredClusterSyncTimerRef.current);
+        deferredClusterSyncTimerRef.current = null;
+      }
+      pendingClusterStoreSyncRef.current = false;
+      pendingClusterUnlockReasonRef.current = null;
+      ignoreProgrammaticCameraRef.current = false;
     };
   }, []);
 

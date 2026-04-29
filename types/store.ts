@@ -100,6 +100,7 @@ export interface MapState {
   prefetchIfStale: (maxAgeMs?: number) => Promise<void>;
   getFilteredEvents: () => Event[];
   generateClusters: (zoom?: number) => void;
+  getClustersForZoom: (zoom: number) => Cluster[];
   getTimeFilterCounts: (eventType: 'event' | 'special') => { [key in TimeFilterType]: number };
   getCategoryFilterCounts: (eventType: 'event' | 'special') => { [category: string]: number };
   fetchEventDetails: (eventIds: (string | number)[]) => Promise<void>;

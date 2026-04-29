@@ -30,6 +30,7 @@ const HIGHLIGHT_SIZE = 140;
 const PULSE_MAX_SCALE = 1.4;
 const POSITION_POLL_MS = 100;
 const ANDROID_HOTSPOT_OVERLAY_DIAGNOSTICS = Platform.OS === 'android';
+const ANDROID_USE_CENTERED_HOTSPOT_POSITION = Platform.OS === 'android';
 
 const logAndroidHotspotOverlayTiming = (label: string, details?: Record<string, unknown>) => {
   if (!ANDROID_HOTSPOT_OVERLAY_DIAGNOSTICS) {
@@ -80,6 +81,25 @@ export const HotspotHighlight: React.FC<HotspotHighlightProps> = ({ ignoreProgra
   const tooltipSlideAnim = useRef(new Animated.Value(-50)).current;
   const positionLogRef = useRef(false);
   const positionUnavailableLogRef = useRef(false);
+
+  const getCenteredAndroidHotspotPosition = useCallback(() => {
+    const layout = (global as any).mapViewLayout;
+    if (
+      !layout ||
+      typeof layout.width !== 'number' ||
+      typeof layout.height !== 'number' ||
+      layout.width <= 0 ||
+      layout.height <= 0
+    ) {
+      return null;
+    }
+
+    return {
+      x: layout.width / 2,
+      y: layout.height / 2 + MARKER_ICON_OFFSET_Y,
+      layout,
+    };
+  }, []);
 
   // Use Mapbox's getPointInView to convert geo coordinates to screen position
   const updatePosition = useCallback(async () => {
@@ -195,11 +215,57 @@ export const HotspotHighlight: React.FC<HotspotHighlightProps> = ({ ignoreProgra
     }
   }, [shouldShow]);
 
+  useEffect(() => {
+    if (
+      !ANDROID_USE_CENTERED_HOTSPOT_POSITION ||
+      !shouldShow ||
+      !targetCoordinates ||
+      positionReady
+    ) {
+      return;
+    }
+
+    const centeredPosition = getCenteredAndroidHotspotPosition();
+    if (!centeredPosition) {
+      return;
+    }
+
+    const { x, y, layout } = centeredPosition;
+    setHighlightPosition({ x, y });
+    if (!positionLogRef.current) {
+      logAndroidHotspotOverlayTiming('position_ready_centered', {
+        x,
+        y,
+        layout,
+        targetCoordinates,
+        isAnimating,
+      });
+      positionLogRef.current = true;
+    }
+    setPositionReady(true);
+    onOverlayPositionReady();
+  }, [
+    getCenteredAndroidHotspotPosition,
+    isAnimating,
+    onOverlayPositionReady,
+    positionReady,
+    shouldShow,
+    targetCoordinates,
+  ]);
+
   // Update position only after the hotspot is actually visible. On slower
   // Android devices, polling Mapbox projection during the camera animation can
   // backlog the JS/native bridge and delay the refinement timer by many seconds.
   useEffect(() => {
     if (!shouldShow) {
+      return;
+    }
+
+    if (
+      ANDROID_USE_CENTERED_HOTSPOT_POSITION &&
+      targetCoordinates &&
+      getCenteredAndroidHotspotPosition()
+    ) {
       return;
     }
 
@@ -216,7 +282,14 @@ export const HotspotHighlight: React.FC<HotspotHighlightProps> = ({ ignoreProgra
     const interval = setInterval(updatePosition, POSITION_POLL_MS);
 
     return () => clearInterval(interval);
-  }, [shouldShow, isAnimating, positionReady, updatePosition]);
+  }, [
+    getCenteredAndroidHotspotPosition,
+    isAnimating,
+    positionReady,
+    shouldShow,
+    targetCoordinates,
+    updatePosition,
+  ]);
 
   // Fade in/out effect
   useEffect(() => {
@@ -268,9 +341,22 @@ export const HotspotHighlight: React.FC<HotspotHighlightProps> = ({ ignoreProgra
     }
   }, [shouldShow, pulseAnim]);
 
-  // Don't render during animation (wait for centroid to be calculated)
-  // Don't render until position is ready (prevents jumping from wrong position to correct position)
-  if (!shouldShow || !positionReady || !highlightPosition) {
+  const centeredAndroidPosition =
+    ANDROID_USE_CENTERED_HOTSPOT_POSITION && shouldShow && targetCoordinates
+      ? getCenteredAndroidHotspotPosition()
+      : null;
+  const effectivePositionReady = positionReady || !!centeredAndroidPosition;
+  const effectiveHighlightPosition =
+    positionReady && highlightPosition
+      ? highlightPosition
+      : centeredAndroidPosition
+      ? { x: centeredAndroidPosition.x, y: centeredAndroidPosition.y }
+      : highlightPosition;
+
+  // Don't render until the refined marker position is available. Android's
+  // camera is recentered to the refined cluster before shouldShow flips, so the
+  // map center is the fastest reliable overlay position on slower tablets.
+  if (!shouldShow || !effectivePositionReady || !effectiveHighlightPosition) {
     return null;
   }
 
@@ -282,8 +368,8 @@ export const HotspotHighlight: React.FC<HotspotHighlightProps> = ({ ignoreProgra
       ? TODAY_COLOR
       : BRAND_PRIMARY;
 
-  const highlightCenterX = highlightPosition.x;
-  const highlightCenterY = highlightPosition.y;
+  const highlightCenterX = effectiveHighlightPosition.x;
+  const highlightCenterY = effectiveHighlightPosition.y;
 
   return (
     <Animated.View
