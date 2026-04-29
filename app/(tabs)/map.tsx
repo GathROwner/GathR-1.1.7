@@ -863,7 +863,7 @@ const DeepLinkLightbox = () => {
 function MapScreen() {
    const ActiveCalloutComponent = STATIC_CALLOUT_ISOLATION_DEBUG ? StaticDebugCallout : EventCallout;
    // ───── DEBUG: Map load session & timers ─────
-   const DEBUG_MAP_LOAD = true;
+   const DEBUG_MAP_LOAD = __DEV__;
    const DEBUG_CAMERA_TICKS = false;
    const __ml_sessionIdRef = React.useRef<string>(`ML-${Date.now()}`);
    const __ml_t0Ref = React.useRef<number>(Date.now());
@@ -875,7 +875,7 @@ const __ml_firstClustersReadyRef = React.useRef<boolean>(false);
 const __ml_userStartAppliedRef = React.useRef<boolean>(false);
 const __ml_styleReadyRef = React.useRef<boolean>(true);  // Set to true since callbacks don't work
 const __ml_initialSnapDoneRef = React.useRef<boolean>(false);
-const ANDROID_STARTUP_TIMING_DIAGNOSTICS = Platform.OS === 'android';
+const ANDROID_STARTUP_TIMING_DIAGNOSTICS = __DEV__ && Platform.OS === 'android';
 const logAndroidStartupTiming = (label: string, details?: Record<string, unknown>) => {
   if (!ANDROID_STARTUP_TIMING_DIAGNOSTICS) {
     return;
@@ -1000,6 +1000,11 @@ const computeStartCenter = (): [number, number] => {
   const locationSubscription = useRef<Location.LocationSubscription | null>(null);
   const calloutAnimationRequestRef = useRef(0);
   const calloutOpenTouchGuardUntilRef = useRef(0);
+  const latestClusterCountRef = useRef(0);
+  const fullClusterMarkersTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const richClusterMarkersTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  latestClusterCountRef.current = clusters.length;
 
   // Make these ref objects available during the first passive-effect flush.
   // The daily hotspot can trigger synchronously on Android, before the older
@@ -1982,11 +1987,32 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
     }
   }, [clusters.length, clustersReady, clustersReadyForInteraction]);
 
+  useEffect(() => {
+    return () => {
+      if (fullClusterMarkersTimerRef.current) {
+        clearTimeout(fullClusterMarkersTimerRef.current);
+        fullClusterMarkersTimerRef.current = null;
+      }
+      if (richClusterMarkersTimerRef.current) {
+        clearTimeout(richClusterMarkersTimerRef.current);
+        richClusterMarkersTimerRef.current = null;
+      }
+    };
+  }, []);
+
   // Keep startup MarkerView work low on slower Android devices. iOS renders the
   // full custom marker set immediately because the visible fill-in is too
   // noticeable there.
   useEffect(() => {
     if (isLoading || clusters.length === 0 || !clustersReadyForInteraction) {
+      if (fullClusterMarkersTimerRef.current) {
+        clearTimeout(fullClusterMarkersTimerRef.current);
+        fullClusterMarkersTimerRef.current = null;
+      }
+      if (richClusterMarkersTimerRef.current) {
+        clearTimeout(richClusterMarkersTimerRef.current);
+        richClusterMarkersTimerRef.current = null;
+      }
       if (fullClusterMarkersEnabled) {
         setFullClusterMarkersEnabled(false);
         traceMapEvent('full_cluster_markers_reset');
@@ -1999,13 +2025,15 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
     }
 
     if (!STAGE_CLUSTER_MARKERS_ON_STARTUP) {
-      setFullClusterMarkersEnabled(true);
+      if (!fullClusterMarkersEnabled) {
+        setFullClusterMarkersEnabled(true);
+      }
       logAndroidStartupTiming('full_cluster_markers_enabled_immediate', {
-        clusterCount: clusters.length,
+        clusterCount: latestClusterCountRef.current,
         platform: Platform.OS,
       });
       traceMapEvent('full_cluster_markers_enabled_immediate', {
-        clusterCount: clusters.length,
+        clusterCount: latestClusterCountRef.current,
         platform: Platform.OS,
       });
       return;
@@ -2015,39 +2043,50 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
       return;
     }
 
+    // Start the restore countdown once. Cluster count changes during hotspot
+    // zoom/refinement should not restart this timer.
+    if (fullClusterMarkersTimerRef.current) {
+      return;
+    }
+
+    const scheduledClusterCount = latestClusterCountRef.current;
     traceMapEvent('full_cluster_markers_delay_started', {
-      clusterCount: clusters.length,
+      clusterCount: scheduledClusterCount,
       delayMs: FULL_CLUSTER_MARKER_DELAY_MS,
       startupLimit: STARTUP_CLUSTER_MARKER_LIMIT,
     });
     logAndroidStartupTiming('full_cluster_markers_delay_started', {
-      clusterCount: clusters.length,
+      clusterCount: scheduledClusterCount,
       delayMs: FULL_CLUSTER_MARKER_DELAY_MS,
       startupLimit: STARTUP_CLUSTER_MARKER_LIMIT,
     });
 
-    const timer = setTimeout(() => {
+    fullClusterMarkersTimerRef.current = setTimeout(() => {
+      fullClusterMarkersTimerRef.current = null;
+      const clusterCount = latestClusterCountRef.current;
       setFullClusterMarkersEnabled(true);
       traceMapEvent('full_cluster_markers_enabled', {
-        clusterCount: clusters.length,
+        clusterCount,
         startupLimit: STARTUP_CLUSTER_MARKER_LIMIT,
       });
       logAndroidStartupTiming('full_cluster_markers_enabled', {
-        clusterCount: clusters.length,
+        clusterCount,
         startupLimit: STARTUP_CLUSTER_MARKER_LIMIT,
       });
       if (DEBUG_MAP_LOAD) {
         const delta = Date.now() - __ml_t0Ref.current;
-        console.log(`[MapLoad][${__ml_sessionIdRef.current}] T5d full_cluster_markers_enabled +${delta}ms (clusters=${clusters.length})`);
+        console.log(`[MapLoad][${__ml_sessionIdRef.current}] T5d full_cluster_markers_enabled +${delta}ms (clusters=${clusterCount})`);
       }
     }, FULL_CLUSTER_MARKER_DELAY_MS);
-
-    return () => clearTimeout(timer);
   }, [clusters.length, clustersReadyForInteraction, fullClusterMarkersEnabled, isLoading, richClusterMarkersEnabled]);
 
   // Restore animated/rich marker children after the full MarkerView set is back.
   useEffect(() => {
     if (isLoading || clusters.length === 0 || !clustersReadyForInteraction || !fullClusterMarkersEnabled) {
+      if (richClusterMarkersTimerRef.current) {
+        clearTimeout(richClusterMarkersTimerRef.current);
+        richClusterMarkersTimerRef.current = null;
+      }
       if (richClusterMarkersEnabled) {
         setRichClusterMarkersEnabled(false);
         traceMapEvent('rich_cluster_markers_reset');
@@ -2059,30 +2098,36 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
       return;
     }
 
+    // Keep the rich-detail countdown anchored to the first full-marker restore.
+    if (richClusterMarkersTimerRef.current) {
+      return;
+    }
+
+    const scheduledClusterCount = latestClusterCountRef.current;
     traceMapEvent('rich_cluster_markers_delay_started', {
-      clusterCount: clusters.length,
+      clusterCount: scheduledClusterCount,
       delayMs: RICH_CLUSTER_MARKER_DELAY_MS,
     });
     logAndroidStartupTiming('rich_cluster_markers_delay_started', {
-      clusterCount: clusters.length,
+      clusterCount: scheduledClusterCount,
       delayMs: RICH_CLUSTER_MARKER_DELAY_MS,
     });
 
-    const timer = setTimeout(() => {
+    richClusterMarkersTimerRef.current = setTimeout(() => {
+      richClusterMarkersTimerRef.current = null;
+      const clusterCount = latestClusterCountRef.current;
       setRichClusterMarkersEnabled(true);
       traceMapEvent('rich_cluster_markers_enabled', {
-        clusterCount: clusters.length,
+        clusterCount,
       });
       logAndroidStartupTiming('rich_cluster_markers_enabled', {
-        clusterCount: clusters.length,
+        clusterCount,
       });
       if (DEBUG_MAP_LOAD) {
         const delta = Date.now() - __ml_t0Ref.current;
-        console.log(`[MapLoad][${__ml_sessionIdRef.current}] T5e rich_marker_details_enabled +${delta}ms (clusters=${clusters.length})`);
+        console.log(`[MapLoad][${__ml_sessionIdRef.current}] T5e rich_marker_details_enabled +${delta}ms (clusters=${clusterCount})`);
       }
     }, RICH_CLUSTER_MARKER_DELAY_MS);
-
-    return () => clearTimeout(timer);
   }, [clusters.length, clustersReadyForInteraction, fullClusterMarkersEnabled, isLoading, richClusterMarkersEnabled]);
 
   // Re-center the map on user location

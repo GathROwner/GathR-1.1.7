@@ -52,7 +52,7 @@ const HOTSPOT_CAMERA_ZOOM_LEVEL = 14.4;
 const HOTSPOT_CAMERA_ANIMATION_MS = Platform.OS === 'android' ? 0 : 1000;
 const HOTSPOT_MIN_CAMERA_IDLE_MS = Platform.OS === 'android' ? 0 : 300;
 const DEFER_HOTSPOT_VISIBILITY_UNTIL_REFINED = Platform.OS === 'ios' || Platform.OS === 'android';
-const ANDROID_HOTSPOT_TIMING_DIAGNOSTICS = Platform.OS === 'android';
+const ANDROID_HOTSPOT_TIMING_DIAGNOSTICS = __DEV__ && Platform.OS === 'android';
 const ANDROID_CLUSTER_STORE_SYNC_BACKUP_MS = 8000;
 
 function hotspotDebugLog(...args: unknown[]) {
