@@ -1054,6 +1054,7 @@ const computeStartCenter = (): [number, number] => {
     () => `${presentedCalloutClusterId ?? 'single'}::${presentedCalloutSignature || 'no-venues'}`,
     [presentedCalloutClusterId, presentedCalloutSignature]
   );
+  const clustersReadyForInteraction = !isLoading && clusters.length > 0;
   const shouldRenderAncillaryOverlays = !isCalloutOpen && !hasPresentedCallout;
 
   // Close filter panel and callouts only when the map tab actually loses focus.
@@ -1131,30 +1132,32 @@ const computeStartCenter = (): [number, number] => {
   }, []);
 
   useEffect(() => {
-      setMapTraceSnapshot({
-        isGuest,
-        isLoading,
-        clustersReady,
-        clusterCount: clusters.length,
+    setMapTraceSnapshot({
+      isGuest,
+      isLoading,
+      clustersReady: clustersReadyForInteraction,
+      clustersReadyState: clustersReady,
+      clusterCount: clusters.length,
       processingClusterId: processingClusterId ?? null,
-        selectedVenueCount,
-        selectedClusterId,
-        isCalloutOpen,
-        renderedCalloutVenueCount,
-        renderedCalloutClusterId,
-        hasRenderedCallout,
-        hasSelectedCalloutRendered,
-        calloutLayoutReady: isRenderedCalloutLayoutReady,
-        activeFilterPanel: activeFilterPanel ?? null,
-        hotspotFilterActive: hotInterestCarouselActive,
-        hasInitiallyPositioned,
-        locationPermissionGranted,
-        ignoreProgrammatic: ignoreProgrammaticCameraRef.current,
+      selectedVenueCount,
+      selectedClusterId,
+      isCalloutOpen,
+      renderedCalloutVenueCount,
+      renderedCalloutClusterId,
+      hasRenderedCallout,
+      hasSelectedCalloutRendered,
+      calloutLayoutReady: isRenderedCalloutLayoutReady,
+      activeFilterPanel: activeFilterPanel ?? null,
+      hotspotFilterActive: hotInterestCarouselActive,
+      hasInitiallyPositioned,
+      locationPermissionGranted,
+      ignoreProgrammatic: ignoreProgrammaticCameraRef.current,
     });
   }, [
     activeFilterPanel,
     clusters.length,
     clustersReady,
+    clustersReadyForInteraction,
     hasSelectedCalloutRendered,
     hasInitiallyPositioned,
     hasRenderedCallout,
@@ -1201,13 +1204,15 @@ const computeStartCenter = (): [number, number] => {
       hotInterestCarouselActive,
       activeFilterPanel: activeFilterPanel ?? 'none',
       ignoreProgrammatic: ignoreProgrammaticCameraRef.current,
-      clustersReady,
+      clustersReady: clustersReadyForInteraction,
+      clustersReadyState: clustersReady,
       isLoading,
     }));
   }, [
     activeFilterPanel,
     calloutAnimation,
     clustersReady,
+    clustersReadyForInteraction,
     hasSelectedCalloutRendered,
     hasRenderedCallout,
     hotInterestCarouselActive,
@@ -1232,9 +1237,10 @@ const computeStartCenter = (): [number, number] => {
   useEffect(() => {
     traceMapEvent('clusters_ready_state_changed', {
       clustersReady,
+      clustersReadyForInteraction,
       clusterCount: clusters.length,
     });
-  }, [clusters.length, clustersReady]);
+  }, [clusters.length, clustersReady, clustersReadyForInteraction]);
 
   useEffect(() => {
     console.log('[CalloutProbe] store selection changed', {
@@ -1946,10 +1952,11 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
     //             "selectedCluster:", selectedCluster ? selectedCluster.id : "none");
   }, [selectedVenues, selectedCluster]);
 
-  // Enable cluster interaction as soon as clusters are available. The previous
-  // startup timer routinely fired several seconds late on the Samsung tablet.
+  // Mirror derived cluster readiness for diagnostics. User-facing gates use
+  // clustersReadyForInteraction directly so they are not blocked on a passive
+  // effect/state round trip during Android startup.
   useEffect(() => {
-    if (!isLoading && clusters.length > 0 && !clustersReady) {
+    if (clustersReadyForInteraction && !clustersReady) {
       logAndroidStartupTiming('clusters_ready_immediate_started', {
         clusterCount: clusters.length,
       });
@@ -1969,17 +1976,17 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
     }
 
     // Reset clustersReady when loading starts again
-    if (isLoading && clustersReady) {
+    if (!clustersReadyForInteraction && clustersReady) {
       setClustersReady(false);
       traceMapEvent('clusters_ready_reset_for_loading');
     }
-  }, [isLoading, clusters.length, clustersReady]);
+  }, [clusters.length, clustersReady, clustersReadyForInteraction]);
 
   // Keep startup MarkerView work low on slower Android devices. iOS renders the
   // full custom marker set immediately because the visible fill-in is too
   // noticeable there.
   useEffect(() => {
-    if (isLoading || clusters.length === 0 || !clustersReady) {
+    if (isLoading || clusters.length === 0 || !clustersReadyForInteraction) {
       if (fullClusterMarkersEnabled) {
         setFullClusterMarkersEnabled(false);
         traceMapEvent('full_cluster_markers_reset');
@@ -2036,11 +2043,11 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
     }, FULL_CLUSTER_MARKER_DELAY_MS);
 
     return () => clearTimeout(timer);
-  }, [clusters.length, clustersReady, fullClusterMarkersEnabled, isLoading, richClusterMarkersEnabled]);
+  }, [clusters.length, clustersReadyForInteraction, fullClusterMarkersEnabled, isLoading, richClusterMarkersEnabled]);
 
   // Restore animated/rich marker children after the full MarkerView set is back.
   useEffect(() => {
-    if (isLoading || clusters.length === 0 || !clustersReady || !fullClusterMarkersEnabled) {
+    if (isLoading || clusters.length === 0 || !clustersReadyForInteraction || !fullClusterMarkersEnabled) {
       if (richClusterMarkersEnabled) {
         setRichClusterMarkersEnabled(false);
         traceMapEvent('rich_cluster_markers_reset');
@@ -2076,7 +2083,7 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
     }, RICH_CLUSTER_MARKER_DELAY_MS);
 
     return () => clearTimeout(timer);
-  }, [clusters.length, clustersReady, fullClusterMarkersEnabled, isLoading, richClusterMarkersEnabled]);
+  }, [clusters.length, clustersReadyForInteraction, fullClusterMarkersEnabled, isLoading, richClusterMarkersEnabled]);
 
   // Re-center the map on user location
   const handleRecenterPress = () => {
@@ -3449,7 +3456,7 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
             <TouchableOpacity
               onPress={() => handleMarkerPress(cluster)}
               testID={isClosestCluster ? "closest-cluster" : undefined}
-              disabled={!clustersReady || processingClusterId !== null || hasRenderedCallout}
+              disabled={!clustersReadyForInteraction || processingClusterId !== null || hasRenderedCallout}
               activeOpacity={0.7}
               hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             >
@@ -3457,7 +3464,7 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
                 cluster={cluster}
                 isSelected={isSelected}
                 isProcessing={processingClusterId === cluster.id}
-                isReady={clustersReady}
+                isReady={clustersReadyForInteraction}
                 detailsEnabled={richClusterMarkersEnabled}
               />
             </TouchableOpacity>
@@ -3775,7 +3782,7 @@ onDidFinishLoadingMap={() => {
       )}
 
       {/* Transparent overlay to block touches while clusters are not ready */}
-      {!isLoading && !clustersReady && (
+      {!isLoading && !clustersReadyForInteraction && (
         <View
           style={styles.clustersNotReadyOverlay}
           pointerEvents="box-only"
@@ -3888,7 +3895,7 @@ Owner: Map UX stability on Android • Last validated: 2025-09-04
       )}
       
       {/* Preview-debug gate: keep hotspot fully unmounted so its timers/camera flow cannot affect callout presentation. */}
-      {!HOTSPOT_HARD_DISABLED_FOR_PREVIEW_DEBUG && clustersReady && !isLoading && (
+      {!HOTSPOT_HARD_DISABLED_FOR_PREVIEW_DEBUG && clustersReadyForInteraction && (
         <HotspotHighlight ignoreProgrammaticCameraRef={ignoreProgrammaticCameraRef} />
       )}
 
