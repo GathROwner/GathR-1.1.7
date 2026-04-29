@@ -100,8 +100,10 @@ const ANDROID_CLUSTER_MARKERVIEW_ISOLATION_DEBUG = false;
 const DEBUG_TREE_MARKER_EVENTS = false;
 const STAGE_CLUSTER_MARKERS_ON_STARTUP = Platform.OS === 'android';
 const STARTUP_CLUSTER_MARKER_LIMIT = 12;
-const FULL_CLUSTER_MARKER_DELAY_MS = 10000;
-const RICH_CLUSTER_MARKER_DELAY_MS = Platform.OS === 'ios' ? 0 : 12000;
+const FULL_CLUSTER_MARKER_DELAY_MS = 1000;
+const RICH_CLUSTER_MARKER_DELAY_MS = Platform.OS === 'ios' ? 0 : 2000;
+const ANDROID_FULL_CLUSTER_MARKER_HOTSPOT_SETTLE_MS = 500;
+const ANDROID_FULL_CLUSTER_MARKER_HOTSPOT_BACKUP_MS = 4000;
 
 const getStartupClusterScore = (cluster: Cluster): number => {
   const statusScore =
@@ -1001,10 +1003,14 @@ const computeStartCenter = (): [number, number] => {
   const calloutAnimationRequestRef = useRef(0);
   const calloutOpenTouchGuardUntilRef = useRef(0);
   const latestClusterCountRef = useRef(0);
+  const isMapLoadingRef = useRef(false);
+  const clustersReadyForInteractionRef = useRef(false);
+  const fullClusterMarkersEnabledRef = useRef(false);
   const fullClusterMarkersTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const richClusterMarkersTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   latestClusterCountRef.current = clusters.length;
+  isMapLoadingRef.current = isLoading;
 
   // Make these ref objects available during the first passive-effect flush.
   // The daily hotspot can trigger synchronously on Android, before the older
@@ -1060,6 +1066,8 @@ const computeStartCenter = (): [number, number] => {
     [presentedCalloutClusterId, presentedCalloutSignature]
   );
   const clustersReadyForInteraction = !isLoading && clusters.length > 0;
+  clustersReadyForInteractionRef.current = clustersReadyForInteraction;
+  fullClusterMarkersEnabledRef.current = fullClusterMarkersEnabled;
   const shouldRenderAncillaryOverlays = !isCalloutOpen && !hasPresentedCallout;
 
   // Close filter panel and callouts only when the map tab actually loses focus.
@@ -2000,6 +2008,83 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
     };
   }, []);
 
+  const enableFullClusterMarkers = useCallback((source: string) => {
+    if (
+      fullClusterMarkersEnabledRef.current ||
+      isMapLoadingRef.current ||
+      latestClusterCountRef.current === 0 ||
+      !clustersReadyForInteractionRef.current
+    ) {
+      return false;
+    }
+
+    if (fullClusterMarkersTimerRef.current) {
+      clearTimeout(fullClusterMarkersTimerRef.current);
+      fullClusterMarkersTimerRef.current = null;
+    }
+
+    const clusterCount = latestClusterCountRef.current;
+    fullClusterMarkersEnabledRef.current = true;
+    setFullClusterMarkersEnabled(true);
+    traceMapEvent('full_cluster_markers_enabled', {
+      clusterCount,
+      startupLimit: STARTUP_CLUSTER_MARKER_LIMIT,
+      source,
+    });
+    logAndroidStartupTiming('full_cluster_markers_enabled', {
+      clusterCount,
+      startupLimit: STARTUP_CLUSTER_MARKER_LIMIT,
+      source,
+    });
+    if (DEBUG_MAP_LOAD) {
+      const delta = Date.now() - __ml_t0Ref.current;
+      console.log(`[MapLoad][${__ml_sessionIdRef.current}] T5d full_cluster_markers_enabled +${delta}ms (clusters=${clusterCount}) source=${source}`);
+    }
+
+    return true;
+  }, []);
+
+  useEffect(() => {
+    if (Platform.OS !== 'android') {
+      return undefined;
+    }
+
+    const globalAny = global as any;
+    const restoreCallback = (source = 'hotspot_overlay_ready') => {
+      if (source === 'hotspot_overlay_ready' && !fullClusterMarkersEnabledRef.current) {
+        if (fullClusterMarkersTimerRef.current) {
+          clearTimeout(fullClusterMarkersTimerRef.current);
+          fullClusterMarkersTimerRef.current = null;
+        }
+
+        traceMapEvent('full_cluster_markers_hotspot_overlay_ready', {
+          clusterCount: latestClusterCountRef.current,
+          settleDelayMs: ANDROID_FULL_CLUSTER_MARKER_HOTSPOT_SETTLE_MS,
+        });
+        logAndroidStartupTiming('full_cluster_markers_hotspot_overlay_ready', {
+          clusterCount: latestClusterCountRef.current,
+          settleDelayMs: ANDROID_FULL_CLUSTER_MARKER_HOTSPOT_SETTLE_MS,
+        });
+
+        fullClusterMarkersTimerRef.current = setTimeout(() => {
+          fullClusterMarkersTimerRef.current = null;
+          enableFullClusterMarkers('hotspot_overlay_ready_settled');
+        }, ANDROID_FULL_CLUSTER_MARKER_HOTSPOT_SETTLE_MS);
+        return;
+      }
+
+      enableFullClusterMarkers(source);
+    };
+
+    globalAny.mapStartupFullMarkerRestoreCallback = restoreCallback;
+
+    return () => {
+      if (globalAny.mapStartupFullMarkerRestoreCallback === restoreCallback) {
+        delete globalAny.mapStartupFullMarkerRestoreCallback;
+      }
+    };
+  }, [enableFullClusterMarkers]);
+
   // Keep startup MarkerView work low on slower Android devices. iOS renders the
   // full custom marker set immediately because the visible fill-in is too
   // noticeable there.
@@ -2014,6 +2099,7 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
         richClusterMarkersTimerRef.current = null;
       }
       if (fullClusterMarkersEnabled) {
+        fullClusterMarkersEnabledRef.current = false;
         setFullClusterMarkersEnabled(false);
         traceMapEvent('full_cluster_markers_reset');
       }
@@ -2026,6 +2112,7 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
 
     if (!STAGE_CLUSTER_MARKERS_ON_STARTUP) {
       if (!fullClusterMarkersEnabled) {
+        fullClusterMarkersEnabledRef.current = true;
         setFullClusterMarkersEnabled(true);
       }
       logAndroidStartupTiming('full_cluster_markers_enabled_immediate', {
@@ -2063,22 +2150,27 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
 
     fullClusterMarkersTimerRef.current = setTimeout(() => {
       fullClusterMarkersTimerRef.current = null;
-      const clusterCount = latestClusterCountRef.current;
-      setFullClusterMarkersEnabled(true);
-      traceMapEvent('full_cluster_markers_enabled', {
-        clusterCount,
-        startupLimit: STARTUP_CLUSTER_MARKER_LIMIT,
-      });
-      logAndroidStartupTiming('full_cluster_markers_enabled', {
-        clusterCount,
-        startupLimit: STARTUP_CLUSTER_MARKER_LIMIT,
-      });
-      if (DEBUG_MAP_LOAD) {
-        const delta = Date.now() - __ml_t0Ref.current;
-        console.log(`[MapLoad][${__ml_sessionIdRef.current}] T5d full_cluster_markers_enabled +${delta}ms (clusters=${clusterCount})`);
+
+      if (Platform.OS === 'android' && (global as any).mapHotspotStartupPhase === 'running') {
+        traceMapEvent('full_cluster_markers_deferred_for_hotspot_overlay', {
+          clusterCount: latestClusterCountRef.current,
+          backupDelayMs: ANDROID_FULL_CLUSTER_MARKER_HOTSPOT_BACKUP_MS,
+        });
+        logAndroidStartupTiming('full_cluster_markers_deferred_for_hotspot_overlay', {
+          clusterCount: latestClusterCountRef.current,
+          backupDelayMs: ANDROID_FULL_CLUSTER_MARKER_HOTSPOT_BACKUP_MS,
+        });
+
+        fullClusterMarkersTimerRef.current = setTimeout(() => {
+          fullClusterMarkersTimerRef.current = null;
+          enableFullClusterMarkers('hotspot_overlay_backup');
+        }, ANDROID_FULL_CLUSTER_MARKER_HOTSPOT_BACKUP_MS);
+        return;
       }
+
+      enableFullClusterMarkers('timer');
     }, FULL_CLUSTER_MARKER_DELAY_MS);
-  }, [clusters.length, clustersReadyForInteraction, fullClusterMarkersEnabled, isLoading, richClusterMarkersEnabled]);
+  }, [clusters.length, clustersReadyForInteraction, enableFullClusterMarkers, fullClusterMarkersEnabled, isLoading, richClusterMarkersEnabled]);
 
   // Restore animated/rich marker children after the full MarkerView set is back.
   useEffect(() => {

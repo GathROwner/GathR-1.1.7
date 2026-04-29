@@ -699,6 +699,14 @@ export function useHotspotHighlight(
     }, 7000);
 
     flushPendingClusterStoreSync('overlay_ready');
+    if (Platform.OS === 'android') {
+      const globalAny = global as any;
+      globalAny.mapHotspotStartupPhase = 'overlay_ready';
+      const markerRestoreCallback = globalAny.mapStartupFullMarkerRestoreCallback;
+      if (typeof markerRestoreCallback === 'function') {
+        markerRestoreCallback('hotspot_overlay_ready');
+      }
+    }
   }, [
     dismiss,
     flushPendingClusterStoreSync,
@@ -718,6 +726,9 @@ export function useHotspotHighlight(
     hotspotTimingStartRef.current = Date.now();
     overlayPositionReadyRef.current = false;
     visibleSourceRef.current = null;
+    if (Platform.OS === 'android') {
+      (global as any).mapHotspotStartupPhase = 'running';
+    }
     logAndroidHotspotTiming('trigger_started', {
       clusterCount: clusters.length,
     });
@@ -729,6 +740,14 @@ export function useHotspotHighlight(
     if (!hottest) {
       logAndroidHotspotTiming('trigger_aborted_no_cluster');
       traceMapEvent('hotspot_trigger_aborted_no_cluster');
+      if (Platform.OS === 'android') {
+        const globalAny = global as any;
+        globalAny.mapHotspotStartupPhase = 'aborted';
+        const markerRestoreCallback = globalAny.mapStartupFullMarkerRestoreCallback;
+        if (typeof markerRestoreCallback === 'function') {
+          markerRestoreCallback('hotspot_aborted');
+        }
+      }
       return;
     }
 
