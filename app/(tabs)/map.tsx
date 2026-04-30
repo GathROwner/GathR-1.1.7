@@ -487,38 +487,28 @@ const CategoryCarousel: React.FC<CategoryCarouselProps> = ({ cluster, size }) =>
 };
 
 /**
- * User Location Marker component with pulsing animation
+ * Native user-location puck. Keeping this off MarkerView lets it appear without
+ * waiting for the slower Android annotation path used by event cluster markers.
  */
-const UserLocationMarker: React.FC<{ location: Location.LocationObject }> = ({ location }) => {
-  if (!location) return null;
-  
-  const userMarkerSize = 16;
-  const userMarkerColor = '#4285F4'; // Google Maps blue
-  
+const UserLocationMarker: React.FC<{ visible: boolean }> = ({ visible }) => {
+  if (!visible) return null;
+
   return (
-    <MapboxGL.MarkerView
-      coordinate={[location.coords.longitude, location.coords.latitude]}
-      anchor={{ x: 0.5, y: 0.5 }}
-    >
-      <View style={styles.userMarkerWrapper}>
-        <BroadcastingEffect size={userMarkerSize} color={userMarkerColor} />
-        <View 
-          style={[
-            styles.userMarkerDot, 
-            { 
-              width: userMarkerSize, 
-              height: userMarkerSize,
-              borderRadius: userMarkerSize / 2,
-              backgroundColor: userMarkerColor,
-              borderColor: '#FFFFFF',
-              borderWidth: 2
-            }
-          ]} 
-        />
-      </View>
-    </MapboxGL.MarkerView>
+    <MapboxGL.LocationPuck
+      visible={visible}
+      puckBearingEnabled={false}
+      pulsing={{ isEnabled: true, color: '#4285F4', radius: 'accuracy' }}
+      scale={1}
+    />
   );
 };
+
+const StartupUserLocationOverlayMarker: React.FC = () => (
+  <View pointerEvents="none" style={styles.startupUserLocationOverlay}>
+    <View style={styles.startupUserLocationPulse} />
+    <View style={styles.startupUserLocationDot} />
+  </View>
+);
 
 // Animated "New Content" Indicator Dot for map markers
 interface IndicatorDotProps {
@@ -1047,6 +1037,7 @@ useEffect(() => {
   const [renderedCalloutVenues, setRenderedCalloutVenues] = useState<Venue[]>([]);
   const [renderedCalloutCluster, setRenderedCalloutCluster] = useState<Cluster | null>(null);
   const [calloutLayoutReadyKey, setCalloutLayoutReadyKey] = useState<string | null>(null);
+  const [mapFirstFrameRendered, setMapFirstFrameRendered] = useState<boolean>(false);
   const cameraRef = useRef<MapboxGL.Camera>(null);
   const calloutAnimation = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
   const mapRef = useRef<MapboxGL.MapView>(null);
@@ -1062,6 +1053,7 @@ useEffect(() => {
   const initialViewportWaitingLoggedRef = useRef(false);
   const fullClusterMarkersTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const richClusterMarkersTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const mapFirstFrameRenderedRef = useRef(false);
 
   latestClusterCountRef.current = clusters.length;
   isMapLoadingRef.current = isLoading;
@@ -1120,6 +1112,10 @@ useEffect(() => {
     [presentedCalloutClusterId, presentedCalloutSignature]
   );
   const clustersReadyForInteraction = !isLoading && clusters.length > 0;
+  const shouldRenderStartupUserLocationMarker =
+    !mapFirstFrameRendered &&
+    Boolean(location || cachedStartupLocation) &&
+    (locationPermissionGranted || Boolean(cachedStartupLocation));
   clustersReadyForInteractionRef.current = clustersReadyForInteraction;
   fullClusterMarkersEnabledRef.current = fullClusterMarkersEnabled;
   const shouldRenderAncillaryOverlays = !isCalloutOpen && !hasPresentedCallout;
@@ -4065,6 +4061,10 @@ onMapIdle={() => {
 
 onDidFinishRenderingFrameFully={() => {
   notifyHotspotCameraReady('rendering_frame_fully');
+  if (!mapFirstFrameRenderedRef.current) {
+    mapFirstFrameRenderedRef.current = true;
+    setMapFirstFrameRendered(true);
+  }
   if (DEBUG_MAP_LOAD && !__ml_firstFrameLoggedRef.current) {
     __ml_firstFrameLoggedRef.current = true;
     const t1bf = Date.now();
@@ -4162,9 +4162,9 @@ onDidFinishLoadingMap={() => {
   followUserLocation={false}
 />
        
-        {/* Render the user location marker if we have location and permission */}
-        {location && locationPermissionGranted && (
-          <UserLocationMarker location={location} />
+        {/* Render native user location as soon as permission is available */}
+        {locationPermissionGranted && (
+          <UserLocationMarker visible={locationPermissionGranted} />
         )}
         
         {/* Render event markers */}
@@ -4246,6 +4246,10 @@ onDidFinishLoadingMap={() => {
         </View>
       )}
 
+      {shouldRenderStartupUserLocationMarker && (
+        <StartupUserLocationOverlayMarker />
+      )}
+
       {/* Transparent overlay to block touches while clusters are not ready */}
       {!isLoading && !clustersReadyForInteraction && (
         <View
@@ -4259,7 +4263,12 @@ onDidFinishLoadingMap={() => {
             });
           }}
         >
-          <View style={styles.clustersLoadingMessage}>
+          <View
+            style={[
+              styles.clustersLoadingMessage,
+              shouldRenderStartupUserLocationMarker && styles.clustersLoadingMessageWithStartupLocation,
+            ]}
+          >
             <Text style={styles.clustersLoadingText}>Loading Data...</Text>
           </View>
         </View>
@@ -4442,6 +4451,9 @@ const styles = StyleSheet.create({
     shadowRadius: 3.84,
     elevation: 5,
   },
+  clustersLoadingMessageWithStartupLocation: {
+    transform: [{ translateY: 48 }],
+  },
   clustersLoadingText: {
     color: '#FFFFFF',
     fontSize: 14,
@@ -4480,6 +4492,35 @@ const styles = StyleSheet.create({
     shadowRadius: 3.84,
     elevation: 5,
     zIndex: 3,
+  },
+  startupUserLocationOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 101,
+    elevation: 101,
+  },
+  startupUserLocationPulse: {
+    position: 'absolute',
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: 'rgba(66, 133, 244, 0.18)',
+    borderWidth: 2,
+    borderColor: 'rgba(66, 133, 244, 0.35)',
+  },
+  startupUserLocationDot: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: '#4285F4',
+    borderColor: '#FFFFFF',
+    borderWidth: 3,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3,
+    elevation: 6,
   },
   treeTop: {
     borderWidth: 2,
