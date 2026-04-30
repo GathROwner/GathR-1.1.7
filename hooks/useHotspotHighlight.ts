@@ -1082,6 +1082,9 @@ export function useHotspotHighlight(
 
       captureOriginalCameraPosition();
       setIsAnimating(true);
+      if (Platform.OS === 'android') {
+        (global as any).mapHotspotStartupPhase = 'camera_animating';
+      }
       logAndroidHotspotTiming('camera_animation_started', {
         clusterId: hottest.id,
         venueName: hottestVenue.venue,

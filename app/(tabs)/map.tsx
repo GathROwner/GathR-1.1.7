@@ -122,7 +122,12 @@ const getAndroidHotspotStartupPhase = (): string | null => {
 
 const isAndroidHotspotStartupCameraActive = (): boolean => {
   const phase = getAndroidHotspotStartupPhase();
-  return phase === 'running' || phase === 'overlay_ready';
+  return phase === 'camera_animating' || phase === 'overlay_ready';
+};
+
+const isAndroidHotspotStartupFlowActive = (): boolean => {
+  const phase = getAndroidHotspotStartupPhase();
+  return phase === 'running' || phase === 'camera_animating';
 };
 
 const getStartupClusterScore = (cluster: Cluster): number => {
@@ -1698,7 +1703,7 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
   };
 
   const requestStartupGpsViewportFetch = (center: GeoCoordinate, attempt = 0) => {
-    if (Platform.OS === 'android' && getAndroidHotspotStartupPhase() === 'running') {
+    if (Platform.OS === 'android' && isAndroidHotspotStartupFlowActive()) {
       if (startupGpsViewportRetryTimerRef.current) {
         logAndroidStartupTiming('gps_viewport_fetch_defer_already_pending', {
           attempt,
@@ -2554,7 +2559,7 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
     fullClusterMarkersTimerRef.current = setTimeout(() => {
       fullClusterMarkersTimerRef.current = null;
 
-      if (Platform.OS === 'android' && (global as any).mapHotspotStartupPhase === 'running') {
+      if (Platform.OS === 'android' && isAndroidHotspotStartupFlowActive()) {
         traceMapEvent('full_cluster_markers_deferred_for_hotspot_overlay', {
           clusterCount: latestClusterCountRef.current,
           backupDelayMs: ANDROID_FULL_CLUSTER_MARKER_HOTSPOT_BACKUP_MS,
