@@ -49,8 +49,9 @@ interface OriginalCameraPosition {
 const HOTSPOT_VERBOSE_DEBUG = false;
 const HOTSPOT_TRIGGER_DELAY_MS = 0;
 const HOTSPOT_CAMERA_ZOOM_LEVEL = 14.4;
-const HOTSPOT_CAMERA_ANIMATION_MS = Platform.OS === 'android' ? 0 : 1000;
-const HOTSPOT_MIN_CAMERA_IDLE_MS = Platform.OS === 'android' ? 0 : 300;
+const HOTSPOT_CAMERA_ANIMATION_MS = Platform.OS === 'android' ? 450 : 1000;
+const HOTSPOT_MIN_CAMERA_IDLE_MS = Platform.OS === 'android' ? 250 : 300;
+const HOTSPOT_CAMERA_FINALIZE_BUFFER_MS = Platform.OS === 'android' ? 250 : 100;
 const DEFER_HOTSPOT_VISIBILITY_UNTIL_REFINED = Platform.OS === 'ios' || Platform.OS === 'android';
 const ANDROID_HOTSPOT_TIMING_DIAGNOSTICS = __DEV__ && Platform.OS === 'android';
 const ANDROID_CLUSTER_STORE_SYNC_BACKUP_MS = 8000;
@@ -61,6 +62,38 @@ function hotspotDebugLog(...args: unknown[]) {
     console.log(...args);
   }
 }
+
+const getClusterCentroidCoordinate = (cluster: Cluster | null): [number, number] | null => {
+  const venues = cluster?.venues;
+  if (!venues || venues.length === 0) {
+    return null;
+  }
+
+  let sumLatitude = 0;
+  let sumLongitude = 0;
+  let validVenueCount = 0;
+
+  for (const venue of venues) {
+    if (
+      typeof venue.latitude !== 'number' ||
+      typeof venue.longitude !== 'number' ||
+      Number.isNaN(venue.latitude) ||
+      Number.isNaN(venue.longitude)
+    ) {
+      continue;
+    }
+
+    sumLatitude += venue.latitude;
+    sumLongitude += venue.longitude;
+    validVenueCount += 1;
+  }
+
+  if (validVenueCount === 0) {
+    return null;
+  }
+
+  return [sumLongitude / validVenueCount, sumLatitude / validVenueCount];
+};
 
 /**
  * Helper to determine a venue's "hotness" based on event timing.
@@ -1002,6 +1035,12 @@ export function useHotspotHighlight(
       setHotspotProgrammaticLock(true, 'trigger_zoom_in');
 
       let cameraFinalized = false;
+      const initialTargetCoordinate =
+        getClusterCentroidCoordinate(hottest) ?? [hottestVenue.longitude, hottestVenue.latitude];
+      targetCoordsRef.current = {
+        longitude: initialTargetCoordinate[0],
+        latitude: initialTargetCoordinate[1],
+      };
 
       const finalizeCameraAnimation = (completionSource: 'map_idle' | 'timer') => {
         if (cameraFinalized) {
@@ -1211,9 +1250,15 @@ export function useHotspotHighlight(
       (global as any).mapHotspotCameraIdleCallback = idleCallback;
 
       cameraRef.current.setCamera({
-        centerCoordinate: [hottestVenue.longitude, hottestVenue.latitude],
+        centerCoordinate: initialTargetCoordinate,
         zoomLevel: HOTSPOT_CAMERA_ZOOM_LEVEL, // Same zoom as tutorial for consistency
         animationDuration: HOTSPOT_CAMERA_ANIMATION_MS,
+      });
+      logAndroidHotspotTiming('guided_camera_move_requested', {
+        source,
+        targetLongitude: initialTargetCoordinate[0],
+        targetLatitude: initialTargetCoordinate[1],
+        animationDurationMs: HOTSPOT_CAMERA_ANIMATION_MS,
       });
 
       // Wait for the zoomed-cluster refinement so the ring does not flash at
@@ -1234,7 +1279,7 @@ export function useHotspotHighlight(
           source,
         });
         finalizeCameraAnimation('timer');
-      }, HOTSPOT_CAMERA_ANIMATION_MS + 100);
+      }, HOTSPOT_CAMERA_ANIMATION_MS + HOTSPOT_CAMERA_FINALIZE_BUFFER_MS);
       return true;
     };
 

@@ -1441,6 +1441,7 @@ const logPills = (msg: string, ctx?: Record<string, any>) => {
   // Viewport filtering refs
   const lastViewportBboxRef = useRef<BoundingBox | null>(null);
   const viewportFetchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const startupGpsViewportRetryTimerRef = useRef<NodeJS.Timeout | null>(null);
   const lastViewportFetchTimeRef = useRef<number>(0);  // Track last fetch timestamp for throttling
   const currentCameraStateRef = useRef<{ center: [number, number]; zoom: number } | null>(null);
   const startupFallbackViewportUsedRef = useRef(false);
@@ -1497,6 +1498,29 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
     lastViewportFetchTimeRef.current = Date.now();
     startupFallbackViewportUsedRef.current = source === 'fallback_center';
     fetchViewportEvents(roundedBbox);
+  };
+
+  const requestStartupGpsViewportFetch = (center: GeoCoordinate, attempt = 0) => {
+    if (Platform.OS === 'android' && getAndroidHotspotStartupPhase() === 'running') {
+      if (startupGpsViewportRetryTimerRef.current) {
+        logAndroidStartupTiming('gps_viewport_fetch_defer_already_pending', {
+          attempt,
+        });
+        return;
+      }
+
+      logAndroidStartupTiming('gps_viewport_fetch_deferred_for_hotspot', {
+        attempt,
+      });
+
+      startupGpsViewportRetryTimerRef.current = setTimeout(() => {
+        startupGpsViewportRetryTimerRef.current = null;
+        requestStartupGpsViewportFetch(center, attempt + 1);
+      }, 700);
+      return;
+    }
+
+    requestStartupViewportFetch(center, 'gps_location');
   };
   
   // Request location permissions as soon as possible
@@ -1690,13 +1714,10 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
   // Initial viewport refinement when location is acquired
   useEffect(() => {
     if (location && (!lastViewportBboxRef.current || startupFallbackViewportUsedRef.current)) {
-      requestStartupViewportFetch(
-        {
+      requestStartupGpsViewportFetch({
         latitude: location.coords.latitude,
         longitude: location.coords.longitude
-        },
-        'gps_location'
-      );
+      });
     }
   }, [location, fetchViewportEvents]);
 
@@ -3511,6 +3532,9 @@ Clustering refresh: keep zoom → store → recluster in sync
       }
       if (showTimeoutRef.current) {
         clearTimeout(showTimeoutRef.current);
+      }
+      if (startupGpsViewportRetryTimerRef.current) {
+        clearTimeout(startupGpsViewportRetryTimerRef.current);
       }
     };
   }, []);
