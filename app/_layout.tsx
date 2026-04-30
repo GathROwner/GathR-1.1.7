@@ -100,6 +100,7 @@ function StylePreloader() {
       <MapboxGL.MapView
         style={{ flex: 1 }}
         styleURL={MapboxGL.StyleURL.Street}
+        surfaceView={Platform.OS === 'android' ? false : undefined}
         onDidFinishLoadingMap={() => console.log('[MapLoad][preloader] style_loaded')}
 onDidFinishRenderingMapFully={() => {
   console.log('[MapLoad][preloader] warmed');
@@ -429,8 +430,6 @@ try {
     // â›‘ï¸ Root wrapper so GH gestures (ScrollView, handlers) work on Android.
     //This fixes callout ScrollView not scrolling and the GH error about GestureHandlerRootView.
     <GestureHandlerRootView style={{ flex: 1 }}> 
-        {/* TEMP: disable secondary MapView to restore Android gestures */}
-          {/* <StylePreloader /> */}
       <PersistQueryClientProvider
   client={queryClient}
   persistOptions={{
@@ -922,6 +921,9 @@ useEffect(() => {
   }, [router]);
 
   // Show loading screen while Firebase determines auth state
+  const shouldWarmMapboxOnAuthScreen =
+    Platform.OS === 'android' && !user && (!segments[0] || segments[0] === 'index');
+
   if (isLoading) {
     return (
       <View style={styles.loadingContainer}>
@@ -934,6 +936,7 @@ useEffect(() => {
   // This enables the tutorial to display over all screens in the app
   return (
     <TutorialManager>
+      {shouldWarmMapboxOnAuthScreen && <StylePreloader />}
       <Stack screenOptions={{ headerShown: false }}>
         <Stack.Screen name="index" />
         <Stack.Screen name="interest-selection" options={{ 
