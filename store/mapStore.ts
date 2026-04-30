@@ -64,14 +64,6 @@ import * as Location from 'expo-location';
 import Supercluster from 'supercluster';
 
 
-// Import centralized date utilities
-import { 
-  isEventNow,
-  isEventHappeningToday,
-  getEventTimeStatus,
-  sortEventsByTimeStatus
-} from '../utils/dateUtils';
-
 // Import default filter criteria
 import { DEFAULT_FILTER_CRITERIA } from '../types/filter';
 
@@ -79,7 +71,11 @@ import { DEFAULT_FILTER_CRITERIA } from '../types/filter';
 import { getHasNewContent } from './clusterInteractionStore';
 
 // Import unified events API (Firestore default, legacy fallback optional)
-import { dedupeEvents, fetchMinimalEvents } from '../lib/api/events';
+import {
+  dedupeEvents,
+  fetchMinimalEvents,
+  type FetchMinimalEventsOptions,
+} from '../lib/api/events';
 import {
   areEventIdsEquivalent,
   fetchFirestoreEventDetailsBatch,
@@ -101,6 +97,52 @@ export interface ZoomThreshold {
 
  // ───── DEBUG: Map load instrumentation toggles & counters ─────
  const DEBUG_MAP_LOAD = false;
+ const DEBUG_STARTUP_DATA_TIMING = __DEV__;
+ const logStartupDataTiming = (label: string, details?: Record<string, unknown>) => {
+   if (!DEBUG_STARTUP_DATA_TIMING) {
+     return;
+   }
+
+   console.warn('[GathRStartupData]', label, JSON.stringify(details ?? {}));
+ };
+ type MinimalEventsResult = Awaited<ReturnType<typeof fetchMinimalEvents>>;
+ let __minimalEventsInFlight:
+   | { key: string; promise: Promise<MinimalEventsResult>; startedAt: number }
+   | null = null;
+ const getMinimalEventsFetchKey = (options: FetchMinimalEventsOptions = {}) =>
+   JSON.stringify(options ?? {});
+ const fetchMinimalEventsShared = (
+   options: FetchMinimalEventsOptions = {}
+ ): Promise<MinimalEventsResult> => {
+   const key = getMinimalEventsFetchKey(options);
+   if (__minimalEventsInFlight?.key === key) {
+     logStartupDataTiming('minimal_fetch_reused_inflight', {
+       key,
+       ageMs: Date.now() - __minimalEventsInFlight.startedAt,
+     });
+     return __minimalEventsInFlight.promise;
+   }
+
+   const startedAt = Date.now();
+   logStartupDataTiming('minimal_fetch_started', { key });
+   const promise: Promise<MinimalEventsResult> = fetchMinimalEvents(options)
+     .then((result) => {
+       logStartupDataTiming('minimal_fetch_resolved', {
+         key,
+         durationMs: Date.now() - startedAt,
+         count: result.combinedData.length,
+       });
+       return result;
+     })
+     .finally(() => {
+       if (__minimalEventsInFlight?.promise === promise) {
+         __minimalEventsInFlight = null;
+       }
+     });
+
+   __minimalEventsInFlight = { key, promise, startedAt };
+   return promise;
+ };
  let __ML_fetchCount = 0;
  let __ML_lastFetchMs = 0;
  let __ML_lastEventsBytes = 0;
@@ -214,20 +256,18 @@ const generateClusterId = (venues: Venue[]): string => {
 /**
  * Determine the time status of a cluster based on its events
  */
-const determineClusterTimeStatus = (venues: Venue[]): TimeStatus => {
+const determineClusterTimeStatus = (
+  venues: Venue[],
+  timeContext: EventTimeContext = createEventTimeContext()
+): TimeStatus => {
   const hasNowEvents = venues.some(venue => 
-    venue.events.some(event => isEventNow(
-      event.startDate, 
-      event.startTime, 
-      event.endDate || event.startDate, 
-      event.endTime || ''
-    ))
+    venue.events.some(event => isEventNowFast(event, timeContext))
   );
   
   if (hasNowEvents) return 'now';
   
   const hasTodayEvents = venues.some(venue => 
-    venue.events.some(event => isEventHappeningToday(event))
+    venue.events.some(event => isEventHappeningTodayFast(event, timeContext))
   );
   
   if (hasTodayEvents) return 'today';
@@ -246,37 +286,194 @@ const calculateInterestLevel = (venues: Venue[]): InterestLevel => {
   return 'low';
 };
 
+type EventTimeContext = {
+  todayKey: string;
+  tomorrowKey: string;
+  yesterdayKey: string;
+  nowMinutes: number;
+};
+
+const DATE_KEY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+const NOON_MINUTES = 12 * 60;
+const END_OF_DAY_MINUTES = 23 * 60 + 59;
+
+const formatLocalDateKey = (date: Date): string => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const addDaysKey = (date: Date, days: number): string => {
+  const next = new Date(date);
+  next.setDate(next.getDate() + days);
+  return formatLocalDateKey(next);
+};
+
+const createEventTimeContext = (now = new Date()): EventTimeContext => ({
+  todayKey: formatLocalDateKey(now),
+  tomorrowKey: addDaysKey(now, 1),
+  yesterdayKey: addDaysKey(now, -1),
+  nowMinutes: now.getHours() * 60 + now.getMinutes(),
+});
+
+const getEventDateKey = (dateStr?: string | null): string => {
+  if (!dateStr) return '';
+
+  const rawKey = dateStr.slice(0, 10);
+  if (DATE_KEY_PATTERN.test(rawKey)) {
+    return rawKey;
+  }
+
+  const parsed = new Date(dateStr);
+  if (!Number.isNaN(parsed.getTime())) {
+    return formatLocalDateKey(parsed);
+  }
+
+  return '';
+};
+
+const parseTimeMinutes = (
+  timeStr?: string | null,
+  fallbackMinutes: number | null = null
+): number | null => {
+  if (!timeStr) return fallbackMinutes;
+
+  const trimmed = timeStr.trim();
+  const twelveHour = trimmed.match(/^(\d{1,2})(?::(\d{2}))?(?::\d{2})?\s*(AM|PM)$/i);
+  if (twelveHour) {
+    let hours = Number(twelveHour[1]);
+    const minutes = Number(twelveHour[2] ?? 0);
+    const ampm = twelveHour[3].toUpperCase();
+
+    if (ampm === 'PM' && hours < 12) hours += 12;
+    if (ampm === 'AM' && hours === 12) hours = 0;
+
+    return hours * 60 + minutes;
+  }
+
+  const twentyFourHour = trimmed.match(/^(\d{1,2}):(\d{2})(?::\d{2})?$/);
+  if (twentyFourHour) {
+    const hours = Number(twentyFourHour[1]);
+    const minutes = Number(twentyFourHour[2]);
+    if (hours >= 0 && hours < 24 && minutes >= 0 && minutes < 60) {
+      return hours * 60 + minutes;
+    }
+  }
+
+  return fallbackMinutes;
+};
+
+const isEventNowFast = (event: Pick<Event, 'startDate' | 'startTime' | 'endDate' | 'endTime'>, context: EventTimeContext): boolean => {
+  const startKey = getEventDateKey(event.startDate);
+  if (!startKey) return false;
+
+  const endKey = getEventDateKey(event.endDate) || startKey;
+  const startMinutes = parseTimeMinutes(event.startTime, NOON_MINUTES);
+  const endMinutes = parseTimeMinutes(event.endTime, END_OF_DAY_MINUTES);
+
+  if (startMinutes === null || endMinutes === null) return false;
+
+  const crossesMidnight = endMinutes < startMinutes;
+  const isMultiDay = endKey !== startKey;
+
+  if (isMultiDay) {
+    if (context.todayKey < startKey || context.todayKey > endKey) {
+      return false;
+    }
+
+    if (crossesMidnight) {
+      return context.nowMinutes >= startMinutes;
+    }
+
+    return context.nowMinutes >= startMinutes && context.nowMinutes <= endMinutes;
+  }
+
+  if (startKey === context.todayKey) {
+    if (crossesMidnight) {
+      return context.nowMinutes >= startMinutes;
+    }
+
+    return context.nowMinutes >= startMinutes && context.nowMinutes <= endMinutes;
+  }
+
+  if (startKey === context.yesterdayKey && crossesMidnight) {
+    return context.nowMinutes <= endMinutes;
+  }
+
+  return false;
+};
+
+const isEventHappeningTodayFast = (
+  event: Pick<Event, 'startDate' | 'startTime' | 'endDate' | 'endTime'>,
+  context: EventTimeContext
+): boolean => {
+  if (isEventNowFast(event, context)) {
+    return true;
+  }
+
+  const startKey = getEventDateKey(event.startDate);
+  if (!startKey) return false;
+
+  const endKey = getEventDateKey(event.endDate) || startKey;
+
+  if (endKey !== startKey) {
+    if (context.todayKey < startKey || context.todayKey > endKey) {
+      return false;
+    }
+
+    if (startKey === context.todayKey) {
+      return true;
+    }
+
+    if (context.todayKey > startKey && context.todayKey < endKey) {
+      return true;
+    }
+
+    if (endKey === context.todayKey) {
+      const endMinutes = parseTimeMinutes(event.endTime, END_OF_DAY_MINUTES);
+      return endMinutes !== null && context.nowMinutes <= endMinutes;
+    }
+
+    return true;
+  }
+
+  return startKey === context.todayKey;
+};
+
+const getEventTimeStatusFast = (
+  event: Pick<Event, 'startDate' | 'startTime' | 'endDate' | 'endTime'>,
+  context: EventTimeContext
+): TimeStatus => {
+  if (isEventNowFast(event, context)) return 'now';
+  if (isEventHappeningTodayFast(event, context)) return 'today';
+  return 'future';
+};
+
 /**
  * Determines if an event matches the given type-specific filters
  */
-export const doesEventMatchTypeFilters = (event: Event, typeFilters: TypeFilterCriteria): boolean => {
+export const doesEventMatchTypeFilters = (
+  event: Event,
+  typeFilters: TypeFilterCriteria,
+  timeContext: EventTimeContext = createEventTimeContext()
+): boolean => {
   // Check time filter
   if (typeFilters.timeFilter === TimeFilterType.ALL) {
     // No time filtering - show all events
     // Continue to other filters
   } else if (typeFilters.timeFilter === TimeFilterType.NOW) {
-    const isNow = isEventNow(
-      event.startDate,
-      event.startTime,
-      event.endDate || event.startDate,
-      event.endTime || ''
-    );
+    const isNow = isEventNowFast(event, timeContext);
     if (!isNow) return false;
   } else if (typeFilters.timeFilter === TimeFilterType.TODAY) {
-    const isToday = isEventHappeningToday(event);
+    const isToday = isEventHappeningTodayFast(event, timeContext);
     if (!isToday) return false;
   } else if (typeFilters.timeFilter === TimeFilterType.TOMORROW) {
-    // Check if event starts tomorrow (local day)
-    const eventDate = new Date(`${event.startDate}T00:00:00`);
-    const tomorrow = new Date();
-    tomorrow.setHours(0, 0, 0, 0);
-    tomorrow.setDate(tomorrow.getDate() + 1);
-
-    const isTomorrow = eventDate.getTime() === tomorrow.getTime();
+    const isTomorrow = getEventDateKey(event.startDate) === timeContext.tomorrowKey;
     if (!isTomorrow) return false;
   } else if (typeFilters.timeFilter === TimeFilterType.UPCOMING) {
     // UPCOMING should only show future events (not now or today)
-    const timeStatus = getEventTimeStatus(event);
+    const timeStatus = getEventTimeStatusFast(event, timeContext);
     if (timeStatus !== 'future') return false;
   }
 
@@ -366,6 +563,8 @@ export const calculateDistance = (
  * Filter events with type-specific filter support
  */
 const filterEvents = (events: Event[], criteria: FilterCriteria): Event[] => {
+  const timeContext = createEventTimeContext();
+
   return events.filter(event => {
     // Apply basic visibility filter
     const isVisible = 
@@ -379,7 +578,7 @@ const filterEvents = (events: Event[], criteria: FilterCriteria): Event[] => {
       ? criteria.eventFilters 
       : criteria.specialFilters;
     
-    return doesEventMatchTypeFilters(event, typeFilters);
+    return doesEventMatchTypeFilters(event, typeFilters, timeContext);
   });
 };
 
@@ -425,33 +624,28 @@ const calculateTimeFilterCounts = (
     return true;
   });
   
-  // Calculate counts for each time filter
-// Calculate counts for each time filter
-const counts = {
-  [TimeFilterType.ALL]: baseEvents.length,
-  [TimeFilterType.NOW]: baseEvents.filter(event =>
-    isEventNow(
-      event.startDate,
-      event.startTime,
-      event.endDate || event.startDate,
-      event.endTime || ''
-    )
-  ).length,
-  [TimeFilterType.TODAY]: baseEvents.filter(event =>
-    isEventHappeningToday(event)
-  ).length,
-  [TimeFilterType.TOMORROW]: baseEvents.filter(event => {
-    const eventDate = new Date(`${event.startDate}T00:00:00`);
-    const tomorrow = new Date();
-    tomorrow.setHours(0, 0, 0, 0);
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    return eventDate.getTime() === tomorrow.getTime();
-  }).length,
-  [TimeFilterType.UPCOMING]: baseEvents.filter(event => {
-    const timeStatus = getEventTimeStatus(event);
-    return timeStatus === 'future';
-  }).length
-};
+  const timeContext = createEventTimeContext();
+  const counts = {
+    [TimeFilterType.ALL]: baseEvents.length,
+    [TimeFilterType.NOW]: 0,
+    [TimeFilterType.TODAY]: 0,
+    [TimeFilterType.TOMORROW]: 0,
+    [TimeFilterType.UPCOMING]: 0
+  };
+
+  for (const event of baseEvents) {
+    const isNow = isEventNowFast(event, timeContext);
+    const isToday = isNow || isEventHappeningTodayFast(event, timeContext);
+
+    if (isNow) counts[TimeFilterType.NOW] += 1;
+    if (isToday) counts[TimeFilterType.TODAY] += 1;
+    if (getEventDateKey(event.startDate) === timeContext.tomorrowKey) {
+      counts[TimeFilterType.TOMORROW] += 1;
+    }
+    if (!isToday && !isNow) {
+      counts[TimeFilterType.UPCOMING] += 1;
+    }
+  }
 
   
   return counts;
@@ -466,6 +660,8 @@ const calculateCategoryFilterCounts = (
   currentCriteria: FilterCriteria, 
   eventType: 'event' | 'special'
 ): { [category: string]: number } => {
+  const timeContext = createEventTimeContext();
+
   // Get all unique categories for this event type
   const allCategories = Array.from(new Set(
     events
@@ -496,26 +692,16 @@ const calculateCategoryFilterCounts = (
       // Apply time filter logic
 // Apply time filter logic
 if (typeFilters.timeFilter === TimeFilterType.NOW) {
-  const isNow = isEventNow(
-    event.startDate,
-    event.startTime,
-    event.endDate || event.startDate,
-    event.endTime || ''
-  );
+  const isNow = isEventNowFast(event, timeContext);
   if (!isNow) return false;
 } else if (typeFilters.timeFilter === TimeFilterType.TODAY) {
-  const isToday = isEventHappeningToday(event);
+  const isToday = isEventHappeningTodayFast(event, timeContext);
   if (!isToday) return false;
 } else if (typeFilters.timeFilter === TimeFilterType.TOMORROW) {
-  const eventDate = new Date(`${event.startDate}T00:00:00`);
-  const tomorrow = new Date();
-  tomorrow.setHours(0, 0, 0, 0);
-  tomorrow.setDate(tomorrow.getDate() + 1);
-
-  const isTomorrow = eventDate.getTime() === tomorrow.getTime();
+  const isTomorrow = getEventDateKey(event.startDate) === timeContext.tomorrowKey;
   if (!isTomorrow) return false;
 } else if (typeFilters.timeFilter === TimeFilterType.UPCOMING) {
-  const timeStatus = getEventTimeStatus(event);
+  const timeStatus = getEventTimeStatusFast(event, timeContext);
   if (timeStatus !== 'future') return false;
 }
 
@@ -573,6 +759,7 @@ const clusterVenues = (venues: Venue[], zoom: number = 12): Cluster[] => {
   const features = __scIndex.getClusters([-180, -85, 180, 85], z);
 
   const clusters: Cluster[] = [];
+  const timeContext = createEventTimeContext();
 
   for (const f of features) {
     // Cluster feature
@@ -588,7 +775,7 @@ const clusterVenues = (venues: Venue[], zoom: number = 12): Cluster[] => {
       const eventCount = allEvents.filter(e => e.type === 'event').length;
       const specialCount = allEvents.filter(e => e.type === 'special').length;
       const categories = Array.from(new Set(allEvents.map(e => e.category)));
-      const timeStatus = determineClusterTimeStatus(venuesInCluster);
+      const timeStatus = determineClusterTimeStatus(venuesInCluster, timeContext);
       const interestLevel = calculateInterestLevel(venuesInCluster);
       const isBroadcasting = timeStatus === 'now';
 
@@ -625,7 +812,7 @@ const clusterVenues = (venues: Venue[], zoom: number = 12): Cluster[] => {
       const eventCount = allEvents.filter(e => e.type === 'event').length;
       const specialCount = allEvents.filter(e => e.type === 'special').length;
       const categories = Array.from(new Set(allEvents.map(e => e.category)));
-      const timeStatus = determineClusterTimeStatus([v]);
+      const timeStatus = determineClusterTimeStatus([v], timeContext);
       const interestLevel = calculateInterestLevel([v]);
       const isBroadcasting = timeStatus === 'now';
 
@@ -969,8 +1156,22 @@ selectCluster: (cluster) => {
   prefetchIfStale: async (maxAgeMs: number = 60000) => {
     const { isLoading, lastFetchedAt } = get();
     const now = Date.now();
-    if (isLoading) return;
-    if (lastFetchedAt && (now - lastFetchedAt) < maxAgeMs) return;
+    logStartupDataTiming('prefetch_if_stale_called', {
+      maxAgeMs,
+      isLoading,
+      hasLastFetchedAt: !!lastFetchedAt,
+      ageMs: lastFetchedAt ? now - lastFetchedAt : null,
+    });
+    if (isLoading) {
+      logStartupDataTiming('prefetch_if_stale_skipped_loading');
+      return;
+    }
+    if (lastFetchedAt && (now - lastFetchedAt) < maxAgeMs) {
+      logStartupDataTiming('prefetch_if_stale_skipped_fresh', {
+        ageMs: now - lastFetchedAt,
+      });
+      return;
+    }
     await get().fetchEvents();
   },
   
@@ -978,6 +1179,8 @@ selectCluster: (cluster) => {
    * Fetch events from API
    */
 fetchEvents: async () => {
+  const fetchEventsStartedAt = Date.now();
+  logStartupDataTiming('fetch_events_called');
   const qc: any = (global as any)?.__RQ_CLIENT ?? null;
   const queryKey = ['events-minimal'];
   const STALE_MS = 1000 * 60 * 3; // 3 minutes default
@@ -989,7 +1192,7 @@ fetchEvents: async () => {
     __ML_fetchCount += 1;
 
     // Use unified fetch that handles both data sources in parallel
-    const result = await fetchMinimalEvents();
+    const result = await fetchMinimalEventsShared();
 
     __ML_lastFetchMs = Date.now() - __tFetchStart;
     __ML_lastEventsCount = result.combinedData.filter((e: Event) => e.type === 'event').length;
@@ -1026,6 +1229,10 @@ fetchEvents: async () => {
   // CACHE-FIRST
   const cached = qc?.getQueryData(queryKey) as { combinedData: any[] } | undefined;
   if (cached?.combinedData?.length) {
+    logStartupDataTiming('fetch_events_using_query_cache', {
+      count: cached.combinedData.length,
+      elapsedMs: Date.now() - fetchEventsStartedAt,
+    });
     filtersChanged = true; // force recluster
     get().setAllEvents(cached.combinedData);
     set({ isLoading: false, error: null, lastFetchedAt: Date.now() });
@@ -1050,6 +1257,9 @@ fetchEvents: async () => {
   }
 
   // First load → foreground fetch
+  logStartupDataTiming('fetch_events_foreground_fetch_started', {
+    hasQueryClient: !!qc,
+  });
   set({ isLoading: true, error: null });
   try {
     const fresh = qc
@@ -1059,10 +1269,18 @@ fetchEvents: async () => {
     filtersChanged = true;
     get().setAllEvents(fresh.combinedData);
     set({ isLoading: false, lastFetchedAt: Date.now() });
+    logStartupDataTiming('fetch_events_completed', {
+      elapsedMs: Date.now() - fetchEventsStartedAt,
+      count: fresh.combinedData.length,
+    });
   } catch (error) {
     set({
       error: error instanceof Error ? error.message : 'Unknown error',
       isLoading: false,
+    });
+    logStartupDataTiming('fetch_events_failed', {
+      elapsedMs: Date.now() - fetchEventsStartedAt,
+      error: error instanceof Error ? error.message : String(error),
     });
     if (DEBUG_MAP_LOAD) console.log('[MapLoad][fetch] error', error);
   }
@@ -1074,6 +1292,12 @@ fetchEvents: async () => {
    */
   fetchViewportEvents: async (bbox: { west: number; south: number; east: number; north: number }) => {
     const startedAt = Date.now();
+    logStartupDataTiming('viewport_fetch_called', {
+      bbox,
+      allEvents: get().allEvents.length,
+      filteredEvents: get().filteredEvents.length,
+      clusters: get().clusters.length,
+    });
 
     try {
       set({ error: null });
@@ -1097,6 +1321,11 @@ fetchEvents: async () => {
       };
 
       let candidateEvents = (get().allEvents || []).filter(matchesTypeFilter);
+      logStartupDataTiming('viewport_candidates_ready', {
+        elapsedMs: Date.now() - startedAt,
+        candidateEvents: candidateEvents.length,
+        requestedType: typeParam,
+      });
 
       // Refresh from source when cache is empty for the requested type slice.
       if (candidateEvents.length === 0) {
@@ -1105,11 +1334,20 @@ fetchEvents: async () => {
             ? { isEvent: firestoreTypeFilter }
             : {};
 
-        const result = await fetchMinimalEvents(fetchOptions);
+        logStartupDataTiming('viewport_fetch_awaiting_minimal_events', {
+          elapsedMs: Date.now() - startedAt,
+          fetchOptions,
+        });
+        const result = await fetchMinimalEventsShared(fetchOptions);
         const dedupedAll = dedupeEvents(result.combinedData);
         candidateEvents = dedupedAll.filter(matchesTypeFilter);
         get().setAllEvents(dedupedAll);
         set({ lastFetchedAt: Date.now() });
+        logStartupDataTiming('viewport_fetch_minimal_events_ready', {
+          elapsedMs: Date.now() - startedAt,
+          fetched: dedupedAll.length,
+          matchedTypeCount: candidateEvents.length,
+        });
 
         if (DEBUG_MAP_LOAD) {
           console.log('[MapLoad][viewport] Warmed candidate events from API:', {
@@ -1138,17 +1376,44 @@ fetchEvents: async () => {
         );
       };
 
-      const coordinateEvents = candidateEvents.filter(hasValidCoordinates);
-      const viewportEvents = dedupeEvents(coordinateEvents.filter(inBbox));
-      const outsideViewportEvents = dedupeEvents(
-        coordinateEvents.filter((event) => !inBbox(event))
-      );
-      const allAvailableEvents = dedupeEvents([...viewportEvents, ...outsideViewportEvents]);
-      const filtered = filterEvents(allAvailableEvents, filters);
+      const partitionStartedAt = Date.now();
+      const coordinateEvents: Event[] = [];
+      const viewportEvents: Event[] = [];
+      const outsideViewportEvents: Event[] = [];
+
+      // candidateEvents comes from fetchMinimalEvents/dedupeEvents or allEvents,
+      // so keep this pass allocation-light and avoid re-deduping the same list.
+      for (const event of candidateEvents) {
+        if (!hasValidCoordinates(event)) {
+          continue;
+        }
+
+        coordinateEvents.push(event);
+        if (inBbox(event)) {
+          viewportEvents.push(event);
+        } else {
+          outsideViewportEvents.push(event);
+        }
+      }
+
+      const partitionMs = Date.now() - partitionStartedAt;
+      const filterStartedAt = Date.now();
+      const filtered = filterEvents(coordinateEvents, filters);
+      const filterMs = Date.now() - filterStartedAt;
+      logStartupDataTiming('viewport_partition_complete', {
+        elapsedMs: Date.now() - startedAt,
+        partitionMs,
+        filterMs,
+        candidateEvents: candidateEvents.length,
+        coordinateEvents: coordinateEvents.length,
+        viewportCount: viewportEvents.length,
+        outsideViewportCount: outsideViewportEvents.length,
+        filteredCount: filtered.length,
+      });
 
       filtersChanged = true;
 
-      const onScreenEvents = viewportEvents.filter(inBbox);
+      const onScreenEvents = viewportEvents;
 
       if (DEBUG_MAP_LOAD) {
         console.log('[MapLoad][viewport] Firestore client-side partition complete:', {
@@ -1163,7 +1428,7 @@ fetchEvents: async () => {
       }
 
       set({
-        events: allAvailableEvents,
+        events: coordinateEvents,
         viewportEvents,
         outsideViewportEvents,
         onScreenEvents,
@@ -1180,12 +1445,20 @@ fetchEvents: async () => {
       });
 
       get().generateClusters(get().zoomLevel);
+      logStartupDataTiming('viewport_fetch_completed', {
+        elapsedMs: Date.now() - startedAt,
+        clusters: get().clusters.length,
+      });
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : 'Unknown viewport fetch error';
       console.error('[MapStore] Viewport fetch error:', errorMsg);
       set({
         error: errorMsg,
         isLoading: false,
+      });
+      logStartupDataTiming('viewport_fetch_failed', {
+        elapsedMs: Date.now() - startedAt,
+        error: errorMsg,
       });
     }
   },
@@ -1444,6 +1717,10 @@ fetchEventDetails: async (eventIds: (string | number)[]) => {
     const { filteredEvents, zoomLevel } = get();
     const currentZoom = zoom || zoomLevel;
     const t0 = Date.now();
+    logStartupDataTiming('generate_clusters_started', {
+      zoom: currentZoom,
+      filteredEvents: filteredEvents.length,
+    });
 
     const venues = groupEventsByVenue(filteredEvents);
     const clusters = clusterVenues(venues, currentZoom);
@@ -1478,6 +1755,12 @@ if (DEBUG_MAP_LOAD) {
 }
 
 set({ clusters });
+logStartupDataTiming('generate_clusters_completed', {
+  elapsedMs: Date.now() - t0,
+  zoom: currentZoom,
+  venues: __ML_lastVenueCount,
+  clusters: __ML_lastClusterCount,
+});
   },
 
   getClustersForZoom: (zoom) => {

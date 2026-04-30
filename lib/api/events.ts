@@ -20,6 +20,18 @@ const LEGACY_EVENTS_URL = `${LEGACY_EVENTS_API_BASE}/minimal?type=event`;
 const LEGACY_SPECIALS_URL = `${LEGACY_EVENTS_API_BASE}/minimal?type=special`;
 
 export type FetchMinimalEventsOptions = FirestoreFetchOptions;
+type FetchMinimalEventsResult = {
+  combinedData: Event[];
+  fetchedAt: number;
+  sources: { googleSheets: number; firestore: number };
+};
+
+let minimalEventsInFlight:
+  | { key: string; startedAt: number; promise: Promise<FetchMinimalEventsResult> }
+  | null = null;
+
+const getFetchMinimalEventsKey = (options: FetchMinimalEventsOptions = {}) =>
+  JSON.stringify(options ?? {});
 
 /**
  * Stronger dedupe key to avoid collapsing distinct same-day occurrences.
@@ -78,13 +90,9 @@ async function fetchLegacyMinimalEvents(): Promise<Event[]> {
  * Fetch minimal events for app consumption.
  * Firestore path is default. Legacy endpoints are fallback-only.
  */
-export async function fetchMinimalEvents(
+async function fetchMinimalEventsFromSource(
   options: FetchMinimalEventsOptions = {}
-): Promise<{
-  combinedData: Event[];
-  fetchedAt: number;
-  sources: { googleSheets: number; firestore: number };
-}> {
+): Promise<FetchMinimalEventsResult> {
   const t0 = Date.now();
 
   if (USE_FIRESTORE_EVENTS) {
@@ -145,5 +153,29 @@ export async function fetchMinimalEvents(
       },
     };
   }
+}
+
+export function fetchMinimalEvents(
+  options: FetchMinimalEventsOptions = {}
+): Promise<FetchMinimalEventsResult> {
+  const key = getFetchMinimalEventsKey(options);
+  if (minimalEventsInFlight?.key === key) {
+    if (DEBUG_FETCH) {
+      console.log(
+        `[fetchMinimalEvents] Reusing in-flight request key=${key} ageMs=${Date.now() - minimalEventsInFlight.startedAt}`
+      );
+    }
+    return minimalEventsInFlight.promise;
+  }
+
+  const startedAt = Date.now();
+  const promise = fetchMinimalEventsFromSource(options).finally(() => {
+    if (minimalEventsInFlight?.promise === promise) {
+      minimalEventsInFlight = null;
+    }
+  });
+  minimalEventsInFlight = { key, startedAt, promise };
+
+  return promise;
 }
 

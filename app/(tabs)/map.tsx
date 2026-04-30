@@ -102,8 +102,21 @@ const STAGE_CLUSTER_MARKERS_ON_STARTUP = Platform.OS === 'android';
 const STARTUP_CLUSTER_MARKER_LIMIT = 12;
 const FULL_CLUSTER_MARKER_DELAY_MS = 1000;
 const RICH_CLUSTER_MARKER_DELAY_MS = Platform.OS === 'ios' ? 0 : 2000;
-const ANDROID_FULL_CLUSTER_MARKER_HOTSPOT_SETTLE_MS = 500;
+const ANDROID_FULL_CLUSTER_MARKER_HOTSPOT_SETTLE_MS = 0;
 const ANDROID_FULL_CLUSTER_MARKER_HOTSPOT_BACKUP_MS = 4000;
+
+const getAndroidHotspotStartupPhase = (): string | null => {
+  if (Platform.OS !== 'android') {
+    return null;
+  }
+
+  return ((global as any).mapHotspotStartupPhase as string | undefined) ?? null;
+};
+
+const isAndroidHotspotStartupCameraActive = (): boolean => {
+  const phase = getAndroidHotspotStartupPhase();
+  return phase === 'running' || phase === 'overlay_ready';
+};
 
 const getStartupClusterScore = (cluster: Cluster): number => {
   const statusScore =
@@ -888,6 +901,7 @@ const logAndroidStartupTiming = (label: string, details?: Record<string, unknown
     ...(details ?? {}),
   }));
 };
+const [startupHotspotPreviewCluster, setStartupHotspotPreviewCluster] = useState<Cluster | null>(null);
 
 // Preferred starting zoom (city-level)
 const START_ZOOM = 12;
@@ -901,6 +915,29 @@ const computeStartCenter = (): [number, number] => {
   }
   return (initialCenterCoordinate as [number, number]) ?? [-63.128, 46.238];
 };
+
+useEffect(() => {
+  if (Platform.OS !== 'android') {
+    return undefined;
+  }
+
+  const globalAny = global as any;
+  const previewClusterCallback = (cluster: Cluster | null) => {
+    setStartupHotspotPreviewCluster(cluster);
+    logAndroidStartupTiming('hotspot_preview_marker_callback', {
+      clusterId: cluster?.id ?? null,
+      venueCount: cluster?.venues?.length ?? 0,
+    });
+  };
+
+  globalAny.mapStartupHotspotPreviewClusterCallback = previewClusterCallback;
+
+  return () => {
+    if (globalAny.mapStartupHotspotPreviewClusterCallback === previewClusterCallback) {
+      delete globalAny.mapStartupHotspotPreviewClusterCallback;
+    }
+  };
+}, []);
 
 
 
@@ -1406,6 +1443,7 @@ const logPills = (msg: string, ctx?: Record<string, any>) => {
   const viewportFetchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const lastViewportFetchTimeRef = useRef<number>(0);  // Track last fetch timestamp for throttling
   const currentCameraStateRef = useRef<{ center: [number, number]; zoom: number } | null>(null);
+  const startupFallbackViewportUsedRef = useRef(false);
 
 
   // Add a ref to track current zoom threshold and visible clusters for stability
@@ -1414,6 +1452,7 @@ const visibleClusterIds = useRef<Set<string>>(new Set());
 const previousFilterCriteria = useRef<FilterCriteria>(filterCriteria);
 const previousClusterCount = useRef<number>(0);
 const startupMarkerSubsetLoggedRef = useRef<boolean>(false);
+const startupHotspotPreviewMarkerLoggedRef = useRef<boolean>(false);
 
   // 🔥 ANALYTICS: Add refs for tracking performance and behavior
 const mapInteractionStartTime = useRef<number | null>(null);
@@ -1430,17 +1469,51 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
       ? [location.coords.longitude, location.coords.latitude]
       : [-63.1276, 46.2336]; // Default to PEI coordinates
   }, [location]);
+
+  const requestStartupViewportFetch = (
+    center: GeoCoordinate,
+    source: 'fallback_center' | 'gps_location'
+  ) => {
+    const { width, height } = Dimensions.get('window');
+    const bbox = getViewportBoundingBox(center, START_ZOOM, width, height, 1.0);
+    const roundedBbox = roundBoundingBoxForCache(bbox, 3);  // 3 decimals = ~110m resolution
+
+    const previousBbox = lastViewportBboxRef.current;
+    const bboxChanged = !previousBbox || JSON.stringify(roundedBbox) !== JSON.stringify(previousBbox);
+    if (!bboxChanged) {
+      return;
+    }
+
+    if (DEBUG_MAP_LOAD) {
+      console.log('[Viewport] Startup load:', source, roundedBbox);
+    }
+
+    logAndroidStartupTiming('initial_viewport_fetch_requested', {
+      bbox: roundedBbox,
+      source,
+    });
+
+    lastViewportBboxRef.current = roundedBbox;
+    lastViewportFetchTimeRef.current = Date.now();
+    startupFallbackViewportUsedRef.current = source === 'fallback_center';
+    fetchViewportEvents(roundedBbox);
+  };
   
   // Request location permissions as soon as possible
   useEffect(() => {
     const requestLocationPermission = async () => {
       try {
+        logAndroidStartupTiming('location_permission_request_started');
         // 🔥 ANALYTICS: Track location permission request
         analytics.trackMapInteraction('location_permission_requested');
         
         const { status } = await Location.requestForegroundPermissionsAsync();
         const granted = status === 'granted';
         setLocationPermissionGranted(granted);
+        logAndroidStartupTiming('location_permission_request_completed', {
+          status,
+          granted,
+        });
         
         // 🔥 ANALYTICS: Track location permission result
         analytics.trackMapInteraction('location_permission_result', {
@@ -1458,6 +1531,9 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
         }
       } catch (error) {
         console.error('Error requesting location permission:', error);
+        logAndroidStartupTiming('location_permission_request_failed', {
+          error: error instanceof Error ? error.message : String(error),
+        });
         // 🔥 ANALYTICS: Track permission errors
         analytics.trackError('location_permission_error', 
           error instanceof Error ? error.message : 'Unknown permission error',
@@ -1475,12 +1551,16 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
     
     const startLocationTracking = async () => {
       try {
+        logAndroidStartupTiming('initial_location_request_started');
         // Get initial location
         const initialLocation = await Location.getCurrentPositionAsync({
           accuracy: Location.Accuracy.Balanced
         });
         
         setLocation(initialLocation);
+        logAndroidStartupTiming('initial_location_request_completed', {
+          accuracy: initialLocation.coords.accuracy ?? null,
+        });
         
         // Share location with the store for use in other components
         setUserLocation(initialLocation);
@@ -1521,6 +1601,9 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
         );
       } catch (error) {
         console.error('Error tracking location:', error);
+        logAndroidStartupTiming('initial_location_request_failed', {
+          error: error instanceof Error ? error.message : String(error),
+        });
         // 🔥 ANALYTICS: Track location tracking errors
         analytics.trackError('location_tracking_error',
           error instanceof Error ? error.message : 'Unknown location error',
@@ -1543,6 +1626,18 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
   useEffect(() => {
     // Only do this once when we first get a location
     if (location && !hasInitiallyPositioned && cameraRef.current) {
+      const hotspotStartupPhase = getAndroidHotspotStartupPhase();
+      if (isAndroidHotspotStartupCameraActive()) {
+        logAndroidStartupTiming('initial_center_camera_move_skipped_for_hotspot', {
+          hotspotStartupPhase,
+        });
+        traceMapEvent('initial_center_camera_move_skipped_for_hotspot', {
+          hotspotStartupPhase,
+        });
+        setHasInitiallyPositioned(true);
+        return;
+      }
+
         // Ignore hides briefly while we move the camera programmatically
     setIgnoreProgrammaticTrace(true, 'initial_center');
     logPills('PROGRAMMATIC MOVE START (initial center) — suppress hides 800ms');
@@ -1578,23 +1673,30 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
 
   }, [location, hasInitiallyPositioned]); // REMOVED analytics, isGuest dependencies
 
-  // Initial viewport load when location is acquired
+  // Initial viewport load from the same fallback center used by the camera.
+  // Live GPS refines this below; this removes the first-cluster wait on location.
   useEffect(() => {
-    if (location && !lastViewportBboxRef.current) {
-      const { width, height } = Dimensions.get('window');
-      const center: GeoCoordinate = {
+    if (lastViewportBboxRef.current) return;
+
+    requestStartupViewportFetch(
+      {
+        latitude: initialCenterCoordinate[1],
+        longitude: initialCenterCoordinate[0],
+      },
+      'fallback_center'
+    );
+  }, []);
+
+  // Initial viewport refinement when location is acquired
+  useEffect(() => {
+    if (location && (!lastViewportBboxRef.current || startupFallbackViewportUsedRef.current)) {
+      requestStartupViewportFetch(
+        {
         latitude: location.coords.latitude,
         longitude: location.coords.longitude
-      };
-
-      const bbox = getViewportBoundingBox(center, START_ZOOM, width, height, 1.0);
-      const roundedBbox = roundBoundingBoxForCache(bbox, 3);  // 3 decimals = ~110m resolution
-
-      if (DEBUG_MAP_LOAD) {
-        console.log('[Viewport] Initial load:', roundedBbox);
-      }
-      lastViewportBboxRef.current = roundedBbox;
-      fetchViewportEvents(roundedBbox);
+        },
+        'gps_location'
+      );
     }
   }, [location, fetchViewportEvents]);
 
@@ -1625,13 +1727,18 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
       return;
     }
 
-    // Check if viewport data already exists - if so, skip React Query fetch
+    // Check if viewport data already exists, or the startup viewport request
+    // has already begun. That path fetches/derives the same minimal event data,
+    // so running prefetchIfStale here just toggles isLoading and delays
+    // interaction readiness after first clusters are already available.
     const hasViewportData = viewportEvents.length > 0;
+    const hasStartupViewportRequest = lastViewportBboxRef.current !== null;
 
-    if (hasViewportData) {
-      console.log('[MapScreen] Viewport data already loaded, skipping prefetchIfStale');
+    if (hasViewportData || hasStartupViewportRequest) {
+      console.log('[MapScreen] Startup viewport active, skipping prefetchIfStale');
     } else {
       console.log('[MapScreen] No preloaded events on mount — invoking prefetchIfStale(0)');
+      logAndroidStartupTiming('prefetch_if_stale_requested_from_map_mount');
       prefetchIfStale(0)
         .catch((error) => {
           console.error('Error prefetching events:', error);
@@ -1644,6 +1751,9 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
         .finally(() => {
           const dur = Date.now() - t0;
           console.log('[MapScreen] prefetchIfStale(0) finished in', dur, 'ms');
+          logAndroidStartupTiming('prefetch_if_stale_finished_from_map_mount', {
+            durationMs: dur,
+          });
           analytics.logEvent('map_data_fetch', {
             duration_ms: dur,
             screen: 'map',
@@ -2065,6 +2175,11 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
           clusterCount: latestClusterCountRef.current,
           settleDelayMs: ANDROID_FULL_CLUSTER_MARKER_HOTSPOT_SETTLE_MS,
         });
+
+        if (ANDROID_FULL_CLUSTER_MARKER_HOTSPOT_SETTLE_MS <= 0) {
+          enableFullClusterMarkers('hotspot_overlay_ready');
+          return;
+        }
 
         fullClusterMarkersTimerRef.current = setTimeout(() => {
           fullClusterMarkersTimerRef.current = null;
@@ -3017,6 +3132,18 @@ const handleMapMovementEnd = useCallback(() => {
 React.useEffect(() => {
   if (!location) return;
   if (__ml_userStartAppliedRef.current) return;
+  const hotspotStartupPhase = getAndroidHotspotStartupPhase();
+  if (isAndroidHotspotStartupCameraActive()) {
+    __ml_userStartAppliedRef.current = true;
+    logAndroidStartupTiming('applied_user_start_skipped_for_hotspot', {
+      hotspotStartupPhase,
+    });
+    traceMapEvent('applied_user_start_skipped_for_hotspot', {
+      hotspotStartupPhase,
+    });
+    return;
+  }
+
   __ml_userStartAppliedRef.current = true;
 
   try {
@@ -3543,9 +3670,25 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
     // path is not competing with every custom marker at once.
     const visibleClustersForRender = clusters.filter(cluster => visibleClusterIds.current.has(cluster.id));
     const shouldUseStartupClusterSubset = STAGE_CLUSTER_MARKERS_ON_STARTUP && !fullClusterMarkersEnabled;
-    const clustersForRender = !shouldUseStartupClusterSubset
+    const baseClustersForRender = !shouldUseStartupClusterSubset
       ? visibleClustersForRender
       : pickStartupClusters(visibleClustersForRender, STARTUP_CLUSTER_MARKER_LIMIT);
+    const shouldAppendHotspotPreviewCluster =
+      Platform.OS === 'android' &&
+      shouldUseStartupClusterSubset &&
+      startupHotspotPreviewCluster &&
+      !baseClustersForRender.some(cluster => cluster.id === startupHotspotPreviewCluster.id);
+    const clustersForRender = shouldAppendHotspotPreviewCluster
+      ? [...baseClustersForRender, startupHotspotPreviewCluster]
+      : baseClustersForRender;
+
+    if (shouldAppendHotspotPreviewCluster && !startupHotspotPreviewMarkerLoggedRef.current) {
+      startupHotspotPreviewMarkerLoggedRef.current = true;
+      logAndroidStartupTiming('hotspot_preview_marker_rendered', {
+        clusterId: startupHotspotPreviewCluster.id,
+        baseRenderedCount: baseClustersForRender.length,
+      });
+    }
 
     if (
       DEBUG_MAP_LOAD &&
@@ -3783,19 +3926,32 @@ onDidFinishLoadingMap={() => {
     hasLocationPermission: locationPermissionGranted,
   });
 
-  // Instantly set camera to the best-known start center (no fly animation)
-  try {
-    const startCenter = computeStartCenter();
-    cameraRef.current?.setCamera({
-      centerCoordinate: startCenter,
-      zoomLevel: START_ZOOM,
-      animationDuration: 0,
-    });
-    if (typeof setZoomLevel === 'function') {
-      setZoomLevel(START_ZOOM);
+  const hotspotStartupPhase = getAndroidHotspotStartupPhase();
+  const hotspotOwnsStartupCamera = isAndroidHotspotStartupCameraActive();
+
+  // Instantly set camera to the best-known start center (no fly animation),
+  // unless the daily hotspot has already taken control of startup camera motion.
+  if (!hotspotOwnsStartupCamera) {
+    try {
+      const startCenter = computeStartCenter();
+      cameraRef.current?.setCamera({
+        centerCoordinate: startCenter,
+        zoomLevel: START_ZOOM,
+        animationDuration: 0,
+      });
+      if (typeof setZoomLevel === 'function') {
+        setZoomLevel(START_ZOOM);
+      }
+    } catch (e) {
+      if (DEBUG_MAP_LOAD) console.log('[MapLoad] setCamera error', e);
     }
-  } catch (e) {
-    if (DEBUG_MAP_LOAD) console.log('[MapLoad] setCamera error', e);
+  } else {
+    logAndroidStartupTiming('map_loaded_start_camera_snap_skipped_for_hotspot', {
+      hotspotStartupPhase,
+    });
+    traceMapEvent('map_loaded_start_camera_snap_skipped_for_hotspot', {
+      hotspotStartupPhase,
+    });
   }
 
   // Force pills visible NOW (inline animation; avoids order issues)
@@ -3804,10 +3960,13 @@ onDidFinishLoadingMap={() => {
     Animated.timing(pillsOpacity,  { toValue: 1, duration: 160, useNativeDriver: true }),
   ]).start();
 
-  // Do NOT allow hides until the first real user gesture
-  userGestureSeenRef.current = false;
-  autoHideEnabledRef.current = false;
-  setIgnoreProgrammaticTrace(true, 'map_loaded_initial_lock');
+  // Do NOT allow hides until the first real user gesture. If the hotspot owns
+  // startup camera motion, its own lock controls this period.
+  if (!hotspotOwnsStartupCamera) {
+    userGestureSeenRef.current = false;
+    autoHideEnabledRef.current = false;
+    setIgnoreProgrammaticTrace(true, 'map_loaded_initial_lock');
+  }
 }}
 
 

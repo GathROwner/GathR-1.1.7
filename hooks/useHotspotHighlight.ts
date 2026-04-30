@@ -54,6 +54,7 @@ const HOTSPOT_MIN_CAMERA_IDLE_MS = Platform.OS === 'android' ? 0 : 300;
 const DEFER_HOTSPOT_VISIBILITY_UNTIL_REFINED = Platform.OS === 'ios' || Platform.OS === 'android';
 const ANDROID_HOTSPOT_TIMING_DIAGNOSTICS = __DEV__ && Platform.OS === 'android';
 const ANDROID_CLUSTER_STORE_SYNC_BACKUP_MS = 8000;
+const ANDROID_HOTSPOT_VISIBILITY_FRAME_FALLBACK_MS = 750;
 
 function hotspotDebugLog(...args: unknown[]) {
   if (__DEV__ && HOTSPOT_VERBOSE_DEBUG) {
@@ -330,6 +331,7 @@ export function useHotspotHighlight(
   const triggerTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const cameraRetryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const cameraFinalizeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hotspotVisibilityFrameTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const deferredClusterSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingClusterStoreSyncRef = useRef(false);
   const pendingClusterUnlockReasonRef = useRef<string | null>(null);
@@ -397,10 +399,38 @@ export function useHotspotHighlight(
     setHotspotProgrammaticLock(false, unlockReason);
   }, [logAndroidHotspotTiming, setHotspotProgrammaticLock]);
 
+  const queueAndroidHotspotPreviewMarker = useCallback((clusterForTooltip: Cluster) => {
+    if (Platform.OS !== 'android') {
+      return false;
+    }
+
+    const previewMarkerCallback = (global as any).mapStartupHotspotPreviewClusterCallback;
+    if (typeof previewMarkerCallback !== 'function') {
+      logAndroidHotspotTiming('preview_marker_callback_unavailable', {
+        clusterId: clusterForTooltip.id,
+      });
+      return false;
+    }
+
+    previewMarkerCallback(clusterForTooltip);
+    logAndroidHotspotTiming('preview_marker_queued', {
+      clusterId: clusterForTooltip.id,
+      venueCount: clusterForTooltip.venues?.length ?? 0,
+    });
+    return true;
+  }, [logAndroidHotspotTiming]);
+
   const clearCameraFinalizeTimer = useCallback(() => {
     if (cameraFinalizeTimerRef.current) {
       clearTimeout(cameraFinalizeTimerRef.current);
       cameraFinalizeTimerRef.current = null;
+    }
+  }, []);
+
+  const clearHotspotVisibilityFrameTimer = useCallback(() => {
+    if (hotspotVisibilityFrameTimerRef.current) {
+      clearTimeout(hotspotVisibilityFrameTimerRef.current);
+      hotspotVisibilityFrameTimerRef.current = null;
     }
   }, []);
 
@@ -437,6 +467,7 @@ export function useHotspotHighlight(
     return () => {
       clearCameraRetryTimer();
       clearCameraFinalizeTimer();
+      clearHotspotVisibilityFrameTimer();
       clearHotspotCameraReadyCallback();
       clearHotspotCameraIdleCallback();
     };
@@ -445,6 +476,7 @@ export function useHotspotHighlight(
     clearCameraRetryTimer,
     clearHotspotCameraIdleCallback,
     clearHotspotCameraReadyCallback,
+    clearHotspotVisibilityFrameTimer,
   ]);
 
   useEffect(() => {
@@ -626,6 +658,13 @@ export function useHotspotHighlight(
     setIsVisible(false);
     overlayPositionReadyRef.current = false;
     visibleSourceRef.current = null;
+    if (Platform.OS === 'android') {
+      (global as any).mapHotspotStartupPhase = 'dismissed';
+      const previewMarkerCallback = (global as any).mapStartupHotspotPreviewClusterCallback;
+      if (typeof previewMarkerCallback === 'function') {
+        previewMarkerCallback(null);
+      }
+    }
 
     // Zoom back to original position
     const cameraRef = (global as any).mapCameraRef;
@@ -726,6 +765,8 @@ export function useHotspotHighlight(
     hotspotTimingStartRef.current = Date.now();
     overlayPositionReadyRef.current = false;
     visibleSourceRef.current = null;
+    pendingClusterStoreSyncRef.current = false;
+    pendingClusterUnlockReasonRef.current = null;
     if (Platform.OS === 'android') {
       (global as any).mapHotspotStartupPhase = 'running';
     }
@@ -888,6 +929,48 @@ export function useHotspotHighlight(
 
     const showInitialHotspot = (source: 'camera_ready' | 'camera_unavailable' | 'camera_retry') => {
       showHotspot(hottest, source, 'hotspot_visible_initial');
+    };
+
+    const showRefinedHotspotAfterMapFrame = (
+      clusterForTooltip: Cluster,
+      source: 'camera_ready' | 'camera_retry'
+    ) => {
+      if (Platform.OS !== 'android') {
+        showHotspot(clusterForTooltip, source, 'hotspot_visible_refined');
+        return;
+      }
+
+      queueAndroidHotspotPreviewMarker(clusterForTooltip);
+      clearHotspotCameraReadyCallback();
+      clearHotspotVisibilityFrameTimer();
+
+      let didShow = false;
+      const showOnce = (completionSource: 'render_frame' | 'fallback_timer') => {
+        if (didShow || initialHotspotShownRef.current) {
+          return;
+        }
+
+        didShow = true;
+        clearHotspotCameraReadyCallback();
+        clearHotspotVisibilityFrameTimer();
+        logAndroidHotspotTiming('visibility_released_after_map_frame', {
+          completionSource,
+          clusterId: clusterForTooltip.id,
+        });
+        showHotspot(clusterForTooltip, source, 'hotspot_visible_refined');
+      };
+
+      const readyCallback = () => showOnce('render_frame');
+      hotspotCameraReadyCallbackRef.current = readyCallback;
+      (global as any).mapHotspotCameraReadyCallback = readyCallback;
+      logAndroidHotspotTiming('visibility_waiting_for_post_recenter_frame', {
+        clusterId: clusterForTooltip.id,
+        fallbackMs: ANDROID_HOTSPOT_VISIBILITY_FRAME_FALLBACK_MS,
+      });
+
+      hotspotVisibilityFrameTimerRef.current = setTimeout(() => {
+        showOnce('fallback_timer');
+      }, ANDROID_HOTSPOT_VISIBILITY_FRAME_FALLBACK_MS);
     };
 
     const startHotspotCameraAnimation = (
@@ -1092,7 +1175,7 @@ export function useHotspotHighlight(
         });
 
         if (DEFER_HOTSPOT_VISIBILITY_UNTIL_REFINED) {
-          showHotspot(clusterForTooltip, source, 'hotspot_visible_refined');
+          showRefinedHotspotAfterMapFrame(clusterForTooltip, source);
         }
 
         if (shouldSyncClusterStoreAfterVisible) {
@@ -1216,10 +1299,12 @@ export function useHotspotHighlight(
     clearCameraRetryTimer,
     clearHotspotCameraIdleCallback,
     clearHotspotCameraReadyCallback,
+    clearHotspotVisibilityFrameTimer,
     flushPendingClusterStoreSync,
     clusters,
     favoriteVenues,
     logAndroidHotspotTiming,
+    queueAndroidHotspotPreviewMarker,
     setHotspotProgrammaticLock,
     userInterests,
     userLocation,
