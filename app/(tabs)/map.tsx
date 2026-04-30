@@ -4017,6 +4017,7 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
           bottom: 12,
           left: Math.round((Dimensions.get('window').width / 2) - 50)
         }}
+        surfaceView={Platform.OS === 'android' ? false : undefined}
 onLayout={(event) => {
   const { width, height, x, y } = event.nativeEvent.layout;
   setMapDimensions({ width, height });
