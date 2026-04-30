@@ -1050,6 +1050,8 @@ useEffect(() => {
   const clustersReadyForInteractionRef = useRef(false);
   const fullClusterMarkersEnabledRef = useRef(false);
   const cachedStartupCenterAppliedRef = useRef(false);
+  const startupCameraCenterRef = useRef<[number, number] | null>(null);
+  const startupCameraSourceRef = useRef<string | null>(null);
   const initialViewportWaitingLoggedRef = useRef(false);
   const fullClusterMarkersTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const richClusterMarkersTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1116,9 +1118,22 @@ useEffect(() => {
     !mapFirstFrameRendered &&
     Boolean(location || cachedStartupLocation) &&
     (locationPermissionGranted || Boolean(cachedStartupLocation));
+  const shouldRenderBlockingLoadingOverlay =
+    isLoading && Platform.OS !== 'android';
   clustersReadyForInteractionRef.current = clustersReadyForInteraction;
   fullClusterMarkersEnabledRef.current = fullClusterMarkersEnabled;
   const shouldRenderAncillaryOverlays = !isCalloutOpen && !hasPresentedCallout;
+
+  useEffect(() => {
+    if (Platform.OS !== 'android') {
+      return;
+    }
+
+    (global as any).mapFirstFrameRendered = false;
+    return () => {
+      delete (global as any).mapFirstFrameRendered;
+    };
+  }, []);
 
   // Close filter panel and callouts only when the map tab actually loses focus.
   // A useFocusEffect cleanup tied to selectedVenues was firing during selection
@@ -1490,6 +1505,95 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
     return [-63.1276, 46.2336]; // Default to PEI coordinates
   }, [cachedStartupLocation, location]);
 
+  const applyAndroidStartupCameraCenter = (
+    center: [number, number],
+    source: string,
+    options: { logMapLoadLabel?: string; allowAfterFirstFrame?: boolean } = {}
+  ): boolean => {
+    if (Platform.OS !== 'android') {
+      return false;
+    }
+
+    if (!cameraRef.current) {
+      return false;
+    }
+
+    const hotspotStartupPhase = getAndroidHotspotStartupPhase();
+    if (isAndroidHotspotStartupCameraActive()) {
+      logAndroidStartupTiming('startup_camera_center_skipped_for_hotspot', {
+        source,
+        hotspotStartupPhase,
+      });
+      traceMapEvent('startup_camera_center_skipped_for_hotspot', {
+        source,
+        hotspotStartupPhase,
+      });
+      return true;
+    }
+
+    const previousCenter = startupCameraCenterRef.current;
+    if (previousCenter) {
+      const distanceMeters = haversineMeters(
+        previousCenter[0],
+        previousCenter[1],
+        center[0],
+        center[1]
+      );
+
+      if (distanceMeters <= 80) {
+        logAndroidStartupTiming('startup_camera_center_skipped_duplicate', {
+          source,
+          previousSource: startupCameraSourceRef.current,
+          distanceMeters: Math.round(distanceMeters),
+        });
+        return true;
+      }
+
+      if (mapFirstFrameRenderedRef.current && !options.allowAfterFirstFrame) {
+        logAndroidStartupTiming('startup_camera_center_skipped_after_first_frame', {
+          source,
+          previousSource: startupCameraSourceRef.current,
+          distanceMeters: Math.round(distanceMeters),
+        });
+        return true;
+      }
+    }
+
+    if (mapFirstFrameRenderedRef.current && !previousCenter && !options.allowAfterFirstFrame) {
+      logAndroidStartupTiming('startup_camera_center_skipped_late_without_prior_center', {
+        source,
+      });
+      return true;
+    }
+
+    try {
+      cameraRef.current.setCamera({
+        centerCoordinate: center,
+        zoomLevel: START_ZOOM,
+        animationDuration: 0,
+      });
+      startupCameraCenterRef.current = center;
+      startupCameraSourceRef.current = source;
+      if (typeof setZoomLevel === 'function') {
+        setZoomLevel(START_ZOOM);
+      }
+      logAndroidStartupTiming('startup_camera_center_applied', {
+        source,
+        latitude: center[1],
+        longitude: center[0],
+      });
+      if (options.logMapLoadLabel && DEBUG_MAP_LOAD) {
+        console.log(`[MapLoad][${__ml_sessionIdRef.current}] ${options.logMapLoadLabel}`);
+      }
+      return true;
+    } catch (e) {
+      if (DEBUG_MAP_LOAD) {
+        console.log('[MapLoad] startup camera setCamera error', e);
+      }
+      return false;
+    }
+  };
+
   useEffect(() => {
     let cancelled = false;
 
@@ -1529,12 +1633,15 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
         return false;
       }
 
-      const hotspotStartupPhase = getAndroidHotspotStartupPhase();
-      if (isAndroidHotspotStartupCameraActive()) {
-        logAndroidStartupTiming('cached_startup_center_skipped_for_hotspot', {
-          hotspotStartupPhase,
-        });
-        return true;
+      if (Platform.OS === 'android') {
+        const applied = applyAndroidStartupCameraCenter(
+          [cachedStartupLocation.longitude, cachedStartupLocation.latitude],
+          'cached_startup_location'
+        );
+        if (applied) {
+          cachedStartupCenterAppliedRef.current = true;
+        }
+        return applied;
       }
 
       cameraRef.current.setCamera({
@@ -1772,6 +1879,7 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
   useEffect(() => {
     // Only do this once when we first get a location
     if (location && !hasInitiallyPositioned && cameraRef.current) {
+      const dest: [number, number] = [location.coords.longitude, location.coords.latitude];
       const hotspotStartupPhase = getAndroidHotspotStartupPhase();
       if (isAndroidHotspotStartupCameraActive()) {
         logAndroidStartupTiming('initial_center_camera_move_skipped_for_hotspot', {
@@ -1781,6 +1889,24 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
           hotspotStartupPhase,
         });
         setHasInitiallyPositioned(true);
+        return;
+      }
+
+      if (Platform.OS === 'android') {
+        const applied = applyAndroidStartupCameraCenter(dest, 'initial_location', {
+          logMapLoadLabel: 'applied_user_start',
+        });
+        if (applied) {
+          __ml_userStartAppliedRef.current = true;
+          setHasInitiallyPositioned(true);
+        }
+
+        autoHideEnabledRef.current = false;
+        logPills('AUTO-HIDE ARMED pending (600ms)');
+        setTimeout(() => {
+          autoHideEnabledRef.current = true;
+          logPills('AUTO-HIDE ARMED = true');
+        }, 600);
         return;
       }
 
@@ -1799,7 +1925,7 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
 
 
     cameraRef.current.setCamera({
-      centerCoordinate: [location.coords.longitude, location.coords.latitude],
+      centerCoordinate: dest,
 
       zoomLevel: 12,
       animationDuration: 500,
@@ -3310,6 +3436,13 @@ React.useEffect(() => {
 
   try {
     const dest: [number, number] = [location.coords.longitude, location.coords.latitude];
+    if (Platform.OS === 'android') {
+      applyAndroidStartupCameraCenter(dest, 'user_start', {
+        logMapLoadLabel: 'applied_user_start',
+      });
+      return;
+    }
+
     cameraRef.current?.setCamera({
       centerCoordinate: dest,
       zoomLevel: START_ZOOM,
@@ -3326,6 +3459,14 @@ React.useEffect(() => {
 useEffect(() => {
   // Snap the camera immediately on mount (no animation), so we never show the globe
   try {
+    if (Platform.OS === 'android') {
+      applyAndroidStartupCameraCenter(computeStartCenter(), 'initial_snap', {
+        logMapLoadLabel: 'applied_initial_snap',
+      });
+      __ml_initialSnapDoneRef.current = true;
+      return;
+    }
+
     cameraRef.current?.setCamera({
       centerCoordinate: computeStartCenter(),
       zoomLevel: START_ZOOM,
@@ -3397,6 +3538,40 @@ if (isGesture && !userGestureSeenRef.current) {
   const centerArr: [number, number] | undefined =
     (Array.isArray(props.center) && props.center.length === 2 ? props.center as [number, number] : undefined) ||
     (Array.isArray(e?.geometry?.coordinates) && e.geometry.coordinates.length === 2 ? e.geometry.coordinates as [number, number] : undefined);
+
+  if (Platform.OS === 'android' && centerArr && typeof zoom === 'number') {
+    const globalAny = global as any;
+    const settleTarget = globalAny.mapHotspotCameraSettleTarget;
+    const settleCallback = globalAny.mapHotspotCameraSettledCallback;
+    if (
+      settleTarget &&
+      typeof settleCallback === 'function' &&
+      typeof settleTarget.longitude === 'number' &&
+      typeof settleTarget.latitude === 'number' &&
+      typeof settleTarget.zoom === 'number'
+    ) {
+      const elapsedMs = now - (Number(settleTarget.startedAt) || now);
+      const minElapsedMs = Number(settleTarget.minElapsedMs) || 0;
+      const distanceMeters = haversineMeters(
+        centerArr[0],
+        centerArr[1],
+        settleTarget.longitude,
+        settleTarget.latitude
+      );
+      const zoomDeltaToTarget = Math.abs(zoom - settleTarget.zoom);
+
+      if (elapsedMs >= minElapsedMs && distanceMeters <= 120 && zoomDeltaToTarget <= 0.18) {
+        delete globalAny.mapHotspotCameraSettledCallback;
+        delete globalAny.mapHotspotCameraSettleTarget;
+        logAndroidStartupTiming('hotspot_camera_target_reached_from_camera_change', {
+          elapsedMs,
+          distanceMeters: Math.round(distanceMeters),
+          zoomDelta: Number(zoomDeltaToTarget.toFixed(3)),
+        });
+        settleCallback();
+      }
+    }
+  }
 
   // Deltas
   const zoomDelta = typeof zoom === 'number' ? Math.abs(zoom - lastZoomLevel.current) : 0;
@@ -4061,11 +4236,12 @@ onMapIdle={() => {
 }}
 
 onDidFinishRenderingFrameFully={() => {
-  notifyHotspotCameraReady('rendering_frame_fully');
   if (!mapFirstFrameRenderedRef.current) {
     mapFirstFrameRenderedRef.current = true;
+    (global as any).mapFirstFrameRendered = true;
     setMapFirstFrameRendered(true);
   }
+  notifyHotspotCameraReady('rendering_frame_fully');
   if (DEBUG_MAP_LOAD && !__ml_firstFrameLoggedRef.current) {
     __ml_firstFrameLoggedRef.current = true;
     const t1bf = Date.now();
@@ -4104,13 +4280,17 @@ onDidFinishLoadingMap={() => {
   if (!hotspotOwnsStartupCamera) {
     try {
       const startCenter = computeStartCenter();
-      cameraRef.current?.setCamera({
-        centerCoordinate: startCenter,
-        zoomLevel: START_ZOOM,
-        animationDuration: 0,
-      });
-      if (typeof setZoomLevel === 'function') {
-        setZoomLevel(START_ZOOM);
+      if (Platform.OS === 'android') {
+        applyAndroidStartupCameraCenter(startCenter, 'map_loaded');
+      } else {
+        cameraRef.current?.setCamera({
+          centerCoordinate: startCenter,
+          zoomLevel: START_ZOOM,
+          animationDuration: 0,
+        });
+        if (typeof setZoomLevel === 'function') {
+          setZoomLevel(START_ZOOM);
+        }
       }
     } catch (e) {
       if (DEBUG_MAP_LOAD) console.log('[MapLoad] setCamera error', e);
@@ -4241,7 +4421,7 @@ onDidFinishLoadingMap={() => {
         />
       )}
       
-      {isLoading && (
+      {shouldRenderBlockingLoadingOverlay && (
         <View style={styles.loadingOverlay}>
           <Text>Loading map data...</Text>
         </View>

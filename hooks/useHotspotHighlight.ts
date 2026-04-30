@@ -49,6 +49,7 @@ interface OriginalCameraPosition {
 const HOTSPOT_VERBOSE_DEBUG = false;
 const HOTSPOT_TRIGGER_DELAY_MS = 0;
 const HOTSPOT_CAMERA_ZOOM_LEVEL = 14.4;
+const HOTSPOT_RETURN_ZOOM_LEVEL = 12;
 const HOTSPOT_CAMERA_ANIMATION_MS = Platform.OS === 'android' ? 800 : 1000;
 const HOTSPOT_MIN_CAMERA_IDLE_MS = Platform.OS === 'android' ? 400 : 300;
 const HOTSPOT_CAMERA_FINALIZE_BUFFER_MS = Platform.OS === 'android' ? 250 : 100;
@@ -56,6 +57,7 @@ const DEFER_HOTSPOT_VISIBILITY_UNTIL_REFINED = Platform.OS === 'ios' || Platform
 const ANDROID_HOTSPOT_TIMING_DIAGNOSTICS = __DEV__ && Platform.OS === 'android';
 const ANDROID_CLUSTER_STORE_SYNC_BACKUP_MS = 8000;
 const ANDROID_HOTSPOT_VISIBILITY_FRAME_FALLBACK_MS = 750;
+const ANDROID_WAIT_FOR_FIRST_MAP_FRAME_BEFORE_CAMERA = Platform.OS === 'android';
 
 function hotspotDebugLog(...args: unknown[]) {
   if (__DEV__ && HOTSPOT_VERBOSE_DEBUG) {
@@ -93,6 +95,46 @@ const getClusterCentroidCoordinate = (cluster: Cluster | null): [number, number]
   }
 
   return [sumLongitude / validVenueCount, sumLatitude / validVenueCount];
+};
+
+const isMapFirstFrameReadyForHotspotCamera = (): boolean => {
+  return (
+    !ANDROID_WAIT_FOR_FIRST_MAP_FRAME_BEFORE_CAMERA ||
+    (global as any).mapFirstFrameRendered === true
+  );
+};
+
+const findClusterContainingVenue = (
+  clusters: Cluster[],
+  venueName: string | null | undefined
+): Cluster | null => {
+  if (!venueName) {
+    return null;
+  }
+
+  for (const cluster of clusters) {
+    const hasVenue = cluster.venues?.some(venue => venue.venue === venueName);
+    if (hasVenue) {
+      return cluster;
+    }
+  }
+
+  return null;
+};
+
+const normalizeReturnZoom = (zoom: number | null | undefined): number => {
+  if (typeof zoom !== 'number' || !Number.isFinite(zoom)) {
+    return HOTSPOT_RETURN_ZOOM_LEVEL;
+  }
+
+  // During startup the store can briefly report a world-level zoom before the
+  // first real camera frame. Returning to that value makes the app jump out to
+  // a continent view, so clamp the daily-hotspot return to the user-level range.
+  if (zoom < 10 || zoom > 16) {
+    return HOTSPOT_RETURN_ZOOM_LEVEL;
+  }
+
+  return zoom;
 };
 
 /**
@@ -720,7 +762,7 @@ export function useHotspotHighlight(
       const coords: [number, number] | undefined = hasValidLatestUserLocation
         ? [latestUserLocation.coords.longitude, latestUserLocation.coords.latitude]
         : originalCameraRef.current?.coordinates;
-      const zoom = originalCameraRef.current?.zoom ?? 12;
+      const zoom = normalizeReturnZoom(originalCameraRef.current?.zoom);
 
       // Validate coordinates are valid numbers before zooming
       if (
@@ -933,7 +975,7 @@ export function useHotspotHighlight(
 
         originalCameraRef.current = {
           coordinates,
-          zoom: mapStore?.zoomLevel || 12,
+          zoom: normalizeReturnZoom(mapStore?.zoomLevel),
         };
       } catch (e) {
         // Set fallback so we don't crash on zoom-back
@@ -1059,19 +1101,59 @@ export function useHotspotHighlight(
       setHotspotProgrammaticLock(true, 'trigger_zoom_in');
 
       let cameraFinalized = false;
-      const initialTargetCoordinate =
+      const fallbackTargetCoordinate =
         getClusterCentroidCoordinate(hottest) ?? [hottestVenue.longitude, hottestVenue.latitude];
+      let refinedClusterForAnimation: Cluster | null = null;
+      let refinedClustersForAnimation: Cluster[] | null = null;
+      let animationTargetCoordinate = fallbackTargetCoordinate;
+
+      if (Platform.OS === 'android') {
+        try {
+          refinedClustersForAnimation = useMapStore.getState().getClustersForZoom(HOTSPOT_CAMERA_ZOOM_LEVEL);
+          refinedClusterForAnimation = findClusterContainingVenue(
+            refinedClustersForAnimation,
+            hottestVenueNameRef.current ?? hottestVenue.venue
+          );
+          const refinedCoordinate = getClusterCentroidCoordinate(refinedClusterForAnimation);
+          if (refinedClusterForAnimation && refinedCoordinate) {
+            animationTargetCoordinate = refinedCoordinate;
+            setTargetCluster(refinedClusterForAnimation);
+          }
+          logAndroidHotspotTiming('refinement_cluster_precomputed_for_animation', {
+            currentClusterCount: refinedClustersForAnimation.length,
+            zoomedClusterFound: !!refinedClusterForAnimation,
+            clusterId: refinedClusterForAnimation?.id ?? null,
+            targetVenueName: hottestVenueNameRef.current ?? hottestVenue.venue,
+            targetLongitude: animationTargetCoordinate[0],
+            targetLatitude: animationTargetCoordinate[1],
+          });
+        } catch (e) {
+          logAndroidHotspotTiming('refinement_precompute_failed', {
+            error: e instanceof Error ? e.message : String(e),
+          });
+        }
+      }
+
       targetCoordsRef.current = {
-        longitude: initialTargetCoordinate[0],
-        latitude: initialTargetCoordinate[1],
+        longitude: animationTargetCoordinate[0],
+        latitude: animationTargetCoordinate[1],
       };
 
-      const finalizeCameraAnimation = (completionSource: 'map_idle' | 'timer') => {
+      const finalizeCameraAnimation = (completionSource: 'map_idle' | 'timer' | 'camera_target_reached') => {
         if (cameraFinalized) {
           return;
         }
 
         cameraFinalized = true;
+        if (Platform.OS === 'android') {
+          const globalAny = global as any;
+          if (globalAny.mapHotspotCameraSettledCallback) {
+            delete globalAny.mapHotspotCameraSettledCallback;
+          }
+          if (globalAny.mapHotspotCameraSettleTarget) {
+            delete globalAny.mapHotspotCameraSettleTarget;
+          }
+        }
         clearCameraFinalizeTimer();
         clearHotspotCameraIdleCallback();
         logAndroidHotspotTiming('camera_animation_finalize_started', {
@@ -1101,11 +1183,14 @@ export function useHotspotHighlight(
         let shouldSyncClusterStoreAfterVisible = false;
         try {
           if (Platform.OS === 'android') {
-            currentClusters = useMapStore.getState().getClustersForZoom(HOTSPOT_CAMERA_ZOOM_LEVEL);
+            currentClusters =
+              refinedClustersForAnimation ??
+              useMapStore.getState().getClustersForZoom(HOTSPOT_CAMERA_ZOOM_LEVEL);
             shouldSyncClusterStoreAfterVisible = true;
             logAndroidHotspotTiming('refinement_clusters_previewed', {
               currentClusterCount: currentClusters.length,
               targetZoom: HOTSPOT_CAMERA_ZOOM_LEVEL,
+              source: refinedClustersForAnimation ? 'precomputed' : 'computed_on_finalize',
             });
           } else {
             useMapStore.getState().setZoomLevel(HOTSPOT_CAMERA_ZOOM_LEVEL);
@@ -1120,19 +1205,15 @@ export function useHotspotHighlight(
 
         // Find the cluster that contains the original hottest venue by name
         // This ensures we highlight the correct cluster even after splitting at higher zoom
-        let zoomedCluster: Cluster | null = null;
+        let zoomedCluster: Cluster | null = refinedClusterForAnimation;
 
-        if (hottestVenueNameRef.current && currentClusters.length > 0) {
+        if (!zoomedCluster && hottestVenueNameRef.current && currentClusters.length > 0) {
           const targetVenueName = hottestVenueNameRef.current;
 
           // Find the cluster containing the original hottest venue
-          for (const c of currentClusters) {
-            const hasVenue = c.venues?.some(v => v.venue === targetVenueName);
-            if (hasVenue) {
-              zoomedCluster = c;
-              hotspotDebugLog(`[Hotspot] Found cluster containing "${targetVenueName}" with ${c.venues?.length} venues`);
-              break;
-            }
+          zoomedCluster = findClusterContainingVenue(currentClusters, targetVenueName);
+          if (zoomedCluster) {
+            hotspotDebugLog(`[Hotspot] Found cluster containing "${targetVenueName}" with ${zoomedCluster.venues?.length} venues`);
           }
 
           // Fallback: if venue not found (shouldn't happen), use distance-based search
@@ -1214,13 +1295,8 @@ export function useHotspotHighlight(
               venueCount: zoomedCluster.venues.length,
             });
 
-            if (Platform.OS === 'android' && cameraRef.current) {
-              cameraRef.current.setCamera({
-                centerCoordinate: [centroidLon, centroidLat],
-                zoomLevel: HOTSPOT_CAMERA_ZOOM_LEVEL,
-                animationDuration: 0,
-              });
-              logAndroidHotspotTiming('camera_recentered_to_refined_cluster', {
+            if (Platform.OS === 'android') {
+              logAndroidHotspotTiming('camera_recenter_skipped_final_target_precomputed', {
                 clusterId: zoomedCluster.id,
                 centroidLatitude: centroidLat,
                 centroidLongitude: centroidLon,
@@ -1272,16 +1348,33 @@ export function useHotspotHighlight(
 
       hotspotCameraIdleCallbackRef.current = idleCallback;
       (global as any).mapHotspotCameraIdleCallback = idleCallback;
+      if (Platform.OS === 'android') {
+        (global as any).mapHotspotCameraSettleTarget = {
+          longitude: animationTargetCoordinate[0],
+          latitude: animationTargetCoordinate[1],
+          zoom: HOTSPOT_CAMERA_ZOOM_LEVEL,
+          startedAt: Date.now(),
+          minElapsedMs: Math.max(250, HOTSPOT_CAMERA_ANIMATION_MS - 200),
+        };
+        (global as any).mapHotspotCameraSettledCallback = () => {
+          logAndroidHotspotTiming('camera_target_reached_callback_invoked', {
+            targetLongitude: animationTargetCoordinate[0],
+            targetLatitude: animationTargetCoordinate[1],
+          });
+          finalizeCameraAnimation('camera_target_reached');
+        };
+      }
 
       cameraRef.current.setCamera({
-        centerCoordinate: initialTargetCoordinate,
+        centerCoordinate: animationTargetCoordinate,
         zoomLevel: HOTSPOT_CAMERA_ZOOM_LEVEL, // Same zoom as tutorial for consistency
         animationDuration: HOTSPOT_CAMERA_ANIMATION_MS,
       });
       logAndroidHotspotTiming('guided_camera_move_requested', {
         source,
-        targetLongitude: initialTargetCoordinate[0],
-        targetLatitude: initialTargetCoordinate[1],
+        targetLongitude: animationTargetCoordinate[0],
+        targetLatitude: animationTargetCoordinate[1],
+        targetPrecomputed: !!refinedClusterForAnimation,
         animationDurationMs: HOTSPOT_CAMERA_ANIMATION_MS,
       });
 
@@ -1309,12 +1402,13 @@ export function useHotspotHighlight(
 
     const retryCameraAnimation = (attempt: number) => {
       const retryCameraRef = (global as any).mapCameraRef;
-      if (retryCameraRef?.current) {
+      if (retryCameraRef?.current && isMapFirstFrameReadyForHotspotCamera()) {
         cameraRefRetryCountRef.current = 0;
         clearCameraRetryTimer();
         clearHotspotCameraReadyCallback();
         logAndroidHotspotTiming('camera_ref_retry_ready', {
           attempt,
+          mapFirstFrameReady: isMapFirstFrameReadyForHotspotCamera(),
         });
         startHotspotCameraAnimation(retryCameraRef, 'camera_retry');
         return;
@@ -1335,9 +1429,24 @@ export function useHotspotHighlight(
       }
 
       if (__DEV__) {
-        console.log('[HotspotTiming] camera ref unavailable; retrying zoom', {
+        console.log('[HotspotTiming] camera/map frame unavailable; retrying zoom', {
+          attempt,
+          hasCameraRef: !!retryCameraRef?.current,
+          mapFirstFrameReady: isMapFirstFrameReadyForHotspotCamera(),
+        });
+      }
+      if (retryCameraRef?.current && !isMapFirstFrameReadyForHotspotCamera()) {
+        logAndroidHotspotTiming('camera_ref_ready_waiting_for_first_map_frame', {
           attempt,
         });
+        const readyCallback = () => {
+          logAndroidHotspotTiming('first_map_frame_ready_callback_invoked', {
+            attempt,
+          });
+          retryCameraAnimation(attempt);
+        };
+        hotspotCameraReadyCallbackRef.current = readyCallback;
+        (global as any).mapHotspotCameraReadyCallback = readyCallback;
       }
       cameraRetryTimerRef.current = setTimeout(() => {
         cameraRetryTimerRef.current = null;
@@ -1349,10 +1458,13 @@ export function useHotspotHighlight(
     // hotspot hidden until the camera is ready so Android cannot flash the ring
     // at the unrefined venue coordinate.
     const cameraRef = (global as any).mapCameraRef;
-    if (!cameraRef?.current) {
-      logAndroidHotspotTiming('camera_ref_unavailable_initial');
+    if (!cameraRef?.current || !isMapFirstFrameReadyForHotspotCamera()) {
+      logAndroidHotspotTiming('camera_start_waiting_for_ref_or_first_frame', {
+        hasCameraRef: !!cameraRef?.current,
+        mapFirstFrameReady: isMapFirstFrameReadyForHotspotCamera(),
+      });
       const readyCallback = () => {
-        logAndroidHotspotTiming('camera_ref_ready_callback_invoked');
+        logAndroidHotspotTiming('camera_or_first_frame_ready_callback_invoked');
         retryCameraAnimation(1);
       };
       hotspotCameraReadyCallbackRef.current = readyCallback;
