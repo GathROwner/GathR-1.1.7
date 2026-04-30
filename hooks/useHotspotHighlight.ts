@@ -1142,7 +1142,9 @@ export function useHotspotHighlight(
         latitude: animationTargetCoordinate[1],
       };
 
-      const finalizeCameraAnimation = (completionSource: 'map_idle' | 'timer' | 'camera_target_reached') => {
+      const finalizeCameraAnimation = (
+        completionSource: 'map_idle' | 'timer' | 'camera_target_reached' | 'scheduled_reveal'
+      ) => {
         if (cameraFinalized) {
           return;
         }
@@ -1352,14 +1354,19 @@ export function useHotspotHighlight(
       hotspotCameraIdleCallbackRef.current = idleCallback;
       (global as any).mapHotspotCameraIdleCallback = idleCallback;
       if (Platform.OS === 'android') {
-        (global as any).mapHotspotCameraSettleTarget = {
+        const globalAny = global as any;
+        globalAny.mapHotspotOverlayRevealAt =
+          Date.now() + HOTSPOT_CAMERA_ANIMATION_MS + HOTSPOT_CAMERA_FINALIZE_BUFFER_MS;
+        globalAny.mapHotspotCameraSettleTarget = {
           longitude: animationTargetCoordinate[0],
           latitude: animationTargetCoordinate[1],
           zoom: HOTSPOT_CAMERA_ZOOM_LEVEL,
           startedAt: Date.now(),
-          minElapsedMs: Math.max(250, HOTSPOT_CAMERA_ANIMATION_MS - 200),
+          minElapsedMs: Math.max(500, HOTSPOT_CAMERA_ANIMATION_MS - 200),
+          maxDistanceMeters: 350,
+          maxZoomDelta: 1.1,
         };
-        (global as any).mapHotspotCameraSettledCallback = () => {
+        globalAny.mapHotspotCameraSettledCallback = () => {
           logAndroidHotspotTiming('camera_target_reached_callback_invoked', {
             targetLongitude: animationTargetCoordinate[0],
             targetLatitude: animationTargetCoordinate[1],
@@ -1391,15 +1398,20 @@ export function useHotspotHighlight(
         });
       }
 
-      // Fallback for platforms/builds where Mapbox does not emit a usable idle
-      // callback. On the Samsung tablet this timer can slip badly, so map-idle
-      // is the primary path.
-      cameraFinalizeTimerRef.current = setTimeout(() => {
-        logAndroidHotspotTiming('refinement_timer_fired', {
+      if (Platform.OS === 'android') {
+        logAndroidHotspotTiming('camera_animation_finalize_scheduled_reveal', {
           source,
+          revealDelayMs: HOTSPOT_CAMERA_ANIMATION_MS + HOTSPOT_CAMERA_FINALIZE_BUFFER_MS,
         });
-        finalizeCameraAnimation('timer');
-      }, HOTSPOT_CAMERA_ANIMATION_MS + HOTSPOT_CAMERA_FINALIZE_BUFFER_MS);
+        finalizeCameraAnimation('scheduled_reveal');
+      } else {
+        cameraFinalizeTimerRef.current = setTimeout(() => {
+          logAndroidHotspotTiming('refinement_timer_fired', {
+            source,
+          });
+          finalizeCameraAnimation('timer');
+        }, HOTSPOT_CAMERA_ANIMATION_MS + HOTSPOT_CAMERA_FINALIZE_BUFFER_MS);
+      }
       return true;
     };
 

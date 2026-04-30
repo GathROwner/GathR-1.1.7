@@ -81,6 +81,31 @@ export const HotspotHighlight: React.FC<HotspotHighlightProps> = ({ ignoreProgra
   const tooltipSlideAnim = useRef(new Animated.Value(-50)).current;
   const positionLogRef = useRef(false);
   const positionUnavailableLogRef = useRef(false);
+  const positionReadyRef = useRef(false);
+  const overlayReadyNotifiedRef = useRef(false);
+
+  const getAndroidOverlayRevealDelayMs = useCallback(() => {
+    if (Platform.OS !== 'android') {
+      return 0;
+    }
+
+    const revealAt = Number((global as any).mapHotspotOverlayRevealAt || 0);
+    if (!Number.isFinite(revealAt) || revealAt <= 0) {
+      return 0;
+    }
+
+    return Math.max(0, revealAt - Date.now());
+  }, []);
+
+  const notifyOverlayPositionReady = useCallback((source: string) => {
+    if (!shouldShow || overlayReadyNotifiedRef.current) {
+      return;
+    }
+
+    overlayReadyNotifiedRef.current = true;
+    logAndroidHotspotOverlayTiming('overlay_ready_notified', { source });
+    onOverlayPositionReady();
+  }, [onOverlayPositionReady, shouldShow]);
 
   const getCenteredAndroidHotspotPosition = useCallback(() => {
     const layout = (global as any).mapViewLayout;
@@ -180,7 +205,9 @@ export const HotspotHighlight: React.FC<HotspotHighlightProps> = ({ ignoreProgra
         // This ensures the spotlight doesn't appear until after the centroid is calculated
         if (shouldShow && !positionReady) {
           setPositionReady(true);
-          onOverlayPositionReady();
+          if (!ANDROID_USE_CENTERED_HOTSPOT_POSITION) {
+            notifyOverlayPositionReady('projected_position');
+          }
         }
       }
     } catch (e) {
@@ -204,16 +231,31 @@ export const HotspotHighlight: React.FC<HotspotHighlightProps> = ({ ignoreProgra
         setHighlightPosition({ x: SCREEN_WIDTH / 2, y: centerY });
       }
     }
-  }, [targetCoordinates, shouldShow, positionReady, isAnimating, onOverlayPositionReady]);
+  }, [
+    targetCoordinates,
+    shouldShow,
+    positionReady,
+    isAnimating,
+    notifyOverlayPositionReady,
+  ]);
 
   // Reset positionReady when the spotlight is hidden
   useEffect(() => {
     if (!shouldShow) {
       setPositionReady(false);
+      positionReadyRef.current = false;
+      overlayReadyNotifiedRef.current = false;
       positionLogRef.current = false;
       positionUnavailableLogRef.current = false;
+      if (Platform.OS === 'android') {
+        delete (global as any).mapHotspotOverlayRevealAt;
+      }
     }
   }, [shouldShow]);
+
+  useEffect(() => {
+    positionReadyRef.current = positionReady;
+  }, [positionReady]);
 
   useEffect(() => {
     if (
@@ -243,11 +285,11 @@ export const HotspotHighlight: React.FC<HotspotHighlightProps> = ({ ignoreProgra
       positionLogRef.current = true;
     }
     setPositionReady(true);
-    onOverlayPositionReady();
+    notifyOverlayPositionReady('centered_position_ready');
   }, [
     getCenteredAndroidHotspotPosition,
     isAnimating,
-    onOverlayPositionReady,
+    notifyOverlayPositionReady,
     positionReady,
     shouldShow,
     targetCoordinates,
@@ -294,19 +336,56 @@ export const HotspotHighlight: React.FC<HotspotHighlightProps> = ({ ignoreProgra
   // Fade in/out effect
   useEffect(() => {
     if (shouldShow) {
-      Animated.timing(fadeAnim, {
+      const revealDelayMs = getAndroidOverlayRevealDelayMs();
+      fadeAnim.setValue(0);
+      tooltipSlideAnim.setValue(-50);
+
+      if (Platform.OS === 'android') {
+        logAndroidHotspotOverlayTiming('reveal_animation_scheduled', {
+          revealDelayMs,
+        });
+      }
+
+      const fadeIn = Animated.timing(fadeAnim, {
         toValue: 1,
         duration: 400,
+        delay: revealDelayMs,
         useNativeDriver: true,
-      }).start();
+      });
 
       // Slide in tooltip
-      Animated.spring(tooltipSlideAnim, {
+      const slideIn = Animated.spring(tooltipSlideAnim, {
         toValue: 0,
         tension: 50,
         friction: 8,
+        delay: revealDelayMs,
         useNativeDriver: true,
-      }).start();
+      });
+
+      fadeIn.start(({ finished }) => {
+        if (!finished) {
+          return;
+        }
+
+        if (Platform.OS === 'android') {
+          logAndroidHotspotOverlayTiming('reveal_animation_completed', {
+            revealDelayMs,
+          });
+        }
+        if (Platform.OS === 'android') {
+          if (positionReadyRef.current || getCenteredAndroidHotspotPosition()) {
+            notifyOverlayPositionReady('fade_in_complete');
+          }
+        } else {
+          notifyOverlayPositionReady('fade_in_complete');
+        }
+      });
+      slideIn.start();
+
+      return () => {
+        fadeIn.stop();
+        slideIn.stop();
+      };
     } else {
       Animated.timing(fadeAnim, {
         toValue: 0,
@@ -314,7 +393,14 @@ export const HotspotHighlight: React.FC<HotspotHighlightProps> = ({ ignoreProgra
         useNativeDriver: true,
       }).start();
     }
-  }, [shouldShow, fadeAnim, tooltipSlideAnim]);
+  }, [
+    fadeAnim,
+    getAndroidOverlayRevealDelayMs,
+    getCenteredAndroidHotspotPosition,
+    notifyOverlayPositionReady,
+    shouldShow,
+    tooltipSlideAnim,
+  ]);
 
   // Pulse animation loop
   useEffect(() => {

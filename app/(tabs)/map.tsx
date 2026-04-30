@@ -3557,6 +3557,8 @@ if (isGesture && !userGestureSeenRef.current) {
     ) {
       const elapsedMs = now - (Number(settleTarget.startedAt) || now);
       const minElapsedMs = Number(settleTarget.minElapsedMs) || 0;
+      const maxDistanceMeters = Number(settleTarget.maxDistanceMeters) || 120;
+      const maxZoomDelta = Number(settleTarget.maxZoomDelta) || 0.18;
       const distanceMeters = haversineMeters(
         centerArr[0],
         centerArr[1],
@@ -3565,13 +3567,19 @@ if (isGesture && !userGestureSeenRef.current) {
       );
       const zoomDeltaToTarget = Math.abs(zoom - settleTarget.zoom);
 
-      if (elapsedMs >= minElapsedMs && distanceMeters <= 120 && zoomDeltaToTarget <= 0.18) {
+      if (
+        elapsedMs >= minElapsedMs &&
+        distanceMeters <= maxDistanceMeters &&
+        zoomDeltaToTarget <= maxZoomDelta
+      ) {
         delete globalAny.mapHotspotCameraSettledCallback;
         delete globalAny.mapHotspotCameraSettleTarget;
         logAndroidStartupTiming('hotspot_camera_target_reached_from_camera_change', {
           elapsedMs,
           distanceMeters: Math.round(distanceMeters),
           zoomDelta: Number(zoomDeltaToTarget.toFixed(3)),
+          maxDistanceMeters,
+          maxZoomDelta,
         });
         settleCallback();
       }
