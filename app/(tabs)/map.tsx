@@ -82,6 +82,11 @@ import {
   setMapTraceSnapshot,
   traceMapEvent,
 } from '../../utils/mapTrace';
+import {
+  cacheStartupLocation,
+  getPreloadedStartupLocationSnapshot,
+  preloadStartupLocation,
+} from '../../utils/startupLocationCache';
 
 // Initialize Mapbox token
 try {
@@ -1023,6 +1028,10 @@ useEffect(() => {
 
   // Local state for location and map
   const [location, setLocation] = useState<Location.LocationObject | null>(null);
+  const [cachedStartupLocation, setCachedStartupLocation] = useState<GeoCoordinate | null>(() => {
+    const cached = getPreloadedStartupLocationSnapshot();
+    return cached ? { latitude: cached.latitude, longitude: cached.longitude } : null;
+  });
   const [locationPermissionGranted, setLocationPermissionGranted] = useState<boolean>(false);
   const [hasInitiallyPositioned, setHasInitiallyPositioned] = useState<boolean>(false);
   const [processingClusterId, setProcessingClusterId] = useState<string | null>(null);
@@ -1043,6 +1052,7 @@ useEffect(() => {
   const isMapLoadingRef = useRef(false);
   const clustersReadyForInteractionRef = useRef(false);
   const fullClusterMarkersEnabledRef = useRef(false);
+  const cachedStartupCenterAppliedRef = useRef(false);
   const fullClusterMarkersTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const richClusterMarkersTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -1466,14 +1476,89 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
   // Create a memoized initial center coordinate
   // This will only update when location changes, not on every render
   const initialCenterCoordinate = useMemo(() => {
-    return location
-      ? [location.coords.longitude, location.coords.latitude]
-      : [-63.1276, 46.2336]; // Default to PEI coordinates
-  }, [location]);
+    if (location) {
+      return [location.coords.longitude, location.coords.latitude];
+    }
+
+    if (cachedStartupLocation) {
+      return [cachedStartupLocation.longitude, cachedStartupLocation.latitude];
+    }
+
+    return [-63.1276, 46.2336]; // Default to PEI coordinates
+  }, [cachedStartupLocation, location]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    preloadStartupLocation()
+      .then((cached) => {
+        if (cancelled || !cached) {
+          return;
+        }
+
+        setCachedStartupLocation({
+          latitude: cached.latitude,
+          longitude: cached.longitude,
+        });
+        logAndroidStartupTiming('cached_startup_location_loaded', {
+          ageMs: Date.now() - cached.timestamp,
+          accuracy: cached.accuracy ?? null,
+        });
+      })
+      .catch(() => {
+        // Missing/corrupt location cache should fall back silently.
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!cachedStartupLocation || location || cachedStartupCenterAppliedRef.current) {
+      return;
+    }
+
+    const applyCachedStartupCenter = () => {
+      if (!cameraRef.current || cachedStartupCenterAppliedRef.current) {
+        return false;
+      }
+
+      const hotspotStartupPhase = getAndroidHotspotStartupPhase();
+      if (isAndroidHotspotStartupCameraActive()) {
+        logAndroidStartupTiming('cached_startup_center_skipped_for_hotspot', {
+          hotspotStartupPhase,
+        });
+        return true;
+      }
+
+      cameraRef.current.setCamera({
+        centerCoordinate: [cachedStartupLocation.longitude, cachedStartupLocation.latitude],
+        zoomLevel: START_ZOOM,
+        animationDuration: 0,
+      });
+      cachedStartupCenterAppliedRef.current = true;
+      if (typeof setZoomLevel === 'function') {
+        setZoomLevel(START_ZOOM);
+      }
+      logAndroidStartupTiming('cached_startup_center_applied', {
+        latitude: cachedStartupLocation.latitude,
+        longitude: cachedStartupLocation.longitude,
+      });
+      return true;
+    };
+
+    if (applyCachedStartupCenter()) {
+      return;
+    }
+
+    const retryTimer = setTimeout(applyCachedStartupCenter, 250);
+    return () => clearTimeout(retryTimer);
+  }, [cachedStartupLocation, location, setZoomLevel]);
 
   const requestStartupViewportFetch = (
     center: GeoCoordinate,
-    source: 'fallback_center' | 'gps_location'
+    source: 'fallback_center' | 'cached_startup_location' | 'gps_location'
   ) => {
     const { width, height } = Dimensions.get('window');
     const bbox = getViewportBoundingBox(center, START_ZOOM, width, height, 1.0);
@@ -1582,6 +1667,7 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
         });
         
         setLocation(initialLocation);
+        cacheStartupLocation(initialLocation);
         logAndroidStartupTiming('initial_location_request_completed', {
           accuracy: initialLocation.coords.accuracy ?? null,
         });
@@ -1606,6 +1692,7 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
           },
           (newLocation) => {
             setLocation(newLocation);
+            cacheStartupLocation(newLocation);
             
             // Share new location with the store but DON'T update the camera
             setUserLocation(newLocation);
@@ -1644,7 +1731,7 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
         locationSubscription.current.remove();
       }
     };
-  }, [locationPermissionGranted, setUserLocation]); // 🔥 STABLE: Only essential dependencies
+  }, [cacheStartupLocation, locationPermissionGranted, setUserLocation]); // 🔥 STABLE: Only essential dependencies
   
   // Effect to handle first-time positioning to user location
   useEffect(() => {
@@ -1697,17 +1784,18 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
 
   }, [location, hasInitiallyPositioned]); // REMOVED analytics, isGuest dependencies
 
-  // Initial viewport load from the same fallback center used by the camera.
-  // Live GPS refines this below; this removes the first-cluster wait on location.
+  // Initial viewport load from the same startup center used by the camera.
+  // A cached user location is preferred when available; live GPS refines this below.
   useEffect(() => {
     if (lastViewportBboxRef.current) return;
 
+    const source = cachedStartupLocation ? 'cached_startup_location' : 'fallback_center';
     requestStartupViewportFetch(
       {
         latitude: initialCenterCoordinate[1],
         longitude: initialCenterCoordinate[0],
       },
-      'fallback_center'
+      source
     );
   }, []);
 

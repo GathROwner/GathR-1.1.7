@@ -42,6 +42,7 @@ import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
 import { installNotificationDebugListeners } from '../services/notificationService';
 import { useDeepLinking } from '../hooks/useDeepLinking';
+import { preloadStartupLocation } from '../utils/startupLocationCache';
 
 
   // ðŸš€ PERFORMANCE: Preload data on app start
@@ -75,6 +76,7 @@ const asyncStoragePersister = createAsyncStoragePersister({
 const LIVE_REFRESH_MS = 10 * 60 * 1000; // 10 minutes
 const ADMOB_STARTUP_DELAY_MS = Platform.OS === 'android' ? 45000 : 2000;
 
+void preloadStartupLocation();
 
 // Prevent auto-hiding splash screen
 SplashScreen.preventAutoHideAsync();SplashScreen.preventAutoHideAsync();

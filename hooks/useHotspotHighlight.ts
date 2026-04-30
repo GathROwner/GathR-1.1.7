@@ -49,8 +49,8 @@ interface OriginalCameraPosition {
 const HOTSPOT_VERBOSE_DEBUG = false;
 const HOTSPOT_TRIGGER_DELAY_MS = 0;
 const HOTSPOT_CAMERA_ZOOM_LEVEL = 14.4;
-const HOTSPOT_CAMERA_ANIMATION_MS = Platform.OS === 'android' ? 450 : 1000;
-const HOTSPOT_MIN_CAMERA_IDLE_MS = Platform.OS === 'android' ? 250 : 300;
+const HOTSPOT_CAMERA_ANIMATION_MS = Platform.OS === 'android' ? 800 : 1000;
+const HOTSPOT_MIN_CAMERA_IDLE_MS = Platform.OS === 'android' ? 400 : 300;
 const HOTSPOT_CAMERA_FINALIZE_BUFFER_MS = Platform.OS === 'android' ? 250 : 100;
 const DEFER_HOTSPOT_VISIBILITY_UNTIL_REFINED = Platform.OS === 'ios' || Platform.OS === 'android';
 const ANDROID_HOTSPOT_TIMING_DIAGNOSTICS = __DEV__ && Platform.OS === 'android';
@@ -339,6 +339,7 @@ export function useHotspotHighlight(
   const setShowDailyHotspot = useUserPrefsStore((state) => state.setShowDailyHotspot);
   const favoriteVenues = useUserPrefsStore((state) => state.favoriteVenues);
   const userInterests = useUserPrefsStore((state) => state.interests);
+  const latestUserLocationRef = useRef(userLocation);
 
   // Internal state
   const [isVisible, setIsVisible] = useState(false);
@@ -511,6 +512,10 @@ export function useHotspotHighlight(
     clearHotspotCameraReadyCallback,
     clearHotspotVisibilityFrameTimer,
   ]);
+
+  useEffect(() => {
+    latestUserLocationRef.current = userLocation;
+  }, [userLocation]);
 
   useEffect(() => {
     setMapTraceSnapshot({
@@ -699,10 +704,23 @@ export function useHotspotHighlight(
       }
     }
 
-    // Zoom back to original position
+    // Zoom back to the latest user location if it arrived after the hotspot
+    // started; otherwise use the captured startup camera position.
     const cameraRef = (global as any).mapCameraRef;
-    if (cameraRef?.current && originalCameraRef.current) {
-      const coords = originalCameraRef.current.coordinates;
+    if (cameraRef?.current) {
+      const latestUserLocation = latestUserLocationRef.current;
+      const hasValidLatestUserLocation =
+        latestUserLocation &&
+        latestUserLocation.coords &&
+        typeof latestUserLocation.coords.longitude === 'number' &&
+        typeof latestUserLocation.coords.latitude === 'number' &&
+        Number.isFinite(latestUserLocation.coords.longitude) &&
+        Number.isFinite(latestUserLocation.coords.latitude);
+
+      const coords: [number, number] | undefined = hasValidLatestUserLocation
+        ? [latestUserLocation.coords.longitude, latestUserLocation.coords.latitude]
+        : originalCameraRef.current?.coordinates;
+      const zoom = originalCameraRef.current?.zoom ?? 12;
 
       // Validate coordinates are valid numbers before zooming
       if (
@@ -713,11 +731,17 @@ export function useHotspotHighlight(
         !isNaN(coords[0]) &&
         !isNaN(coords[1])
       ) {
+        logAndroidHotspotTiming('dismiss_return_camera_selected', {
+          source: hasValidLatestUserLocation ? 'latest_user_location' : 'original_camera',
+          longitude: coords[0],
+          latitude: coords[1],
+          zoom,
+        });
         setHotspotProgrammaticLock(true, 'dismiss_zoom_back');
 
         cameraRef.current.setCamera({
           centerCoordinate: coords,
-          zoomLevel: originalCameraRef.current.zoom,
+          zoomLevel: zoom,
           animationDuration: 800,
         });
 
@@ -731,7 +755,7 @@ export function useHotspotHighlight(
     amplitudeTrack('hotspot_dismissed', {
       auto_dismissed: dismissTimeoutRef.current === null,
     });
-  }, [setHotspotProgrammaticLock, targetCluster]);
+  }, [logAndroidHotspotTiming, setHotspotProgrammaticLock, targetCluster]);
 
   const onOverlayPositionReady = useCallback(() => {
     if (!isVisible || !targetCluster || overlayPositionReadyRef.current) {
