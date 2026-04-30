@@ -84,8 +84,10 @@ import {
 } from '../../utils/mapTrace';
 import {
   cacheStartupLocation,
+  DEVICE_LAST_KNOWN_REQUIRED_ACCURACY_METERS,
   getPreloadedStartupLocationSnapshot,
   preloadStartupLocation,
+  STARTUP_LOCATION_CACHE_MAX_AGE_MS,
 } from '../../utils/startupLocationCache';
 
 // Initialize Mapbox token
@@ -1032,6 +1034,9 @@ useEffect(() => {
     const cached = getPreloadedStartupLocationSnapshot();
     return cached ? { latitude: cached.latitude, longitude: cached.longitude } : null;
   });
+  const [startupLocationResolved, setStartupLocationResolved] = useState<boolean>(() =>
+    Boolean(getPreloadedStartupLocationSnapshot())
+  );
   const [locationPermissionGranted, setLocationPermissionGranted] = useState<boolean>(false);
   const [hasInitiallyPositioned, setHasInitiallyPositioned] = useState<boolean>(false);
   const [processingClusterId, setProcessingClusterId] = useState<string | null>(null);
@@ -1048,11 +1053,13 @@ useEffect(() => {
   const locationSubscription = useRef<Location.LocationSubscription | null>(null);
   const calloutAnimationRequestRef = useRef(0);
   const calloutOpenTouchGuardUntilRef = useRef(0);
+  const latestLocationRef = useRef<Location.LocationObject | null>(null);
   const latestClusterCountRef = useRef(0);
   const isMapLoadingRef = useRef(false);
   const clustersReadyForInteractionRef = useRef(false);
   const fullClusterMarkersEnabledRef = useRef(false);
   const cachedStartupCenterAppliedRef = useRef(false);
+  const initialViewportWaitingLoggedRef = useRef(false);
   const fullClusterMarkersTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const richClusterMarkersTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -1503,7 +1510,9 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
         logAndroidStartupTiming('cached_startup_location_loaded', {
           ageMs: Date.now() - cached.timestamp,
           accuracy: cached.accuracy ?? null,
+          source: cached.source ?? 'storage',
         });
+        setStartupLocationResolved(true);
       })
       .catch(() => {
         // Missing/corrupt location cache should fall back silently.
@@ -1637,12 +1646,38 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
           analytics.trackUserAction('location_permission_denied', {
             user_type: isGuest ? 'guest' : 'registered'
           });
+          setStartupLocationResolved(true);
+          return;
+        }
+
+        const lastKnownLocation = await Location.getLastKnownPositionAsync({
+          maxAge: STARTUP_LOCATION_CACHE_MAX_AGE_MS,
+          requiredAccuracy: DEVICE_LAST_KNOWN_REQUIRED_ACCURACY_METERS,
+        });
+
+        if (lastKnownLocation) {
+          if (latestLocationRef.current) {
+            logAndroidStartupTiming('permission_last_known_location_skipped_after_live_location', {
+              accuracy: lastKnownLocation.coords.accuracy ?? null,
+            });
+            return;
+          }
+
+          latestLocationRef.current = lastKnownLocation;
+          setLocation(lastKnownLocation);
+          cacheStartupLocation(lastKnownLocation);
+          setUserLocation(lastKnownLocation);
+          setStartupLocationResolved(true);
+          logAndroidStartupTiming('permission_last_known_location_applied', {
+            accuracy: lastKnownLocation.coords.accuracy ?? null,
+          });
         }
       } catch (error) {
         console.error('Error requesting location permission:', error);
         logAndroidStartupTiming('location_permission_request_failed', {
           error: error instanceof Error ? error.message : String(error),
         });
+        setStartupLocationResolved(true);
         // 🔥 ANALYTICS: Track permission errors
         analytics.trackError('location_permission_error', 
           error instanceof Error ? error.message : 'Unknown permission error',
@@ -1666,8 +1701,10 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
           accuracy: Location.Accuracy.Balanced
         });
         
+        latestLocationRef.current = initialLocation;
         setLocation(initialLocation);
         cacheStartupLocation(initialLocation);
+        setStartupLocationResolved(true);
         logAndroidStartupTiming('initial_location_request_completed', {
           accuracy: initialLocation.coords.accuracy ?? null,
         });
@@ -1691,6 +1728,7 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
             timeInterval: 10000    // Update every 10 seconds (increased from 5 seconds)
           },
           (newLocation) => {
+            latestLocationRef.current = newLocation;
             setLocation(newLocation);
             cacheStartupLocation(newLocation);
             
@@ -1715,6 +1753,7 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
         logAndroidStartupTiming('initial_location_request_failed', {
           error: error instanceof Error ? error.message : String(error),
         });
+        setStartupLocationResolved(true);
         // 🔥 ANALYTICS: Track location tracking errors
         analytics.trackError('location_tracking_error',
           error instanceof Error ? error.message : 'Unknown location error',
@@ -1785,19 +1824,37 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
   }, [location, hasInitiallyPositioned]); // REMOVED analytics, isGuest dependencies
 
   // Initial viewport load from the same startup center used by the camera.
-  // A cached user location is preferred when available; live GPS refines this below.
+  // Prefer live/last-known location once permission resolves; fallback is deliberate.
   useEffect(() => {
     if (lastViewportBboxRef.current) return;
 
-    const source = cachedStartupLocation ? 'cached_startup_location' : 'fallback_center';
+    if (!location && !cachedStartupLocation && !startupLocationResolved) {
+      if (!initialViewportWaitingLoggedRef.current) {
+        initialViewportWaitingLoggedRef.current = true;
+        logAndroidStartupTiming('initial_viewport_waiting_for_startup_location');
+      }
+      return;
+    }
+
+    const source = location
+      ? 'gps_location'
+      : cachedStartupLocation
+        ? 'cached_startup_location'
+        : 'fallback_center';
+
     requestStartupViewportFetch(
-      {
-        latitude: initialCenterCoordinate[1],
-        longitude: initialCenterCoordinate[0],
-      },
+      location
+        ? {
+            latitude: location.coords.latitude,
+            longitude: location.coords.longitude,
+          }
+        : {
+            latitude: initialCenterCoordinate[1],
+            longitude: initialCenterCoordinate[0],
+          },
       source
     );
-  }, []);
+  }, [cachedStartupLocation, initialCenterCoordinate, location, startupLocationResolved]);
 
   // Initial viewport refinement when location is acquired
   useEffect(() => {
