@@ -94,6 +94,7 @@ import type { Event, Venue, Cluster, TimeStatus } from '../../types/events';
 
 // Add global tutorial manager type declarations
 declare global {
+  // eslint-disable-next-line no-var
   var tutorialManager: {
     getCurrentStep?: () => { id: string } | null;
     getIsActive?: () => boolean;
