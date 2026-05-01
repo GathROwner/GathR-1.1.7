@@ -34,7 +34,7 @@ export const useUserPrefsStore = create<UserPrefsState>()(
       hotspotLastShownDate: null,
       setAll: (p) => set(p),
       clear: () =>
-        set({
+        set((state) => ({
           interests: [],
           savedEvents: [],
           favoriteVenues: [],
@@ -42,8 +42,10 @@ export const useUserPrefsStore = create<UserPrefsState>()(
           interestedEvents: [],
           lastLoadedAt: undefined,
           showDailyHotspot: true,
-          hotspotLastShownDate: null,
-        }),
+          // This is app/day-scoped, not user-specific. Preserve it so guest refreshes
+          // do not rerun the daily hotspot after it has already been shown.
+          hotspotLastShownDate: state.hotspotLastShownDate,
+        })),
       setShowDailyHotspot: (value: boolean) => set({ showDailyHotspot: value }),
       markHotspotShownToday: () => set({ hotspotLastShownDate: new Date().toISOString().split('T')[0] }),
     }),
