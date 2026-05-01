@@ -211,6 +211,10 @@ plugins: [
   extra: {
     eas: { projectId: "87fd0c8f-0007-49fb-a057-2f4e81afe1db" },
     router: { origin: false },
+    mapboxAccessToken:
+      process.env.EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN ??
+      process.env.MAPBOX_ACCESS_TOKEN ??
+      "",
 
     "react-native-google-mobile-ads": {
       ios_app_id: "ca-app-pub-9606287073864764~2166199571",

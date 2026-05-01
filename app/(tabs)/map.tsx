@@ -89,13 +89,10 @@ import {
   preloadStartupLocation,
   STARTUP_LOCATION_CACHE_MAX_AGE_MS,
 } from '../../utils/startupLocationCache';
+import { initializeMapboxAccessToken } from '../../utils/mapboxAccessToken';
 
 // Initialize Mapbox token
-try {
-  MapboxGL.setAccessToken('MAPBOX_ACCESS_TOKEN_REMOVED');
-} catch (error) {
-  console.error('Error setting Mapbox token:', error);
-}
+initializeMapboxAccessToken(MapboxGL);
 
 // Constants
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
