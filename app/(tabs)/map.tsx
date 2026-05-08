@@ -1640,6 +1640,7 @@ useEffect(() => {
   const selectCallout = useMapStore((state) => state.selectCallout);
   const setZoomLevel = useMapStore((state) => state.setZoomLevel);
   const generateClusters = useMapStore((state) => state.generateClusters);
+  const getClustersForZoom = useMapStore((state) => state.getClustersForZoom);
   const filterCriteria = useMapStore((state) => state.filterCriteria);
   const zoomLevel = useMapStore((state) => state.zoomLevel);
   const shouldClusterBeVisible = useMapStore((state) => state.shouldClusterBeVisible);
@@ -1666,12 +1667,13 @@ useEffect(() => {
       clusters,
       selectedVenues,
       filterCriteria,
-      zoomLevel
+      zoomLevel,
+      getClustersForZoom
     };
     return () => {
       delete (global as any).mapStore;
     };
-  }, [clusters, selectedVenues, filterCriteria, zoomLevel]);
+  }, [clusters, selectedVenues, filterCriteria, zoomLevel, getClustersForZoom]);
 
   // Keep tutorial/hotspot refs stable across normal cluster/filter/zoom updates.
   // Android hotspot startup can hit a passive-effect cleanup window if these
@@ -5809,6 +5811,11 @@ onMapIdle={() => {
       console.warn('[GathRHotspotTiming]', 'map_idle_callback_invoked', JSON.stringify({}));
     }
     hotspotCameraIdleCallback();
+  }
+
+  const tutorialCameraIdleCallback = (global as any).mapTutorialCameraIdleCallback;
+  if (typeof tutorialCameraIdleCallback === 'function') {
+    tutorialCameraIdleCallback();
   }
 }}
 

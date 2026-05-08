@@ -31,6 +31,44 @@ import { TUTORIAL_STEPS, hasSubSteps, getTutorialStepById} from '../../config/tu
 import { TutorialStep } from '../../types/tutorial';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+const TUTORIAL_CLUSTER_ZOOM_LEVEL = 14.4;
+const TUTORIAL_CLUSTER_SPOTLIGHT_SIZE = 80;
+const TUTORIAL_CLUSTER_MARKER_CENTER_OFFSET_Y = -20;
+const TUTORIAL_CLUSTER_CAMERA_SETTLE_TIMEOUT_MS = 1400;
+const TUTORIAL_CLUSTER_POST_IDLE_SETTLE_MS = 150;
+
+const getTutorialClusterCoordinate = (cluster: any): [number, number] | null => {
+  const venues = Array.isArray(cluster?.venues) ? cluster.venues : [];
+  if (venues.length === 0) {
+    return null;
+  }
+
+  if (cluster?.clusterType !== 'multi') {
+    const venue = venues[0];
+    return [venue.longitude, venue.latitude];
+  }
+
+  const totals = venues.reduce(
+    (acc: { longitude: number; latitude: number }, venue: any) => ({
+      longitude: acc.longitude + venue.longitude,
+      latitude: acc.latitude + venue.latitude,
+    }),
+    { longitude: 0, latitude: 0 }
+  );
+
+  return [totals.longitude / venues.length, totals.latitude / venues.length];
+};
+
+const findTutorialClusterContainingVenue = (clusters: any[], venueName?: string | null) => {
+  if (!venueName || !Array.isArray(clusters)) {
+    return null;
+  }
+
+  return clusters.find((cluster: any) =>
+    Array.isArray(cluster?.venues) &&
+    cluster.venues.some((venue: any) => venue?.venue === venueName)
+  ) ?? null;
+};
 
 const IOS_CALLOUT_MODAL_TUTORIAL_STEPS = new Set([
   'callout-venue-selector',
@@ -609,11 +647,40 @@ const timeoutId = setTimeout(() => {
 
             await new Promise(resolve => setTimeout(resolve, 500));
             const mapStore = (global as any).mapStore;
+            let androidProjectedClusterCoordinate: [number, number] | null = null;
             if (mapStore?.clusters?.length > 0) {
               if (cameraRef?.current) {
-                 const targetCluster = mapStore.clusters.find((c: any) => c.eventCount > 0) || mapStore.clusters[0];
+                 const targetCluster =
+                   mapStore.clusters.find((c: any) => c.eventCount > 0 || c.specialCount > 0) ||
+                   mapStore.clusters[0];
                  if (targetCluster && targetCluster.venues && targetCluster.venues[0]) {
-                 const coordinates = [targetCluster.venues[0].longitude, targetCluster.venues[0].latitude];
+                 const targetVenue = targetCluster.venues[0];
+                 const coordinates = [targetVenue.longitude, targetVenue.latitude];
+                 const targetVenueName = targetVenue.venue;
+                 let projectedClusterCoordinate =
+                   getTutorialClusterCoordinate(targetCluster) ?? coordinates;
+
+                 if (
+                   Platform.OS === 'android' &&
+                   typeof mapStore.getClustersForZoom === 'function'
+                 ) {
+                   const zoomClusters = mapStore.getClustersForZoom(TUTORIAL_CLUSTER_ZOOM_LEVEL);
+                   const zoomCluster = findTutorialClusterContainingVenue(zoomClusters, targetVenueName);
+                   const zoomCoordinate = getTutorialClusterCoordinate(zoomCluster);
+                   if (zoomCoordinate) {
+                     projectedClusterCoordinate = zoomCoordinate;
+                   }
+                   androidProjectedClusterCoordinate = projectedClusterCoordinate as [number, number];
+                   tutorialLog('cluster-click refined Android target cluster', {
+                     targetVenueName,
+                     hadZoomCluster: !!zoomCluster,
+                     zoomClusterVenueCount: zoomCluster?.venues?.length ?? null,
+                     projectedClusterCoordinate
+                   });
+                 }
+                 if (Platform.OS === 'android') {
+                   androidProjectedClusterCoordinate = projectedClusterCoordinate as [number, number];
+                 }
                  
                  // --- ADJUSTMENT AREA ---
                  // This value controls the vertical shift of the target on screen.
@@ -659,8 +726,11 @@ const timeoutId = setTimeout(() => {
                       tutorialLog('Setting ignoreProgrammaticCameraRef = true for tutorial zoom');
                     }
                     cameraRef.current.setCamera({
-                      centerCoordinate: [coordinates[0], coordinates[1] - latitudeOffset],
-                      zoomLevel: 14.4, // TEMP: mid-band test to avoid cluster split on settle. This worked so dont change it. 
+                      centerCoordinate: [
+                        projectedClusterCoordinate[0],
+                        projectedClusterCoordinate[1] - latitudeOffset
+                      ],
+                      zoomLevel: TUTORIAL_CLUSTER_ZOOM_LEVEL,
                       animationDuration: 1000,
                     });
                  }
@@ -668,16 +738,89 @@ const timeoutId = setTimeout(() => {
             }
             // Positive moves hole DOWN; negative moves hole UP
               // Wait for map idle event before drawing spotlight
-   
-const spotlightYAdjust = -12; // try -12px up; flip sign if you want to lower instead
-targetMeasurement = {
-  x: SCREEN_WIDTH / 2 - 40,
-  y: SCREEN_HEIGHT * 0.25 - 35 + spotlightYAdjust,
-  width: 80,
-  height: 80
-};
 
-tutorialLog('cluster-click targetMeasurement adjusted', { spotlightYAdjust, targetMeasurement });
+if (Platform.OS === 'android' && androidProjectedClusterCoordinate) {
+  await new Promise<void>((resolve) => {
+    let settled = false;
+    let timeoutId: ReturnType<typeof setTimeout>;
+
+    const finish = (source: string) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      clearTimeout(timeoutId);
+      if ((global as any).mapTutorialCameraIdleCallback === idleCallback) {
+        delete (global as any).mapTutorialCameraIdleCallback;
+      }
+      tutorialLog('cluster-click camera settled before projection', { source });
+      resolve();
+    };
+
+    const idleCallback = () => finish('map_idle');
+    (global as any).mapTutorialCameraIdleCallback = idleCallback;
+    timeoutId = setTimeout(
+      () => finish('timeout'),
+      TUTORIAL_CLUSTER_CAMERA_SETTLE_TIMEOUT_MS
+    );
+  });
+
+  await new Promise(resolve => setTimeout(resolve, TUTORIAL_CLUSTER_POST_IDLE_SETTLE_MS));
+
+  try {
+    const mapViewRef = (global as any).mapViewRef;
+    const mapViewLayout = (global as any).mapViewLayout;
+    const screenPoint = await mapViewRef?.current?.getPointInView(androidProjectedClusterCoordinate);
+
+    if (Array.isArray(screenPoint) && screenPoint.length === 2) {
+      const [rawX, rawY] = screenPoint;
+      const mapOriginX =
+        typeof mapViewLayout?.absoluteX === 'number'
+          ? mapViewLayout.absoluteX
+          : (typeof mapViewLayout?.x === 'number' ? mapViewLayout.x : 0);
+      const mapOriginY =
+        typeof mapViewLayout?.absoluteY === 'number'
+          ? mapViewLayout.absoluteY
+          : (typeof mapViewLayout?.y === 'number' ? mapViewLayout.y : 0);
+      const markerCenterX = rawX + mapOriginX;
+      const markerCenterY = rawY + mapOriginY + TUTORIAL_CLUSTER_MARKER_CENTER_OFFSET_Y;
+
+      targetMeasurement = {
+        x: markerCenterX - TUTORIAL_CLUSTER_SPOTLIGHT_SIZE / 2,
+        y: markerCenterY - TUTORIAL_CLUSTER_SPOTLIGHT_SIZE / 2,
+        width: TUTORIAL_CLUSTER_SPOTLIGHT_SIZE,
+        height: TUTORIAL_CLUSTER_SPOTLIGHT_SIZE
+      };
+
+      tutorialLog('cluster-click projected Android targetMeasurement', {
+        androidProjectedClusterCoordinate,
+        rawX,
+        rawY,
+        mapOriginX,
+        mapOriginY,
+        markerCenterX,
+        markerCenterY,
+        targetMeasurement
+      });
+    }
+  } catch (error) {
+    tutorialLog('cluster-click Android projection failed; using fallback spotlight', {
+      error: error instanceof Error ? error.message : String(error)
+    });
+  }
+}
+
+if (!targetMeasurement) {
+  const spotlightYAdjust = -12; // iOS path; Android only uses this if projection fails.
+  targetMeasurement = {
+    x: SCREEN_WIDTH / 2 - 40,
+    y: SCREEN_HEIGHT * 0.25 - 35 + spotlightYAdjust,
+    width: 80,
+    height: 80
+  };
+
+  tutorialLog('cluster-click targetMeasurement fallback adjusted', { spotlightYAdjust, targetMeasurement });
+}
           break;
         default:
           tutorialLog(`No specific measurement for step: ${step.id}.`);
