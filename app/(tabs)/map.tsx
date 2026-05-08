@@ -1491,6 +1491,29 @@ const DeepLinkLightbox = () => {
   );
 };
 
+const IosCalloutTutorialOverlayHost = () => {
+  const [, forceRender] = useState(0);
+
+  useEffect(() => {
+    if (Platform.OS !== 'ios') {
+      return;
+    }
+
+    const interval = setInterval(() => {
+      forceRender((value) => (value + 1) % 1000000);
+    }, 150);
+
+    return () => clearInterval(interval);
+  }, []);
+
+  if (Platform.OS !== 'ios') {
+    return null;
+  }
+
+  const renderOverlay = (global as any).tutorialOverlayForCalloutModal;
+  return typeof renderOverlay === 'function' ? renderOverlay() : null;
+};
+
  // Main Map Screen component
 function MapScreen() {
    markTabScreenRenderStart('map');
@@ -5679,6 +5702,7 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
       >
         <View style={styles.calloutModalContent}>
           {content}
+          <IosCalloutTutorialOverlayHost />
         </View>
       </Modal>
     );

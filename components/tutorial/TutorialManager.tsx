@@ -32,6 +32,12 @@ import { TutorialStep } from '../../types/tutorial';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
+const IOS_CALLOUT_MODAL_TUTORIAL_STEPS = new Set([
+  'callout-venue-selector',
+  'callout-tabs',
+  'callout-event-details',
+]);
+
 interface TutorialManagerProps {children: React.ReactNode;}
 
 export const TutorialManager: React.FC<TutorialManagerProps> = ({ children }) => {
@@ -1541,6 +1547,69 @@ onSkip={() => {
   return null;
 }, [isActive, showWelcome, isPositioning, currentStep, tutorialStatus, completeTutorial, skipTutorial, previousStep]);
 
+const tutorialOverlayForCalloutModal = useCallback(() => {
+  if (
+    Platform.OS !== 'ios' ||
+    !isActive ||
+    showWelcome ||
+    isPositioning ||
+    !currentStep?.id ||
+    !IOS_CALLOUT_MODAL_TUTORIAL_STEPS.has(currentStep.id)
+  ) {
+    return null;
+  }
+
+  return (
+    <TutorialOverlay isVisible={true} onRequestClose={skipTutorial}>
+      <TutorialSpotlight spotlight={spotlightConfig}>
+        {stepForTooltip && (
+          <TutorialBottomSheet
+            title={stepForTooltip.title}
+            content={stepForTooltip.content}
+            onNext={handleNext}
+            onPrevious={() => {
+              if (currentStep.id === 'callout-venue-selector') {
+                const closeCallout = (global as any).closeCallout;
+                closeCallout?.();
+                setTimeout(() => previousStep(), 250);
+                return;
+              }
+
+              previousStep();
+            }}
+            onSkip={skipTutorial}
+            showPrevious={currentStep.id !== 'welcome'}
+            showNext={
+              stepForTooltip.id !== 'cluster-click' &&
+              stepForTooltip.id !== 'events-tab' &&
+              stepForTooltip.id !== 'specials-tab' &&
+              stepForTooltip.id !== 'profile-facebook'
+            }
+            showSkip={true}
+            nextText={stepForTooltip.action === 'interaction' ? 'Continue' : 'Next'}
+            position={tooltipPosition}
+            placement={stepForTooltip.placement || 'bottom'}
+            sheetPosition={stepForTooltip.sheetPosition || 'bottom'}
+            stepNumber={TUTORIAL_STEPS.findIndex(s => s.id === stepForTooltip.id) + 1}
+            totalSteps={TUTORIAL_STEPS.length}
+          />
+        )}
+      </TutorialSpotlight>
+    </TutorialOverlay>
+  );
+}, [
+  currentStep,
+  handleNext,
+  isActive,
+  isPositioning,
+  previousStep,
+  showWelcome,
+  skipTutorial,
+  spotlightConfig,
+  stepForTooltip,
+  tooltipPosition,
+]);
+
 
  
 
@@ -1558,13 +1627,16 @@ onSkip={() => {
     (global as any).restartGathRTutorial = restartTutorial;
     // @ts-ignore - Add tutorial overlay for modal screens
     (global as any).tutorialOverlayForModal = tutorialOverlayForModal;
+    // @ts-ignore - Add tutorial overlay for iOS callout modal screens
+    (global as any).tutorialOverlayForCalloutModal = tutorialOverlayForCalloutModal;
     
     tutorialLog('Global tutorial functions exposed', {
       triggerGathRTutorial: 'available',
       autoTriggerGathRTutorial: 'available', 
       manualTriggerGathRTutorial: 'available',
       restartGathRTutorial: 'available',
-      tutorialOverlayForModal: 'available'
+      tutorialOverlayForModal: 'available',
+      tutorialOverlayForCalloutModal: 'available'
     });
     
     return () => {
@@ -1578,13 +1650,26 @@ onSkip={() => {
       delete (global as any).restartGathRTutorial;
       // @ts-ignore - Cleanup
       delete (global as any).tutorialOverlayForModal;
+      // @ts-ignore - Cleanup
+      delete (global as any).tutorialOverlayForCalloutModal;
     };
-  }, [triggerTutorial, autoTriggerTutorial, manualTriggerTutorial, restartTutorial, tutorialOverlayForModal]);
+  }, [
+    triggerTutorial,
+    autoTriggerTutorial,
+    manualTriggerTutorial,
+    restartTutorial,
+    tutorialOverlayForModal,
+    tutorialOverlayForCalloutModal,
+  ]);
 
   /**
    * Check if we should show any tutorial UI
    */
   const shouldShowTutorialUI = showWelcome || (isActive && !showWelcome);
+  const shouldRenderCalloutTutorialInModal =
+    Platform.OS === 'ios' &&
+    !!currentStep?.id &&
+    IOS_CALLOUT_MODAL_TUTORIAL_STEPS.has(currentStep.id);
 
   return (
     <View style={{ flex: 1 }}>
@@ -1600,6 +1685,7 @@ onSkip={() => {
 
       {/* Tutorial Steps - Show for all steps except facebook-submission */}
       {isActive && !showWelcome && !isPositioning && 
+       !shouldRenderCalloutTutorialInModal &&
        currentStep?.id !== 'facebook-submission' && (() => {
          console.log('ðŸ” MAIN OVERLAY RENDERING - isActive:', isActive, 'step:', currentStep?.id);
          return true;

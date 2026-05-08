@@ -108,6 +108,7 @@ export interface TutorialOverlayProps {
   isVisible: boolean;
   onRequestClose: () => void;
   children: React.ReactNode;
+  useNativeModal?: boolean;
 }
 
 export interface TutorialSpotlightProps {

@@ -17,7 +17,8 @@ import {
   Animated,
   Dimensions,
   StatusBar,
-  Platform
+  Platform,
+  Modal
 } from 'react-native';
 import { TutorialOverlayProps } from '../../types/tutorial';
 import { TUTORIAL_CONFIG } from '../../config/tutorialSteps';
@@ -27,7 +28,8 @@ const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 export const TutorialOverlay: React.FC<TutorialOverlayProps> = ({
   isVisible,
   onRequestClose,
-  children
+  children,
+  useNativeModal = false
 }) => {
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
@@ -51,7 +53,7 @@ export const TutorialOverlay: React.FC<TutorialOverlayProps> = ({
 
   if (!isVisible) return null;
 
-  return (
+  const overlayContent = (
     <Animated.View 
       style={[
         styles.overlay, 
@@ -69,6 +71,23 @@ export const TutorialOverlay: React.FC<TutorialOverlayProps> = ({
       {children}
     </Animated.View>
   );
+
+  if (useNativeModal) {
+    return (
+      <Modal
+        transparent={true}
+        visible={true}
+        animationType="none"
+        onRequestClose={onRequestClose}
+        presentationStyle="overFullScreen"
+        statusBarTranslucent={true}
+      >
+        {overlayContent}
+      </Modal>
+    );
+  }
+
+  return overlayContent;
 };
 
 const styles = StyleSheet.create({
