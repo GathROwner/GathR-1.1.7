@@ -513,16 +513,17 @@ const FacebookPageSubmission = React.forwardRef<View, FacebookPageSubmissionProp
   };
 
   return (
-    <Animated.View style={isHighlighted ? tutorialHighlightStyle : {}}>
-      <View 
-        ref={ref}
-        style={submissionStyles.container}
-        onLayout={() => {
-          // Immediate measurement DISABLED - one-shot measurement system handles all measurements with padding
-          // The one-shot system measures once, applies padding, and marks as stable
-          // Do NOT overwrite facebookSubmissionLayout here or it will replace the padded measurement
-        }}
-      >
+    <View
+      ref={ref}
+      collapsable={false}
+      onLayout={() => {
+        // Immediate measurement DISABLED - one-shot measurement system handles all measurements with padding
+        // The one-shot system measures once, applies padding, and marks as stable
+        // Do NOT overwrite facebookSubmissionLayout here or it will replace the padded measurement
+      }}
+    >
+      <Animated.View style={isHighlighted ? tutorialHighlightStyle : {}}>
+        <View style={submissionStyles.container}>
       {/* Compact Header - Always Visible */}
       <TouchableOpacity 
         style={[submissionStyles.header, submissionStyles.expandableHeader]}
@@ -602,8 +603,9 @@ const FacebookPageSubmission = React.forwardRef<View, FacebookPageSubmissionProp
           </TouchableOpacity>
         </View>
        )}
-      </View>
-    </Animated.View>
+        </View>
+      </Animated.View>
+    </View>
   );
 });
 
@@ -643,6 +645,7 @@ export default function ProfileScreen() {
   
   // Profile container ref for modal header measurement
   const profileContainerRef = useRef<KeyboardAvoidingView>(null);
+  const profileTutorialOverlayHostRef = useRef<View>(null);
   
   // Make it globally accessible for tutorial measurement
   useEffect(() => {
@@ -662,8 +665,8 @@ export default function ProfileScreen() {
     const interval = setInterval(() => {
       const globalFlag = (global as any).tutorialHighlightFacebookSubmission || false;
       
-      if (globalFlag !== facebookSubmissionHighlighted) {
-        setFacebookSubmissionHighlighted(globalFlag);
+      if (!globalFlag && facebookSubmissionHighlighted) {
+        setFacebookSubmissionHighlighted(false);
         console.log('ðŸ“ ONE-SHOT MEASUREMENT: Tutorial highlight flag changed to:', globalFlag);
       }
       
@@ -687,6 +690,7 @@ export default function ProfileScreen() {
       
       // Only measure ONCE when flag is on and we haven't measured yet
       if (globalFlag && facebookSubmissionRef.current && !hasMeasuredRef.current) {
+        setFacebookSubmissionHighlighted(false);
         console.log('ðŸ“ ONE-SHOT MEASUREMENT: Taking single measurement (first time only)...');
         
         // IMMEDIATELY set the flag to prevent re-measurement
@@ -697,7 +701,8 @@ export default function ProfileScreen() {
         (global as any).facebookSubmissionLayout = null;
         (global as any).facebookSubmissionStable = false;
         
-        facebookSubmissionRef.current.measureInWindow((x: number, y: number, width: number, height: number) => {
+        const measureFacebookSubmission = (rootX = 0, rootY = 0) => {
+          facebookSubmissionRef.current?.measureInWindow((x: number, y: number, width: number, height: number) => {
           const rawMeasurement = { 
             x: Math.round(x), 
             y: Math.round(y), 
@@ -709,94 +714,76 @@ export default function ProfileScreen() {
           
           /*
   PROFILE â†’ FACEBOOK SUBMISSION: ONE-SHOT MEASUREMENT
-  Modal header adjustment:
-    â€¢ iOS modals render ~72px lower vs "transparent" modal mode.
-    â€¢ Android uses 0 (no header delta).
-  We subtract this only on iOS to normalize the rect used by the tutorial spotlight.
+  Coordinate normalization:
+    â€¢ measureInWindow returns screen coordinates.
+    â€¢ The tutorial overlay is rendered inside this profile root.
+  Convert the target rect into the overlay host's coordinate space instead of using a fixed iOS offset.
 */
-            const modalHeaderHeight = Platform.OS === 'ios' ? 72 : 0;
-          console.log('📍 ONE-SHOT MEASUREMENT: Using modal header offset:', modalHeaderHeight);
+            const overlayOriginY = Math.round(rootY);
+          console.log('📍 ONE-SHOT MEASUREMENT: Using profile overlay origin:', { rootX, rootY });
           
           const adjustedMeasurement = {
             ...rawMeasurement,
-            y: rawMeasurement.y - modalHeaderHeight
+            x: Math.round(rawMeasurement.x - rootX),
+            y: rawMeasurement.y - overlayOriginY
           };
           
-          console.log('ðŸ“ ONE-SHOT MEASUREMENT: Adjusted for modal header:', {
+          console.log('ðŸ“ ONE-SHOT MEASUREMENT: Adjusted for profile overlay origin:', {
+            rootX,
+            rootY,
+            originalX: rawMeasurement.x,
             originalY: rawMeasurement.y,
-            headerHeight: modalHeaderHeight,
+            overlayOriginY,
+            adjustedX: adjustedMeasurement.x,
             adjustedY: adjustedMeasurement.y
           });
           
-          // Apply proportional padding for scale: 1.15 pulse animation
-          // We use 1.35x multiplier to ensure full coverage regardless of when we measure in the pulse cycle
-          // This accounts for: measuring at min (needs 115% coverage) or measuring mid-pulse (needs buffer both ways)
-          const paddingFactorX = 0.175; // 17.5% padding on each side horizontally (35% total)
-          const paddingFactorY = 0.175; // 17.5% padding on each side vertically (35% total)
-          const sizeMultiplier = 1.35; // 135% of measured size for generous coverage
+          // The card animation scales to 1.15, and TutorialSpotlight adds
+          // a final fixed 8px visual pad around this rect. The extra buffer
+          // covers the highlighted shell's border/shadow without moving center.
           
-          const paddedMeasurement = {
-            x: Math.round(adjustedMeasurement.x - (adjustedMeasurement.width * paddingFactorX)),
-            y: Math.round(adjustedMeasurement.y - (adjustedMeasurement.height * paddingFactorY)),
-            width: Math.round(adjustedMeasurement.width * sizeMultiplier),
-            height: Math.round(adjustedMeasurement.height * sizeMultiplier)
-          };
-          
-          console.log('ðŸ“ ONE-SHOT MEASUREMENT: Using generous 35% padding for full pulse coverage');
-          console.log('ðŸ“ ONE-SHOT MEASUREMENT: Initial padded measurement:', paddedMeasurement);
-          console.log('ðŸ“ ONE-SHOT MEASUREMENT: Padding applied:', {
-            xAdjustment: rawMeasurement.width * paddingFactorX,
-            yAdjustment: rawMeasurement.height * paddingFactorY,
-            widthIncrease: rawMeasurement.width * (sizeMultiplier - 1),
-            heightIncrease: rawMeasurement.height * (sizeMultiplier - 1)
-          });
-          
-          // Constrain to screen bounds with 4px margin
+          // Constrain to screen bounds with a small margin.
           const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
           const SCREEN_MARGIN = 15;
-          
-          // Calculate constraints
           const minX = SCREEN_MARGIN;
-          const maxX = SCREEN_WIDTH - SCREEN_MARGIN;
           const minY = SCREEN_MARGIN;
-          const maxY = SCREEN_HEIGHT - SCREEN_MARGIN;
-          
-          // Apply constraints
-          let constrainedMeasurement = { ...paddedMeasurement };
-          
-          // Constrain X position
-          if (constrainedMeasurement.x < minX) {
-            console.log('ðŸ“ ONE-SHOT MEASUREMENT: Adjusting X from', constrainedMeasurement.x, 'to', minX);
-            constrainedMeasurement.x = minX;
-          }
-          
-          // Constrain width if it would exceed right edge
-          const rightEdge = constrainedMeasurement.x + constrainedMeasurement.width;
-          if (rightEdge > maxX) {
-            const newWidth = maxX - constrainedMeasurement.x;
-            console.log('ðŸ“ ONE-SHOT MEASUREMENT: Adjusting width from', constrainedMeasurement.width, 'to', newWidth, '(right edge was', rightEdge, ')');
-            constrainedMeasurement.width = newWidth;
-          }
-          
-          // Constrain Y position
-          if (constrainedMeasurement.y < minY) {
-            console.log('ðŸ“ ONE-SHOT MEASUREMENT: Adjusting Y from', constrainedMeasurement.y, 'to', minY);
-            constrainedMeasurement.y = minY;
-          }
-          
-          // Constrain height if it would exceed bottom edge
-          const bottomEdge = constrainedMeasurement.y + constrainedMeasurement.height;
-          if (bottomEdge > maxY) {
-            const newHeight = maxY - constrainedMeasurement.y;
-            console.log('ðŸ“ ONE-SHOT MEASUREMENT: Adjusting height from', constrainedMeasurement.height, 'to', newHeight, '(bottom edge was', bottomEdge, ')');
-            constrainedMeasurement.height = newHeight;
-          }
-          
-          // Fine-tune coverage - extend bottom without losing top
-          const HEIGHT_EXTENSION = 5; // Extend spotlight height by 5 pixels at bottom
-          constrainedMeasurement.height = constrainedMeasurement.height + HEIGHT_EXTENSION;
-          console.log('ðŸ“ ONE-SHOT MEASUREMENT: Extended height by', HEIGHT_EXTENSION, 'pixels to better contain bottom pulse');
-          
+          const PULSE_SCALE = 1.15;
+          const EXTRA_HORIZONTAL_BUFFER = 16;
+          const EXTRA_VERTICAL_BUFFER = 18;
+          const IOS_SPOTLIGHT_VERTICAL_NUDGE = Platform.OS === 'ios' ? 22 : 0;
+          const targetCenterX = adjustedMeasurement.x + adjustedMeasurement.width / 2;
+          const targetCenterY =
+            adjustedMeasurement.y + adjustedMeasurement.height / 2 + IOS_SPOTLIGHT_VERTICAL_NUDGE;
+          const maxSpotlightWidth = SCREEN_WIDTH - SCREEN_MARGIN * 2;
+          const maxSpotlightHeight = SCREEN_HEIGHT - SCREEN_MARGIN * 2;
+          const centeredSpotlightWidth = Math.min(
+            adjustedMeasurement.width * PULSE_SCALE + EXTRA_HORIZONTAL_BUFFER * 2,
+            maxSpotlightWidth
+          );
+          const centeredSpotlightHeight = Math.min(
+            adjustedMeasurement.height * PULSE_SCALE + EXTRA_VERTICAL_BUFFER * 2,
+            maxSpotlightHeight
+          );
+          const clamp = (value: number, min: number, max: number) => {
+            return Math.min(Math.max(value, min), Math.max(min, max));
+          };
+
+          const constrainedMeasurement = {
+            x: Math.round(clamp(targetCenterX - centeredSpotlightWidth / 2, minX, SCREEN_WIDTH - SCREEN_MARGIN - centeredSpotlightWidth)),
+            y: Math.round(clamp(targetCenterY - centeredSpotlightHeight / 2, minY, SCREEN_HEIGHT - SCREEN_MARGIN - centeredSpotlightHeight)),
+            width: Math.round(centeredSpotlightWidth),
+            height: Math.round(centeredSpotlightHeight),
+          };
+          console.log('ONE-SHOT MEASUREMENT: Recentered spotlight from target center:', {
+            targetCenterX,
+            targetCenterY,
+            pulseScale: PULSE_SCALE,
+            extraHorizontalBuffer: EXTRA_HORIZONTAL_BUFFER,
+            extraVerticalBuffer: EXTRA_VERTICAL_BUFFER,
+            iosSpotlightVerticalNudge: IOS_SPOTLIGHT_VERTICAL_NUDGE,
+            centeredSpotlightWidth,
+            centeredSpotlightHeight
+          });
           console.log('ðŸ“ ONE-SHOT MEASUREMENT: Final constrained measurement:', constrainedMeasurement);
           console.log('ðŸ“ ONE-SHOT MEASUREMENT: Screen bounds:', {
             screenWidth: SCREEN_WIDTH,
@@ -819,7 +806,29 @@ export default function ProfileScreen() {
           console.log('âœ… ONE-SHOT MEASUREMENT: hasMeasured set to true, will not measure again');
           
           // Force re-render to show overlay
-          setFacebookSubmissionHighlighted(prev => !prev);
+          setFacebookSubmissionHighlighted(true);
+        });
+        };
+
+        const captureAfterPulseStops = () => {
+          const overlayHost = profileTutorialOverlayHostRef.current as any;
+          const profileRoot = profileContainerRef.current as any;
+          const measurementRoot =
+            overlayHost && typeof overlayHost.measureInWindow === 'function'
+              ? overlayHost
+              : profileRoot;
+
+          if (measurementRoot && typeof measurementRoot.measureInWindow === 'function') {
+            measurementRoot.measureInWindow((rootX: number, rootY: number) => {
+              measureFacebookSubmission(rootX, rootY);
+            });
+          } else {
+            measureFacebookSubmission();
+          }
+        };
+
+        requestAnimationFrame(() => {
+          requestAnimationFrame(captureAfterPulseStops);
         });
             } else if (globalFlag && hasMeasuredRef.current) {
         // We've already measured; if the layout is marked stable, stop polling entirely.
@@ -1554,7 +1563,14 @@ const handleLogout = async () => {
       </ScrollView>
       
       {/* Tutorial overlay for modal screens */}
-      {(global as any).tutorialOverlayForModal && (global as any).tutorialOverlayForModal()}
+      <View
+        ref={profileTutorialOverlayHostRef}
+        collapsable={false}
+        pointerEvents="box-none"
+        style={StyleSheet.absoluteFillObject}
+      >
+        {(global as any).tutorialOverlayForModal && (global as any).tutorialOverlayForModal()}
+      </View>
       
       {/* Password Confirmation Modal with standard animations */}
       {showPasswordModal && (
