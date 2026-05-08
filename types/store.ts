@@ -15,6 +15,16 @@ export interface ScrollTriggers {
   specials: number;
 }
 
+export type InterestCarouselFilter =
+  | {
+      status: 'active';
+      type: 'event' | 'special';
+      category: string;
+    }
+  | {
+      status: 'cleared';
+    };
+
 /**
  * Map state interface for the application
  * Defines the structure of the map store
@@ -85,9 +95,17 @@ export interface MapState {
     typeFilters: Partial<TypeFilterCriteria>,
     source?: 'filter-pills' | 'interest-pills'
   ) => void;
+  setTypeFiltersBatch: (
+    updates: Array<{
+      type: 'event' | 'special';
+      typeFilters: Partial<TypeFilterCriteria>;
+      source?: 'filter-pills' | 'interest-pills';
+    }>
+  ) => void;
   selectVenue: (venue: Venue | null) => void;
   selectVenues: (venues: Venue[]) => void;
   selectCluster: (cluster: Cluster | null) => void;
+  selectCallout: (venues: Venue[], cluster: Cluster | null) => void;
   setZoomLevel: (zoom: number) => void;
   setUserLocation: (location: Location.LocationObject) => void;
   setActiveFilterPanel: (panel: 'events' | 'specials' | null) => void;

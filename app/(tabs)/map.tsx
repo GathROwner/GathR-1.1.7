@@ -36,8 +36,10 @@ import { useAuth } from '../../contexts/AuthContext'; // Adjust path as needed
 
 // Import the store and types
 import { useMapStore } from '../../store';
+import { useInterestCarouselUiStore } from '../../store/interestCarouselUiStore';
 import type { Event, Venue, Cluster, TimeStatus, InterestLevel } from '../../types/events';
 import { FilterCriteria, TimeFilterType } from '../../types/filter';
+import type { InterestCarouselFilter } from '../../types/store';
 
 // Import components
 import FilterPills from '../../components/map/FilterPills';
@@ -90,6 +92,13 @@ import {
   STARTUP_LOCATION_CACHE_MAX_AGE_MS,
 } from '../../utils/startupLocationCache';
 import { initializeMapboxAccessToken } from '../../utils/mapboxAccessToken';
+import {
+  markTabFocus,
+  markTabRootLayout,
+  markTabScreenRenderCommit,
+  markTabScreenRenderStart,
+  markTabTracePhase,
+} from '../../utils/tabSwitchTrace';
 
 // Initialize Mapbox token
 initializeMapboxAccessToken(MapboxGL);
@@ -101,13 +110,21 @@ const STATIC_CALLOUT_ISOLATION_DEBUG = false;
 const IOS_CALLOUT_NATIVE_AD_ISOLATION_DEBUG = Platform.OS === 'ios';
 const ANDROID_MAPBOX_STARTUP_ISOLATION_DEBUG = false;
 const ANDROID_CLUSTER_MARKERVIEW_ISOLATION_DEBUG = false;
+const USE_ANDROID_NATIVE_CLUSTER_MARKER_LAYERS = false;
 const DEBUG_TREE_MARKER_EVENTS = false;
 const STAGE_CLUSTER_MARKERS_ON_STARTUP = Platform.OS === 'android';
 const STARTUP_CLUSTER_MARKER_LIMIT = 12;
 const FULL_CLUSTER_MARKER_DELAY_MS = 1000;
 const RICH_CLUSTER_MARKER_DELAY_MS = Platform.OS === 'ios' ? 0 : 2000;
+const ANDROID_RICH_CLUSTER_MARKER_MIN_ZOOM = 13;
 const ANDROID_FULL_CLUSTER_MARKER_HOTSPOT_SETTLE_MS = 0;
 const ANDROID_FULL_CLUSTER_MARKER_HOTSPOT_BACKUP_MS = 4000;
+const MAP_BLUR_CLEANUP_DELAY_MS = Platform.OS === 'android' ? 1000 : 0;
+const ANDROID_MAP_TAB_OVERLAY_RESTORE_DELAY_MS = 350;
+const ANDROID_CALLOUT_PREP_CACHE_LIMIT = 24;
+const ANDROID_CALLOUT_PREP_PREWARM_LIMIT = 8;
+const ANDROID_CALLOUT_PREP_PREWARM_STEP_MS = 45;
+const ANDROID_CALLOUT_CAMERA_MOVE_DELAY_MS = 1300;
 
 const getAndroidHotspotStartupPhase = (): string | null => {
   if (Platform.OS !== 'android') {
@@ -120,6 +137,82 @@ const getAndroidHotspotStartupPhase = (): string | null => {
 const isAndroidHotspotStartupCameraActive = (): boolean => {
   const phase = getAndroidHotspotStartupPhase();
   return phase === 'camera_animating' || phase === 'overlay_ready';
+};
+
+const shouldShowClusterMarkerDetails = (
+  zoom: number,
+  richMarkersReady: boolean,
+  androidZoomAllowsDetails: boolean
+): boolean => {
+  if (Platform.OS !== 'android') {
+    return richMarkersReady;
+  }
+
+  return richMarkersReady && (androidZoomAllowsDetails || zoom >= ANDROID_RICH_CLUSTER_MARKER_MIN_ZOOM);
+};
+
+const getCoordinatePairFromPosition = (position: unknown): [number, number] | null => {
+  if (!Array.isArray(position) || position.length < 2) {
+    return null;
+  }
+
+  const longitude = Number(position[0]);
+  const latitude = Number(position[1]);
+
+  return Number.isFinite(longitude) && Number.isFinite(latitude)
+    ? [longitude, latitude]
+    : null;
+};
+
+const getBoundingBoxFromPositions = (positions: unknown): BoundingBox | null => {
+  if (!Array.isArray(positions) || positions.length < 2) {
+    return null;
+  }
+
+  const coordinates = positions
+    .map(getCoordinatePairFromPosition)
+    .filter((position): position is [number, number] => position !== null)
+    .map(([longitude, latitude]) => ({ longitude, latitude }));
+
+  if (coordinates.length < 2) {
+    return null;
+  }
+
+  return {
+    west: Math.min(...coordinates.map((coordinate) => coordinate.longitude)),
+    south: Math.min(...coordinates.map((coordinate) => coordinate.latitude)),
+    east: Math.max(...coordinates.map((coordinate) => coordinate.longitude)),
+    north: Math.max(...coordinates.map((coordinate) => coordinate.latitude)),
+  };
+};
+
+const getNativeVisibleBoundingBox = (props: any): BoundingBox | null => {
+  const bounds = props?.bounds;
+  const boundsBbox = bounds?.ne && bounds?.sw
+    ? getBoundingBoxFromPositions([bounds.ne, bounds.sw])
+    : null;
+
+  return boundsBbox ?? getBoundingBoxFromPositions(props?.visibleBounds);
+};
+
+const getEffectiveZoomFromVisibleBounds = (
+  reportedZoom: number,
+  visibleBbox: BoundingBox | null,
+  mapWidthPixels: number
+): number => {
+  if (!visibleBbox || !Number.isFinite(mapWidthPixels) || mapWidthPixels <= 0) {
+    return reportedZoom;
+  }
+
+  const longitudeSpan = visibleBbox.east - visibleBbox.west;
+  if (!Number.isFinite(longitudeSpan) || longitudeSpan <= 0) {
+    return reportedZoom;
+  }
+
+  const derivedZoom = Math.log2((mapWidthPixels * 360) / (longitudeSpan * 512));
+  return Number.isFinite(derivedZoom)
+    ? Math.max(reportedZoom, derivedZoom)
+    : reportedZoom;
 };
 
 const isAndroidHotspotStartupFlowActive = (): boolean => {
@@ -151,6 +244,129 @@ const pickStartupClusters = (clusters: Cluster[], limit: number): Cluster[] => {
   );
 
   return clusters.filter(cluster => startupClusterIds.has(cluster.id));
+};
+
+type ClusterCalloutPrepContext = {
+  userLocation: Location.LocationObject | null;
+  userInterests: string[];
+  savedEvents: string[];
+  favoriteVenues: string[];
+};
+
+type PreparedClusterCallout = {
+  sortedVenues: Venue[];
+  coordinates: [number, number];
+};
+
+const getStableListSignature = (values: string[]): string =>
+  values.length === 0 ? '' : [...values].sort().join(',');
+
+const getClusterContentSignature = (cluster: Cluster): string =>
+  cluster.venues
+    .map((venue) => `${venue.locationKey}:${venue.events.map((event) => event.id).join(',')}`)
+    .join('|');
+
+const getClusterCalloutPrepCacheKey = (
+  cluster: Cluster,
+  context: ClusterCalloutPrepContext
+): string => {
+  const locationSignature = context.userLocation
+    ? `${context.userLocation.coords.latitude.toFixed(3)},${context.userLocation.coords.longitude.toFixed(3)}`
+    : 'none';
+
+  return [
+    cluster.id,
+    cluster.clusterType,
+    cluster.eventCount,
+    cluster.specialCount,
+    cluster.venues.length,
+    locationSignature,
+    getStableListSignature(context.userInterests),
+    getStableListSignature(context.savedEvents),
+    getStableListSignature(context.favoriteVenues),
+    getClusterContentSignature(cluster),
+  ].join('::');
+};
+
+const prepareClusterCallout = (
+  cluster: Cluster,
+  context: ClusterCalloutPrepContext
+): PreparedClusterCallout => {
+  const savedEventIds = new Set(context.savedEvents);
+  const userInterestIds = new Set(context.userInterests);
+  const favoriteVenueIds = new Set(context.favoriteVenues);
+  const userLocation = context.userLocation;
+
+  const venuesWithScores: Venue[] = cluster.venues.map((venue) => {
+    const isFavoriteVenue = favoriteVenueIds.has(venue.locationKey);
+    const favoriteVenueScore = isFavoriteVenue ? 500 : 0;
+
+    const scoredEvents = venue.events
+      .map((event): Event => {
+        const isSaved = savedEventIds.has(event.id.toString());
+        const savedScore = isSaved ? 1000 : 0;
+        const matchesInterest = userInterestIds.has(event.category);
+        const interestScore = matchesInterest ? 100 : 0;
+
+        const timeScore = isEventNow(event.startDate, event.startTime, event.endDate, event.endTime)
+          ? 10
+          : isEventHappeningToday(event)
+          ? 5
+          : 1;
+
+        const engagementScore = event.engagementScore || 0;
+        let proximityScore = 0;
+        if (userLocation) {
+          const distance = calculateDistance(
+            userLocation.coords.latitude,
+            userLocation.coords.longitude,
+            event.latitude,
+            event.longitude
+          );
+          proximityScore = Math.max(0, 1 - (distance / 10000));
+        }
+
+        return {
+          ...event,
+          relevanceScore:
+            savedScore + favoriteVenueScore + interestScore + timeScore + engagementScore + proximityScore,
+        };
+      })
+      .sort((a, b) => (b.relevanceScore || 0) - (a.relevanceScore || 0));
+
+    return {
+      ...venue,
+      events: scoredEvents,
+      relevanceScore: scoredEvents.length > 0 ? scoredEvents[0].relevanceScore || 0 : 0,
+    };
+  });
+
+  const sortedVenues = venuesWithScores.sort((a, b) => (b.relevanceScore || 0) - (a.relevanceScore || 0));
+  const coordinates: [number, number] =
+    cluster.clusterType === 'multi' && cluster.venues.length > 0
+      ? [
+          cluster.venues.reduce((sum: number, venue: Venue) => sum + venue.longitude, 0) / cluster.venues.length,
+          cluster.venues.reduce((sum: number, venue: Venue) => sum + venue.latitude, 0) / cluster.venues.length,
+        ]
+      : [
+          cluster.venues[0]?.longitude ?? 0,
+          cluster.venues[0]?.latitude ?? 0,
+        ];
+
+  return {
+    sortedVenues,
+    coordinates,
+  };
+};
+
+const trimClusterCalloutPrepCache = (cache: Map<string, PreparedClusterCallout>): void => {
+  while (cache.size > ANDROID_CALLOUT_PREP_CACHE_LIMIT) {
+    const firstKey = cache.keys().next().value;
+    if (!firstKey) {
+      return;
+    }
+    cache.delete(firstKey);
+  }
 };
 
 // Helper function to get color for time status
@@ -237,24 +453,399 @@ const getInterestLevelSize = (interestLevel: InterestLevel): number => {
   }
 };
 
+type AndroidClusterMarkerFeatureProperties = {
+  broadcastPulseOpacity1: number;
+  broadcastPulseOpacity2: number;
+  broadcastPulseOpacity3: number;
+  broadcastPulseRadius1: number;
+  broadcastPulseRadius2: number;
+  broadcastPulseRadius3: number;
+  categoryCountLabel: string;
+  categoryIconImage: string;
+  categoryTextColor: string;
+  clusterId: string;
+  eventLabel: string;
+  hasCategory: boolean;
+  hasEvents: boolean;
+  hasFirestoreEvents: boolean;
+  hasNewContent: boolean;
+  hasSpecials: boolean;
+  isBroadcasting: boolean;
+  isProcessing: boolean;
+  label: string;
+  markerCategoryRadius: number;
+  markerColor: string;
+  markerLabelRadius: number;
+  markerOpacity: number;
+  markerOuterRingRadius: number;
+  markerRadius: number;
+  markerStrokeColor: string;
+  markerStrokeWidth: number;
+  markerStatusDotRadius: number;
+  markerTextSize: number;
+  markerTrunkTextSize: number;
+  specialLabel: string;
+  textColor: string;
+  venueTextHaloColor: string;
+  venueTextHaloWidth: number;
+  hasVenueIconOutline: boolean;
+  venueIconImage: string;
+  venueIconOutlineSize: number;
+  venueIconSize: number;
+};
+
+type AndroidClusterMarkerFeature = {
+  type: 'Feature';
+  id: string;
+  properties: AndroidClusterMarkerFeatureProperties;
+  geometry: {
+    type: 'Point';
+    coordinates: [number, number];
+  };
+};
+
+type AndroidClusterMarkerShape = {
+  type: 'FeatureCollection';
+  features: AndroidClusterMarkerFeature[];
+};
+
+const ANDROID_CLUSTER_CATEGORY_CYCLE_MS = 2500;
+const ANDROID_CLUSTER_MARKER_PULSE_MS = 250;
+const ANDROID_CLUSTER_MARKER_PULSE_STEPS = 12;
+const ANDROID_CLUSTER_DARK_TEXT_COLORS = new Set(['#FBBC05']);
+const ANDROID_CLUSTER_CATEGORY_PILL_SIZE = 0.6;
+const ANDROID_CLUSTER_CATEGORY_GLYPH_SIZE = 0.19;
+const ANDROID_CLUSTER_CATEGORY_TEXT_SIZE = 9.6;
+const ANDROID_CLUSTER_COUNT_STRIP_SIZE = 0.58;
+const ANDROID_CLUSTER_COUNT_GLYPH_SIZE = 0.18;
+const ANDROID_CLUSTER_COUNT_TEXT_SIZE = 9.6;
+const ANDROID_CLUSTER_MARKER_CATEGORY_PILL_ID = 'gathr-marker-category-pill';
+const ANDROID_CLUSTER_CATEGORY_ICON_IDS = {
+  bar: 'gathr-category-bar',
+  church: 'gathr-category-church',
+  comedy: 'gathr-category-comedy',
+  default: 'gathr-category-default',
+  drink: 'gathr-category-drink',
+  family: 'gathr-category-family',
+  food: 'gathr-category-food',
+  music: 'gathr-category-music',
+  nightlife: 'gathr-category-nightlife',
+  sports: 'gathr-category-sports',
+  theater: 'gathr-category-theater',
+  trivia: 'gathr-category-trivia',
+  workshop: 'gathr-category-workshop',
+} as const;
+const ANDROID_CLUSTER_MARKER_COUNT_STRIP_ID = 'gathr-marker-count-strip';
+const ANDROID_CLUSTER_MARKER_EVENT_ICON_ID = 'gathr-marker-event-count';
+const ANDROID_CLUSTER_MARKER_SPECIAL_ICON_ID = 'gathr-marker-special-count';
+const ANDROID_CLUSTER_MARKER_VENUE_DARK_ICON_ID = 'gathr-marker-venue-dark';
+const ANDROID_CLUSTER_MARKER_VENUE_LIGHT_ICON_ID = 'gathr-marker-venue-light';
+const ANDROID_CLUSTER_MARKER_IMAGES = {
+  [ANDROID_CLUSTER_MARKER_CATEGORY_PILL_ID]: require('../../assets/map-markers/marker-category-pill.png'),
+  [ANDROID_CLUSTER_CATEGORY_ICON_IDS.bar]: require('../../assets/map-markers/category-bar.png'),
+  [ANDROID_CLUSTER_CATEGORY_ICON_IDS.church]: require('../../assets/map-markers/category-church.png'),
+  [ANDROID_CLUSTER_CATEGORY_ICON_IDS.comedy]: require('../../assets/map-markers/category-comedy.png'),
+  [ANDROID_CLUSTER_CATEGORY_ICON_IDS.default]: require('../../assets/map-markers/category-default.png'),
+  [ANDROID_CLUSTER_CATEGORY_ICON_IDS.drink]: require('../../assets/map-markers/category-drink.png'),
+  [ANDROID_CLUSTER_CATEGORY_ICON_IDS.family]: require('../../assets/map-markers/category-family.png'),
+  [ANDROID_CLUSTER_CATEGORY_ICON_IDS.food]: require('../../assets/map-markers/category-food.png'),
+  [ANDROID_CLUSTER_CATEGORY_ICON_IDS.music]: require('../../assets/map-markers/category-music.png'),
+  [ANDROID_CLUSTER_CATEGORY_ICON_IDS.nightlife]: require('../../assets/map-markers/category-nightlife.png'),
+  [ANDROID_CLUSTER_CATEGORY_ICON_IDS.sports]: require('../../assets/map-markers/category-sports.png'),
+  [ANDROID_CLUSTER_CATEGORY_ICON_IDS.theater]: require('../../assets/map-markers/category-theater.png'),
+  [ANDROID_CLUSTER_CATEGORY_ICON_IDS.trivia]: require('../../assets/map-markers/category-trivia.png'),
+  [ANDROID_CLUSTER_CATEGORY_ICON_IDS.workshop]: require('../../assets/map-markers/category-workshop.png'),
+  [ANDROID_CLUSTER_MARKER_COUNT_STRIP_ID]: require('../../assets/map-markers/marker-count-strip.png'),
+  [ANDROID_CLUSTER_MARKER_EVENT_ICON_ID]: require('../../assets/map-markers/marker-calendar.png'),
+  [ANDROID_CLUSTER_MARKER_SPECIAL_ICON_ID]: require('../../assets/map-markers/marker-special.png'),
+  [ANDROID_CLUSTER_MARKER_VENUE_DARK_ICON_ID]: require('../../assets/map-markers/marker-venue-dark.png'),
+  [ANDROID_CLUSTER_MARKER_VENUE_LIGHT_ICON_ID]: require('../../assets/map-markers/marker-venue-light.png'),
+};
+
+const getAndroidClusterCategoryIconImage = (category: string): string => {
+  const categoryLower = category.toLowerCase();
+
+  if (categoryLower.includes('live music') || categoryLower.includes('music')) return ANDROID_CLUSTER_CATEGORY_ICON_IDS.music;
+  if (categoryLower.includes('comedy')) return ANDROID_CLUSTER_CATEGORY_ICON_IDS.comedy;
+  if (categoryLower.includes('sport')) return ANDROID_CLUSTER_CATEGORY_ICON_IDS.sports;
+  if (categoryLower.includes('trivia')) return ANDROID_CLUSTER_CATEGORY_ICON_IDS.trivia;
+  if (categoryLower.includes('workshop') || categoryLower.includes('class')) return ANDROID_CLUSTER_CATEGORY_ICON_IDS.workshop;
+  if (categoryLower.includes('religious') || categoryLower.includes('church')) return ANDROID_CLUSTER_CATEGORY_ICON_IDS.church;
+  if (categoryLower.includes('family')) return ANDROID_CLUSTER_CATEGORY_ICON_IDS.family;
+  if (categoryLower.includes('gathering') || categoryLower.includes('parties') || categoryLower.includes('party')) return ANDROID_CLUSTER_CATEGORY_ICON_IDS.nightlife;
+  if (categoryLower.includes('cinema') || categoryLower.includes('movie') || categoryLower.includes('film')) return ANDROID_CLUSTER_CATEGORY_ICON_IDS.theater;
+  if (categoryLower.includes('happy hour')) return ANDROID_CLUSTER_CATEGORY_ICON_IDS.bar;
+  if (categoryLower.includes('food') || categoryLower.includes('wing') || categoryLower.includes('restaurant')) return ANDROID_CLUSTER_CATEGORY_ICON_IDS.food;
+  if (categoryLower.includes('drink')) return ANDROID_CLUSTER_CATEGORY_ICON_IDS.drink;
+
+  return ANDROID_CLUSTER_CATEGORY_ICON_IDS.default;
+};
+
+const getUniqueVenueCount = (venues: Venue[]): number => {
+  const keys = new Set<string>();
+
+  venues.forEach((venue, index) => {
+    keys.add(venue.locationKey || `${venue.venue}-${venue.latitude}-${venue.longitude}-${index}`);
+  });
+
+  return keys.size;
+};
+
+const getAndroidClusterCategoryItems = (cluster: Cluster, userInterests: string[]): CategoryItem[] => {
+  const categoryMap = new Map<string, CategoryItem>();
+
+  cluster.venues.forEach(venue => {
+    venue.events.forEach(event => {
+      const iconImage = getAndroidClusterCategoryIconImage(event.category);
+      const currentItem = categoryMap.get(iconImage);
+      const isUserInterest = userInterests.includes(event.category);
+
+      if (currentItem) {
+        currentItem.count += 1;
+        currentItem.isUserInterest = currentItem.isUserInterest || isUserInterest;
+        if (isUserInterest) {
+          currentItem.category = event.category;
+        }
+      } else {
+        categoryMap.set(iconImage, {
+          category: event.category,
+          count: 1,
+          iconImage,
+          isUserInterest,
+        });
+      }
+    });
+  });
+
+  const items: CategoryItem[] = Array.from(categoryMap.values());
+
+  items.sort((a, b) => {
+    if (a.isUserInterest && !b.isUserInterest) return -1;
+    if (!a.isUserInterest && b.isUserInterest) return 1;
+    return b.count - a.count;
+  });
+
+  return items;
+};
+
+const getClusterCoordinate = (cluster: Cluster): [number, number] => {
+  if (cluster.clusterType !== 'multi') {
+    const venue = cluster.venues[0];
+    return [venue.longitude, venue.latitude];
+  }
+
+  const totals = cluster.venues.reduce(
+    (acc, venue) => ({
+      longitude: acc.longitude + venue.longitude,
+      latitude: acc.latitude + venue.latitude,
+    }),
+    { longitude: 0, latitude: 0 }
+  );
+
+  return [
+    totals.longitude / cluster.venues.length,
+    totals.latitude / cluster.venues.length,
+  ];
+};
+
+type ActiveInterestCarouselFilter = Extract<InterestCarouselFilter, { status: 'active' }>;
+
+const normalizeInterestCategory = (value: string): string => value.trim().toLowerCase();
+
+const eventMatchesInterestCarouselFilter = (
+  event: Event,
+  filter: ActiveInterestCarouselFilter
+): boolean =>
+  event.type === filter.type &&
+  normalizeInterestCategory(event.category) === normalizeInterestCategory(filter.category);
+
+const clusterMatchesInterestCarouselFilter = (
+  cluster: Cluster,
+  filter: ActiveInterestCarouselFilter
+): boolean =>
+  cluster.venues.some((venue) =>
+    venue.events.some((event) => eventMatchesInterestCarouselFilter(event, filter))
+  );
+
+const buildAndroidClusterMarkerShape = (
+  clustersForRender: Cluster[],
+  options: {
+    categoryCycleTick: number;
+    clustersReadyForInteraction: boolean;
+    detailsEnabled: boolean;
+    pulseStep: number;
+    processingClusterId: string | null;
+    selectedClusterId: string | null;
+    userInterests: string[];
+  }
+): AndroidClusterMarkerShape => ({
+  type: 'FeatureCollection',
+  features: clustersForRender
+    .filter(cluster => cluster.venues.length > 0)
+    .map((cluster): AndroidClusterMarkerFeature => {
+      const color = getTimeStatusColor(cluster.timeStatus);
+      const isSelected = cluster.id === options.selectedClusterId;
+      const isProcessing = cluster.id === options.processingClusterId;
+      const detailsEnabled = options.detailsEnabled || isSelected;
+      const isBroadcasting = detailsEnabled && !!cluster.isBroadcasting;
+      const scaleFactor = isSelected ? 1.2 : 1;
+      const size = getInterestLevelSize(cluster.interestLevel) * scaleFactor;
+      const markerRadius = Math.max(size * 0.8, 10);
+      const getPulseRing = (offset: number) => {
+        const phase = ((options.pulseStep + offset) % ANDROID_CLUSTER_MARKER_PULSE_STEPS) / (ANDROID_CLUSTER_MARKER_PULSE_STEPS - 1);
+
+        return {
+          opacity: phase < 0.1 ? 0 : 0.28 * (1 - phase),
+          radius: markerRadius + 4 + phase * 22,
+        };
+      };
+      const pulseRing1 = getPulseRing(0);
+      const pulseRing2 = getPulseRing(4);
+      const pulseRing3 = getPulseRing(8);
+      const pulseBreath = Math.sin(
+        (options.pulseStep % ANDROID_CLUSTER_MARKER_PULSE_STEPS) /
+          (ANDROID_CLUSTER_MARKER_PULSE_STEPS - 1) *
+          Math.PI
+      );
+      const usesDarkText = ANDROID_CLUSTER_DARK_TEXT_COLORS.has(color);
+      const hasFirestoreEvents = detailsEnabled && cluster.venues.some(venue =>
+        venue.events.some(event => event.source === 'firestore')
+      );
+      const categoryItems = detailsEnabled
+        ? getAndroidClusterCategoryItems(cluster, options.userInterests)
+        : [];
+      const categoryItem = categoryItems.length > 0
+        ? categoryItems[options.categoryCycleTick % categoryItems.length]
+        : null;
+      const venueCount = getUniqueVenueCount(cluster.venues);
+      const venueLabel = String(venueCount);
+      const venueTextSize = Math.min(
+        Math.max(size * 0.55, venueLabel.length > 1 ? 9.2 : 9.8),
+        venueLabel.length > 1 ? 10.6 : 11.2
+      );
+
+      return {
+        type: 'Feature',
+        id: cluster.id,
+        properties: {
+          broadcastPulseOpacity1: pulseRing1.opacity,
+          broadcastPulseOpacity2: pulseRing2.opacity,
+          broadcastPulseOpacity3: pulseRing3.opacity,
+          broadcastPulseRadius1: pulseRing1.radius,
+          broadcastPulseRadius2: pulseRing2.radius,
+          broadcastPulseRadius3: pulseRing3.radius,
+          categoryCountLabel: categoryItem ? String(categoryItem.count) : '',
+          categoryIconImage: categoryItem
+            ? categoryItem.iconImage
+            : ANDROID_CLUSTER_CATEGORY_ICON_IDS.default,
+          categoryTextColor: categoryItem?.isUserInterest ? '#4A90E2' : '#333333',
+          clusterId: cluster.id,
+          eventLabel: detailsEnabled && cluster.eventCount > 0 ? String(cluster.eventCount) : '',
+          hasCategory: detailsEnabled && categoryItem != null,
+          hasEvents: detailsEnabled && cluster.eventCount > 0,
+          hasFirestoreEvents,
+          hasNewContent: detailsEnabled && !!cluster.hasNewContent,
+          hasSpecials: detailsEnabled && cluster.specialCount > 0,
+          isBroadcasting,
+          isProcessing,
+          label: venueLabel,
+          markerCategoryRadius: 9.5,
+          markerColor: color,
+          markerOpacity: !options.clustersReadyForInteraction ? 0.4 : isProcessing ? 0.65 : 1,
+          markerLabelRadius: 12,
+          markerOuterRingRadius: markerRadius + 7,
+          markerRadius: markerRadius + (isBroadcasting ? pulseBreath * 0.55 : 0),
+          markerStrokeColor: isSelected ? '#202124' : '#FFFFFF',
+          markerStrokeWidth: isSelected ? 3 : 2,
+          markerStatusDotRadius: Math.max(markerRadius * 0.24, 3.5),
+          markerTextSize: venueTextSize,
+          markerTrunkTextSize: Math.max(size * 0.9, 13),
+          specialLabel: detailsEnabled && cluster.specialCount > 0 ? String(cluster.specialCount) : '',
+          textColor: usesDarkText ? '#000000' : '#FFFFFF',
+          venueTextHaloColor: usesDarkText ? '#FFFFFF' : '#0B3D1A',
+          venueTextHaloWidth: usesDarkText ? 0.65 : 0.9,
+          hasVenueIconOutline: !usesDarkText,
+          venueIconImage: usesDarkText
+            ? ANDROID_CLUSTER_MARKER_VENUE_DARK_ICON_ID
+            : ANDROID_CLUSTER_MARKER_VENUE_LIGHT_ICON_ID,
+          venueIconOutlineSize: Math.min(Math.max(size / 70, 0.2), 0.28),
+          venueIconSize: Math.min(Math.max(size / 78, 0.18), 0.25),
+        },
+        geometry: {
+          type: 'Point',
+          coordinates: getClusterCoordinate(cluster),
+        },
+      };
+    }),
+});
+
+type MapTabAnimationStopper = () => void;
+
+const MAP_TAB_ANIMATION_STOPPERS_KEY = '__gathrMapTabAnimationStoppers';
+const PAUSE_MAP_TAB_ANIMATIONS_KEY = 'pauseMapTabAnimationsForHandoff';
+
+const getMapTabAnimationStoppers = (): Set<MapTabAnimationStopper> => {
+  const globalAny = global as any;
+  if (!globalAny[MAP_TAB_ANIMATION_STOPPERS_KEY]) {
+    globalAny[MAP_TAB_ANIMATION_STOPPERS_KEY] = new Set<MapTabAnimationStopper>();
+  }
+
+  return globalAny[MAP_TAB_ANIMATION_STOPPERS_KEY] as Set<MapTabAnimationStopper>;
+};
+
+const stopMapTabAnimationsForHandoff = () => {
+  getMapTabAnimationStoppers().forEach((stopAnimation) => {
+    try {
+      stopAnimation();
+    } catch {
+      // Best-effort handoff optimization; stale animation refs should not block navigation.
+    }
+  });
+};
+
+const useMapTabAnimationStopper = (stopAnimation: MapTabAnimationStopper) => {
+  useEffect(() => {
+    const stoppers = getMapTabAnimationStoppers();
+    stoppers.add(stopAnimation);
+    return () => {
+      stoppers.delete(stopAnimation);
+    };
+  }, [stopAnimation]);
+};
+
 // Broadcasting effect component for "now" events
 interface BroadcastingEffectProps {
   size: number;
   color: string;
+  isActive?: boolean;
 }
 
 /**
  * Broadcasting effect component for "now" events with pulsing animation
  */
-const BroadcastingEffect: React.FC<BroadcastingEffectProps> = ({ size, color }) => {
+const BroadcastingEffect: React.FC<BroadcastingEffectProps> = ({ size, color, isActive = true }) => {
   // Create animation values for each ring
   const [animations] = useState([
     new Animated.Value(0),
     new Animated.Value(0),
     new Animated.Value(0)
   ]);
+
+  const stopAnimations = useCallback(() => {
+    animations.forEach(anim => {
+      anim.stopAnimation();
+      anim.setValue(0);
+    });
+  }, [animations]);
+
+  useMapTabAnimationStopper(stopAnimations);
   
   useEffect(() => {
+    if (!isActive) {
+      stopAnimations();
+      return;
+    }
+
     // Create staggered animations for each ring
     const createAnimation = (index: number) => {
       return Animated.loop(
@@ -280,13 +871,15 @@ const BroadcastingEffect: React.FC<BroadcastingEffectProps> = ({ size, color }) 
     
     // Start animations
     const animationSequences = animations.map((_, index) => createAnimation(index));
-    Animated.parallel(animationSequences).start();
+    const runningAnimation = Animated.parallel(animationSequences);
+    runningAnimation.start();
     
     // Clean up animations on unmount
     return () => {
-      animations.forEach(anim => anim.stopAnimation());
+      runningAnimation.stop();
+      stopAnimations();
     };
-  }, []);
+  }, [animations, isActive, stopAnimations]);
   
   return (
     <View style={styles.broadcastContainer}>
@@ -332,55 +925,44 @@ const BroadcastingEffect: React.FC<BroadcastingEffectProps> = ({ size, color }) 
 interface CategoryCarouselProps {
   cluster: Cluster;
   size: number;
+  isActive?: boolean;
 }
 
 interface CategoryItem {
   category: string;
   count: number;
+  iconImage: string;
   isUserInterest: boolean;
 }
 
-const CategoryCarousel: React.FC<CategoryCarouselProps> = ({ cluster, size }) => {
+const CategoryCarousel: React.FC<CategoryCarouselProps> = ({ cluster, size, isActive = true }) => {
   const [currentIndex, setCurrentIndex] = useState(0);
   const fadeAnim = useRef(new Animated.Value(1)).current;
   const pulseAnim = useRef(new Animated.Value(1)).current;
 
+  const stopFadeAnimation = useCallback(() => {
+    fadeAnim.stopAnimation();
+    fadeAnim.setValue(1);
+  }, [fadeAnim]);
+
+  const stopPulseAnimation = useCallback(() => {
+    pulseAnim.stopAnimation();
+    pulseAnim.setValue(1);
+  }, [pulseAnim]);
+
+  const stopCarouselAnimations = useCallback(() => {
+    stopFadeAnimation();
+    stopPulseAnimation();
+  }, [stopFadeAnimation, stopPulseAnimation]);
+
+  useMapTabAnimationStopper(stopCarouselAnimations);
+
   // Get user interests
   const userInterests = getUserInterestsSync();
 
-  // Extract all categories from cluster with counts
+  // Extract displayed marker categories with counts.
   const categoryItems = useMemo(() => {
-    const categoryMap = new Map<string, number>();
-
-    // Count categories from all events in all venues
-    cluster.venues.forEach(venue => {
-      venue.events.forEach(event => {
-        const currentCount = categoryMap.get(event.category) || 0;
-        categoryMap.set(event.category, currentCount + 1);
-      });
-    });
-
-    // Convert to array with user interest flag
-    const items: CategoryItem[] = Array.from(categoryMap.entries()).map(([category, count]) => ({
-      category,
-      count,
-      isUserInterest: userInterests.includes(category),
-    }));
-
-    // Sort: user interests first, then by count (descending)
-    items.sort((a, b) => {
-      if (a.isUserInterest && !b.isUserInterest) return -1;
-      if (!a.isUserInterest && b.isUserInterest) return 1;
-      return b.count - a.count;
-    });
-
-    // Debug: log unique categories
-    // if (items.length > 0) {
-    //   console.log(`[CategoryCarousel] Cluster ${cluster.id} has ${items.length} unique categories:`,
-    //     items.map(i => `${i.category}(${i.count})`).join(', '));
-    // }
-
-    return items;
+    return getAndroidClusterCategoryItems(cluster, userInterests);
   }, [cluster, userInterests]);
 
   // Clamp index when categories shrink (e.g., filters reduce to 0/1)
@@ -393,7 +975,10 @@ const CategoryCarousel: React.FC<CategoryCarouselProps> = ({ cluster, size }) =>
 
   // Rotate through categories (only if there are 2+ unique categories)
   useEffect(() => {
-    if (categoryItems.length <= 1) return; // Don't animate if only one category
+    if (!isActive || categoryItems.length <= 1) {
+      stopFadeAnimation();
+      return;
+    }
 
     const interval = setInterval(() => {
       // Fade out
@@ -414,17 +999,23 @@ const CategoryCarousel: React.FC<CategoryCarouselProps> = ({ cluster, size }) =>
       });
     }, 2500); // 2.5 seconds per category
 
-    return () => clearInterval(interval);
-  }, [categoryItems.length, fadeAnim]);
+    return () => {
+      clearInterval(interval);
+      stopFadeAnimation();
+    };
+  }, [categoryItems.length, fadeAnim, isActive, stopFadeAnimation]);
 
   // Pulse animation for user interests
   useEffect(() => {
-    if (categoryItems.length === 0) return;
+    if (!isActive || categoryItems.length === 0) {
+      stopPulseAnimation();
+      return;
+    }
 
     const currentItem = categoryItems[currentIndex];
     if (currentItem?.isUserInterest) {
       // Start pulsing
-      Animated.loop(
+      const pulseAnimation = Animated.loop(
         Animated.sequence([
           Animated.timing(pulseAnim, {
             toValue: 1.15,
@@ -439,12 +1030,17 @@ const CategoryCarousel: React.FC<CategoryCarouselProps> = ({ cluster, size }) =>
             easing: Easing.inOut(Easing.ease),
           }),
         ])
-      ).start();
+      );
+      pulseAnimation.start();
+      return () => {
+        pulseAnimation.stop();
+        stopPulseAnimation();
+      };
     } else {
       // Reset pulse
-      pulseAnim.setValue(1);
+      stopPulseAnimation();
     }
-  }, [currentIndex, categoryItems, pulseAnim]);
+  }, [currentIndex, categoryItems, pulseAnim, isActive, stopPulseAnimation]);
 
   if (categoryItems.length === 0) return null;
 
@@ -515,16 +1111,33 @@ const StartupUserLocationOverlayMarker: React.FC = () => (
 // Animated "New Content" Indicator Dot for map markers
 interface IndicatorDotProps {
   hasNewContent: boolean;
+  isActive?: boolean;
   style: any;
 }
 
-const IndicatorDot: React.FC<IndicatorDotProps> = ({ hasNewContent, style }) => {
+const IndicatorDot: React.FC<IndicatorDotProps> = ({ hasNewContent, isActive = true, style }) => {
   const pulseScale = useRef(new Animated.Value(1)).current;
   const pulseOpacity = useRef(new Animated.Value(0.9)).current;
   const fadeOpacity = useRef(new Animated.Value(hasNewContent ? 1 : 0)).current;
 
+  const stopIndicatorAnimations = useCallback(() => {
+    pulseScale.stopAnimation();
+    pulseOpacity.stopAnimation();
+    fadeOpacity.stopAnimation();
+    pulseScale.setValue(1);
+    pulseOpacity.setValue(0.9);
+    fadeOpacity.setValue(hasNewContent ? 1 : 0);
+  }, [fadeOpacity, hasNewContent, pulseOpacity, pulseScale]);
+
+  useMapTabAnimationStopper(stopIndicatorAnimations);
+
   // Breathing pulse animation
   useEffect(() => {
+    if (hasNewContent && !isActive) {
+      stopIndicatorAnimations();
+      return;
+    }
+
     if (hasNewContent) {
       // Fade in
       Animated.timing(fadeOpacity, {
@@ -567,6 +1180,7 @@ const IndicatorDot: React.FC<IndicatorDotProps> = ({ hasNewContent, style }) => 
 
       return () => {
         pulseAnimation.stop();
+        stopIndicatorAnimations();
       };
     } else {
       // Fade out smoothly when cleared
@@ -576,7 +1190,7 @@ const IndicatorDot: React.FC<IndicatorDotProps> = ({ hasNewContent, style }) => 
         useNativeDriver: true,
       }).start();
     }
-  }, [hasNewContent]);
+  }, [fadeOpacity, hasNewContent, isActive, pulseOpacity, pulseScale, stopIndicatorAnimations]);
 
   return (
     <Animated.View
@@ -598,9 +1212,10 @@ interface TreeMarkerProps {
   isProcessing?: boolean;
   isReady?: boolean;
   detailsEnabled?: boolean;
+  isActive?: boolean;
 }
 
-const TreeMarker: React.FC<TreeMarkerProps> = React.memo(({ cluster, isSelected, isProcessing = false, isReady = true, detailsEnabled = true }) => {
+const TreeMarker: React.FC<TreeMarkerProps> = React.memo(({ cluster, isSelected, isProcessing = false, isReady = true, detailsEnabled = true, isActive = true }) => {
   // Determine color based on time status
   const color = getTimeStatusColor(cluster.timeStatus);
 
@@ -628,11 +1243,11 @@ const TreeMarker: React.FC<TreeMarkerProps> = React.memo(({ cluster, isSelected,
   return (
     <View style={styles.markerWrapper}>
       {/* Category Carousel - positioned above the tree */}
-      {detailsEnabled && <CategoryCarousel cluster={cluster} size={adjustedSize} />}
+      {detailsEnabled && <CategoryCarousel cluster={cluster} size={adjustedSize} isActive={isActive} />}
 
       {/* Broadcasting effect for 'now' events */}
       {detailsEnabled && cluster.isBroadcasting && (
-        <BroadcastingEffect size={adjustedSize} color={color} />
+        <BroadcastingEffect size={adjustedSize} color={color} isActive={isActive} />
       )}
 
       {/* Tree top (circle) */}
@@ -690,6 +1305,7 @@ const TreeMarker: React.FC<TreeMarkerProps> = React.memo(({ cluster, isSelected,
         {detailsEnabled && cluster.hasNewContent && (
           <IndicatorDot
             hasNewContent
+            isActive={isActive}
             style={[
               styles.newContentDot,
               {
@@ -742,39 +1358,41 @@ const TreeMarker: React.FC<TreeMarkerProps> = React.memo(({ cluster, isSelected,
       />
       
       {/* Label area with category icons */}
-      <View
-        style={[
-          styles.markerLabel,
-          {
-            width: Math.max(adjustedSize * 3.4, 58),
-            height: Math.max(adjustedSize * 0.5, 16),
-          }
-        ]}
-      >
-        {/* Event icon and count */}
-        {cluster.eventCount > 0 && (
-          <View style={styles.iconContainer}>
-            <MaterialIcons
-              name="event"
-              size={Math.max(adjustedSize / 3, 11)}
-              color="#2196F3"
-            />
-            <Text style={[styles.countText, { color: '#2196F3' }]}>{cluster.eventCount}</Text>
-          </View>
-        )}
+      {detailsEnabled && (
+        <View
+          style={[
+            styles.markerLabel,
+            {
+              width: Math.max(adjustedSize * 3.4, 58),
+              height: Math.max(adjustedSize * 0.5, 16),
+            }
+          ]}
+        >
+          {/* Event icon and count */}
+          {cluster.eventCount > 0 && (
+            <View style={styles.iconContainer}>
+              <MaterialIcons
+                name="event"
+                size={Math.max(adjustedSize / 3, 11)}
+                color="#2196F3"
+              />
+              <Text style={[styles.countText, { color: '#2196F3' }]}>{cluster.eventCount}</Text>
+            </View>
+          )}
 
-        {/* Special icon and count */}
-        {cluster.specialCount > 0 && (
-          <View style={styles.iconContainer}>
-            <MaterialIcons
-              name="restaurant"
-              size={Math.max(adjustedSize / 3, 11)}
-              color="#34A853"
-            />
-            <Text style={[styles.countText, { color: '#34A853' }]}>{cluster.specialCount}</Text>
-          </View>
-        )}
-      </View>
+          {/* Special icon and count */}
+          {cluster.specialCount > 0 && (
+            <View style={styles.iconContainer}>
+              <MaterialIcons
+                name="restaurant"
+                size={Math.max(adjustedSize / 3, 11)}
+                color="#34A853"
+              />
+              <Text style={[styles.countText, { color: '#34A853' }]}>{cluster.specialCount}</Text>
+            </View>
+          )}
+        </View>
+      )}
 
       {/* Processing indicator - pulsing ring overlay */}
       {isProcessing && (
@@ -875,6 +1493,7 @@ const DeepLinkLightbox = () => {
 
  // Main Map Screen component
 function MapScreen() {
+   markTabScreenRenderStart('map');
    const ActiveCalloutComponent = STATIC_CALLOUT_ISOLATION_DEBUG ? StaticDebugCallout : EventCallout;
    // ───── DEBUG: Map load session & timers ─────
    const DEBUG_MAP_LOAD = __DEV__;
@@ -942,6 +1561,9 @@ useEffect(() => {
 
   // 🔥 ANALYTICS INTEGRATION: Initialize analytics hook
   const analytics = useAnalytics();
+  useEffect(() => {
+    markTabScreenRenderCommit('map');
+  });
 
   // Auth state for guest checking  
   const { user } = useAuth(); // Adjust import path as needed
@@ -952,6 +1574,31 @@ useEffect(() => {
 
   // Focus state - skip expensive renders when Map tab is not visible
   const isFocused = useIsFocused();
+  const isFocusedRef = useRef(isFocused);
+  useEffect(() => {
+    isFocusedRef.current = isFocused;
+  }, [isFocused]);
+  useEffect(() => {
+    if (isFocused) {
+      markTabFocus('map');
+    }
+  }, [isFocused]);
+  useEffect(() => {
+    if (Platform.OS !== 'android') {
+      return undefined;
+    }
+
+    const globalAny = global as any;
+    globalAny[PAUSE_MAP_TAB_ANIMATIONS_KEY] = stopMapTabAnimationsForHandoff;
+    return () => {
+      if (globalAny[PAUSE_MAP_TAB_ANIMATIONS_KEY] === stopMapTabAnimationsForHandoff) {
+        delete globalAny[PAUSE_MAP_TAB_ANIMATIONS_KEY];
+      }
+    };
+  }, []);
+  const handleRootLayout = useCallback(() => {
+    markTabRootLayout('map');
+  }, []);
 
   // Use the map store - individual selectors to prevent infinite loops
   // (Combined object selectors with shallow cause getSnapshot caching issues)
@@ -967,8 +1614,7 @@ useEffect(() => {
   const fetchViewportEvents = useMapStore((state) => state.fetchViewportEvents);
   const prefetchIfStale = useMapStore((state) => state.prefetchIfStale);
   const selectVenue = useMapStore((state) => state.selectVenue);
-  const selectVenues = useMapStore((state) => state.selectVenues);
-  const selectCluster = useMapStore((state) => state.selectCluster);
+  const selectCallout = useMapStore((state) => state.selectCallout);
   const setZoomLevel = useMapStore((state) => state.setZoomLevel);
   const generateClusters = useMapStore((state) => state.generateClusters);
   const filterCriteria = useMapStore((state) => state.filterCriteria);
@@ -981,7 +1627,9 @@ useEffect(() => {
   const triggerCloseCallout = useMapStore((state) => state.triggerCloseCallout);
   const isHeaderSearchActive = useMapStore((state) => state.isHeaderSearchActive);
   const setHeaderSearchActive = useMapStore((state) => state.setHeaderSearchActive);
-  const setTypeFilters = useMapStore((state) => state.setTypeFilters);
+  const setTypeFiltersBatch = useMapStore((state) => state.setTypeFiltersBatch);
+  const interestCarouselFilter = useInterestCarouselUiStore((state) => state.interestCarouselFilter);
+  const setInterestCarouselFilter = useInterestCarouselUiStore((state) => state.setInterestCarouselFilter);
 
   // Is the bottom callout visible?
   const isCalloutOpen = !!selectedCluster || (Array.isArray(selectedVenues) && selectedVenues.length > 0);
@@ -1035,11 +1683,18 @@ useEffect(() => {
   const [clustersReady, setClustersReady] = useState<boolean>(false);
   const [fullClusterMarkersEnabled, setFullClusterMarkersEnabled] = useState<boolean>(false);
   const [richClusterMarkersEnabled, setRichClusterMarkersEnabled] = useState<boolean>(false);
+  const [androidRichMarkerZoomAllowed, setAndroidRichMarkerZoomAllowed] = useState<boolean>(
+    Platform.OS !== 'android' || START_ZOOM >= ANDROID_RICH_CLUSTER_MARKER_MIN_ZOOM
+  );
+  const [androidCategoryCycleTick, setAndroidCategoryCycleTick] = useState(0);
+  const [androidMarkerPulseStep, setAndroidMarkerPulseStep] = useState(0);
   const [isTracePanelVisible, setIsTracePanelVisible] = useState(false);
   const [renderedCalloutVenues, setRenderedCalloutVenues] = useState<Venue[]>([]);
   const [renderedCalloutCluster, setRenderedCalloutCluster] = useState<Cluster | null>(null);
   const [calloutLayoutReadyKey, setCalloutLayoutReadyKey] = useState<string | null>(null);
+  const [isCalloutClosingVisually, setIsCalloutClosingVisually] = useState(false);
   const [mapFirstFrameRendered, setMapFirstFrameRendered] = useState<boolean>(false);
+  const [mapTabOverlaysReady, setMapTabOverlaysReady] = useState<boolean>(Platform.OS !== 'android');
   const cameraRef = useRef<MapboxGL.Camera>(null);
   const calloutAnimation = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
   const mapRef = useRef<MapboxGL.MapView>(null);
@@ -1058,6 +1713,7 @@ useEffect(() => {
   const fullClusterMarkersTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const richClusterMarkersTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mapFirstFrameRenderedRef = useRef(false);
+  const calloutPrepCacheRef = useRef<Map<string, PreparedClusterCallout>>(new Map());
 
   latestClusterCountRef.current = clusters.length;
   isMapLoadingRef.current = isLoading;
@@ -1124,7 +1780,142 @@ useEffect(() => {
     isLoading && Platform.OS !== 'android';
   clustersReadyForInteractionRef.current = clustersReadyForInteraction;
   fullClusterMarkersEnabledRef.current = fullClusterMarkersEnabled;
-  const shouldRenderAncillaryOverlays = !isCalloutOpen && !hasPresentedCallout;
+  const richClusterMarkerDetailsEnabled = shouldShowClusterMarkerDetails(
+    zoomLevel,
+    richClusterMarkersEnabled,
+    androidRichMarkerZoomAllowed
+  );
+  const shouldRenderAncillaryOverlays = isFocused && mapTabOverlaysReady && !isCalloutOpen && !hasPresentedCallout;
+
+  const getPreparedClusterCallout = useCallback((
+    cluster: Cluster,
+    source: 'tap' | 'prewarm'
+  ): PreparedClusterCallout => {
+    const context: ClusterCalloutPrepContext = {
+      userLocation: latestLocationRef.current ?? location,
+      userInterests: getUserInterestsSync(),
+      savedEvents: getSavedEventsSync(),
+      favoriteVenues: getFavoriteVenuesSync(),
+    };
+    const cacheKey = getClusterCalloutPrepCacheKey(cluster, context);
+    const cached = calloutPrepCacheRef.current.get(cacheKey);
+
+    if (cached) {
+      calloutPrepCacheRef.current.delete(cacheKey);
+      calloutPrepCacheRef.current.set(cacheKey, cached);
+      traceMapEvent('callout_prep_cache_hit', {
+        clusterId: cluster.id,
+        source,
+        venueCount: cached.sortedVenues.length,
+      });
+      return cached;
+    }
+
+    const startedAt = Date.now();
+    const prepared = prepareClusterCallout(cluster, context);
+    calloutPrepCacheRef.current.set(cacheKey, prepared);
+    trimClusterCalloutPrepCache(calloutPrepCacheRef.current);
+    traceMapEvent('callout_prep_cache_miss', {
+      clusterId: cluster.id,
+      source,
+      venueCount: prepared.sortedVenues.length,
+      prepMs: Date.now() - startedAt,
+    });
+    return prepared;
+  }, [location]);
+
+  useEffect(() => {
+    if (
+      Platform.OS !== 'android' ||
+      !isFocused ||
+      !clustersReadyForInteraction ||
+      isCalloutOpen ||
+      hasRenderedCallout ||
+      clusters.length === 0
+    ) {
+      return undefined;
+    }
+
+    let cancelled = false;
+    let stepTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const task = InteractionManager.runAfterInteractions(() => {
+      if (cancelled) {
+        return;
+      }
+
+      const candidates = clusters
+        .filter((cluster) => visibleClusterIds.current.has(cluster.id))
+        .sort((a, b) => getStartupClusterScore(b) - getStartupClusterScore(a))
+        .slice(0, ANDROID_CALLOUT_PREP_PREWARM_LIMIT);
+
+      let index = 0;
+      const warmNext = () => {
+        if (cancelled || index >= candidates.length) {
+          return;
+        }
+
+        getPreparedClusterCallout(candidates[index], 'prewarm');
+        index += 1;
+        stepTimer = setTimeout(warmNext, ANDROID_CALLOUT_PREP_PREWARM_STEP_MS);
+      };
+
+      stepTimer = setTimeout(warmNext, ANDROID_CALLOUT_PREP_PREWARM_STEP_MS);
+    });
+
+    return () => {
+      cancelled = true;
+      task.cancel();
+      if (stepTimer) {
+        clearTimeout(stepTimer);
+      }
+    };
+  }, [
+    clusters,
+    clustersReadyForInteraction,
+    filterCriteria,
+    fullClusterMarkersEnabled,
+    getPreparedClusterCallout,
+    hasRenderedCallout,
+    isCalloutOpen,
+    isFocused,
+    zoomLevel,
+  ]);
+
+  useEffect(() => {
+    if (Platform.OS !== 'android') {
+      setMapTabOverlaysReady(true);
+      return undefined;
+    }
+
+    if (!isFocused) {
+      setMapTabOverlaysReady(false);
+      return undefined;
+    }
+
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const frame = requestAnimationFrame(() => {
+      markTabTracePhase('map', 'map_overlays_restore_scheduled', {
+        delayMs: ANDROID_MAP_TAB_OVERLAY_RESTORE_DELAY_MS,
+        trigger: 'focus_request_animation_frame',
+      });
+      timer = setTimeout(() => {
+        timer = null;
+        setMapTabOverlaysReady(true);
+        markTabTracePhase('map', 'map_overlays_ready', {
+          delayMs: ANDROID_MAP_TAB_OVERLAY_RESTORE_DELAY_MS,
+          trigger: 'focus_timer',
+        });
+      }, ANDROID_MAP_TAB_OVERLAY_RESTORE_DELAY_MS);
+    });
+
+    return () => {
+      cancelAnimationFrame(frame);
+      if (timer) {
+        clearTimeout(timer);
+      }
+    };
+  }, [isFocused]);
 
   useEffect(() => {
     if (Platform.OS !== 'android') {
@@ -1145,7 +1936,9 @@ useEffect(() => {
       return;
     }
 
-    const cleanupTask = InteractionManager.runAfterInteractions(() => {
+    let cleanupTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const runCleanup = () => {
       console.log('[MapFocusCleanup] clearing map-only UI after blur', {
         activeFilterPanel: activeFilterPanel ?? 'none',
         selectedVenueCount: Array.isArray(selectedVenues) ? selectedVenues.length : 0,
@@ -1159,10 +1952,17 @@ useEffect(() => {
       setRenderedCalloutVenues([]);
       setRenderedCalloutCluster(null);
       setCalloutLayoutReadyKey(null);
+    };
+
+    const cleanupTask = InteractionManager.runAfterInteractions(() => {
+      cleanupTimer = setTimeout(runCleanup, MAP_BLUR_CLEANUP_DELAY_MS);
     });
 
     return () => {
       cleanupTask.cancel?.();
+      if (cleanupTimer) {
+        clearTimeout(cleanupTimer);
+      }
     };
   }, [
     activeFilterPanel,
@@ -1182,6 +1982,10 @@ useEffect(() => {
   useEffect(() => {
     hotInterestCarouselActiveRef.current = hotInterestCarouselActive;
   }, [hotInterestCarouselActive]);
+
+  const handleInterestPillInteraction = useCallback(() => {
+    setHotInterestCarouselActive(false);
+  }, []);
 
   useEffect(() => {
     if (!isCalloutOpen && !hasRenderedCallout) {
@@ -1345,41 +2149,55 @@ useEffect(() => {
   const dismissInterestCarousel = useCallback((reason: string = 'unspecified') => {
     const mapState = useMapStore.getState();
     const liveFilterCriteria = mapState.filterCriteria;
+    const liveInterestCarouselFilter = useInterestCarouselUiStore.getState().interestCarouselFilter;
 
     const hasActiveCategoryFilter =
       !!liveFilterCriteria.eventFilters.category ||
       !!liveFilterCriteria.specialFilters.category;
+    const hasOptimisticInterestFilter = liveInterestCarouselFilter?.status === 'active';
     const hotModeWasActive = hotInterestCarouselActiveRef.current;
 
-    if (!hotModeWasActive && !hasActiveCategoryFilter) {
+    if (!hotModeWasActive && !hasActiveCategoryFilter && !hasOptimisticInterestFilter) {
       return false;
     }
 
     if (hotModeWasActive) {
       setHotInterestCarouselActive(false);
     }
+    if (hasOptimisticInterestFilter) {
+      setInterestCarouselFilter({ status: 'cleared' });
+    }
+
+    const updates: Parameters<typeof setTypeFiltersBatch>[0] = [];
 
     // Only clear category filters that were set by interest pills
     if (liveFilterCriteria.eventFilters.categoryFilterSource === 'interest-pills') {
-      setTypeFilters('event', { category: undefined });
+      updates.push({ type: 'event', typeFilters: { category: undefined } });
     }
     if (liveFilterCriteria.specialFilters.categoryFilterSource === 'interest-pills') {
-      setTypeFilters('special', { category: undefined });
+      updates.push({ type: 'special', typeFilters: { category: undefined } });
+    }
+
+    if (updates.length > 0) {
+      setTypeFiltersBatch(updates);
     }
 
     return true;
-  }, [setTypeFilters]);
+  }, [setInterestCarouselFilter, setTypeFiltersBatch]);
 
   // Handle hot flame pill press
   const handleHotFlamePress = useCallback(() => {
     if (!hotInterestCarouselActive) {
       // Hot mode is a separate interest carousel mode; clear category pill filters when activating it.
-      setTypeFilters('event', { category: undefined });
-      setTypeFilters('special', { category: undefined });
+      setInterestCarouselFilter({ status: 'cleared' });
+      setTypeFiltersBatch([
+        { type: 'event', typeFilters: { category: undefined } },
+        { type: 'special', typeFilters: { category: undefined } },
+      ]);
     }
 
     setHotInterestCarouselActive((prev) => !prev);
-  }, [hotInterestCarouselActive, setTypeFilters]);
+  }, [hotInterestCarouselActive, setInterestCarouselFilter, setTypeFiltersBatch]);
 
   // Auto-dismiss hot mode if category filter is activated
   useEffect(() => {
@@ -1451,8 +2269,10 @@ const logPills = (msg: string, ctx?: Record<string, any>) => {
 
   // Ignore non-user (programmatic) camera moves for a short window
   const ignoreProgrammaticCameraRef = useRef<boolean>(false);
+  const ignoreProgrammaticCameraReasonRef = useRef<string | null>(null);
   const setIgnoreProgrammaticTrace = useCallback((value: boolean, reason: string) => {
     ignoreProgrammaticCameraRef.current = value;
+    ignoreProgrammaticCameraReasonRef.current = value ? reason : null;
     setMapTraceSnapshot({
       ignoreProgrammatic: value,
       ignoreProgrammaticReason: reason,
@@ -1472,8 +2292,15 @@ const logPills = (msg: string, ctx?: Record<string, any>) => {
   const lastViewportBboxRef = useRef<BoundingBox | null>(null);
   const viewportFetchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const startupGpsViewportRetryTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const startupViewportRecoveryTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const startupViewportRecoveryAttemptedRef = useRef(false);
   const lastViewportFetchTimeRef = useRef<number>(0);  // Track last fetch timestamp for throttling
-  const currentCameraStateRef = useRef<{ center: [number, number]; zoom: number } | null>(null);
+  const currentCameraStateRef = useRef<{
+    center: [number, number];
+    zoom: number;
+    visibleBbox: BoundingBox | null;
+  } | null>(null);
+  const cameraReconcileRequestIdRef = useRef<number>(0);
   const startupFallbackViewportUsedRef = useRef(false);
 
 
@@ -1484,6 +2311,7 @@ const previousFilterCriteria = useRef<FilterCriteria>(filterCriteria);
 const previousClusterCount = useRef<number>(0);
 const startupMarkerSubsetLoggedRef = useRef<boolean>(false);
 const startupHotspotPreviewMarkerLoggedRef = useRef<boolean>(false);
+const startupInvalidCameraTickLoggedRef = useRef<boolean>(false);
 
   // 🔥 ANALYTICS: Add refs for tracking performance and behavior
 const mapInteractionStartTime = useRef<number | null>(null);
@@ -1543,6 +2371,8 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
       );
 
       if (distanceMeters <= 80) {
+        useMapStore.setState({ zoomLevel: START_ZOOM });
+        lastZoomLevel.current = START_ZOOM;
         logAndroidStartupTiming('startup_camera_center_skipped_duplicate', {
           source,
           previousSource: startupCameraSourceRef.current,
@@ -1696,7 +2526,32 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
     lastViewportBboxRef.current = roundedBbox;
     lastViewportFetchTimeRef.current = Date.now();
     startupFallbackViewportUsedRef.current = source === 'fallback_center';
+    startupViewportRecoveryAttemptedRef.current = false;
     fetchViewportEvents(roundedBbox);
+
+    if (startupViewportRecoveryTimerRef.current) {
+      clearTimeout(startupViewportRecoveryTimerRef.current);
+    }
+    startupViewportRecoveryTimerRef.current = setTimeout(() => {
+      startupViewportRecoveryTimerRef.current = null;
+
+      const state = useMapStore.getState();
+      if (
+        startupViewportRecoveryAttemptedRef.current ||
+        state.events.length > 0 ||
+        state.viewportEvents.length > 0
+      ) {
+        return;
+      }
+
+      startupViewportRecoveryAttemptedRef.current = true;
+      logAndroidStartupTiming('startup_viewport_recovery_fetch_requested', {
+        bbox: roundedBbox,
+        allEvents: state.allEvents.length,
+        source,
+      });
+      fetchViewportEvents(roundedBbox);
+    }, 1200);
   };
 
   const requestStartupGpsViewportFetch = (center: GeoCoordinate, attempt = 0) => {
@@ -1721,6 +2576,16 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
 
     requestStartupViewportFetch(center, 'gps_location');
   };
+
+  useEffect(() => {
+    if (Platform.OS !== 'android') {
+      return;
+    }
+
+    lastViewportBboxRef.current = null;
+    startupFallbackViewportUsedRef.current = false;
+    startupViewportRecoveryAttemptedRef.current = false;
+  }, []);
   
   // Request location permissions as soon as possible
   useEffect(() => {
@@ -1990,6 +2855,17 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
     }
   }, [location, fetchViewportEvents]);
 
+  useEffect(() => {
+    if (events.length === 0 && viewportEvents.length === 0) {
+      return;
+    }
+
+    if (startupViewportRecoveryTimerRef.current) {
+      clearTimeout(startupViewportRecoveryTimerRef.current);
+      startupViewportRecoveryTimerRef.current = null;
+    }
+  }, [events.length, viewportEvents.length]);
+
 // (Test code removed - validation complete)
 
 // Prefer preloaded events; derive clusters immediately. Fallback only if no events.
@@ -2000,6 +2876,11 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
     console.log('[MapScreen] Mount: events =', eventsLen, 'cached clusters =', cachedClusters, 'isLoading =', isLoading);
 
     if (eventsLen > 0) {
+      if (Platform.OS === 'android') {
+        console.log('[MapScreen] Android startup waiting for fresh viewport partition before reclustering preloaded events');
+        return;
+      }
+
       console.log('[MapScreen] Using preloaded events on mount — generating clusters now');
       // Defer cluster generation to not block initial render
       setTimeout(() => {
@@ -2131,6 +3012,7 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
 
   useEffect(() => {
     if (selectedVenues && selectedVenues.length > 0) {
+      setIsCalloutClosingVisually(false);
       calloutOpenTouchGuardUntilRef.current = Date.now() + 900;
       console.log('[CalloutProbe] arming map press guard', {
         until: calloutOpenTouchGuardUntilRef.current,
@@ -2148,10 +3030,13 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
       return;
     }
     calloutOpenTouchGuardUntilRef.current = 0;
+    if (!hasRenderedCallout) {
+      setIsCalloutClosingVisually(false);
+    }
     console.log('[CalloutProbe] selected venues empty', {
       selectedClusterId: selectedCluster?.id ?? 'none',
     });
-  }, [selectedCluster, selectedVenues]);
+  }, [hasRenderedCallout, selectedCluster, selectedVenues]);
 
   useEffect(() => {
     console.log('[CalloutProbe] rendered callout state changed', {
@@ -2167,6 +3052,36 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
     renderedCalloutVenues.length,
   ]);
 
+  const handleCalloutCloseStart = useCallback(() => {
+    if (Platform.OS === 'android') {
+      setIsCalloutClosingVisually(true);
+    }
+  }, []);
+
+  const trackClusterClosedOnce = useCallback(() => {
+    if (clusterOpenStartRef.current == null) {
+      return;
+    }
+
+    const dur = Date.now() - clusterOpenStartRef.current;
+    amplitudeTrack('cluster_closed', {
+      cluster_active_for_ms: dur,
+      cluster_active_for_seconds: Math.round(dur / 1000),
+      cluster_id: lastOpenedClusterIdRef.current ?? 'unknown',
+      session_interactions: sessionClusterInteractions.current,
+    });
+    clusterOpenStartRef.current = null;
+    lastOpenedClusterIdRef.current = null;
+  }, []);
+
+  const clearRenderedCalloutPresentation = useCallback(() => {
+    calloutAnimation.setValue(SCREEN_HEIGHT);
+    setRenderedCalloutVenues([]);
+    setRenderedCalloutCluster(null);
+    setCalloutLayoutReadyKey(null);
+    setIsCalloutClosingVisually(false);
+  }, [calloutAnimation]);
+
   const closeCallout = useCallback((reason: string) => {
     console.log('[CalloutProbe] closeCallout', {
       reason,
@@ -2178,14 +3093,22 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
       calloutLayoutReady: isRenderedCalloutLayoutReady,
       guardRemainingMs: Math.max(0, calloutOpenTouchGuardUntilRef.current - Date.now()),
     });
+    handleCalloutCloseStart();
+    if (Platform.OS === 'android') {
+      trackClusterClosedOnce();
+      clearRenderedCalloutPresentation();
+    }
     selectVenue(null);
   }, [
+    clearRenderedCalloutPresentation,
+    handleCalloutCloseStart,
     isRenderedCalloutLayoutReady,
     renderedCalloutClusterId,
     renderedCalloutVenues.length,
     selectedClusterId,
     selectedVenueCount,
     selectVenue,
+    trackClusterClosedOnce,
   ]);
 
   // Parent callout lifecycle only mounts/dismisses the subtree.
@@ -2329,6 +3252,7 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
       setRenderedCalloutVenues([]);
       setRenderedCalloutCluster(null);
       setCalloutLayoutReadyKey(null);
+      setIsCalloutClosingVisually(false);
 
       traceMapEvent('callout_close_animation_finished', {
         requestId: animationRequestId,
@@ -2410,6 +3334,7 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
 
   const enableFullClusterMarkers = useCallback((source: string) => {
     if (
+      !isFocusedRef.current ||
       fullClusterMarkersEnabledRef.current ||
       isMapLoadingRef.current ||
       latestClusterCountRef.current === 0 ||
@@ -2426,6 +3351,11 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
     const clusterCount = latestClusterCountRef.current;
     fullClusterMarkersEnabledRef.current = true;
     setFullClusterMarkersEnabled(true);
+    markTabTracePhase('map', 'map_full_markers_ready', {
+      clusterCount,
+      source,
+      startupLimit: STARTUP_CLUSTER_MARKER_LIMIT,
+    });
     traceMapEvent('full_cluster_markers_enabled', {
       clusterCount,
       startupLimit: STARTUP_CLUSTER_MARKER_LIMIT,
@@ -2443,6 +3373,21 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
 
     return true;
   }, []);
+
+  useEffect(() => {
+    if (isFocused) {
+      return;
+    }
+
+    if (fullClusterMarkersTimerRef.current) {
+      clearTimeout(fullClusterMarkersTimerRef.current);
+      fullClusterMarkersTimerRef.current = null;
+    }
+    if (richClusterMarkersTimerRef.current) {
+      clearTimeout(richClusterMarkersTimerRef.current);
+      richClusterMarkersTimerRef.current = null;
+    }
+  }, [isFocused]);
 
   useEffect(() => {
     if (Platform.OS !== 'android') {
@@ -2494,7 +3439,7 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
   // full custom marker set immediately because the visible fill-in is too
   // noticeable there.
   useEffect(() => {
-    if (isLoading || clusters.length === 0 || !clustersReadyForInteraction) {
+    if (!isFocused || isLoading || clusters.length === 0 || !clustersReadyForInteraction) {
       if (fullClusterMarkersTimerRef.current) {
         clearTimeout(fullClusterMarkersTimerRef.current);
         fullClusterMarkersTimerRef.current = null;
@@ -2502,6 +3447,9 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
       if (richClusterMarkersTimerRef.current) {
         clearTimeout(richClusterMarkersTimerRef.current);
         richClusterMarkersTimerRef.current = null;
+      }
+      if (!isFocused) {
+        return;
       }
       if (fullClusterMarkersEnabled) {
         fullClusterMarkersEnabledRef.current = false;
@@ -2575,14 +3523,17 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
 
       enableFullClusterMarkers('timer');
     }, FULL_CLUSTER_MARKER_DELAY_MS);
-  }, [clusters.length, clustersReadyForInteraction, enableFullClusterMarkers, fullClusterMarkersEnabled, isLoading, richClusterMarkersEnabled]);
+  }, [clusters.length, clustersReadyForInteraction, enableFullClusterMarkers, fullClusterMarkersEnabled, isFocused, isLoading, richClusterMarkersEnabled]);
 
   // Restore animated/rich marker children after the full MarkerView set is back.
   useEffect(() => {
-    if (isLoading || clusters.length === 0 || !clustersReadyForInteraction || !fullClusterMarkersEnabled) {
+    if (!isFocused || isLoading || clusters.length === 0 || !clustersReadyForInteraction || !fullClusterMarkersEnabled) {
       if (richClusterMarkersTimerRef.current) {
         clearTimeout(richClusterMarkersTimerRef.current);
         richClusterMarkersTimerRef.current = null;
+      }
+      if (!isFocused) {
+        return;
       }
       if (richClusterMarkersEnabled) {
         setRichClusterMarkersEnabled(false);
@@ -2612,8 +3563,15 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
 
     richClusterMarkersTimerRef.current = setTimeout(() => {
       richClusterMarkersTimerRef.current = null;
+      if (!isFocusedRef.current) {
+        return;
+      }
       const clusterCount = latestClusterCountRef.current;
       setRichClusterMarkersEnabled(true);
+      markTabTracePhase('map', 'map_rich_markers_ready', {
+        clusterCount,
+        delayMs: RICH_CLUSTER_MARKER_DELAY_MS,
+      });
       traceMapEvent('rich_cluster_markers_enabled', {
         clusterCount,
       });
@@ -2624,8 +3582,49 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
         const delta = Date.now() - __ml_t0Ref.current;
         console.log(`[MapLoad][${__ml_sessionIdRef.current}] T5e rich_marker_details_enabled +${delta}ms (clusters=${clusterCount})`);
       }
+
+      const tabPrewarmCallback = (global as any).mapReadyForTabPrewarmCallback;
+      if (typeof tabPrewarmCallback === 'function') {
+        tabPrewarmCallback('rich_marker_details_enabled');
+      }
     }, RICH_CLUSTER_MARKER_DELAY_MS);
-  }, [clusters.length, clustersReadyForInteraction, fullClusterMarkersEnabled, isLoading, richClusterMarkersEnabled]);
+  }, [clusters.length, clustersReadyForInteraction, fullClusterMarkersEnabled, isFocused, isLoading, richClusterMarkersEnabled]);
+
+  useEffect(() => {
+    if (!USE_ANDROID_NATIVE_CLUSTER_MARKER_LAYERS || !isFocused || !richClusterMarkerDetailsEnabled || clusters.length === 0) {
+      setAndroidCategoryCycleTick(0);
+      return undefined;
+    }
+
+    const interval = setInterval(() => {
+      setAndroidCategoryCycleTick((tick) => tick + 1);
+    }, ANDROID_CLUSTER_CATEGORY_CYCLE_MS);
+
+    return () => {
+      clearInterval(interval);
+    };
+  }, [clusters.length, isFocused, richClusterMarkerDetailsEnabled]);
+
+  useEffect(() => {
+    if (!USE_ANDROID_NATIVE_CLUSTER_MARKER_LAYERS || !isFocused || !richClusterMarkerDetailsEnabled || clusters.length === 0) {
+      setAndroidMarkerPulseStep(0);
+      return undefined;
+    }
+
+    const hasBroadcastingCluster = clusters.some(cluster => cluster.isBroadcasting);
+    if (!hasBroadcastingCluster) {
+      setAndroidMarkerPulseStep(0);
+      return undefined;
+    }
+
+    const interval = setInterval(() => {
+      setAndroidMarkerPulseStep((step) => (step + 1) % ANDROID_CLUSTER_MARKER_PULSE_STEPS);
+    }, ANDROID_CLUSTER_MARKER_PULSE_MS);
+
+    return () => {
+      clearInterval(interval);
+    };
+  }, [clusters, isFocused, richClusterMarkerDetailsEnabled]);
 
   // Re-center the map on user location
   const handleRecenterPress = () => {
@@ -2699,10 +3698,22 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
     }
 
     // 🛡️ HOTSPOT PREVENTION: Block clicks during programmatic camera animations
+    if (
+      ignoreProgrammaticCameraRef.current &&
+      ignoreProgrammaticCameraReasonRef.current === 'map_loaded_initial_lock'
+    ) {
+      userGestureSeenRef.current = true;
+      autoHideEnabledRef.current = true;
+      setIgnoreProgrammaticTrace(false, 'marker_press_cleared_initial_lock');
+    }
+
     if (ignoreProgrammaticCameraRef.current) {
-      console.log('[map] Cluster tap blocked: camera animating');
+      console.log('[map] Cluster tap blocked: camera animating', {
+        reason: ignoreProgrammaticCameraReasonRef.current ?? 'unknown',
+      });
       traceMapEvent('marker_press_blocked_programmatic', {
         clusterId: cluster.id,
+        reason: ignoreProgrammaticCameraReasonRef.current ?? 'unknown',
       });
       return;
     }
@@ -2803,123 +3814,8 @@ lastOpenedClusterIdRef.current = cluster.id;
     }
     
     try {
-      // Get current user location for proximity calculations
-      const userLocation = location;
-      
-      // Calculate distance to cluster if user location available
-      const distanceToCluster = userLocation && cluster.venues.length > 0 
-        ? calculateDistance(
-            userLocation.coords.latitude,
-            userLocation.coords.longitude,
-            cluster.venues[0].latitude,
-            cluster.venues[0].longitude
-          )
-        : null;
-      
-      // Read cached prefs synchronously (no network on tap)
-      const userInterests: string[] = getUserInterestsSync();
-      const savedEvents: string[] = getSavedEventsSync();
-      const favoriteVenues: string[] = getFavoriteVenuesSync();
-            
-      // LOG: User data loaded - shows if user has interests/saved events for scoring algorithm
-      // console.log("User data loaded:", {
-      //   hasInterests: userInterests.length > 0,
-      //   hasSaved: savedEvents.length > 0
-      // });
-      
-      // Create a deep copy of venues with proper typing
-      // Use a type assertion to ensure TypeScript understands the structure
-      const venuesWithScores: Venue[] = JSON.parse(JSON.stringify(cluster.venues));
-      
-      // Track relevance scoring analytics
-      let highRelevanceEvents = 0;
-      let savedEventMatches = 0;
-      let interestMatches = 0;
-      
-      // Process all venues to add relevance scores to each event and venue
-      for (const venue of venuesWithScores) {
-        // Check if this is a favorite venue (applies to all events at this venue)
-        const isFavoriteVenue = favoriteVenues.includes(venue.locationKey);
-        const favoriteVenueScore = isFavoriteVenue ? 500 : 0;
-
-        // Calculate scores for each event in the venue
-        for (const event of venue.events) {
-          // Base score components
-          let baseScore = 0;
-
-          // 1. Saved Status (Highest Priority - 1000 points base)
-          const isSaved = savedEvents.includes(event.id.toString());
-          const savedScore = isSaved ? 1000 : 0;
-          if (isSaved) savedEventMatches++;
-
-          // 2. Favorite Venue (Second Priority - 500 points)
-          // (favoriteVenueScore calculated at venue level above)
-
-          // 3. User Interest Match (Third Priority - 100 points base)
-          const matchesInterest = userInterests.includes(event.category);
-          const interestScore = matchesInterest ? 100 : 0;
-          if (matchesInterest) interestMatches++;
-          
-          // 3. Time Status (Third Priority - 10 points base)
-          let timeScore = 0;
-          if (isEventNow(event.startDate, event.startTime, event.endDate, event.endTime)) {
-            timeScore = 10;
-          } else if (isEventHappeningToday(event)) {
-            timeScore = 5;
-          } else {
-            timeScore = 1;
-          }
-          
-          // 4. Engagement Score (Fourth Priority - direct points)
-          const engagementScore = event.engagementScore || 0;
-          
-          // 5. Proximity Score (Final Tiebreaker - fractional points)
-          let proximityScore = 0;
-          if (userLocation) {
-            const distance = calculateDistance(
-              userLocation.coords.latitude,
-              userLocation.coords.longitude,
-              event.latitude,
-              event.longitude
-            );
-            // Normalize distance to a score between 0-1
-            // Closer locations get higher scores
-            proximityScore = Math.max(0, 1 - (distance / 10000));
-          }
-          
-          // Calculate final relevance score
-          event.relevanceScore = savedScore + favoriteVenueScore + interestScore + timeScore + engagementScore + proximityScore;
-          
-          if (event.relevanceScore > 100) highRelevanceEvents++;
-          
-          // Log scores for debugging
-          // LOG: Event scoring breakdown - shows how relevance scores are calculated for each event
-          // if (process.env.NODE_ENV !== 'production') {
-          //   console.log(`Event "${event.title}" scores:`, {
-          //     saved: savedScore,
-          //     favorite: favoriteVenueScore,
-          //     interest: interestScore,
-          //     time: timeScore,
-          //     engagement: engagementScore,
-          //     proximity: proximityScore.toFixed(3),
-          //     total: event.relevanceScore
-          //   });
-          // }
-        }
-        
-        // Calculate venue relevance score based on its highest-scoring event
-        venue.relevanceScore = venue.events.length > 0 
-          ? Math.max(...venue.events.map((event: Event) => event.relevanceScore || 0)) 
-          : 0;
-        
-        // Also sort events within each venue by relevance score
-        venue.events.sort((a: Event, b: Event) => (b.relevanceScore || 0) - (a.relevanceScore || 0));
-      }
-      
-      // Sort venues by their relevance scores
-      const sortedVenues = venuesWithScores.sort((a: Venue, b: Venue) => 
-        (b.relevanceScore || 0) - (a.relevanceScore || 0)
-      );
+      const preparedCallout = getPreparedClusterCallout(cluster, 'tap');
+      const sortedVenues = preparedCallout.sortedVenues;
       
       // Log the sorting results
       // LOG: Venue sorting results - shows how venues are prioritized by relevance scoring
@@ -2928,18 +3824,8 @@ lastOpenedClusterIdRef.current = cluster.id;
       //   return `${i}: ${v.venue} (score: ${v.relevanceScore?.toFixed(2)}, top event: "${topEvent?.title}")`;
       // }));
       
-      // Select prioritized venues
-      selectVenues(sortedVenues);
-
-      // Store the entire cluster if it contains multiple venues
-      if (cluster.clusterType === 'multi') {
-        selectCluster(cluster);
-      } else {
-        selectCluster(null);
-      }
-
-      // For backward compatibility - select the first (most relevant) venue as primary
-      selectVenue(sortedVenues[0]);
+      const calloutCluster = cluster.clusterType === 'multi' ? cluster : null;
+      selectCallout(sortedVenues, calloutCluster);
       traceMapEvent('marker_press_selected', {
         clusterId: cluster.id,
         venueCount: sortedVenues.length,
@@ -2956,28 +3842,26 @@ lastOpenedClusterIdRef.current = cluster.id;
         console.log(`[Hotspot]   ${idx + 1}. ${v.venue} (score: ${v.relevanceScore?.toFixed(2)}, top event: "${topEvent?.title}" ${topEvent?.category})`);
       });
       
-      // Calculate center coordinates for the cluster
-      const coordinates = cluster.clusterType === 'multi'
-        ? [
-            cluster.venues.reduce((sum: number, venue: Venue) => sum + venue.longitude, 0) / cluster.venues.length,
-            cluster.venues.reduce((sum: number, venue: Venue) => sum + venue.latitude, 0) / cluster.venues.length
-          ]
-        : [cluster.venues[0].longitude, cluster.venues[0].latitude];
-      
-      // Move camera to the cluster
-      setIgnoreProgrammaticTrace(true, 'cluster_tap_camera_move');
-      logPills('PROGRAMMATIC MOVE START (cluster tap) — suppress hides 800ms');
-      setTimeout(() => {
-        setIgnoreProgrammaticTrace(false, 'cluster_tap_camera_move_complete');
-        logPills('PROGRAMMATIC MOVE END (cluster tap)');
-      }, 800);
+      const moveCameraToCluster = () => {
+        setIgnoreProgrammaticTrace(true, 'cluster_tap_camera_move');
+        logPills('PROGRAMMATIC MOVE START (cluster tap) — suppress hides 800ms');
+        setTimeout(() => {
+          setIgnoreProgrammaticTrace(false, 'cluster_tap_camera_move_complete');
+          logPills('PROGRAMMATIC MOVE END (cluster tap)');
+        }, 800);
 
+        cameraRef.current?.setCamera({
+          centerCoordinate: preparedCallout.coordinates,
+          zoomLevel: 14,
+          animationDuration: 500,
+        });
+      };
 
-      cameraRef.current?.setCamera({
-        centerCoordinate: coordinates,
-        zoomLevel: 14,
-        animationDuration: 500,
-      });
+      if (Platform.OS === 'android') {
+        setTimeout(moveCameraToCluster, ANDROID_CALLOUT_CAMERA_MOVE_DELAY_MS);
+      } else {
+        moveCameraToCluster();
+      }
 
 
       // 🔥 ANALYTICS: TEMPORARILY COMMENTED OUT - Track successful cluster interaction
@@ -3033,9 +3917,7 @@ lastOpenedClusterIdRef.current = cluster.id;
       
       // Fallback to original functionality if scoring fails
       const defaultVenues = [...cluster.venues];
-      selectVenues(defaultVenues);
-      selectVenue(defaultVenues[0]);
-      selectCluster(cluster.clusterType === 'multi' ? cluster : null);
+      selectCallout(defaultVenues, cluster.clusterType === 'multi' ? cluster : null);
       traceMapEvent('marker_press_fallback_selected', {
         clusterId: cluster.id,
         venueCount: defaultVenues.length,
@@ -3056,11 +3938,13 @@ lastOpenedClusterIdRef.current = cluster.id;
       setProcessingClusterId(null);
     }
   }, [
+    getPreparedClusterCallout,
     hasRenderedCallout,
     isGuest,
     location,
     renderedCalloutClusterId,
     renderedCalloutVenueCount,
+    selectCallout,
     trackInteraction,
   ]); // REMOVED analytics, zoomLevel dependencies
 
@@ -3272,6 +4156,46 @@ const angularDelta = (a?: number, b?: number) => {
 };
 // ---------------------------------------------------------
 
+const isAndroidStartupCameraPayloadInvalid = useCallback(({
+  zoom,
+  visibleBbox,
+  isGesture = false,
+  userGestureSeen = userGestureSeenRef.current,
+}: {
+  zoom?: number;
+  visibleBbox: BoundingBox | null;
+  isGesture?: boolean;
+  userGestureSeen?: boolean;
+}): boolean => {
+  if (Platform.OS !== 'android' || isGesture || userGestureSeen) {
+    return false;
+  }
+
+  const zoomLooksLikeGlobe = typeof zoom === 'number' && zoom < START_ZOOM - 1;
+  if (zoomLooksLikeGlobe) {
+    return true;
+  }
+
+  if (!visibleBbox) {
+    return false;
+  }
+
+  const spanLng = visibleBbox.east - visibleBbox.west;
+  const spanLat = visibleBbox.north - visibleBbox.south;
+  const bboxLooksTooBroad = spanLng > 0.9 || spanLat > 0.75;
+  if (bboxLooksTooBroad) {
+    return true;
+  }
+
+  const startCenter = startupCameraCenterRef.current ?? (initialCenterCoordinate as [number, number]);
+  const bboxCenter: [number, number] = [
+    (visibleBbox.east + visibleBbox.west) / 2,
+    (visibleBbox.north + visibleBbox.south) / 2,
+  ];
+
+  return haversineMeters(startCenter[0], startCenter[1], bboxCenter[0], bboxCenter[1]) > 50000;
+}, [initialCenterCoordinate]);
+
 
 
 /**
@@ -3331,6 +4255,155 @@ const handleMapMovementStart = useCallback(() => {
 }, [activeFilterPanel, hidePills, hasInitiallyPositioned, isMapMoving]);
 
 
+const reconcileCameraStateFromMapRef = useCallback(async (source: 'map_idle' = 'map_idle') => {
+  if (Platform.OS !== 'android' || isAndroidHotspotStartupFlowActive()) {
+    return;
+  }
+
+  const mapView = mapRef.current as any;
+  if (
+    !mapView ||
+    typeof mapView.getCenter !== 'function' ||
+    typeof mapView.getZoom !== 'function'
+  ) {
+    return;
+  }
+
+  const requestId = cameraReconcileRequestIdRef.current + 1;
+  cameraReconcileRequestIdRef.current = requestId;
+
+  try {
+    const [nativeCenter, nativeZoom, nativeVisibleBounds] = await Promise.all([
+      mapView.getCenter(),
+      mapView.getZoom(),
+      typeof mapView.getVisibleBounds === 'function'
+        ? mapView.getVisibleBounds()
+        : Promise.resolve(null),
+    ]);
+
+    if (cameraReconcileRequestIdRef.current !== requestId) {
+      return;
+    }
+
+    const centerArr = getCoordinatePairFromPosition(nativeCenter);
+    const reportedZoom = typeof nativeZoom === 'number' && Number.isFinite(nativeZoom)
+      ? nativeZoom
+      : undefined;
+
+    if (!centerArr || typeof reportedZoom !== 'number') {
+      return;
+    }
+
+    const nativeVisibleBbox = getBoundingBoxFromPositions(nativeVisibleBounds);
+    const { width: windowWidth, height: windowHeight } = Dimensions.get('window');
+    const width = mapDimensions?.width ?? windowWidth;
+    const height = mapDimensions?.height ?? windowHeight;
+    const effectiveClusterZoom = getEffectiveZoomFromVisibleBounds(
+      reportedZoom,
+      nativeVisibleBbox,
+      width * PixelRatio.get()
+    );
+
+    if (isAndroidStartupCameraPayloadInvalid({
+      zoom: effectiveClusterZoom,
+      visibleBbox: nativeVisibleBbox,
+      userGestureSeen: userGestureSeenRef.current,
+    })) {
+      return;
+    }
+
+    const previousCameraState = currentCameraStateRef.current;
+    const previousZoomDelta = previousCameraState
+      ? Math.abs(effectiveClusterZoom - previousCameraState.zoom)
+      : 0;
+    const previousCenterDelta = previousCameraState
+      ? haversineMeters(
+          previousCameraState.center[0],
+          previousCameraState.center[1],
+          centerArr[0],
+          centerArr[1]
+        )
+      : 0;
+    const cameraMovedMeaningfully = previousZoomDelta >= 0.02 || previousCenterDelta >= 10;
+
+    if (
+      !userGestureSeenRef.current &&
+      lastViewportBboxRef.current !== null &&
+      cameraMovedMeaningfully
+    ) {
+      userGestureSeenRef.current = true;
+      setIgnoreProgrammaticTrace(false, 'android_idle_inferred_user_gesture');
+      autoHideEnabledRef.current = true;
+      traceMapEvent('android_idle_inferred_user_gesture', {
+        source,
+        zoom: Number(effectiveClusterZoom.toFixed(2)),
+      });
+    }
+
+    currentCameraStateRef.current = {
+      center: centerArr,
+      zoom: effectiveClusterZoom,
+      visibleBbox: nativeVisibleBbox,
+    };
+    previousCenterRef.current = centerArr;
+    lastZoomLevel.current = effectiveClusterZoom;
+
+    setAndroidRichMarkerZoomAllowed((previous) => {
+      const next = effectiveClusterZoom >= ANDROID_RICH_CLUSTER_MARKER_MIN_ZOOM;
+      return previous === next ? previous : next;
+    });
+
+    const storeZoom = useMapStore.getState().zoomLevel;
+    const finalZoomDelta = Math.abs(effectiveClusterZoom - storeZoom);
+    const finalZoomBucketChanged = Math.floor(effectiveClusterZoom) !== Math.floor(storeZoom);
+    if (finalZoomBucketChanged || finalZoomDelta >= 0.02) {
+      setZoomLevel(effectiveClusterZoom);
+    }
+
+    const center: GeoCoordinate = {
+      latitude: centerArr[1],
+      longitude: centerArr[0],
+    };
+    const bbox = nativeVisibleBbox ?? getViewportBoundingBox(center, effectiveClusterZoom, width, height, 1.0);
+    const roundedBbox = roundBoundingBoxForCache(bbox, 3);
+
+    const currentViewportEvents = useMapStore.getState().viewportEvents || [];
+    const onScreenEvents = currentViewportEvents.filter(event => {
+      const lat = event.latitude;
+      const lng = event.longitude;
+      if (!lat || !lng) return false;
+
+      return lat >= bbox.south &&
+        lat <= bbox.north &&
+        lng >= bbox.west &&
+        lng <= bbox.east;
+    });
+    useMapStore.getState().setOnScreenEvents(onScreenEvents);
+
+    const bboxChanged = !lastViewportBboxRef.current ||
+      JSON.stringify(roundedBbox) !== JSON.stringify(lastViewportBboxRef.current);
+
+    if (bboxChanged && (userGestureSeenRef.current || lastViewportBboxRef.current !== null)) {
+      if (viewportFetchTimeoutRef.current) {
+        clearTimeout(viewportFetchTimeoutRef.current);
+        viewportFetchTimeoutRef.current = null;
+      }
+      lastViewportBboxRef.current = roundedBbox;
+      lastViewportFetchTimeRef.current = Date.now();
+      fetchViewportEvents(roundedBbox);
+    }
+  } catch {
+    // Native camera reads are best-effort; camera-change events still handle normal updates.
+  }
+}, [
+  fetchViewportEvents,
+  isAndroidStartupCameraPayloadInvalid,
+  mapDimensions?.height,
+  mapDimensions?.width,
+  setIgnoreProgrammaticTrace,
+  setZoomLevel,
+]);
+
 
 
 /**
@@ -3372,7 +4445,16 @@ const handleMapMovementEnd = useCallback(() => {
     };
     const zoom = cameraState.zoom;
 
-    const bbox = getViewportBoundingBox(center, zoom, width, height, 1.0);
+    const storeZoom = useMapStore.getState().zoomLevel;
+    const finalZoomDelta = Math.abs(zoom - storeZoom);
+    const finalZoomBucketChanged = Math.floor(zoom) !== Math.floor(storeZoom);
+
+    if (!ignoreProgrammaticCameraRef.current && (finalZoomBucketChanged || finalZoomDelta >= 0.02)) {
+      lastZoomLevel.current = zoom;
+      setZoomLevel(zoom);
+    }
+
+    const bbox = cameraState.visibleBbox ?? getViewportBoundingBox(center, zoom, width, height, 1.0);
     const roundedBbox = roundBoundingBoxForCache(bbox, 3);
 
     const bboxChanged = !lastViewportBboxRef.current ||
@@ -3398,7 +4480,7 @@ const handleMapMovementEnd = useCallback(() => {
     // After showing, set a brief lockout so a tiny tick can't immediately hide again
     postShowLockoutUntilRef.current = Date.now() + POST_SHOW_LOCKOUT_MS;
   }, 300);
-}, [showPills, analytics, zoomLevel, isGuest, fetchViewportEvents]);
+}, [showPills, analytics, zoomLevel, isGuest, fetchViewportEvents, setZoomLevel]);
 
 
   // Add this right before the return statement in the component
@@ -3534,12 +4616,42 @@ if (isGesture && !userGestureSeenRef.current) {
   // logPills('USER GESTURE DETECTED — auto-hide enabled & programmatic off');
 }
 
-  const isProgrammaticCameraMove = ignoreProgrammaticCameraRef.current && !isGesture;
+  let isProgrammaticCameraMove = ignoreProgrammaticCameraRef.current && !isGesture;
+
+  if (Platform.OS === 'android' && typeof zoom === 'number') {
+    const nextZoomAllowsRichDetails = zoom >= ANDROID_RICH_CLUSTER_MARKER_MIN_ZOOM;
+    setAndroidRichMarkerZoomAllowed((previous) =>
+      previous === nextZoomAllowsRichDetails ? previous : nextZoomAllowsRichDetails
+    );
+  }
 
   // Center from props or geometry
   const centerArr: [number, number] | undefined =
     (Array.isArray(props.center) && props.center.length === 2 ? props.center as [number, number] : undefined) ||
     (Array.isArray(e?.geometry?.coordinates) && e.geometry.coordinates.length === 2 ? e.geometry.coordinates as [number, number] : undefined);
+  const nativeVisibleBbox = getNativeVisibleBoundingBox(props);
+  const { width: effectiveZoomWindowWidth } = Dimensions.get('window');
+  const effectiveClusterZoom = typeof zoom === 'number'
+    ? getEffectiveZoomFromVisibleBounds(
+        zoom,
+        Platform.OS === 'android' ? nativeVisibleBbox : null,
+        (mapDimensions?.width ?? effectiveZoomWindowWidth) * PixelRatio.get()
+      )
+    : undefined;
+  const isAndroidStartupViewportPayloadInvalid = isAndroidStartupCameraPayloadInvalid({
+    zoom: effectiveClusterZoom,
+    visibleBbox: nativeVisibleBbox,
+    isGesture,
+    userGestureSeen: userGestureSeenRef.current,
+  });
+
+  if (isAndroidStartupViewportPayloadInvalid && !startupInvalidCameraTickLoggedRef.current) {
+    startupInvalidCameraTickLoggedRef.current = true;
+    logAndroidStartupTiming('startup_camera_tick_ignored_for_viewport', {
+      zoom: typeof zoom === 'number' ? zoom : null,
+      visibleBbox: nativeVisibleBbox,
+    });
+  }
 
   if (Platform.OS === 'android' && centerArr && typeof zoom === 'number') {
     const globalAny = global as any;
@@ -3584,7 +4696,7 @@ if (isGesture && !userGestureSeenRef.current) {
   }
 
   // Deltas
-  const zoomDelta = typeof zoom === 'number' ? Math.abs(zoom - lastZoomLevel.current) : 0;
+  const zoomDelta = typeof effectiveClusterZoom === 'number' ? Math.abs(effectiveClusterZoom - lastZoomLevel.current) : 0;
   const headingDelta = angularDelta(heading, previousHeadingRef.current ?? heading);
   const pitchDelta = angularDelta(pitch, previousPitchRef.current ?? pitch);
 
@@ -3598,7 +4710,7 @@ if (isGesture && !userGestureSeenRef.current) {
 
   // Compute dynamic center threshold based on zoom (≈ pixels → meters)
   const latForScale = centerArr ? centerArr[1] : 0; // default 0 if unknown
-  const mPerPx = (typeof zoom === 'number') ? metersPerPixel(latForScale, zoom) : 0;
+  const mPerPx = (typeof effectiveClusterZoom === 'number') ? metersPerPixel(latForScale, effectiveClusterZoom) : 0;
   const dynamicCenterMetersThreshold = Math.max(
     MIN_CENTER_METERS_TO_HIDE,
     mPerPx * CENTER_PX_THRESHOLD
@@ -3613,6 +4725,24 @@ if (isGesture && !userGestureSeenRef.current) {
 
   const meaningfulChange = isZoomMeaningful || isCenterMeaningful || isHeadingMeaningful || isPitchMeaningful;
 
+  if (
+    Platform.OS === 'android' &&
+    !isGesture &&
+    !userGestureSeenRef.current &&
+    !isAndroidStartupViewportPayloadInvalid &&
+    !isAndroidHotspotStartupFlowActive() &&
+    meaningfulChange &&
+    lastViewportBboxRef.current !== null
+  ) {
+    userGestureSeenRef.current = true;
+    setIgnoreProgrammaticTrace(false, 'android_camera_movement_inferred_user_gesture');
+    autoHideEnabledRef.current = true;
+    isProgrammaticCameraMove = false;
+    traceMapEvent('android_camera_movement_inferred_user_gesture', {
+      zoom: typeof zoom === 'number' ? zoom : 'unknown',
+    });
+  }
+
   // Update "previous" refs after computing deltas
   // Update "previous" refs after computing deltas
   if (centerArr) previousCenterRef.current = centerArr;
@@ -3620,27 +4750,36 @@ if (isGesture && !userGestureSeenRef.current) {
   if (typeof pitch === 'number') previousPitchRef.current = pitch;
 
   // Store current camera state for viewport fetching on movement end
-  if (centerArr && typeof zoom === 'number') {
-    currentCameraStateRef.current = { center: centerArr, zoom };
+  if (centerArr && typeof effectiveClusterZoom === 'number' && !isAndroidStartupViewportPayloadInvalid) {
+    currentCameraStateRef.current = { center: centerArr, zoom: effectiveClusterZoom, visibleBbox: nativeVisibleBbox };
   }
 
 /* ─────────────────────────────────────────────────────────────────────────────
 Clustering refresh: keep zoom → store → recluster in sync
 - Recompute clusters when the visible zoom changes enough to matter.
 ──────────────────────────────────────────────────────────────────────────── */
-    if (typeof zoom === 'number' && Math.abs(zoom - lastZoomLevel.current) >= 0.06) {
-      lastZoomLevel.current = zoom;
+    if (
+      typeof effectiveClusterZoom === 'number' &&
+      !isAndroidStartupViewportPayloadInvalid &&
+      Math.abs(effectiveClusterZoom - lastZoomLevel.current) >= 0.06
+    ) {
+      lastZoomLevel.current = effectiveClusterZoom;
 
       // Don't trigger cluster regeneration during programmatic camera moves
-      if (!isProgrammaticCameraMove) {
+      const shouldSyncProgrammaticZoom =
+        Platform.OS === 'android' &&
+        nativeVisibleBbox != null &&
+        !isAndroidHotspotStartupFlowActive();
+
+      if (!isProgrammaticCameraMove || shouldSyncProgrammaticZoom) {
         try {
-          setZoomLevel(zoom); // triggers generateClusters(zoom) in the store
+          setZoomLevel(effectiveClusterZoom); // triggers generateClusters(zoom) in the store
         } catch (e) {
           if (DEBUG_MAP_LOAD) console.log('[MapLoad] setZoomLevel error', e);
         }
       } else {
         // During programmatic moves, just update the zoom ref without reclustering
-        logPills('ZOOM CHANGED during programmatic move — skipping recluster', { zoom });
+        logPills('ZOOM CHANGED during programmatic move — skipping recluster', { zoom: effectiveClusterZoom });
       }
     }
 
@@ -3680,14 +4819,19 @@ Clustering refresh: keep zoom → store → recluster in sync
     });
   }
 
-  if (centerArr && typeof zoom === 'number') {
+  if (centerArr && typeof effectiveClusterZoom === 'number') {
+    if (isAndroidStartupViewportPayloadInvalid) {
+      lastCameraChangeRef.current = now;
+      return;
+    }
+
     const center: GeoCoordinate = {
       latitude: centerArr[1],
       longitude: centerArr[0]
     };
 
-    // Calculate viewport bounding box (no buffer - exact viewport)
-    const bbox = getViewportBoundingBox(center, zoom, width, height, 1.0);
+    // Prefer Mapbox's native visible bounds; fall back to a zoom-derived bbox.
+    const bbox = nativeVisibleBbox ?? getViewportBoundingBox(center, effectiveClusterZoom, width, height, 1.0);
     const roundedBbox = roundBoundingBoxForCache(bbox, 3);  // ~110m resolution; avoids fetch churn from tiny camera drift
 
     // Filter viewportEvents to only those visible on actual screen
@@ -3829,6 +4973,7 @@ Clustering refresh: keep zoom → store → recluster in sync
   autoHideEnabledRef,
   ignoreProgrammaticCameraRef,
   fetchViewportEvents,
+  isAndroidStartupCameraPayloadInvalid,
   setZoomLevel
 ]);
 
@@ -3861,6 +5006,9 @@ Clustering refresh: keep zoom → store → recluster in sync
       }
       if (startupGpsViewportRetryTimerRef.current) {
         clearTimeout(startupGpsViewportRetryTimerRef.current);
+      }
+      if (startupViewportRecoveryTimerRef.current) {
+        clearTimeout(startupViewportRecoveryTimerRef.current);
       }
     };
   }, []);
@@ -3903,14 +5051,13 @@ Clustering refresh: keep zoom → store → recluster in sync
     hotspotCameraReadyCallback();
   }, []);
 
-  // Render cluster markers on the map with improved stability
+  // Keep MarkerViews mounted across tab switches; remounting all custom
+  // clusters is the expensive part of returning to the Map tab on Android.
   const renderClusterMarkers = () => {
-    // Skip expensive cluster rendering when Map tab is not visible
-    // This prevents 30+ TreeMarker re-renders during tab switches
-    if (!isFocused) {
-      return null;
-    }
-
+    const markerRenderStartedAt =
+      __DEV__ && typeof performance !== 'undefined' && typeof performance.now === 'function'
+        ? performance.now()
+        : null;
   // DEBUG T5 (first render call)
   if (DEBUG_MAP_LOAD && !__ml_firstMarkersLoggedRef.current) {
     __ml_firstMarkersLoggedRef.current = true;
@@ -4031,6 +5178,28 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
     const clustersForRender = shouldAppendHotspotPreviewCluster
       ? [...baseClustersForRender, startupHotspotPreviewCluster]
       : baseClustersForRender;
+    const activeInterestMarkerFilter =
+      interestCarouselFilter?.status === 'active' ? interestCarouselFilter : null;
+
+    markTabTracePhase('map', 'map_markers_render_start', {
+      clusterCount: clusters.length,
+      visibleCount: visibleClustersForRender.length,
+      renderedCount: clustersForRender.length,
+      fullMarkers: fullClusterMarkersEnabled,
+      richMarkers: richClusterMarkersEnabled,
+      richDetails: richClusterMarkerDetailsEnabled,
+    });
+    markTabTracePhase('map', 'map_markers_render_complete', {
+      clusterCount: clusters.length,
+      visibleCount: visibleClustersForRender.length,
+      renderedCount: clustersForRender.length,
+      fullMarkers: fullClusterMarkersEnabled,
+      richMarkers: richClusterMarkersEnabled,
+      richDetails: richClusterMarkerDetailsEnabled,
+      renderMs: markerRenderStartedAt == null
+        ? null
+        : Math.round((performance.now() - markerRenderStartedAt) * 10) / 10,
+    });
 
     if (shouldAppendHotspotPreviewCluster && !startupHotspotPreviewMarkerLoggedRef.current) {
       startupHotspotPreviewMarkerLoggedRef.current = true;
@@ -4049,6 +5218,369 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
       startupMarkerSubsetLoggedRef.current = true;
       const delta = Date.now() - __ml_t0Ref.current;
       console.log(`[MapLoad][${__ml_sessionIdRef.current}] startup_marker_subset_rendered +${delta}ms (visible=${visibleClustersForRender.length}, rendered=${clustersForRender.length})`);
+    }
+
+    if (USE_ANDROID_NATIVE_CLUSTER_MARKER_LAYERS) {
+      const layerMarkerShape = buildAndroidClusterMarkerShape(clustersForRender, {
+        categoryCycleTick: androidCategoryCycleTick,
+        clustersReadyForInteraction,
+        detailsEnabled: richClusterMarkerDetailsEnabled,
+        pulseStep: androidMarkerPulseStep,
+        processingClusterId,
+        selectedClusterId,
+        userInterests: getUserInterestsSync(),
+      });
+
+      return (
+        <MapboxGL.ShapeSource
+          key="android-cluster-layer-source"
+          id="android-cluster-layer-source"
+          shape={layerMarkerShape as any}
+          hitbox={{ width: 44, height: 44 }}
+          onPress={(event: any) => {
+            if (!clustersReadyForInteraction || processingClusterId !== null || hasRenderedCallout) {
+              return;
+            }
+
+            const feature = event?.features?.[0];
+            const clusterId = feature?.properties?.clusterId;
+            const cluster = clustersForRender.find((item) => item.id === clusterId);
+            if (cluster) {
+              void handleMarkerPress(cluster);
+            }
+          }}
+        >
+          <MapboxGL.CircleLayer
+            id="android-cluster-layer-shadow"
+            style={{
+              circleColor: '#000000',
+              circleOpacity: 0.18,
+              circleRadius: ['get', 'markerRadius'] as any,
+              circleTranslate: [0, 2],
+              circleTranslateAnchor: 'viewport',
+            }}
+          />
+          <MapboxGL.CircleLayer
+            id="android-cluster-layer-broadcast-ring-1"
+            filter={['==', ['get', 'isBroadcasting'], true] as any}
+            style={{
+              circleColor: 'rgba(255,255,255,0)',
+              circleRadius: ['get', 'broadcastPulseRadius1'] as any,
+              circleStrokeColor: ['get', 'markerColor'] as any,
+              circleStrokeOpacity: ['get', 'broadcastPulseOpacity1'] as any,
+              circleStrokeWidth: 2,
+            }}
+          />
+          <MapboxGL.CircleLayer
+            id="android-cluster-layer-broadcast-ring-2"
+            filter={['==', ['get', 'isBroadcasting'], true] as any}
+            style={{
+              circleColor: 'rgba(255,255,255,0)',
+              circleRadius: ['get', 'broadcastPulseRadius2'] as any,
+              circleStrokeColor: ['get', 'markerColor'] as any,
+              circleStrokeOpacity: ['get', 'broadcastPulseOpacity2'] as any,
+              circleStrokeWidth: 2,
+            }}
+          />
+          <MapboxGL.CircleLayer
+            id="android-cluster-layer-broadcast-ring-3"
+            filter={['==', ['get', 'isBroadcasting'], true] as any}
+            style={{
+              circleColor: 'rgba(255,255,255,0)',
+              circleRadius: ['get', 'broadcastPulseRadius3'] as any,
+              circleStrokeColor: ['get', 'markerColor'] as any,
+              circleStrokeOpacity: ['get', 'broadcastPulseOpacity3'] as any,
+              circleStrokeWidth: 2,
+            }}
+          />
+          <MapboxGL.CircleLayer
+            id="android-cluster-layer-processing-ring"
+            filter={['==', ['get', 'isProcessing'], true] as any}
+            style={{
+              circleColor: 'rgba(255,255,255,0)',
+              circleRadius: ['get', 'markerOuterRingRadius'] as any,
+              circleStrokeColor: ['get', 'markerColor'] as any,
+              circleStrokeOpacity: 0.8,
+              circleStrokeWidth: 2,
+            }}
+          />
+          <MapboxGL.SymbolLayer
+            id="android-cluster-layer-trunks"
+            style={{
+              textAllowOverlap: true,
+              textAnchor: 'center',
+              textColor: ['get', 'markerColor'] as any,
+              textField: 'I',
+              textHaloColor: '#FFFFFF',
+              textHaloWidth: 0.5,
+              textIgnorePlacement: true,
+              textSize: ['get', 'markerTrunkTextSize'] as any,
+              textTranslate: [0, 10],
+              textTranslateAnchor: 'viewport',
+            }}
+          />
+          <MapboxGL.CircleLayer
+            id="android-cluster-layer-tree-tops"
+            style={{
+              circleColor: ['get', 'markerColor'] as any,
+              circleOpacity: ['get', 'markerOpacity'] as any,
+              circleRadius: ['get', 'markerRadius'] as any,
+              circleStrokeColor: ['get', 'markerStrokeColor'] as any,
+              circleStrokeWidth: ['get', 'markerStrokeWidth'] as any,
+            }}
+          />
+          <MapboxGL.SymbolLayer
+            id="android-cluster-layer-category-pills"
+            filter={['==', ['get', 'hasCategory'], true] as any}
+            style={{
+              iconAllowOverlap: true,
+              iconAnchor: 'center',
+              iconIgnorePlacement: true,
+              iconImage: ANDROID_CLUSTER_MARKER_CATEGORY_PILL_ID,
+              iconSize: ANDROID_CLUSTER_CATEGORY_PILL_SIZE,
+              iconTranslate: [0, -24],
+              iconTranslateAnchor: 'viewport',
+            }}
+          />
+          <MapboxGL.SymbolLayer
+            id="android-cluster-layer-count-strips"
+            filter={['any', ['==', ['get', 'hasEvents'], true], ['==', ['get', 'hasSpecials'], true]] as any}
+            style={{
+              iconAllowOverlap: true,
+              iconAnchor: 'center',
+              iconIgnorePlacement: true,
+              iconImage: ANDROID_CLUSTER_MARKER_COUNT_STRIP_ID,
+              iconSize: ANDROID_CLUSTER_COUNT_STRIP_SIZE,
+              iconTranslate: [0, 26],
+              iconTranslateAnchor: 'viewport',
+            }}
+          />
+          <MapboxGL.CircleLayer
+            id="android-cluster-layer-new-content-dots"
+            filter={['==', ['get', 'hasNewContent'], true] as any}
+            style={{
+              circleColor: '#F44336',
+              circleRadius: ['get', 'markerStatusDotRadius'] as any,
+              circleStrokeColor: '#FFFFFF',
+              circleStrokeWidth: 1,
+              circleTranslate: [9, -9],
+              circleTranslateAnchor: 'viewport',
+            }}
+          />
+          <MapboxGL.CircleLayer
+            id="android-cluster-layer-firestore-badges"
+            filter={['==', ['get', 'hasFirestoreEvents'], true] as any}
+            style={{
+              circleColor: '#E3F2FD',
+              circleRadius: ['get', 'markerStatusDotRadius'] as any,
+              circleStrokeColor: '#1565C0',
+              circleStrokeWidth: 1,
+              circleTranslate: [-9, -9],
+              circleTranslateAnchor: 'viewport',
+            }}
+          />
+          <MapboxGL.SymbolLayer
+            id="android-cluster-layer-category-icons"
+            filter={['==', ['get', 'hasCategory'], true] as any}
+            style={{
+              iconAllowOverlap: true,
+              iconAnchor: 'center',
+              iconIgnorePlacement: true,
+              iconImage: ['get', 'categoryIconImage'] as any,
+              iconSize: ANDROID_CLUSTER_CATEGORY_GLYPH_SIZE,
+              iconTranslate: [-8, -24],
+              iconTranslateAnchor: 'viewport',
+            }}
+          />
+          <MapboxGL.SymbolLayer
+            id="android-cluster-layer-category-counts"
+            filter={['==', ['get', 'hasCategory'], true] as any}
+            style={{
+              textAllowOverlap: true,
+              textAnchor: 'center',
+              textColor: ['get', 'categoryTextColor'] as any,
+              textField: ['get', 'categoryCountLabel'] as any,
+              textHaloColor: '#F5F3E8',
+              textHaloWidth: 0.6,
+              textIgnorePlacement: true,
+              textSize: ANDROID_CLUSTER_CATEGORY_TEXT_SIZE,
+              textTranslate: [8, -24],
+              textTranslateAnchor: 'viewport',
+            }}
+          />
+          <MapboxGL.SymbolLayer
+            id="android-cluster-layer-event-icons-both"
+            filter={['all', ['==', ['get', 'hasEvents'], true], ['==', ['get', 'hasSpecials'], true]] as any}
+            style={{
+              iconAllowOverlap: true,
+              iconAnchor: 'center',
+              iconIgnorePlacement: true,
+              iconImage: ANDROID_CLUSTER_MARKER_EVENT_ICON_ID,
+              iconSize: ANDROID_CLUSTER_COUNT_GLYPH_SIZE,
+              iconTranslate: [-18, 26],
+              iconTranslateAnchor: 'viewport',
+            }}
+          />
+          <MapboxGL.SymbolLayer
+            id="android-cluster-layer-event-icons-only"
+            filter={['all', ['==', ['get', 'hasEvents'], true], ['==', ['get', 'hasSpecials'], false]] as any}
+            style={{
+              iconAllowOverlap: true,
+              iconAnchor: 'center',
+              iconIgnorePlacement: true,
+              iconImage: ANDROID_CLUSTER_MARKER_EVENT_ICON_ID,
+              iconSize: ANDROID_CLUSTER_COUNT_GLYPH_SIZE,
+              iconTranslate: [-7, 26],
+              iconTranslateAnchor: 'viewport',
+            }}
+          />
+          <MapboxGL.SymbolLayer
+            id="android-cluster-layer-event-labels-both"
+            filter={['all', ['==', ['get', 'hasEvents'], true], ['==', ['get', 'hasSpecials'], true]] as any}
+            style={{
+              textAllowOverlap: true,
+              textAnchor: 'center',
+              textColor: '#2196F3',
+              textField: ['get', 'eventLabel'] as any,
+              textHaloColor: '#F5F3E8',
+              textHaloWidth: 1,
+              textIgnorePlacement: true,
+              textSize: ANDROID_CLUSTER_COUNT_TEXT_SIZE,
+              textTranslate: [-6, 26],
+              textTranslateAnchor: 'viewport',
+            }}
+          />
+          <MapboxGL.SymbolLayer
+            id="android-cluster-layer-event-labels-only"
+            filter={['all', ['==', ['get', 'hasEvents'], true], ['==', ['get', 'hasSpecials'], false]] as any}
+            style={{
+              textAllowOverlap: true,
+              textAnchor: 'center',
+              textColor: '#2196F3',
+              textField: ['get', 'eventLabel'] as any,
+              textHaloColor: '#F5F3E8',
+              textHaloWidth: 1,
+              textIgnorePlacement: true,
+              textSize: ANDROID_CLUSTER_COUNT_TEXT_SIZE,
+              textTranslate: [7, 26],
+              textTranslateAnchor: 'viewport',
+            }}
+          />
+          <MapboxGL.SymbolLayer
+            id="android-cluster-layer-special-icons-both"
+            filter={['all', ['==', ['get', 'hasEvents'], true], ['==', ['get', 'hasSpecials'], true]] as any}
+            style={{
+              iconAllowOverlap: true,
+              iconAnchor: 'center',
+              iconIgnorePlacement: true,
+              iconImage: ANDROID_CLUSTER_MARKER_SPECIAL_ICON_ID,
+              iconSize: ANDROID_CLUSTER_COUNT_GLYPH_SIZE,
+              iconTranslate: [7, 26],
+              iconTranslateAnchor: 'viewport',
+            }}
+          />
+          <MapboxGL.SymbolLayer
+            id="android-cluster-layer-special-icons-only"
+            filter={['all', ['==', ['get', 'hasEvents'], false], ['==', ['get', 'hasSpecials'], true]] as any}
+            style={{
+              iconAllowOverlap: true,
+              iconAnchor: 'center',
+              iconIgnorePlacement: true,
+              iconImage: ANDROID_CLUSTER_MARKER_SPECIAL_ICON_ID,
+              iconSize: ANDROID_CLUSTER_COUNT_GLYPH_SIZE,
+              iconTranslate: [-7, 26],
+              iconTranslateAnchor: 'viewport',
+            }}
+          />
+          <MapboxGL.SymbolLayer
+            id="android-cluster-layer-special-labels-both"
+            filter={['all', ['==', ['get', 'hasEvents'], true], ['==', ['get', 'hasSpecials'], true]] as any}
+            style={{
+              textAllowOverlap: true,
+              textAnchor: 'center',
+              textColor: '#34A853',
+              textField: ['get', 'specialLabel'] as any,
+              textHaloColor: '#F5F3E8',
+              textHaloWidth: 1,
+              textIgnorePlacement: true,
+              textSize: ANDROID_CLUSTER_COUNT_TEXT_SIZE,
+              textTranslate: [18, 26],
+              textTranslateAnchor: 'viewport',
+            }}
+          />
+          <MapboxGL.SymbolLayer
+            id="android-cluster-layer-special-labels-only"
+            filter={['all', ['==', ['get', 'hasEvents'], false], ['==', ['get', 'hasSpecials'], true]] as any}
+            style={{
+              textAllowOverlap: true,
+              textAnchor: 'center',
+              textColor: '#34A853',
+              textField: ['get', 'specialLabel'] as any,
+              textHaloColor: '#F5F3E8',
+              textHaloWidth: 1,
+              textIgnorePlacement: true,
+              textSize: ANDROID_CLUSTER_COUNT_TEXT_SIZE,
+              textTranslate: [7, 26],
+              textTranslateAnchor: 'viewport',
+            }}
+          />
+          <MapboxGL.SymbolLayer
+            id="android-cluster-layer-firestore-labels"
+            filter={['==', ['get', 'hasFirestoreEvents'], true] as any}
+            style={{
+              textAllowOverlap: true,
+              textAnchor: 'center',
+              textColor: '#1565C0',
+              textField: 'F',
+              textIgnorePlacement: true,
+              textSize: 7,
+              textTranslate: [-9, -9],
+              textTranslateAnchor: 'viewport',
+            }}
+          />
+          <MapboxGL.SymbolLayer
+            id="android-cluster-layer-venue-icon-outlines"
+            filter={['==', ['get', 'hasVenueIconOutline'], true] as any}
+            style={{
+              iconAllowOverlap: true,
+              iconAnchor: 'center',
+              iconIgnorePlacement: true,
+              iconImage: ANDROID_CLUSTER_MARKER_VENUE_DARK_ICON_ID,
+              iconOpacity: 0.9,
+              iconSize: ['get', 'venueIconOutlineSize'] as any,
+              iconTranslate: [-4, 0],
+              iconTranslateAnchor: 'viewport',
+            }}
+          />
+          <MapboxGL.SymbolLayer
+            id="android-cluster-layer-venue-icons"
+            style={{
+              iconAllowOverlap: true,
+              iconAnchor: 'center',
+              iconIgnorePlacement: true,
+              iconImage: ['get', 'venueIconImage'] as any,
+              iconSize: ['get', 'venueIconSize'] as any,
+              iconTranslate: [-4, 0],
+              iconTranslateAnchor: 'viewport',
+            }}
+          />
+          <MapboxGL.SymbolLayer
+            id="android-cluster-layer-venue-labels"
+            style={{
+              textAllowOverlap: true,
+              textAnchor: 'center',
+              textColor: ['get', 'textColor'] as any,
+              textField: ['get', 'label'] as any,
+              textIgnorePlacement: true,
+              textHaloColor: ['get', 'venueTextHaloColor'] as any,
+              textHaloWidth: ['get', 'venueTextHaloWidth'] as any,
+              textSize: ['get', 'markerTextSize'] as any,
+              textTranslate: [4, 0],
+              textTranslateAnchor: 'viewport',
+            }}
+          />
+        </MapboxGL.ShapeSource>
+      );
     }
 
     return clustersForRender
@@ -4074,6 +5606,10 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
 
         // 🎯 TUTORIAL INTEGRATION: Add targeting for closest cluster
         const isClosestCluster = index === 0; // First cluster is prioritized
+        const isDimmedByInterestFilter =
+          !!activeInterestMarkerFilter &&
+          !isSelected &&
+          !clusterMatchesInterestCarouselFilter(cluster, activeInterestMarkerFilter);
       
         return (
           <MapboxGL.MarkerView
@@ -4089,6 +5625,7 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
               disabled={!clustersReadyForInteraction || processingClusterId !== null || hasRenderedCallout}
               activeOpacity={0.7}
               hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              style={isDimmedByInterestFilter ? styles.interestFilteredMarkerDimmed : undefined}
             >
               <TreeMarker
                 cluster={cluster}
@@ -4096,6 +5633,7 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
                 isProcessing={processingClusterId === cluster.id}
                 isReady={clustersReadyForInteraction}
                 detailsEnabled={richClusterMarkersEnabled}
+                isActive={isFocused}
               />
             </TouchableOpacity>
           </MapboxGL.MarkerView>
@@ -4146,9 +5684,13 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
     );
   };
 
+  const calloutOverlayBackgroundColor = Platform.OS === 'android' || isCalloutClosingVisually
+    ? 'rgba(0, 0, 0, 0)'
+    : 'rgba(0, 0, 0, 0.3)';
+
   // Render the map
   return (
-    <View style={styles.container}>
+    <View style={styles.container} onLayout={handleRootLayout}>
       {isHeaderSearchActive && (
         <Pressable
           onPress={() => { setHeaderSearchActive(false); Keyboard.dismiss(); }}
@@ -4231,6 +5773,7 @@ onLayout={(event) => {
 }}
 onMapIdle={() => {
   notifyHotspotCameraReady('map_idle');
+  void reconcileCameraStateFromMapRef('map_idle');
   if (DEBUG_MAP_LOAD) {
     const t1b = Date.now();
     const delta = t1b - __ml_t0Ref.current;
@@ -4246,6 +5789,12 @@ onMapIdle={() => {
 }}
 
 onDidFinishRenderingFrameFully={() => {
+  markTabTracePhase('map', 'mapbox_frame_fully', {
+    firstStartupFrameAlreadyRendered: mapFirstFrameRenderedRef.current,
+    overlaysReady: mapTabOverlaysReady,
+    fullMarkers: fullClusterMarkersEnabled,
+    richMarkers: richClusterMarkersEnabled,
+  });
   if (!mapFirstFrameRenderedRef.current) {
     mapFirstFrameRenderedRef.current = true;
     (global as any).mapFirstFrameRendered = true;
@@ -4263,6 +5812,12 @@ onDidFinishRenderingFrameFully={() => {
 
 onDidFinishLoadingMap={() => {
   notifyHotspotCameraReady('map_loaded');
+  markTabTracePhase('map', 'mapbox_loaded', {
+    firstStartupFrameRendered: mapFirstFrameRenderedRef.current,
+    overlaysReady: mapTabOverlaysReady,
+    fullMarkers: fullClusterMarkersEnabled,
+    richMarkers: richClusterMarkersEnabled,
+  });
 
   // Mark style ready on a supported callback (don’t depend on unsupported events)
   if (!__ml_styleReadyRef.current) __ml_styleReadyRef.current = true;
@@ -4352,6 +5907,10 @@ onDidFinishLoadingMap={() => {
   }}
   followUserLocation={false}
 />
+
+        {USE_ANDROID_NATIVE_CLUSTER_MARKER_LAYERS && (
+          <MapboxGL.Images images={ANDROID_CLUSTER_MARKER_IMAGES} />
+        )}
        
         {/* Render native user location as soon as permission is available */}
         {locationPermissionGranted && (
@@ -4404,7 +5963,7 @@ onDidFinishLoadingMap={() => {
           />
 
           <View pointerEvents="box-none" style={styles.interestPillsContainer}>
-            <InterestFilterPills onPillInteraction={() => setHotInterestCarouselActive(false)} />
+            <InterestFilterPills onPillInteraction={handleInterestPillInteraction} />
           </View>
 
           {/* Interests Carousel - appears when interest pill is selected */}
@@ -4512,6 +6071,7 @@ Owner: Map UX stability on Android • Last validated: 2025-09-04
   onResponderRelease={() => {
     // Tapping outside the sheet intentionally closes it with animation
     console.log('OVERLAY TAP - dismissing callout with animation');
+    handleCalloutCloseStart();
     traceMapEvent('callout_overlay_tap_closed', {
       selectedClusterId: presentedCalloutClusterId ?? 'none',
       selectedVenueCount: presentedCalloutVenueCount,
@@ -4529,7 +6089,7 @@ Owner: Map UX stability on Android • Last validated: 2025-09-04
   style={[
     StyleSheet.absoluteFillObject,
     {
-      backgroundColor: 'rgba(0, 0, 0, 0.3)',
+      backgroundColor: calloutOverlayBackgroundColor,
     }
   ]}
 />
@@ -4543,6 +6103,7 @@ Owner: Map UX stability on Android • Last validated: 2025-09-04
               venues={presentedCalloutVenues}
               cluster={presentedCalloutCluster}
               onClose={() => closeCallout('callout-onClose-prop')}
+              onCloseStart={handleCalloutCloseStart}
               onLayoutReady={() => {
                 traceMapEvent('callout_child_layout_ready', {
                   renderedClusterId: presentedCalloutClusterId ?? 'none',
@@ -4666,6 +6227,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     position: 'relative',
+  },
+  interestFilteredMarkerDimmed: {
+    opacity: 0.28,
   },
   // User location marker
   userMarkerWrapper: {

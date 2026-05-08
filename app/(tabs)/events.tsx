@@ -12,14 +12,14 @@ import {
   ScrollView,
   Modal,
   Share,
-  Platform,
   Linking,
   GestureResponderEvent,
   TextInput,
   Alert,
   Keyboard,
   Pressable,
-  InteractionManager
+  InteractionManager,
+  Platform
 } from 'react-native';
 import { usePathname } from 'expo-router';
 
@@ -67,12 +67,30 @@ import {
   createLocationKeyFromEvent
 } from '../../utils/priorityUtils';
 import * as userService from '../../services/userService';
-import { calculateDistance, doesEventMatchTypeFilters } from '../../store/mapStore';
+import {
+  calculateDistance,
+  createEventTimeContext,
+  doesEventMatchTypeFilters,
+  getEventTimeStatusFast,
+} from '../../store/mapStore';
 import { useUserPrefsStore } from '../../store/userPrefsStore';
 import { areEventIdsEquivalent } from '../../lib/api/firestoreEvents';
 
 // Import for loading native ads
 import useNativeAds from '../../hooks/useNativeAds';
+import { measureListTabStage } from '../../utils/listTabPerfTrace';
+import { runAfterTabPaint } from '../../utils/tabFocusEffects';
+import {
+  markTabFirstAdLayout,
+  markTabFirstListItemLayout,
+  markTabFlatListLayout,
+  markTabFocus,
+  markTabListDataReady,
+  markTabListPropsReady,
+  markTabRootLayout,
+  markTabScreenRenderCommit,
+  markTabScreenRenderStart,
+} from '../../utils/tabSwitchTrace';
 
 //import for updating events list based on updating firebase user interests .. Firebase listener
 import { doc, onSnapshot } from 'firebase/firestore';
@@ -101,6 +119,9 @@ import { amplitudeTrack } from '../../lib/amplitudeAnalytics';
 // Constants
 const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get('window');
 const COLLAPSIBLE_HEADER_TOP_MARGIN = 3;
+const ENABLE_SORT_PERFORMANCE_ANALYTICS = false;
+const LIST_LIVE_COUNT_LISTENER_DELAY_MS = 1500;
+const INITIAL_FILTER_HEADER_HEIGHT = 195;
 
 type UserPrefsState = {
   interests: string[];
@@ -493,16 +514,36 @@ const EventListItem: React.FC<EventListItemProps> = ({
   }, [event.id]);
   
   useEffect(() => {
-    if (!event.id) return;
-    startEventLikesListener(event.id);
-    startEventSharesListener(event.id);
-    startEventInterestedListener(event.id);
+    if (!event.id || isGuest) return;
+
+    let started = false;
+    let cancelled = false;
+    let startTimer: ReturnType<typeof setTimeout> | null = null;
+    const task = InteractionManager.runAfterInteractions(() => {
+      startTimer = setTimeout(() => {
+        if (cancelled) {
+          return;
+        }
+        started = true;
+        startEventLikesListener(event.id);
+        startEventSharesListener(event.id);
+        startEventInterestedListener(event.id);
+      }, LIST_LIVE_COUNT_LISTENER_DELAY_MS);
+    });
+
     return () => {
-      stopEventLikesListener(event.id);
-      stopEventSharesListener(event.id);
-      stopEventInterestedListener(event.id);
+      cancelled = true;
+      task.cancel?.();
+      if (startTimer) {
+        clearTimeout(startTimer);
+      }
+      if (started) {
+        stopEventLikesListener(event.id);
+        stopEventSharesListener(event.id);
+        stopEventInterestedListener(event.id);
+      }
     };
-  }, [event.id]);
+  }, [event.id, isGuest]);
 
   const timeStatus = getEventTimeStatus(event);
   const hasVenueAddress = Boolean(event.address?.trim());
@@ -1444,10 +1485,24 @@ const MemoizedEventListItem = React.memo(EventListItem, (prevProps, nextProps) =
 
 // Main Events Screen component
 function EventsScreen() {
+  markTabScreenRenderStart('events');
   // ===============================================================
   // ANALYTICS INTEGRATION - RE-ENABLED
   // ===============================================================
   const analytics = useAnalytics();
+  useEffect(() => {
+    markTabScreenRenderCommit('events');
+  });
+
+  useFocusEffect(
+    useCallback(() => {
+      markTabFocus('events');
+    }, [])
+  );
+  const handleRootLayout = useCallback(() => {
+    markTabRootLayout('events');
+  }, []);
+  const isFocusedContentReady = true;
 
   // 🔔 If registration begins, close any open overlays (details sheet, image lightbox)
   const overlayCloseSignal = useGuestLimitationStore(s => s.overlayCloseSignal);
@@ -1501,7 +1556,7 @@ useEffect(() => {
     }
   };
   
-  diagnoseFirebase();
+  return;
 }, []);
 
   // Track screen focus for session analytics - RE-ENABLED
@@ -1509,8 +1564,7 @@ useEffect(() => {
   useFocusEffect(
     useCallback(() => {
       const startTime = Date.now();
-
-      InteractionManager.runAfterInteractions(() => {
+      const cancelScreenView = runAfterTabPaint(() => {
         analytics.trackScreenView('events', {
           content_type: 'event_list',
           user_type: isGuest ? 'guest' : 'registered'
@@ -1519,6 +1573,7 @@ useEffect(() => {
 
       // Return cleanup function to track time spent
       return () => {
+        cancelScreenView();
         const timeSpent = Date.now() - startTime;
         InteractionManager.runAfterInteractions(() => {
           analytics.trackEngagementDepth('events', timeSpent, {
@@ -1533,10 +1588,11 @@ useEffect(() => {
   // Tutorial auto-advancement detection - already deferred with setTimeout
   useFocusEffect(
     useCallback(() => {
-      InteractionManager.runAfterInteractions(() => {
-        console.log('🔍 EVENTS SCREEN: Screen focused, checking for tutorial');
+      return runAfterTabPaint(() => {
         if ((global as any).onEventsScreenNavigated) {
-          console.log('🔍 EVENTS SCREEN: Calling tutorial advancement');
+          if (__DEV__) {
+            console.log('EVENTS SCREEN: Calling tutorial advancement');
+          }
           (global as any).onEventsScreenNavigated();
         }
       });
@@ -1551,16 +1607,12 @@ useEffect(() => {
   // Store integration - individual selectors to prevent infinite loops
   // (Combined object selectors with shallow cause getSnapshot caching issues)
   const events = useMapStore((state) => state.events);
-  const filteredEvents = useMapStore((state) => state.filteredEvents);
   const viewportEvents = useMapStore((state) => state.viewportEvents);
   const outsideViewportEvents = useMapStore((state) => state.outsideViewportEvents);
-  const viewportMetadata = useMapStore((state) => state.viewportMetadata);
   const isLoading = useMapStore((state) => state.isLoading);
   const error = useMapStore((state) => state.error);
-  const fetchEvents = useMapStore((state) => state.fetchEvents);
   const fetchEventDetails = useMapStore((state) => state.fetchEventDetails);
   const setTypeFilters = useMapStore((state) => state.setTypeFilters);
-  const categories = useMapStore((state) => state.categories);
   const filterCriteria = useMapStore((state) => state.filterCriteria);
   const userLocation = useMapStore((state) => state.userLocation);
   const getTimeFilterCounts = useMapStore((state) => state.getTimeFilterCounts);
@@ -1571,35 +1623,43 @@ useEffect(() => {
 
   // 🔎 Cache usage diagnostics: log whether preloaded events are present on mount
   useEffect(() => {
-    const len = Array.isArray(events) ? events.length : 0;
-    if (len > 0) {
-      console.log('[EventsScreen] Using preloaded events from store:', len);
-    } else {
-      console.log('[EventsScreen] No preloaded events at mount; will wait for store/update');
-    }
+    return;
   }, []);
 
-  // Memoized event lookup Map for O(1) access instead of O(n) find
+  // Memoized event lookup Map for O(1) access instead of O(n) find.
+  // Build it after the tab shell has painted so first focus stays responsive.
   const eventLookupMap = useMemo(() => {
+    if (!isFocusedContentReady) {
+      return new Map<string, Event>();
+    }
+
     const map = new Map<string, Event>();
     events.forEach(event => {
       map.set(String(event.id), event);
     });
     return map;
-  }, [events]);
+  }, [events, isFocusedContentReady]);
 
-  // Helper function to get updated event data from store - now O(1)
   const getUpdatedEvent = useCallback((eventId: string | number) => {
     return eventLookupMap.get(String(eventId));
   }, [eventLookupMap]);
 
   // State management
   const [scrollY] = useState(new Animated.Value(0));
-  const [headerHeight, setHeaderHeight] = useState(0);
+  const [headerHeight, setHeaderHeight] = useState(INITIAL_FILTER_HEADER_HEIGHT);
   const [isHeaderCollapsed, setIsHeaderCollapsed] = useState(false);
   const headerTranslateY = useRef(new Animated.Value(0)).current;
   const lastScrollY = useRef(0);
   const flatListRef = useRef<FlatList>(null);
+  const handleFlatListLayout = useCallback(() => {
+    markTabFlatListLayout('events');
+  }, []);
+  const handleFirstListItemLayout = useCallback(() => {
+    markTabFirstListItemLayout('events');
+  }, []);
+  const handleFirstAdLayout = useCallback(() => {
+    markTabFirstAdLayout('events');
+  }, []);
   
   // Back to top button state
   const [showBackToTop, setShowBackToTop] = useState(false);
@@ -1633,11 +1693,15 @@ useEffect(() => {
   // Deferred with InteractionManager to not block tab switch
   useFocusEffect(
     React.useCallback(() => {
-      InteractionManager.runAfterInteractions(() => {
-        console.log('[GuestLimitation] Events screen gained focus');
+      return runAfterTabPaint(() => {
+        if (__DEV__) {
+          console.log('[GuestLimitation] Events screen gained focus');
+        }
 
         if (isGuest) {
-          console.log('[GuestLimitation] Tracking Events tab selection for guest');
+          if (__DEV__) {
+            console.log('[GuestLimitation] Tracking Events tab selection for guest');
+          }
           trackTabSelect('events');
         }
       });
@@ -2016,20 +2080,45 @@ setSelectedImageData({ imageUrl, event });
   };
 
   // Get dynamic filter counts
-  const timeFilterCounts = getTimeFilterCounts('event');
-  const categoryFilterCounts = getCategoryFilterCounts('event');
+  const timeFilterCounts = isFocusedContentReady
+    ? measureListTabStage('events', 'time_filter_counts', {}, () => getTimeFilterCounts('event'))
+    : {
+        [TimeFilterType.ALL]: 0,
+        [TimeFilterType.NOW]: 0,
+        [TimeFilterType.TODAY]: 0,
+        [TimeFilterType.TOMORROW]: 0,
+        [TimeFilterType.UPCOMING]: 0,
+      };
+  const categoryFilterCounts = isFocusedContentReady
+    ? measureListTabStage('events', 'category_filter_counts', {}, () => getCategoryFilterCounts('event'))
+    : {};
+
+  const savedEventSet = useMemo(() => {
+    return new Set(savedEvents || []);
+  }, [savedEvents]);
+
+  const userInterestLowerSet = useMemo(() => {
+    return new Set((userInterests || []).map(interest => interest.toLowerCase()));
+  }, [userInterests]);
+
+  const favoriteVenueSet = useMemo(() => {
+    return new Set(favoriteVenues || []);
+  }, [favoriteVenues]);
+
+  const eventTimeContextMinute = Math.floor(Date.now() / 60000);
+  const eventTimeContext = useMemo(() => {
+    return createEventTimeContext();
+  }, [eventTimeContextMinute]);
   
   // Helper functions
   const matchesUserInterests = (event: Event): boolean => {
-    if (!userInterests || userInterests.length === 0) return false;
-    return userInterests.some(interest => 
-      interest.toLowerCase() === event.category.toLowerCase()
-    );
+    if (userInterestLowerSet.size === 0) return false;
+    return userInterestLowerSet.has(event.category.toLowerCase());
   };
   
   const isEventSaved = (event: Event): boolean => {
-    if (!savedEvents || savedEvents.length === 0) return false;
-    return savedEvents.includes(event.id.toString());
+    if (savedEventSet.size === 0) return false;
+    return savedEventSet.has(event.id.toString());
   };
 
   // ===============================================================
@@ -2117,42 +2206,98 @@ setSelectedImageData({ imageUrl, event });
 
   // Filter viewport events
   const filteredViewportEvents = useMemo(() => {
-    let filtered = viewportEvents.filter(event => event.type === 'event');
+    return measureListTabStage('events', 'filter_viewport', {
+      inputCount: viewportEvents.length,
+      ready: isFocusedContentReady,
+    }, () => {
+      if (!isFocusedContentReady) {
+        markTabListDataReady('events', {
+          ready: false,
+          itemCount: 0,
+        });
+        return [];
+      }
 
-    if (filterCriteria.eventFilters.savedOnly) {
-      filtered = filtered.filter(e => isEventSaved(e));
-    }
+      const filtered: Event[] = [];
 
-    filtered = filtered.filter(e => doesEventMatchTypeFilters(e, filterCriteria.eventFilters));
+      for (const event of viewportEvents) {
+        if (event.type !== 'event') {
+          continue;
+        }
 
-    return filtered;
-  }, [viewportEvents, filterCriteria, savedEvents]);
+        if (filterCriteria.eventFilters.savedOnly && !isEventSaved(event)) {
+          continue;
+        }
+
+        if (!doesEventMatchTypeFilters(event, filterCriteria.eventFilters, eventTimeContext)) {
+          continue;
+        }
+
+        filtered.push(event);
+      }
+
+      return filtered;
+    });
+  }, [isFocusedContentReady, viewportEvents, filterCriteria, savedEventSet, eventTimeContext]);
 
   // Filter outside-viewport events
   const filteredOutsideViewportEvents = useMemo(() => {
-    let filtered = outsideViewportEvents.filter(event => event.type === 'event');
+    return measureListTabStage('events', 'filter_outside_viewport', {
+      inputCount: outsideViewportEvents.length,
+      ready: isFocusedContentReady,
+    }, () => {
+      if (!isFocusedContentReady) {
+        return [];
+      }
 
-    if (filterCriteria.eventFilters.savedOnly) {
-      filtered = filtered.filter(e => isEventSaved(e));
-    }
+      const filtered: Event[] = [];
 
-    filtered = filtered.filter(e => doesEventMatchTypeFilters(e, filterCriteria.eventFilters));
+      for (const event of outsideViewportEvents) {
+        if (event.type !== 'event') {
+          continue;
+        }
 
-    return filtered;
-  }, [outsideViewportEvents, filterCriteria, savedEvents]);
+        if (filterCriteria.eventFilters.savedOnly && !isEventSaved(event)) {
+          continue;
+        }
+
+        if (!doesEventMatchTypeFilters(event, filterCriteria.eventFilters, eventTimeContext)) {
+          continue;
+        }
+
+        filtered.push(event);
+      }
+
+      return filtered;
+    });
+  }, [isFocusedContentReady, outsideViewportEvents, filterCriteria, savedEventSet, eventTimeContext]);
 
   // Enhanced sorting with analytics tracking
   const sortAndPrioritizeEvents = (events: Event[]): Event[] => {
     const sortStartTime = Date.now();
-    
-    const eventsWithScores = events.map(event => {
+
+    type ScoredEvent = {
+      event: Event;
+      isSaved: boolean;
+      isFromFavoriteVenue: boolean;
+      timeStatus: 'now' | 'today' | 'future';
+      compositeScore: number;
+      distance: number;
+    };
+
+    const savedNowEvents: ScoredEvent[] = [];
+    const savedTodayEvents: ScoredEvent[] = [];
+    const savedFutureEvents: ScoredEvent[] = [];
+    const unsavedEvents: ScoredEvent[] = [];
+
+    for (const event of events) {
       const isSaved = isEventSaved(event);
-      const timeStatus = getEventTimeStatus(event);
+      const timeStatus = getEventTimeStatusFast(event, eventTimeContext);
       const matchesInterest = matchesUserInterests(event);
 
       // Check if event is from a favorite venue
       const eventLocationKey = createLocationKeyFromEvent(event);
-      const isFromFavoriteVenue = favoriteVenues.includes(eventLocationKey);
+      const isFromFavoriteVenue = favoriteVenueSet.has(eventLocationKey);
 
       const scoreCategory = matchesInterest ? 'INTEREST_MATCH' : 'NON_INTEREST';
       const baseScore = BASE_SCORES[scoreCategory][timeStatus];
@@ -2181,7 +2326,7 @@ setSelectedImageData({ imageUrl, event });
       const favoriteVenueBonus = isFromFavoriteVenue ? FAVORITE_VENUE_BONUS : 0;
       const compositeScore = (baseScore * proximityMultiplier) + engagementTierPoints + favoriteVenueBonus;
 
-      return {
+      const scoredEvent = {
         event,
         isSaved,
         isFromFavoriteVenue,
@@ -2189,20 +2334,18 @@ setSelectedImageData({ imageUrl, event });
         compositeScore,
         distance
       };
-    });
-    
-    // Group and sort
-    const savedNowEvents = eventsWithScores.filter(item => 
-      item.isSaved && item.timeStatus === 'now'
-    );
-    const savedTodayEvents = eventsWithScores.filter(item => 
-      item.isSaved && item.timeStatus === 'today'
-    );
-    const savedFutureEvents = eventsWithScores.filter(item => 
-      item.isSaved && item.timeStatus === 'future'
-    );
-    const unsavedEvents = eventsWithScores.filter(item => !item.isSaved);
-    
+
+      if (!isSaved) {
+        unsavedEvents.push(scoredEvent);
+      } else if (timeStatus === 'now') {
+        savedNowEvents.push(scoredEvent);
+      } else if (timeStatus === 'today') {
+        savedTodayEvents.push(scoredEvent);
+      } else {
+        savedFutureEvents.push(scoredEvent);
+      }
+    }
+
     [savedNowEvents, savedTodayEvents, savedFutureEvents, unsavedEvents].forEach(group => {
       group.sort((a, b) => {
         if (b.compositeScore !== a.compositeScore) {
@@ -2219,22 +2362,27 @@ setSelectedImageData({ imageUrl, event });
       ...unsavedEvents.map(item => item.event)
     ];
     
-    // Track sorting performance
-    const sortTime = Date.now() - sortStartTime;
-    analytics?.trackPerformance('events_sort', sortTime, {
-      events_count: events.length,
-      sort_time_ms: sortTime,
-      has_user_location: !!userLocation,
-      user_interests_count: userInterests.length
-    });
+    if (ENABLE_SORT_PERFORMANCE_ANALYTICS) {
+      const sortTime = Date.now() - sortStartTime;
+      requestAnimationFrame(() => {
+        analytics?.trackPerformance('events_sort', sortTime, {
+          events_count: events.length,
+          sort_time_ms: sortTime,
+          has_user_location: !!userLocation,
+          user_interests_count: userInterests.length
+        });
+      });
+    }
     
     return sortedEvents;
   };
 
   // Apply priority sorting to viewport section (small, sorts immediately)
   const sortedViewportEvents = useMemo(() => {
-    return sortAndPrioritizeEvents(filteredViewportEvents);
-  }, [filteredViewportEvents, userLocation, userInterests, savedEvents, favoriteVenues]);
+    return measureListTabStage('events', 'sort_viewport', {
+      inputCount: filteredViewportEvents.length,
+    }, () => sortAndPrioritizeEvents(filteredViewportEvents));
+  }, [filteredViewportEvents, userLocation, userInterestLowerSet, savedEventSet, favoriteVenueSet, eventTimeContext]);
 
   // State for pagination of outside-viewport events
   const [outsideViewportLoadCount, setOutsideViewportLoadCount] = useState(10);
@@ -2247,17 +2395,22 @@ setSelectedImageData({ imageUrl, event });
   // Lazy-sort outside-viewport events: only sort what we need for display
   // This prevents sorting 800+ events when FlatList only shows 10 initially
   const sortedOutsideViewportEvents = useMemo(() => {
-    // Only sort up to what we're displaying + one batch ahead for smooth scrolling
-    const maxToSort = outsideViewportLoadCount + 20; // loadMoreBatchSize buffer
-    if (filteredOutsideViewportEvents.length <= maxToSort) {
-      // Small list, sort all of it
-      return sortAndPrioritizeEvents(filteredOutsideViewportEvents);
-    }
-    // Large list: sort only what we need
-    // Note: This means ordering isn't globally optimal, but it's much faster
-    const eventsToSort = filteredOutsideViewportEvents.slice(0, maxToSort);
-    return sortAndPrioritizeEvents(eventsToSort);
-  }, [filteredOutsideViewportEvents, outsideViewportLoadCount, userLocation, userInterests, savedEvents, favoriteVenues]);
+    return measureListTabStage('events', 'sort_outside_viewport', {
+      inputCount: filteredOutsideViewportEvents.length,
+      outsideViewportLoadCount,
+    }, () => {
+      // Only sort up to what we're displaying + one batch ahead for smooth scrolling
+      const maxToSort = outsideViewportLoadCount + 20; // loadMoreBatchSize buffer
+      if (filteredOutsideViewportEvents.length <= maxToSort) {
+        // Small list, sort all of it
+        return sortAndPrioritizeEvents(filteredOutsideViewportEvents);
+      }
+      // Large list: sort only what we need
+      // Note: This means ordering isn't globally optimal, but it's much faster
+      const eventsToSort = filteredOutsideViewportEvents.slice(0, maxToSort);
+      return sortAndPrioritizeEvents(eventsToSort);
+    });
+  }, [filteredOutsideViewportEvents, outsideViewportLoadCount, userLocation, userInterestLowerSet, savedEventSet, favoriteVenueSet, eventTimeContext]);
 
   // Create events with ads list
   type EventListItem = {
@@ -2307,10 +2460,20 @@ setSelectedImageData({ imageUrl, event });
   }, []);
   
   const eventsWithAds = useMemo<ListItem[]>(() => {
-    const result: ListItem[] = [];
-    const adFrequency = 4;
-    let adIndex = 0;
-    const adOccurrenceCounts = new Map<string, number>();
+    return measureListTabStage('events', 'build_list_with_ads', {
+      ready: isFocusedContentReady,
+      viewportCount: sortedViewportEvents.length,
+      outsideViewportCount: sortedOutsideViewportEvents.length,
+      nativeAdsCount: nativeAds.length,
+    }, () => {
+      if (!isFocusedContentReady) {
+        return [];
+      }
+
+      const result: ListItem[] = [];
+      const adFrequency = 4;
+      let adIndex = 0;
+      const adOccurrenceCounts = new Map<string, number>();
 
     // Add viewport events with ads
     sortedViewportEvents.forEach((event, index) => {
@@ -2394,30 +2557,48 @@ setSelectedImageData({ imageUrl, event });
       }
     }
 
-    return result;
-  }, [getAdListKey, getAdSignature, sortedViewportEvents, sortedOutsideViewportEvents, filteredOutsideViewportEvents.length, nativeAds, outsideViewportLoadCount]);
+      markTabListDataReady('events', {
+        ready: true,
+        itemCount: result.length,
+        viewportCount: sortedViewportEvents.length,
+        outsideViewportCount: sortedOutsideViewportEvents.length,
+        nativeAdsCount: nativeAds.length,
+      });
+
+      return result;
+    });
+  }, [getAdListKey, getAdSignature, isFocusedContentReady, sortedViewportEvents, sortedOutsideViewportEvents, filteredOutsideViewportEvents.length, nativeAds, outsideViewportLoadCount]);
 
   // Pre-compute lookup Sets for O(1) access during render
   const interestMatchSet = useMemo(() => {
-    if (!userInterests || userInterests.length === 0) return new Set<string>();
-    const lowerInterests = userInterests.map(i => i.toLowerCase());
-    const matchingIds = new Set<string>();
-    eventsWithAds.forEach(item => {
-      if (item.type === 'event' && lowerInterests.includes(item.data.category.toLowerCase())) {
-        matchingIds.add(String(item.data.id));
-      }
+    return measureListTabStage('events', 'interest_match_set', {
+      inputCount: eventsWithAds.length,
+      interestCount: userInterestLowerSet.size,
+    }, () => {
+      if (userInterestLowerSet.size === 0) return new Set<string>();
+      const matchingIds = new Set<string>();
+      eventsWithAds.forEach(item => {
+        if (item.type === 'event' && userInterestLowerSet.has(item.data.category.toLowerCase())) {
+          matchingIds.add(String(item.data.id));
+        }
+      });
+      return matchingIds;
     });
-    return matchingIds;
-  }, [eventsWithAds, userInterests]);
-
-  const savedEventSet = useMemo(() => {
-    return new Set(savedEvents || []);
-  }, [savedEvents]);
+  }, [eventsWithAds, userInterestLowerSet]);
 
   // Find first event index once instead of O(n) for each item
   const firstEventIndex = useMemo(() => {
     return eventsWithAds.findIndex(item => item.type === 'event');
   }, [eventsWithAds]);
+  const firstAdIndex = useMemo(() => {
+    return eventsWithAds.findIndex(item => item.type === 'ad');
+  }, [eventsWithAds]);
+
+  markTabListPropsReady('events', {
+    itemCount: eventsWithAds.length,
+    firstEventIndex,
+    firstAdIndex,
+  });
 
   // Memoized FlatList callbacks to prevent unnecessary re-renders
   const keyExtractor = useCallback((item: any, index: number) => {
@@ -2528,7 +2709,7 @@ setSelectedImageData({ imageUrl, event });
   };
 
   return (
-    <View style={styles.container}>
+    <View style={styles.container} onLayout={handleRootLayout}>
       {isHeaderSearchActive && (
         <Pressable
           onPress={() => { setHeaderSearchActive(false); Keyboard.dismiss(); }}
@@ -2543,9 +2724,10 @@ setSelectedImageData({ imageUrl, event });
           { transform: [{ translateY: headerTranslateY }] }
         ]}
         onLayout={(event) => {
-          const height = event.nativeEvent.layout.height;
-          console.log('Header height measured:', height);
-          setHeaderHeight(height + 5);
+          const nextHeight = event.nativeEvent.layout.height + 5;
+          setHeaderHeight((previousHeight) =>
+            Math.abs(previousHeight - nextHeight) > 1 ? nextHeight : previousHeight
+          );
         }}
       >
         {/* Filtering section */}
@@ -2733,19 +2915,33 @@ setSelectedImageData({ imageUrl, event });
      {/* Event list with ads */}
       <FlatList
           ref={flatListRef}
-          data={eventsWithAds}
+          data={isFocusedContentReady ? eventsWithAds : []}
           keyExtractor={keyExtractor}
           onScroll={handleScroll}
+          onLayout={handleFlatListLayout}
           scrollEventThrottle={16}
           contentContainerStyle={contentContainerStyleMemo}
           renderItem={({ item, index }) => {
             if (item.type === 'divider') {
-              return <DividerComponent message={item.data.message} count={item.data.count} />;
+              const divider = <DividerComponent message={item.data.message} count={item.data.count} />;
+              return index === 0 ? (
+                <View onLayout={handleFirstListItemLayout}>{divider}</View>
+              ) : divider;
             }
 
             if (item.type === 'ad') {
               return (
-                <View style={styles.adContainer}>
+                <View
+                  style={styles.adContainer}
+                  onLayout={() => {
+                    if (index === 0) {
+                      handleFirstListItemLayout();
+                    }
+                    if (index === firstAdIndex) {
+                      handleFirstAdLayout();
+                    }
+                  }}
+                >
                   <FullSizeSdkAdCard
                     key={item.data.key}
                     nativeAd={item.data.ad}
@@ -2761,8 +2957,7 @@ setSelectedImageData({ imageUrl, event });
             const isFirstEventItem = index === firstEventIndex;
             const eventId = String(item.data.id);
             const eventData = getUpdatedEvent(item.data.id) || item.data;
-
-            return (
+            const eventListItem = (
               <MemoizedEventListItem
                 event={eventData}
                 onPress={() => handleEventPress(eventData)}
@@ -2774,16 +2969,20 @@ setSelectedImageData({ imageUrl, event });
                 isFirstItem={isFirstEventItem}
               />
             );
+
+            return index === 0 ? (
+              <View onLayout={handleFirstListItemLayout}>{eventListItem}</View>
+            ) : eventListItem;
           }}
-        ListEmptyComponent={listEmptyComponent}
+        ListEmptyComponent={isFocusedContentReady ? listEmptyComponent : null}
         onEndReached={handleEndReached}
         onEndReachedThreshold={0.5}
         // Performance optimizations for large lists
         removeClippedSubviews={true}
-        maxToRenderPerBatch={10}
-        windowSize={5}
-        initialNumToRender={10}
-        updateCellsBatchingPeriod={50}
+        maxToRenderPerBatch={1}
+        windowSize={3}
+        initialNumToRender={1}
+        updateCellsBatchingPeriod={80}
       />
       
       
@@ -2990,11 +3189,14 @@ const styles = StyleSheet.create({
     marginHorizontal: 3,
     borderWidth: 1,
     borderColor: '#EEEEEE',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 1,
-    elevation: 1,
+    ...(Platform.OS === 'android' ? {
+      elevation: 0,
+    } : {
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 1 },
+      shadowOpacity: 0.1,
+      shadowRadius: 1,
+    }),
     flexDirection: 'row',
     alignItems: 'center',
   },
@@ -3043,12 +3245,14 @@ const styles = StyleSheet.create({
     marginHorizontal: 2, // Add side margins so border is visible
     marginRight: 4,
     marginBottom: 4, // Replace bottom border with margin
-    // NEW: Add subtle shadow to match hero image effect
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 4,
-    elevation: 3,
+    ...(Platform.OS === 'android' ? {
+      elevation: 0,
+    } : {
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.08,
+      shadowRadius: 4,
+    }),
   },
   nowEventCard: {
     borderLeftColor: '#34A853',
@@ -3135,23 +3339,28 @@ const styles = StyleSheet.create({
     position: 'relative', // For proper badge positioning
     paddingHorizontal: 0, // Add horizontal padding so image isn't full width
     paddingBottom: 16, // Add space below image
-    // Create strong "window frame" shadow effect
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.15,
-    shadowRadius: 12,
-    elevation: 8,
+    ...(Platform.OS === 'android' ? {
+      elevation: 0,
+    } : {
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 6 },
+      shadowOpacity: 0.15,
+      shadowRadius: 12,
+    }),
   },
   heroImageContainer: {
     position: 'relative',
     backgroundColor: '#F8F8F8', // Subtle background behind the image
     borderRadius: 16, // Slightly larger radius than image
     padding: 0, // Creates visible background border
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 6,
-    elevation: 3,
+    ...(Platform.OS === 'android' ? {
+      elevation: 0,
+    } : {
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.1,
+      shadowRadius: 6,
+    }),
   },
   heroImage: {
     width: '100%',
@@ -3161,12 +3370,14 @@ const styles = StyleSheet.create({
     // Strong border to create "photo frame" effect
     borderWidth: 3,
     borderColor: '#FFFFFF',
-    // Enhanced shadow for 3D "pop out" effect
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    elevation: 6,
+    ...(Platform.OS === 'android' ? {
+      elevation: 0,
+    } : {
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.2,
+      shadowRadius: 8,
+    }),
   },
   heroEngagementOverlay: {
     position: 'absolute',
@@ -3219,11 +3430,14 @@ const styles = StyleSheet.create({
     height: 40,
     borderRadius: 20,
     backgroundColor: '#FFFFFF',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 4,
+    ...(Platform.OS === 'android' ? {
+      elevation: 0,
+    } : {
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.2,
+      shadowRadius: 4,
+    }),
   },
   venueProfileImageSmall: {
     width: 40,

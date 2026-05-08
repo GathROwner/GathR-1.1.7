@@ -1,9 +1,9 @@
 // app\(tabs)\_layout.tsx
 
 import { Tabs } from 'expo-router';
-import { TouchableOpacity, View, TextInput, Text, Animated, Image, InteractionManager } from 'react-native';
+import { TouchableOpacity, View, TextInput, Text, Animated, Image, InteractionManager, Pressable, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useNavigation, useRouter } from 'expo-router';
 import { useMapStore } from '../../store/mapStore';
 import { Alert, Keyboard } from 'react-native';
 import { useEffect, useState, useRef } from 'react';
@@ -18,6 +18,264 @@ import { trackTabSelect } from '../../store/guestLimitationStore';
 // ANALYTICS IMPORT - RE-ENABLED
 // ===============================================================
 import useAnalytics from '../../hooks/useAnalytics';
+import { runAfterTabPaint } from '../../utils/tabFocusEffects';
+import {
+  markTabBarSelected,
+  markTabButtonPressReturned,
+  markTabNavigatorFocus,
+  markTabPress,
+  markTabPressIn,
+} from '../../utils/tabSwitchTrace';
+
+const TAB_PREWARM_FALLBACK_DELAY_MS = 30000;
+const POST_TAB_PREFETCH_DELAY_MS = 8000;
+type InstrumentedTabName = 'events' | 'map' | 'specials';
+const TAB_PRESS_RIPPLE = Platform.OS === 'android'
+  ? { color: 'rgba(0, 0, 0, 0.08)', borderless: false }
+  : undefined;
+
+type InstrumentedTabBarButtonProps = any & {
+  targetTab: InstrumentedTabName;
+};
+
+const pauseMapAnimationsForTabHandoff = (targetTab: InstrumentedTabName, isSelected: boolean) => {
+  if (Platform.OS !== 'android' || isSelected || targetTab === 'map') {
+    return;
+  }
+
+  const pauseMapAnimations = (global as any).pauseMapTabAnimationsForHandoff;
+  if (typeof pauseMapAnimations === 'function') {
+    pauseMapAnimations(targetTab);
+  }
+};
+
+const InstrumentedTabBarButton = (props: InstrumentedTabBarButtonProps) => {
+  const { children, onPress, onLongPress, targetTab, accessibilityState } = props;
+  const isSelected = Boolean(accessibilityState?.selected);
+
+  useEffect(() => {
+    if (isSelected) {
+      markTabBarSelected(targetTab);
+    }
+  }, [isSelected, targetTab]);
+
+  const handlePressIn = () => {
+    pauseMapAnimationsForTabHandoff(targetTab, isSelected);
+    markTabPressIn(targetTab, isSelected);
+  };
+
+  const handlePress = (event: any) => {
+    markTabPress(targetTab, isSelected);
+    onPress?.(event);
+    markTabButtonPressReturned(targetTab);
+  };
+
+  return (
+    <Pressable
+      onPressIn={handlePressIn}
+      onPress={handlePress}
+      onLongPress={onLongPress}
+      android_ripple={TAB_PRESS_RIPPLE}
+      style={{ flex: 1 }}
+    >
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+        {children}
+      </View>
+    </Pressable>
+  );
+};
+
+const TutorialAwareTabBarButton = (props: InstrumentedTabBarButtonProps) => {
+  const { children, onPress, onLongPress, targetTab, accessibilityState } = props;
+  const isSelected = Boolean(accessibilityState?.selected);
+  const viewRef = useRef<View>(null);
+  const pulseAnim = useRef(new Animated.Value(1)).current;
+  const [isHighlighted, setIsHighlighted] = useState(false);
+
+  useEffect(() => {
+    if (isSelected) {
+      markTabBarSelected(targetTab);
+    }
+  }, [isSelected, targetTab]);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const globalFlag = (global as any).tutorialHighlightEventsTab || false;
+      if (globalFlag !== isHighlighted) {
+        setIsHighlighted(globalFlag);
+      }
+      if (globalFlag && viewRef.current) {
+        (viewRef.current as View).measure((_x, _y, width, height, pageX, pageY) => {
+          (global as any).eventsTabLayout = { x: pageX, y: pageY, width, height };
+        });
+      }
+    }, 500);
+    return () => clearInterval(interval);
+  }, [isHighlighted]);
+
+  useEffect(() => {
+    if (isHighlighted) {
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(pulseAnim, { toValue: 1.05, useNativeDriver: true, duration: 800 }),
+          Animated.timing(pulseAnim, { toValue: 1, useNativeDriver: true, duration: 800 }),
+        ])
+      ).start();
+    } else {
+      pulseAnim.stopAnimation();
+      pulseAnim.setValue(1);
+    }
+  }, [isHighlighted]);
+
+  const tutorialHighlightStyle = {
+    // The shadow creates a "glow" effect
+    shadowColor: '#FF6B35',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.9,
+    shadowRadius: 10,
+    elevation: 15, // Required for shadow on Android
+
+    // A subtle border to define the edge
+    borderWidth: 2,
+    borderColor: '#FF8C42', // A slightly lighter orange for the border
+    borderRadius: 12,
+    backgroundColor: 'rgba(255, 255, 255, 0.9)', // A light background to make it pop
+
+    zIndex: 99999,
+    transform: [{ scale: pulseAnim }],
+  };
+
+  const handlePressIn = () => {
+    pauseMapAnimationsForTabHandoff(targetTab, isSelected);
+    markTabPressIn(targetTab, isSelected);
+  };
+
+  const handlePress = (event: any) => {
+    markTabPress(targetTab, isSelected);
+    onPress?.(event);
+    markTabButtonPressReturned(targetTab);
+  };
+
+  return (
+    <Pressable
+      onPressIn={handlePressIn}
+      onPress={handlePress}
+      onLongPress={onLongPress}
+      android_ripple={TAB_PRESS_RIPPLE}
+      style={{ flex: 1 }}
+    >
+      <Animated.View
+        ref={viewRef}
+        style={[
+          { flex: 1, justifyContent: 'center', alignItems: 'center' },
+          isHighlighted && tutorialHighlightStyle,
+        ]}
+      >
+        {children}
+      </Animated.View>
+    </Pressable>
+  );
+};
+
+const TutorialAwareSpecialsTabBarButton = (props: InstrumentedTabBarButtonProps) => {
+  const { children, onPress, onLongPress, targetTab, accessibilityState } = props;
+  const isSelected = Boolean(accessibilityState?.selected);
+  const viewRef = useRef<View>(null);
+  const pulseAnim = useRef(new Animated.Value(1)).current;
+  const [isHighlighted, setIsHighlighted] = useState(false);
+
+  useEffect(() => {
+    if (isSelected) {
+      markTabBarSelected(targetTab);
+    }
+  }, [isSelected, targetTab]);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const globalFlag = (global as any).tutorialHighlightSpecialsTab || false;
+      if (globalFlag !== isHighlighted) {
+        setIsHighlighted(globalFlag);
+      }
+      if (globalFlag && viewRef.current) {
+        (viewRef.current as View).measure((_x, _y, width, height, pageX, pageY) => {
+          (global as any).specialsTabLayout = { x: pageX, y: pageY, width, height };
+        });
+      }
+    }, 500);
+    return () => clearInterval(interval);
+  }, [isHighlighted]);
+
+  useEffect(() => {
+    if (isHighlighted) {
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(pulseAnim, { toValue: 1.05, useNativeDriver: true, duration: 800 }),
+          Animated.timing(pulseAnim, { toValue: 1, useNativeDriver: true, duration: 800 }),
+        ])
+      ).start();
+    } else {
+      pulseAnim.stopAnimation();
+      pulseAnim.setValue(1);
+    }
+  }, [isHighlighted]);
+
+  const tutorialHighlightStyle = {
+    shadowColor: '#FF6B35',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.9,
+    shadowRadius: 10,
+    elevation: 15,
+    borderWidth: 2,
+    borderColor: '#FF8C42',
+    borderRadius: 12,
+    backgroundColor: 'rgba(255, 255, 255, 0.9)',
+    zIndex: 99999,
+    transform: [{ scale: pulseAnim }],
+  };
+
+  const handlePressIn = () => {
+    pauseMapAnimationsForTabHandoff(targetTab, isSelected);
+    markTabPressIn(targetTab, isSelected);
+  };
+
+  const handlePress = (event: any) => {
+    markTabPress(targetTab, isSelected);
+    onPress?.(event);
+    markTabButtonPressReturned(targetTab);
+  };
+
+  return (
+    <Pressable
+      onPressIn={handlePressIn}
+      onPress={handlePress}
+      onLongPress={onLongPress}
+      android_ripple={TAB_PRESS_RIPPLE}
+      style={{ flex: 1 }}
+    >
+      <Animated.View
+        ref={viewRef}
+        style={[
+          { flex: 1, justifyContent: 'center', alignItems: 'center' },
+          isHighlighted && tutorialHighlightStyle,
+        ]}
+      >
+        {children}
+      </Animated.View>
+    </Pressable>
+  );
+};
+
+const renderEventsTabBarButton = (props: any) => (
+  <TutorialAwareTabBarButton {...props} targetTab="events" />
+);
+
+const renderMapTabBarButton = (props: any) => (
+  <InstrumentedTabBarButton {...props} targetTab="map" />
+);
+
+const renderSpecialsTabBarButton = (props: any) => (
+  <TutorialAwareSpecialsTabBarButton {...props} targetTab="specials" />
+);
 
 // Custom Header Title Component with Analytics - RE-ENABLED
 const HeaderTitle = ({ route }: { route: any }) => {
@@ -278,6 +536,7 @@ const HeaderTitle = ({ route }: { route: any }) => {
 
 export default function TabLayout() {
   const router = useRouter();
+  const navigation = useNavigation<any>();
   // Select only state values, get setters/actions directly
   const isHeaderSearchActive = useMapStore((state) => state.isHeaderSearchActive);
   const searchQuery = useMapStore((state) => state.searchQuery);
@@ -288,9 +547,10 @@ export default function TabLayout() {
   const { user } = useAuth();
   const isGuest = !user;
 
-  const [navigationHistory, setNavigationHistory] = useState<string[]>([]);
-  const [sessionTabSwitches, setSessionTabSwitches] = useState(0);
-  const lastTabSwitch = useRef<number>(Date.now());
+  const [prewarmInactiveTabs, setPrewarmInactiveTabs] = useState(false);
+  const postSwitchPrefetchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const tabScreenViewCancelRef = useRef<(() => void) | null>(null);
+  const tabPrewarmStartedRef = useRef(false);
 
   // Tutorial awareness for profile button
   const profileButtonRef = useRef<View>(null);
@@ -347,143 +607,6 @@ export default function TabLayout() {
     }
   }, [profileButtonHighlighted]);
 
-  // --- START OF TUTORIAL COMPONENT ---
-  // This is the new, tutorial-aware button component for the Events tab.
-  const TutorialAwareTabBarButton = (props: any) => {
-    const { children, onPress, onLongPress } = props;
-    const viewRef = useRef<View>(null);
-    const pulseAnim = useRef(new Animated.Value(1)).current;
-    const [isHighlighted, setIsHighlighted] = useState(false);
-  
-    useEffect(() => {
-      const interval = setInterval(() => {
-        const globalFlag = (global as any).tutorialHighlightEventsTab || false;
-        if (globalFlag !== isHighlighted) {
-          setIsHighlighted(globalFlag);
-        }
-        if (globalFlag && viewRef.current) {
-          (viewRef.current as View).measure((_x, _y, width, height, pageX, pageY) => {
-            (global as any).eventsTabLayout = { x: pageX, y: pageY, width, height };
-          });
-        }
-      }, 500);
-      return () => clearInterval(interval);
-    }, [isHighlighted]);
-  
-    useEffect(() => {
-      if (isHighlighted) {
-        Animated.loop(
-          Animated.sequence([
-            Animated.timing(pulseAnim, { toValue: 1.05, useNativeDriver: true, duration: 800 }),
-            Animated.timing(pulseAnim, { toValue: 1, useNativeDriver: true, duration: 800 }),
-          ])
-        ).start();
-      } else {
-        pulseAnim.stopAnimation();
-        pulseAnim.setValue(1);
-      }
-    }, [isHighlighted]);
-  
-    const tutorialHighlightStyle = {
-    // The shadow creates a "glow" effect
-    shadowColor: '#FF6B35',
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.9,
-    shadowRadius: 10,
-    elevation: 15, // Required for shadow on Android
-    
-    // A subtle border to define the edge
-    borderWidth: 2,
-    borderColor: '#FF8C42', // A slightly lighter orange for the border
-    borderRadius: 12,
-    backgroundColor: 'rgba(255, 255, 255, 0.9)', // A light background to make it pop
-
-    zIndex: 99999,
-    transform: [{ scale: pulseAnim }],
-  };
-  
-    return (
-      <TouchableOpacity onPress={onPress} style={{ flex: 1 }}>
-        <Animated.View
-          ref={viewRef}
-          style={[
-            { flex: 1, justifyContent: 'center', alignItems: 'center' },
-            isHighlighted && tutorialHighlightStyle,
-          ]}
-        >
-          {children}
-        </Animated.View>
-      </TouchableOpacity>
-    );
-  };
-  // --- END OF TUTORIAL COMPONENT ---
-
-  // Tutorial-aware button component for the Specials tab.
-  const TutorialAwareSpecialsTabBarButton = (props: any) => {
-    const { children, onPress, onLongPress } = props;
-    const viewRef = useRef<View>(null);
-    const pulseAnim = useRef(new Animated.Value(1)).current;
-    const [isHighlighted, setIsHighlighted] = useState(false);
-  
-    useEffect(() => {
-      const interval = setInterval(() => {
-        const globalFlag = (global as any).tutorialHighlightSpecialsTab || false;
-        if (globalFlag !== isHighlighted) {
-          setIsHighlighted(globalFlag);
-        }
-        if (globalFlag && viewRef.current) {
-          (viewRef.current as View).measure((_x, _y, width, height, pageX, pageY) => {
-            (global as any).specialsTabLayout = { x: pageX, y: pageY, width, height };
-          });
-        }
-      }, 500);
-      return () => clearInterval(interval);
-    }, [isHighlighted]);
-  
-    useEffect(() => {
-      if (isHighlighted) {
-        Animated.loop(
-          Animated.sequence([
-            Animated.timing(pulseAnim, { toValue: 1.05, useNativeDriver: true, duration: 800 }),
-            Animated.timing(pulseAnim, { toValue: 1, useNativeDriver: true, duration: 800 }),
-          ])
-        ).start();
-      } else {
-        pulseAnim.stopAnimation();
-        pulseAnim.setValue(1);
-      }
-    }, [isHighlighted]);
-  
-    const tutorialHighlightStyle = {
-      shadowColor: '#FF6B35',
-      shadowOffset: { width: 0, height: 0 },
-      shadowOpacity: 0.9,
-      shadowRadius: 10,
-      elevation: 15,
-      borderWidth: 2,
-      borderColor: '#FF8C42',
-      borderRadius: 12,
-      backgroundColor: 'rgba(255, 255, 255, 0.9)',
-      zIndex: 99999,
-      transform: [{ scale: pulseAnim }],
-    };
-  
-    return (
-      <TouchableOpacity onPress={onPress} onLongPress={onLongPress} style={{ flex: 1 }}>
-        <Animated.View
-          ref={viewRef}
-          style={[
-            { flex: 1, justifyContent: 'center', alignItems: 'center' },
-            isHighlighted && tutorialHighlightStyle,
-          ]}
-        >
-          {children}
-        </Animated.View>
-      </TouchableOpacity>
-    );
-  };
-
-
   const handleProfileButtonPress = () => {
     analytics.trackUserAction('profile_access', { access_method: 'header_button' });
     router.push('/profile');
@@ -494,15 +617,22 @@ export default function TabLayout() {
     setHeaderSearchActive(true);
   };
 
+  const trackTabScreenViewAfterPaint = (tabName: InstrumentedTabName) => {
+    tabScreenViewCancelRef.current?.();
+    tabScreenViewCancelRef.current = runAfterTabPaint(() => {
+      tabScreenViewCancelRef.current = null;
+      analytics.trackScreenView(tabName, {});
+    });
+  };
+
   const handleTabSwitch = (tabName: string, isFocused: boolean) => {
     // Defer ALL operations until after UI interactions complete
     // This gives priority to the tab switch animation
     InteractionManager.runAfterInteractions(() => {
-      setHeaderSearchActive(false);
-      Keyboard.dismiss();
-      setNavigationHistory(prev => [...prev.slice(-9), tabName]);
-      setSessionTabSwitches(prev => prev + 1);
-      lastTabSwitch.current = Date.now();
+      if (isHeaderSearchActive) {
+        setHeaderSearchActive(false);
+        Keyboard.dismiss();
+      }
 
       if (isFocused && (tabName === 'events' || tabName === 'specials')) {
         triggerScrollToTop(tabName);
@@ -513,10 +643,72 @@ export default function TabLayout() {
     });
   };
 
+  const schedulePostSwitchPrefetch = (maxAgeMs: number = 180000) => {
+    InteractionManager.runAfterInteractions(() => {
+      if (postSwitchPrefetchTimerRef.current) {
+        clearTimeout(postSwitchPrefetchTimerRef.current);
+      }
+
+      postSwitchPrefetchTimerRef.current = setTimeout(() => {
+        postSwitchPrefetchTimerRef.current = null;
+        useMapStore.getState().prefetchIfStale?.(maxAgeMs);
+      }, POST_TAB_PREFETCH_DELAY_MS);
+    });
+  };
+
   useEffect(() => {
     analytics.trackUserAction('tab_layout_initialized', {});
-    setNavigationHistory(['events']);
   }, []);
+
+  useEffect(() => {
+    return () => {
+      if (postSwitchPrefetchTimerRef.current) {
+        clearTimeout(postSwitchPrefetchTimerRef.current);
+      }
+      tabScreenViewCancelRef.current?.();
+      tabScreenViewCancelRef.current = null;
+    };
+  }, []);
+
+  useEffect(() => {
+    let timeout: ReturnType<typeof setTimeout> | null = null;
+    let cancelled = false;
+    const globalAny = global as any;
+
+    const prewarmTabs = (source: string = 'unknown') => {
+      if (cancelled || tabPrewarmStartedRef.current) {
+        return;
+      }
+
+      tabPrewarmStartedRef.current = true;
+      if (__DEV__) {
+        console.log('[GathRTabPerf]', JSON.stringify({
+          phase: 'tab_prewarm_start',
+          source,
+          wallTime: new Date().toISOString(),
+        }));
+      }
+      navigation.preload?.('events');
+      navigation.preload?.('specials');
+      setPrewarmInactiveTabs(true);
+    };
+
+    globalAny.mapReadyForTabPrewarmCallback = prewarmTabs;
+
+    timeout = setTimeout(() => {
+      prewarmTabs('fallback_timer');
+    }, TAB_PREWARM_FALLBACK_DELAY_MS);
+
+    return () => {
+      cancelled = true;
+      if (globalAny.mapReadyForTabPrewarmCallback === prewarmTabs) {
+        delete globalAny.mapReadyForTabPrewarmCallback;
+      }
+      if (timeout) {
+        clearTimeout(timeout);
+      }
+    };
+  }, [navigation]);
 
   return (
     <Tabs screenOptions={({ route }) => ({
@@ -564,18 +756,24 @@ export default function TabLayout() {
       headerTitleAlign: 'center', // This fixes the Android centering issue
       animation: 'none', // Disabled for faster tab switches (was 'fade')
       // Keep startup focused on the active tab. Eager-mounting Events and
-      // Specials competes with Map hotspot startup on slower Android tablets.
-      lazy: true,
+      // Specials competes with Map hotspot startup on slower Android tablets,
+      // but mount them after startup so later tab switches do not pay that cost.
+      lazy: !prewarmInactiveTabs,
+      freezeOnBlur: Platform.OS === 'android' ? true : false,
     })}>
       <Tabs.Screen
         name="events"
         options={({ route }) => ({
           title: 'Events',
           headerTitle: () => <HeaderTitle route={route} />,
+          // Keep list tabs warm once preloaded. The Map tab keeps Android
+          // freezeOnBlur from screenOptions, avoiding the prior Mapbox
+          // invalid-surface behavior from disabling freeze globally.
+          freezeOnBlur: false,
           tabBarActiveTintColor: '#007AFF',
           tabBarInactiveTintColor: '#B0B0B0',
           tabBarIcon: ({ color, focused }) => <Ionicons name={focused ? "calendar" : "calendar-outline"} size={24} color={color} />,
-          tabBarButton: (props) => <TutorialAwareTabBarButton {...props} />, // Use the tutorial-aware button
+          tabBarButton: renderEventsTabBarButton,
            headerLeft: () => (
             !isHeaderSearchActive ? (
               <TouchableOpacity onPress={handleSearchActivation} style={{ marginLeft: 16 }}>
@@ -615,11 +813,13 @@ export default function TabLayout() {
           tabPress: (e) => {
             const focused = navigation.isFocused();
             handleTabSwitch('events', focused);
-            // Defer data prefetch until after tab animation
-            if (!focused) { InteractionManager.runAfterInteractions(() => useMapStore.getState().prefetchIfStale?.(180000)); }
+            if (!focused) { schedulePostSwitchPrefetch(180000); }
           },
-          tabLongPress: (e) => { InteractionManager.runAfterInteractions(() => useMapStore.getState().prefetchIfStale?.(180000)); },
-          focus: (e) => { InteractionManager.runAfterInteractions(() => analytics.trackScreenView('events', {})); }
+          tabLongPress: (e) => { schedulePostSwitchPrefetch(180000); },
+          focus: (e) => {
+            markTabNavigatorFocus('events');
+            trackTabScreenViewAfterPaint('events');
+          }
         })}
       />
       
@@ -664,21 +864,24 @@ export default function TabLayout() {
             ) : null
           ),
           tabBarIcon: ({ color, focused }) => <Ionicons name={focused ? "map" : "map-outline"} size={24} color={color} />,
+          tabBarButton: renderMapTabBarButton,
         })}
         listeners={({ navigation }) => ({
           tabPress: (e) => {
             const focused = navigation.isFocused();
             handleTabSwitch('map', focused);
-            // Defer store operations until after tab animation
             InteractionManager.runAfterInteractions(() => {
               if (focused) {
                 useMapStore.getState().triggerCloseCallout();
               } else {
-                useMapStore.getState().prefetchIfStale?.(180000);
+                schedulePostSwitchPrefetch(180000);
               }
             });
           },
-          focus: (e) => { InteractionManager.runAfterInteractions(() => analytics.trackScreenView('map', {})); }
+          focus: (e) => {
+            markTabNavigatorFocus('map');
+            trackTabScreenViewAfterPaint('map');
+          }
         })}
       />
 
@@ -687,10 +890,14 @@ export default function TabLayout() {
         options={({ route }) => ({
           title: 'Specials',
           headerTitle: () => <HeaderTitle route={route} />,
+          // Keep list tabs warm once preloaded. The Map tab keeps Android
+          // freezeOnBlur from screenOptions, avoiding the prior Mapbox
+          // invalid-surface behavior from disabling freeze globally.
+          freezeOnBlur: false,
           tabBarActiveTintColor: '#34A853',
           tabBarInactiveTintColor: '#B0B0B0',
           tabBarIcon: ({ color, focused }) => <Ionicons name={focused ? "restaurant" : "restaurant-outline"} size={24} color={color} />,
-          tabBarButton: (props) => <TutorialAwareSpecialsTabBarButton {...props} />, // Use the tutorial-aware button
+          tabBarButton: renderSpecialsTabBarButton,
           headerLeft: () => (
             !isHeaderSearchActive ? (
               <TouchableOpacity onPress={handleSearchActivation} style={{ marginLeft: 16 }}>
@@ -740,11 +947,13 @@ export default function TabLayout() {
           tabPress: (e) => {
             const focused = navigation.isFocused();
             handleTabSwitch('specials', focused);
-            // Defer data prefetch until after tab animation
-            if (!focused) { InteractionManager.runAfterInteractions(() => useMapStore.getState().prefetchIfStale?.(180000)); }
+            if (!focused) { schedulePostSwitchPrefetch(180000); }
           },
-          tabLongPress: (e) => { InteractionManager.runAfterInteractions(() => useMapStore.getState().prefetchIfStale?.(180000)); },
-          focus: (e) => { InteractionManager.runAfterInteractions(() => analytics.trackScreenView('specials', {})); }
+          tabLongPress: (e) => { schedulePostSwitchPrefetch(180000); },
+          focus: (e) => {
+            markTabNavigatorFocus('specials');
+            trackTabScreenViewAfterPaint('specials');
+          }
         })}
       />
     </Tabs>

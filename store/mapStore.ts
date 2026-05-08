@@ -61,6 +61,7 @@ import { Event, Venue, Cluster, TimeStatus, InterestLevel } from '../types/event
 import { FilterCriteria, TimeFilterType, TypeFilterCriteria } from '../types/filter';
 import { MapState } from '../types/store';
 import * as Location from 'expo-location';
+import { Platform } from 'react-native';
 import Supercluster from 'supercluster';
 
 
@@ -177,6 +178,130 @@ let filtersChanged = true;                // Track if filters have changed
 // Supercluster caches
 let __scIndex: any | null = null;
 let __venueByKey: Map<string, Venue> = new Map();
+let __scIndexConfig: { radius: number; extent: number; maxZoom: number } | null = null;
+const IOS_SUPERCLUSTER_RADIUS_PX = 28;
+const ANDROID_BASE_SUPERCLUSTER_RADIUS_PX = 48;
+const IOS_SUPERCLUSTER_EXTENT = 256;
+const ANDROID_SUPERCLUSTER_EXTENT = 512;
+const SUPERCLUSTER_EXTENT = Platform.OS === 'android' ? ANDROID_SUPERCLUSTER_EXTENT : IOS_SUPERCLUSTER_EXTENT;
+const IOS_SUPERCLUSTER_MAX_ZOOM = 16;
+const ANDROID_SUPERCLUSTER_MAX_ZOOM = 14;
+const SUPERCLUSTER_MAX_ZOOM = Platform.OS === 'android' ? ANDROID_SUPERCLUSTER_MAX_ZOOM : IOS_SUPERCLUSTER_MAX_ZOOM;
+const ANDROID_DYNAMIC_RADIUS_MIN_ZOOM = 13;
+const ANDROID_SUPERCLUSTER_MAX_RADIUS_PX = 128;
+const WEB_MERCATOR_EARTH_CIRCUMFERENCE_METERS = 40075016.686;
+const SELECTED_CLUSTER_ENHANCEMENT_DELAY_MS = Platform.OS === 'android' ? 900 : 0;
+const CLUSTER_SOURCE_BBOX_BUFFER_MULTIPLIER = Platform.OS === 'android' ? 1.35 : 1.2;
+
+type ViewportBoundingBox = { west: number; south: number; east: number; north: number };
+
+const clampNumber = (value: number, min: number, max: number): number =>
+  Math.min(max, Math.max(min, value));
+
+const getAverageVenueLatitude = (venues: Venue[]): number => {
+  if (venues.length === 0) {
+    return 0;
+  }
+
+  const totalLatitude = venues.reduce((sum, venue) => sum + venue.latitude, 0);
+  return totalLatitude / venues.length;
+};
+
+const getSuperclusterRadiusPx = (venues: Venue[], zoom: number): number => {
+  if (Platform.OS !== 'android') {
+    return IOS_SUPERCLUSTER_RADIUS_PX;
+  }
+
+  const z = Math.max(0, Math.min(22, Math.floor(zoom)));
+  if (z < ANDROID_DYNAMIC_RADIUS_MIN_ZOOM || z > ANDROID_SUPERCLUSTER_MAX_ZOOM) {
+    return ANDROID_BASE_SUPERCLUSTER_RADIUS_PX;
+  }
+
+  const threshold = ZOOM_THRESHOLDS[getThresholdIndexForZoom(zoom)];
+  const latitude = clampNumber(getAverageVenueLatitude(venues), -85, 85);
+  const metersPerTileAtZoom =
+    (WEB_MERCATOR_EARTH_CIRCUMFERENCE_METERS * Math.cos((latitude * Math.PI) / 180)) /
+    Math.pow(2, z);
+
+  if (!Number.isFinite(metersPerTileAtZoom) || metersPerTileAtZoom <= 0) {
+    return ANDROID_BASE_SUPERCLUSTER_RADIUS_PX;
+  }
+
+  const radiusPx = Math.round((threshold.radius / metersPerTileAtZoom) * ANDROID_SUPERCLUSTER_EXTENT);
+  return clampNumber(radiusPx, ANDROID_BASE_SUPERCLUSTER_RADIUS_PX, ANDROID_SUPERCLUSTER_MAX_RADIUS_PX);
+};
+
+const getSuperclusterConfig = (venues: Venue[], zoom: number) => ({
+  radius: getSuperclusterRadiusPx(venues, zoom),
+  extent: SUPERCLUSTER_EXTENT,
+  maxZoom: SUPERCLUSTER_MAX_ZOOM,
+});
+
+const expandBoundingBox = (
+  bbox: ViewportBoundingBox,
+  multiplier: number
+): ViewportBoundingBox => {
+  const centerLat = (bbox.north + bbox.south) / 2;
+  const centerLng = (bbox.east + bbox.west) / 2;
+  const halfLat = ((bbox.north - bbox.south) / 2) * multiplier;
+  const halfLng = ((bbox.east - bbox.west) / 2) * multiplier;
+
+  return {
+    west: Math.max(-180, centerLng - halfLng),
+    south: Math.max(-90, centerLat - halfLat),
+    east: Math.min(180, centerLng + halfLng),
+    north: Math.min(90, centerLat + halfLat),
+  };
+};
+
+const hasEnhancedEventDetails = (event: Event): boolean =>
+  event.hasOwnProperty('fullDescription') ||
+  event.hasOwnProperty('ticketLinkPosts') ||
+  event.hasOwnProperty('ticketLinkEvents');
+
+const scheduleSelectedClusterEnhancement = (
+  get: () => MapState,
+  set: (partial: Partial<MapState>) => void,
+  cluster: Cluster | null
+): void => {
+  if (!cluster) {
+    return;
+  }
+
+  setTimeout(() => {
+    const { events } = get();
+    const eventIds = cluster.venues.flatMap(venue =>
+      venue.events.map(event => event.id)
+    );
+    const eventsById = new Map(events.map(event => [String(event.id), event]));
+
+    const needsEnhancement = eventIds.some(id => {
+      const event = eventsById.get(String(id));
+      return Boolean(event && !hasEnhancedEventDetails(event));
+    });
+
+    if (!needsEnhancement) {
+      return;
+    }
+
+    get().fetchEventDetails(eventIds).then(() => {
+      if (get().selectedCluster?.id !== cluster.id) {
+        return;
+      }
+
+      const updatedEventsById = new Map(get().events.map(event => [String(event.id), event]));
+      const updatedCluster = {
+        ...cluster,
+        venues: cluster.venues.map(venue => ({
+          ...venue,
+          events: venue.events.map(event => updatedEventsById.get(String(event.id)) || event)
+        }))
+      };
+
+      set({ selectedCluster: updatedCluster });
+    });
+  }, SELECTED_CLUSTER_ENHANCEMENT_DELAY_MS);
+};
 
 
 /**
@@ -286,7 +411,7 @@ const calculateInterestLevel = (venues: Venue[]): InterestLevel => {
   return 'low';
 };
 
-type EventTimeContext = {
+export type EventTimeContext = {
   todayKey: string;
   tomorrowKey: string;
   yesterdayKey: string;
@@ -310,7 +435,7 @@ const addDaysKey = (date: Date, days: number): string => {
   return formatLocalDateKey(next);
 };
 
-const createEventTimeContext = (now = new Date()): EventTimeContext => ({
+export const createEventTimeContext = (now = new Date()): EventTimeContext => ({
   todayKey: formatLocalDateKey(now),
   tomorrowKey: addDaysKey(now, 1),
   yesterdayKey: addDaysKey(now, -1),
@@ -441,7 +566,7 @@ const isEventHappeningTodayFast = (
   return startKey === context.todayKey;
 };
 
-const getEventTimeStatusFast = (
+export const getEventTimeStatusFast = (
   event: Pick<Event, 'startDate' | 'startTime' | 'endDate' | 'endTime'>,
   context: EventTimeContext
 ): TimeStatus => {
@@ -591,49 +716,42 @@ const calculateTimeFilterCounts = (
   currentCriteria: FilterCriteria, 
   eventType: 'event' | 'special'
 ): { [key in TimeFilterType]: number } => {
-  // Filter by visibility and other criteria (excluding time filter)
-  const baseEvents = events.filter(event => {
-    // Apply type visibility filter
-    const isVisible = 
-      (event.type === 'event' && currentCriteria.showEvents) || 
-      (event.type === 'special' && currentCriteria.showSpecials);
-    
-    if (!isVisible || event.type !== eventType) return false;
-    
-    // Apply category filter if active
-    const typeFilters = eventType === 'event' 
-      ? currentCriteria.eventFilters 
-      : currentCriteria.specialFilters;
-    
-    if (typeFilters.category && 
-        event.category.toLowerCase() !== typeFilters.category.toLowerCase()) {
-      return false;
-    }
-    
-    // Apply search filter if active
-    if (typeFilters.search && typeFilters.search.trim() !== '') {
-      const searchTerm = typeFilters.search.toLowerCase().trim();
-      const matchesSearch = 
-        event.title.toLowerCase().includes(searchTerm) ||
-        event.description.toLowerCase().includes(searchTerm) ||
-        event.venue.toLowerCase().includes(searchTerm);
-      
-      if (!matchesSearch) return false;
-    }
-    
-    return true;
-  });
-  
   const timeContext = createEventTimeContext();
+  const typeFilters = eventType === 'event'
+    ? currentCriteria.eventFilters
+    : currentCriteria.specialFilters;
+  const categoryFilter = typeFilters.category?.toLowerCase();
+  const searchTerm = typeFilters.search?.trim().toLowerCase();
   const counts = {
-    [TimeFilterType.ALL]: baseEvents.length,
+    [TimeFilterType.ALL]: 0,
     [TimeFilterType.NOW]: 0,
     [TimeFilterType.TODAY]: 0,
     [TimeFilterType.TOMORROW]: 0,
     [TimeFilterType.UPCOMING]: 0
   };
 
-  for (const event of baseEvents) {
+  for (const event of events) {
+    const isVisible =
+      (event.type === 'event' && currentCriteria.showEvents) ||
+      (event.type === 'special' && currentCriteria.showSpecials);
+
+    if (!isVisible || event.type !== eventType) continue;
+
+    if (categoryFilter && event.category.toLowerCase() !== categoryFilter) {
+      continue;
+    }
+
+    if (searchTerm) {
+      const matchesSearch =
+        event.title.toLowerCase().includes(searchTerm) ||
+        event.description.toLowerCase().includes(searchTerm) ||
+        event.venue.toLowerCase().includes(searchTerm);
+
+      if (!matchesSearch) continue;
+    }
+
+    counts[TimeFilterType.ALL] += 1;
+
     const isNow = isEventNowFast(event, timeContext);
     const isToday = isNow || isEventHappeningTodayFast(event, timeContext);
 
@@ -661,70 +779,109 @@ const calculateCategoryFilterCounts = (
   eventType: 'event' | 'special'
 ): { [category: string]: number } => {
   const timeContext = createEventTimeContext();
-
-  // Get all unique categories for this event type
-  const allCategories = Array.from(new Set(
-    events
-      .filter(event => event.type === eventType)
-      .map(event => event.category)
-  ));
+  const typeFilters = eventType === 'event'
+    ? currentCriteria.eventFilters
+    : currentCriteria.specialFilters;
+  const searchTerm = typeFilters.search?.trim().toLowerCase();
   
   const counts: { [category: string]: number } = {};
-  
-  // Calculate count for each category
-  allCategories.forEach(category => {
-    const categoryEvents = events.filter(event => {
-      // Apply type visibility filter
-      const isVisible = 
-        (event.type === 'event' && currentCriteria.showEvents) || 
-        (event.type === 'special' && currentCriteria.showSpecials);
-      
-      if (!isVisible || event.type !== eventType) return false;
-      
-      // Must match this category
-      if (event.category.toLowerCase() !== category.toLowerCase()) return false;
-      
-      // Apply time filter if active
-      const typeFilters = eventType === 'event' 
-        ? currentCriteria.eventFilters 
-        : currentCriteria.specialFilters;
-      
-      // Apply time filter logic
-// Apply time filter logic
-if (typeFilters.timeFilter === TimeFilterType.NOW) {
-  const isNow = isEventNowFast(event, timeContext);
-  if (!isNow) return false;
-} else if (typeFilters.timeFilter === TimeFilterType.TODAY) {
-  const isToday = isEventHappeningTodayFast(event, timeContext);
-  if (!isToday) return false;
-} else if (typeFilters.timeFilter === TimeFilterType.TOMORROW) {
-  const isTomorrow = getEventDateKey(event.startDate) === timeContext.tomorrowKey;
-  if (!isTomorrow) return false;
-} else if (typeFilters.timeFilter === TimeFilterType.UPCOMING) {
-  const timeStatus = getEventTimeStatusFast(event, timeContext);
-  if (timeStatus !== 'future') return false;
-}
 
-      // TimeFilterType.ALL requires no additional filtering
-      
-      // Apply search filter if active
-      if (typeFilters.search && typeFilters.search.trim() !== '') {
-        const searchTerm = typeFilters.search.toLowerCase().trim();
-        const matchesSearch = 
-          event.title.toLowerCase().includes(searchTerm) ||
-          event.description.toLowerCase().includes(searchTerm) ||
-          event.venue.toLowerCase().includes(searchTerm);
-        
-        if (!matchesSearch) return false;
-      }
-      
-      return true;
-    });
-    
-    counts[category] = categoryEvents.length;
-  });
+  for (const event of events) {
+    if (event.type !== eventType) continue;
+
+    if (counts[event.category] === undefined) {
+      counts[event.category] = 0;
+    }
+
+    const isVisible =
+      (event.type === 'event' && currentCriteria.showEvents) ||
+      (event.type === 'special' && currentCriteria.showSpecials);
+
+    if (!isVisible) continue;
+
+    if (typeFilters.timeFilter === TimeFilterType.NOW) {
+      const isNow = isEventNowFast(event, timeContext);
+      if (!isNow) continue;
+    } else if (typeFilters.timeFilter === TimeFilterType.TODAY) {
+      const isToday = isEventHappeningTodayFast(event, timeContext);
+      if (!isToday) continue;
+    } else if (typeFilters.timeFilter === TimeFilterType.TOMORROW) {
+      const isTomorrow = getEventDateKey(event.startDate) === timeContext.tomorrowKey;
+      if (!isTomorrow) continue;
+    } else if (typeFilters.timeFilter === TimeFilterType.UPCOMING) {
+      const timeStatus = getEventTimeStatusFast(event, timeContext);
+      if (timeStatus !== 'future') continue;
+    }
+
+    if (searchTerm) {
+      const matchesSearch =
+        event.title.toLowerCase().includes(searchTerm) ||
+        event.description.toLowerCase().includes(searchTerm) ||
+        event.venue.toLowerCase().includes(searchTerm);
+
+      if (!matchesSearch) continue;
+    }
+
+    counts[event.category] += 1;
+  }
   
   return counts;
+};
+
+type FilterCountCacheEntry<T> = {
+  events: Event[];
+  criteria: FilterCriteria;
+  minuteKey: number;
+  result: T;
+};
+
+const timeFilterCountsCache: Partial<Record<'event' | 'special', FilterCountCacheEntry<{ [key in TimeFilterType]: number }>>> = {};
+const categoryFilterCountsCache: Partial<Record<'event' | 'special', FilterCountCacheEntry<{ [category: string]: number }>>> = {};
+
+const getFilterCountMinuteKey = () => Math.floor(Date.now() / 60000);
+
+const getCachedTimeFilterCounts = (
+  events: Event[],
+  currentCriteria: FilterCriteria,
+  eventType: 'event' | 'special'
+): { [key in TimeFilterType]: number } => {
+  const minuteKey = getFilterCountMinuteKey();
+  const cached = timeFilterCountsCache[eventType];
+
+  if (
+    cached &&
+    cached.events === events &&
+    cached.criteria === currentCriteria &&
+    cached.minuteKey === minuteKey
+  ) {
+    return cached.result;
+  }
+
+  const result = calculateTimeFilterCounts(events, currentCriteria, eventType);
+  timeFilterCountsCache[eventType] = { events, criteria: currentCriteria, minuteKey, result };
+  return result;
+};
+
+const getCachedCategoryFilterCounts = (
+  events: Event[],
+  currentCriteria: FilterCriteria,
+  eventType: 'event' | 'special'
+): { [category: string]: number } => {
+  const minuteKey = getFilterCountMinuteKey();
+  const cached = categoryFilterCountsCache[eventType];
+
+  if (
+    cached &&
+    cached.events === events &&
+    cached.criteria === currentCriteria &&
+    cached.minuteKey === minuteKey
+  ) {
+    return cached.result;
+  }
+
+  const result = calculateCategoryFilterCounts(events, currentCriteria, eventType);
+  categoryFilterCountsCache[eventType] = { events, criteria: currentCriteria, minuteKey, result };
+  return result;
 };
 
 /**
@@ -735,8 +892,17 @@ if (typeFilters.timeFilter === TimeFilterType.NOW) {
 const clusterVenues = (venues: Venue[], zoom: number = 12): Cluster[] => {
   if (venues.length === 0) return [];
 
+  const superclusterConfig = getSuperclusterConfig(venues, zoom);
+  const shouldRebuildIndex =
+    !__scIndex ||
+    filtersChanged ||
+    !__scIndexConfig ||
+    __scIndexConfig.radius !== superclusterConfig.radius ||
+    __scIndexConfig.extent !== superclusterConfig.extent ||
+    __scIndexConfig.maxZoom !== superclusterConfig.maxZoom;
+
   // Rebuild the index when filters/data changed or index is missing
-  if (!__scIndex || filtersChanged) {
+  if (shouldRebuildIndex) {
     __venueByKey = new Map(venues.map(v => [v.locationKey, v]));
 
     const points = venues.map(v => ({
@@ -747,11 +913,12 @@ const clusterVenues = (venues: Venue[], zoom: number = 12): Cluster[] => {
 
     __scIndex = new Supercluster({
       minZoom: 0,
-      maxZoom: 16,
-      radius: 28,          // px — tune to taste, ~40–80 common
-      extent: 256,          // default; safe for RN
+      maxZoom: superclusterConfig.maxZoom,
+      radius: superclusterConfig.radius,
+      extent: superclusterConfig.extent,
       nodeSize: 16        // Smaller tree nodes
     }).load(points);
+    __scIndexConfig = superclusterConfig;
   }
 
   // Query clusters for the current zoom; world bbox (minimal change)
@@ -945,6 +1112,9 @@ export const useMapStore = create<MapState>((set, get) => ({
    * Set active filter panel
    */
       setActiveFilterPanel: (panel) => {
+        if (get().activeFilterPanel === panel) {
+          return;
+        }
         set({ activeFilterPanel: panel });
       },
   
@@ -952,6 +1122,9 @@ export const useMapStore = create<MapState>((set, get) => ({
    * Set header search active state
    */
   setHeaderSearchActive: (active: boolean) => {
+    if (get().isHeaderSearchActive === active) {
+      return;
+    }
     set({ isHeaderSearchActive: active });
   },
 
@@ -959,6 +1132,9 @@ export const useMapStore = create<MapState>((set, get) => ({
    * Set search query and apply search filter
    */
   setSearchQuery: (query: string) => {
+    if (get().searchQuery === query) {
+      return;
+    }
     set({ searchQuery: query });
 
     // Apply search to both types so lists & map stay consistent
@@ -1044,27 +1220,67 @@ export const useMapStore = create<MapState>((set, get) => ({
    * Update filters for a specific type (events or specials)
    */
   setTypeFilters: (type: 'event' | 'special', typeFilters: Partial<TypeFilterCriteria>, source?: 'filter-pills' | 'interest-pills') => {
-    const currentCriteria = get().filterCriteria;
+    get().setTypeFiltersBatch([{ type, typeFilters, source }]);
+  },
 
-    // Create new filter criteria with updated type-specific filters
-    const updatedCriteria = {
-      ...currentCriteria,
-      [type === 'event' ? 'eventFilters' : 'specialFilters']: {
-        ...currentCriteria[type === 'event' ? 'eventFilters' : 'specialFilters'],
-        ...typeFilters,
-        // Set source if category is being set, clear if being cleared
-        categoryFilterSource: typeFilters.category !== undefined ? source : undefined
-      }
-    };
+  /**
+   * Update multiple type filters in one filter/recluster pass.
+   */
+  setTypeFiltersBatch: (updates) => {
+    const currentCriteria = get().filterCriteria;
+    let updatedCriteria = currentCriteria;
+
+    updates.forEach(({ type, typeFilters, source }) => {
+      const filterKey = type === 'event' ? 'eventFilters' : 'specialFilters';
+
+      updatedCriteria = {
+        ...updatedCriteria,
+        [filterKey]: {
+          ...updatedCriteria[filterKey],
+          ...typeFilters,
+          // Set source if category is being set, clear if being cleared
+          categoryFilterSource: typeFilters.category !== undefined ? source : undefined
+        }
+      };
+    });
+
+    if (JSON.stringify(updatedCriteria) === JSON.stringify(currentCriteria)) {
+      return;
+    }
 
     // Set the filters changed flag to true
     filtersChanged = true;
 
-    set({ filterCriteria: updatedCriteria });
+    const { events, zoomLevel } = get();
+    const filterStartedAt = Date.now();
+    const filtered = filterEvents(events, updatedCriteria);
 
-    // Apply updated filters and regenerate clusters
-    get().getFilteredEvents();
-    get().generateClusters();
+    __ML_lastFilterMs = Date.now() - filterStartedAt;
+    __ML_lastFilterIn = events.length;
+    __ML_lastFilterOut = filtered.length;
+
+    const clusterStartedAt = Date.now();
+    const venues = groupEventsByVenue(filtered);
+    const clusters = clusterVenues(venues, zoomLevel);
+
+    __ML_lastVenueCount = venues.length;
+    __ML_lastClusterCount = clusters.length;
+    __ML_lastClusterMs = Date.now() - clusterStartedAt;
+
+    logStartupDataTiming('type_filters_batch_completed', {
+      updates: updates.length,
+      filterMs: __ML_lastFilterMs,
+      clusterMs: __ML_lastClusterMs,
+      filteredEvents: filtered.length,
+      venues: venues.length,
+      clusters: clusters.length,
+    });
+
+    set({
+      filterCriteria: updatedCriteria,
+      filteredEvents: filtered,
+      clusters,
+    });
   },
   
   /**
@@ -1077,46 +1293,24 @@ export const useMapStore = create<MapState>((set, get) => ({
   /**
    * Set selected cluster (for multi-venue support)
    */
-selectCluster: (cluster) => {
+  selectCluster: (cluster) => {
   // Set selected cluster immediately for instant visual feedback
   set({ selectedCluster: cluster });
-
-  // Defer enhancement checking to not block touch response
-  if (cluster) {
-    setTimeout(() => {
-      const { events } = get();
-      const eventIds = cluster.venues.flatMap(venue =>
-        venue.events.map(event => event.id)
-      );
-
-      const needsEnhancement = eventIds.some(id => {
-        const event = events.find(e => e.id === id);
-        if (!event) return false;
-        const hasBeenEnhanced = event.hasOwnProperty('fullDescription') ||
-                                event.hasOwnProperty('ticketLinkPosts') ||
-                                event.hasOwnProperty('ticketLinkEvents');
-        return !hasBeenEnhanced;
-      });
-
-      if (needsEnhancement) {
-        get().fetchEventDetails(eventIds).then(() => {
-          const { events: updatedEvents } = get();
-          const updatedCluster = {
-            ...cluster,
-            venues: cluster.venues.map(venue => ({
-              ...venue,
-              events: venue.events.map(event => {
-                const updatedEvent = updatedEvents.find(e => e.id === event.id);
-                return updatedEvent || event;
-              })
-            }))
-          };
-          set({ selectedCluster: updatedCluster });
-        });
-      }
-    }, 0);
-  }
+  scheduleSelectedClusterEnhancement(get, set, cluster);
 },
+
+  /**
+   * Open a callout with one store update so Android does not pay three
+   * selection render passes before the sheet can mount.
+   */
+  selectCallout: (venues, cluster) => {
+    set({
+      selectedVenue: venues[0] ?? null,
+      selectedVenues: venues,
+      selectedCluster: cluster,
+    });
+    scheduleSelectedClusterEnhancement(get, set, cluster);
+  },
   
   /**
    * Set selected venue (legacy support)
@@ -1154,19 +1348,21 @@ selectCluster: (cluster) => {
    * Prefetch events if data is stale
    */
   prefetchIfStale: async (maxAgeMs: number = 60000) => {
-    const { isLoading, lastFetchedAt } = get();
+    const { isLoading, lastFetchedAt, events, allEvents } = get();
     const now = Date.now();
+    const hasUsableEvents = events.length > 0 || allEvents.length > 0;
     logStartupDataTiming('prefetch_if_stale_called', {
       maxAgeMs,
       isLoading,
       hasLastFetchedAt: !!lastFetchedAt,
+      hasUsableEvents,
       ageMs: lastFetchedAt ? now - lastFetchedAt : null,
     });
     if (isLoading) {
       logStartupDataTiming('prefetch_if_stale_skipped_loading');
       return;
     }
-    if (lastFetchedAt && (now - lastFetchedAt) < maxAgeMs) {
+    if (hasUsableEvents && lastFetchedAt && (now - lastFetchedAt) < maxAgeMs) {
       logStartupDataTiming('prefetch_if_stale_skipped_fresh', {
         ageMs: now - lastFetchedAt,
       });
@@ -1365,19 +1561,21 @@ fetchEvents: async () => {
         return Number.isFinite(lat) && Number.isFinite(lng) && !(lat === 0 && lng === 0);
       };
 
-      const inBbox = (event: Event): boolean => {
+      const inBbox = (event: Event, targetBbox: ViewportBoundingBox = bbox): boolean => {
         const lat = Number(event.latitude);
         const lng = Number(event.longitude);
         return (
-          lat >= bbox.south &&
-          lat <= bbox.north &&
-          lng >= bbox.west &&
-          lng <= bbox.east
+          lat >= targetBbox.south &&
+          lat <= targetBbox.north &&
+          lng >= targetBbox.west &&
+          lng <= targetBbox.east
         );
       };
 
       const partitionStartedAt = Date.now();
+      const clusterBbox = expandBoundingBox(bbox, CLUSTER_SOURCE_BBOX_BUFFER_MULTIPLIER);
       const coordinateEvents: Event[] = [];
+      const clusterSourceEvents: Event[] = [];
       const viewportEvents: Event[] = [];
       const outsideViewportEvents: Event[] = [];
 
@@ -1394,11 +1592,15 @@ fetchEvents: async () => {
         } else {
           outsideViewportEvents.push(event);
         }
+
+        if (inBbox(event, clusterBbox)) {
+          clusterSourceEvents.push(event);
+        }
       }
 
       const partitionMs = Date.now() - partitionStartedAt;
       const filterStartedAt = Date.now();
-      const filtered = filterEvents(coordinateEvents, filters);
+      const filtered = filterEvents(clusterSourceEvents, filters);
       const filterMs = Date.now() - filterStartedAt;
       logStartupDataTiming('viewport_partition_complete', {
         elapsedMs: Date.now() - startedAt,
@@ -1406,6 +1608,8 @@ fetchEvents: async () => {
         filterMs,
         candidateEvents: candidateEvents.length,
         coordinateEvents: coordinateEvents.length,
+        clusterBbox,
+        clusterSourceEvents: clusterSourceEvents.length,
         viewportCount: viewportEvents.length,
         outsideViewportCount: outsideViewportEvents.length,
         filteredCount: filtered.length,
@@ -1428,7 +1632,7 @@ fetchEvents: async () => {
       }
 
       set({
-        events: coordinateEvents,
+        events: clusterSourceEvents,
         viewportEvents,
         outsideViewportEvents,
         onScreenEvents,
@@ -1775,7 +1979,7 @@ logStartupDataTiming('generate_clusters_completed', {
   getTimeFilterCounts: (eventType: 'event' | 'special') => {
     const { onScreenEvents, filterCriteria } = get();
     // Use ONLY on-screen events - counts should reflect what's actually visible on screen
-    return calculateTimeFilterCounts(onScreenEvents, filterCriteria, eventType);
+    return getCachedTimeFilterCounts(onScreenEvents, filterCriteria, eventType);
   },
 
   /**
@@ -1784,6 +1988,6 @@ logStartupDataTiming('generate_clusters_completed', {
   getCategoryFilterCounts: (eventType: 'event' | 'special') => {
     const { onScreenEvents, filterCriteria } = get();
     // Use ONLY on-screen events - counts should reflect what's actually visible on screen
-    return calculateCategoryFilterCounts(onScreenEvents, filterCriteria, eventType);
+    return getCachedCategoryFilterCounts(onScreenEvents, filterCriteria, eventType);
   }
 }))

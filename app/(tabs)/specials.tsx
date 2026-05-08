@@ -11,14 +11,14 @@ import {
   ScrollView,
   Modal,
   Share,
-  Platform,
   Linking,
   GestureResponderEvent,
   TextInput,
   Alert,
   Keyboard,
   Pressable,
-  InteractionManager
+  InteractionManager,
+  Platform
 } from 'react-native';
 import { MaterialIcons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
@@ -65,12 +65,30 @@ import {
   createLocationKeyFromEvent
 } from '../../utils/priorityUtils';
 import * as userService from '../../services/userService';
-import { calculateDistance, doesEventMatchTypeFilters } from '../../store/mapStore';
+import {
+  calculateDistance,
+  createEventTimeContext,
+  doesEventMatchTypeFilters,
+  getEventTimeStatusFast,
+} from '../../store/mapStore';
 import { useUserPrefsStore } from '../../store/userPrefsStore';
 import { areEventIdsEquivalent } from '../../lib/api/firestoreEvents';
 
 // Import for loading native ads
 import useNativeAds from '../../hooks/useNativeAds';
+import { measureListTabStage } from '../../utils/listTabPerfTrace';
+import { runAfterTabPaint } from '../../utils/tabFocusEffects';
+import {
+  markTabFirstAdLayout,
+  markTabFirstListItemLayout,
+  markTabFlatListLayout,
+  markTabFocus,
+  markTabListDataReady,
+  markTabListPropsReady,
+  markTabRootLayout,
+  markTabScreenRenderCommit,
+  markTabScreenRenderStart,
+} from '../../utils/tabSwitchTrace';
 
 // Import Firebase functionality for real-time updates
 import { doc, onSnapshot } from 'firebase/firestore';
@@ -98,6 +116,9 @@ import useAnalytics from '../../hooks/useAnalytics';
 const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get('window');
 const SPECIALS_NATIVE_AD_PLACEHOLDER_DEBUG = false;
 const COLLAPSIBLE_HEADER_TOP_MARGIN = 3;
+const ENABLE_SORT_PERFORMANCE_ANALYTICS = false;
+const LIST_LIVE_COUNT_LISTENER_DELAY_MS = 1500;
+const INITIAL_FILTER_HEADER_HEIGHT = 195;
 
 // --- Local helpers for safe label/range handling and end-date suffix ---
 function partsFrom(base: string, range?: string) {
@@ -425,16 +446,36 @@ const favoriteVenues = useUserPrefsStore((s: UserPrefsState) => s.favoriteVenues
   };
 
     useEffect(() => {
-    if (!event.id) return;
-    startEventLikesListener(event.id);
-    startEventSharesListener(event.id);
-    startEventInterestedListener(event.id);
+    if (!event.id || isGuest) return;
+
+    let started = false;
+    let cancelled = false;
+    let startTimer: ReturnType<typeof setTimeout> | null = null;
+    const task = InteractionManager.runAfterInteractions(() => {
+      startTimer = setTimeout(() => {
+        if (cancelled) {
+          return;
+        }
+        started = true;
+        startEventLikesListener(event.id);
+        startEventSharesListener(event.id);
+        startEventInterestedListener(event.id);
+      }, LIST_LIVE_COUNT_LISTENER_DELAY_MS);
+    });
+
     return () => {
-      stopEventLikesListener(event.id);
-      stopEventSharesListener(event.id);
-      stopEventInterestedListener(event.id);
+      cancelled = true;
+      task.cancel?.();
+      if (startTimer) {
+        clearTimeout(startTimer);
+      }
+      if (started) {
+        stopEventLikesListener(event.id);
+        stopEventSharesListener(event.id);
+        stopEventInterestedListener(event.id);
+      }
     };
-  }, [event.id]);
+  }, [event.id, isGuest]);
 
   const handleHeroLikePress = async (e: GestureResponderEvent) => {
     e.stopPropagation();
@@ -1396,12 +1437,26 @@ const MemoizedEventListItem = React.memo(EventListItem, (prevProps, nextProps) =
 
 // Main Specials Screen component
 function SpecialsScreen() {
+  markTabScreenRenderStart('specials');
 
   
   // ===============================================================
   // ANALYTICS INTEGRATION - RE-ENABLED
   // ===============================================================
   const analytics = useAnalytics();
+  useEffect(() => {
+    markTabScreenRenderCommit('specials');
+  });
+
+  useFocusEffect(
+    useCallback(() => {
+      markTabFocus('specials');
+    }, [])
+  );
+  const handleRootLayout = useCallback(() => {
+    markTabRootLayout('specials');
+  }, []);
+  const isFocusedContentReady = true;
 
   // 🔔 If registration begins, close any open overlays (details sheet, image lightbox)
   const overlayCloseSignal = useGuestLimitationStore(s => s.overlayCloseSignal);
@@ -1430,8 +1485,7 @@ function SpecialsScreen() {
   useFocusEffect(
     useCallback(() => {
       const startTime = Date.now();
-
-      InteractionManager.runAfterInteractions(() => {
+      const cancelScreenView = runAfterTabPaint(() => {
         analytics.trackScreenView('specials', {
           content_type: 'special_list',
           user_type: isGuest ? 'guest' : 'registered'
@@ -1440,6 +1494,7 @@ function SpecialsScreen() {
 
       // Return cleanup function to track time spent
       return () => {
+        cancelScreenView();
         const timeSpent = Date.now() - startTime;
         InteractionManager.runAfterInteractions(() => {
           analytics.trackEngagementDepth('specials', timeSpent, {
@@ -1454,10 +1509,8 @@ function SpecialsScreen() {
   // Tutorial auto-advancement detection - deferred with InteractionManager
   useFocusEffect(
     useCallback(() => {
-      InteractionManager.runAfterInteractions(() => {
-        console.log('🔍 SPECIALS SCREEN: Screen focused, checking for tutorial');
+      return runAfterTabPaint(() => {
         if ((global as any).onSpecialsScreenNavigated) {
-          console.log('🔍 SPECIALS SCREEN: Calling tutorial advancement');
           (global as any).onSpecialsScreenNavigated();
         }
       });
@@ -1483,16 +1536,13 @@ function SpecialsScreen() {
   // Store integration - individual selectors to prevent infinite loops
   // (Combined object selectors with shallow cause getSnapshot caching issues)
   const events = useMapStore((state) => state.events);
-  const filteredEvents = useMapStore((state) => state.filteredEvents);
   const viewportEvents = useMapStore((state) => state.viewportEvents);
   const outsideViewportEvents = useMapStore((state) => state.outsideViewportEvents);
-  const viewportMetadata = useMapStore((state) => state.viewportMetadata);
   const isLoading = useMapStore((state) => state.isLoading);
   const error = useMapStore((state) => state.error);
   const fetchEvents = useMapStore((state) => state.fetchEvents);
   const fetchEventDetails = useMapStore((state) => state.fetchEventDetails);
   const setTypeFilters = useMapStore((state) => state.setTypeFilters);
-  const categories = useMapStore((state) => state.categories);
   const filterCriteria = useMapStore((state) => state.filterCriteria);
   const userLocation = useMapStore((state) => state.userLocation);
   const getTimeFilterCounts = useMapStore((state) => state.getTimeFilterCounts);
@@ -1501,36 +1551,40 @@ function SpecialsScreen() {
   const isHeaderSearchActive = useMapStore((state) => state.isHeaderSearchActive);
   const setHeaderSearchActive = useMapStore((state) => state.setHeaderSearchActive);
 
-  // --- Prefetch confirmation (specials) ---
-  // Logs once on mount if cache already warm, and whenever events change.
-  useEffect(() => {
-    const specialsCount = events.filter(e => e.type === 'special').length;
-    if (events.length > 0 && specialsCount > 0) {
-      console.log(`[SpecialsScreen] Using preloaded specials from store: ${specialsCount}`);
-    }
-  }, [events]);
-
-  // Memoized event lookup Map for O(1) access instead of O(n) find
+  // Memoized event lookup Map for O(1) access instead of O(n) find.
+  // Build it after the tab shell has painted so first focus stays responsive.
   const eventLookupMap = useMemo(() => {
+    if (!isFocusedContentReady) {
+      return new Map<string, Event>();
+    }
+
     const map = new Map<string, Event>();
     events.forEach(event => {
       map.set(String(event.id), event);
     });
     return map;
-  }, [events]);
+  }, [events, isFocusedContentReady]);
 
-  // Helper function to get updated event data from store - now O(1)
   const getUpdatedEvent = useCallback((eventId: string | number) => {
     return eventLookupMap.get(String(eventId));
   }, [eventLookupMap]);
 
   // State management
   const [scrollY] = useState(new Animated.Value(0));
-  const [headerHeight, setHeaderHeight] = useState(0);
+  const [headerHeight, setHeaderHeight] = useState(INITIAL_FILTER_HEADER_HEIGHT);
   const [isHeaderCollapsed, setIsHeaderCollapsed] = useState(false);
   const headerTranslateY = useRef(new Animated.Value(0)).current;
   const lastScrollY = useRef(0);
   const flatListRef = useRef<FlatList>(null);
+  const handleFlatListLayout = useCallback(() => {
+    markTabFlatListLayout('specials');
+  }, []);
+  const handleFirstListItemLayout = useCallback(() => {
+    markTabFirstListItemLayout('specials');
+  }, []);
+  const handleFirstAdLayout = useCallback(() => {
+    markTabFirstAdLayout('specials');
+  }, []);
   
   // Back to top button state
   const [showBackToTop, setShowBackToTop] = useState(false);
@@ -1564,11 +1618,15 @@ function SpecialsScreen() {
   // Deferred with InteractionManager to not block tab switch
   useFocusEffect(
     React.useCallback(() => {
-      InteractionManager.runAfterInteractions(() => {
-        console.log('[GuestLimitation] Specials screen gained focus');
+      return runAfterTabPaint(() => {
+        if (__DEV__) {
+          console.log('[GuestLimitation] Specials screen gained focus');
+        }
 
         if (isGuest) {
-          console.log('[GuestLimitation] Tracking Specials tab selection for guest');
+          if (__DEV__) {
+            console.log('[GuestLimitation] Tracking Specials tab selection for guest');
+          }
           trackTabSelect('specials');
         }
       });
@@ -1860,20 +1918,45 @@ useEffect(() => {
   };
 
   // Get dynamic filter counts
-  const timeFilterCounts = getTimeFilterCounts('special');
-  const categoryFilterCounts = getCategoryFilterCounts('special');
+  const timeFilterCounts = isFocusedContentReady
+    ? measureListTabStage('specials', 'time_filter_counts', {}, () => getTimeFilterCounts('special'))
+    : {
+        [TimeFilterType.ALL]: 0,
+        [TimeFilterType.NOW]: 0,
+        [TimeFilterType.TODAY]: 0,
+        [TimeFilterType.TOMORROW]: 0,
+        [TimeFilterType.UPCOMING]: 0,
+      };
+  const categoryFilterCounts = isFocusedContentReady
+    ? measureListTabStage('specials', 'category_filter_counts', {}, () => getCategoryFilterCounts('special'))
+    : {};
+
+  const savedEventSet = useMemo(() => {
+    return new Set(savedEvents || []);
+  }, [savedEvents]);
+
+  const userInterestLowerSet = useMemo(() => {
+    return new Set((userInterests || []).map(interest => interest.toLowerCase()));
+  }, [userInterests]);
+
+  const favoriteVenueSet = useMemo(() => {
+    return new Set(favoriteVenues || []);
+  }, [favoriteVenues]);
+
+  const eventTimeContextMinute = Math.floor(Date.now() / 60000);
+  const eventTimeContext = useMemo(() => {
+    return createEventTimeContext();
+  }, [eventTimeContextMinute]);
   
   // Helper functions
   const matchesUserInterests = (event: Event): boolean => {
-    if (!userInterests || userInterests.length === 0) return false;
-    return userInterests.some(interest => 
-      interest.toLowerCase() === event.category.toLowerCase()
-    );
+    if (userInterestLowerSet.size === 0) return false;
+    return userInterestLowerSet.has(event.category.toLowerCase());
   };
   
   const isEventSaved = (event: Event): boolean => {
-    if (!savedEvents || savedEvents.length === 0) return false;
-    return savedEvents.includes(event.id.toString());
+    if (savedEventSet.size === 0) return false;
+    return savedEventSet.has(event.id.toString());
   };
 
   // ===============================================================
@@ -2035,42 +2118,98 @@ useEffect(() => {
 
   // Filter viewport specials
   const filteredViewportSpecials = useMemo(() => {
-    let filtered = viewportEvents.filter(event => event.type === 'special');
+    return measureListTabStage('specials', 'filter_viewport', {
+      inputCount: viewportEvents.length,
+      ready: isFocusedContentReady,
+    }, () => {
+      if (!isFocusedContentReady) {
+        markTabListDataReady('specials', {
+          ready: false,
+          itemCount: 0,
+        });
+        return [];
+      }
 
-    if (filterCriteria.specialFilters.savedOnly) {
-      filtered = filtered.filter(e => isEventSaved(e));
-    }
+      const filtered: Event[] = [];
 
-    filtered = filtered.filter(e => doesEventMatchTypeFilters(e, filterCriteria.specialFilters));
+      for (const event of viewportEvents) {
+        if (event.type !== 'special') {
+          continue;
+        }
 
-    return filtered;
-  }, [viewportEvents, filterCriteria, savedEvents]);
+        if (filterCriteria.specialFilters.savedOnly && !isEventSaved(event)) {
+          continue;
+        }
+
+        if (!doesEventMatchTypeFilters(event, filterCriteria.specialFilters, eventTimeContext)) {
+          continue;
+        }
+
+        filtered.push(event);
+      }
+
+      return filtered;
+    });
+  }, [isFocusedContentReady, viewportEvents, filterCriteria, savedEventSet, eventTimeContext]);
 
   // Filter outside-viewport specials
   const filteredOutsideViewportSpecials = useMemo(() => {
-    let filtered = outsideViewportEvents.filter(event => event.type === 'special');
+    return measureListTabStage('specials', 'filter_outside_viewport', {
+      inputCount: outsideViewportEvents.length,
+      ready: isFocusedContentReady,
+    }, () => {
+      if (!isFocusedContentReady) {
+        return [];
+      }
 
-    if (filterCriteria.specialFilters.savedOnly) {
-      filtered = filtered.filter(e => isEventSaved(e));
-    }
+      const filtered: Event[] = [];
 
-    filtered = filtered.filter(e => doesEventMatchTypeFilters(e, filterCriteria.specialFilters));
+      for (const event of outsideViewportEvents) {
+        if (event.type !== 'special') {
+          continue;
+        }
 
-    return filtered;
-  }, [outsideViewportEvents, filterCriteria, savedEvents]);
+        if (filterCriteria.specialFilters.savedOnly && !isEventSaved(event)) {
+          continue;
+        }
+
+        if (!doesEventMatchTypeFilters(event, filterCriteria.specialFilters, eventTimeContext)) {
+          continue;
+        }
+
+        filtered.push(event);
+      }
+
+      return filtered;
+    });
+  }, [isFocusedContentReady, outsideViewportEvents, filterCriteria, savedEventSet, eventTimeContext]);
 
   // Enhanced sorting with special-specific analytics tracking
   const sortAndPrioritizeSpecials = (specials: Event[]): Event[] => {
     const sortStartTime = Date.now();
-    
-    const specialsWithScores = specials.map(special => {
+
+    type ScoredSpecial = {
+      event: Event;
+      isSaved: boolean;
+      isFromFavoriteVenue: boolean;
+      timeStatus: 'now' | 'today' | 'future';
+      compositeScore: number;
+      distance: number;
+    };
+
+    const savedNowSpecials: ScoredSpecial[] = [];
+    const savedTodaySpecials: ScoredSpecial[] = [];
+    const savedFutureSpecials: ScoredSpecial[] = [];
+    const unsavedSpecials: ScoredSpecial[] = [];
+
+    for (const special of specials) {
       const isSaved = isEventSaved(special);
-      const timeStatus = getEventTimeStatus(special);
+      const timeStatus = getEventTimeStatusFast(special, eventTimeContext);
       const matchesInterest = matchesUserInterests(special);
 
       // Check if special is from a favorite venue
       const specialLocationKey = createLocationKeyFromEvent(special);
-      const isFromFavoriteVenue = favoriteVenues.includes(specialLocationKey);
+      const isFromFavoriteVenue = favoriteVenueSet.has(specialLocationKey);
 
       const scoreCategory = matchesInterest ? 'INTEREST_MATCH' : 'NON_INTEREST';
       const baseScore = BASE_SCORES[scoreCategory][timeStatus];
@@ -2118,7 +2257,7 @@ useEffect(() => {
     //  }
       
      
-      return {
+      const scoredSpecial = {
         event: special,
         isSaved,
         isFromFavoriteVenue,
@@ -2126,20 +2265,18 @@ useEffect(() => {
         compositeScore,
         distance
       };
-    });
-    
-    // Group and sort (same logic as events)
-    const savedNowSpecials = specialsWithScores.filter(item => 
-      item.isSaved && item.timeStatus === 'now'
-    );
-    const savedTodaySpecials = specialsWithScores.filter(item => 
-      item.isSaved && item.timeStatus === 'today'
-    );
-    const savedFutureSpecials = specialsWithScores.filter(item => 
-      item.isSaved && item.timeStatus === 'future'
-    );
-    const unsavedSpecials = specialsWithScores.filter(item => !item.isSaved);
-    
+
+      if (!isSaved) {
+        unsavedSpecials.push(scoredSpecial);
+      } else if (timeStatus === 'now') {
+        savedNowSpecials.push(scoredSpecial);
+      } else if (timeStatus === 'today') {
+        savedTodaySpecials.push(scoredSpecial);
+      } else {
+        savedFutureSpecials.push(scoredSpecial);
+      }
+    }
+
     [savedNowSpecials, savedTodaySpecials, savedFutureSpecials, unsavedSpecials].forEach(group => {
       group.sort((a, b) => {
         if (b.compositeScore !== a.compositeScore) {
@@ -2165,22 +2302,27 @@ useEffect(() => {
    //   matchesInterest: matchesUserInterests(event)
    // })));
     
-    // Track special sorting performance
-    const sortTime = Date.now() - sortStartTime;
-    analytics.trackPerformance('specials_sort', sortTime, {
-      specials_count: specials.length,
-      sort_time_ms: sortTime,
-      has_user_location: !!userLocation,
-      user_interests_count: userInterests.length
-    });
+    if (ENABLE_SORT_PERFORMANCE_ANALYTICS) {
+      const sortTime = Date.now() - sortStartTime;
+      requestAnimationFrame(() => {
+        analytics.trackPerformance('specials_sort', sortTime, {
+          specials_count: specials.length,
+          sort_time_ms: sortTime,
+          has_user_location: !!userLocation,
+          user_interests_count: userInterests.length
+        });
+      });
+    }
     
     return sortedSpecials;
   };
 
   // Apply priority sorting to viewport section (small, sorts immediately)
   const sortedViewportSpecials = useMemo(() => {
-    return sortAndPrioritizeSpecials(filteredViewportSpecials);
-  }, [filteredViewportSpecials, userLocation, savedEvents, favoriteVenues]);
+    return measureListTabStage('specials', 'sort_viewport', {
+      inputCount: filteredViewportSpecials.length,
+    }, () => sortAndPrioritizeSpecials(filteredViewportSpecials));
+  }, [filteredViewportSpecials, userLocation, savedEventSet, favoriteVenueSet, userInterestLowerSet, eventTimeContext]);
 
   // State for pagination of outside-viewport specials
   const [outsideViewportLoadCount, setOutsideViewportLoadCount] = useState(10);
@@ -2193,16 +2335,21 @@ useEffect(() => {
   // Lazy-sort outside-viewport specials: only sort what we need for display
   // This prevents sorting hundreds of specials when FlatList only shows 10 initially
   const sortedOutsideViewportSpecials = useMemo(() => {
-    // Only sort up to what we're displaying + one batch ahead for smooth scrolling
-    const maxToSort = outsideViewportLoadCount + 20; // loadMoreBatchSize buffer
-    if (filteredOutsideViewportSpecials.length <= maxToSort) {
-      // Small list, sort all of it
-      return sortAndPrioritizeSpecials(filteredOutsideViewportSpecials);
-    }
-    // Large list: sort only what we need
-    const specialsToSort = filteredOutsideViewportSpecials.slice(0, maxToSort);
-    return sortAndPrioritizeSpecials(specialsToSort);
-  }, [filteredOutsideViewportSpecials, outsideViewportLoadCount, userLocation, savedEvents, favoriteVenues]);
+    return measureListTabStage('specials', 'sort_outside_viewport', {
+      inputCount: filteredOutsideViewportSpecials.length,
+      outsideViewportLoadCount,
+    }, () => {
+      // Only sort up to what we're displaying + one batch ahead for smooth scrolling
+      const maxToSort = outsideViewportLoadCount + 20; // loadMoreBatchSize buffer
+      if (filteredOutsideViewportSpecials.length <= maxToSort) {
+        // Small list, sort all of it
+        return sortAndPrioritizeSpecials(filteredOutsideViewportSpecials);
+      }
+      // Large list: sort only what we need
+      const specialsToSort = filteredOutsideViewportSpecials.slice(0, maxToSort);
+      return sortAndPrioritizeSpecials(specialsToSort);
+    });
+  }, [filteredOutsideViewportSpecials, outsideViewportLoadCount, userLocation, savedEventSet, favoriteVenueSet, userInterestLowerSet, eventTimeContext]);
 
   // Create specials with ads list
   type SpecialListItem = {
@@ -2252,10 +2399,20 @@ useEffect(() => {
   }, []);
   
   const specialsWithAds = useMemo<ListItem[]>(() => {
-    const result: ListItem[] = [];
-    const adFrequency = 4;
-    let adIndex = 0;
-    const adOccurrenceCounts = new Map<string, number>();
+    return measureListTabStage('specials', 'build_list_with_ads', {
+      ready: isFocusedContentReady,
+      viewportCount: sortedViewportSpecials.length,
+      outsideViewportCount: sortedOutsideViewportSpecials.length,
+      nativeAdsCount: nativeAds.length,
+    }, () => {
+      if (!isFocusedContentReady) {
+        return [];
+      }
+
+      const result: ListItem[] = [];
+      const adFrequency = 4;
+      let adIndex = 0;
+      const adOccurrenceCounts = new Map<string, number>();
 
     // Add viewport specials with ads
     sortedViewportSpecials.forEach((special, index) => {
@@ -2339,30 +2496,48 @@ useEffect(() => {
       }
     }
 
-    return result;
-  }, [getAdListKey, getAdSignature, sortedViewportSpecials, sortedOutsideViewportSpecials, filteredOutsideViewportSpecials.length, nativeAds, outsideViewportLoadCount]);
+      markTabListDataReady('specials', {
+        ready: true,
+        itemCount: result.length,
+        viewportCount: sortedViewportSpecials.length,
+        outsideViewportCount: sortedOutsideViewportSpecials.length,
+        nativeAdsCount: nativeAds.length,
+      });
+
+      return result;
+    });
+  }, [getAdListKey, getAdSignature, isFocusedContentReady, sortedViewportSpecials, sortedOutsideViewportSpecials, filteredOutsideViewportSpecials.length, nativeAds, outsideViewportLoadCount]);
 
   // Pre-compute lookup Sets for O(1) access during render
   const interestMatchSet = useMemo(() => {
-    if (!userInterests || userInterests.length === 0) return new Set<string>();
-    const lowerInterests = userInterests.map(i => i.toLowerCase());
-    const matchingIds = new Set<string>();
-    specialsWithAds.forEach(item => {
-      if (item.type === 'special' && lowerInterests.includes(item.data.category.toLowerCase())) {
-        matchingIds.add(String(item.data.id));
-      }
+    return measureListTabStage('specials', 'interest_match_set', {
+      inputCount: specialsWithAds.length,
+      interestCount: userInterestLowerSet.size,
+    }, () => {
+      if (userInterestLowerSet.size === 0) return new Set<string>();
+      const matchingIds = new Set<string>();
+      specialsWithAds.forEach(item => {
+        if (item.type === 'special' && userInterestLowerSet.has(item.data.category.toLowerCase())) {
+          matchingIds.add(String(item.data.id));
+        }
+      });
+      return matchingIds;
     });
-    return matchingIds;
-  }, [specialsWithAds, userInterests]);
-
-  const savedEventSet = useMemo(() => {
-    return new Set(savedEvents || []);
-  }, [savedEvents]);
+  }, [specialsWithAds, userInterestLowerSet]);
 
   // Find first special index once instead of O(n) for each item
   const firstSpecialIndex = useMemo(() => {
     return specialsWithAds.findIndex(item => item.type === 'special');
   }, [specialsWithAds]);
+  const firstAdIndex = useMemo(() => {
+    return specialsWithAds.findIndex(item => item.type === 'ad');
+  }, [specialsWithAds]);
+
+  markTabListPropsReady('specials', {
+    itemCount: specialsWithAds.length,
+    firstSpecialIndex,
+    firstAdIndex,
+  });
 
   // Memoized FlatList callbacks to prevent unnecessary re-renders
   const keyExtractor = useCallback((item: any, index: number) => {
@@ -2473,7 +2648,7 @@ useEffect(() => {
   };
 
   return (
-    <View style={styles.container}>
+    <View style={styles.container} onLayout={handleRootLayout}>
       {isHeaderSearchActive && (
         <Pressable
           onPress={() => { setHeaderSearchActive(false); Keyboard.dismiss(); }}
@@ -2488,9 +2663,10 @@ useEffect(() => {
           { transform: [{ translateY: headerTranslateY }] }
         ]}
         onLayout={(event) => {
-          const height = event.nativeEvent.layout.height;
-          console.log('Header height measured:', height);
-          setHeaderHeight(height + 5);
+          const nextHeight = event.nativeEvent.layout.height + 5;
+          setHeaderHeight((previousHeight) =>
+            Math.abs(previousHeight - nextHeight) > 1 ? nextHeight : previousHeight
+          );
         }}
       >
 {/* Filtering section */}
@@ -2679,19 +2855,33 @@ useEffect(() => {
       {/* Specials list with ads */}
       <FlatList
         ref={flatListRef}
-        data={specialsWithAds}
+        data={isFocusedContentReady ? specialsWithAds : []}
         keyExtractor={keyExtractor}
         onScroll={handleScroll}
+        onLayout={handleFlatListLayout}
         scrollEventThrottle={16}
         contentContainerStyle={contentContainerStyleMemo}
         renderItem={({ item, index }) => {
           if (item.type === 'divider') {
-            return <DividerComponent message={item.data.message} count={item.data.count} />;
+            const divider = <DividerComponent message={item.data.message} count={item.data.count} />;
+            return index === 0 ? (
+              <View onLayout={handleFirstListItemLayout}>{divider}</View>
+            ) : divider;
           }
 
           if (item.type === 'ad') {
             return (
-              <View style={styles.adContainer}>
+              <View
+                style={styles.adContainer}
+                onLayout={() => {
+                  if (index === 0) {
+                    handleFirstListItemLayout();
+                  }
+                  if (index === firstAdIndex) {
+                    handleFirstAdLayout();
+                  }
+                }}
+              >
                 {SPECIALS_NATIVE_AD_PLACEHOLDER_DEBUG ? (
                   <View style={styles.placeholderAdCard}>
                     <View style={styles.placeholderAdBadge}>
@@ -2721,8 +2911,7 @@ useEffect(() => {
           const isFirstSpecialItem = index === firstSpecialIndex;
           const specialId = String(item.data.id);
           const specialData = getUpdatedEvent(item.data.id) || item.data;
-
-          return (
+          const specialListItem = (
             <MemoizedEventListItem
               event={specialData}
               onPress={() => handleEventPress(specialData)}
@@ -2734,16 +2923,20 @@ useEffect(() => {
               isFirstItem={isFirstSpecialItem}
             />
           );
+
+          return index === 0 ? (
+            <View onLayout={handleFirstListItemLayout}>{specialListItem}</View>
+          ) : specialListItem;
         }}
-        ListEmptyComponent={listEmptyComponent}
+        ListEmptyComponent={isFocusedContentReady ? listEmptyComponent : null}
         onEndReached={handleEndReached}
         onEndReachedThreshold={0.5}
         // Performance optimizations for large lists
         removeClippedSubviews={true}
-        maxToRenderPerBatch={10}
-        windowSize={5}
-        initialNumToRender={10}
-        updateCellsBatchingPeriod={50}
+        maxToRenderPerBatch={1}
+        windowSize={3}
+        initialNumToRender={1}
+        updateCellsBatchingPeriod={80}
       />
 
       {/* Special details bottom sheet */}
@@ -2975,11 +3168,14 @@ const styles = StyleSheet.create({
     marginHorizontal: 3,
     borderWidth: 1,
     borderColor: '#EEEEEE',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 1,
-    elevation: 1,
+    ...(Platform.OS === 'android' ? {
+      elevation: 0,
+    } : {
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 1 },
+      shadowOpacity: 0.1,
+      shadowRadius: 1,
+    }),
     flexDirection: 'row',
     alignItems: 'center',
   },
@@ -3028,12 +3224,14 @@ const styles = StyleSheet.create({
     marginHorizontal: 2, // Add side margins so border is visible
     marginRight: 4,
     marginBottom: 4, // Replace bottom border with margin
-    // NEW: Add subtle shadow to match hero image effect
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 4,
-    elevation: 3,
+    ...(Platform.OS === 'android' ? {
+      elevation: 0,
+    } : {
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.08,
+      shadowRadius: 4,
+    }),
   },
   nowEventCard: {
     borderLeftColor: '#34A853',
@@ -3120,23 +3318,28 @@ const styles = StyleSheet.create({
     position: 'relative', // For proper badge positioning
     paddingHorizontal: 0, // Add horizontal padding so image isn't full width
     paddingBottom: 16, // Add space below image
-    // Create strong "window frame" shadow effect
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.15,
-    shadowRadius: 12,
-    elevation: 8,
+    ...(Platform.OS === 'android' ? {
+      elevation: 0,
+    } : {
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 6 },
+      shadowOpacity: 0.15,
+      shadowRadius: 12,
+    }),
   },
   // Add new style for image container background
   heroImageContainer: {
     backgroundColor: '#F8F8F8', // Subtle background behind the image
     borderRadius: 16, // Slightly larger radius than image
     padding: 0, // Creates visible background border
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 6,
-    elevation: 3,
+    ...(Platform.OS === 'android' ? {
+      elevation: 0,
+    } : {
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.1,
+      shadowRadius: 6,
+    }),
   },
   heroImage: {
     width: '100%',
@@ -3146,12 +3349,14 @@ const styles = StyleSheet.create({
     // Strong border to create "photo frame" effect
     borderWidth: 3,
     borderColor: '#FFFFFF',
-    // Enhanced shadow for 3D "pop out" effect
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    elevation: 6,
+    ...(Platform.OS === 'android' ? {
+      elevation: 0,
+    } : {
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.2,
+      shadowRadius: 8,
+    }),
   },
   heroEngagementOverlay: {
     position: 'absolute',
@@ -3196,11 +3401,14 @@ const styles = StyleSheet.create({
     height: 40,
     borderRadius: 20,
     backgroundColor: '#FFFFFF',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 4,
+    ...(Platform.OS === 'android' ? {
+      elevation: 0,
+    } : {
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.2,
+      shadowRadius: 4,
+    }),
   },
   venueProfileImageSmall: {
     width: 40,

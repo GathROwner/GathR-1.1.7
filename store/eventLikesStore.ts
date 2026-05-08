@@ -24,6 +24,19 @@ const updateCount = (eventId: string, value?: number) => {
   });
 };
 
+const handleListenerError = (eventId: string, error: unknown) => {
+  const code = typeof (error as { code?: unknown })?.code === 'string'
+    ? (error as { code: string }).code
+    : 'unknown';
+
+  if (__DEV__) {
+    console.warn('[EventLikes] live count listener unavailable', { eventId, code });
+  }
+
+  delete listeners[eventId];
+  updateCount(eventId, undefined);
+};
+
 export const startEventLikesListener = (eventId: string | number) => {
   if (!eventId) return;
   const key = String(eventId);
@@ -41,6 +54,8 @@ export const startEventLikesListener = (eventId: string | number) => {
     } else {
       updateCount(key, undefined);
     }
+  }, (error) => {
+    handleListenerError(key, error);
   });
 
   listeners[key] = { unsub, refCount: 1 };

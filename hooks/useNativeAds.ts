@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from 'react';
-import { InteractionManager } from 'react-native';
-import { useIsFocused } from '@react-navigation/native';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { InteractionManager, Platform } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import { useAdPoolStore } from '../store/adPoolStore';
 import { NativeAd } from 'react-native-google-mobile-ads';
 
@@ -14,6 +14,9 @@ export type AdDebugInfo = string[];
 // Disable verbose logging in production - console.log is slow in React Native
 const DEBUG_ADS = false;
 const MAX_LOGGED_ADS = 5;
+const ANDROID_FOCUSED_AD_WORK_DELAY_MS = 8000;
+const ANDROID_FOCUSED_AD_LOAD_COUNT = 2;
+const ANDROID_AD_REFRESH_MAX_AGE_MS = 20 * 60 * 1000;
 
 const summarizeAd = (ad: NativeAd | null) => {
   if (!ad) {
@@ -82,14 +85,15 @@ export default function useNativeAds(
   const ownerIdRef = useRef(`native-ads-${Math.random().toString(36).slice(2, 10)}`);
   const lastPoolSignatureRef = useRef('');
   const lastSelectionSignatureRef = useRef('');
-  const isFocused = useIsFocused();
+  const isFocusedRef = useRef(false);
+  const focusedAdWorkCancelRef = useRef<(() => void) | null>(null);
   const [nativeAdsData, setNativeAdsData] = useState<NativeAdData[]>(
     Array(count)
       .fill(0)
       .map(() => ({ ad: null, loading: false }))
   );
 
-  const logMessage = (message: string) => {
+  const logMessage = useCallback((message: string) => {
     if (onDebugLog) {
       onDebugLog(`[ADMOB ${tabType}]: ${message}`);
     }
@@ -97,54 +101,191 @@ export default function useNativeAds(
     if (DEBUG_ADS) {
       console.log(`[useNativeAds ${tabType}]: ${message}`);
     }
-  };
+  }, [onDebugLog, tabType]);
 
-  const logStructured = (event: string, payload: Record<string, unknown>) => {
+  const logStructured = useCallback((event: string, payload: Record<string, unknown>) => {
     if (DEBUG_ADS) {
       console.log(`[useNativeAds ${tabType}] ${event}`, payload);
     }
+  }, [tabType]);
+
+  const latestStateRef = useRef({
+    count,
+    tabType,
+    startIndex,
+    isLoading,
+    poolAds,
+    loadAds,
+    refreshIfStale,
+    claimAds,
+    releaseAds,
+  });
+
+  latestStateRef.current = {
+    count,
+    tabType,
+    startIndex,
+    isLoading,
+    poolAds,
+    loadAds,
+    refreshIfStale,
+    claimAds,
+    releaseAds,
   };
 
-  // Load ads on mount if pool is empty, or refresh if stale
-  // Deferred to not block tab switches
+  const updateIfChanged = useCallback((next: NativeAdData[]) => {
+    setNativeAdsData((prev) => {
+      const sameLength = prev.length === next.length;
+      const sameEntries =
+        sameLength &&
+        prev.every((entry, index) => {
+          const nextEntry = next[index];
+          return entry.loading === nextEntry.loading && entry.ad === nextEntry.ad;
+        });
+      return sameEntries ? prev : next;
+    });
+  }, []);
+
+  const makeEmptySlots = useCallback(
+    (slotCount: number, loading: boolean = false) =>
+      Array(slotCount)
+        .fill(0)
+        .map(() => ({ ad: null, loading })),
+    []
+  );
+
+  const cancelFocusedAdWork = useCallback(() => {
+    if (focusedAdWorkCancelRef.current) {
+      focusedAdWorkCancelRef.current();
+      focusedAdWorkCancelRef.current = null;
+    }
+  }, []);
+
+  const scheduleFocusedAdWork = useCallback((reason: string) => {
+    cancelFocusedAdWork();
+
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
+    let cancelled = false;
+
+    const handle = InteractionManager.runAfterInteractions(() => {
+      const delayMs = Platform.OS === 'android' ? ANDROID_FOCUSED_AD_WORK_DELAY_MS : 0;
+      timeoutId = setTimeout(() => {
+        timeoutId = null;
+        if (cancelled || !isFocusedRef.current) {
+          return;
+        }
+
+        const state = latestStateRef.current;
+        const ownerId = ownerIdRef.current;
+
+        logStructured('focused_ad_work_started', {
+          reason,
+          tabType: state.tabType,
+          count: state.count,
+          startIndex: state.startIndex,
+          ownerId,
+          poolSize: state.poolAds.length,
+          isLoading: state.isLoading,
+        });
+
+        if (state.count <= 0) {
+          state.releaseAds(state.tabType, ownerId);
+          updateIfChanged([]);
+          return;
+        }
+
+        if (state.poolAds.length === 0) {
+          if (state.isLoading) {
+            logMessage(`Loading state - returning ${state.count} loading placeholders for owner=${ownerId}`);
+            updateIfChanged(makeEmptySlots(state.count, true));
+            return;
+          }
+
+          logMessage(`Pool empty - loading ads`);
+          const focusedLoadCount = Platform.OS === 'android'
+            ? Math.max(1, Math.min(state.count, ANDROID_FOCUSED_AD_LOAD_COUNT))
+            : undefined;
+          state.loadAds(state.tabType, focusedLoadCount);
+          updateIfChanged(makeEmptySlots(state.count, false));
+          return;
+        }
+
+        logMessage(`Pool has ${state.poolAds.length} ads - checking freshness`);
+        state.refreshIfStale(
+          state.tabType,
+          Platform.OS === 'android' ? ANDROID_AD_REFRESH_MAX_AGE_MS : undefined
+        );
+
+        const claimed = state.claimAds(state.tabType, ownerId, state.count, state.startIndex);
+        const next = claimed.map((ad) => ({ ad, loading: false }));
+        logMessage(
+          `Claimed ${claimed.filter(Boolean).length}/${state.count} ads from pool of ${state.poolAds.length} (startIndex=${state.startIndex}, owner=${ownerId})`
+        );
+        updateIfChanged(next);
+      }, delayMs);
+    });
+
+    focusedAdWorkCancelRef.current = () => {
+      cancelled = true;
+      handle.cancel();
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
+    };
+  }, [cancelFocusedAdWork, logMessage, logStructured, makeEmptySlots, updateIfChanged]);
+
+  useFocusEffect(
+    useCallback(() => {
+      isFocusedRef.current = true;
+      scheduleFocusedAdWork('focus');
+
+      return () => {
+        isFocusedRef.current = false;
+        cancelFocusedAdWork();
+      };
+    }, [cancelFocusedAdWork, scheduleFocusedAdWork])
+  );
+
+  // Keep focus changes from forcing the list screens to re-render. Pool updates
+  // still refresh ads while focused, but blur no longer clears native ad state
+  // during the tab transition.
   useEffect(() => {
-    logStructured('hook_mount_or_tab_change', {
+    logStructured('hook_state_changed', {
       tabType,
       count,
       startIndex,
       ownerId: ownerIdRef.current,
-      isFocused,
+      isFocused: isFocusedRef.current,
       poolSize: poolAds.length,
       isLoading,
     });
 
-    const handle = InteractionManager.runAfterInteractions(() => {
-      if (!isFocused || count <= 0) {
-        releaseAds(tabType, ownerIdRef.current);
-        return;
-      }
-      if (poolAds.length === 0) {
-        logMessage(`Pool empty - loading ads`);
-        loadAds(tabType);
-      } else {
-        logMessage(`Pool has ${poolAds.length} ads - checking freshness`);
-        refreshIfStale(tabType);
-      }
-    });
+    if (isFocusedRef.current && count > 0) {
+      scheduleFocusedAdWork('pool_or_count_change');
+    }
+  }, [count, isLoading, logStructured, poolAds, scheduleFocusedAdWork, startIndex, tabType]);
 
-    return () => handle.cancel();
-  }, [count, isFocused, loadAds, poolAds.length, refreshIfStale, releaseAds, tabType]);
+  useEffect(() => {
+    if (count > 0) {
+      return;
+    }
+
+    cancelFocusedAdWork();
+    releaseAds(tabType, ownerIdRef.current);
+    updateIfChanged([]);
+  }, [cancelFocusedAdWork, count, releaseAds, tabType, updateIfChanged]);
 
   useEffect(() => {
     const ownerId = ownerIdRef.current;
     return () => {
+      cancelFocusedAdWork();
       releaseAds(tabType, ownerId);
       logStructured('hook_release', {
         tabType,
         ownerId,
       });
     };
-  }, [releaseAds, tabType]);
+  }, [cancelFocusedAdWork, logStructured, releaseAds, tabType]);
 
   useEffect(() => {
     const sample = poolAds.slice(0, MAX_LOGGED_ADS).map(summarizeAd);
@@ -169,67 +310,6 @@ export default function useNativeAds(
       sample,
     });
   }, [count, isLoading, poolAds, startIndex, tabType]);
-
-  useEffect(() => {
-    const ownerId = ownerIdRef.current;
-
-    const updateIfChanged = (next: NativeAdData[]) => {
-      setNativeAdsData((prev) => {
-        const sameLength = prev.length === next.length;
-        const sameEntries =
-          sameLength &&
-          prev.every((entry, index) => {
-            const nextEntry = next[index];
-            return entry.loading === nextEntry.loading && entry.ad === nextEntry.ad;
-          });
-        return sameEntries ? prev : next;
-      });
-    };
-
-    // Defer ad state updates to not block tab switches
-    // This prevents cascading useMemo recomputations during navigation
-    const handle = InteractionManager.runAfterInteractions(() => {
-      if (!isFocused || count <= 0) {
-        releaseAds(tabType, ownerId);
-        logMessage(`Inactive - released ads for owner=${ownerId}`);
-        updateIfChanged(
-          Array(count)
-            .fill(0)
-            .map(() => ({ ad: null, loading: false }))
-        );
-        return;
-      }
-
-      if (isLoading && poolAds.length === 0) {
-        logMessage(`Loading state - returning ${count} loading placeholders for owner=${ownerId}`);
-        updateIfChanged(
-          Array(count)
-            .fill(0)
-            .map(() => ({ ad: null, loading: true }))
-        );
-        return;
-      }
-
-      if (poolAds.length === 0) {
-        logMessage(`No ads available - returning ${count} empty slots for owner=${ownerId}`);
-        updateIfChanged(
-          Array(count)
-            .fill(0)
-            .map(() => ({ ad: null, loading: false }))
-        );
-        return;
-      }
-
-      const claimed = claimAds(tabType, ownerId, count, startIndex);
-      const next = claimed.map((ad) => ({ ad, loading: false }));
-      logMessage(
-        `Claimed ${claimed.filter(Boolean).length}/${count} ads from pool of ${poolAds.length} (startIndex=${startIndex}, owner=${ownerId})`
-      );
-      updateIfChanged(next);
-    });
-
-    return () => handle.cancel();
-  }, [claimAds, count, isFocused, isLoading, poolAds, releaseAds, startIndex, tabType]);
 
   useEffect(() => {
     const selection = nativeAdsData.map((entry, index) => ({

@@ -75,7 +75,7 @@ const asyncStoragePersister = createAsyncStoragePersister({
 
 // â±ï¸ Live refresh cadence (adjust as desired; backend updates a few times/day)
 const LIVE_REFRESH_MS = 10 * 60 * 1000; // 10 minutes
-const ADMOB_STARTUP_DELAY_MS = Platform.OS === 'android' ? 45000 : 2000;
+const ADMOB_STARTUP_DELAY_MS = Platform.OS === 'android' ? 300000 : 2000;
 
 initializeMapboxAccessToken(MapboxGL);
 void preloadStartupLocation();
@@ -594,9 +594,12 @@ useEffect(() => {
           mobileAds().setAppMuted(false);
           mobileAds().setAppVolume(1.0);
 
-          // Now preload ads after SDK is ready
-          console.log('📢 Preloading ad pool after SDK init...');
-          useAdPoolStore.getState().preloadAds();
+          // iOS can warm ads early. On Android, list screens load ads after focus so
+          // startup and tab switches are not interrupted by a fixed preload timer.
+          if (Platform.OS !== 'android') {
+            console.log('📢 Preloading ad pool after SDK init...');
+            useAdPoolStore.getState().preloadAds();
+          }
 
         } catch (error) {
           console.error('Error initializing AdMob:', error);

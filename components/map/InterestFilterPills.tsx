@@ -4,9 +4,11 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialIcons, Ionicons } from '@expo/vector-icons';
 import { useIsFocused } from '@react-navigation/native';
 import { useMapStore } from '../../store';
+import { useInterestCarouselUiStore } from '../../store/interestCarouselUiStore';
 import { useUserPrefsStore } from '../../store/userPrefsStore';
 import { useClusterInteractionStore } from '../../store/clusterInteractionStore';
 import { doesEventMatchInterestCarouselBaseFilters } from '../../utils/interestCarouselFilterUtils';
+import { markInterestFilterPerfAction } from '../../utils/interestFilterPerfTrace';
 
 type PillItem = {
   label: string;
@@ -15,6 +17,15 @@ type PillItem = {
   originalInterests: string[]; // Track original interest names for filtering
   hasNewContent?: boolean; // Whether this category has new content
   newContentCount?: number; // Number of unseen "new" carousel cards in this pill
+};
+
+type InterestCarouselUiFilter =
+  | { status: 'active'; type: 'event' | 'special'; category: string }
+  | { status: 'cleared' };
+
+type InterestPillEventContext = {
+  venueLocationKey: string;
+  venueEventIds: string[];
 };
 
 const ITEM_HEIGHT = 48; // Increased spacing between pills (36px pill + 12px gap)
@@ -126,22 +137,19 @@ const InterestFilterPills: React.FC<InterestFilterPillsProps> = ({ onPillInterac
   const userInterests = useUserPrefsStore((s) => s.interests);
   const isFocused = useIsFocused();
 
-  const {
-    filterCriteria,
-    setTypeFilters,
-    getCategoryFilterCounts,
-    activeFilterPanel,
-    onScreenEvents,
-    clusters,
-  } = useMapStore();
+  const filterCriteria = useMapStore((state) => state.filterCriteria);
+  const activeFilterPanel = useMapStore((state) => state.activeFilterPanel);
+  const onScreenEvents = useMapStore((state) => state.onScreenEvents);
+  const clusters = useMapStore((state) => state.clusters);
+  const eventCounts = useMapStore((state) => state.getCategoryFilterCounts('event'));
+  const specialCounts = useMapStore((state) => state.getCategoryFilterCounts('special'));
+  const interestCarouselFilter = useInterestCarouselUiStore((state) => state.interestCarouselFilter);
+  const setInterestCarouselFilter = useInterestCarouselUiStore((state) => state.setInterestCarouselFilter);
   const {
     hasNewContent: checkHasNewContent,
     carouselViewedEventIds,
     interactions,
   } = useClusterInteractionStore();
-
-  const eventCounts = getCategoryFilterCounts('event');
-  const specialCounts = getCategoryFilterCounts('special');
 
   const eventCountByKey = useMemo(() => {
     const result: Record<string, number> = {};
@@ -159,6 +167,25 @@ const InterestFilterPills: React.FC<InterestFilterPillsProps> = ({ onPillInterac
     return result;
   }, [specialCounts]);
 
+  const eventContextById = useMemo(() => {
+    const eventMap = new Map<string, InterestPillEventContext>();
+
+    clusters.forEach((cluster) => {
+      cluster.venues.forEach((venue) => {
+        const venueEventIds = venue.events.map((event) => event.id.toString());
+
+        venue.events.forEach((event) => {
+          eventMap.set(event.id.toString(), {
+            venueLocationKey: venue.locationKey,
+            venueEventIds,
+          });
+        });
+      });
+    });
+
+    return eventMap;
+  }, [clusters]);
+
   const newContentCountByInterestKey = useMemo(() => {
     const counts: Record<string, number> = {};
 
@@ -171,19 +198,16 @@ const InterestFilterPills: React.FC<InterestFilterPillsProps> = ({ onPillInterac
         return;
       }
 
-      const cluster = clusters.find((c) =>
-        c.venues.some((v) => v.events.some((e) => e.id === event.id))
-      );
-      const venue = cluster?.venues.find((v) =>
-        v.events.some((e) => e.id === event.id)
-      );
+      const eventContext = eventContextById.get(event.id.toString());
 
-      if (!venue) {
+      if (!eventContext) {
         return;
       }
 
-      const venueEventIds = venue.events.map((e) => e.id.toString());
-      const venueHasNew = checkHasNewContent(venue.locationKey, venueEventIds);
+      const venueHasNew = checkHasNewContent(
+        eventContext.venueLocationKey,
+        eventContext.venueEventIds
+      );
 
       if (!venueHasNew) {
         return;
@@ -194,7 +218,7 @@ const InterestFilterPills: React.FC<InterestFilterPillsProps> = ({ onPillInterac
     });
 
     return counts;
-  }, [onScreenEvents, filterCriteria, clusters, checkHasNewContent, carouselViewedEventIds, interactions]);
+  }, [onScreenEvents, filterCriteria, eventContextById, checkHasNewContent, carouselViewedEventIds, interactions]);
 
   const pills = useMemo<PillItem[]>(() => {
     if (!userInterests || userInterests.length === 0) return [];
@@ -254,17 +278,27 @@ const InterestFilterPills: React.FC<InterestFilterPillsProps> = ({ onPillInterac
     return pillArray;
   }, [userInterests, eventCountByKey, specialCountByKey, newContentCountByInterestKey, filterCriteria]);
 
-  const activeEventKey = normalize(filterCriteria.eventFilters.category || '');
-  const activeSpecialKey = normalize(filterCriteria.specialFilters.category || '');
+  const optimisticFilterActive = interestCarouselFilter?.status === 'active';
+  const optimisticFilterCleared = interestCarouselFilter?.status === 'cleared';
+  const activeEventKey = optimisticFilterActive && interestCarouselFilter.type === 'event'
+    ? normalize(interestCarouselFilter.category)
+    : optimisticFilterCleared
+    ? ''
+    : normalize(filterCriteria.eventFilters.category || '');
+  const activeSpecialKey = optimisticFilterActive && interestCarouselFilter.type === 'special'
+    ? normalize(interestCarouselFilter.category)
+    : optimisticFilterCleared
+    ? ''
+    : normalize(filterCriteria.specialFilters.category || '');
   const hasActiveFilter = !!activeEventKey || !!activeSpecialKey;
 
-  const isActive = (item: PillItem) => {
+  const isActive = useCallback((item: PillItem) => {
     // Check if any of the original interests match the current filter
     return item.originalInterests.some((interest) => {
       const key = normalize(interest);
       return key === activeEventKey || key === activeSpecialKey;
     });
-  };
+  }, [activeEventKey, activeSpecialKey]);
 
   const highestCountIndex = useMemo(() => {
     if (!pills.length) return 0;
@@ -360,6 +394,8 @@ const InterestFilterPills: React.FC<InterestFilterPillsProps> = ({ onPillInterac
 
   const handlePress = useCallback(
     (item: PillItem, index: number) => {
+      const itemIsActive = isActive(item);
+
       if (snapBackTimeoutRef.current) {
         clearTimeout(snapBackTimeoutRef.current);
         snapBackTimeoutRef.current = null;
@@ -375,41 +411,54 @@ const InterestFilterPills: React.FC<InterestFilterPillsProps> = ({ onPillInterac
       }
 
       if (clearArmed) {
+        markInterestFilterPerfAction({
+          action: 'clear-armed-pill',
+          label: item.label,
+          type: item.type,
+          index,
+        });
         onPillInteraction?.();
-        setTypeFilters('event', { category: undefined });
-        setTypeFilters('special', { category: undefined });
+        const clearedFilter: InterestCarouselUiFilter = { status: 'cleared' };
+        setInterestCarouselFilter(clearedFilter);
         cancelClearArmed();
         scrollToCenteredIndex(highestCountIndex, true);
         return;
       }
 
-      if (isActive(item)) {
+      if (itemIsActive) {
+        markInterestFilterPerfAction({
+          action: 'clear-active-pill',
+          label: item.label,
+          type: item.type,
+          index,
+        });
         onPillInteraction?.();
-        setTypeFilters('event', { category: undefined });
-        setTypeFilters('special', { category: undefined });
+        const clearedFilter: InterestCarouselUiFilter = { status: 'cleared' };
+        setInterestCarouselFilter(clearedFilter);
         scrollToCenteredIndex(highestCountIndex, true);
         return;
       }
 
+      markInterestFilterPerfAction({
+        action: 'select',
+        label: item.label,
+        type: item.type,
+        index,
+      });
       onPillInteraction?.();
 
-      // Clear both category filters
-      setTypeFilters('event', { category: undefined });
-      setTypeFilters('special', { category: undefined });
-
-      // Set the category filter for the selected type with interest-pills source
-      setTypeFilters(item.type, { category: item.originalInterests[0] }, 'interest-pills');
-
-      // Set the opposite type's category to a special value that will never match
-      // This ensures only the selected type shows on the map
-      const oppositeType = item.type === 'event' ? 'special' : 'event';
-      setTypeFilters(oppositeType, { category: '__FILTER_PILLS_HIDE__' }, 'interest-pills');
+      const selectedFilter: InterestCarouselUiFilter = {
+        status: 'active',
+        type: item.type,
+        category: item.originalInterests[0],
+      };
+      setInterestCarouselFilter(selectedFilter);
 
       scrollToCenteredIndex(index, true);
     },
     [
       isActive,
-      setTypeFilters,
+      setInterestCarouselFilter,
       scrollToCenteredIndex,
       highestCountIndex,
       clearArmed,

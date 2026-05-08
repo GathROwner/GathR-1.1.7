@@ -143,6 +143,9 @@ const EVENT_CALLOUT_DISABLE_NATIVE_ADS_DEBUG = false;
 // does not attach during the initial callout layout-settling phase.
 const EVENT_CALLOUT_FORCE_COMPACT_FALLBACK_ON_IOS = false;
 const EVENT_CALLOUT_PLACEHOLDER_AD_CARD_DEBUG = false;
+const ANDROID_INITIAL_VENUE_SELECTOR_LIMIT = 6;
+const ANDROID_INITIAL_CONTENT_ITEM_LIMIT = 1;
+const ANDROID_INITIAL_CONTENT_HYDRATION_DELAY_MS = 250;
 let compactSdkUnlockedForSession = true;
 
 // Enable LayoutAnimation on Android
@@ -819,6 +822,7 @@ interface VenueSelectorProps {
   venueHasNewContent: (venue: Venue) => boolean;
   favoriteVenues: string[];
   isGuest: boolean;
+  deferInactiveVisuals?: boolean;
 }
 
 const VenueSelector: React.FC<VenueSelectorProps> = ({
@@ -828,7 +832,8 @@ const VenueSelector: React.FC<VenueSelectorProps> = ({
   onScroll,
   venueHasNewContent,
   favoriteVenues,
-  isGuest
+  isGuest,
+  deferInactiveVisuals = false
 }) => {
   // LOG: VenueSelector rendering - tracks venues count and active index for debugging selector state
   // console.log("VenueSelector rendering with venues:", venues.length, 
@@ -849,7 +854,9 @@ const VenueSelector: React.FC<VenueSelectorProps> = ({
         {venues.map((venue, index) => {
           const events = venue.events.filter(event => event.type === 'event');
           const specials = venue.events.filter(event => event.type === 'special');
-          const profileImage = getPreferredVenueProfileImage(venue.events);
+          const shouldDeferVenueVisuals = deferInactiveVisuals && activeVenueIndex !== index;
+          const profileImage = shouldDeferVenueVisuals ? '' : getPreferredVenueProfileImage(venue.events);
+          const venueContentType = events.length > 0 ? 'event' : 'special';
           
           // LOG: Venue option details - shows venue data for debugging venue selector options
           // console.log(`Venue option ${index}: ${venue.venue}, events: ${events.length}, specials: ${specials.length}, hasImage: ${!!profileImage}`);
@@ -874,19 +881,13 @@ const VenueSelector: React.FC<VenueSelectorProps> = ({
   )}
 
   <View style={styles.venueImageContainer}>
-    {profileImage !== undefined ? (
+    {shouldDeferVenueVisuals ? (
+      <View style={[styles.venueProfileImage, styles.venueProfileImageDeferred]} />
+    ) : (
       <FallbackImage
         imageUrl={profileImage}
         category=""
-        type={venue.events.find(e => e.type === 'event') ? 'event' : 'special'}
-        style={styles.venueProfileImage}
-        fallbackType="profile"
-      />
-    ) : (
-      <FallbackImage
-        imageUrl=""
-        category=""
-        type={venue.events.find(e => e.type === 'event') ? 'event' : 'special'}
+        type={venueContentType}
         style={styles.venueProfileImage}
         fallbackType="profile"
       />
@@ -898,23 +899,24 @@ const VenueSelector: React.FC<VenueSelectorProps> = ({
     )}
 
     {/* Favorite venue button - positioned in top-right corner */}
-    <View style={[
-      styles.venueFavoriteButtonContainer,
-      activeVenueIndex !== index && { opacity: 0.4 }
-    ]}>
-      <VenueFavoriteButton
-        locationKey={venue.locationKey}
-        venueName={venue.venue}
-        size={14}
-        source="map_callout"
-        style={styles.venueFavoriteButton}
-      />
-    </View>
+    {!shouldDeferVenueVisuals && (
+      <View style={[
+        styles.venueFavoriteButtonContainer,
+        activeVenueIndex !== index && { opacity: 0.4 }
+      ]}>
+        <VenueFavoriteButton
+          locationKey={venue.locationKey}
+          venueName={venue.venue}
+          size={14}
+          source="map_callout"
+          style={styles.venueFavoriteButton}
+        />
+      </View>
+    )}
 
     {/* New content indicator - animated red dot */}
-    {(() => {
+    {!shouldDeferVenueVisuals && (() => {
       const hasNew = venueHasNewContent(venue);
-      console.log(`[VenueNewContent] ${venue.venue}: ${hasNew}`);
       return (
         <IndicatorDot
           hasNewContent={hasNew}
@@ -2473,6 +2475,7 @@ interface EventCalloutProps {
   venues: Venue[];
   cluster: Cluster | null;
   onClose: () => void;
+  onCloseStart?: () => void;
   onEventSelected?: (event: Event) => void;
   onLayoutReady?: () => void;
 }
@@ -2481,6 +2484,7 @@ const EventCallout: React.FC<EventCalloutProps> = ({
   venues, 
   cluster,
   onClose,
+  onCloseStart,
   onEventSelected,
   onLayoutReady,
 }) => {
@@ -2766,6 +2770,9 @@ const [calloutState, setCalloutState] = useState<CalloutState>('expanded');
   const lastSdkCompactReadySignatureRef = useRef<string>('');
   const [scrollProgress, setScrollProgress] = useState(0);
   const [canScrollMore, setCanScrollMore] = useState(false);
+  const [androidInitialContentHydrated, setAndroidInitialContentHydrated] = useState(
+    Platform.OS !== 'android'
+  );
 
   // NEW: Venue selector scroll progress
   const [venueScrollProgress, setVenueScrollProgress] = useState(0);
@@ -2783,6 +2790,44 @@ const [calloutState, setCalloutState] = useState<CalloutState>('expanded');
     compactSdkUnlockedForSession = true;
     setCompactSdkUnlocked(true);
   };
+  const shouldDeferAndroidCalloutContent =
+    Platform.OS === 'android' && !androidInitialContentHydrated;
+
+  useEffect(() => {
+    if (Platform.OS !== 'android') {
+      return;
+    }
+
+    setAndroidInitialContentHydrated(false);
+
+    let cancelled = false;
+    let firstFrame: number | null = null;
+    let secondFrame: number | null = null;
+    let hydrationTimer: ReturnType<typeof setTimeout> | null = null;
+
+    firstFrame = requestAnimationFrame(() => {
+      secondFrame = requestAnimationFrame(() => {
+        hydrationTimer = setTimeout(() => {
+          if (!cancelled) {
+            setAndroidInitialContentHydrated(true);
+          }
+        }, ANDROID_INITIAL_CONTENT_HYDRATION_DELAY_MS);
+      });
+    });
+
+    return () => {
+      cancelled = true;
+      if (firstFrame !== null) {
+        cancelAnimationFrame(firstFrame);
+      }
+      if (secondFrame !== null) {
+        cancelAnimationFrame(secondFrame);
+      }
+      if (hydrationTimer) {
+        clearTimeout(hydrationTimer);
+      }
+    };
+  }, [cluster?.id, venues.length]);
   
   // Change this: remove the calloutVisible state
   // Instead, use CSS to show/hide the callout when the lightbox is open
@@ -2818,7 +2863,10 @@ const [calloutState, setCalloutState] = useState<CalloutState>('expanded');
   
   // Load native ads for the current tab
   // Pass activeVenueIndex as startIndex so different venues show different ads from the pool
-  const requestedNativeAdCount = EVENT_CALLOUT_DISABLE_NATIVE_ADS_DEBUG ? 0 : calculateAdCount;
+  const requestedNativeAdCount =
+    EVENT_CALLOUT_DISABLE_NATIVE_ADS_DEBUG || shouldDeferAndroidCalloutContent
+      ? 0
+      : calculateAdCount;
   const nativeAds = useNativeAds(
     requestedNativeAdCount,
     activeTab === 'events' ? 'events' : 'specials',
@@ -2849,6 +2897,32 @@ const [calloutState, setCalloutState] = useState<CalloutState>('expanded');
     const isMinimalSpecialsContent = specials.length <= 1;
     return mixContentWithAds(specials, nativeAds, isMinimalSpecialsContent);
   }, [specials, nativeAds]);
+  const visibleVenueSelectorVenues = useMemo(() => {
+    if (!shouldDeferAndroidCalloutContent) {
+      return reorderedVenues;
+    }
+
+    const initialLimit = Math.max(ANDROID_INITIAL_VENUE_SELECTOR_LIMIT, activeVenueIndex + 1);
+    return reorderedVenues.slice(0, initialLimit);
+  }, [activeVenueIndex, reorderedVenues, shouldDeferAndroidCalloutContent]);
+  const visibleMixedEventsContent = useMemo(() => {
+    if (!shouldDeferAndroidCalloutContent) {
+      return mixedEventsContent;
+    }
+
+    return mixedEventsContent
+      .filter((item) => item.type === 'event')
+      .slice(0, ANDROID_INITIAL_CONTENT_ITEM_LIMIT);
+  }, [mixedEventsContent, shouldDeferAndroidCalloutContent]);
+  const visibleMixedSpecialsContent = useMemo(() => {
+    if (!shouldDeferAndroidCalloutContent) {
+      return mixedSpecialsContent;
+    }
+
+    return mixedSpecialsContent
+      .filter((item) => item.type === 'event')
+      .slice(0, ANDROID_INITIAL_CONTENT_ITEM_LIMIT);
+  }, [mixedSpecialsContent, shouldDeferAndroidCalloutContent]);
   
   const handleImagePress = (imageUrl: string, event: Event) => {
     console.log('IMAGE PRESSED - Starting handleImagePress with URL:', imageUrl);
@@ -3174,6 +3248,7 @@ try {
   
   const translateY = useRef(new Animated.Value(0)).current;
   const backgroundOpacity = useRef(new Animated.Value(0)).current;
+  const closeAnimationStartedRef = useRef(false);
   const indicatorRotation = useRef(new Animated.Value(0)).current;
   
   const touchStartX = useRef(0);
@@ -3379,6 +3454,8 @@ const calloutContainerStyle = EVENT_CALLOUT_SHELL_ISOLATION_DEBUG
         opacity: isLightboxOpen ? 0.3 : 1,
       }
     ];
+const shouldRenderInternalDimOverlay =
+  !EVENT_CALLOUT_SHELL_ISOLATION_DEBUG;
 
 const needsInitialCompactLayoutGate =
   !hasExitedInitialCompactTabRef.current &&
@@ -3660,12 +3737,28 @@ const setCalloutStateWithAnimation = (state: CalloutState) => {
 
   // Animated close function - slides callout down before unmounting
   const animateClose = useCallback(() => {
+    if (closeAnimationStartedRef.current) {
+      return;
+    }
+    closeAnimationStartedRef.current = true;
+    onCloseStart?.();
+
     if (useStaticIosCalloutPresentation) {
       console.log('ANIMATE CLOSE - static iOS close path');
       setCompactTabRenderMode(null);
       onClose();
       return;
     }
+
+    if (Platform.OS === 'android') {
+      console.log('ANIMATE CLOSE - immediate Android close path');
+      translateY.setValue(SCREEN_HEIGHT);
+      backgroundOpacity.setValue(0);
+      setCompactTabRenderMode(null);
+      onClose();
+      return;
+    }
+
     console.log('ANIMATE CLOSE - sliding callout down');
     Animated.parallel([
       Animated.timing(translateY, {
@@ -3684,7 +3777,7 @@ const setCalloutStateWithAnimation = (state: CalloutState) => {
         onClose();
       }
     });
-  }, [backgroundOpacity, onClose, translateY, useStaticIosCalloutPresentation]);
+  }, [backgroundOpacity, onClose, onCloseStart, translateY, useStaticIosCalloutPresentation]);
 
   // Attach the PanResponder to entire callout for swipe-from-anywhere
   const panResponder = useRef(
@@ -4048,7 +4141,7 @@ useEffect(() => {
 
   return (
     <>
-      {!EVENT_CALLOUT_SHELL_ISOLATION_DEBUG && (
+      {shouldRenderInternalDimOverlay && (
         <Animated.View 
           style={[
             styles.dimOverlay,
@@ -4160,13 +4253,14 @@ useEffect(() => {
           ]}
         >
           <VenueSelector
-            venues={reorderedVenues}
+            venues={visibleVenueSelectorVenues}
             activeVenueIndex={activeVenueIndex}
             onSelectVenue={handleVenueSelect}
             onScroll={handleVenueScroll}
             venueHasNewContent={venueHasNewContent}
             favoriteVenues={favoriteVenues}
             isGuest={isGuest}
+            deferInactiveVisuals={shouldDeferAndroidCalloutContent}
           />
         </Animated.View>
         
@@ -4218,7 +4312,7 @@ useEffect(() => {
               <>
                 {hasEvents && (
                   <View style={styles.multiEventsContainer}>
-                    {mixedEventsContent.map((item, index) => renderContentItem(item, index))}
+                    {visibleMixedEventsContent.map((item, index) => renderContentItem(item, index))}
                   </View>
                 )}
               </>
@@ -4228,7 +4322,7 @@ useEffect(() => {
               <>
                 {hasSpecials && (
                   <View style={styles.multiEventsContainer}>
-                    {mixedSpecialsContent.map((item, index) => renderContentItem(item, index))}
+                    {visibleMixedSpecialsContent.map((item, index) => renderContentItem(item, index))}
                   </View>
                 )}
               </>
@@ -4832,11 +4926,14 @@ const styles = StyleSheet.create({
     color: '#1E90FF', // Blue accent for active state
     fontWeight: '700',
   },
-   venueProfileImage: {
+  venueProfileImage: {
     width: 40,
     height: 40,
     borderRadius: 20,
     backgroundColor: '#F0F0F0',
+  },
+  venueProfileImageDeferred: {
+    backgroundColor: '#E6E6E6',
   },
   venueImageGrayOverlay: {
     position: 'absolute',
