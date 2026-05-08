@@ -1707,7 +1707,14 @@ function SpecialsScreen() {
       if (globalFlag && specialsFiltersRef.current) {
         specialsFiltersRef.current.measureInWindow((x: number, y: number, width: number, height: number) => {
           // Add stability check to prevent measurement spam
-          const currentMeasurement = { x: Math.round(x), y: Math.round(y), width: Math.round(width), height: Math.round(height) };
+          const measuredAt = Date.now();
+          const currentMeasurement = {
+            x: Math.round(x),
+            y: Math.round(y),
+            width: Math.round(width),
+            height: Math.round(height),
+            measuredAt
+          };
           
           if (!lastMeasurement || 
               Math.abs(currentMeasurement.x - lastMeasurement.x) > 2 ||
@@ -1724,6 +1731,7 @@ function SpecialsScreen() {
             }
             
             (global as any).specialsFiltersLayout = currentMeasurement;
+            (global as any).specialsFiltersLayoutMeasuredAt = measuredAt;
           }
         });
       }
@@ -2697,7 +2705,9 @@ useEffect(() => {
               // Immediate measurement for tutorial
               if ((global as any).tutorialHighlightSpecialsFilters && specialsFiltersRef.current) {
                 specialsFiltersRef.current.measureInWindow((x: number, y: number, width: number, height: number) => {
-                  (global as any).specialsFiltersLayout = { x, y, width, height };
+                  const measuredAt = Date.now();
+                  (global as any).specialsFiltersLayout = { x, y, width, height, measuredAt };
+                  (global as any).specialsFiltersLayoutMeasuredAt = measuredAt;
                 });
               }
             }}

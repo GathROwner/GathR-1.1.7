@@ -639,12 +639,18 @@ const timeoutId = setTimeout(() => {
     }
 
     if (step.id === 'specials-filters') {
+      const specialsFiltersLayoutFreshAfter = Date.now();
+      (global as any).specialsFiltersLayout = null;
+      (global as any).specialsFiltersLayoutMeasuredAt = 0;
       createWaitForLayoutFunction(
         'tutorialHighlightSpecialsFilters',
         'specialsFiltersLayout',
         (layout) => ({ ...layout, borderRadius: 12, showPulse: false }),
         (layout) => ({ x: SCREEN_WIDTH / 2, y: layout.y + layout.height + 20 }),
-        'specials-filters'
+        'specials-filters',
+        {
+          requireFreshLayoutAfter: specialsFiltersLayoutFreshAfter
+        }
       );
       return;
     }

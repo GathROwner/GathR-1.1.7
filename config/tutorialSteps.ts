@@ -155,7 +155,7 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
     content: 'You can combine filters here too!',
     target: 'specials-filter-section',
     placement: 'top',
-    sheetPosition: 'bottom',
+    sheetPosition: 'center',
     action: 'next'
   },
   
