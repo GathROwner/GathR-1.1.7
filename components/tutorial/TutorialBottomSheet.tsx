@@ -31,11 +31,13 @@ import { ClusterExplanationContent } from './ClusterExplanationContent';
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 interface TutorialBottomSheetProps extends TutorialTooltipProps {
+  stepId?: string;
   stepNumber?: number;
   totalSteps?: number;
 }
 
 export const TutorialBottomSheet: React.FC<TutorialBottomSheetProps> = ({
+  stepId,
   title,
   content,
   onNext,
@@ -142,12 +144,20 @@ export const TutorialBottomSheet: React.FC<TutorialBottomSheetProps> = ({
           // Slides UP from bottom - for top content tutorials
           // Keep the Android cluster step above the system navigation bar.
           const isAndroidClusterStep =
-            Platform.OS === 'android' && title === 'Event Clusters - Tap the Marker!';
+            Platform.OS === 'android' && stepId === 'cluster-click';
+          const isAndroidSpecialsTabStep =
+            Platform.OS === 'android' && stepId === 'specials-tab';
           const androidNavSafeBottom = Math.max(72, insets.bottom + 16);
-          const bottomOffset = isAndroidClusterStep ? androidNavSafeBottom : 90;
+          const androidSpecialsTabBottom = Math.max(140, insets.bottom + 84);
+          const bottomOffset = isAndroidClusterStep
+            ? androidNavSafeBottom
+            : isAndroidSpecialsTabStep
+              ? androidSpecialsTabBottom
+              : 90;
 
           console.log('[TutorialBottomSheet] bottom placement', {
             platform: Platform.OS,
+            stepId,
             title,
             bottomOffset,
             safeAreaBottom: insets.bottom

@@ -1771,6 +1771,7 @@ const tutorialOverlayForCalloutModal = useCallback(() => {
       <TutorialSpotlight spotlight={spotlightConfig}>
         {stepForTooltip && (
           <TutorialBottomSheet
+            stepId={stepForTooltip.id}
             title={stepForTooltip.title}
             content={stepForTooltip.content}
             onNext={handleNext}
@@ -1901,6 +1902,7 @@ const tutorialOverlayForCalloutModal = useCallback(() => {
           <TutorialSpotlight spotlight={spotlightConfig}>
             {stepForTooltip && (
               <TutorialBottomSheet
+                stepId={stepForTooltip.id}
                 title={stepForTooltip.title}
                 content={stepForTooltip.content}
                 onNext={handleNext}
