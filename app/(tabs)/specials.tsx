@@ -118,6 +118,7 @@ const SPECIALS_NATIVE_AD_PLACEHOLDER_DEBUG = false;
 const COLLAPSIBLE_HEADER_TOP_MARGIN = 3;
 const ENABLE_SORT_PERFORMANCE_ANALYTICS = false;
 const LIST_LIVE_COUNT_LISTENER_DELAY_MS = 1500;
+const ANDROID_SPECIALS_FILTERS_VISIBLE_TOP_TRIM = 36;
 const INITIAL_FILTER_HEADER_HEIGHT = 195;
 
 // --- Local helpers for safe label/range handling and end-date suffix ---
@@ -1695,6 +1696,26 @@ function SpecialsScreen() {
   const specialsFiltersPulseAnim = useRef(new Animated.Value(1)).current;
   const [specialsFiltersHighlighted, setSpecialsFiltersHighlighted] = useState(false);
 
+  const measureVisibleSpecialsFiltersLayout = useCallback((
+    x: number,
+    y: number,
+    width: number,
+    height: number,
+    measuredAt = Date.now()
+  ) => {
+    const topTrim = Platform.OS === 'android'
+      ? Math.min(ANDROID_SPECIALS_FILTERS_VISIBLE_TOP_TRIM, Math.max(0, height - 1))
+      : 0;
+
+    return {
+      x: Math.round(x),
+      y: Math.round(y + topTrim),
+      width: Math.round(width),
+      height: Math.round(Math.max(1, height)),
+      measuredAt
+    };
+  }, []);
+
   useEffect(() => {
     let lastMeasurement: any = null;
     let measurementCount = 0;
@@ -1708,13 +1729,7 @@ function SpecialsScreen() {
         specialsFiltersRef.current.measureInWindow((x: number, y: number, width: number, height: number) => {
           // Add stability check to prevent measurement spam
           const measuredAt = Date.now();
-          const currentMeasurement = {
-            x: Math.round(x),
-            y: Math.round(y),
-            width: Math.round(width),
-            height: Math.round(height),
-            measuredAt
-          };
+          const currentMeasurement = measureVisibleSpecialsFiltersLayout(x, y, width, height, measuredAt);
           
           if (!lastMeasurement || 
               Math.abs(currentMeasurement.x - lastMeasurement.x) > 2 ||
@@ -1737,7 +1752,7 @@ function SpecialsScreen() {
       }
     }, 200);
     return () => clearInterval(interval);
-  }, [specialsFiltersHighlighted]);
+  }, [specialsFiltersHighlighted, measureVisibleSpecialsFiltersLayout]);
 
   useEffect(() => {
     if (specialsFiltersHighlighted) {
@@ -2706,7 +2721,7 @@ useEffect(() => {
               if ((global as any).tutorialHighlightSpecialsFilters && specialsFiltersRef.current) {
                 specialsFiltersRef.current.measureInWindow((x: number, y: number, width: number, height: number) => {
                   const measuredAt = Date.now();
-                  (global as any).specialsFiltersLayout = { x, y, width, height, measuredAt };
+                  (global as any).specialsFiltersLayout = measureVisibleSpecialsFiltersLayout(x, y, width, height, measuredAt);
                   (global as any).specialsFiltersLayoutMeasuredAt = measuredAt;
                 });
               }

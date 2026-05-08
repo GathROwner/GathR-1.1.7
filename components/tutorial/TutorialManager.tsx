@@ -645,7 +645,17 @@ const timeoutId = setTimeout(() => {
       createWaitForLayoutFunction(
         'tutorialHighlightSpecialsFilters',
         'specialsFiltersLayout',
-        (layout) => ({ ...layout, borderRadius: 12, showPulse: false }),
+        (layout) => {
+          const spotlightPadding = 8;
+          return {
+            x: layout.x + spotlightPadding,
+            y: layout.y + spotlightPadding,
+            width: Math.max(1, layout.width - spotlightPadding * 2),
+            height: Math.max(1, layout.height - spotlightPadding * 2),
+            borderRadius: 12,
+            showPulse: false
+          };
+        },
         (layout) => ({ x: SCREEN_WIDTH / 2, y: layout.y + layout.height + 20 }),
         'specials-filters',
         {
