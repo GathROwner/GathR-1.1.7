@@ -1506,6 +1506,33 @@ React.useEffect(() => {
   }, [eventsPillHasActiveFilters, specialsPillHasActiveFilters]);
   
   const viewRef = useRef<View>(null);
+  const publishTutorialFilterPillsLayout = React.useCallback(() => {
+    const node = viewRef.current;
+    if (!node) {
+      return;
+    }
+
+    node.measure((x, y, width, height, pageX, pageY) => {
+      const measuredAt = Date.now();
+      (global as any).filterPillsLayout = { x: pageX, y: pageY, width, height, measuredAt };
+      (global as any).filterPillsLayoutMeasuredAt = measuredAt;
+    });
+  }, []);
+
+  React.useEffect(() => {
+    if (!tutorialHighlight) {
+      return;
+    }
+
+    const frameId = requestAnimationFrame(publishTutorialFilterPillsLayout);
+    const timeoutId = setTimeout(publishTutorialFilterPillsLayout, 120);
+
+    return () => {
+      cancelAnimationFrame(frameId);
+      clearTimeout(timeoutId);
+    };
+  }, [publishTutorialFilterPillsLayout, tutorialHighlight]);
+
   const {
     pillWidth: curtainPillWidth,
     travelDistance: curtainTravelDistance
@@ -1586,11 +1613,7 @@ React.useEffect(() => {
       <Animated.View
         ref={viewRef}
         onLayout={() => {
-          if (viewRef.current) {
-            viewRef.current.measure((x, y, width, height, pageX, pageY) => {
-              (global as any).filterPillsLayout = { x: pageX, y: pageY, width, height };
-            });
-          }
+          publishTutorialFilterPillsLayout();
         }}
         style={[
           styles.pillsContainer,

@@ -26,6 +26,7 @@ import { TutorialBottomSheet } from './TutorialBottomSheet';
 import { SpotlightConfig, ComponentMeasurement} from '../../types/tutorial';
 import { findNearestCluster, measureComponent, calculateTooltipPosition, tutorialLog, shouldAutoTriggerTutorial} from '../../utils/tutorialUtils';
 import { TUTORIAL_CONFIG } from '../../config/tutorialSteps';
+import { useMapStore } from '../../store/mapStore';
 
 import { TUTORIAL_STEPS, hasSubSteps, getTutorialStepById} from '../../config/tutorialSteps';
 import { TutorialStep } from '../../types/tutorial';
@@ -77,6 +78,11 @@ const IOS_CALLOUT_MODAL_TUTORIAL_STEPS = new Set([
 ]);
 
 interface TutorialManagerProps {children: React.ReactNode;}
+
+type TutorialLayoutWaitOptions = {
+  requireFreshLayoutAfter?: number;
+  waitForMapCalloutClosed?: boolean;
+};
 
 export const TutorialManager: React.FC<TutorialManagerProps> = ({ children }) => {
   const {
@@ -346,7 +352,14 @@ if (currentStep?.id !== 'facebook-submission') {
       (global as any).facebookSubmissionLayout = null;
     }
 
-    const createWaitForLayoutFunction = (flagName: string, layoutName: string, configCallback: (layout: ComponentMeasurement) => SpotlightConfig, tooltipCallback: (layout: ComponentMeasurement) => { x: number, y: number }, stepId?: string) => {
+    const createWaitForLayoutFunction = (
+      flagName: string,
+      layoutName: string,
+      configCallback: (layout: ComponentMeasurement) => SpotlightConfig,
+      tooltipCallback: (layout: ComponentMeasurement) => { x: number, y: number },
+      stepId?: string,
+      options: TutorialLayoutWaitOptions = {}
+    ) => {
       (global as any)[flagName] = true;
       setSpotlightConfig(undefined);
 
@@ -392,8 +405,52 @@ const timeoutId = setTimeout(() => {
 
           // For non-callout steps (like filter-pills), skip complex validation
           if (!isCalloutStep) {
-            const layout = (global as any)[layoutName];
+            if (options.waitForMapCalloutClosed) {
+              const mapSelectionState = useMapStore.getState();
+              const liveSelectedVenues = mapSelectionState.selectedVenues;
+              const liveSelectedCluster = mapSelectionState.selectedCluster;
+              const isMapCalloutOpen =
+                Boolean(liveSelectedCluster) ||
+                (Array.isArray(liveSelectedVenues) && liveSelectedVenues.length > 0);
+
+              if (isMapCalloutOpen) {
+                if (retries === 25 || retries % 5 === 0) {
+                  tutorialLog(`Waiting for map callout to close before measuring ${layoutName}.`, {
+                    selectedVenueCount: Array.isArray(liveSelectedVenues) ? liveSelectedVenues.length : 0,
+                    hasSelectedCluster: Boolean(liveSelectedCluster),
+                    retries
+                  });
+                }
+                setTimeout(() => pollForLayout(retries - 1, currentDelay), currentDelay);
+                return;
+              }
+            }
+
+            const layout = (global as any)[layoutName] as (ComponentMeasurement & { measuredAt?: number }) | null | undefined;
             if (layout && layout.width > 0 && layout.height > 0) {
+              const measuredAtKey = `${layoutName}MeasuredAt`;
+              const layoutMeasuredAt =
+                typeof layout.measuredAt === 'number'
+                  ? layout.measuredAt
+                  : typeof (global as any)[measuredAtKey] === 'number'
+                    ? (global as any)[measuredAtKey]
+                    : 0;
+
+              if (
+                typeof options.requireFreshLayoutAfter === 'number' &&
+                layoutMeasuredAt < options.requireFreshLayoutAfter
+              ) {
+                if (retries === 25 || retries % 5 === 0) {
+                  tutorialLog(`Waiting for fresh layout for ${layoutName}.`, {
+                    layoutMeasuredAt,
+                    requireFreshLayoutAfter: options.requireFreshLayoutAfter,
+                    retries
+                  });
+                }
+                setTimeout(() => pollForLayout(retries - 1, 100), 100);
+                return;
+              }
+
             // Normal successful measurement
             // Include the derived stable flag in the payload so it actually shows in logs
             // Example: "eventsFiltersLayout" â†’ stableKey "eventsFiltersStable"
@@ -479,13 +536,20 @@ const timeoutId = setTimeout(() => {
   pendingTimeoutRef.current = timeoutId;
 };
 
-     if (step.id === 'filter-pills') {
+    if (step.id === 'filter-pills') {
+      const filterPillsLayoutFreshAfter = Date.now();
+      (global as any).filterPillsLayout = null;
+      (global as any).filterPillsLayoutMeasuredAt = 0;
       createWaitForLayoutFunction(
         'tutorialHighlightFilterPills',
         'filterPillsLayout',
         (layout) => ({ ...layout, borderRadius: (layout.height / 2) - 1, showPulse: false }),
         (layout) => ({ x: SCREEN_WIDTH / 2, y: layout.y + layout.height + 20 }),
-        'filter-pills'
+        'filter-pills',
+        {
+          requireFreshLayoutAfter: filterPillsLayoutFreshAfter,
+          waitForMapCalloutClosed: true
+        }
       );
       return;
     }
