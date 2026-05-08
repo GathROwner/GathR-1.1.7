@@ -119,6 +119,7 @@ const COLLAPSIBLE_HEADER_TOP_MARGIN = 3;
 const ENABLE_SORT_PERFORMANCE_ANALYTICS = false;
 const LIST_LIVE_COUNT_LISTENER_DELAY_MS = 1500;
 const ANDROID_SPECIALS_FILTERS_VISIBLE_TOP_TRIM = 36;
+const ANDROID_SPECIALS_FILTERS_VISIBLE_BOTTOM_PAD = 10;
 const INITIAL_FILTER_HEADER_HEIGHT = 195;
 
 // --- Local helpers for safe label/range handling and end-date suffix ---
@@ -1706,12 +1707,13 @@ function SpecialsScreen() {
     const topTrim = Platform.OS === 'android'
       ? Math.min(ANDROID_SPECIALS_FILTERS_VISIBLE_TOP_TRIM, Math.max(0, height - 1))
       : 0;
+    const bottomPad = Platform.OS === 'android' ? ANDROID_SPECIALS_FILTERS_VISIBLE_BOTTOM_PAD : 0;
 
     return {
       x: Math.round(x),
       y: Math.round(y + topTrim),
       width: Math.round(width),
-      height: Math.round(Math.max(1, height)),
+      height: Math.round(Math.max(1, height + bottomPad)),
       measuredAt
     };
   }, []);
