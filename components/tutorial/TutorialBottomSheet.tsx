@@ -21,6 +21,7 @@ import {
   Platform
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TutorialTooltipProps } from '../../types/tutorial';
 import { TUTORIAL_CONFIG } from '../../config/tutorialSteps';
 import { IconLegendDemo } from './TutorialDemoComponents';
@@ -50,6 +51,7 @@ export const TutorialBottomSheet: React.FC<TutorialBottomSheetProps> = ({
 }) => {
   const slideAnim = useRef(new Animated.Value(0)).current;
   const scaleAnim = useRef(new Animated.Value(0.95)).current;
+  const insets = useSafeAreaInsets();
 
   useEffect(() => {
     // Animate sheet entrance - same animation for all positions
@@ -135,37 +137,21 @@ export const TutorialBottomSheet: React.FC<TutorialBottomSheetProps> = ({
           ]
         };
       
-        
-        /* 
-  ──────────────────────────────────────────────────────────────────────────────
-  TUTORIAL: BOTTOM SHEET POSITION (ANDROID CLUSTER STEP)
-  ──────────────────────────────────────────────────────────────────────────────
-  Why:
-    • On Android, the default "bottom: 90" left too much dimmed space and the
-      tooltip overlapped the cluster spotlight on step 2 ("Event Clusters - Tap the Marker!").
-    • We pin the sheet a little lower ONLY for this step on Android to open a clean
-      gap above the sheet for the spotlight + tap target.
-
-  How:
-    • Title-gated override (kept simple for now): if platform=android AND this is the
-      cluster step (by title), use a smaller bottom offset (currently 8).
-    • All other steps/platforms keep the default offset (90).
-
-  Notes:
-    • Title matching is brittle ("Tap" vs "Tab"). If we productize this, switch to using
-      step.id === 'cluster-click' instead of the title.
-    • This logic only adjusts the sheet; spotlight/tooltip geometry is handled elsewhere.
-*/
       case 'bottom':
         default:
           // Slides UP from bottom - for top content tutorials
-          // Lower the sheet ONLY for the Android cluster-click step so it doesn't cover the spotlight.
-          const bottomOffset =
-            (Platform.OS === 'android' && title === 'Event Clusters - Tap the Marker!')
-              ? 8   // ↓ was 16 — move the sheet ~8px closer to the system bar
-              : 90; // default elsewhere
+          // Keep the Android cluster step above the system navigation bar.
+          const isAndroidClusterStep =
+            Platform.OS === 'android' && title === 'Event Clusters - Tap the Marker!';
+          const androidNavSafeBottom = Math.max(72, insets.bottom + 16);
+          const bottomOffset = isAndroidClusterStep ? androidNavSafeBottom : 90;
 
-          console.log('[TutorialBottomSheet] bottom placement', { platform: Platform.OS, title, bottomOffset });
+          console.log('[TutorialBottomSheet] bottom placement', {
+            platform: Platform.OS,
+            title,
+            bottomOffset,
+            safeAreaBottom: insets.bottom
+          });
 
           return {
             ...baseStyle,
