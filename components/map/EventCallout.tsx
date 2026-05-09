@@ -3803,34 +3803,47 @@ const setCalloutStateWithAnimation = (state: CalloutState) => {
     });
   }, [backgroundOpacity, onClose, onCloseStart, translateY, useStaticIosCalloutPresentation]);
 
-  // Attach the PanResponder to entire callout for swipe-from-anywhere
-  const panResponder = useRef(
-    PanResponder.create({
+  const isShellVerticalDrag = useCallback((gestureState: { dx: number; dy: number }) => {
+    const { dx, dy } = gestureState;
+    const isVerticalGesture = Math.abs(dy) > Math.abs(dx);
+    const exceededThreshold = Math.abs(dy) > 10;
+    const hasVerticalBias = Math.abs(dy) > Math.abs(dx) * 1.5;
+
+    return isVerticalGesture && exceededThreshold && hasVerticalBias;
+  }, []);
+
+  // Tutorial and gesture handlers call through refs so mounted responders stay current.
+  const setCalloutStateRef = useRef(setCalloutStateWithAnimation);
+  const onCloseRef = useRef(animateClose);
+
+  // Attach the PanResponder to the fixed shell controls above the scroll content.
+  const panResponder = useMemo(
+    () => PanResponder.create({
       // Don't claim gesture on touch start - let ScrollView have a chance
       onStartShouldSetPanResponder: () => false,
 
+      // Android children such as GH horizontal ScrollViews and Touchables can
+      // take the responder before the parent shell sees the bubbling move.
+      // Capture only after a clear vertical intent so horizontal venue swipes
+      // and taps still behave normally.
+      onMoveShouldSetPanResponderCapture: (_, gestureState) => isShellVerticalDrag(gestureState),
+
       // Only claim when clear vertical movement detected AND scroll-aware
       onMoveShouldSetPanResponder: (_, gestureState) => {
-        const { dx, dy } = gestureState;
-
-        // Must be primarily vertical
-        const isVerticalGesture = Math.abs(dy) > Math.abs(dx);
-        const exceededThreshold = Math.abs(dy) > 10;
-        const hasVerticalBias = Math.abs(dy) > Math.abs(dx) * 1.5;
-
-        if (!isVerticalGesture || !exceededThreshold || !hasVerticalBias) {
+        if (!isShellVerticalDrag(gestureState)) {
           return false;
         }
 
-        // Check scroll position
-        const currentScrollY = scrollYRef.current || 0;
+        const { dy } = gestureState;
 
-        // Down swipe: only claim if at top of scroll
-        if (dy > 0 && currentScrollY < 5) {
+        // These handlers are only attached to the fixed shell controls above
+        // the scroll content, so a shell pull-down should work regardless of
+        // where the content list is currently scrolled.
+        if (dy > 0) {
           return true;
         }
 
-        // Up swipe: always claim (doesn't interfere with scrolling)
+        // Up swipe: always claim from shell controls.
         if (dy < 0) {
           return true;
         }
@@ -3851,13 +3864,13 @@ const setCalloutStateWithAnimation = (state: CalloutState) => {
         // console.log('MOVE - dy:', gestureState.dy.toFixed(2), 'dx:', gestureState.dx.toFixed(2), 'vy:', gestureState.vy.toFixed(2));
         translateY.setValue(gestureState.dy);
         let opacity = 0;
-        if (calloutState === 'expanded') {
+        if (currentStateRef.current === 'expanded') {
           opacity = Math.max(0, 0.5 - (gestureState.dy / SCREEN_HEIGHT));
-        } else if (calloutState === 'normal' && gestureState.dy < 0) {
+        } else if (currentStateRef.current === 'normal' && gestureState.dy < 0) {
           opacity = Math.min(0.5, Math.abs(gestureState.dy) / SCREEN_HEIGHT);
         }
         backgroundOpacity.setValue(opacity);
-        const rotation = calloutState === 'expanded' ? 
+        const rotation = currentStateRef.current === 'expanded' ?
           Math.max(0, 1 - (gestureState.dy / 300)) :
           Math.min(1, Math.abs(gestureState.dy) / 300);
         indicatorRotation.setValue(rotation);
@@ -3873,7 +3886,7 @@ const setCalloutStateWithAnimation = (state: CalloutState) => {
         // === LARGE SWIPE DOWN from ANY state → dismiss callout ===
         if (dy > LARGE_SWIPE_DISTANCE || vy > LARGE_SWIPE_VELOCITY) {
           console.log('LARGE SWIPE DOWN - dismissing callout (dy:', dy.toFixed(2), 'vy:', vy.toFixed(2), ')');
-          animateClose();
+          onCloseRef.current();
           return;
         }
 
@@ -3881,14 +3894,14 @@ const setCalloutStateWithAnimation = (state: CalloutState) => {
         if (currentStateRef.current === 'minimized' &&
             (dy < -LARGE_SWIPE_DISTANCE || vy < -LARGE_SWIPE_VELOCITY)) {
           console.log('LARGE SWIPE UP from minimized - jumping to expanded (dy:', dy.toFixed(2), 'vy:', vy.toFixed(2), ')');
-          setCalloutStateWithAnimation('expanded');
+          setCalloutStateRef.current('expanded');
           return;
         }
 
         // === Small down drag from minimized → dismiss ===
         if (currentStateRef.current === 'minimized' && dy > 10) {
           console.log('CLOSING callout from minimized');
-          animateClose();
+          onCloseRef.current();
           return;
         }
 
@@ -3918,10 +3931,16 @@ const setCalloutStateWithAnimation = (state: CalloutState) => {
           }
         }
         console.log('TARGET STATE decided:', targetState);
-        setCalloutStateWithAnimation(targetState);
+        setCalloutStateRef.current(targetState);
       }
-    })
-  ).current;
+    }),
+    [
+      backgroundOpacity,
+      indicatorRotation,
+      isShellVerticalDrag,
+      translateY,
+    ]
+  );
 const shellPanHandlers = EVENT_CALLOUT_SHELL_ISOLATION_DEBUG ? {} : panResponder.panHandlers;
 
     useEffect(() => {
@@ -3937,9 +3956,6 @@ const shellPanHandlers = EVENT_CALLOUT_SHELL_ISOLATION_DEBUG ? {} : panResponder
   }, [calloutState]);
 
 // ðŸŽ¯ TUTORIAL INTEGRATION: Expose callout state control globally (attach per mount)
-const setCalloutStateRef = useRef(setCalloutStateWithAnimation);
-const onCloseRef = useRef(onClose);
-
 useEffect(() => {
   setCalloutStateRef.current = setCalloutStateWithAnimation;
   onCloseRef.current = animateClose;
@@ -4267,6 +4283,7 @@ useEffect(() => {
         
         <Animated.View
           {...shellPanHandlers}
+          collapsable={false}
           ref={(node) => {
             venueSelectorRef.current = node as View | null;
           }}
@@ -4300,6 +4317,7 @@ useEffect(() => {
         
         <Animated.View
           {...shellPanHandlers}
+          collapsable={false}
           ref={(node) => {
             eventTabsRef.current = node as View | null;
           }}
