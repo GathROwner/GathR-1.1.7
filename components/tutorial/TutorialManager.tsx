@@ -45,7 +45,7 @@ const getAndroidEventsFiltersHeaderTrim = () => (
 const getAndroidEventsFiltersBottomPad = () => (
   Platform.OS === 'android' ? 10 : 0
 );
-const TUTORIAL_CLUSTER_POST_IDLE_SETTLE_MS = 150;
+const TUTORIAL_CLUSTER_POST_IDLE_SETTLE_MS = 250;
 
 const getTutorialClusterCoordinate = (cluster: any): [number, number] | null => {
   const venues = Array.isArray(cluster?.venues) ? cluster.venues : [];
@@ -69,15 +69,51 @@ const getTutorialClusterCoordinate = (cluster: any): [number, number] | null => 
   return [totals.longitude / venues.length, totals.latitude / venues.length];
 };
 
-const findTutorialClusterContainingVenue = (clusters: any[], venueName?: string | null) => {
-  if (!venueName || !Array.isArray(clusters)) {
+const findTutorialClusterContainingVenue = (
+  clusters: any[],
+  venueLocationKey?: string | null,
+  venueName?: string | null
+) => {
+  if ((!venueLocationKey && !venueName) || !Array.isArray(clusters)) {
     return null;
   }
 
   return clusters.find((cluster: any) =>
     Array.isArray(cluster?.venues) &&
-    cluster.venues.some((venue: any) => venue?.venue === venueName)
+    cluster.venues.some((venue: any) =>
+      (venueLocationKey && venue?.locationKey === venueLocationKey) ||
+      (venueName && venue?.venue === venueName)
+    )
   ) ?? null;
+};
+
+const findNearestTutorialClusterToCoordinate = (
+  clusters: any[],
+  coordinate?: [number, number] | null
+) => {
+  if (!Array.isArray(clusters) || !coordinate) {
+    return null;
+  }
+
+  let nearestCluster: any = null;
+  let nearestDistance = Number.POSITIVE_INFINITY;
+
+  clusters.forEach((cluster: any) => {
+    const clusterCoordinate = getTutorialClusterCoordinate(cluster);
+    if (!clusterCoordinate) {
+      return;
+    }
+
+    const longitudeDelta = clusterCoordinate[0] - coordinate[0];
+    const latitudeDelta = clusterCoordinate[1] - coordinate[1];
+    const distance = longitudeDelta * longitudeDelta + latitudeDelta * latitudeDelta;
+    if (distance < nearestDistance) {
+      nearestDistance = distance;
+      nearestCluster = cluster;
+    }
+  });
+
+  return nearestCluster;
 };
 
 const IOS_CALLOUT_MODAL_TUTORIAL_STEPS = new Set([
@@ -749,6 +785,8 @@ const timeoutId = setTimeout(() => {
             await new Promise(resolve => setTimeout(resolve, 500));
             const mapStore = (global as any).mapStore;
             let androidProjectedClusterCoordinate: [number, number] | null = null;
+            let androidTargetVenueLocationKey: string | null = null;
+            let androidTargetVenueName: string | null = null;
             if (mapStore?.clusters?.length > 0) {
               if (cameraRef?.current) {
                  const targetCluster =
@@ -758,6 +796,8 @@ const timeoutId = setTimeout(() => {
                  const targetVenue = targetCluster.venues[0];
                  const coordinates = [targetVenue.longitude, targetVenue.latitude];
                  const targetVenueName = targetVenue.venue;
+                 androidTargetVenueName = targetVenueName ?? null;
+                 androidTargetVenueLocationKey = targetVenue.locationKey ?? null;
                  let projectedClusterCoordinate =
                    getTutorialClusterCoordinate(targetCluster) ?? coordinates;
 
@@ -766,7 +806,11 @@ const timeoutId = setTimeout(() => {
                    typeof mapStore.getClustersForZoom === 'function'
                  ) {
                    const zoomClusters = mapStore.getClustersForZoom(TUTORIAL_CLUSTER_ZOOM_LEVEL);
-                   const zoomCluster = findTutorialClusterContainingVenue(zoomClusters, targetVenueName);
+                   const zoomCluster = findTutorialClusterContainingVenue(
+                     zoomClusters,
+                     androidTargetVenueLocationKey,
+                     targetVenueName
+                   );
                    const zoomCoordinate = getTutorialClusterCoordinate(zoomCluster);
                    if (zoomCoordinate) {
                      projectedClusterCoordinate = zoomCoordinate;
@@ -867,6 +911,27 @@ if (Platform.OS === 'android' && androidProjectedClusterCoordinate) {
   });
 
   await new Promise(resolve => setTimeout(resolve, TUTORIAL_CLUSTER_POST_IDLE_SETTLE_MS));
+
+  const settledMapStore = (global as any).mapStore;
+  const settledClusters = Array.isArray(settledMapStore?.clusters) ? settledMapStore.clusters : [];
+  const settledTargetCluster =
+    findTutorialClusterContainingVenue(
+      settledClusters,
+      androidTargetVenueLocationKey,
+      androidTargetVenueName
+    ) ?? findNearestTutorialClusterToCoordinate(settledClusters, androidProjectedClusterCoordinate);
+  const settledTargetCoordinate = getTutorialClusterCoordinate(settledTargetCluster);
+  if (settledTargetCoordinate) {
+    tutorialLog('cluster-click resolved settled Android target cluster', {
+      targetVenueName: androidTargetVenueName,
+      targetVenueLocationKey: androidTargetVenueLocationKey,
+      settledClusterId: settledTargetCluster?.id ?? null,
+      settledClusterVenueCount: settledTargetCluster?.venues?.length ?? null,
+      previousCoordinate: androidProjectedClusterCoordinate,
+      settledTargetCoordinate
+    });
+    androidProjectedClusterCoordinate = settledTargetCoordinate;
+  }
 
   try {
     const mapViewRef = (global as any).mapViewRef;
