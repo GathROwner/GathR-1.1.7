@@ -500,13 +500,13 @@ const FacebookPageSubmission = React.forwardRef<View, FacebookPageSubmissionProp
   };
 
   const tutorialHighlightStyle = {
-    shadowColor: '#FF6B35',
+    shadowColor: 'transparent',
     shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 0.9,
     shadowRadius: 12,
     elevation: 15,
     borderWidth: 3,
-    borderColor: '#FF8C42',
+    borderColor: 'transparent',
     borderRadius: 16,
     backgroundColor: 'rgba(255, 255, 255, 0.95)',
     transform: pulseAnim ? [{ scale: pulseAnim }] : [],
