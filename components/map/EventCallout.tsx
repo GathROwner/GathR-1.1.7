@@ -2536,6 +2536,34 @@ const EventCallout: React.FC<EventCalloutProps> = ({
   const pulseAnimVenueSelector = useRef(new Animated.Value(1)).current;
   const pulseAnimEventTabs = useRef(new Animated.Value(1)).current;
 
+  const publishTutorialLayout = useCallback((ref: View | null, layoutName: string) => {
+    const measuredAt = Date.now();
+    const publish = (x: number, y: number, width: number, height: number) => {
+      (global as any)[layoutName] = {
+        x: Math.round(x),
+        y: Math.round(y),
+        width: Math.round(width),
+        height: Math.round(height),
+        measuredAt
+      };
+      (global as any)[`${layoutName}MeasuredAt`] = measuredAt;
+    };
+
+    const node = ref as any;
+    if (typeof node?.measureInWindow === 'function') {
+      node.measureInWindow((x: number, y: number, width: number, height: number) => {
+        publish(x, y, width, height);
+      });
+      return;
+    }
+
+    if (typeof node?.measure === 'function') {
+      node.measure((_x: number, _y: number, width: number, height: number, pageX: number, pageY: number) => {
+        publish(pageX, pageY, width, height);
+      });
+    }
+  }, []);
+
   // Polling and Measurement for Venue Selector
   useEffect(() => {
     const interval = setInterval(() => {
@@ -2544,13 +2572,11 @@ const EventCallout: React.FC<EventCalloutProps> = ({
         setVenueSelectorHighlighted(flag);
       }
       if (flag && venueSelectorRef.current) {
-        venueSelectorRef.current.measure((_x: number, _y: number, width: number, height: number, pageX: number, pageY: number) => {
-          (global as any).venueSelectorLayout = { x: pageX, y: pageY, width, height };
-        });
+        publishTutorialLayout(venueSelectorRef.current, 'venueSelectorLayout');
       }
     }, 200);
     return () => clearInterval(interval);
-  }, [isVenueSelectorHighlighted]);
+  }, [isVenueSelectorHighlighted, publishTutorialLayout]);
 
   // Polling and Measurement for Event Tabs
   useEffect(() => {
@@ -2560,13 +2586,11 @@ const EventCallout: React.FC<EventCalloutProps> = ({
         setEventTabsHighlighted(flag);
       }
       if (flag && eventTabsRef.current) {
-        eventTabsRef.current.measure((_x: number, _y: number, width: number, height: number, pageX: number, pageY: number) => {
-          (global as any).eventTabsLayout = { x: pageX, y: pageY, width, height };
-        });
+        publishTutorialLayout(eventTabsRef.current, 'eventTabsLayout');
       }
     }, 200);
     return () => clearInterval(interval);
-  }, [isEventTabsHighlighted]);
+  }, [isEventTabsHighlighted, publishTutorialLayout]);
   
   // Animation for Venue Selector
   useEffect(() => {

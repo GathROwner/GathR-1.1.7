@@ -520,7 +520,7 @@ const timeoutId = setTimeout(() => {
             return;
           }
 
-          const layout = (global as any)[layoutName];
+          const layout = (global as any)[layoutName] as (ComponentMeasurement & { measuredAt?: number }) | null | undefined;
           if (layout && calloutStable) {
             // Extra validation for consistent measurements
             const isLayoutValid = layout.width > 0 && layout.height > 0 && 
@@ -529,6 +529,29 @@ const timeoutId = setTimeout(() => {
             if (!isLayoutValid) {
               tutorialLog(`Invalid layout for ${layoutName}, retrying...`, layout);
               setTimeout(() => pollForLayout(retries - 1, currentDelay), currentDelay);
+              return;
+            }
+
+            const measuredAtKey = `${layoutName}MeasuredAt`;
+            const layoutMeasuredAt =
+              typeof layout.measuredAt === 'number'
+                ? layout.measuredAt
+                : typeof (global as any)[measuredAtKey] === 'number'
+                  ? (global as any)[measuredAtKey]
+                  : 0;
+
+            if (
+              typeof options.requireFreshLayoutAfter === 'number' &&
+              layoutMeasuredAt < options.requireFreshLayoutAfter
+            ) {
+              if (retries === 25 || retries % 5 === 0) {
+                tutorialLog(`Waiting for fresh layout for ${layoutName}.`, {
+                  layoutMeasuredAt,
+                  requireFreshLayoutAfter: options.requireFreshLayoutAfter,
+                  retries
+                });
+              }
+              setTimeout(() => pollForLayout(retries - 1, 100), 100);
               return;
             }
 
@@ -609,22 +632,35 @@ const timeoutId = setTimeout(() => {
       return;
     }
     if (step.id === 'callout-venue-selector') {
+      const venueSelectorLayoutFreshAfter = Date.now();
+      (global as any).venueSelectorLayout = null;
+      (global as any).venueSelectorLayoutMeasuredAt = 0;
       createWaitForLayoutFunction(
         'tutorialHighlightVenueSelector',
         'venueSelectorLayout',
-        (layout) => ({ ...layout, borderRadius: 8, showPulse: false }),
+        (layout) => ({
+          ...layout,
+          y: layout.y + getAndroidStatusBarOffset(),
+          borderRadius: 8,
+          showPulse: false
+        }),
         (layout) => ({ x: SCREEN_WIDTH / 2, y: layout.y + layout.height + 20 }),
-        'callout-venue-selector'
+        'callout-venue-selector',
+        { requireFreshLayoutAfter: venueSelectorLayoutFreshAfter }
       );
       return;
     }
     if (step.id === 'callout-tabs') {
+      const eventTabsLayoutFreshAfter = Date.now();
+      (global as any).eventTabsLayout = null;
+      (global as any).eventTabsLayoutMeasuredAt = 0;
       createWaitForLayoutFunction(
         'tutorialHighlightEventTabs',
         'eventTabsLayout',
         (layout) => ({ ...layout, borderRadius: 8, showPulse: false }),
         (layout) => ({ x: SCREEN_WIDTH / 2, y: layout.y + layout.height + 20 }),
-        'callout-tabs'
+        'callout-tabs',
+        { requireFreshLayoutAfter: eventTabsLayoutFreshAfter }
       );
       return;
     }
