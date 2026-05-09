@@ -609,7 +609,7 @@ const timeoutId = setTimeout(() => {
       createWaitForLayoutFunction(
         'tutorialHighlightEventsFilters',
         'eventsFiltersLayout',
-        (layout) => ({ ...layout, borderRadius: 12, showPulse: false }),
+        (layout) => ({ ...layout, borderRadius: 0, squareCorners: true, showPulse: false }),
         (layout) => ({ x: SCREEN_WIDTH / 2, y: layout.y + layout.height + 20 }),
         'events-filters'
       );
@@ -652,7 +652,8 @@ const timeoutId = setTimeout(() => {
             y: layout.y + spotlightPadding,
             width: Math.max(1, layout.width - spotlightPadding * 2),
             height: Math.max(1, layout.height - spotlightPadding * 2),
-            borderRadius: 12,
+            borderRadius: 0,
+            squareCorners: true,
             showPulse: false
           };
         },

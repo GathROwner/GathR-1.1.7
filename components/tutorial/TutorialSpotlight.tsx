@@ -65,9 +65,10 @@ export const TutorialSpotlight: React.FC<TutorialSpotlightProps> = ({
     • showPulse        — pulsing ring effect
     • forceCircle      — true only for the cluster step to render a perfect circle
 */
-  const { x, y, width, height, borderRadius = 8, showPulse = true, forceCircle = false } = spotlight;
+  const { x, y, width, height, borderRadius = 8, showPulse = true, forceCircle = false, squareCorners = false } = spotlight;
   const isCircle = borderRadius >= Math.min(width, height) / 2;
   const effectiveRadius = isCircle ? Math.min(width, height) / 2 : borderRadius;
+  const paddedRadius = squareCorners ? 0 : Math.max(0, effectiveRadius + SPOTLIGHT_PADDING);
 
 // padded bounds
 const paddedX = x - SPOTLIGHT_PADDING;
@@ -96,8 +97,8 @@ const SpotlightMasked = (
               y={paddedY}
               width={paddedWidth}
               height={paddedHeight}
-              rx={effectiveRadius + SPOTLIGHT_PADDING}
-              ry={effectiveRadius + SPOTLIGHT_PADDING}
+              rx={paddedRadius}
+              ry={paddedRadius}
               fill="black"
             />
           </Mask>
@@ -180,8 +181,8 @@ const AndroidRectangularOverlay = (
           y={paddedY}
           width={paddedWidth}
           height={paddedHeight}
-          rx={effectiveRadius + SPOTLIGHT_PADDING}
-          ry={effectiveRadius + SPOTLIGHT_PADDING}
+          rx={paddedRadius}
+          ry={paddedRadius}
           fill="black"
         />
       </Mask>
@@ -251,7 +252,7 @@ return (
                 top: paddedY - 4,
                 width: paddedWidth + 8,
                 height: paddedHeight + 8,
-                borderRadius: effectiveRadius + SPOTLIGHT_PADDING + 4,
+                borderRadius: paddedRadius + 4,
                 transform: [{ scale: pulseAnim }],
               },
             ]}
@@ -265,7 +266,7 @@ return (
                 top: paddedY - 8,
                 width: paddedWidth + 16,
                 height: paddedHeight + 16,
-                borderRadius: effectiveRadius + SPOTLIGHT_PADDING + 8,
+                borderRadius: paddedRadius + 8,
                 opacity: pulseAnim.interpolate({ inputRange: [1,1.05], outputRange: [0.6,0.9] }),
               },
             ]}
