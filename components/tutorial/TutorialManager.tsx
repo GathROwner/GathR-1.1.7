@@ -39,6 +39,12 @@ const TUTORIAL_CLUSTER_CAMERA_SETTLE_TIMEOUT_MS = 1400;
 const getAndroidStatusBarOffset = () => (
   Platform.OS === 'android' ? (StatusBar.currentHeight ?? 0) : 0
 );
+const getAndroidEventsFiltersHeaderTrim = () => (
+  Platform.OS === 'android' ? getAndroidStatusBarOffset() + 2 : 0
+);
+const getAndroidEventsFiltersBottomPad = () => (
+  Platform.OS === 'android' ? 10 : 0
+);
 const TUTORIAL_CLUSTER_POST_IDLE_SETTLE_MS = 150;
 
 const getTutorialClusterCoordinate = (cluster: any): [number, number] | null => {
@@ -612,7 +618,18 @@ const timeoutId = setTimeout(() => {
       createWaitForLayoutFunction(
         'tutorialHighlightEventsFilters',
         'eventsFiltersLayout',
-        (layout) => ({ ...layout, borderRadius: 0, squareCorners: true, showPulse: false }),
+        (layout) => {
+          const topTrim = getAndroidEventsFiltersHeaderTrim();
+          const bottomPad = getAndroidEventsFiltersBottomPad();
+          return {
+            ...layout,
+            y: layout.y + topTrim,
+            height: Math.max(1, layout.height - topTrim + bottomPad),
+            borderRadius: 0,
+            squareCorners: true,
+            showPulse: false
+          };
+        },
         (layout) => ({ x: SCREEN_WIDTH / 2, y: layout.y + layout.height + 20 }),
         'events-filters'
       );
