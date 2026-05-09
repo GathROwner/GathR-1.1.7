@@ -102,6 +102,12 @@ const BRAND = {
   textLight: '#777777'
 };
 
+const PROFILE_BUTTON_FILL = 'rgba(30, 144, 255, 0.03)';
+const ANDROID_PROFILE_BUTTON_FILL = '#CAE5FF';
+const PROFILE_BUTTON_INNER_FILL = Platform.OS === 'android'
+  ? ANDROID_PROFILE_BUTTON_FILL
+  : PROFILE_BUTTON_FILL;
+
 const PAGE_SUBMISSION_PRECHECK_BASE_URL = (
   (typeof process !== 'undefined' && process?.env?.EXPO_PUBLIC_GATHR_BACKEND_URL) ||
   'https://gathr-backend-924732524090.northamerica-northeast1.run.app'
@@ -531,7 +537,12 @@ const FacebookPageSubmission = React.forwardRef<View, FacebookPageSubmissionProp
         activeOpacity={0.7}
       >
         <View style={submissionStyles.headerLeft}>
-          <Ionicons name="add-circle-outline" size={24} color={BRAND.primary} />
+          <Ionicons
+            name="add-circle-outline"
+            size={24}
+            color={BRAND.primary}
+            style={submissionStyles.headerLeadingIcon}
+          />
           <View style={submissionStyles.titleContainer}>
             <Text style={submissionStyles.title}>Suggest a Facebook Page</Text>
             <Text style={submissionStyles.subtitle}>
@@ -1653,7 +1664,7 @@ const handleLogout = async () => {
 
 const submissionStyles = StyleSheet.create({
   container: {
-    backgroundColor: 'rgba(30, 144, 255, 0.03)',
+    backgroundColor: Platform.OS === 'android' ? ANDROID_PROFILE_BUTTON_FILL : PROFILE_BUTTON_FILL,
     borderRadius: 16,
     padding: 12,
     marginVertical: 12,
@@ -1670,7 +1681,11 @@ const submissionStyles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 12,
+    justifyContent: 'center',
+    backgroundColor: PROFILE_BUTTON_INNER_FILL,
+    minHeight: 48,
+    position: 'relative',
+    marginBottom: 8,
   },
   expandableHeader: {
     justifyContent: 'space-between',
@@ -1678,11 +1693,19 @@ const submissionStyles = StyleSheet.create({
   headerLeft: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
     flex: 1,
+    paddingHorizontal: 40,
+    position: 'relative',
+  },
+  headerLeadingIcon: {
+    position: 'absolute',
+    left: 0,
+    top: 12,
   },
   titleContainer: {
     alignItems: 'center',
-    marginLeft: 8,
+    marginLeft: 0,
   },
   title: {
     fontSize: 16,
@@ -1696,14 +1719,18 @@ const submissionStyles = StyleSheet.create({
   },
   expandIcon: {
     padding: 4,
+    position: 'absolute',
+    right: 0,
+    top: 10,
   },
   progressContainer: {
+    backgroundColor: PROFILE_BUTTON_INNER_FILL,
     marginBottom: 12,
   },
   progressBar: {
-    height: 4,
-    backgroundColor: BRAND.lightGray,
-    borderRadius: 2,
+    height: 6,
+    backgroundColor: Platform.OS === 'android' ? '#D6DEE8' : BRAND.lightGray,
+    borderRadius: 3,
     overflow: 'hidden',
   },
   progressFill: {
@@ -1982,7 +2009,7 @@ const styles = StyleSheet.create({
   gridButton: {
     flex: 1,
     height: 56,
-    backgroundColor: 'rgba(30, 144, 255, 0.03)',
+    backgroundColor: PROFILE_BUTTON_FILL,
     borderWidth: 1.5,
     borderColor: BRAND.primary,
     borderRadius: 28,
