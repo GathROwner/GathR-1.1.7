@@ -657,7 +657,12 @@ const timeoutId = setTimeout(() => {
       createWaitForLayoutFunction(
         'tutorialHighlightEventTabs',
         'eventTabsLayout',
-        (layout) => ({ ...layout, borderRadius: 8, showPulse: false }),
+        (layout) => ({
+          ...layout,
+          y: layout.y + getAndroidStatusBarOffset(),
+          borderRadius: 8,
+          showPulse: false
+        }),
         (layout) => ({ x: SCREEN_WIDTH / 2, y: layout.y + layout.height + 20 }),
         'callout-tabs',
         { requireFreshLayoutAfter: eventTabsLayoutFreshAfter }
