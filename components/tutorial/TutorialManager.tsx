@@ -11,7 +11,7 @@
  */
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { View, Dimensions, Platform } from 'react-native';
+import { View, Dimensions, Platform, StatusBar } from 'react-native';
 import { useTutorial } from '../../hooks/useTutorial';
 import { usePathname } from 'expo-router';
 import { useAuth } from '../../contexts/AuthContext';
@@ -36,6 +36,9 @@ const TUTORIAL_CLUSTER_ZOOM_LEVEL = 14.4;
 const TUTORIAL_CLUSTER_SPOTLIGHT_SIZE = 80;
 const TUTORIAL_CLUSTER_MARKER_CENTER_OFFSET_Y = -8;
 const TUTORIAL_CLUSTER_CAMERA_SETTLE_TIMEOUT_MS = 1400;
+const getAndroidStatusBarOffset = () => (
+  Platform.OS === 'android' ? (StatusBar.currentHeight ?? 0) : 0
+);
 const TUTORIAL_CLUSTER_POST_IDLE_SETTLE_MS = 150;
 
 const getTutorialClusterCoordinate = (cluster: any): [number, number] | null => {
@@ -672,7 +675,7 @@ const timeoutId = setTimeout(() => {
         'profileFacebookLayout',
         (layout) => ({ 
           x: layout.x - 6, 
-          y: layout.y - 6, 
+          y: layout.y + getAndroidStatusBarOffset() - 6,
           width: layout.width + 12, 
           height: layout.height + 12, 
           borderRadius: (Math.max(layout.width, layout.height) + 12) / 2, 
