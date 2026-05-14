@@ -191,29 +191,14 @@ const ANDROID_DYNAMIC_RADIUS_MIN_ZOOM = 13;
 const ANDROID_SUPERCLUSTER_MAX_RADIUS_PX = 128;
 const WEB_MERCATOR_EARTH_CIRCUMFERENCE_METERS = 40075016.686;
 const SELECTED_CLUSTER_ENHANCEMENT_DELAY_MS = Platform.OS === 'android' ? 900 : 0;
-const ANDROID_CALLOUT_CLOSE_CLUSTER_REFRESH_DELAY_MS = 75;
 const CLUSTER_SOURCE_BBOX_BUFFER_MULTIPLIER = Platform.OS === 'android' ? 1.35 : 1.2;
 
-let calloutCloseClusterRefreshTimer: ReturnType<typeof setTimeout> | null = null;
-
 const scheduleCalloutCloseClusterRefresh = (refreshClusters: () => void): void => {
-  if (Platform.OS !== 'android') {
-    refreshClusters();
-    return;
-  }
-
-  if (calloutCloseClusterRefreshTimer) {
-    clearTimeout(calloutCloseClusterRefreshTimer);
-    calloutCloseClusterRefreshTimer = null;
-  }
-
-  // Do not use InteractionManager here. On slower Android devices, repeated
-  // post-close taps keep interactions active and can delay MarkerView refreshes
-  // for several seconds, leaving visible clusters without active press targets.
-  calloutCloseClusterRefreshTimer = setTimeout(() => {
-    calloutCloseClusterRefreshTimer = null;
-    refreshClusters();
-  }, ANDROID_CALLOUT_CLOSE_CLUSTER_REFRESH_DELAY_MS);
+  // Keep this synchronous on Android. The visible callout close path can keep
+  // the JS event loop busy for several seconds on older tablets, so timers or
+  // InteractionManager callbacks leave visible MarkerViews with stale press
+  // targets until long after the user starts tapping again.
+  refreshClusters();
 };
 
 type ViewportBoundingBox = { west: number; south: number; east: number; north: number };
