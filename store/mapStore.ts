@@ -61,7 +61,7 @@ import { Event, Venue, Cluster, TimeStatus, InterestLevel } from '../types/event
 import { FilterCriteria, TimeFilterType, TypeFilterCriteria } from '../types/filter';
 import { MapState } from '../types/store';
 import * as Location from 'expo-location';
-import { Platform } from 'react-native';
+import { InteractionManager, Platform } from 'react-native';
 import Supercluster from 'supercluster';
 
 
@@ -191,7 +191,34 @@ const ANDROID_DYNAMIC_RADIUS_MIN_ZOOM = 13;
 const ANDROID_SUPERCLUSTER_MAX_RADIUS_PX = 128;
 const WEB_MERCATOR_EARTH_CIRCUMFERENCE_METERS = 40075016.686;
 const SELECTED_CLUSTER_ENHANCEMENT_DELAY_MS = Platform.OS === 'android' ? 900 : 0;
+const ANDROID_CALLOUT_CLOSE_CLUSTER_REFRESH_DELAY_MS = 250;
 const CLUSTER_SOURCE_BBOX_BUFFER_MULTIPLIER = Platform.OS === 'android' ? 1.35 : 1.2;
+
+let calloutCloseClusterRefreshTimer: ReturnType<typeof setTimeout> | null = null;
+let calloutCloseClusterRefreshTask: ReturnType<typeof InteractionManager.runAfterInteractions> | null = null;
+
+const scheduleCalloutCloseClusterRefresh = (refreshClusters: () => void): void => {
+  if (Platform.OS !== 'android') {
+    refreshClusters();
+    return;
+  }
+
+  if (calloutCloseClusterRefreshTimer) {
+    clearTimeout(calloutCloseClusterRefreshTimer);
+    calloutCloseClusterRefreshTimer = null;
+  }
+
+  calloutCloseClusterRefreshTask?.cancel();
+  calloutCloseClusterRefreshTask = null;
+
+  calloutCloseClusterRefreshTimer = setTimeout(() => {
+    calloutCloseClusterRefreshTimer = null;
+    calloutCloseClusterRefreshTask = InteractionManager.runAfterInteractions(() => {
+      calloutCloseClusterRefreshTask = null;
+      refreshClusters();
+    });
+  }, ANDROID_CALLOUT_CLOSE_CLUSTER_REFRESH_DELAY_MS);
+};
 
 type ViewportBoundingBox = { west: number; south: number; east: number; north: number };
 
@@ -1330,9 +1357,22 @@ export const useMapStore = create<MapState>((set, get) => ({
         selectedCluster: null
       });
 
-      // Trigger cluster regeneration to update hasNewContent flags
-      console.log('[ClusterRefresh] Callout closed - regenerating clusters to update indicators');
-      get().generateClusters();
+      const refreshClustersAfterClose = () => {
+        const state = get();
+        if (state.selectedVenues.length > 0 || state.selectedCluster) {
+          console.log('[ClusterRefresh] Skipping close refresh because a callout reopened');
+          return;
+        }
+
+        // Trigger cluster regeneration to update hasNewContent flags
+        console.log('[ClusterRefresh] Callout closed - regenerating clusters to update indicators');
+        state.generateClusters();
+      };
+
+      if (Platform.OS === 'android') {
+        console.log('[ClusterRefresh] Callout closed - scheduling deferred cluster regeneration');
+      }
+      scheduleCalloutCloseClusterRefresh(refreshClustersAfterClose);
     }
   },
   

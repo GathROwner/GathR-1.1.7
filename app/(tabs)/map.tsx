@@ -1737,6 +1737,7 @@ useEffect(() => {
   const initialViewportWaitingLoggedRef = useRef(false);
   const fullClusterMarkersTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const richClusterMarkersTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const androidCalloutCameraMoveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mapFirstFrameRenderedRef = useRef(false);
   const calloutPrepCacheRef = useRef<Map<string, PreparedClusterCallout>>(new Map());
 
@@ -3035,6 +3036,16 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
     }
   }, [closeCalloutTrigger]); // Removed unnecessary dependencies
 
+  const cancelPendingAndroidCalloutCameraMove = useCallback((source: string) => {
+    if (androidCalloutCameraMoveTimerRef.current) {
+      clearTimeout(androidCalloutCameraMoveTimerRef.current);
+      androidCalloutCameraMoveTimerRef.current = null;
+      traceMapEvent('android_callout_camera_move_cancelled', {
+        source,
+      });
+    }
+  }, []);
+
   useEffect(() => {
     if (selectedVenues && selectedVenues.length > 0) {
       setIsCalloutClosingVisually(false);
@@ -3055,13 +3066,14 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
       return;
     }
     calloutOpenTouchGuardUntilRef.current = 0;
+    cancelPendingAndroidCalloutCameraMove('selected-venues-empty');
     if (!hasRenderedCallout) {
       setIsCalloutClosingVisually(false);
     }
     console.log('[CalloutProbe] selected venues empty', {
       selectedClusterId: selectedCluster?.id ?? 'none',
     });
-  }, [hasRenderedCallout, selectedCluster, selectedVenues]);
+  }, [cancelPendingAndroidCalloutCameraMove, hasRenderedCallout, selectedCluster, selectedVenues]);
 
   useEffect(() => {
     console.log('[CalloutProbe] rendered callout state changed', {
@@ -3118,6 +3130,7 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
       calloutLayoutReady: isRenderedCalloutLayoutReady,
       guardRemainingMs: Math.max(0, calloutOpenTouchGuardUntilRef.current - Date.now()),
     });
+    cancelPendingAndroidCalloutCameraMove(reason);
     handleCalloutCloseStart();
     if (Platform.OS === 'android') {
       trackClusterClosedOnce();
@@ -3125,6 +3138,7 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
     }
     selectVenue(null);
   }, [
+    cancelPendingAndroidCalloutCameraMove,
     clearRenderedCalloutPresentation,
     handleCalloutCloseStart,
     isRenderedCalloutLayoutReady,
@@ -3346,6 +3360,10 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
 
   useEffect(() => {
     return () => {
+      if (androidCalloutCameraMoveTimerRef.current) {
+        clearTimeout(androidCalloutCameraMoveTimerRef.current);
+        androidCalloutCameraMoveTimerRef.current = null;
+      }
       if (fullClusterMarkersTimerRef.current) {
         clearTimeout(fullClusterMarkersTimerRef.current);
         fullClusterMarkersTimerRef.current = null;
@@ -3883,7 +3901,20 @@ lastOpenedClusterIdRef.current = cluster.id;
       };
 
       if (Platform.OS === 'android') {
-        setTimeout(moveCameraToCluster, ANDROID_CALLOUT_CAMERA_MOVE_DELAY_MS);
+        if (androidCalloutCameraMoveTimerRef.current) {
+          clearTimeout(androidCalloutCameraMoveTimerRef.current);
+        }
+        androidCalloutCameraMoveTimerRef.current = setTimeout(() => {
+          androidCalloutCameraMoveTimerRef.current = null;
+          const liveSelectedVenues = useMapStore.getState().selectedVenues;
+          if (!liveSelectedVenues || liveSelectedVenues.length === 0) {
+            traceMapEvent('android_callout_camera_move_skipped_no_callout', {
+              clusterId: cluster.id,
+            });
+            return;
+          }
+          moveCameraToCluster();
+        }, ANDROID_CALLOUT_CAMERA_MOVE_DELAY_MS);
       } else {
         moveCameraToCluster();
       }
