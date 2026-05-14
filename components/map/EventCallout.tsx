@@ -2527,6 +2527,7 @@ const EventCallout: React.FC<EventCalloutProps> = ({
   // });
 
   // --- Start of Tutorial Logic for Venue Selector & Tabs ---
+  const calloutRootRef = useRef<View | null>(null);
   const venueSelectorRef = useRef<View | null>(null);
   const eventTabsRef = useRef<View | null>(null);
 
@@ -3765,6 +3766,15 @@ const setCalloutStateWithAnimation = (state: CalloutState) => {
       return;
     }
     closeAnimationStartedRef.current = true;
+    if (Platform.OS === 'android') {
+      (calloutRootRef.current as any)?.setNativeProps?.({
+        pointerEvents: 'none',
+        style: {
+          opacity: 0,
+          transform: [{ translateY: SCREEN_HEIGHT }],
+        },
+      });
+    }
     onCloseStart?.();
 
     if (useStaticIosCalloutPresentation) {
@@ -3985,6 +3995,9 @@ useEffect(() => {
 
 useEffect(() => {
   console.log("Initial callout animation effect");
+  if (Platform.OS === 'android') {
+    (calloutRootRef.current as any)?.setNativeProps?.({ pointerEvents: 'auto' });
+  }
   const initialCalloutState: CalloutState = 'expanded';
   if (calloutState !== initialCalloutState) {
     setCalloutState(initialCalloutState);
@@ -4193,6 +4206,7 @@ useEffect(() => {
       
       {/* Always render the callout, but apply style changes when lightbox is open */}
       <CalloutContainerComponent
+        ref={calloutRootRef}
         pointerEvents={isLightboxOpen ? 'none' : 'auto'}
         style={calloutContainerStyle}
         onLayout={(event: LayoutChangeEvent) => {

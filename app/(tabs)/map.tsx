@@ -14,7 +14,7 @@
  */
 
 import React, { useEffect, useRef, useState, useMemo, useCallback } from 'react';
-import { View, Text, StyleSheet, Animated, Dimensions, PixelRatio, TouchableOpacity, Easing, Keyboard, Pressable, Image, Modal, InteractionManager } from 'react-native';
+import { View, Text, StyleSheet, Animated, Dimensions, PixelRatio, TouchableOpacity, Easing, Keyboard, Pressable, Image, Modal, InteractionManager, GestureResponderEvent } from 'react-native';
 import * as Location from 'expo-location';
 import * as Haptics from 'expo-haptics';
 import MapboxGL from '@rnmapbox/maps';
@@ -1839,6 +1839,7 @@ useEffect(() => {
   const [mapTabOverlaysReady, setMapTabOverlaysReady] = useState<boolean>(Platform.OS !== 'android');
   const cameraRef = useRef<MapboxGL.Camera>(null);
   const calloutAnimation = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
+  const calloutContainerRef = useRef<View>(null);
   const mapRef = useRef<MapboxGL.MapView>(null);
   const locationSubscription = useRef<Location.LocationSubscription | null>(null);
   const calloutAnimationRequestRef = useRef(0);
@@ -3177,6 +3178,7 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
     if (selectedVenues && selectedVenues.length > 0) {
       isCalloutClosingVisuallyRef.current = false;
       setIsCalloutClosingVisually(false);
+      (calloutContainerRef.current as any)?.setNativeProps?.({ pointerEvents: 'box-none' });
       calloutOpenTouchGuardUntilRef.current = Date.now() + 900;
       logCalloutProbe('[CalloutProbe] arming map press guard', {
         until: calloutOpenTouchGuardUntilRef.current,
@@ -3218,6 +3220,95 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
     renderedCalloutVenues.length,
   ]);
 
+  const getAndroidProjectedClusterHitTargets = useCallback((): {
+    projected: AndroidClusterHitTarget[];
+    sourceCount: number;
+  } => {
+    const cameraState = currentCameraStateRef.current;
+    const fallbackBbox = cameraState && mapDimensions
+      ? getViewportBoundingBox(
+          {
+            latitude: cameraState.center[1],
+            longitude: cameraState.center[0],
+          },
+          cameraState.zoom,
+          mapDimensions.width,
+          mapDimensions.height,
+          1.0
+        )
+      : null;
+    const visibleBbox = cameraState?.visibleBbox ?? fallbackBbox;
+
+    if (
+      Platform.OS !== 'android' ||
+      !isFocused ||
+      isLoading ||
+      !clustersReadyForInteraction ||
+      !mapDimensions ||
+      !visibleBbox
+    ) {
+      return { projected: [], sourceCount: 0 };
+    }
+
+    const sourceClusters = clusters.filter((cluster) =>
+      visibleClusterIds.current.has(cluster.id) ||
+      shouldClusterBeVisible(cluster, filterCriteria)
+    );
+    const projected = sourceClusters
+      .map((cluster): AndroidClusterHitTarget | null => {
+        const coordinate = getClusterMapCoordinate(cluster);
+        if (!coordinate) {
+          return null;
+        }
+
+        const point = projectCoordinateToViewportPoint(coordinate, visibleBbox, mapDimensions);
+        if (!point) {
+          return null;
+        }
+
+        return {
+          cluster,
+          clusterId: cluster.id,
+          x: point.x + mapScreenOffset.x,
+          y: point.y + mapScreenOffset.y,
+        };
+      })
+      .filter((target): target is AndroidClusterHitTarget => target !== null)
+      .slice(0, ANDROID_CLUSTER_TOUCH_OVERLAY_LIMIT);
+
+    return { projected, sourceCount: sourceClusters.length };
+  }, [
+    clusters,
+    clustersReadyForInteraction,
+    filterCriteria,
+    isFocused,
+    isLoading,
+    mapDimensions,
+    mapScreenOffset.x,
+    mapScreenOffset.y,
+    shouldClusterBeVisible,
+  ]);
+
+  const logAndroidRetapOverlayTargets = useCallback((
+    reason: string,
+    sourceCount: number,
+    projected: AndroidClusterHitTarget[]
+  ) => {
+    console.log('[map] Android retap overlay targets projected', {
+      reason,
+      sourceCount,
+      targetCount: projected.length,
+      projection: 'js_visible_bbox',
+      sampleTargets: projected.slice(0, 12).map((target) => ({
+        id: target.clusterId.slice(0, 36),
+        x: Math.round(target.x),
+        y: Math.round(target.y),
+        events: target.cluster.eventCount,
+        specials: target.cluster.specialCount,
+      })),
+    });
+  }, []);
+
   const deactivateAndroidRetapOverlay = useCallback(() => {
     if (androidRetapOverlayTimerRef.current) {
       clearTimeout(androidRetapOverlayTimerRef.current);
@@ -3238,7 +3329,16 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
       clearTimeout(androidRetapOverlayTimerRef.current);
     }
 
-    console.log('[map] Android retap overlay activated');
+    const { projected, sourceCount } = getAndroidProjectedClusterHitTargets();
+
+    console.log('[map] Android retap overlay activated', {
+      targetCount: projected.length,
+      sourceCount,
+    });
+    setAndroidClusterHitTargets(projected);
+    if (projected.length > 0) {
+      logAndroidRetapOverlayTargets('activate', sourceCount, projected);
+    }
     androidRetapOverlayActiveRef.current = true;
     androidRetapOverlayPressHandledRef.current = false;
     setAndroidRetapOverlayActive(true);
@@ -3250,7 +3350,7 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
       androidRetapOverlayActiveRef.current = false;
       androidRetapOverlayPressHandledRef.current = true;
     }, ANDROID_CLUSTER_TOUCH_OVERLAY_DURATION_MS);
-  }, []);
+  }, [getAndroidProjectedClusterHitTargets, logAndroidRetapOverlayTargets]);
 
   useEffect(() => () => {
     if (androidRetapOverlayTimerRef.current) {
@@ -3263,6 +3363,7 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
     if (Platform.OS === 'android') {
       isCalloutClosingVisuallyRef.current = true;
       setIsCalloutClosingVisually(true);
+      (calloutContainerRef.current as any)?.setNativeProps?.({ pointerEvents: 'none' });
     }
   }, []);
 
@@ -3302,10 +3403,9 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
     });
     cancelPendingAndroidCalloutCameraMove(reason);
     handleCalloutCloseStart();
-    if (Platform.OS === 'android') {
+      if (Platform.OS === 'android') {
       trackClusterClosedOnce();
       activateAndroidRetapOverlay();
-      setAndroidMarkerTouchEpoch((epoch) => epoch + 1);
       selectVenue(null);
       clearRenderedCalloutPresentation();
       return;
@@ -4179,100 +4279,102 @@ lastOpenedClusterIdRef.current = cluster.id;
     trackInteraction,
   ]); // REMOVED analytics, zoomLevel dependencies
 
+  const handleAndroidRetapOverlayResponderRelease = useCallback((event: GestureResponderEvent): boolean => {
+    if (
+      Platform.OS !== 'android' ||
+      !androidRetapOverlayActiveRef.current ||
+      androidRetapOverlayPressHandledRef.current
+    ) {
+      return false;
+    }
+
+    const pageX = Number(event.nativeEvent.pageX);
+    const pageY = Number(event.nativeEvent.pageY);
+    const locationX = Number(event.nativeEvent.locationX);
+    const locationY = Number(event.nativeEvent.locationY);
+    const touchX = Number.isFinite(pageX) ? pageX : locationX;
+    const touchY = Number.isFinite(pageY) ? pageY : locationY;
+
+    if (!Number.isFinite(touchX) || !Number.isFinite(touchY)) {
+      return true;
+    }
+
+    const maxDistance = ANDROID_CLUSTER_TOUCH_OVERLAY_SIZE / 2;
+    const maxDistanceSquared = maxDistance * maxDistance;
+    let matchedTarget: AndroidClusterHitTarget | null = null;
+    let matchedDistanceSquared = Number.POSITIVE_INFINITY;
+
+    androidClusterHitTargets.forEach((target) => {
+      const dx = touchX - target.x;
+      const dy = touchY - target.y;
+      const distanceSquared = dx * dx + dy * dy;
+      if (distanceSquared <= maxDistanceSquared && distanceSquared < matchedDistanceSquared) {
+        matchedTarget = target;
+        matchedDistanceSquared = distanceSquared;
+      }
+    });
+
+    if (!matchedTarget) {
+      console.log('[map] Android retap overlay miss', {
+        x: Math.round(touchX),
+        y: Math.round(touchY),
+        targetCount: androidClusterHitTargets.length,
+      });
+      return true;
+    }
+
+    if (!clustersReadyForInteractionRef.current || clusterProcessingRef.current !== null) {
+      console.log('[map] Android retap overlay blocked', {
+        clusterId: matchedTarget.clusterId,
+        clustersReadyForInteraction: clustersReadyForInteractionRef.current,
+        processingClusterId: clusterProcessingRef.current,
+      });
+      return true;
+    }
+
+    androidRetapOverlayPressHandledRef.current = true;
+    traceMapEvent('android_retap_overlay_cluster_press', {
+      clusterId: matchedTarget.clusterId,
+      targetCount: androidClusterHitTargets.length,
+      source: 'callout_touch_capture_overlay',
+    });
+    console.log('[map] Android retap overlay cluster press', {
+      clusterId: matchedTarget.clusterId,
+      targetCount: androidClusterHitTargets.length,
+      source: 'callout_touch_capture_overlay',
+    });
+    deactivateAndroidRetapOverlay();
+    void handleMarkerPress(matchedTarget.cluster);
+    return true;
+  }, [
+    androidClusterHitTargets,
+    deactivateAndroidRetapOverlay,
+    handleMarkerPress,
+  ]);
+
   useEffect(() => {
     if (Platform.OS !== 'android') {
       return undefined;
     }
 
-    const cameraState = currentCameraStateRef.current;
-    const fallbackBbox = cameraState && mapDimensions
-      ? getViewportBoundingBox(
-          {
-            latitude: cameraState.center[1],
-            longitude: cameraState.center[0],
-          },
-          cameraState.zoom,
-          mapDimensions.width,
-          mapDimensions.height,
-          1.0
-        )
-      : null;
-    const visibleBbox = cameraState?.visibleBbox ?? fallbackBbox;
-
-    if (
-      !isFocused ||
-      isLoading ||
-      !clustersReadyForInteraction ||
-      !mapDimensions ||
-      !visibleBbox
-    ) {
-      if (androidRetapOverlayActive) {
-        setAndroidClusterHitTargets([]);
-      }
-      return undefined;
-    }
-
-    const sourceClusters = clusters.filter((cluster) =>
-      visibleClusterIds.current.has(cluster.id) ||
-      shouldClusterBeVisible(cluster, filterCriteria)
-    );
-    const projected = sourceClusters
-      .map((cluster): AndroidClusterHitTarget | null => {
-        const coordinate = getClusterMapCoordinate(cluster);
-        if (!coordinate) {
-          return null;
-        }
-
-        const point = projectCoordinateToViewportPoint(coordinate, visibleBbox, mapDimensions);
-        if (!point) {
-          return null;
-        }
-
-        return {
-          cluster,
-          clusterId: cluster.id,
-          x: point.x + mapScreenOffset.x,
-          y: point.y + mapScreenOffset.y,
-        };
-      })
-      .filter((target): target is AndroidClusterHitTarget => target !== null)
-      .slice(0, ANDROID_CLUSTER_TOUCH_OVERLAY_LIMIT);
+    const { projected, sourceCount } = getAndroidProjectedClusterHitTargets();
 
     setAndroidClusterHitTargets(projected);
 
     if (androidRetapOverlayActive || hasPresentedCallout) {
-      console.log('[map] Android retap overlay targets projected', {
-        sourceCount: sourceClusters.length,
-        targetCount: projected.length,
-        projection: 'js_visible_bbox',
-        sampleTargets: projected.slice(0, 12).map((target) => ({
-          id: target.clusterId.slice(0, 36),
-          x: Math.round(target.x),
-          y: Math.round(target.y),
-          events: target.cluster.eventCount,
-          specials: target.cluster.specialCount,
-        })),
-      });
+      logAndroidRetapOverlayTargets('effect', sourceCount, projected);
     }
 
     return undefined;
   }, [
     androidMarkerTouchEpoch,
     androidRetapOverlayActive,
-    clusters,
-    clustersReadyForInteraction,
-    filterCriteria,
     fullClusterMarkersEnabled,
+    getAndroidProjectedClusterHitTargets,
     hasPresentedCallout,
-    isFocused,
-    isLoading,
-    mapDimensions?.height,
-    mapDimensions?.width,
-    mapScreenOffset.x,
-    mapScreenOffset.y,
+    logAndroidRetapOverlayTargets,
     richClusterMarkersEnabled,
     selectedClusterId,
-    shouldClusterBeVisible,
     zoomLevel,
   ]);
 
@@ -6413,11 +6515,21 @@ Owner: Map UX stability on Android • Last validated: 2025-09-04
 }
 <View
   style={[StyleSheet.absoluteFillObject, { zIndex: 4 }]}
-  pointerEvents={isCalloutClosingVisually ? 'none' : 'auto'}
+  pointerEvents="auto"
   // Always capture touches so MapView doesn't receive them on Android
-  onStartShouldSetResponder={() => !isCalloutClosingVisuallyRef.current}
-  onMoveShouldSetResponder={() => !isCalloutClosingVisuallyRef.current}
-  onResponderRelease={() => {
+  onStartShouldSetResponder={() =>
+    !isCalloutClosingVisuallyRef.current || androidRetapOverlayActiveRef.current
+  }
+  onMoveShouldSetResponder={() =>
+    !isCalloutClosingVisuallyRef.current || androidRetapOverlayActiveRef.current
+  }
+  onResponderRelease={(event) => {
+    if (handleAndroidRetapOverlayResponderRelease(event)) {
+      return;
+    }
+    if (isCalloutClosingVisuallyRef.current) {
+      return;
+    }
     // Tapping outside the sheet intentionally closes it with animation
     console.log('OVERLAY TAP - dismissing callout with animation');
     handleCalloutCloseStart();
@@ -6447,6 +6559,7 @@ Owner: Map UX stability on Android • Last validated: 2025-09-04
           
           {/* Callout container - box-none allows taps to pass through to overlay below */}
           <View
+            ref={calloutContainerRef}
             style={styles.calloutAnimatedContainer}
             pointerEvents={isCalloutClosingVisually ? 'none' : 'box-none'}
           >
@@ -6476,7 +6589,14 @@ Owner: Map UX stability on Android • Last validated: 2025-09-04
         (androidRetapOverlayActive || hasPresentedCallout || isCalloutClosingVisually) &&
         androidClusterHitTargets.length > 0 && (
           <View
-            pointerEvents="box-none"
+            pointerEvents={androidRetapOverlayActive || isCalloutClosingVisually ? 'auto' : 'box-none'}
+            onStartShouldSetResponder={() =>
+              androidRetapOverlayActiveRef.current || isCalloutClosingVisuallyRef.current
+            }
+            onMoveShouldSetResponder={() =>
+              androidRetapOverlayActiveRef.current || isCalloutClosingVisuallyRef.current
+            }
+            onResponderRelease={handleAndroidRetapOverlayResponderRelease}
             style={[StyleSheet.absoluteFillObject, { zIndex: 20, elevation: 20 }]}
           >
             {androidClusterHitTargets.map((target) => (
