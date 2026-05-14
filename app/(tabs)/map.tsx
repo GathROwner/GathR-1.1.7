@@ -1845,6 +1845,7 @@ useEffect(() => {
   const calloutOpenTouchGuardUntilRef = useRef(0);
   const isCalloutClosingVisuallyRef = useRef(false);
   const androidRetapOverlayTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const androidRetapOverlayPressHandledRef = useRef(false);
   const latestLocationRef = useRef<Location.LocationObject | null>(null);
   const latestClusterCountRef = useRef(0);
   const isMapLoadingRef = useRef(false);
@@ -3222,6 +3223,7 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
     }
     setAndroidRetapOverlayActive(false);
     setAndroidClusterHitTargets([]);
+    androidRetapOverlayPressHandledRef.current = true;
   }, []);
 
   const activateAndroidRetapOverlay = useCallback(() => {
@@ -3234,12 +3236,14 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
     }
 
     console.log('[map] Android retap overlay activated');
+    androidRetapOverlayPressHandledRef.current = false;
     setAndroidRetapOverlayActive(true);
     androidRetapOverlayTimerRef.current = setTimeout(() => {
       androidRetapOverlayTimerRef.current = null;
       console.log('[map] Android retap overlay expired');
       setAndroidRetapOverlayActive(false);
       setAndroidClusterHitTargets([]);
+      androidRetapOverlayPressHandledRef.current = true;
     }, ANDROID_CLUSTER_TOUCH_OVERLAY_DURATION_MS);
   }, []);
 
@@ -4236,6 +4240,13 @@ lastOpenedClusterIdRef.current = cluster.id;
         sourceCount: sourceClusters.length,
         targetCount: projected.length,
         projection: 'js_visible_bbox',
+        sampleTargets: projected.slice(0, 12).map((target) => ({
+          id: target.clusterId.slice(0, 36),
+          x: Math.round(target.x),
+          y: Math.round(target.y),
+          events: target.cluster.eventCount,
+          specials: target.cluster.specialCount,
+        })),
       });
     }
 
@@ -6262,6 +6273,10 @@ onDidFinishLoadingMap={() => {
                 key={`android-retap-target-${target.clusterId}`}
                 disabled={!clustersReadyForInteraction || processingClusterId !== null}
                 onPress={() => {
+                  if (androidRetapOverlayPressHandledRef.current) {
+                    return;
+                  }
+                  androidRetapOverlayPressHandledRef.current = true;
                   traceMapEvent('android_retap_overlay_cluster_press', {
                     clusterId: target.clusterId,
                     targetCount: androidClusterHitTargets.length,
