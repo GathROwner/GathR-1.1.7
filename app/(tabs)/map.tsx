@@ -3162,9 +3162,11 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
       clearTimeout(androidRetapOverlayTimerRef.current);
     }
 
+    console.log('[map] Android retap overlay activated');
     setAndroidRetapOverlayActive(true);
     androidRetapOverlayTimerRef.current = setTimeout(() => {
       androidRetapOverlayTimerRef.current = null;
+      console.log('[map] Android retap overlay expired');
       setAndroidRetapOverlayActive(false);
       setAndroidClusterHitTargets([]);
     }, ANDROID_CLUSTER_TOUCH_OVERLAY_DURATION_MS);
@@ -4166,6 +4168,10 @@ lastOpenedClusterIdRef.current = cluster.id;
       setAndroidClusterHitTargets(
         projected.filter((target): target is AndroidClusterHitTarget => target !== null)
       );
+      console.log('[map] Android retap overlay targets projected', {
+        sourceCount: sourceClusters.length,
+        targetCount: projected.filter((target) => target !== null).length,
+      });
     };
 
     const frame = requestAnimationFrame(() => {
@@ -6203,6 +6209,10 @@ onDidFinishLoadingMap={() => {
                 disabled={!clustersReadyForInteraction || processingClusterId !== null}
                 onPress={() => {
                   traceMapEvent('android_retap_overlay_cluster_press', {
+                    clusterId: target.clusterId,
+                    targetCount: androidClusterHitTargets.length,
+                  });
+                  console.log('[map] Android retap overlay cluster press', {
                     clusterId: target.clusterId,
                     targetCount: androidClusterHitTargets.length,
                   });
