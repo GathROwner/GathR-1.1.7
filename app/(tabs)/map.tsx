@@ -6255,7 +6255,7 @@ onDidFinishLoadingMap={() => {
         androidClusterHitTargets.length > 0 && (
           <View
             pointerEvents="box-none"
-            style={[StyleSheet.absoluteFillObject, { zIndex: 3, elevation: 3 }]}
+            style={[StyleSheet.absoluteFillObject, { zIndex: 6, elevation: 6 }]}
           >
             {androidClusterHitTargets.map((target) => (
               <Pressable
