@@ -2367,6 +2367,7 @@ useEffect(() => {
 
   // Actual map viewport dimensions (accounting for header, tab bar, safe areas)
   const [mapDimensions, setMapDimensions] = useState<{ width: number; height: number } | null>(null);
+  const [mapScreenOffset, setMapScreenOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
 
 // Debounce + gating
 /**
@@ -4226,8 +4227,8 @@ lastOpenedClusterIdRef.current = cluster.id;
         return {
           cluster,
           clusterId: cluster.id,
-          x: point.x,
-          y: point.y,
+          x: point.x + mapScreenOffset.x,
+          y: point.y + mapScreenOffset.y,
         };
       })
       .filter((target): target is AndroidClusterHitTarget => target !== null)
@@ -4263,6 +4264,8 @@ lastOpenedClusterIdRef.current = cluster.id;
     isLoading,
     mapDimensions?.height,
     mapDimensions?.width,
+    mapScreenOffset.x,
+    mapScreenOffset.y,
     richClusterMarkersEnabled,
     selectedClusterId,
     shouldClusterBeVisible,
@@ -6082,6 +6085,7 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
 onLayout={(event) => {
   const { width, height, x, y } = event.nativeEvent.layout;
   setMapDimensions({ width, height });
+  setMapScreenOffset({ x, y });
 
   // Use measureInWindow to get absolute screen coordinates
   // mapRef.current is the MapboxGL.MapView which doesn't have measureInWindow
@@ -6089,6 +6093,8 @@ onLayout={(event) => {
   const nativeHandle = (mapRef.current as any)?._nativeRef;
   if (nativeHandle?.measureInWindow) {
     nativeHandle.measureInWindow((absX: number, absY: number, absWidth: number, absHeight: number) => {
+      setMapDimensions({ width: absWidth, height: absHeight });
+      setMapScreenOffset({ x: absX, y: absY });
       (global as any).mapViewLayout = {
         width: absWidth,
         height: absHeight,
