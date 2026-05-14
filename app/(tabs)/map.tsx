@@ -4105,14 +4105,14 @@ lastOpenedClusterIdRef.current = cluster.id;
     }
 
     if (
-      !androidRetapOverlayActive ||
       !isFocused ||
       isLoading ||
       !clustersReadyForInteraction ||
-      hasPresentedCallout ||
       !mapRef.current
     ) {
-      setAndroidClusterHitTargets([]);
+      if (androidRetapOverlayActive) {
+        setAndroidClusterHitTargets([]);
+      }
       return undefined;
     }
 
@@ -4179,12 +4179,20 @@ lastOpenedClusterIdRef.current = cluster.id;
     });
     const retry = setTimeout(() => {
       void projectTargets();
-    }, 350);
+    }, hasPresentedCallout ? 500 : 350);
+    const cameraRetry = hasPresentedCallout
+      ? setTimeout(() => {
+          void projectTargets();
+        }, 1300)
+      : null;
 
     return () => {
       cancelled = true;
       cancelAnimationFrame(frame);
       clearTimeout(retry);
+      if (cameraRetry) {
+        clearTimeout(cameraRetry);
+      }
     };
   }, [
     androidMarkerTouchEpoch,
@@ -4199,6 +4207,7 @@ lastOpenedClusterIdRef.current = cluster.id;
     mapDimensions?.height,
     mapDimensions?.width,
     richClusterMarkersEnabled,
+    selectedClusterId,
     shouldClusterBeVisible,
     zoomLevel,
   ]);
