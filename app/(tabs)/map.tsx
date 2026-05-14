@@ -111,8 +111,11 @@ const IOS_CALLOUT_NATIVE_AD_ISOLATION_DEBUG = Platform.OS === 'ios';
 const ANDROID_MAPBOX_STARTUP_ISOLATION_DEBUG = false;
 const ANDROID_CLUSTER_MARKERVIEW_ISOLATION_DEBUG = false;
 const DEBUG_CALLOUT_PROBE = false;
-const USE_ANDROID_NATIVE_CLUSTER_MARKER_LAYERS = Platform.OS === 'android';
+const USE_ANDROID_NATIVE_CLUSTER_MARKER_LAYERS = false;
 const DEBUG_TREE_MARKER_EVENTS = false;
+const ANDROID_CLUSTER_TOUCH_OVERLAY_SIZE = 96;
+const ANDROID_CLUSTER_TOUCH_OVERLAY_DURATION_MS = 6500;
+const ANDROID_CLUSTER_TOUCH_OVERLAY_LIMIT = 80;
 const STAGE_CLUSTER_MARKERS_ON_STARTUP = Platform.OS === 'android';
 const STARTUP_CLUSTER_MARKER_LIMIT = 12;
 const FULL_CLUSTER_MARKER_DELAY_MS = 1000;
@@ -673,6 +676,39 @@ const clusterMatchesInterestCarouselFilter = (
   cluster.venues.some((venue) =>
     venue.events.some((event) => eventMatchesInterestCarouselFilter(event, filter))
   );
+
+type AndroidClusterHitTarget = {
+  cluster: Cluster;
+  clusterId: string;
+  x: number;
+  y: number;
+};
+
+const getClusterMapCoordinate = (cluster: Cluster): [number, number] | null => {
+  const venues = Array.isArray(cluster.venues) ? cluster.venues : [];
+  if (venues.length === 0) {
+    return null;
+  }
+
+  if (cluster.clusterType !== 'multi') {
+    const venue = venues[0];
+    if (!Number.isFinite(venue.longitude) || !Number.isFinite(venue.latitude)) {
+      return null;
+    }
+    return [venue.longitude, venue.latitude];
+  }
+
+  const longitude =
+    venues.reduce((sum: number, venue: Venue) => sum + venue.longitude, 0) / venues.length;
+  const latitude =
+    venues.reduce((sum: number, venue: Venue) => sum + venue.latitude, 0) / venues.length;
+
+  if (!Number.isFinite(longitude) || !Number.isFinite(latitude)) {
+    return null;
+  }
+
+  return [longitude, latitude];
+};
 
 const buildAndroidClusterMarkerShape = (
   clustersForRender: Cluster[],
@@ -1721,6 +1757,8 @@ useEffect(() => {
   const [androidCategoryCycleTick, setAndroidCategoryCycleTick] = useState(0);
   const [androidMarkerPulseStep, setAndroidMarkerPulseStep] = useState(0);
   const [androidMarkerTouchEpoch, setAndroidMarkerTouchEpoch] = useState(0);
+  const [androidRetapOverlayActive, setAndroidRetapOverlayActive] = useState(false);
+  const [androidClusterHitTargets, setAndroidClusterHitTargets] = useState<AndroidClusterHitTarget[]>([]);
   const [isTracePanelVisible, setIsTracePanelVisible] = useState(false);
   const [renderedCalloutVenues, setRenderedCalloutVenues] = useState<Venue[]>([]);
   const [renderedCalloutCluster, setRenderedCalloutCluster] = useState<Cluster | null>(null);
@@ -1735,6 +1773,7 @@ useEffect(() => {
   const calloutAnimationRequestRef = useRef(0);
   const calloutOpenTouchGuardUntilRef = useRef(0);
   const isCalloutClosingVisuallyRef = useRef(false);
+  const androidRetapOverlayTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const latestLocationRef = useRef<Location.LocationObject | null>(null);
   const latestClusterCountRef = useRef(0);
   const isMapLoadingRef = useRef(false);
@@ -3105,6 +3144,39 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
     renderedCalloutVenues.length,
   ]);
 
+  const deactivateAndroidRetapOverlay = useCallback(() => {
+    if (androidRetapOverlayTimerRef.current) {
+      clearTimeout(androidRetapOverlayTimerRef.current);
+      androidRetapOverlayTimerRef.current = null;
+    }
+    setAndroidRetapOverlayActive(false);
+    setAndroidClusterHitTargets([]);
+  }, []);
+
+  const activateAndroidRetapOverlay = useCallback(() => {
+    if (Platform.OS !== 'android') {
+      return;
+    }
+
+    if (androidRetapOverlayTimerRef.current) {
+      clearTimeout(androidRetapOverlayTimerRef.current);
+    }
+
+    setAndroidRetapOverlayActive(true);
+    androidRetapOverlayTimerRef.current = setTimeout(() => {
+      androidRetapOverlayTimerRef.current = null;
+      setAndroidRetapOverlayActive(false);
+      setAndroidClusterHitTargets([]);
+    }, ANDROID_CLUSTER_TOUCH_OVERLAY_DURATION_MS);
+  }, []);
+
+  useEffect(() => () => {
+    if (androidRetapOverlayTimerRef.current) {
+      clearTimeout(androidRetapOverlayTimerRef.current);
+      androidRetapOverlayTimerRef.current = null;
+    }
+  }, []);
+
   const handleCalloutCloseStart = useCallback(() => {
     if (Platform.OS === 'android') {
       isCalloutClosingVisuallyRef.current = true;
@@ -3150,6 +3222,7 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
     handleCalloutCloseStart();
     if (Platform.OS === 'android') {
       trackClusterClosedOnce();
+      activateAndroidRetapOverlay();
       setAndroidMarkerTouchEpoch((epoch) => epoch + 1);
       selectVenue(null);
       clearRenderedCalloutPresentation();
@@ -3157,6 +3230,7 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
     }
     selectVenue(null);
   }, [
+    activateAndroidRetapOverlay,
     cancelPendingAndroidCalloutCameraMove,
     clearRenderedCalloutPresentation,
     handleCalloutCloseStart,
@@ -4022,6 +4096,106 @@ lastOpenedClusterIdRef.current = cluster.id;
     selectCallout,
     trackInteraction,
   ]); // REMOVED analytics, zoomLevel dependencies
+
+  useEffect(() => {
+    if (Platform.OS !== 'android') {
+      return undefined;
+    }
+
+    if (
+      !androidRetapOverlayActive ||
+      !isFocused ||
+      isLoading ||
+      !clustersReadyForInteraction ||
+      hasPresentedCallout ||
+      !mapRef.current
+    ) {
+      setAndroidClusterHitTargets([]);
+      return undefined;
+    }
+
+    let cancelled = false;
+
+    const projectTargets = async () => {
+      const mapView = mapRef.current as any;
+      if (!mapView?.getPointInView) {
+        return;
+      }
+
+      const sourceClusters = clusters
+        .filter((cluster) =>
+          visibleClusterIds.current.has(cluster.id) ||
+          shouldClusterBeVisible(cluster, filterCriteria)
+        )
+        .slice(0, ANDROID_CLUSTER_TOUCH_OVERLAY_LIMIT);
+
+      const projected = await Promise.all(
+        sourceClusters.map(async (cluster): Promise<AndroidClusterHitTarget | null> => {
+          const coordinate = getClusterMapCoordinate(cluster);
+          if (!coordinate) {
+            return null;
+          }
+
+          try {
+            const point = await mapView.getPointInView(coordinate);
+            if (!Array.isArray(point) || point.length !== 2) {
+              return null;
+            }
+
+            const [x, y] = point;
+            if (!Number.isFinite(x) || !Number.isFinite(y)) {
+              return null;
+            }
+
+            return {
+              cluster,
+              clusterId: cluster.id,
+              x,
+              y,
+            };
+          } catch {
+            return null;
+          }
+        })
+      );
+
+      if (cancelled) {
+        return;
+      }
+
+      setAndroidClusterHitTargets(
+        projected.filter((target): target is AndroidClusterHitTarget => target !== null)
+      );
+    };
+
+    const frame = requestAnimationFrame(() => {
+      void projectTargets();
+    });
+    const retry = setTimeout(() => {
+      void projectTargets();
+    }, 350);
+
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(frame);
+      clearTimeout(retry);
+    };
+  }, [
+    androidMarkerTouchEpoch,
+    androidRetapOverlayActive,
+    clusters,
+    clustersReadyForInteraction,
+    filterCriteria,
+    fullClusterMarkersEnabled,
+    hasPresentedCallout,
+    isFocused,
+    isLoading,
+    mapDimensions?.height,
+    mapDimensions?.width,
+    richClusterMarkersEnabled,
+    shouldClusterBeVisible,
+    zoomLevel,
+  ]);
 
   // Handle map press to close callout
   const handleMapPress = () => {
@@ -6014,6 +6188,39 @@ onDidFinishLoadingMap={() => {
         {!isLoading && !ANDROID_CLUSTER_MARKERVIEW_ISOLATION_DEBUG && renderClusterMarkers()}
       </MapboxGL.MapView>
       )}
+
+      {Platform.OS === 'android' &&
+        androidRetapOverlayActive &&
+        !hasPresentedCallout &&
+        androidClusterHitTargets.length > 0 && (
+          <View
+            pointerEvents="box-none"
+            style={[StyleSheet.absoluteFillObject, { zIndex: 3, elevation: 3 }]}
+          >
+            {androidClusterHitTargets.map((target) => (
+              <Pressable
+                key={`android-retap-target-${target.clusterId}`}
+                disabled={!clustersReadyForInteraction || processingClusterId !== null}
+                onPress={() => {
+                  traceMapEvent('android_retap_overlay_cluster_press', {
+                    clusterId: target.clusterId,
+                    targetCount: androidClusterHitTargets.length,
+                  });
+                  deactivateAndroidRetapOverlay();
+                  void handleMarkerPress(target.cluster);
+                }}
+                style={{
+                  position: 'absolute',
+                  left: target.x - ANDROID_CLUSTER_TOUCH_OVERLAY_SIZE / 2,
+                  top: target.y - ANDROID_CLUSTER_TOUCH_OVERLAY_SIZE / 2,
+                  width: ANDROID_CLUSTER_TOUCH_OVERLAY_SIZE,
+                  height: ANDROID_CLUSTER_TOUCH_OVERLAY_SIZE,
+                  borderRadius: ANDROID_CLUSTER_TOUCH_OVERLAY_SIZE / 2,
+                }}
+              />
+            ))}
+          </View>
+        )}
 
       {MAP_TRACE_UI_ENABLED && (
         <Pressable

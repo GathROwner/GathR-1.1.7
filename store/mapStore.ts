@@ -192,18 +192,11 @@ const ANDROID_SUPERCLUSTER_MAX_RADIUS_PX = 128;
 const WEB_MERCATOR_EARTH_CIRCUMFERENCE_METERS = 40075016.686;
 const SELECTED_CLUSTER_ENHANCEMENT_DELAY_MS = Platform.OS === 'android' ? 900 : 0;
 const CLUSTER_SOURCE_BBOX_BUFFER_MULTIPLIER = Platform.OS === 'android' ? 1.35 : 1.2;
-const ANDROID_CALLOUT_CLOSE_CLUSTER_REFRESH_DELAY_MS = 2500;
 
 const scheduleCalloutCloseClusterRefresh = (refreshClusters: () => void): void => {
-  // Android cluster hit-testing is most fragile immediately after the callout
-  // unmounts. Keep the existing marker source stable during the retap window;
-  // refresh "new content" indicators after the user has had a chance to open
-  // the next callout. If a callout reopens first, the refresh callback skips.
-  if (Platform.OS === 'android') {
-    setTimeout(refreshClusters, ANDROID_CALLOUT_CLOSE_CLUSTER_REFRESH_DELAY_MS);
-    return;
-  }
-
+  // Keep this synchronous on Android. The temporary post-close touch overlay in
+  // map.tsx owns retaps while Mapbox marker hit-testing recovers, so cluster
+  // indicator state can refresh immediately without blocking user input.
   refreshClusters();
 };
 
@@ -1354,7 +1347,7 @@ export const useMapStore = create<MapState>((set, get) => ({
         state.generateClusters();
       };
 
-      console.log('[ClusterRefresh] Callout closed - scheduling cluster regeneration');
+      console.log('[ClusterRefresh] Callout closed - refreshing cluster indicators');
       scheduleCalloutCloseClusterRefresh(refreshClustersAfterClose);
     }
   },
