@@ -1720,6 +1720,7 @@ useEffect(() => {
   );
   const [androidCategoryCycleTick, setAndroidCategoryCycleTick] = useState(0);
   const [androidMarkerPulseStep, setAndroidMarkerPulseStep] = useState(0);
+  const [androidMarkerTouchEpoch, setAndroidMarkerTouchEpoch] = useState(0);
   const [isTracePanelVisible, setIsTracePanelVisible] = useState(false);
   const [renderedCalloutVenues, setRenderedCalloutVenues] = useState<Venue[]>([]);
   const [renderedCalloutCluster, setRenderedCalloutCluster] = useState<Cluster | null>(null);
@@ -3149,6 +3150,7 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
     handleCalloutCloseStart();
     if (Platform.OS === 'android') {
       trackClusterClosedOnce();
+      setAndroidMarkerTouchEpoch((epoch) => epoch + 1);
       selectVenue(null);
       clearRenderedCalloutPresentation();
       return;
@@ -5690,8 +5692,16 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
       
         return (
           <MapboxGL.MarkerView
-            key={`cluster-${cluster.id}`}
-            id={`cluster-${cluster.id}`}
+            key={
+              Platform.OS === 'android'
+                ? `cluster-${cluster.id}-${androidMarkerTouchEpoch}`
+                : `cluster-${cluster.id}`
+            }
+            id={
+              Platform.OS === 'android'
+                ? `cluster-${cluster.id}-${androidMarkerTouchEpoch}`
+                : `cluster-${cluster.id}`
+            }
             coordinate={coordinates}
             anchor={{ x: 0.5, y: 1.0 }}
             
