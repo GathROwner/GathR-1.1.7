@@ -710,6 +710,77 @@ const getClusterMapCoordinate = (cluster: Cluster): [number, number] | null => {
   return [longitude, latitude];
 };
 
+const clampLatitudeForMercator = (latitude: number): number =>
+  Math.max(-85.05112878, Math.min(85.05112878, latitude));
+
+const getMercatorLatitude = (latitude: number): number => {
+  const radians = (clampLatitudeForMercator(latitude) * Math.PI) / 180;
+  return Math.log(Math.tan(Math.PI / 4 + radians / 2));
+};
+
+const getLongitudeSpan = (west: number, east: number): number => {
+  const span = east >= west ? east - west : east + 360 - west;
+  return span > 0 ? span : 0;
+};
+
+const getLongitudeOffsetWithinBounds = (longitude: number, west: number, east: number): number => {
+  let adjustedLongitude = longitude;
+  if (east < west && adjustedLongitude < west) {
+    adjustedLongitude += 360;
+  }
+  return adjustedLongitude - west;
+};
+
+const projectCoordinateToViewportPoint = (
+  coordinate: [number, number],
+  visibleBbox: BoundingBox,
+  mapDimensions: { width: number; height: number }
+): { x: number; y: number } | null => {
+  const [longitude, latitude] = coordinate;
+  const longitudeSpan = getLongitudeSpan(visibleBbox.west, visibleBbox.east);
+  if (
+    !Number.isFinite(longitudeSpan) ||
+    longitudeSpan <= 0 ||
+    !Number.isFinite(mapDimensions.width) ||
+    !Number.isFinite(mapDimensions.height) ||
+    mapDimensions.width <= 0 ||
+    mapDimensions.height <= 0
+  ) {
+    return null;
+  }
+
+  const longitudeOffset = getLongitudeOffsetWithinBounds(
+    longitude,
+    visibleBbox.west,
+    visibleBbox.east
+  );
+  const northMercator = getMercatorLatitude(visibleBbox.north);
+  const southMercator = getMercatorLatitude(visibleBbox.south);
+  const latitudeMercator = getMercatorLatitude(latitude);
+  const latitudeSpan = northMercator - southMercator;
+
+  if (!Number.isFinite(latitudeSpan) || latitudeSpan <= 0) {
+    return null;
+  }
+
+  const x = (longitudeOffset / longitudeSpan) * mapDimensions.width;
+  const y = ((northMercator - latitudeMercator) / latitudeSpan) * mapDimensions.height;
+  const offscreenMargin = ANDROID_CLUSTER_TOUCH_OVERLAY_SIZE;
+
+  if (
+    !Number.isFinite(x) ||
+    !Number.isFinite(y) ||
+    x < -offscreenMargin ||
+    x > mapDimensions.width + offscreenMargin ||
+    y < -offscreenMargin ||
+    y > mapDimensions.height + offscreenMargin
+  ) {
+    return null;
+  }
+
+  return { x, y };
+};
+
 const buildAndroidClusterMarkerShape = (
   clustersForRender: Cluster[],
   options: {
@@ -4104,11 +4175,27 @@ lastOpenedClusterIdRef.current = cluster.id;
       return undefined;
     }
 
+    const cameraState = currentCameraStateRef.current;
+    const fallbackBbox = cameraState && mapDimensions
+      ? getViewportBoundingBox(
+          {
+            latitude: cameraState.center[1],
+            longitude: cameraState.center[0],
+          },
+          cameraState.zoom,
+          mapDimensions.width,
+          mapDimensions.height,
+          1.0
+        )
+      : null;
+    const visibleBbox = cameraState?.visibleBbox ?? fallbackBbox;
+
     if (
       !isFocused ||
       isLoading ||
       !clustersReadyForInteraction ||
-      !mapRef.current
+      !mapDimensions ||
+      !visibleBbox
     ) {
       if (androidRetapOverlayActive) {
         setAndroidClusterHitTargets([]);
@@ -4116,84 +4203,43 @@ lastOpenedClusterIdRef.current = cluster.id;
       return undefined;
     }
 
-    let cancelled = false;
+    const sourceClusters = clusters.filter((cluster) =>
+      visibleClusterIds.current.has(cluster.id) ||
+      shouldClusterBeVisible(cluster, filterCriteria)
+    );
+    const projected = sourceClusters
+      .map((cluster): AndroidClusterHitTarget | null => {
+        const coordinate = getClusterMapCoordinate(cluster);
+        if (!coordinate) {
+          return null;
+        }
 
-    const projectTargets = async () => {
-      const mapView = mapRef.current as any;
-      if (!mapView?.getPointInView) {
-        return;
-      }
+        const point = projectCoordinateToViewportPoint(coordinate, visibleBbox, mapDimensions);
+        if (!point) {
+          return null;
+        }
 
-      const sourceClusters = clusters
-        .filter((cluster) =>
-          visibleClusterIds.current.has(cluster.id) ||
-          shouldClusterBeVisible(cluster, filterCriteria)
-        )
-        .slice(0, ANDROID_CLUSTER_TOUCH_OVERLAY_LIMIT);
+        return {
+          cluster,
+          clusterId: cluster.id,
+          x: point.x,
+          y: point.y,
+        };
+      })
+      .filter((target): target is AndroidClusterHitTarget => target !== null)
+      .slice(0, ANDROID_CLUSTER_TOUCH_OVERLAY_LIMIT);
 
-      const projected = await Promise.all(
-        sourceClusters.map(async (cluster): Promise<AndroidClusterHitTarget | null> => {
-          const coordinate = getClusterMapCoordinate(cluster);
-          if (!coordinate) {
-            return null;
-          }
+    setAndroidClusterHitTargets(projected);
 
-          try {
-            const point = await mapView.getPointInView(coordinate);
-            if (!Array.isArray(point) || point.length !== 2) {
-              return null;
-            }
-
-            const [x, y] = point;
-            if (!Number.isFinite(x) || !Number.isFinite(y)) {
-              return null;
-            }
-
-            return {
-              cluster,
-              clusterId: cluster.id,
-              x,
-              y,
-            };
-          } catch {
-            return null;
-          }
-        })
-      );
-
-      if (cancelled) {
-        return;
-      }
-
-      setAndroidClusterHitTargets(
-        projected.filter((target): target is AndroidClusterHitTarget => target !== null)
-      );
+    if (androidRetapOverlayActive || hasPresentedCallout) {
       console.log('[map] Android retap overlay targets projected', {
         sourceCount: sourceClusters.length,
-        targetCount: projected.filter((target) => target !== null).length,
+        targetCount: projected.length,
+        projection: 'js_visible_bbox',
       });
-    };
+    }
 
-    const frame = requestAnimationFrame(() => {
-      void projectTargets();
-    });
-    const retry = setTimeout(() => {
-      void projectTargets();
-    }, hasPresentedCallout ? 500 : 350);
-    const cameraRetry = hasPresentedCallout
-      ? setTimeout(() => {
-          void projectTargets();
-        }, 1300)
-      : null;
-
-    return () => {
-      cancelled = true;
-      cancelAnimationFrame(frame);
-      clearTimeout(retry);
-      if (cameraRetry) {
-        clearTimeout(cameraRetry);
-      }
-    };
+    return undefined;
   }, [
     androidMarkerTouchEpoch,
     androidRetapOverlayActive,
