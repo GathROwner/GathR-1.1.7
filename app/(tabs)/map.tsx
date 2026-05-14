@@ -1804,6 +1804,7 @@ useEffect(() => {
     () => `${presentedCalloutClusterId ?? 'single'}::${presentedCalloutSignature || 'no-venues'}`,
     [presentedCalloutClusterId, presentedCalloutSignature]
   );
+  const isCalloutBlockingMapInteraction = hasRenderedCallout && !isCalloutClosingVisually;
   const clustersReadyForInteraction = !isLoading && clusters.length > 0;
   const shouldRenderStartupUserLocationMarker =
     !mapFirstFrameRendered &&
@@ -3729,7 +3730,7 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
       hasRenderedCallout,
       renderedCalloutClusterId: renderedCalloutClusterId ?? 'none',
     });
-    if (hasRenderedCallout) {
+    if (isCalloutBlockingMapInteraction) {
       traceMapEvent('marker_press_blocked_callout_rendered', {
         clusterId: cluster.id,
         renderedCalloutClusterId: renderedCalloutClusterId ?? 'none',
@@ -4002,7 +4003,7 @@ lastOpenedClusterIdRef.current = cluster.id;
     }
   }, [
     getPreparedClusterCallout,
-    hasRenderedCallout,
+    isCalloutBlockingMapInteraction,
     isGuest,
     location,
     renderedCalloutClusterId,
@@ -5301,7 +5302,7 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
           shape={layerMarkerShape as any}
           hitbox={{ width: 44, height: 44 }}
           onPress={(event: any) => {
-            if (!clustersReadyForInteraction || processingClusterId !== null || hasRenderedCallout) {
+            if (!clustersReadyForInteraction || processingClusterId !== null || isCalloutBlockingMapInteraction) {
               return;
             }
 
@@ -5685,7 +5686,7 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
             <TouchableOpacity
               onPress={() => handleMarkerPress(cluster)}
               testID={isClosestCluster ? "closest-cluster" : undefined}
-              disabled={!clustersReadyForInteraction || processingClusterId !== null || hasRenderedCallout}
+              disabled={!clustersReadyForInteraction || processingClusterId !== null || isCalloutBlockingMapInteraction}
               activeOpacity={0.7}
               hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
               style={isDimmedByInterestFilter ? styles.interestFilteredMarkerDimmed : undefined}
@@ -6133,10 +6134,10 @@ Owner: Map UX stability on Android • Last validated: 2025-09-04
 }
 <View
   style={[StyleSheet.absoluteFillObject, { zIndex: 4 }]}
-  pointerEvents="auto"
+  pointerEvents={isCalloutClosingVisually ? 'none' : 'auto'}
   // Always capture touches so MapView doesn't receive them on Android
-  onStartShouldSetResponder={() => true}
-  onMoveShouldSetResponder={() => true}
+  onStartShouldSetResponder={() => !isCalloutClosingVisually}
+  onMoveShouldSetResponder={() => !isCalloutClosingVisually}
   onResponderRelease={() => {
     // Tapping outside the sheet intentionally closes it with animation
     console.log('OVERLAY TAP - dismissing callout with animation');
@@ -6166,7 +6167,10 @@ Owner: Map UX stability on Android • Last validated: 2025-09-04
 
           
           {/* Callout container - box-none allows taps to pass through to overlay below */}
-          <View style={styles.calloutAnimatedContainer} pointerEvents="box-none">
+          <View
+            style={styles.calloutAnimatedContainer}
+            pointerEvents={isCalloutClosingVisually ? 'none' : 'box-none'}
+          >
             <ActiveCalloutComponent 
               key={presentedCalloutPresentationKey}
               venues={presentedCalloutVenues}
