@@ -110,6 +110,7 @@ const STATIC_CALLOUT_ISOLATION_DEBUG = false;
 const IOS_CALLOUT_NATIVE_AD_ISOLATION_DEBUG = Platform.OS === 'ios';
 const ANDROID_MAPBOX_STARTUP_ISOLATION_DEBUG = false;
 const ANDROID_CLUSTER_MARKERVIEW_ISOLATION_DEBUG = false;
+const DEBUG_CALLOUT_PROBE = false;
 const USE_ANDROID_NATIVE_CLUSTER_MARKER_LAYERS = false;
 const DEBUG_TREE_MARKER_EVENTS = false;
 const STAGE_CLUSTER_MARKERS_ON_STARTUP = Platform.OS === 'android';
@@ -125,6 +126,12 @@ const ANDROID_CALLOUT_PREP_CACHE_LIMIT = 24;
 const ANDROID_CALLOUT_PREP_PREWARM_LIMIT = 8;
 const ANDROID_CALLOUT_PREP_PREWARM_STEP_MS = 45;
 const ANDROID_CALLOUT_CAMERA_MOVE_DELAY_MS = 1300;
+
+const logCalloutProbe = (...args: unknown[]): void => {
+  if (DEBUG_CALLOUT_PROBE) {
+    console.log(...args);
+  }
+};
 
 const getAndroidHotspotStartupPhase = (): string | null => {
   if (Platform.OS !== 'android') {
@@ -2153,7 +2160,7 @@ useEffect(() => {
   }, [clusters.length, clustersReady, clustersReadyForInteraction]);
 
   useEffect(() => {
-    console.log('[CalloutProbe] store selection changed', {
+    logCalloutProbe('[CalloutProbe] store selection changed', {
       selectedVenueCount,
       selectedClusterId: selectedClusterId ?? 'none',
       isCalloutOpen,
@@ -3050,12 +3057,12 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
     if (selectedVenues && selectedVenues.length > 0) {
       setIsCalloutClosingVisually(false);
       calloutOpenTouchGuardUntilRef.current = Date.now() + 900;
-      console.log('[CalloutProbe] arming map press guard', {
+      logCalloutProbe('[CalloutProbe] arming map press guard', {
         until: calloutOpenTouchGuardUntilRef.current,
         selectedVenueCount: selectedVenues.length,
         selectedClusterId: selectedCluster?.id ?? 'none',
       });
-      console.log('[CalloutProbe] promoting selected venues to rendered callout', {
+      logCalloutProbe('[CalloutProbe] promoting selected venues to rendered callout', {
         selectedVenueCount: selectedVenues.length,
         selectedClusterId: selectedCluster?.id ?? 'none',
         venueNames: selectedVenues.slice(0, 5).map((venue) => venue.venue).join(' | '),
@@ -3070,13 +3077,13 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
     if (!hasRenderedCallout) {
       setIsCalloutClosingVisually(false);
     }
-    console.log('[CalloutProbe] selected venues empty', {
+    logCalloutProbe('[CalloutProbe] selected venues empty', {
       selectedClusterId: selectedCluster?.id ?? 'none',
     });
   }, [cancelPendingAndroidCalloutCameraMove, hasRenderedCallout, selectedCluster, selectedVenues]);
 
   useEffect(() => {
-    console.log('[CalloutProbe] rendered callout state changed', {
+    logCalloutProbe('[CalloutProbe] rendered callout state changed', {
       renderedVenueCount: renderedCalloutVenues.length,
       renderedClusterId: renderedCalloutClusterId ?? 'none',
       hasRenderedCallout,
@@ -3120,7 +3127,7 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
   }, [calloutAnimation]);
 
   const closeCallout = useCallback((reason: string) => {
-    console.log('[CalloutProbe] closeCallout', {
+    logCalloutProbe('[CalloutProbe] closeCallout', {
       reason,
       selectedVenueCount,
       selectedClusterId: selectedClusterId ?? 'none',
@@ -4007,7 +4014,7 @@ lastOpenedClusterIdRef.current = cluster.id;
   // Handle map press to close callout
   const handleMapPress = () => {
     const guardRemainingMs = Math.max(0, calloutOpenTouchGuardUntilRef.current - Date.now());
-    console.log('[CalloutProbe] handleMapPress fired', {
+    logCalloutProbe('[CalloutProbe] handleMapPress fired', {
       selectedVenueCount,
       selectedClusterId: selectedClusterId ?? 'none',
       ignoreProgrammatic: ignoreProgrammaticCameraRef.current,
@@ -4016,17 +4023,17 @@ lastOpenedClusterIdRef.current = cluster.id;
     });
 
     if (ignoreProgrammaticCameraRef.current) {
-      console.log('[CalloutProbe] handleMapPress ignored during programmatic camera move');
+      logCalloutProbe('[CalloutProbe] handleMapPress ignored during programmatic camera move');
       return;
     }
 
     if (selectedVenues && selectedVenues.length > 0 && !isRenderedCalloutLayoutReady) {
-      console.log('[CalloutProbe] handleMapPress ignored while callout layout is pending');
+      logCalloutProbe('[CalloutProbe] handleMapPress ignored while callout layout is pending');
       return;
     }
 
     if (guardRemainingMs > 0) {
-      console.log('[CalloutProbe] handleMapPress ignored by post-open guard', {
+      logCalloutProbe('[CalloutProbe] handleMapPress ignored by post-open guard', {
         guardRemainingMs,
       });
       return;
@@ -5710,7 +5717,7 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
   }
 
   const renderCalloutPresentation = (content: React.ReactNode) => {
-    console.log('[CalloutProbe] renderCalloutPresentation', {
+    logCalloutProbe('[CalloutProbe] renderCalloutPresentation', {
       platform: Platform.OS,
       hasRenderedCallout,
       hasPresentedCallout,
@@ -6595,3 +6602,4 @@ countText: {
 // Explicitly mark the default export for Expo Router
 const MapPage = MapScreen;
 export default MapPage;
+

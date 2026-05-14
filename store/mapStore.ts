@@ -1347,8 +1347,6 @@ export const useMapStore = create<MapState>((set, get) => ({
       // Only update the selectedVenue, not the selectedVenues array
       set({ selectedVenue: venue });
     } else {
-      const closeStack = new Error('[ClusterRefresh] selectVenue(null) stack').stack;
-      console.log('[ClusterRefresh] selectVenue(null) invoked', closeStack);
       // When closing, clear all selections and refresh clusters
       // to update "new content" indicators based on viewed venues
       set({
