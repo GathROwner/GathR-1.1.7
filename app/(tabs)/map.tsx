@@ -1733,6 +1733,7 @@ useEffect(() => {
   const locationSubscription = useRef<Location.LocationSubscription | null>(null);
   const calloutAnimationRequestRef = useRef(0);
   const calloutOpenTouchGuardUntilRef = useRef(0);
+  const isCalloutClosingVisuallyRef = useRef(false);
   const latestLocationRef = useRef<Location.LocationObject | null>(null);
   const latestClusterCountRef = useRef(0);
   const isMapLoadingRef = useRef(false);
@@ -3056,6 +3057,7 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
 
   useEffect(() => {
     if (selectedVenues && selectedVenues.length > 0) {
+      isCalloutClosingVisuallyRef.current = false;
       setIsCalloutClosingVisually(false);
       calloutOpenTouchGuardUntilRef.current = Date.now() + 900;
       logCalloutProbe('[CalloutProbe] arming map press guard', {
@@ -3076,6 +3078,7 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
     calloutOpenTouchGuardUntilRef.current = 0;
     cancelPendingAndroidCalloutCameraMove('selected-venues-empty');
     if (!hasRenderedCallout) {
+      isCalloutClosingVisuallyRef.current = false;
       setIsCalloutClosingVisually(false);
     }
     logCalloutProbe('[CalloutProbe] selected venues empty', {
@@ -3099,6 +3102,7 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
 
   const handleCalloutCloseStart = useCallback(() => {
     if (Platform.OS === 'android') {
+      isCalloutClosingVisuallyRef.current = true;
       setIsCalloutClosingVisually(true);
     }
   }, []);
@@ -3124,7 +3128,6 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
     setRenderedCalloutVenues([]);
     setRenderedCalloutCluster(null);
     setCalloutLayoutReadyKey(null);
-    setIsCalloutClosingVisually(false);
   }, [calloutAnimation]);
 
   const closeCallout = useCallback((reason: string) => {
@@ -3730,7 +3733,7 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
       hasRenderedCallout,
       renderedCalloutClusterId: renderedCalloutClusterId ?? 'none',
     });
-    if (isCalloutBlockingMapInteraction) {
+    if (hasRenderedCallout && !isCalloutClosingVisuallyRef.current) {
       traceMapEvent('marker_press_blocked_callout_rendered', {
         clusterId: cluster.id,
         renderedCalloutClusterId: renderedCalloutClusterId ?? 'none',
@@ -5302,7 +5305,11 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
           shape={layerMarkerShape as any}
           hitbox={{ width: 44, height: 44 }}
           onPress={(event: any) => {
-            if (!clustersReadyForInteraction || processingClusterId !== null || isCalloutBlockingMapInteraction) {
+            if (
+              !clustersReadyForInteraction ||
+              processingClusterId !== null ||
+              (hasRenderedCallout && !isCalloutClosingVisuallyRef.current)
+            ) {
               return;
             }
 
@@ -5686,7 +5693,7 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
             <TouchableOpacity
               onPress={() => handleMarkerPress(cluster)}
               testID={isClosestCluster ? "closest-cluster" : undefined}
-              disabled={!clustersReadyForInteraction || processingClusterId !== null || isCalloutBlockingMapInteraction}
+              disabled={!clustersReadyForInteraction || processingClusterId !== null}
               activeOpacity={0.7}
               hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
               style={isDimmedByInterestFilter ? styles.interestFilteredMarkerDimmed : undefined}
@@ -6136,8 +6143,8 @@ Owner: Map UX stability on Android • Last validated: 2025-09-04
   style={[StyleSheet.absoluteFillObject, { zIndex: 4 }]}
   pointerEvents={isCalloutClosingVisually ? 'none' : 'auto'}
   // Always capture touches so MapView doesn't receive them on Android
-  onStartShouldSetResponder={() => !isCalloutClosingVisually}
-  onMoveShouldSetResponder={() => !isCalloutClosingVisually}
+  onStartShouldSetResponder={() => !isCalloutClosingVisuallyRef.current}
+  onMoveShouldSetResponder={() => !isCalloutClosingVisuallyRef.current}
   onResponderRelease={() => {
     // Tapping outside the sheet intentionally closes it with animation
     console.log('OVERLAY TAP - dismissing callout with animation');
