@@ -126,7 +126,6 @@ const ANDROID_CALLOUT_PREP_CACHE_LIMIT = 24;
 const ANDROID_CALLOUT_PREP_PREWARM_LIMIT = 8;
 const ANDROID_CALLOUT_PREP_PREWARM_STEP_MS = 45;
 const ANDROID_CALLOUT_CAMERA_MOVE_DELAY_MS = 1300;
-const ANDROID_CALLOUT_RENDERED_CLEAR_DELAY_MS = 2500;
 
 const logCalloutProbe = (...args: unknown[]): void => {
   if (DEBUG_CALLOUT_PROBE) {
@@ -1747,7 +1746,6 @@ useEffect(() => {
   const fullClusterMarkersTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const richClusterMarkersTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const androidCalloutCameraMoveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const androidCalloutClearTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mapFirstFrameRenderedRef = useRef(false);
   const calloutPrepCacheRef = useRef<Map<string, PreparedClusterCallout>>(new Map());
 
@@ -3063,10 +3061,6 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
 
   useEffect(() => {
     if (selectedVenues && selectedVenues.length > 0) {
-      if (androidCalloutClearTimerRef.current) {
-        clearTimeout(androidCalloutClearTimerRef.current);
-        androidCalloutClearTimerRef.current = null;
-      }
       isCalloutClosingVisuallyRef.current = false;
       setIsCalloutClosingVisually(false);
       calloutOpenTouchGuardUntilRef.current = Date.now() + 900;
@@ -3134,28 +3128,11 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
   }, []);
 
   const clearRenderedCalloutPresentation = useCallback(() => {
-    if (androidCalloutClearTimerRef.current) {
-      clearTimeout(androidCalloutClearTimerRef.current);
-      androidCalloutClearTimerRef.current = null;
-    }
     calloutAnimation.setValue(SCREEN_HEIGHT);
     setRenderedCalloutVenues([]);
     setRenderedCalloutCluster(null);
     setCalloutLayoutReadyKey(null);
   }, [calloutAnimation]);
-
-  const scheduleAndroidRenderedCalloutClear = useCallback(() => {
-    if (androidCalloutClearTimerRef.current) {
-      clearTimeout(androidCalloutClearTimerRef.current);
-    }
-
-    androidCalloutClearTimerRef.current = setTimeout(() => {
-      androidCalloutClearTimerRef.current = null;
-      clearRenderedCalloutPresentation();
-      isCalloutClosingVisuallyRef.current = false;
-      setIsCalloutClosingVisually(false);
-    }, ANDROID_CALLOUT_RENDERED_CLEAR_DELAY_MS);
-  }, [clearRenderedCalloutPresentation]);
 
   const closeCallout = useCallback((reason: string) => {
     logCalloutProbe('[CalloutProbe] closeCallout', {
@@ -3172,20 +3149,18 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
     handleCalloutCloseStart();
     if (Platform.OS === 'android') {
       trackClusterClosedOnce();
-      calloutAnimation.setValue(SCREEN_HEIGHT);
       selectVenue(null);
-      scheduleAndroidRenderedCalloutClear();
+      clearRenderedCalloutPresentation();
       return;
     }
     selectVenue(null);
   }, [
     cancelPendingAndroidCalloutCameraMove,
-    calloutAnimation,
+    clearRenderedCalloutPresentation,
     handleCalloutCloseStart,
     isRenderedCalloutLayoutReady,
     renderedCalloutClusterId,
     renderedCalloutVenues.length,
-    scheduleAndroidRenderedCalloutClear,
     selectedClusterId,
     selectedVenueCount,
     selectVenue,
@@ -3305,17 +3280,6 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
     }
 
     if (renderedCalloutVenues.length > 0) {
-      if (Platform.OS === 'android' && isCalloutClosingVisuallyRef.current) {
-        calloutAnimation.setValue(SCREEN_HEIGHT);
-        traceMapEvent('callout_close_cleanup_deferred_for_android', {
-          requestId: animationRequestId,
-          renderedVenueCount: renderedCalloutVenues.length,
-          renderedClusterId: renderedCalloutClusterId ?? 'none',
-          delayMs: ANDROID_CALLOUT_RENDERED_CLEAR_DELAY_MS,
-        });
-        return;
-      }
-
       traceMapEvent('callout_animation_close_started', {
         requestId: animationRequestId,
         selectedClusterId: renderedCalloutClusterId ?? 'none',
@@ -3413,10 +3377,6 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
 
   useEffect(() => {
     return () => {
-      if (androidCalloutClearTimerRef.current) {
-        clearTimeout(androidCalloutClearTimerRef.current);
-        androidCalloutClearTimerRef.current = null;
-      }
       if (androidCalloutCameraMoveTimerRef.current) {
         clearTimeout(androidCalloutCameraMoveTimerRef.current);
         androidCalloutCameraMoveTimerRef.current = null;
