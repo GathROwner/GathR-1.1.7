@@ -1845,6 +1845,7 @@ useEffect(() => {
   const calloutOpenTouchGuardUntilRef = useRef(0);
   const isCalloutClosingVisuallyRef = useRef(false);
   const androidRetapOverlayTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const androidRetapOverlayActiveRef = useRef(false);
   const androidRetapOverlayPressHandledRef = useRef(false);
   const latestLocationRef = useRef<Location.LocationObject | null>(null);
   const latestClusterCountRef = useRef(0);
@@ -3224,6 +3225,7 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
     }
     setAndroidRetapOverlayActive(false);
     setAndroidClusterHitTargets([]);
+    androidRetapOverlayActiveRef.current = false;
     androidRetapOverlayPressHandledRef.current = true;
   }, []);
 
@@ -3237,6 +3239,7 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
     }
 
     console.log('[map] Android retap overlay activated');
+    androidRetapOverlayActiveRef.current = true;
     androidRetapOverlayPressHandledRef.current = false;
     setAndroidRetapOverlayActive(true);
     androidRetapOverlayTimerRef.current = setTimeout(() => {
@@ -3244,6 +3247,7 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
       console.log('[map] Android retap overlay expired');
       setAndroidRetapOverlayActive(false);
       setAndroidClusterHitTargets([]);
+      androidRetapOverlayActiveRef.current = false;
       androidRetapOverlayPressHandledRef.current = true;
     }, ANDROID_CLUSTER_TOUCH_OVERLAY_DURATION_MS);
   }, []);
@@ -6267,46 +6271,6 @@ onDidFinishLoadingMap={() => {
       </MapboxGL.MapView>
       )}
 
-      {Platform.OS === 'android' &&
-        (androidRetapOverlayActive || hasPresentedCallout || isCalloutClosingVisually) &&
-        androidClusterHitTargets.length > 0 && (
-          <View
-            pointerEvents="box-none"
-            style={[StyleSheet.absoluteFillObject, { zIndex: 6, elevation: 6 }]}
-          >
-            {androidClusterHitTargets.map((target) => (
-              <Pressable
-                key={`android-retap-target-${target.clusterId}`}
-                disabled={!clustersReadyForInteraction || processingClusterId !== null}
-                onPress={() => {
-                  if (androidRetapOverlayPressHandledRef.current) {
-                    return;
-                  }
-                  androidRetapOverlayPressHandledRef.current = true;
-                  traceMapEvent('android_retap_overlay_cluster_press', {
-                    clusterId: target.clusterId,
-                    targetCount: androidClusterHitTargets.length,
-                  });
-                  console.log('[map] Android retap overlay cluster press', {
-                    clusterId: target.clusterId,
-                    targetCount: androidClusterHitTargets.length,
-                  });
-                  deactivateAndroidRetapOverlay();
-                  void handleMarkerPress(target.cluster);
-                }}
-                style={{
-                  position: 'absolute',
-                  left: target.x - ANDROID_CLUSTER_TOUCH_OVERLAY_SIZE / 2,
-                  top: target.y - ANDROID_CLUSTER_TOUCH_OVERLAY_SIZE / 2,
-                  width: ANDROID_CLUSTER_TOUCH_OVERLAY_SIZE,
-                  height: ANDROID_CLUSTER_TOUCH_OVERLAY_SIZE,
-                  borderRadius: ANDROID_CLUSTER_TOUCH_OVERLAY_SIZE / 2,
-                }}
-              />
-            ))}
-          </View>
-        )}
-
       {MAP_TRACE_UI_ENABLED && (
         <Pressable
           style={styles.mapTraceTrigger}
@@ -6507,6 +6471,49 @@ Owner: Map UX stability on Android • Last validated: 2025-09-04
           </View>
         </>
       )}
+
+      {Platform.OS === 'android' &&
+        (androidRetapOverlayActive || hasPresentedCallout || isCalloutClosingVisually) &&
+        androidClusterHitTargets.length > 0 && (
+          <View
+            pointerEvents="box-none"
+            style={[StyleSheet.absoluteFillObject, { zIndex: 20, elevation: 20 }]}
+          >
+            {androidClusterHitTargets.map((target) => (
+              <Pressable
+                key={`android-retap-target-${target.clusterId}`}
+                disabled={!clustersReadyForInteraction || processingClusterId !== null}
+                onPress={() => {
+                  if (
+                    (!androidRetapOverlayActiveRef.current && !isCalloutClosingVisuallyRef.current) ||
+                    androidRetapOverlayPressHandledRef.current
+                  ) {
+                    return;
+                  }
+                  androidRetapOverlayPressHandledRef.current = true;
+                  traceMapEvent('android_retap_overlay_cluster_press', {
+                    clusterId: target.clusterId,
+                    targetCount: androidClusterHitTargets.length,
+                  });
+                  console.log('[map] Android retap overlay cluster press', {
+                    clusterId: target.clusterId,
+                    targetCount: androidClusterHitTargets.length,
+                  });
+                  deactivateAndroidRetapOverlay();
+                  void handleMarkerPress(target.cluster);
+                }}
+                style={{
+                  position: 'absolute',
+                  left: target.x - ANDROID_CLUSTER_TOUCH_OVERLAY_SIZE / 2,
+                  top: target.y - ANDROID_CLUSTER_TOUCH_OVERLAY_SIZE / 2,
+                  width: ANDROID_CLUSTER_TOUCH_OVERLAY_SIZE,
+                  height: ANDROID_CLUSTER_TOUCH_OVERLAY_SIZE,
+                  borderRadius: ANDROID_CLUSTER_TOUCH_OVERLAY_SIZE / 2,
+                }}
+              />
+            ))}
+          </View>
+        )}
       
       {/* Preview-debug gate: keep hotspot fully unmounted so its timers/camera flow cannot affect callout presentation. */}
       {!HOTSPOT_HARD_DISABLED_FOR_PREVIEW_DEBUG && clustersReadyForInteraction && (
