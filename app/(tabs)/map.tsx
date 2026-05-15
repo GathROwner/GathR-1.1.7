@@ -1939,9 +1939,11 @@ useEffect(() => {
     richClusterMarkersEnabled,
     androidRichMarkerZoomAllowed
   );
-  const shouldRenderAncillaryOverlays =
+  const shouldMountAncillaryOverlays =
     isFocused &&
-    mapTabOverlaysReady &&
+    mapTabOverlaysReady;
+  const shouldRenderAncillaryOverlays =
+    shouldMountAncillaryOverlays &&
     !isCalloutOpen &&
     (!hasPresentedCallout || isCalloutClosingVisually);
 
@@ -6276,9 +6278,9 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
       )}
       {/* Add Filter Bar at the top */}
       {/* Filter pills overlay (floating) anchored under safe-area */}
-      {shouldRenderAncillaryOverlays && (
+      {shouldMountAncillaryOverlays && (
         <Animated.View
-          pointerEvents="box-none"
+          pointerEvents={shouldRenderAncillaryOverlays ? 'box-none' : 'none'}
           style={{
             position: 'absolute',
             left: 0,
@@ -6286,12 +6288,12 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
             top: TOP_OFFSET, // baseline + per-platform nudge
             zIndex: 5,
             transform: [{ translateY: pillsAnimation }],
-            opacity: pillsOpacity,
+            opacity: shouldRenderAncillaryOverlays ? pillsOpacity : 0,
           }}
         >
           <View
             testID="filter-pills"
-            pointerEvents="auto"
+            pointerEvents={shouldRenderAncillaryOverlays ? 'auto' : 'none'}
             onLayout={(e) => {
               const h = e.nativeEvent.layout.height || 0;
               if (h && Math.abs(h - pillsHeight) > 1) setPillsHeight(h);
@@ -6535,8 +6537,14 @@ onDidFinishLoadingMap={() => {
         />
       </View>
 
-      {shouldRenderAncillaryOverlays && (
-        <>
+      {shouldMountAncillaryOverlays && (
+        <View
+          pointerEvents={shouldRenderAncillaryOverlays ? 'box-none' : 'none'}
+          style={[
+            StyleSheet.absoluteFillObject,
+            { opacity: shouldRenderAncillaryOverlays ? 1 : 0 },
+          ]}
+        >
           <MapLegend topOffset={30} rightOffset={10} />
 
           {/* Hot Flame Pill - shows "What's hot" filter in top-right */}
@@ -6556,7 +6564,7 @@ onDidFinishLoadingMap={() => {
             hotModeActive={hotInterestCarouselActive}
             onDismissHotMode={() => setHotInterestCarouselActive(false)}
           />
-        </>
+        </View>
       )}
 
       <View style={styles.mapLogoContainer} pointerEvents="none">
