@@ -129,6 +129,7 @@ const ANDROID_CALLOUT_PREP_CACHE_LIMIT = 24;
 const ANDROID_CALLOUT_PREP_PREWARM_LIMIT = 8;
 const ANDROID_CALLOUT_PREP_PREWARM_STEP_MS = 45;
 const ANDROID_CALLOUT_CAMERA_MOVE_DELAY_MS = 1300;
+const ANDROID_CALLOUT_DEFERRED_TEARDOWN_MS = 2500;
 
 const logCalloutProbe = (...args: unknown[]): void => {
   if (DEBUG_CALLOUT_PROBE) {
@@ -1840,6 +1841,7 @@ useEffect(() => {
   const cameraRef = useRef<MapboxGL.Camera>(null);
   const calloutAnimation = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
   const calloutContainerRef = useRef<View>(null);
+  const androidRetapOverlayRef = useRef<View>(null);
   const mapRef = useRef<MapboxGL.MapView>(null);
   const locationSubscription = useRef<Location.LocationSubscription | null>(null);
   const calloutAnimationRequestRef = useRef(0);
@@ -1848,6 +1850,9 @@ useEffect(() => {
   const androidRetapOverlayTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const androidRetapOverlayActiveRef = useRef(false);
   const androidRetapOverlayPressHandledRef = useRef(false);
+  const androidClusterHitTargetsRef = useRef<AndroidClusterHitTarget[]>([]);
+  const androidCalloutTeardownTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const androidCalloutTeardownSequenceRef = useRef(0);
   const latestLocationRef = useRef<Location.LocationObject | null>(null);
   const latestClusterCountRef = useRef(0);
   const isMapLoadingRef = useRef(false);
@@ -3174,11 +3179,57 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
     }
   }, []);
 
+  const cancelPendingAndroidCalloutTeardown = useCallback((source: string) => {
+    if (androidCalloutTeardownTimerRef.current) {
+      clearTimeout(androidCalloutTeardownTimerRef.current);
+      androidCalloutTeardownTimerRef.current = null;
+      traceMapEvent('android_callout_deferred_teardown_cancelled', {
+        source,
+      });
+    }
+    androidCalloutTeardownSequenceRef.current += 1;
+  }, []);
+
+  const setAndroidRetapOverlayPointerEvents = useCallback((pointerEvents: 'auto' | 'box-none') => {
+    (androidRetapOverlayRef.current as any)?.setNativeProps?.({ pointerEvents });
+  }, []);
+
+  const hideAndroidCalloutContainerForRetap = useCallback(() => {
+    (calloutContainerRef.current as any)?.setNativeProps?.({
+      pointerEvents: 'none',
+      style: {
+        opacity: 0,
+        transform: [{ translateY: SCREEN_HEIGHT }],
+        zIndex: -1,
+        elevation: 0,
+      },
+    });
+  }, []);
+
+  const restoreAndroidCalloutContainerForInteraction = useCallback(() => {
+    (calloutContainerRef.current as any)?.setNativeProps?.({
+      pointerEvents: 'box-none',
+      style: {
+        opacity: 1,
+        transform: [{ translateY: 0 }],
+        zIndex: 15,
+        elevation: 15,
+      },
+    });
+  }, []);
+
+  const setAndroidClusterHitTargetsImmediate = useCallback((targets: AndroidClusterHitTarget[]) => {
+    androidClusterHitTargetsRef.current = targets;
+    setAndroidClusterHitTargets(targets);
+  }, []);
+
   useEffect(() => {
     if (selectedVenues && selectedVenues.length > 0) {
+      cancelPendingAndroidCalloutTeardown('selected-venues-promoted');
       isCalloutClosingVisuallyRef.current = false;
       setIsCalloutClosingVisually(false);
-      (calloutContainerRef.current as any)?.setNativeProps?.({ pointerEvents: 'box-none' });
+      restoreAndroidCalloutContainerForInteraction();
+      setAndroidRetapOverlayPointerEvents('box-none');
       calloutOpenTouchGuardUntilRef.current = Date.now() + 900;
       logCalloutProbe('[CalloutProbe] arming map press guard', {
         until: calloutOpenTouchGuardUntilRef.current,
@@ -3204,7 +3255,15 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
     logCalloutProbe('[CalloutProbe] selected venues empty', {
       selectedClusterId: selectedCluster?.id ?? 'none',
     });
-  }, [cancelPendingAndroidCalloutCameraMove, hasRenderedCallout, selectedCluster, selectedVenues]);
+  }, [
+    cancelPendingAndroidCalloutCameraMove,
+    cancelPendingAndroidCalloutTeardown,
+    hasRenderedCallout,
+    restoreAndroidCalloutContainerForInteraction,
+    selectedCluster,
+    selectedVenues,
+    setAndroidRetapOverlayPointerEvents,
+  ]);
 
   useEffect(() => {
     logCalloutProbe('[CalloutProbe] rendered callout state changed', {
@@ -3314,11 +3373,12 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
       clearTimeout(androidRetapOverlayTimerRef.current);
       androidRetapOverlayTimerRef.current = null;
     }
+    setAndroidRetapOverlayPointerEvents('box-none');
     setAndroidRetapOverlayActive(false);
-    setAndroidClusterHitTargets([]);
+    setAndroidClusterHitTargetsImmediate([]);
     androidRetapOverlayActiveRef.current = false;
     androidRetapOverlayPressHandledRef.current = true;
-  }, []);
+  }, [setAndroidClusterHitTargetsImmediate, setAndroidRetapOverlayPointerEvents]);
 
   const activateAndroidRetapOverlay = useCallback(() => {
     if (Platform.OS !== 'android') {
@@ -3335,7 +3395,8 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
       targetCount: projected.length,
       sourceCount,
     });
-    setAndroidClusterHitTargets(projected);
+    setAndroidClusterHitTargetsImmediate(projected);
+    setAndroidRetapOverlayPointerEvents('auto');
     if (projected.length > 0) {
       logAndroidRetapOverlayTargets('activate', sourceCount, projected);
     }
@@ -3345,27 +3406,37 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
     androidRetapOverlayTimerRef.current = setTimeout(() => {
       androidRetapOverlayTimerRef.current = null;
       console.log('[map] Android retap overlay expired');
+      setAndroidRetapOverlayPointerEvents('box-none');
       setAndroidRetapOverlayActive(false);
-      setAndroidClusterHitTargets([]);
+      setAndroidClusterHitTargetsImmediate([]);
       androidRetapOverlayActiveRef.current = false;
       androidRetapOverlayPressHandledRef.current = true;
     }, ANDROID_CLUSTER_TOUCH_OVERLAY_DURATION_MS);
-  }, [getAndroidProjectedClusterHitTargets, logAndroidRetapOverlayTargets]);
+  }, [
+    getAndroidProjectedClusterHitTargets,
+    logAndroidRetapOverlayTargets,
+    setAndroidClusterHitTargetsImmediate,
+    setAndroidRetapOverlayPointerEvents,
+  ]);
 
   useEffect(() => () => {
     if (androidRetapOverlayTimerRef.current) {
       clearTimeout(androidRetapOverlayTimerRef.current);
       androidRetapOverlayTimerRef.current = null;
     }
+    if (androidCalloutTeardownTimerRef.current) {
+      clearTimeout(androidCalloutTeardownTimerRef.current);
+      androidCalloutTeardownTimerRef.current = null;
+    }
   }, []);
 
   const handleCalloutCloseStart = useCallback(() => {
     if (Platform.OS === 'android') {
       isCalloutClosingVisuallyRef.current = true;
-      setIsCalloutClosingVisually(true);
-      (calloutContainerRef.current as any)?.setNativeProps?.({ pointerEvents: 'none' });
+      hideAndroidCalloutContainerForRetap();
+      setAndroidRetapOverlayPointerEvents('auto');
     }
-  }, []);
+  }, [hideAndroidCalloutContainerForRetap, setAndroidRetapOverlayPointerEvents]);
 
   const trackClusterClosedOnce = useCallback(() => {
     if (clusterOpenStartRef.current == null) {
@@ -3390,6 +3461,59 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
     setCalloutLayoutReadyKey(null);
   }, [calloutAnimation]);
 
+  const scheduleAndroidDeferredCalloutTeardown = useCallback((reason: string) => {
+    if (Platform.OS !== 'android') {
+      clearRenderedCalloutPresentation();
+      return;
+    }
+
+    isCalloutClosingVisuallyRef.current = true;
+    hideAndroidCalloutContainerForRetap();
+    setAndroidRetapOverlayPointerEvents('auto');
+    calloutAnimation.setValue(SCREEN_HEIGHT);
+
+    if (androidCalloutTeardownTimerRef.current) {
+      traceMapEvent('android_callout_deferred_teardown_already_pending', {
+        reason,
+      });
+      return;
+    }
+
+    const sequence = ++androidCalloutTeardownSequenceRef.current;
+    traceMapEvent('android_callout_deferred_teardown_scheduled', {
+      reason,
+      delayMs: ANDROID_CALLOUT_DEFERRED_TEARDOWN_MS,
+    });
+    console.log('[map] Android deferred callout teardown scheduled', {
+      reason,
+      delayMs: ANDROID_CALLOUT_DEFERRED_TEARDOWN_MS,
+    });
+
+    androidCalloutTeardownTimerRef.current = setTimeout(() => {
+      if (androidCalloutTeardownSequenceRef.current !== sequence) {
+        return;
+      }
+
+      androidCalloutTeardownTimerRef.current = null;
+      traceMapEvent('android_callout_deferred_teardown_running', {
+        reason,
+      });
+      console.log('[map] Android deferred callout teardown running', {
+        reason,
+      });
+      selectVenue(null);
+      clearRenderedCalloutPresentation();
+      isCalloutClosingVisuallyRef.current = false;
+      setIsCalloutClosingVisually(false);
+    }, ANDROID_CALLOUT_DEFERRED_TEARDOWN_MS);
+  }, [
+    calloutAnimation,
+    clearRenderedCalloutPresentation,
+    hideAndroidCalloutContainerForRetap,
+    selectVenue,
+    setAndroidRetapOverlayPointerEvents,
+  ]);
+
   const closeCallout = useCallback((reason: string) => {
     logCalloutProbe('[CalloutProbe] closeCallout', {
       reason,
@@ -3406,19 +3530,18 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
       if (Platform.OS === 'android') {
       trackClusterClosedOnce();
       activateAndroidRetapOverlay();
-      selectVenue(null);
-      clearRenderedCalloutPresentation();
+      scheduleAndroidDeferredCalloutTeardown(reason);
       return;
     }
     selectVenue(null);
   }, [
     activateAndroidRetapOverlay,
     cancelPendingAndroidCalloutCameraMove,
-    clearRenderedCalloutPresentation,
     handleCalloutCloseStart,
     isRenderedCalloutLayoutReady,
     renderedCalloutClusterId,
     renderedCalloutVenues.length,
+    scheduleAndroidDeferredCalloutTeardown,
     selectedClusterId,
     selectedVenueCount,
     selectVenue,
@@ -3543,6 +3666,10 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
         selectedClusterId: renderedCalloutClusterId ?? 'none',
         renderedVenueCount: renderedCalloutVenues.length,
       });
+      if (Platform.OS === 'android') {
+        scheduleAndroidDeferredCalloutTeardown('callout-lifecycle-close');
+        return;
+      }
       calloutAnimation.setValue(SCREEN_HEIGHT);
       traceMapEvent('callout_parent_presentation_clearing', {
         requestId: animationRequestId,
@@ -3591,6 +3718,7 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
     renderedCalloutClusterId,
     renderedCalloutPresentationKey,
     renderedCalloutSignature,
+    scheduleAndroidDeferredCalloutTeardown,
     selectedCalloutSignature,
     selectedClusterId,
   ]); // Parent exposes a stable callout subtree once the selected content is ready
@@ -4304,7 +4432,12 @@ lastOpenedClusterIdRef.current = cluster.id;
     let matchedTarget: AndroidClusterHitTarget | null = null;
     let matchedDistanceSquared = Number.POSITIVE_INFINITY;
 
-    androidClusterHitTargets.forEach((target) => {
+    const hitTargets =
+      androidClusterHitTargetsRef.current.length > 0
+        ? androidClusterHitTargetsRef.current
+        : androidClusterHitTargets;
+
+    hitTargets.forEach((target) => {
       const dx = touchX - target.x;
       const dy = touchY - target.y;
       const distanceSquared = dx * dx + dy * dy;
@@ -4318,7 +4451,7 @@ lastOpenedClusterIdRef.current = cluster.id;
       console.log('[map] Android retap overlay miss', {
         x: Math.round(touchX),
         y: Math.round(touchY),
-        targetCount: androidClusterHitTargets.length,
+        targetCount: hitTargets.length,
       });
       return true;
     }
@@ -4335,12 +4468,12 @@ lastOpenedClusterIdRef.current = cluster.id;
     androidRetapOverlayPressHandledRef.current = true;
     traceMapEvent('android_retap_overlay_cluster_press', {
       clusterId: matchedTarget.clusterId,
-      targetCount: androidClusterHitTargets.length,
+      targetCount: hitTargets.length,
       source: 'callout_touch_capture_overlay',
     });
     console.log('[map] Android retap overlay cluster press', {
       clusterId: matchedTarget.clusterId,
-      targetCount: androidClusterHitTargets.length,
+      targetCount: hitTargets.length,
       source: 'callout_touch_capture_overlay',
     });
     deactivateAndroidRetapOverlay();
@@ -4359,7 +4492,7 @@ lastOpenedClusterIdRef.current = cluster.id;
 
     const { projected, sourceCount } = getAndroidProjectedClusterHitTargets();
 
-    setAndroidClusterHitTargets(projected);
+    setAndroidClusterHitTargetsImmediate(projected);
 
     if (androidRetapOverlayActive || hasPresentedCallout) {
       logAndroidRetapOverlayTargets('effect', sourceCount, projected);
@@ -4375,6 +4508,7 @@ lastOpenedClusterIdRef.current = cluster.id;
     logAndroidRetapOverlayTargets,
     richClusterMarkersEnabled,
     selectedClusterId,
+    setAndroidClusterHitTargetsImmediate,
     zoomLevel,
   ]);
 
@@ -6586,9 +6720,9 @@ Owner: Map UX stability on Android • Last validated: 2025-09-04
       )}
 
       {Platform.OS === 'android' &&
-        (androidRetapOverlayActive || hasPresentedCallout || isCalloutClosingVisually) &&
-        androidClusterHitTargets.length > 0 && (
+        (androidRetapOverlayActive || hasPresentedCallout || isCalloutClosingVisually) && (
           <View
+            ref={androidRetapOverlayRef}
             pointerEvents={androidRetapOverlayActive || isCalloutClosingVisually ? 'auto' : 'box-none'}
             onStartShouldSetResponder={() =>
               androidRetapOverlayActiveRef.current || isCalloutClosingVisuallyRef.current
@@ -6597,7 +6731,7 @@ Owner: Map UX stability on Android • Last validated: 2025-09-04
               androidRetapOverlayActiveRef.current || isCalloutClosingVisuallyRef.current
             }
             onResponderRelease={handleAndroidRetapOverlayResponderRelease}
-            style={[StyleSheet.absoluteFillObject, { zIndex: 20, elevation: 20 }]}
+            style={[StyleSheet.absoluteFillObject, { zIndex: 10, elevation: 10 }]}
           >
             {androidClusterHitTargets.map((target) => (
               <Pressable
