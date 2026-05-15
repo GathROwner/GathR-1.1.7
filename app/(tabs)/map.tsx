@@ -130,6 +130,7 @@ const ANDROID_CALLOUT_PREP_PREWARM_LIMIT = 8;
 const ANDROID_CALLOUT_PREP_PREWARM_STEP_MS = 45;
 const ANDROID_CALLOUT_CAMERA_MOVE_DELAY_MS = 1300;
 const ANDROID_CALLOUT_DEFERRED_TEARDOWN_MS = 2500;
+const ANDROID_CONTROLS_RELEASE_AFTER_CLOSE_MS = 150;
 
 const logCalloutProbe = (...args: unknown[]): void => {
   if (DEBUG_CALLOUT_PROBE) {
@@ -1831,6 +1832,7 @@ useEffect(() => {
   const [androidMarkerTouchEpoch, setAndroidMarkerTouchEpoch] = useState(0);
   const [androidRetapOverlayActive, setAndroidRetapOverlayActive] = useState(false);
   const [androidClusterHitTargets, setAndroidClusterHitTargets] = useState<AndroidClusterHitTarget[]>([]);
+  const [androidAncillaryOverlaysReleasedForClose, setAndroidAncillaryOverlaysReleasedForClose] = useState(false);
   const [isTracePanelVisible, setIsTracePanelVisible] = useState(false);
   const [renderedCalloutVenues, setRenderedCalloutVenues] = useState<Venue[]>([]);
   const [renderedCalloutCluster, setRenderedCalloutCluster] = useState<Cluster | null>(null);
@@ -1852,6 +1854,7 @@ useEffect(() => {
   const androidRetapOverlayPressHandledRef = useRef(false);
   const androidClusterHitTargetsRef = useRef<AndroidClusterHitTarget[]>([]);
   const androidCalloutTeardownTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const androidControlsReleaseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const androidCalloutTeardownSequenceRef = useRef(0);
   const latestLocationRef = useRef<Location.LocationObject | null>(null);
   const latestClusterCountRef = useRef(0);
@@ -1944,8 +1947,10 @@ useEffect(() => {
     mapTabOverlaysReady;
   const shouldRenderAncillaryOverlays =
     shouldMountAncillaryOverlays &&
-    !isCalloutOpen &&
-    (!hasPresentedCallout || isCalloutClosingVisually);
+    (
+      (Platform.OS === 'android' && androidAncillaryOverlaysReleasedForClose) ||
+      (!isCalloutOpen && (!hasPresentedCallout || isCalloutClosingVisually))
+    );
 
   const getPreparedClusterCallout = useCallback((
     cluster: Cluster,
@@ -3227,6 +3232,13 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
 
   useEffect(() => {
     if (selectedVenues && selectedVenues.length > 0) {
+      if (Platform.OS === 'android') {
+        if (androidControlsReleaseTimerRef.current) {
+          clearTimeout(androidControlsReleaseTimerRef.current);
+          androidControlsReleaseTimerRef.current = null;
+        }
+        setAndroidAncillaryOverlaysReleasedForClose(false);
+      }
       cancelPendingAndroidCalloutTeardown('selected-venues-promoted');
       isCalloutClosingVisuallyRef.current = false;
       setIsCalloutClosingVisually(false);
@@ -3430,6 +3442,10 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
       clearTimeout(androidCalloutTeardownTimerRef.current);
       androidCalloutTeardownTimerRef.current = null;
     }
+    if (androidControlsReleaseTimerRef.current) {
+      clearTimeout(androidControlsReleaseTimerRef.current);
+      androidControlsReleaseTimerRef.current = null;
+    }
   }, []);
 
   const handleCalloutCloseStart = useCallback(() => {
@@ -3480,6 +3496,22 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
       });
       return;
     }
+
+    if (androidControlsReleaseTimerRef.current) {
+      clearTimeout(androidControlsReleaseTimerRef.current);
+    }
+    androidControlsReleaseTimerRef.current = setTimeout(() => {
+      androidControlsReleaseTimerRef.current = null;
+      traceMapEvent('android_ancillary_overlays_released_after_close', {
+        reason,
+        delayMs: ANDROID_CONTROLS_RELEASE_AFTER_CLOSE_MS,
+      });
+      console.log('[map] Android ancillary overlays released after close', {
+        reason,
+        delayMs: ANDROID_CONTROLS_RELEASE_AFTER_CLOSE_MS,
+      });
+      setAndroidAncillaryOverlaysReleasedForClose(true);
+    }, ANDROID_CONTROLS_RELEASE_AFTER_CLOSE_MS);
 
     const sequence = ++androidCalloutTeardownSequenceRef.current;
     traceMapEvent('android_callout_deferred_teardown_scheduled', {
@@ -4174,6 +4206,13 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
     // Mark this cluster as being processed (both ref and state)
     clusterProcessingRef.current = cluster.id;
     setProcessingClusterId(cluster.id);
+    if (Platform.OS === 'android') {
+      if (androidControlsReleaseTimerRef.current) {
+        clearTimeout(androidControlsReleaseTimerRef.current);
+        androidControlsReleaseTimerRef.current = null;
+      }
+      setAndroidAncillaryOverlaysReleasedForClose(false);
+    }
     console.log(`[map] Cluster processing started: ${cluster.id}`);
     traceMapEvent('marker_processing_started', {
       clusterId: cluster.id,
