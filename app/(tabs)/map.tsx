@@ -1843,6 +1843,9 @@ useEffect(() => {
   const cameraRef = useRef<MapboxGL.Camera>(null);
   const calloutAnimation = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
   const calloutContainerRef = useRef<View>(null);
+  const filterPillsOverlayRef = useRef<any>(null);
+  const filterPillsContentRef = useRef<View>(null);
+  const ancillaryOverlayContainerRef = useRef<View>(null);
   const androidRetapOverlayRef = useRef<View>(null);
   const mapRef = useRef<MapboxGL.MapView>(null);
   const locationSubscription = useRef<Location.LocationSubscription | null>(null);
@@ -1855,6 +1858,7 @@ useEffect(() => {
   const androidClusterHitTargetsRef = useRef<AndroidClusterHitTarget[]>([]);
   const androidCalloutTeardownTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const androidControlsReleaseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const androidControlsReleaseSequenceRef = useRef(0);
   const androidCalloutTeardownSequenceRef = useRef(0);
   const latestLocationRef = useRef<Location.LocationObject | null>(null);
   const latestClusterCountRef = useRef(0);
@@ -3225,6 +3229,32 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
     });
   }, []);
 
+  const setAndroidAncillaryOverlaysNativeVisibility = useCallback((visible: boolean) => {
+    if (Platform.OS !== 'android') {
+      return;
+    }
+
+    filterPillsOverlayRef.current?.setNativeProps?.({
+      pointerEvents: visible ? 'box-none' : 'none',
+      style: {
+        opacity: visible ? 1 : 0,
+        zIndex: 12,
+        elevation: 12,
+      },
+    });
+    filterPillsContentRef.current?.setNativeProps?.({
+      pointerEvents: visible ? 'auto' : 'none',
+    });
+    ancillaryOverlayContainerRef.current?.setNativeProps?.({
+      pointerEvents: visible ? 'box-none' : 'none',
+      style: {
+        opacity: visible ? 1 : 0,
+        zIndex: 12,
+        elevation: 12,
+      },
+    });
+  }, []);
+
   const setAndroidClusterHitTargetsImmediate = useCallback((targets: AndroidClusterHitTarget[]) => {
     androidClusterHitTargetsRef.current = targets;
     setAndroidClusterHitTargets(targets);
@@ -3233,10 +3263,12 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
   useEffect(() => {
     if (selectedVenues && selectedVenues.length > 0) {
       if (Platform.OS === 'android') {
+        androidControlsReleaseSequenceRef.current += 1;
         if (androidControlsReleaseTimerRef.current) {
           clearTimeout(androidControlsReleaseTimerRef.current);
           androidControlsReleaseTimerRef.current = null;
         }
+        setAndroidAncillaryOverlaysNativeVisibility(false);
         setAndroidAncillaryOverlaysReleasedForClose(false);
       }
       cancelPendingAndroidCalloutTeardown('selected-venues-promoted');
@@ -3276,6 +3308,7 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
     restoreAndroidCalloutContainerForInteraction,
     selectedCluster,
     selectedVenues,
+    setAndroidAncillaryOverlaysNativeVisibility,
     setAndroidRetapOverlayPointerEvents,
   ]);
 
@@ -3446,6 +3479,7 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
       clearTimeout(androidControlsReleaseTimerRef.current);
       androidControlsReleaseTimerRef.current = null;
     }
+    androidControlsReleaseSequenceRef.current += 1;
   }, []);
 
   const handleCalloutCloseStart = useCallback(() => {
@@ -3500,7 +3534,12 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
     if (androidControlsReleaseTimerRef.current) {
       clearTimeout(androidControlsReleaseTimerRef.current);
     }
+    const controlsReleaseSequence = ++androidControlsReleaseSequenceRef.current;
+    setAndroidAncillaryOverlaysNativeVisibility(true);
     androidControlsReleaseTimerRef.current = setTimeout(() => {
+      if (androidControlsReleaseSequenceRef.current !== controlsReleaseSequence) {
+        return;
+      }
       androidControlsReleaseTimerRef.current = null;
       traceMapEvent('android_ancillary_overlays_released_after_close', {
         reason,
@@ -3545,6 +3584,7 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
     clearRenderedCalloutPresentation,
     hideAndroidCalloutContainerForRetap,
     selectVenue,
+    setAndroidAncillaryOverlaysNativeVisibility,
     setAndroidRetapOverlayPointerEvents,
   ]);
 
@@ -4207,10 +4247,12 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
     clusterProcessingRef.current = cluster.id;
     setProcessingClusterId(cluster.id);
     if (Platform.OS === 'android') {
+      androidControlsReleaseSequenceRef.current += 1;
       if (androidControlsReleaseTimerRef.current) {
         clearTimeout(androidControlsReleaseTimerRef.current);
         androidControlsReleaseTimerRef.current = null;
       }
+      setAndroidAncillaryOverlaysNativeVisibility(false);
       setAndroidAncillaryOverlaysReleasedForClose(false);
     }
     console.log(`[map] Cluster processing started: ${cluster.id}`);
@@ -6319,18 +6361,21 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
       {/* Filter pills overlay (floating) anchored under safe-area */}
       {shouldMountAncillaryOverlays && (
         <Animated.View
+          ref={filterPillsOverlayRef}
           pointerEvents={shouldRenderAncillaryOverlays ? 'box-none' : 'none'}
           style={{
             position: 'absolute',
             left: 0,
             right: 0,
             top: TOP_OFFSET, // baseline + per-platform nudge
-            zIndex: 5,
+            zIndex: 12,
+            elevation: 12,
             transform: [{ translateY: pillsAnimation }],
             opacity: shouldRenderAncillaryOverlays ? pillsOpacity : 0,
           }}
         >
           <View
+            ref={filterPillsContentRef}
             testID="filter-pills"
             pointerEvents={shouldRenderAncillaryOverlays ? 'auto' : 'none'}
             onLayout={(e) => {
@@ -6578,10 +6623,15 @@ onDidFinishLoadingMap={() => {
 
       {shouldMountAncillaryOverlays && (
         <View
+          ref={ancillaryOverlayContainerRef}
           pointerEvents={shouldRenderAncillaryOverlays ? 'box-none' : 'none'}
           style={[
             StyleSheet.absoluteFillObject,
-            { opacity: shouldRenderAncillaryOverlays ? 1 : 0 },
+            {
+              opacity: shouldRenderAncillaryOverlays ? 1 : 0,
+              zIndex: 12,
+              elevation: 12,
+            },
           ]}
         >
           <MapLegend topOffset={30} rightOffset={10} />
