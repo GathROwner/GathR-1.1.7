@@ -4199,6 +4199,15 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
       hasRenderedCallout,
       renderedCalloutClusterId: renderedCalloutClusterId ?? 'none',
     });
+    if (Platform.OS === 'android') {
+      androidControlsReleaseSequenceRef.current += 1;
+      if (androidControlsReleaseTimerRef.current) {
+        clearTimeout(androidControlsReleaseTimerRef.current);
+        androidControlsReleaseTimerRef.current = null;
+      }
+      setAndroidAncillaryOverlaysNativeVisibility(false);
+      setAndroidAncillaryOverlaysReleasedForClose(false);
+    }
     if (hasRenderedCallout && !isCalloutClosingVisuallyRef.current) {
       traceMapEvent('marker_press_blocked_callout_rendered', {
         clusterId: cluster.id,
@@ -4246,15 +4255,6 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
     // Mark this cluster as being processed (both ref and state)
     clusterProcessingRef.current = cluster.id;
     setProcessingClusterId(cluster.id);
-    if (Platform.OS === 'android') {
-      androidControlsReleaseSequenceRef.current += 1;
-      if (androidControlsReleaseTimerRef.current) {
-        clearTimeout(androidControlsReleaseTimerRef.current);
-        androidControlsReleaseTimerRef.current = null;
-      }
-      setAndroidAncillaryOverlaysNativeVisibility(false);
-      setAndroidAncillaryOverlaysReleasedForClose(false);
-    }
     console.log(`[map] Cluster processing started: ${cluster.id}`);
     traceMapEvent('marker_processing_started', {
       clusterId: cluster.id,
@@ -4487,6 +4487,7 @@ lastOpenedClusterIdRef.current = cluster.id;
     renderedCalloutClusterId,
     renderedCalloutVenueCount,
     selectCallout,
+    setAndroidAncillaryOverlaysNativeVisibility,
     trackInteraction,
   ]); // REMOVED analytics, zoomLevel dependencies
 
