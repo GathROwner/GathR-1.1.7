@@ -39,6 +39,7 @@ Reusable harness:
 - Retap-during-teardown experiment: `fac83a8` on `codex/android-open-during-teardown`
 - Short teardown experiment: `c6c6d15` on `codex/android-open-during-teardown`
 - Idle overlay unmount experiment: `d85fec6` on `codex/android-open-during-teardown`
+- Map-freeze experiment: `e4adc16` on `codex/android-freeze-map-during-callout`
 
 Rejected or non-primary checkpoints:
 
@@ -133,6 +134,35 @@ Result:
 - The previous `2500 ms` teardown wait no longer defines the minimum retap latency on this path.
 - The old full-screen Android retap overlay no longer remains mounted during idle `hasPresentedCallout` state, reducing the chance that an invisible RN view blocks native Mapbox taps.
 
+### Follow-up candidate: keep clusters stable while callout opens
+
+Artifacts:
+
+- `artifacts/freeze-map-recompute-probe-20260516-130602-logcat.txt`
+- `artifacts/freeze-map-skip-camera-marker-sweep-logcat.txt`
+- `artifacts/freeze-map-skip-camera-close-retap-20260516-132154.mp4`
+- `artifacts/freeze-map-skip-camera-close-retap-20260516-132154-logcat.txt`
+
+Finding:
+
+- The remaining lag was not caused by event data refetching.
+- In the pre-fix probe, `events` stayed at `491` and `viewportEvents` stayed at `472`, but `clusters` changed from `14` to `22` while the callout was open.
+- That cluster change happened after the Android delayed callout camera move, which re-centered/zoomed the map and forced reclustering.
+
+Change:
+
+- On Android, cluster taps now open the callout without scheduling the programmatic camera recenter/zoom.
+- iOS keeps the existing camera behavior.
+
+No-camera result:
+
+- After opening a 7-venue callout, `events`, `viewportEvents`, and `clusters` stayed stable at `484 / 465 / 21` across callout render commits.
+- During close-and-retap, those counts stayed stable at `484 / 465 / 21`.
+- Close handler: `13:21:57.446`
+- Retap overlay cluster press: `13:21:58.223`
+- New `handleMarkerPress`: `13:21:58.285`
+- New accepted cluster press was about `0.84 s` after the Android close handler in that run.
+
 ## Current interpretation
 
 The expensive part is still the selected-venue/rendered-callout teardown, so that remains deferred. The useful fix is to stop making the map controls wait for that teardown.
@@ -147,6 +177,7 @@ The current candidate does that by:
 - Allowing a valid retap to flush the closing callout state and open the next cluster instead of waiting for old teardown.
 - Shortening Android deferred selected-venue teardown from `2500 ms` to `900 ms`.
 - Unmounting the Android retap overlay when it is idle instead of keeping a full-screen `box-none` view above Mapbox.
+- Skipping Android callout camera recenter/zoom so opening a callout does not force a viewport cluster recomputation.
 
 Remaining delay:
 
@@ -156,6 +187,6 @@ Remaining delay:
 
 ## Recommendation
 
-Use `codex/android-open-during-teardown` / `d85fec6` as the current candidate for hands-on tablet testing.
+Use `codex/android-freeze-map-during-callout` / `e4adc16` as the current candidate for hands-on tablet testing.
 
 If it feels good, the next cleanup pass should squash the candidate changes into a small branch from stable and remove temporary/high-frequency diagnostic logging before release.
