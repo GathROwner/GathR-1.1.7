@@ -4494,18 +4494,16 @@ lastOpenedClusterIdRef.current = cluster.id;
       if (Platform.OS === 'android') {
         if (androidCalloutCameraMoveTimerRef.current) {
           clearTimeout(androidCalloutCameraMoveTimerRef.current);
-        }
-        androidCalloutCameraMoveTimerRef.current = setTimeout(() => {
           androidCalloutCameraMoveTimerRef.current = null;
-          const liveSelectedVenues = useMapStore.getState().selectedVenues;
-          if (!liveSelectedVenues || liveSelectedVenues.length === 0) {
-            traceMapEvent('android_callout_camera_move_skipped_no_callout', {
-              clusterId: cluster.id,
-            });
-            return;
-          }
-          moveCameraToCluster();
-        }, ANDROID_CALLOUT_CAMERA_MOVE_DELAY_MS);
+        }
+        traceMapEvent('android_callout_camera_move_skipped_freeze_map', {
+          clusterId: cluster.id,
+          venueCount: sortedVenues.length,
+        });
+        console.log('[MapFreezeProbe] Android callout camera move skipped to keep clusters stable', {
+          clusterId: cluster.id,
+          venueCount: sortedVenues.length,
+        });
       } else {
         moveCameraToCluster();
       }
