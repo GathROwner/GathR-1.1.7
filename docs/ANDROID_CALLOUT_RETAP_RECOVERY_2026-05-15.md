@@ -190,3 +190,31 @@ Remaining delay:
 Use `codex/android-freeze-map-during-callout` / `e4adc16` as the current candidate for hands-on tablet testing.
 
 If it feels good, the next cleanup pass should squash the candidate changes into a small branch from stable and remove temporary/high-frequency diagnostic logging before release.
+
+## 2026-05-16 follow-up probes: remaining post-close lag
+
+Branch checkpoints created during this round:
+- `codex/android-disable-selected-marker-scale-probe` -> `165dcb9 Probe Android selected marker scale removal`.
+- `codex/android-ref-retap-arm-probe` was tested and rejected; no keeper commit beyond its branch point.
+- `codex/android-shorter-teardown-probe` was tested and reset to clean baseline; no keeper commit.
+- `codex/android-retap-log-trim-probe` -> `2826114 Gate Android retap target projection logs`.
+
+Tested hypotheses:
+- Pre-mounting the Android retap overlay was rejected. Even when set inactive, the full-screen native layer made normal marker taps unreliable in this Mapbox view.
+- Keeping Android retap hit targets warm after close prevented `androidHitTargets` from dropping from `13` to `0`, but did not materially improve close-to-retap timing by itself.
+- Disabling Android selected-marker scale removed the visible selected-marker shrink, but timing stayed around `1.45s` to `1.51s` from close handler to accepted retap in comparable runs. Not a strong speed fix.
+- Ref-only retap arming did not improve the first close path; first accepted retap stayed around `1.67s` after the close handler.
+- Reducing deferred teardown from `900ms` to `450ms` did not materially improve the first close path. The scheduled teardown timer often did not run before the retap, indicating JS was busy during close.
+- The heaviest remaining safe cleanup was the retap target projection console dump. It logged arrays of projected targets during callout close/effect cycles. `2826114` gates that log behind `MAP_TRACE_UI_ENABLED` and trims the sample from 12 targets to 3 when enabled.
+
+Timing notes from this round:
+- Prior stable baseline from earlier evidence: close handler to accepted new cluster was about `2.02s`.
+- No-camera/stable-cluster candidate best earlier run: about `0.84s` close handler to accepted new cluster.
+- Marker hydration / warm-target runs in this round were typically `1.45s` to `1.7s`, but were affected by temporary high-volume probe logging and noisy adb coordinates.
+- After log trimming, one warmed segment showed about `1.10s` from close handler (`16:37:34.142`) to accepted retap (`16:37:35.244`), but the full harness run was not clean enough to treat that as final proof.
+
+Current interpretation:
+- The visible marker shrink is real, but it is not the main source of the remaining delay.
+- The remaining delay is mostly the JS/render workload immediately after close starts. Timers and tap handling are both delayed while that work runs.
+- Heavy debug logging in this path is worth removing/gating because it can distort tablet dev measurements and is not production-safe in a high-frequency map path.
+- Further automated adb testing needs a clean visible marker target or manual tablet assistance; repeated branch switching/Fast Refresh left the viewport in states where visible markers did not receive adb taps even though the app process received touch events.
