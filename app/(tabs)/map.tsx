@@ -2280,6 +2280,62 @@ useEffect(() => {
     selectedVenueCount,
   ]);
 
+  const mapFreezeProbeRenderCountRef = useRef(0);
+  const mapFreezeProbeLastCommitAtRef = useRef(Date.now());
+
+  useEffect(() => {
+    const now = Date.now();
+    const renderCount = ++mapFreezeProbeRenderCountRef.current;
+    const sinceLastCommitMs = now - mapFreezeProbeLastCommitAtRef.current;
+    mapFreezeProbeLastCommitAtRef.current = now;
+    console.log('[MapFreezeProbe] render committed', {
+      renderCount,
+      sinceLastCommitMs,
+      events: events.length,
+      viewportEvents: viewportEvents.length,
+      clusters: clusters.length,
+      selectedVenueCount,
+      selectedClusterId: selectedClusterId ?? 'none',
+      renderedCalloutVenueCount,
+      presentedCalloutVenueCount,
+      hasRenderedCallout,
+      hasPresentedCallout,
+      isCalloutOpen,
+      androidRetapOverlayActive,
+      androidHitTargets: androidClusterHitTargets.length,
+    });
+  });
+
+  useEffect(() => {
+    console.log('[MapFreezeProbe] map/callout counts changed', {
+      events: events.length,
+      viewportEvents: viewportEvents.length,
+      clusters: clusters.length,
+      selectedVenueCount,
+      selectedClusterId: selectedClusterId ?? 'none',
+      renderedCalloutVenueCount,
+      presentedCalloutVenueCount,
+      hasRenderedCallout,
+      hasPresentedCallout,
+      isCalloutOpen,
+      androidRetapOverlayActive,
+      androidHitTargets: androidClusterHitTargets.length,
+    });
+  }, [
+    androidClusterHitTargets.length,
+    androidRetapOverlayActive,
+    clusters.length,
+    events.length,
+    hasPresentedCallout,
+    hasRenderedCallout,
+    isCalloutOpen,
+    presentedCalloutVenueCount,
+    renderedCalloutVenueCount,
+    selectedClusterId,
+    selectedVenueCount,
+    viewportEvents.length,
+  ]);
+
   useEffect(() => {
     traceMapEvent('map_loading_state_changed', {
       isLoading,
