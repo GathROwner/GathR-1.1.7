@@ -6867,8 +6867,8 @@ Owner: Map UX stability on Android • Last validated: 2025-09-04
         </>
       )}
 
-      {Platform.OS === 'android' &&
-        (androidRetapOverlayActive || hasPresentedCallout || isCalloutClosingVisually) && (
+          {Platform.OS === 'android' &&
+            (androidRetapOverlayActive || isCalloutClosingVisually) && (
           <View
             ref={androidRetapOverlayRef}
             pointerEvents={androidRetapOverlayActive || isCalloutClosingVisually ? 'auto' : 'box-none'}
