@@ -36,6 +36,9 @@ Reusable harness:
 - Stable baseline: `3f44256` on `codex/android-defer-callout-teardown`
 - Mounted-controls experiment: `e471381` on `codex/android-controls-mounted-experiment`
 - Controls-release experiment: `d37dd57` on `codex/android-controls-release-experiment`
+- Retap-during-teardown experiment: `fac83a8` on `codex/android-open-during-teardown`
+- Short teardown experiment: `c6c6d15` on `codex/android-open-during-teardown`
+- Idle overlay unmount experiment: `d85fec6` on `codex/android-open-during-teardown`
 
 Rejected or non-primary checkpoints:
 
@@ -96,6 +99,40 @@ No-retap visual result:
 - Deferred teardown ran: `17:09:18.946`
 - Screenshot at about 650 ms after the close tap showed the callout gone and filter controls visible again, well before deferred teardown.
 
+### Follow-up candidate: retap while old callout is closing
+
+Artifacts:
+
+- `artifacts/open-during-teardown-retap-20260516-120015-logcat.txt`
+- `artifacts/open-during-teardown-d85fec6-marker-sweep-logcat.txt`
+- `artifacts/d85fec6-close-retap-correct-close-20260516-122333.mp4`
+- `artifacts/d85fec6-close-retap-correct-close-20260516-122333-logcat.txt`
+- `artifacts/d85fec6-full-cycle-close-retap-20260516-122527-logcat.txt`
+
+Invalid or partial runs:
+
+- `artifacts/open-during-teardown-retap-20260516-120015-logcat.txt` showed no retap press or miss logs after close, which suggested the retap layer or native map was not receiving the scripted tap.
+- `artifacts/d85fec6-close-retap-open-callout-20260516-121904-logcat.txt` used the wrong close coordinate and opened a special image/detail flow instead of dismissing the callout.
+- `artifacts/d85fec6-full-cycle-close-retap-20260516-122527-logcat.txt` did not open the initial callout, so it is not valid close-to-retap evidence.
+
+Useful run:
+
+- Manual marker sweep proved the map can accept successive cluster opens on `d85fec6`: `Prince Edward Island Marathon` opened at `12:17:40.493`, then `Greco Pizza` opened at `12:17:42.533`.
+- Corrected close-and-retap run:
+- Close tap: `12:23:35.338`
+- Android close handler: `12:23:36.258`
+- Retap overlay activated: `12:23:36.280`
+- Deferred teardown scheduled for `900 ms`: `12:23:36.322`
+- Controls released after close: `12:23:37.021`
+- Retap overlay cluster press: `12:23:37.680`
+- `handleMarkerPress` reached: `12:23:37.746`
+
+Result:
+
+- The app accepted a new cluster press about `1.49 s` after the Android close handler.
+- The previous `2500 ms` teardown wait no longer defines the minimum retap latency on this path.
+- The old full-screen Android retap overlay no longer remains mounted during idle `hasPresentedCallout` state, reducing the chance that an invisible RN view blocks native Mapbox taps.
+
 ## Current interpretation
 
 The expensive part is still the selected-venue/rendered-callout teardown, so that remains deferred. The useful fix is to stop making the map controls wait for that teardown.
@@ -107,6 +144,9 @@ The current candidate does that by:
 - Showing them with native props immediately when Android begins deferred callout close.
 - Aligning React state afterward.
 - Invalidating pending release work as soon as any cluster press attempt starts, so controls do not stale-release over a new callout.
+- Allowing a valid retap to flush the closing callout state and open the next cluster instead of waiting for old teardown.
+- Shortening Android deferred selected-venue teardown from `2500 ms` to `900 ms`.
+- Unmounting the Android retap overlay when it is idle instead of keeping a full-screen `box-none` view above Mapbox.
 
 Remaining delay:
 
@@ -116,6 +156,6 @@ Remaining delay:
 
 ## Recommendation
 
-Use `codex/android-controls-release-experiment` / `d37dd57` as the current candidate for hands-on tablet testing.
+Use `codex/android-open-during-teardown` / `d85fec6` as the current candidate for hands-on tablet testing.
 
 If it feels good, the next cleanup pass should squash the candidate changes into a small branch from stable and remove temporary/high-frequency diagnostic logging before release.
