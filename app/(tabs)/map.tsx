@@ -128,7 +128,6 @@ const ANDROID_MAP_TAB_OVERLAY_RESTORE_DELAY_MS = 350;
 const ANDROID_CALLOUT_PREP_CACHE_LIMIT = 24;
 const ANDROID_CALLOUT_PREP_PREWARM_LIMIT = 8;
 const ANDROID_CALLOUT_PREP_PREWARM_STEP_MS = 45;
-const ANDROID_CALLOUT_CAMERA_MOVE_DELAY_MS = 1300;
 const ANDROID_CALLOUT_DEFERRED_TEARDOWN_MS = 900;
 const ANDROID_CONTROLS_RELEASE_AFTER_CLOSE_MS = 150;
 
@@ -2278,62 +2277,6 @@ useEffect(() => {
     renderedCalloutVenueCount,
     selectedClusterId,
     selectedVenueCount,
-  ]);
-
-  const mapFreezeProbeRenderCountRef = useRef(0);
-  const mapFreezeProbeLastCommitAtRef = useRef(Date.now());
-
-  useEffect(() => {
-    const now = Date.now();
-    const renderCount = ++mapFreezeProbeRenderCountRef.current;
-    const sinceLastCommitMs = now - mapFreezeProbeLastCommitAtRef.current;
-    mapFreezeProbeLastCommitAtRef.current = now;
-    console.log('[MapFreezeProbe] render committed', {
-      renderCount,
-      sinceLastCommitMs,
-      events: events.length,
-      viewportEvents: viewportEvents.length,
-      clusters: clusters.length,
-      selectedVenueCount,
-      selectedClusterId: selectedClusterId ?? 'none',
-      renderedCalloutVenueCount,
-      presentedCalloutVenueCount,
-      hasRenderedCallout,
-      hasPresentedCallout,
-      isCalloutOpen,
-      androidRetapOverlayActive,
-      androidHitTargets: androidClusterHitTargets.length,
-    });
-  });
-
-  useEffect(() => {
-    console.log('[MapFreezeProbe] map/callout counts changed', {
-      events: events.length,
-      viewportEvents: viewportEvents.length,
-      clusters: clusters.length,
-      selectedVenueCount,
-      selectedClusterId: selectedClusterId ?? 'none',
-      renderedCalloutVenueCount,
-      presentedCalloutVenueCount,
-      hasRenderedCallout,
-      hasPresentedCallout,
-      isCalloutOpen,
-      androidRetapOverlayActive,
-      androidHitTargets: androidClusterHitTargets.length,
-    });
-  }, [
-    androidClusterHitTargets.length,
-    androidRetapOverlayActive,
-    clusters.length,
-    events.length,
-    hasPresentedCallout,
-    hasRenderedCallout,
-    isCalloutOpen,
-    presentedCalloutVenueCount,
-    renderedCalloutVenueCount,
-    selectedClusterId,
-    selectedVenueCount,
-    viewportEvents.length,
   ]);
 
   useEffect(() => {
@@ -4497,10 +4440,6 @@ lastOpenedClusterIdRef.current = cluster.id;
           androidCalloutCameraMoveTimerRef.current = null;
         }
         traceMapEvent('android_callout_camera_move_skipped_freeze_map', {
-          clusterId: cluster.id,
-          venueCount: sortedVenues.length,
-        });
-        console.log('[MapFreezeProbe] Android callout camera move skipped to keep clusters stable', {
           clusterId: cluster.id,
           venueCount: sortedVenues.length,
         });
