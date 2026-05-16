@@ -3588,6 +3588,41 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
     setAndroidRetapOverlayPointerEvents,
   ]);
 
+  const flushAndroidClosingCalloutForRetap = useCallback((clusterId: string): boolean => {
+    if (
+      Platform.OS !== 'android' ||
+      (!isCalloutClosingVisuallyRef.current && !androidCalloutTeardownTimerRef.current)
+    ) {
+      return false;
+    }
+
+    cancelPendingAndroidCalloutTeardown('retap-open-new-callout');
+    if (androidControlsReleaseTimerRef.current) {
+      clearTimeout(androidControlsReleaseTimerRef.current);
+      androidControlsReleaseTimerRef.current = null;
+    }
+    androidControlsReleaseSequenceRef.current += 1;
+    setAndroidAncillaryOverlaysNativeVisibility(false);
+    setAndroidAncillaryOverlaysReleasedForClose(false);
+    hideAndroidCalloutContainerForRetap();
+    calloutAnimation.setValue(SCREEN_HEIGHT);
+    clearRenderedCalloutPresentation();
+    traceMapEvent('android_callout_teardown_flushed_for_retap', {
+      clusterId,
+    });
+    console.log('[map] Android closing callout flushed for retap', {
+      clusterId,
+    });
+
+    return true;
+  }, [
+    calloutAnimation,
+    cancelPendingAndroidCalloutTeardown,
+    clearRenderedCalloutPresentation,
+    hideAndroidCalloutContainerForRetap,
+    setAndroidAncillaryOverlaysNativeVisibility,
+  ]);
+
   const closeCallout = useCallback((reason: string) => {
     logCalloutProbe('[CalloutProbe] closeCallout', {
       reason,
@@ -4190,6 +4225,10 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
 
   // Enhanced handleMarkerPress with comprehensive prioritization
   const handleMarkerPress = useCallback(async (cluster: Cluster): Promise<void> => {
+    const androidCalloutTeardownWasInProgress =
+      Platform.OS === 'android' &&
+      (isCalloutClosingVisuallyRef.current || androidCalloutTeardownTimerRef.current !== null);
+
     traceMapEvent('marker_press_started', {
       clusterId: cluster.id,
       clusterType: cluster.clusterType,
@@ -4208,7 +4247,11 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
       setAndroidAncillaryOverlaysNativeVisibility(false);
       setAndroidAncillaryOverlaysReleasedForClose(false);
     }
-    if (hasRenderedCallout && !isCalloutClosingVisuallyRef.current) {
+    if (
+      hasRenderedCallout &&
+      !isCalloutClosingVisuallyRef.current &&
+      !androidCalloutTeardownWasInProgress
+    ) {
       traceMapEvent('marker_press_blocked_callout_rendered', {
         clusterId: cluster.id,
         renderedCalloutClusterId: renderedCalloutClusterId ?? 'none',
@@ -4248,6 +4291,10 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
     }
 
     // 📳 HAPTIC FEEDBACK: Provide immediate tactile confirmation of tap
+    if (androidCalloutTeardownWasInProgress) {
+      flushAndroidClosingCalloutForRetap(cluster.id);
+    }
+
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {
       // Silently fail if haptics not available (some devices/simulators)
     });
@@ -4488,6 +4535,7 @@ lastOpenedClusterIdRef.current = cluster.id;
     renderedCalloutVenueCount,
     selectCallout,
     setAndroidAncillaryOverlaysNativeVisibility,
+    flushAndroidClosingCalloutForRetap,
     trackInteraction,
   ]); // REMOVED analytics, zoomLevel dependencies
 
