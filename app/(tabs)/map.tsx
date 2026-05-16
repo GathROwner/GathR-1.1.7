@@ -129,7 +129,7 @@ const ANDROID_CALLOUT_PREP_CACHE_LIMIT = 24;
 const ANDROID_CALLOUT_PREP_PREWARM_LIMIT = 8;
 const ANDROID_CALLOUT_PREP_PREWARM_STEP_MS = 45;
 const ANDROID_CALLOUT_CAMERA_MOVE_DELAY_MS = 1300;
-const ANDROID_CALLOUT_DEFERRED_TEARDOWN_MS = 2500;
+const ANDROID_CALLOUT_DEFERRED_TEARDOWN_MS = 900;
 const ANDROID_CONTROLS_RELEASE_AFTER_CLOSE_MS = 150;
 
 const logCalloutProbe = (...args: unknown[]): void => {
@@ -3574,6 +3574,7 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
       console.log('[map] Android deferred callout teardown running', {
         reason,
       });
+      deactivateAndroidRetapOverlay();
       selectVenue(null);
       clearRenderedCalloutPresentation();
       isCalloutClosingVisuallyRef.current = false;
@@ -3582,6 +3583,7 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
   }, [
     calloutAnimation,
     clearRenderedCalloutPresentation,
+    deactivateAndroidRetapOverlay,
     hideAndroidCalloutContainerForRetap,
     selectVenue,
     setAndroidAncillaryOverlaysNativeVisibility,
