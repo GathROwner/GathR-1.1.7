@@ -3399,12 +3399,16 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
     sourceCount: number,
     projected: AndroidClusterHitTarget[]
   ) => {
+    if (!MAP_TRACE_UI_ENABLED) {
+      return;
+    }
+
     console.log('[map] Android retap overlay targets projected', {
       reason,
       sourceCount,
       targetCount: projected.length,
       projection: 'js_visible_bbox',
-      sampleTargets: projected.slice(0, 12).map((target) => ({
+      sampleTargets: projected.slice(0, 3).map((target) => ({
         id: target.clusterId.slice(0, 36),
         x: Math.round(target.x),
         y: Math.round(target.y),
