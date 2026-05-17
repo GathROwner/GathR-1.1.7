@@ -1054,6 +1054,7 @@ const CategoryCarousel: React.FC<CategoryCarouselProps> = ({ cluster, size, isAc
   const [currentIndex, setCurrentIndex] = useState(0);
   const fadeAnim = useRef(new Animated.Value(1)).current;
   const pulseAnim = useRef(new Animated.Value(1)).current;
+  const isActiveRef = useRef(isActive);
 
   const stopFadeAnimation = useCallback(() => {
     fadeAnim.stopAnimation();
@@ -1071,6 +1072,10 @@ const CategoryCarousel: React.FC<CategoryCarouselProps> = ({ cluster, size, isAc
   }, [stopFadeAnimation, stopPulseAnimation]);
 
   useMapTabAnimationStopper(stopCarouselAnimations);
+
+  useEffect(() => {
+    isActiveRef.current = isActive;
+  }, [isActive]);
 
   // Get user interests
   const userInterests = getUserInterestsSync();
@@ -1101,7 +1106,11 @@ const CategoryCarousel: React.FC<CategoryCarouselProps> = ({ cluster, size, isAc
         toValue: 0,
         duration: 200,
         useNativeDriver: true,
-      }).start(() => {
+      }).start(({ finished }) => {
+        if (!finished || !isActiveRef.current) {
+          return;
+        }
+
         // Change index
         setCurrentIndex((prev) => (prev + 1) % categoryItems.length);
 
@@ -1954,6 +1963,46 @@ useEffect(() => {
       (Platform.OS === 'android' && androidAncillaryOverlaysReleasedForClose) ||
       (!isCalloutOpen && (!hasPresentedCallout || isCalloutClosingVisually))
     );
+  const [pauseClusterMarkerAnimations, setPauseClusterMarkerAnimations] = useState(false);
+  const clusterMarkerAnimationResumeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (Platform.OS !== 'android') {
+      return;
+    }
+
+    if (hasPresentedCallout) {
+      if (clusterMarkerAnimationResumeTimerRef.current) {
+        clearTimeout(clusterMarkerAnimationResumeTimerRef.current);
+        clusterMarkerAnimationResumeTimerRef.current = null;
+      }
+      setPauseClusterMarkerAnimations(true);
+      return;
+    }
+
+    if (!pauseClusterMarkerAnimations) {
+      return;
+    }
+
+    if (clusterMarkerAnimationResumeTimerRef.current) {
+      clearTimeout(clusterMarkerAnimationResumeTimerRef.current);
+    }
+
+    clusterMarkerAnimationResumeTimerRef.current = setTimeout(() => {
+      clusterMarkerAnimationResumeTimerRef.current = null;
+      setPauseClusterMarkerAnimations(false);
+    }, 1400);
+
+    return () => {
+      if (clusterMarkerAnimationResumeTimerRef.current) {
+        clearTimeout(clusterMarkerAnimationResumeTimerRef.current);
+        clusterMarkerAnimationResumeTimerRef.current = null;
+      }
+    };
+  }, [hasPresentedCallout, pauseClusterMarkerAnimations]);
+
+  const clusterMarkerAnimationsActive =
+    isFocused && !(Platform.OS === 'android' && pauseClusterMarkerAnimations);
 
   const getPreparedClusterCallout = useCallback((
     cluster: Cluster,
@@ -4156,6 +4205,10 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
       return undefined;
     }
 
+    if (pauseClusterMarkerAnimations) {
+      return undefined;
+    }
+
     const interval = setInterval(() => {
       setAndroidCategoryCycleTick((tick) => tick + 1);
     }, ANDROID_CLUSTER_CATEGORY_CYCLE_MS);
@@ -4163,7 +4216,7 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
     return () => {
       clearInterval(interval);
     };
-  }, [clusters.length, isFocused, richClusterMarkerDetailsEnabled]);
+  }, [clusters.length, isFocused, pauseClusterMarkerAnimations, richClusterMarkerDetailsEnabled]);
 
   useEffect(() => {
     if (!USE_ANDROID_NATIVE_CLUSTER_MARKER_LAYERS || !isFocused || !richClusterMarkerDetailsEnabled || clusters.length === 0) {
@@ -6340,7 +6393,7 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
                 isProcessing={processingClusterId === cluster.id}
                 isReady={clustersReadyForInteraction}
                 detailsEnabled={richClusterMarkersEnabled}
-                isActive={isFocused}
+                isActive={clusterMarkerAnimationsActive}
               />
             </TouchableOpacity>
           </MapboxGL.MarkerView>
