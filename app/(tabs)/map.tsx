@@ -711,6 +711,19 @@ const getClusterMapCoordinate = (cluster: Cluster): [number, number] | null => {
   return [longitude, latitude];
 };
 
+const getClusterRenderCoordinates = (cluster: Cluster): [number, number] => {
+  if (cluster.clusterType === 'multi') {
+    return [
+      cluster.venues.reduce((sum: number, venue: Venue) => sum + venue.longitude, 0) /
+        cluster.venues.length,
+      cluster.venues.reduce((sum: number, venue: Venue) => sum + venue.latitude, 0) /
+        cluster.venues.length,
+    ];
+  }
+
+  return [cluster.venues[0].longitude, cluster.venues[0].latitude];
+};
+
 const clampLatitudeForMercator = (latitude: number): number =>
   Math.max(-85.05112878, Math.min(85.05112878, latitude));
 
@@ -803,7 +816,7 @@ const buildAndroidClusterMarkerShape = (
       const isProcessing = cluster.id === options.processingClusterId;
       const detailsEnabled = options.detailsEnabled || isSelected;
       const isBroadcasting = detailsEnabled && !!cluster.isBroadcasting;
-      const scaleFactor = isSelected ? 1.2 : 1;
+      const scaleFactor = Platform.OS === 'android' ? 1 : isSelected ? 1.2 : 1;
       const size = getInterestLevelSize(cluster.interestLevel) * scaleFactor;
       const markerRadius = Math.max(size * 0.8, 10);
       const getPulseRing = (offset: number) => {
@@ -1347,7 +1360,7 @@ const TreeMarker: React.FC<TreeMarkerProps> = React.memo(({ cluster, isSelected,
   const size = getInterestLevelSize(cluster.interestLevel);
 
   // Scale up if selected
-  const scaleFactor = isSelected ? 1.2 : 1;
+  const scaleFactor = Platform.OS === 'android' ? 1 : isSelected ? 1.2 : 1;
   const adjustedSize = size * scaleFactor;
 
   // Check if cluster contains Firestore-sourced events
@@ -1552,7 +1565,8 @@ const TreeMarker: React.FC<TreeMarkerProps> = React.memo(({ cluster, isSelected,
     prevProps.isSelected === nextProps.isSelected &&
     prevProps.isProcessing === nextProps.isProcessing &&
     prevProps.isReady === nextProps.isReady &&
-    prevProps.detailsEnabled === nextProps.detailsEnabled
+    prevProps.detailsEnabled === nextProps.detailsEnabled &&
+    prevProps.isActive === nextProps.isActive
   );
 });
 
@@ -6338,15 +6352,7 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
     return clustersForRender
       .map((cluster: Cluster, index: number) => {
         // Calculate the coordinates for the cluster
-        const coordinates =
-          cluster.clusterType === 'multi'
-            ? [
-                cluster.venues.reduce((sum: number, venue: Venue) => sum + venue.longitude, 0) /
-                  cluster.venues.length,
-                cluster.venues.reduce((sum: number, venue: Venue) => sum + venue.latitude, 0) /
-                  cluster.venues.length
-              ]
-            : [cluster.venues[0].longitude, cluster.venues[0].latitude];
+        const coordinates = getClusterRenderCoordinates(cluster);
       
         // Check if this cluster contains the selected venue
         const isSelected =
@@ -6362,19 +6368,15 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
           !!activeInterestMarkerFilter &&
           !isSelected &&
           !clusterMatchesInterestCarouselFilter(cluster, activeInterestMarkerFilter);
-      
+        const markerKey =
+          Platform.OS === 'android'
+            ? `cluster-${cluster.id}-${androidMarkerTouchEpoch}`
+            : `cluster-${cluster.id}`;
+
         return (
           <MapboxGL.MarkerView
-            key={
-              Platform.OS === 'android'
-                ? `cluster-${cluster.id}-${androidMarkerTouchEpoch}`
-                : `cluster-${cluster.id}`
-            }
-            id={
-              Platform.OS === 'android'
-                ? `cluster-${cluster.id}-${androidMarkerTouchEpoch}`
-                : `cluster-${cluster.id}`
-            }
+            key={markerKey}
+            id={markerKey}
             coordinate={coordinates}
             anchor={{ x: 0.5, y: 1.0 }}
             
