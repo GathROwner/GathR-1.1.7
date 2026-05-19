@@ -111,10 +111,11 @@ const IOS_CALLOUT_NATIVE_AD_ISOLATION_DEBUG = Platform.OS === 'ios';
 const ANDROID_MAPBOX_STARTUP_ISOLATION_DEBUG = false;
 const ANDROID_CLUSTER_MARKERVIEW_ISOLATION_DEBUG = false;
 const DEBUG_CALLOUT_PROBE = false;
+const DEBUG_ANDROID_RETAP_LATENCY_PROBE = false;
 const USE_ANDROID_NATIVE_CLUSTER_MARKER_LAYERS = false;
 const DEBUG_TREE_MARKER_EVENTS = false;
 const ANDROID_CLUSTER_TOUCH_OVERLAY_SIZE = 144;
-const ANDROID_CLUSTER_TOUCH_OVERLAY_DURATION_MS = 6500;
+const ANDROID_CLUSTER_TOUCH_OVERLAY_DURATION_MS = 4500;
 const ANDROID_CLUSTER_TOUCH_OVERLAY_LIMIT = 80;
 const STAGE_CLUSTER_MARKERS_ON_STARTUP = Platform.OS === 'android';
 const STARTUP_CLUSTER_MARKER_LIMIT = 12;
@@ -1882,10 +1883,39 @@ useEffect(() => {
   const androidControlsReleaseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const androidControlsReleaseSequenceRef = useRef(0);
   const androidCalloutTeardownSequenceRef = useRef(0);
+  const androidRetapLatencyProbeRef = useRef({
+    active: false,
+    closeReason: 'none',
+    closeStartedAt: 0,
+    attemptCount: 0,
+  });
   const latestLocationRef = useRef<Location.LocationObject | null>(null);
   const latestClusterCountRef = useRef(0);
   const isMapLoadingRef = useRef(false);
   const clustersReadyForInteractionRef = useRef(false);
+  const logAndroidRetapLatencyProbe = useCallback((
+    phase: string,
+    extra: Record<string, unknown> = {}
+  ): void => {
+    if (!DEBUG_ANDROID_RETAP_LATENCY_PROBE) {
+      return;
+    }
+
+    const now = Date.now();
+    const probe = androidRetapLatencyProbeRef.current;
+    console.log('[RetapLatencyProbe]', phase, {
+      sinceCloseMs: probe.closeStartedAt > 0 ? now - probe.closeStartedAt : null,
+      active: probe.active,
+      closeReason: probe.closeReason,
+      attemptCount: probe.attemptCount,
+      overlayActive: androidRetapOverlayActiveRef.current,
+      overlayPressHandled: androidRetapOverlayPressHandledRef.current,
+      targetCount: androidClusterHitTargetsRef.current.length,
+      teardownPending: androidCalloutTeardownTimerRef.current !== null,
+      closingVisual: isCalloutClosingVisuallyRef.current,
+      ...extra,
+    });
+  }, []);
   const fullClusterMarkersEnabledRef = useRef(false);
   const cachedStartupCenterAppliedRef = useRef(false);
   const startupCameraCenterRef = useRef<[number, number] | null>(null);
@@ -3415,6 +3445,22 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
       !mapDimensions ||
       !visibleBbox
     ) {
+      logAndroidRetapLatencyProbe('retap_projection_skipped', {
+        reason: Platform.OS !== 'android'
+          ? 'not_android'
+          : !isFocused
+            ? 'not_focused'
+            : isLoading
+              ? 'loading'
+              : !clustersReadyForInteraction
+                ? 'clusters_not_ready'
+                : !mapDimensions
+                  ? 'missing_map_dimensions'
+                  : 'missing_visible_bbox',
+        hasCameraState: Boolean(cameraState),
+        hasMapDimensions: Boolean(mapDimensions),
+        clusterCount: clusters.length,
+      });
       return { projected: [], sourceCount: 0 };
     }
 
@@ -3451,6 +3497,7 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
     filterCriteria,
     isFocused,
     isLoading,
+    logAndroidRetapLatencyProbe,
     mapDimensions,
     mapScreenOffset.x,
     mapScreenOffset.y,
@@ -3481,7 +3528,114 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
     });
   }, []);
 
+  const refreshAndroidRetapTargetsFromNativeCamera = useCallback(async (reason: string): Promise<void> => {
+    if (Platform.OS !== 'android' || !mapRef.current || !mapDimensions) {
+      logAndroidRetapLatencyProbe('retap_native_projection_skipped', {
+        reason,
+        hasMapRef: Boolean(mapRef.current),
+        hasMapDimensions: Boolean(mapDimensions),
+      });
+      return;
+    }
+
+    try {
+      const [nativeVisibleBounds, nativeZoom, nativeCenter] = await Promise.all([
+        mapRef.current.getVisibleBounds(),
+        mapRef.current.getZoom(),
+        mapRef.current.getCenter(),
+      ]);
+      const visibleBbox = getBoundingBoxFromPositions(nativeVisibleBounds);
+      const center = getCoordinatePairFromPosition(nativeCenter);
+
+      if (!visibleBbox || !center || typeof nativeZoom !== 'number') {
+        logAndroidRetapLatencyProbe('retap_native_projection_invalid_camera', {
+          reason,
+          hasVisibleBbox: Boolean(visibleBbox),
+          hasCenter: Boolean(center),
+          nativeZoom,
+        });
+        return;
+      }
+
+      currentCameraStateRef.current = {
+        center,
+        zoom: nativeZoom,
+        visibleBbox,
+      };
+
+      const { projected, sourceCount } = getAndroidProjectedClusterHitTargets();
+      logAndroidRetapLatencyProbe('retap_native_projection_result', {
+        reason,
+        targetCount: projected.length,
+        sourceCount,
+        sampleTargets: projected.slice(0, 4).map((target) => ({
+          id: target.clusterId.slice(0, 36),
+          x: Math.round(target.x),
+          y: Math.round(target.y),
+          events: target.cluster.eventCount,
+          specials: target.cluster.specialCount,
+        })),
+      });
+
+      if (
+        projected.length > 0 &&
+        androidRetapOverlayActiveRef.current &&
+        !androidRetapOverlayPressHandledRef.current
+      ) {
+        setAndroidClusterHitTargetsImmediate(projected);
+        logAndroidRetapOverlayTargets('native-camera-refresh', sourceCount, projected);
+      }
+    } catch (error) {
+      logAndroidRetapLatencyProbe('retap_native_projection_failed', {
+        reason,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }, [
+    getAndroidProjectedClusterHitTargets,
+    logAndroidRetapLatencyProbe,
+    logAndroidRetapOverlayTargets,
+    mapDimensions,
+    setAndroidClusterHitTargetsImmediate,
+  ]);
+
+  const isAndroidRetapEventNearTarget = useCallback((event: GestureResponderEvent): boolean => {
+    if (
+      Platform.OS !== 'android' ||
+      !androidRetapOverlayActiveRef.current ||
+      androidRetapOverlayPressHandledRef.current
+    ) {
+      return false;
+    }
+
+    const pageX = Number(event.nativeEvent.pageX);
+    const pageY = Number(event.nativeEvent.pageY);
+    const locationX = Number(event.nativeEvent.locationX);
+    const locationY = Number(event.nativeEvent.locationY);
+    const touchX = Number.isFinite(pageX) ? pageX : locationX;
+    const touchY = Number.isFinite(pageY) ? pageY : locationY;
+
+    if (!Number.isFinite(touchX) || !Number.isFinite(touchY)) {
+      return false;
+    }
+
+    const maxDistance = ANDROID_CLUSTER_TOUCH_OVERLAY_SIZE / 2;
+    const maxDistanceSquared = maxDistance * maxDistance;
+    const hitTargets =
+      androidClusterHitTargetsRef.current.length > 0
+        ? androidClusterHitTargetsRef.current
+        : androidClusterHitTargets;
+
+    return hitTargets.some((target) => {
+      const dx = touchX - target.x;
+      const dy = touchY - target.y;
+      return dx * dx + dy * dy <= maxDistanceSquared;
+    });
+  }, [androidClusterHitTargets]);
+
   const deactivateAndroidRetapOverlay = useCallback(() => {
+    logAndroidRetapLatencyProbe('retap_overlay_deactivated');
+    androidRetapLatencyProbeRef.current.active = false;
     if (androidRetapOverlayTimerRef.current) {
       clearTimeout(androidRetapOverlayTimerRef.current);
       androidRetapOverlayTimerRef.current = null;
@@ -3491,7 +3645,7 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
     setAndroidClusterHitTargetsImmediate([]);
     androidRetapOverlayActiveRef.current = false;
     androidRetapOverlayPressHandledRef.current = true;
-  }, [setAndroidClusterHitTargetsImmediate, setAndroidRetapOverlayPointerEvents]);
+  }, [logAndroidRetapLatencyProbe, setAndroidClusterHitTargetsImmediate, setAndroidRetapOverlayPointerEvents]);
 
   const activateAndroidRetapOverlay = useCallback(() => {
     if (Platform.OS !== 'android') {
@@ -3508,10 +3662,24 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
       targetCount: projected.length,
       sourceCount,
     });
+    logAndroidRetapLatencyProbe('retap_overlay_activated', {
+      targetCount: projected.length,
+      sourceCount,
+      durationMs: ANDROID_CLUSTER_TOUCH_OVERLAY_DURATION_MS,
+      sampleTargets: projected.slice(0, 4).map((target) => ({
+        id: target.clusterId.slice(0, 36),
+        x: Math.round(target.x),
+        y: Math.round(target.y),
+        events: target.cluster.eventCount,
+        specials: target.cluster.specialCount,
+      })),
+    });
     setAndroidClusterHitTargetsImmediate(projected);
     setAndroidRetapOverlayPointerEvents('auto');
     if (projected.length > 0) {
       logAndroidRetapOverlayTargets('activate', sourceCount, projected);
+    } else {
+      void refreshAndroidRetapTargetsFromNativeCamera('activate-empty-targets');
     }
     androidRetapOverlayActiveRef.current = true;
     androidRetapOverlayPressHandledRef.current = false;
@@ -3519,6 +3687,8 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
     androidRetapOverlayTimerRef.current = setTimeout(() => {
       androidRetapOverlayTimerRef.current = null;
       console.log('[map] Android retap overlay expired');
+      logAndroidRetapLatencyProbe('retap_overlay_expired');
+      androidRetapLatencyProbeRef.current.active = false;
       setAndroidRetapOverlayPointerEvents('box-none');
       setAndroidRetapOverlayActive(false);
       setAndroidClusterHitTargetsImmediate([]);
@@ -3528,6 +3698,8 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
   }, [
     getAndroidProjectedClusterHitTargets,
     logAndroidRetapOverlayTargets,
+    logAndroidRetapLatencyProbe,
+    refreshAndroidRetapTargetsFromNativeCamera,
     setAndroidClusterHitTargetsImmediate,
     setAndroidRetapOverlayPointerEvents,
   ]);
@@ -3550,11 +3722,19 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
 
   const handleCalloutCloseStart = useCallback(() => {
     if (Platform.OS === 'android') {
+      const probe = androidRetapLatencyProbeRef.current;
+      if (!probe.active) {
+        probe.active = true;
+        probe.closeReason = 'close-start';
+        probe.closeStartedAt = Date.now();
+        probe.attemptCount = 0;
+      }
+      logAndroidRetapLatencyProbe('close_start');
       isCalloutClosingVisuallyRef.current = true;
       hideAndroidCalloutContainerForRetap();
       setAndroidRetapOverlayPointerEvents('auto');
     }
-  }, [hideAndroidCalloutContainerForRetap, setAndroidRetapOverlayPointerEvents]);
+  }, [hideAndroidCalloutContainerForRetap, logAndroidRetapLatencyProbe, setAndroidRetapOverlayPointerEvents]);
 
   const trackClusterClosedOnce = useCallback(() => {
     if (clusterOpenStartRef.current == null) {
@@ -3586,6 +3766,14 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
     }
 
     isCalloutClosingVisuallyRef.current = true;
+    const probe = androidRetapLatencyProbeRef.current;
+    if (!probe.active) {
+      probe.active = true;
+      probe.closeStartedAt = Date.now();
+      probe.attemptCount = 0;
+    }
+    probe.closeReason = reason;
+    logAndroidRetapLatencyProbe('deferred_teardown_requested', { reason });
     hideAndroidCalloutContainerForRetap();
     setAndroidRetapOverlayPointerEvents('auto');
     calloutAnimation.setValue(SCREEN_HEIGHT);
@@ -3594,6 +3782,7 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
       traceMapEvent('android_callout_deferred_teardown_already_pending', {
         reason,
       });
+      logAndroidRetapLatencyProbe('deferred_teardown_already_pending', { reason });
       return;
     }
 
@@ -3615,6 +3804,10 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
         reason,
         delayMs: ANDROID_CONTROLS_RELEASE_AFTER_CLOSE_MS,
       });
+      logAndroidRetapLatencyProbe('ancillary_overlays_released', {
+        reason,
+        delayMs: ANDROID_CONTROLS_RELEASE_AFTER_CLOSE_MS,
+      });
       setAndroidAncillaryOverlaysReleasedForClose(true);
     }, ANDROID_CONTROLS_RELEASE_AFTER_CLOSE_MS);
 
@@ -3624,6 +3817,10 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
       delayMs: ANDROID_CALLOUT_DEFERRED_TEARDOWN_MS,
     });
     console.log('[map] Android deferred callout teardown scheduled', {
+      reason,
+      delayMs: ANDROID_CALLOUT_DEFERRED_TEARDOWN_MS,
+    });
+    logAndroidRetapLatencyProbe('deferred_teardown_scheduled', {
       reason,
       delayMs: ANDROID_CALLOUT_DEFERRED_TEARDOWN_MS,
     });
@@ -3640,17 +3837,25 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
       console.log('[map] Android deferred callout teardown running', {
         reason,
       });
-      deactivateAndroidRetapOverlay();
+      logAndroidRetapLatencyProbe('deferred_teardown_running', {
+        reason,
+        retainedTargets: androidClusterHitTargetsRef.current.length,
+      });
       selectVenue(null);
       clearRenderedCalloutPresentation();
       isCalloutClosingVisuallyRef.current = false;
       setIsCalloutClosingVisually(false);
+      setAndroidRetapOverlayPointerEvents('box-none');
+      logAndroidRetapLatencyProbe('deferred_teardown_finished_targets_retained', {
+        reason,
+        retainedTargets: androidClusterHitTargetsRef.current.length,
+      });
     }, ANDROID_CALLOUT_DEFERRED_TEARDOWN_MS);
   }, [
     calloutAnimation,
     clearRenderedCalloutPresentation,
-    deactivateAndroidRetapOverlay,
     hideAndroidCalloutContainerForRetap,
+    logAndroidRetapLatencyProbe,
     selectVenue,
     setAndroidAncillaryOverlaysNativeVisibility,
     setAndroidRetapOverlayPointerEvents,
@@ -3664,6 +3869,7 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
       return false;
     }
 
+    logAndroidRetapLatencyProbe('closing_callout_flush_for_retap', { clusterId });
     cancelPendingAndroidCalloutTeardown('retap-open-new-callout');
     if (androidControlsReleaseTimerRef.current) {
       clearTimeout(androidControlsReleaseTimerRef.current);
@@ -3688,6 +3894,7 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
     cancelPendingAndroidCalloutTeardown,
     clearRenderedCalloutPresentation,
     hideAndroidCalloutContainerForRetap,
+    logAndroidRetapLatencyProbe,
     setAndroidAncillaryOverlaysNativeVisibility,
   ]);
 
@@ -4310,6 +4517,16 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
       hasRenderedCallout,
       renderedCalloutClusterId: renderedCalloutClusterId ?? 'none',
     });
+    logAndroidRetapLatencyProbe('marker_press_started', {
+      clusterId: cluster.id,
+      clusterType: cluster.clusterType,
+      venueCount: cluster.venues?.length ?? 0,
+      teardownWasInProgress: androidCalloutTeardownWasInProgress,
+      ignoreProgrammatic: ignoreProgrammaticCameraRef.current,
+      activeProcessingClusterId: clusterProcessingRef.current ?? 'none',
+      hasRenderedCallout,
+      renderedCalloutClusterId: renderedCalloutClusterId ?? 'none',
+    });
     if (Platform.OS === 'android') {
       androidControlsReleaseSequenceRef.current += 1;
       if (androidControlsReleaseTimerRef.current) {
@@ -4329,12 +4546,21 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
         renderedCalloutClusterId: renderedCalloutClusterId ?? 'none',
         renderedVenueCount: renderedCalloutVenueCount,
       });
+      logAndroidRetapLatencyProbe('marker_press_blocked_callout_rendered', {
+        clusterId: cluster.id,
+        renderedCalloutClusterId: renderedCalloutClusterId ?? 'none',
+        renderedVenueCount: renderedCalloutVenueCount,
+      });
       return;
     }
     // 🛡️ CLICK PREVENTION: Block rapid taps on same or different clusters
     if (clusterProcessingRef.current !== null) {
       console.log(`[map] Cluster tap blocked: already processing ${clusterProcessingRef.current}`);
       traceMapEvent('marker_press_blocked_processing', {
+        clusterId: cluster.id,
+        processingClusterId: clusterProcessingRef.current,
+      });
+      logAndroidRetapLatencyProbe('marker_press_blocked_processing', {
         clusterId: cluster.id,
         processingClusterId: clusterProcessingRef.current,
       });
@@ -4359,12 +4585,22 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
         clusterId: cluster.id,
         reason: ignoreProgrammaticCameraReasonRef.current ?? 'unknown',
       });
+      logAndroidRetapLatencyProbe('marker_press_blocked_programmatic', {
+        clusterId: cluster.id,
+        reason: ignoreProgrammaticCameraReasonRef.current ?? 'unknown',
+      });
       return;
     }
 
     // 📳 HAPTIC FEEDBACK: Provide immediate tactile confirmation of tap
     if (androidCalloutTeardownWasInProgress) {
       flushAndroidClosingCalloutForRetap(cluster.id);
+    }
+    if (Platform.OS === 'android' && androidRetapOverlayActiveRef.current) {
+      logAndroidRetapLatencyProbe('retap_overlay_deactivated_for_marker_press', {
+        clusterId: cluster.id,
+      });
+      deactivateAndroidRetapOverlay();
     }
 
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {
@@ -4376,6 +4612,9 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
     setProcessingClusterId(cluster.id);
     console.log(`[map] Cluster processing started: ${cluster.id}`);
     traceMapEvent('marker_processing_started', {
+      clusterId: cluster.id,
+    });
+    logAndroidRetapLatencyProbe('marker_processing_started', {
       clusterId: cluster.id,
     });
 
@@ -4589,6 +4828,9 @@ lastOpenedClusterIdRef.current = cluster.id;
       traceMapEvent('marker_processing_completed', {
         clusterId: clusterProcessingRef.current ?? cluster.id,
       });
+      logAndroidRetapLatencyProbe('marker_processing_completed', {
+        clusterId: clusterProcessingRef.current ?? cluster.id,
+      });
       clusterProcessingRef.current = null;
       setProcessingClusterId(null);
     }
@@ -4597,10 +4839,12 @@ lastOpenedClusterIdRef.current = cluster.id;
     isCalloutBlockingMapInteraction,
     isGuest,
     location,
+    logAndroidRetapLatencyProbe,
     renderedCalloutClusterId,
     renderedCalloutVenueCount,
     selectCallout,
     setAndroidAncillaryOverlaysNativeVisibility,
+    deactivateAndroidRetapOverlay,
     flushAndroidClosingCalloutForRetap,
     trackInteraction,
   ]); // REMOVED analytics, zoomLevel dependencies
@@ -4622,6 +4866,12 @@ lastOpenedClusterIdRef.current = cluster.id;
     const touchY = Number.isFinite(pageY) ? pageY : locationY;
 
     if (!Number.isFinite(touchX) || !Number.isFinite(touchY)) {
+      logAndroidRetapLatencyProbe('retap_responder_invalid_touch', {
+        pageX,
+        pageY,
+        locationX,
+        locationY,
+      });
       return true;
     }
 
@@ -4634,6 +4884,12 @@ lastOpenedClusterIdRef.current = cluster.id;
       androidClusterHitTargetsRef.current.length > 0
         ? androidClusterHitTargetsRef.current
         : androidClusterHitTargets;
+    androidRetapLatencyProbeRef.current.attemptCount += 1;
+    logAndroidRetapLatencyProbe('retap_responder_release', {
+      x: Math.round(touchX),
+      y: Math.round(touchY),
+      targetCount: hitTargets.length,
+    });
 
     hitTargets.forEach((target) => {
       const dx = touchX - target.x;
@@ -4651,6 +4907,11 @@ lastOpenedClusterIdRef.current = cluster.id;
         y: Math.round(touchY),
         targetCount: hitTargets.length,
       });
+      logAndroidRetapLatencyProbe('retap_overlay_miss', {
+        x: Math.round(touchX),
+        y: Math.round(touchY),
+        targetCount: hitTargets.length,
+      });
       return true;
     }
 
@@ -4660,10 +4921,20 @@ lastOpenedClusterIdRef.current = cluster.id;
         clustersReadyForInteraction: clustersReadyForInteractionRef.current,
         processingClusterId: clusterProcessingRef.current,
       });
+      logAndroidRetapLatencyProbe('retap_overlay_blocked', {
+        clusterId: matchedTarget.clusterId,
+        clustersReadyForInteraction: clustersReadyForInteractionRef.current,
+        processingClusterId: clusterProcessingRef.current,
+      });
       return true;
     }
 
     androidRetapOverlayPressHandledRef.current = true;
+    logAndroidRetapLatencyProbe('retap_overlay_cluster_press', {
+      clusterId: matchedTarget.clusterId,
+      targetCount: hitTargets.length,
+      source: 'callout_touch_capture_overlay',
+    });
     traceMapEvent('android_retap_overlay_cluster_press', {
       clusterId: matchedTarget.clusterId,
       targetCount: hitTargets.length,
@@ -4681,6 +4952,7 @@ lastOpenedClusterIdRef.current = cluster.id;
     androidClusterHitTargets,
     deactivateAndroidRetapOverlay,
     handleMarkerPress,
+    logAndroidRetapLatencyProbe,
   ]);
 
   useEffect(() => {
@@ -6924,11 +7196,11 @@ Owner: Map UX stability on Android • Last validated: 2025-09-04
           <View
             ref={androidRetapOverlayRef}
             pointerEvents={androidRetapOverlayActive || isCalloutClosingVisually ? 'auto' : 'box-none'}
-            onStartShouldSetResponder={() =>
-              androidRetapOverlayActiveRef.current || isCalloutClosingVisuallyRef.current
+            onStartShouldSetResponder={(event) =>
+              isCalloutClosingVisuallyRef.current || isAndroidRetapEventNearTarget(event)
             }
             onMoveShouldSetResponder={() =>
-              androidRetapOverlayActiveRef.current || isCalloutClosingVisuallyRef.current
+              isCalloutClosingVisuallyRef.current
             }
             onResponderRelease={handleAndroidRetapOverlayResponderRelease}
             style={[StyleSheet.absoluteFillObject, { zIndex: 10, elevation: 10 }]}
@@ -6936,6 +7208,7 @@ Owner: Map UX stability on Android • Last validated: 2025-09-04
             {androidClusterHitTargets.map((target) => (
               <Pressable
                 key={`android-retap-target-${target.clusterId}`}
+                collapsable={false}
                 disabled={!clustersReadyForInteraction || processingClusterId !== null}
                 onPress={() => {
                   if (
@@ -6945,6 +7218,12 @@ Owner: Map UX stability on Android • Last validated: 2025-09-04
                     return;
                   }
                   androidRetapOverlayPressHandledRef.current = true;
+                  androidRetapLatencyProbeRef.current.attemptCount += 1;
+                  logAndroidRetapLatencyProbe('retap_pressable_cluster_press', {
+                    clusterId: target.clusterId,
+                    targetCount: androidClusterHitTargets.length,
+                    source: 'retained_cluster_pressable',
+                  });
                   traceMapEvent('android_retap_overlay_cluster_press', {
                     clusterId: target.clusterId,
                     targetCount: androidClusterHitTargets.length,
@@ -6963,6 +7242,7 @@ Owner: Map UX stability on Android • Last validated: 2025-09-04
                   width: ANDROID_CLUSTER_TOUCH_OVERLAY_SIZE,
                   height: ANDROID_CLUSTER_TOUCH_OVERLAY_SIZE,
                   borderRadius: ANDROID_CLUSTER_TOUCH_OVERLAY_SIZE / 2,
+                  backgroundColor: 'rgba(255,255,255,0.01)',
                 }}
               />
             ))}
