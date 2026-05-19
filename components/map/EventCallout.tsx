@@ -4035,25 +4035,36 @@ useEffect(() => {
     return;
   }
 
-  // Start off-screen (at bottom) for entrance animation
+  // Start off-screen (at bottom) for entrance animation.
+  // On Android, keep the dim layer stable from the first rendered frame. The
+  // callout intentionally hydrates extra cards after the shell appears; if the
+  // backdrop also animates from transparent during that phase, the open path can
+  // visibly flash light/dark on slower devices.
+  const keepInitialBackdropStable = Platform.OS === 'android';
   translateY.setValue(SCREEN_HEIGHT);
-  backgroundOpacity.setValue(0);
+  backgroundOpacity.setValue(keepInitialBackdropStable ? initialBackgroundOpacity : 0);
   indicatorRotation.setValue(initialIndicatorRotation);
 
   // Animate callout sliding up from bottom
-  Animated.parallel([
-    Animated.spring(translateY, {
+  const sheetEntranceAnimation = Animated.spring(translateY, {
       toValue: initialTranslateY,
       useNativeDriver: true,
       tension: 65,
       friction: 11,
-    }),
-    Animated.timing(backgroundOpacity, {
-      toValue: initialBackgroundOpacity,
-      duration: 300,
-      useNativeDriver: true,
-    }),
-  ]).start();
+    });
+
+  if (keepInitialBackdropStable) {
+    sheetEntranceAnimation.start();
+  } else {
+    Animated.parallel([
+      sheetEntranceAnimation,
+      Animated.timing(backgroundOpacity, {
+        toValue: initialBackgroundOpacity,
+        duration: 300,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }
 
   traceMapEvent('event_callout_initial_position_applied', {
     clusterId: cluster?.id ?? 'none',
