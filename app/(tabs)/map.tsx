@@ -3326,6 +3326,15 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
       return;
     }
 
+    if (visible) {
+      pillsAnimation.stopAnimation(() => {
+        pillsAnimation.setValue(0);
+      });
+      pillsOpacity.stopAnimation(() => {
+        pillsOpacity.setValue(1);
+      });
+    }
+
     filterPillsOverlayRef.current?.setNativeProps?.({
       pointerEvents: visible ? 'box-none' : 'none',
       style: {
@@ -3345,7 +3354,7 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
         elevation: 12,
       },
     });
-  }, []);
+  }, [pillsAnimation, pillsOpacity]);
 
   const setAndroidClusterHitTargetsImmediate = useCallback((targets: AndroidClusterHitTarget[]) => {
     androidClusterHitTargetsRef.current = targets;
