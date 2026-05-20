@@ -5262,6 +5262,7 @@ const MIN_HEADING_DELTA_TO_HIDE = 4;     // degrees
 const MIN_PITCH_DELTA_TO_HIDE = 3;       // degrees
 const POST_SHOW_LOCKOUT_MS = 600;        // after pills re-show, ignore hides briefly
 const MAX_HIDDEN_MS = 1500;              // hard cap: never keep pills hidden longer than this
+const DISABLE_ANDROID_FILTER_PILL_AUTO_HIDE = Platform.OS === 'android';
 // ---------------------------------------------------------
 
 // Small helpers for deltas
@@ -5343,6 +5344,15 @@ const handleMapMovementStart = useCallback(() => {
   // Ignore until initial positioning is done AND auto-hide is armed
   if (!hasInitiallyPositioned || !autoHideEnabledRef.current || ignoreProgrammaticCameraRef.current) {
     // logPills('MOVEMENT START IGNORED', { hasInitiallyPositioned, autoHideEnabled: autoHideEnabledRef.current, ignoreProgrammatic: ignoreProgrammaticCameraRef.current });
+    return;
+  }
+
+  if (DISABLE_ANDROID_FILTER_PILL_AUTO_HIDE) {
+    if (hideTimeoutRef.current) { clearTimeout(hideTimeoutRef.current); hideTimeoutRef.current = null; }
+    if (showTimeoutRef.current) { clearTimeout(showTimeoutRef.current); showTimeoutRef.current = null; }
+    if (hideCapTimeoutRef.current) { clearTimeout(hideCapTimeoutRef.current); hideCapTimeoutRef.current = null; }
+    isMapMovingRef.current = false;
+    setIsMapMoving(false);
     return;
   }
 
