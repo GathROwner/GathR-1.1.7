@@ -4686,8 +4686,19 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
         clearTimeout(showTimeoutRef.current);
         showTimeoutRef.current = null;
       }
+      if (hideCapTimeoutRef.current) {
+        clearTimeout(hideCapTimeoutRef.current);
+        hideCapTimeoutRef.current = null;
+      }
       isMapMovingRef.current = false;
       setIsMapMoving(false);
+      postShowLockoutUntilRef.current = Date.now() + 600;
+      pillsAnimation.stopAnimation(() => {
+        pillsAnimation.setValue(0);
+      });
+      pillsOpacity.stopAnimation(() => {
+        pillsOpacity.setValue(1);
+      });
       logAndroidZoomTapLatencyProbe('camera_work_suppressed_for_marker_press', {
         clusterId: cluster.id,
         suppressMs,
