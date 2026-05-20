@@ -6385,6 +6385,39 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
     const activeInterestMarkerFilter =
       interestCarouselFilter?.status === 'active' ? interestCarouselFilter : null;
 
+    if (typeof __DEV__ !== 'undefined' && __DEV__ && Platform.OS === 'android' && zoomLevel >= 8.5 && zoomLevel <= 12.8) {
+      const summarizeCharlottetownClusters = (renderClusters: Cluster[]) =>
+        renderClusters
+          .map((cluster) => {
+            const [lng, lat] = getClusterCoordinate(cluster);
+            return {
+              id: cluster.id.slice(0, 36),
+              venues: cluster.venues.length,
+              events: cluster.eventCount,
+              specials: cluster.specialCount,
+              lat: Math.round(lat * 100000) / 100000,
+              lng: Math.round(lng * 100000) / 100000,
+            };
+          })
+          .filter((cluster) =>
+            cluster.lat >= 46.19 &&
+            cluster.lat <= 46.27 &&
+            cluster.lng >= -63.18 &&
+            cluster.lng <= -63.06
+          );
+
+      console.log('[CharlottetownClusterRenderDebug]', JSON.stringify({
+        zoom: Math.round(zoomLevel * 100) / 100,
+        totalClusters: clusters.length,
+        visible: visibleClustersForRender.length,
+        rendered: clustersForRender.length,
+        fullMarkers: fullClusterMarkersEnabled,
+        richMarkers: richClusterMarkersEnabled,
+        nearVisible: summarizeCharlottetownClusters(visibleClustersForRender),
+        nearRendered: summarizeCharlottetownClusters(clustersForRender),
+      }));
+    }
+
     markTabTracePhase('map', 'map_markers_render_start', {
       clusterCount: clusters.length,
       visibleCount: visibleClustersForRender.length,
