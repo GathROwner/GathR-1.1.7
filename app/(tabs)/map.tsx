@@ -2594,6 +2594,7 @@ const logPills = (msg: string, ctx?: Record<string, any>) => {
   // Viewport filtering refs
   const lastViewportBboxRef = useRef<BoundingBox | null>(null);
   const viewportFetchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const androidSuppressCameraWorkUntilRef = useRef(0);
   const startupGpsViewportRetryTimerRef = useRef<NodeJS.Timeout | null>(null);
   const startupViewportRecoveryTimerRef = useRef<NodeJS.Timeout | null>(null);
   const startupViewportRecoveryAttemptedRef = useRef(false);
@@ -4670,6 +4671,29 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
       deactivateAndroidRetapOverlay();
     }
 
+    if (Platform.OS === 'android') {
+      const suppressMs = 1600;
+      androidSuppressCameraWorkUntilRef.current = Date.now() + suppressMs;
+      if (viewportFetchTimeoutRef.current) {
+        clearTimeout(viewportFetchTimeoutRef.current);
+        viewportFetchTimeoutRef.current = null;
+      }
+      if (hideTimeoutRef.current) {
+        clearTimeout(hideTimeoutRef.current);
+        hideTimeoutRef.current = null;
+      }
+      if (showTimeoutRef.current) {
+        clearTimeout(showTimeoutRef.current);
+        showTimeoutRef.current = null;
+      }
+      isMapMovingRef.current = false;
+      setIsMapMoving(false);
+      logAndroidZoomTapLatencyProbe('camera_work_suppressed_for_marker_press', {
+        clusterId: cluster.id,
+        suppressMs,
+      });
+    }
+
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {
       // Silently fail if haptics not available (some devices/simulators)
     });
@@ -5706,6 +5730,13 @@ const handleCameraChange = useCallback((e: any) => {
   }
 
   const now = Date.now();
+  if (Platform.OS === 'android' && now < androidSuppressCameraWorkUntilRef.current) {
+    lastCameraChangeRef.current = now;
+    logAndroidZoomTapLatencyProbe('camera_change_suppressed_for_callout_open', {
+      remainingMs: androidSuppressCameraWorkUntilRef.current - now,
+    });
+    return;
+  }
 
 const props: any = (e && (e.properties ?? e)) ?? {};
 // Some builds emit zoom/zoomLevel; tolerate both
