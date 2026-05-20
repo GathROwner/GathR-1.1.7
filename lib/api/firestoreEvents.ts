@@ -84,14 +84,34 @@ const chooseProfileUrl = (
   return eventUrl;
 };
 
+const firstText = (...values: Array<unknown>): string => {
+  for (const value of values) {
+    if (value === null || value === undefined) continue;
+    const text = String(value).trim();
+    if (text) return text;
+  }
+  return '';
+};
+
+const isRecord = (value: unknown): value is Record<string, any> =>
+  Boolean(value && typeof value === 'object' && !Array.isArray(value));
+
+const isScopedLocation = (scope?: string | null): boolean =>
+  scope === 'city' || scope === 'area' || scope === 'route';
+
 /**
  * Normalize a Firestore event to match the app Event interface.
  */
 export function normalizeFirestoreEvent(fsEvent: FirestoreEvent): Event {
-  const latitude = fsEvent.venueInfo?.coordinates?.latitude ?? 0;
-  const longitude = fsEvent.venueInfo?.coordinates?.longitude ?? 0;
-  const venue = fsEvent.venue;
-  const venueProfileImage = fsEvent.venueInfo?.profileImage || venue?.profileImage || '';
+  const rawVenue = fsEvent.venue;
+  const venueRecord = isRecord(rawVenue) ? rawVenue : null;
+  const venueText = typeof rawVenue === 'string' ? rawVenue : '';
+  const latitude = fsEvent.venueInfo?.coordinates?.latitude ?? fsEvent.latitude ?? 0;
+  const longitude = fsEvent.venueInfo?.coordinates?.longitude ?? fsEvent.longitude ?? 0;
+  const locationScope = fsEvent.locationScope ?? fsEvent.metadata?.locationScope ?? null;
+  const locationLabel = fsEvent.locationLabel ?? fsEvent.metadata?.locationLabel ?? null;
+  const scopedLocation = isScopedLocation(locationScope);
+  const venueProfileImage = fsEvent.venueInfo?.profileImage || venueRecord?.profileImage || '';
   const rawEventProfileUrl = fsEvent.profileUrl || fsEvent.metadata?.icon || '';
   const eventProfileUrl = chooseProfileUrl(venueProfileImage, rawEventProfileUrl);
   const eventImageUrl =
@@ -112,6 +132,12 @@ export function normalizeFirestoreEvent(fsEvent: FirestoreEvent): Event {
     fsEvent.metadata?.fullDescription ??
     fsEvent.description ??
     '';
+  const venueName = scopedLocation
+    ? firstText(locationLabel, venueText, fsEvent.metadata?.establishment, fsEvent.address)
+    : firstText(fsEvent.venueInfo?.name, fsEvent.metadata?.venueName, venueText, venueRecord?.pagename, 'Unknown Venue');
+  const address = scopedLocation
+    ? firstText(fsEvent.address, locationLabel, fsEvent.metadata?.address, venueRecord?.address)
+    : firstText(fsEvent.venueInfo?.address, fsEvent.metadata?.address, fsEvent.address, venueRecord?.address);
 
   return {
     // Preserve existing app expectation that Firestore IDs are namespaced.
@@ -127,12 +153,21 @@ export function normalizeFirestoreEvent(fsEvent: FirestoreEvent): Event {
     category: fsEvent.category || 'Other',
     title: fsEvent.title || '',
     description: rawDescription,
+    venueId: fsEvent.venueId ?? null,
 
     // Venue info (flattened from nested structure)
-    venue: fsEvent.venueInfo?.name || fsEvent.metadata?.venueName || venue?.pagename || 'Unknown Venue',
-    address: fsEvent.venueInfo?.address || fsEvent.metadata?.address || venue?.address || '',
+    venue: venueName,
+    address,
     latitude,
     longitude,
+    locationScope,
+    locationLabel,
+    locationCity: fsEvent.locationCity ?? fsEvent.metadata?.locationCity ?? null,
+    locationProvince: fsEvent.locationProvince ?? fsEvent.metadata?.locationProvince ?? null,
+    locationPrecision: fsEvent.locationPrecision ?? fsEvent.metadata?.locationPrecision ?? null,
+    locationReviewStatus:
+      fsEvent.locationReviewStatus ?? fsEvent.metadata?.locationReviewStatus ?? null,
+    mapMode: fsEvent.mapMode ?? fsEvent.metadata?.mapMode ?? null,
 
     // Date/time
     startDate: fsEvent.startDate || '',
@@ -171,12 +206,13 @@ export function normalizeFirestoreEvent(fsEvent: FirestoreEvent): Event {
     originalEventId: rawOriginalEventId ? toAppEventId(rawOriginalEventId) : null,
 
     // Venue details
-    venueWebsite: fsEvent.venueInfo?.website || venue?.website || '',
-    venueRating: venue?.placeDetailsParsed?.rating ?? venue?.rating,
-    venuePhone: venue?.placeDetailsParsed?.international_phone_number || venue?.phone || '',
-    venueFacebookUrl: venue?.facebookUrl || '',
-    venueInstagramUrl: venue?.instagramUrl || '',
-    venueCategories: venue?.categories || (venue?.category1 ? [venue.category1] : []),
+    venueWebsite: fsEvent.venueInfo?.website || venueRecord?.website || '',
+    venueRating: venueRecord?.placeDetailsParsed?.rating ?? venueRecord?.rating,
+    venuePhone:
+      venueRecord?.placeDetailsParsed?.international_phone_number || venueRecord?.phone || '',
+    venueFacebookUrl: venueRecord?.facebookUrl || '',
+    venueInstagramUrl: venueRecord?.instagramUrl || '',
+    venueCategories: venueRecord?.categories || (venueRecord?.category1 ? [venueRecord.category1] : []),
   };
 }
 

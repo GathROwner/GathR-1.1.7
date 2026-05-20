@@ -19,6 +19,7 @@ export interface Event {
   category: string;
   title: string;
   description: string;
+  venueId?: string | null;
   venue: string;
   address: string;
   startDate: string;
@@ -62,6 +63,15 @@ export interface Event {
   recurringPattern?: string;
   isRecurringInstance?: boolean;
   originalEventId?: string | null;
+
+  // Non-venue location metadata for citywide/area events
+  locationScope?: 'venue' | 'city' | 'area' | 'route' | 'unknown' | null;
+  locationLabel?: string | null;
+  locationCity?: string | null;
+  locationProvince?: string | null;
+  locationPrecision?: 'exact' | 'approximate' | 'city_centroid' | 'none' | null;
+  locationReviewStatus?: 'not_needed' | 'needs_review' | 'approved' | 'rejected' | null;
+  mapMode?: 'venue' | 'area' | 'none' | null;
 
   // Venue details (from Firestore venue object)
   venueRating?: number;

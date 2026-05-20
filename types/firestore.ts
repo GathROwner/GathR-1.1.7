@@ -29,7 +29,7 @@ export interface FirestoreVenueInfo {
   city?: string;
   category?: string;
   website?: string;
-  coordinates: FirestoreCoordinates;
+  coordinates?: FirestoreCoordinates | null;
   profileImage?: string;
 }
 
@@ -66,6 +66,13 @@ export interface FirestoreEventMetadata {
   fullDescription?: string;
   ticketLinkPosts?: string;
   ticketLinkEvents?: string;
+  locationScope?: 'venue' | 'city' | 'area' | 'route' | 'unknown' | null;
+  locationLabel?: string | null;
+  locationCity?: string | null;
+  locationProvince?: string | null;
+  locationPrecision?: 'exact' | 'approximate' | 'city_centroid' | 'none' | null;
+  locationReviewStatus?: 'not_needed' | 'needs_review' | 'approved' | 'rejected' | null;
+  mapMode?: 'venue' | 'area' | 'none' | null;
 }
 
 /**
@@ -111,7 +118,18 @@ export interface FirestoreEvent {
   startTime: string;        // 24-hour format "HH:MM"
   endDate?: string;
   endTime?: string;
-  venueId: string;
+  venueId: string | null;
+  venue?: string | FirestoreVenue | null;
+  address?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  locationScope?: 'venue' | 'city' | 'area' | 'route' | 'unknown' | null;
+  locationLabel?: string | null;
+  locationCity?: string | null;
+  locationProvince?: string | null;
+  locationPrecision?: 'exact' | 'approximate' | 'city_centroid' | 'none' | null;
+  locationReviewStatus?: 'not_needed' | 'needs_review' | 'approved' | 'rejected' | null;
+  mapMode?: 'venue' | 'area' | 'none' | null;
   category: string | null;  // Can be null
   isEvent: boolean | null;  // Can be null - default to true
   // Top-level recurrence fields (materialized recurring instances)
@@ -128,9 +146,7 @@ export interface FirestoreEvent {
   relevantImageUrl?: string;
   SharedPostThumbnail?: string | null;
   metadata: FirestoreEventMetadata;
-  venueInfo: FirestoreVenueInfo;
-  // Full venue object (only present in single-event endpoint response)
-  venue?: FirestoreVenue;
+  venueInfo?: FirestoreVenueInfo | null;
 }
 
 /**
