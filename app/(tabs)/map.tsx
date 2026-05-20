@@ -2554,6 +2554,7 @@ const hideCapTimeoutRef = useRef<NodeJS.Timeout | null>(null); // force-show cap
 
 
 const lastCameraChangeRef = useRef<number>(0);
+const lastViewportFetchZoomRef = useRef<number | null>(null);
 
 
 // Track previous camera values to compute true deltas
@@ -5623,6 +5624,7 @@ const handleMapMovementEnd = useCallback(() => {
     if (bboxChanged) {
       console.log('[Viewport] Movement ended - bbox changed, fetching:', roundedBbox);
       lastViewportBboxRef.current = roundedBbox;
+      lastViewportFetchZoomRef.current = zoomLevel;
       fetchViewportEvents(roundedBbox);
     }
   } else {
@@ -6094,6 +6096,58 @@ Clustering refresh: keep zoom → store → recluster in sync
       const timeSinceLastFetch = now - lastViewportFetchTimeRef.current;
       const THROTTLE_INTERVAL = 300; // Max 3 fetches per second during active movement
       const DEBOUNCE_DELAY = 50; // Final fetch 50ms after movement stops
+      const ANDROID_PRIORITY_FETCH_MIN_INTERVAL = 180;
+      const ANDROID_PRIORITY_ZOOM_DELTA = 0.35;
+      const ANDROID_OVERVIEW_ZOOM = ANDROID_LOCATION_PUCK_MIN_ZOOM;
+      const previousViewportBbox = lastViewportBboxRef.current;
+      const previousLngSpan = previousViewportBbox
+        ? Math.abs(previousViewportBbox.east - previousViewportBbox.west)
+        : 0;
+      const previousLatSpan = previousViewportBbox
+        ? Math.abs(previousViewportBbox.north - previousViewportBbox.south)
+        : 0;
+      const nextLngSpan = Math.abs(roundedBbox.east - roundedBbox.west);
+      const nextLatSpan = Math.abs(roundedBbox.north - roundedBbox.south);
+      const bboxSpanChangeRatio = previousViewportBbox && previousLngSpan > 0 && previousLatSpan > 0
+        ? Math.max(
+          Math.abs(nextLngSpan - previousLngSpan) / previousLngSpan,
+          Math.abs(nextLatSpan - previousLatSpan) / previousLatSpan
+        )
+        : null;
+      const previousCenterLng = previousViewportBbox
+        ? (previousViewportBbox.east + previousViewportBbox.west) / 2
+        : null;
+      const previousCenterLat = previousViewportBbox
+        ? (previousViewportBbox.north + previousViewportBbox.south) / 2
+        : null;
+      const nextCenterLng = (roundedBbox.east + roundedBbox.west) / 2;
+      const nextCenterLat = (roundedBbox.north + roundedBbox.south) / 2;
+      const bboxCenterShiftDegrees =
+        previousCenterLng !== null && previousCenterLat !== null
+          ? Math.max(
+            Math.abs(nextCenterLng - previousCenterLng),
+            Math.abs(nextCenterLat - previousCenterLat)
+          )
+          : null;
+      const zoomSinceLastFetch =
+        typeof effectiveClusterZoom === 'number' && typeof lastViewportFetchZoomRef.current === 'number'
+          ? Math.abs(effectiveClusterZoom - lastViewportFetchZoomRef.current)
+          : null;
+      const isAndroidOverviewZoom =
+        Platform.OS === 'android' &&
+        typeof effectiveClusterZoom === 'number' &&
+        effectiveClusterZoom <= ANDROID_OVERVIEW_ZOOM;
+      const isAndroidViewportMeaningfullyDifferent =
+        !previousViewportBbox ||
+        (typeof bboxSpanChangeRatio === 'number' && bboxSpanChangeRatio >= 0.12) ||
+        (typeof bboxCenterShiftDegrees === 'number' && bboxCenterShiftDegrees >= 0.015);
+      const shouldUseAndroidPriorityFetch =
+        Platform.OS === 'android' &&
+        timeSinceLastFetch >= ANDROID_PRIORITY_FETCH_MIN_INTERVAL &&
+        (
+          (typeof zoomSinceLastFetch === 'number' && zoomSinceLastFetch >= ANDROID_PRIORITY_ZOOM_DELTA) ||
+          (isAndroidOverviewZoom && isAndroidViewportMeaningfullyDifferent)
+        );
 
       // Clear any pending debounced fetch
       if (viewportFetchTimeoutRef.current) {
@@ -6101,19 +6155,35 @@ Clustering refresh: keep zoom → store → recluster in sync
       }
 
       // THROTTLE: If enough time has passed since last fetch, fetch immediately
-      if (timeSinceLastFetch >= THROTTLE_INTERVAL) {
+      if (timeSinceLastFetch >= THROTTLE_INTERVAL || shouldUseAndroidPriorityFetch) {
         if (DEBUG_CAMERA_TICKS) {
-          console.log('[Viewport] THROTTLED fetch (immediate):', { roundedBbox, timeSinceLastFetch });
+          console.log('[Viewport] THROTTLED fetch (immediate):', {
+            roundedBbox,
+            timeSinceLastFetch,
+            priority: shouldUseAndroidPriorityFetch,
+          });
         }
         if (Platform.OS === 'android') {
           androidZoomTapLatencyProbeRef.current.lastViewportFetchAt = Date.now();
-          logAndroidZoomTapLatencyProbe('viewport_fetch_immediate', {
+          logAndroidZoomTapLatencyProbe(
+            shouldUseAndroidPriorityFetch
+              ? 'viewport_fetch_priority_immediate'
+              : 'viewport_fetch_immediate',
+            {
             timeSinceLastFetch,
+            zoomSinceLastFetch,
+            bboxSpanChangeRatio,
+            bboxCenterShiftDegrees,
             roundedBbox,
-          });
+            }
+          );
         }
         lastViewportBboxRef.current = roundedBbox;
         lastViewportFetchTimeRef.current = now;
+        lastViewportFetchZoomRef.current =
+          typeof effectiveClusterZoom === 'number'
+            ? effectiveClusterZoom
+            : lastViewportFetchZoomRef.current;
         fetchViewportEvents(roundedBbox);
       } else {
         // DEBOUNCE: Schedule a fetch after movement stops for final accuracy
@@ -6121,6 +6191,9 @@ Clustering refresh: keep zoom → store → recluster in sync
           logAndroidZoomTapLatencyProbe('viewport_fetch_debounced_scheduled', {
             timeSinceLastFetch,
             debounceDelayMs: DEBOUNCE_DELAY,
+            zoomSinceLastFetch,
+            bboxSpanChangeRatio,
+            bboxCenterShiftDegrees,
             roundedBbox,
           });
         }
@@ -6136,6 +6209,10 @@ Clustering refresh: keep zoom → store → recluster in sync
           }
           lastViewportBboxRef.current = roundedBbox;
           lastViewportFetchTimeRef.current = Date.now();
+          lastViewportFetchZoomRef.current =
+            typeof effectiveClusterZoom === 'number'
+              ? effectiveClusterZoom
+              : lastViewportFetchZoomRef.current;
           fetchViewportEvents(roundedBbox);
         }, DEBOUNCE_DELAY);
       }
