@@ -492,6 +492,7 @@ type AndroidClusterMarkerFeatureProperties = {
   markerOpacity: number;
   markerOuterRingRadius: number;
   markerRadius: number;
+  markerSortKey: number;
   markerStrokeColor: string;
   markerStrokeWidth: number;
   markerStatusDotRadius: number;
@@ -818,8 +819,12 @@ const buildAndroidClusterMarkerShape = (
       const isProcessing = cluster.id === options.processingClusterId;
       const detailsEnabled = options.detailsEnabled || isSelected;
       const isBroadcasting = detailsEnabled && !!cluster.isBroadcasting;
+      const venueCount = getUniqueVenueCount(cluster.venues);
+      const totalContentCount = (cluster.eventCount ?? 0) + (cluster.specialCount ?? 0);
+      const densityWeight = venueCount + totalContentCount * 0.35;
+      const densityScale = Math.min(1.7, 1 + Math.log2(Math.max(1, densityWeight)) * 0.1);
       const scaleFactor = Platform.OS === 'android' ? 1 : isSelected ? 1.2 : 1;
-      const size = getInterestLevelSize(cluster.interestLevel) * scaleFactor;
+      const size = getInterestLevelSize(cluster.interestLevel) * scaleFactor * densityScale;
       const markerRadius = Math.max(size * 0.8, 10);
       const getPulseRing = (offset: number) => {
         const phase = ((options.pulseStep + offset) % ANDROID_CLUSTER_MARKER_PULSE_STEPS) / (ANDROID_CLUSTER_MARKER_PULSE_STEPS - 1);
@@ -847,11 +852,10 @@ const buildAndroidClusterMarkerShape = (
       const categoryItem = categoryItems.length > 0
         ? categoryItems[options.categoryCycleTick % categoryItems.length]
         : null;
-      const venueCount = getUniqueVenueCount(cluster.venues);
       const venueLabel = String(venueCount);
       const venueTextSize = Math.min(
-        Math.max(size * 0.55, venueLabel.length > 1 ? 9.2 : 9.8),
-        venueLabel.length > 1 ? 10.6 : 11.2
+        Math.max(size * 0.55, venueLabel.length > 1 ? 9.8 : 10.2),
+        venueLabel.length > 1 ? 12.4 : 11.8
       );
 
       return {
@@ -885,6 +889,7 @@ const buildAndroidClusterMarkerShape = (
           markerLabelRadius: 12,
           markerOuterRingRadius: markerRadius + 7,
           markerRadius: markerRadius + (isBroadcasting ? pulseBreath * 0.55 : 0),
+          markerSortKey: Math.round(densityWeight * 10) + (isSelected ? 1000 : 0) + (isProcessing ? 500 : 0),
           markerStrokeColor: isSelected ? '#202124' : '#FFFFFF',
           markerStrokeWidth: isSelected ? 3 : 2,
           markerStatusDotRadius: Math.max(markerRadius * 0.24, 3.5),
@@ -6470,6 +6475,7 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
               circleColor: '#000000',
               circleOpacity: 0.18,
               circleRadius: ['get', 'markerRadius'] as any,
+              circleSortKey: ['get', 'markerSortKey'] as any,
               circleTranslate: [0, 2],
               circleTranslateAnchor: 'viewport',
             }}
@@ -6480,6 +6486,7 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
             style={{
               circleColor: 'rgba(255,255,255,0)',
               circleRadius: ['get', 'broadcastPulseRadius1'] as any,
+              circleSortKey: ['get', 'markerSortKey'] as any,
               circleStrokeColor: ['get', 'markerColor'] as any,
               circleStrokeOpacity: ['get', 'broadcastPulseOpacity1'] as any,
               circleStrokeWidth: 2,
@@ -6491,6 +6498,7 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
             style={{
               circleColor: 'rgba(255,255,255,0)',
               circleRadius: ['get', 'broadcastPulseRadius2'] as any,
+              circleSortKey: ['get', 'markerSortKey'] as any,
               circleStrokeColor: ['get', 'markerColor'] as any,
               circleStrokeOpacity: ['get', 'broadcastPulseOpacity2'] as any,
               circleStrokeWidth: 2,
@@ -6502,6 +6510,7 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
             style={{
               circleColor: 'rgba(255,255,255,0)',
               circleRadius: ['get', 'broadcastPulseRadius3'] as any,
+              circleSortKey: ['get', 'markerSortKey'] as any,
               circleStrokeColor: ['get', 'markerColor'] as any,
               circleStrokeOpacity: ['get', 'broadcastPulseOpacity3'] as any,
               circleStrokeWidth: 2,
@@ -6513,6 +6522,7 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
             style={{
               circleColor: 'rgba(255,255,255,0)',
               circleRadius: ['get', 'markerOuterRingRadius'] as any,
+              circleSortKey: ['get', 'markerSortKey'] as any,
               circleStrokeColor: ['get', 'markerColor'] as any,
               circleStrokeOpacity: 0.8,
               circleStrokeWidth: 2,
@@ -6528,6 +6538,7 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
               textHaloColor: '#FFFFFF',
               textHaloWidth: 0.5,
               textIgnorePlacement: true,
+              symbolSortKey: ['get', 'markerSortKey'] as any,
               textSize: ['get', 'markerTrunkTextSize'] as any,
               textTranslate: [0, 10],
               textTranslateAnchor: 'viewport',
@@ -6539,6 +6550,7 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
               circleColor: ['get', 'markerColor'] as any,
               circleOpacity: ['get', 'markerOpacity'] as any,
               circleRadius: ['get', 'markerRadius'] as any,
+              circleSortKey: ['get', 'markerSortKey'] as any,
               circleStrokeColor: ['get', 'markerStrokeColor'] as any,
               circleStrokeWidth: ['get', 'markerStrokeWidth'] as any,
             }}
@@ -6552,6 +6564,7 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
               iconIgnorePlacement: true,
               iconImage: ANDROID_CLUSTER_MARKER_CATEGORY_PILL_ID,
               iconSize: ANDROID_CLUSTER_CATEGORY_PILL_SIZE,
+              symbolSortKey: ['get', 'markerSortKey'] as any,
               iconTranslate: [0, -24],
               iconTranslateAnchor: 'viewport',
             }}
@@ -6565,6 +6578,7 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
               iconIgnorePlacement: true,
               iconImage: ANDROID_CLUSTER_MARKER_COUNT_STRIP_ID,
               iconSize: ANDROID_CLUSTER_COUNT_STRIP_SIZE,
+              symbolSortKey: ['get', 'markerSortKey'] as any,
               iconTranslate: [0, 26],
               iconTranslateAnchor: 'viewport',
             }}
@@ -6575,6 +6589,7 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
             style={{
               circleColor: '#F44336',
               circleRadius: ['get', 'markerStatusDotRadius'] as any,
+              circleSortKey: ['get', 'markerSortKey'] as any,
               circleStrokeColor: '#FFFFFF',
               circleStrokeWidth: 1,
               circleTranslate: [9, -9],
@@ -6587,6 +6602,7 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
             style={{
               circleColor: '#E3F2FD',
               circleRadius: ['get', 'markerStatusDotRadius'] as any,
+              circleSortKey: ['get', 'markerSortKey'] as any,
               circleStrokeColor: '#1565C0',
               circleStrokeWidth: 1,
               circleTranslate: [-9, -9],
@@ -6602,6 +6618,7 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
               iconIgnorePlacement: true,
               iconImage: ['get', 'categoryIconImage'] as any,
               iconSize: ANDROID_CLUSTER_CATEGORY_GLYPH_SIZE,
+              symbolSortKey: ['get', 'markerSortKey'] as any,
               iconTranslate: [-8, -24],
               iconTranslateAnchor: 'viewport',
             }}
@@ -6617,6 +6634,7 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
               textHaloColor: '#F5F3E8',
               textHaloWidth: 0.6,
               textIgnorePlacement: true,
+              symbolSortKey: ['get', 'markerSortKey'] as any,
               textSize: ANDROID_CLUSTER_CATEGORY_TEXT_SIZE,
               textTranslate: [8, -24],
               textTranslateAnchor: 'viewport',
@@ -6631,6 +6649,7 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
               iconIgnorePlacement: true,
               iconImage: ANDROID_CLUSTER_MARKER_EVENT_ICON_ID,
               iconSize: ANDROID_CLUSTER_COUNT_GLYPH_SIZE,
+              symbolSortKey: ['get', 'markerSortKey'] as any,
               iconTranslate: [-18, 26],
               iconTranslateAnchor: 'viewport',
             }}
@@ -6644,6 +6663,7 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
               iconIgnorePlacement: true,
               iconImage: ANDROID_CLUSTER_MARKER_EVENT_ICON_ID,
               iconSize: ANDROID_CLUSTER_COUNT_GLYPH_SIZE,
+              symbolSortKey: ['get', 'markerSortKey'] as any,
               iconTranslate: [-7, 26],
               iconTranslateAnchor: 'viewport',
             }}
@@ -6659,6 +6679,7 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
               textHaloColor: '#F5F3E8',
               textHaloWidth: 1,
               textIgnorePlacement: true,
+              symbolSortKey: ['get', 'markerSortKey'] as any,
               textSize: ANDROID_CLUSTER_COUNT_TEXT_SIZE,
               textTranslate: [-6, 26],
               textTranslateAnchor: 'viewport',
@@ -6675,6 +6696,7 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
               textHaloColor: '#F5F3E8',
               textHaloWidth: 1,
               textIgnorePlacement: true,
+              symbolSortKey: ['get', 'markerSortKey'] as any,
               textSize: ANDROID_CLUSTER_COUNT_TEXT_SIZE,
               textTranslate: [7, 26],
               textTranslateAnchor: 'viewport',
@@ -6689,6 +6711,7 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
               iconIgnorePlacement: true,
               iconImage: ANDROID_CLUSTER_MARKER_SPECIAL_ICON_ID,
               iconSize: ANDROID_CLUSTER_COUNT_GLYPH_SIZE,
+              symbolSortKey: ['get', 'markerSortKey'] as any,
               iconTranslate: [7, 26],
               iconTranslateAnchor: 'viewport',
             }}
@@ -6702,6 +6725,7 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
               iconIgnorePlacement: true,
               iconImage: ANDROID_CLUSTER_MARKER_SPECIAL_ICON_ID,
               iconSize: ANDROID_CLUSTER_COUNT_GLYPH_SIZE,
+              symbolSortKey: ['get', 'markerSortKey'] as any,
               iconTranslate: [-7, 26],
               iconTranslateAnchor: 'viewport',
             }}
@@ -6717,6 +6741,7 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
               textHaloColor: '#F5F3E8',
               textHaloWidth: 1,
               textIgnorePlacement: true,
+              symbolSortKey: ['get', 'markerSortKey'] as any,
               textSize: ANDROID_CLUSTER_COUNT_TEXT_SIZE,
               textTranslate: [18, 26],
               textTranslateAnchor: 'viewport',
@@ -6733,6 +6758,7 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
               textHaloColor: '#F5F3E8',
               textHaloWidth: 1,
               textIgnorePlacement: true,
+              symbolSortKey: ['get', 'markerSortKey'] as any,
               textSize: ANDROID_CLUSTER_COUNT_TEXT_SIZE,
               textTranslate: [7, 26],
               textTranslateAnchor: 'viewport',
@@ -6747,6 +6773,7 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
               textColor: '#1565C0',
               textField: 'F',
               textIgnorePlacement: true,
+              symbolSortKey: ['get', 'markerSortKey'] as any,
               textSize: 7,
               textTranslate: [-9, -9],
               textTranslateAnchor: 'viewport',
@@ -6762,6 +6789,7 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
               iconImage: ANDROID_CLUSTER_MARKER_VENUE_DARK_ICON_ID,
               iconOpacity: 0.9,
               iconSize: ['get', 'venueIconOutlineSize'] as any,
+              symbolSortKey: ['get', 'markerSortKey'] as any,
               iconTranslate: [-4, 0],
               iconTranslateAnchor: 'viewport',
             }}
@@ -6774,6 +6802,7 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
               iconIgnorePlacement: true,
               iconImage: ['get', 'venueIconImage'] as any,
               iconSize: ['get', 'venueIconSize'] as any,
+              symbolSortKey: ['get', 'markerSortKey'] as any,
               iconTranslate: [-4, 0],
               iconTranslateAnchor: 'viewport',
             }}
@@ -6788,6 +6817,7 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
               textIgnorePlacement: true,
               textHaloColor: ['get', 'venueTextHaloColor'] as any,
               textHaloWidth: ['get', 'venueTextHaloWidth'] as any,
+              symbolSortKey: ['get', 'markerSortKey'] as any,
               textSize: ['get', 'markerTextSize'] as any,
               textTranslate: [4, 0],
               textTranslateAnchor: 'viewport',
