@@ -123,6 +123,7 @@ const STARTUP_CLUSTER_MARKER_LIMIT = 12;
 const FULL_CLUSTER_MARKER_DELAY_MS = 1000;
 const RICH_CLUSTER_MARKER_DELAY_MS = Platform.OS === 'ios' ? 0 : 2000;
 const ANDROID_RICH_CLUSTER_MARKER_MIN_ZOOM = 13;
+const ANDROID_LOCATION_PUCK_MIN_ZOOM = 11.25;
 const ANDROID_FULL_CLUSTER_MARKER_HOTSPOT_SETTLE_MS = 0;
 const ANDROID_FULL_CLUSTER_MARKER_HOTSPOT_BACKUP_MS = 4000;
 const MAP_BLUR_CLEANUP_DELAY_MS = Platform.OS === 'android' ? 1000 : 0;
@@ -1232,12 +1233,16 @@ const CategoryCarousel: React.FC<CategoryCarouselProps> = ({ cluster, size, isAc
  * Native user-location puck. Keeping this off MarkerView lets it appear without
  * waiting for the slower Android annotation path used by event cluster markers.
  */
-const UserLocationMarker: React.FC<{ visible: boolean }> = ({ visible }) => {
-  if (!visible) return null;
+const UserLocationMarker: React.FC<{ visible: boolean; zoomLevel: number }> = ({ visible, zoomLevel }) => {
+  const shouldShowLocationPuck =
+    visible &&
+    (Platform.OS !== 'android' || zoomLevel >= ANDROID_LOCATION_PUCK_MIN_ZOOM);
+
+  if (!shouldShowLocationPuck) return null;
 
   return (
     <MapboxGL.LocationPuck
-      visible={visible}
+      visible={shouldShowLocationPuck}
       puckBearingEnabled={false}
       pulsing={{ isEnabled: true, color: '#4285F4', radius: 'accuracy' }}
       scale={1}
@@ -7219,7 +7224,7 @@ onDidFinishLoadingMap={() => {
        
         {/* Render native user location as soon as permission is available */}
         {locationPermissionGranted && (
-          <UserLocationMarker visible={locationPermissionGranted} />
+          <UserLocationMarker visible={locationPermissionGranted} zoomLevel={zoomLevel} />
         )}
         
         {/* Render event markers */}
