@@ -181,6 +181,9 @@ let __venueByKey: Map<string, Venue> = new Map();
 let __scIndexConfig: { radius: number; extent: number; maxZoom: number } | null = null;
 const IOS_SUPERCLUSTER_RADIUS_PX = 28;
 const ANDROID_BASE_SUPERCLUSTER_RADIUS_PX = 48;
+const ANDROID_CITY_ZOOM_SUPERCLUSTER_RADIUS_PX = 36;
+const ANDROID_CITY_ZOOM_RADIUS_MIN_ZOOM = 9;
+const ANDROID_CITY_ZOOM_RADIUS_MAX_ZOOM = 12;
 const IOS_SUPERCLUSTER_EXTENT = 256;
 const ANDROID_SUPERCLUSTER_EXTENT = 512;
 const SUPERCLUSTER_EXTENT = Platform.OS === 'android' ? ANDROID_SUPERCLUSTER_EXTENT : IOS_SUPERCLUSTER_EXTENT;
@@ -221,6 +224,10 @@ const getSuperclusterRadiusPx = (venues: Venue[], zoom: number): number => {
 
   const z = Math.max(0, Math.min(22, Math.floor(zoom)));
   if (z < ANDROID_DYNAMIC_RADIUS_MIN_ZOOM || z > ANDROID_SUPERCLUSTER_MAX_ZOOM) {
+    if (z >= ANDROID_CITY_ZOOM_RADIUS_MIN_ZOOM && z <= ANDROID_CITY_ZOOM_RADIUS_MAX_ZOOM) {
+      return ANDROID_CITY_ZOOM_SUPERCLUSTER_RADIUS_PX;
+    }
+
     return ANDROID_BASE_SUPERCLUSTER_RADIUS_PX;
   }
 
