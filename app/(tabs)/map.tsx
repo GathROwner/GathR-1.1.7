@@ -112,6 +112,7 @@ const ANDROID_MAPBOX_STARTUP_ISOLATION_DEBUG = false;
 const ANDROID_CLUSTER_MARKERVIEW_ISOLATION_DEBUG = false;
 const DEBUG_CALLOUT_PROBE = false;
 const DEBUG_ANDROID_RETAP_LATENCY_PROBE = false;
+const DEBUG_ANDROID_ZOOM_TAP_LATENCY_PROBE = true;
 const USE_ANDROID_NATIVE_CLUSTER_MARKER_LAYERS = false;
 const DEBUG_TREE_MARKER_EVENTS = false;
 const ANDROID_CLUSTER_TOUCH_OVERLAY_SIZE = 144;
@@ -1893,6 +1894,14 @@ useEffect(() => {
   const latestClusterCountRef = useRef(0);
   const isMapLoadingRef = useRef(false);
   const clustersReadyForInteractionRef = useRef(false);
+  const androidZoomTapLatencyProbeRef = useRef({
+    cameraTickCount: 0,
+    lastMeaningfulCameraAt: 0,
+    lastSetZoomAt: 0,
+    lastViewportFetchAt: 0,
+    lastMapIdleAt: 0,
+    markerTapCount: 0,
+  });
   const logAndroidRetapLatencyProbe = useCallback((
     phase: string,
     extra: Record<string, unknown> = {}
@@ -1992,6 +2001,33 @@ useEffect(() => {
   const shouldRenderBlockingLoadingOverlay =
     isLoading && Platform.OS !== 'android';
   clustersReadyForInteractionRef.current = clustersReadyForInteraction;
+  const logAndroidZoomTapLatencyProbe = useCallback((
+    phase: string,
+    extra: Record<string, unknown> = {}
+  ): void => {
+    if (!DEBUG_ANDROID_ZOOM_TAP_LATENCY_PROBE || Platform.OS !== 'android') {
+      return;
+    }
+
+    const now = Date.now();
+    const probe = androidZoomTapLatencyProbeRef.current;
+    console.log('[ZoomTapProbe]', phase, {
+      now,
+      sinceCameraMs: probe.lastMeaningfulCameraAt > 0 ? now - probe.lastMeaningfulCameraAt : null,
+      sinceSetZoomMs: probe.lastSetZoomAt > 0 ? now - probe.lastSetZoomAt : null,
+      sinceViewportFetchMs: probe.lastViewportFetchAt > 0 ? now - probe.lastViewportFetchAt : null,
+      sinceMapIdleMs: probe.lastMapIdleAt > 0 ? now - probe.lastMapIdleAt : null,
+      cameraTickCount: probe.cameraTickCount,
+      markerTapCount: probe.markerTapCount,
+      clustersReady: clustersReadyForInteractionRef.current,
+      clusterCount: latestClusterCountRef.current,
+      loading: isMapLoadingRef.current,
+      processingClusterId: clusterProcessingRef.current ?? 'none',
+      ignoreProgrammatic: ignoreProgrammaticCameraRef.current,
+      ignoreProgrammaticReason: ignoreProgrammaticCameraReasonRef.current ?? 'none',
+      ...extra,
+    });
+  }, []);
   fullClusterMarkersEnabledRef.current = fullClusterMarkersEnabled;
   const richClusterMarkerDetailsEnabled = shouldShowClusterMarkerDetails(
     zoomLevel,
@@ -5767,6 +5803,23 @@ if (isGesture && !userGestureSeenRef.current) {
   const isPitchMeaningful = pitchDelta >= MIN_PITCH_DELTA_TO_HIDE;
 
   const meaningfulChange = isZoomMeaningful || isCenterMeaningful || isHeadingMeaningful || isPitchMeaningful;
+  if (Platform.OS === 'android' && meaningfulChange) {
+    const probe = androidZoomTapLatencyProbeRef.current;
+    probe.cameraTickCount += 1;
+    probe.lastMeaningfulCameraAt = now;
+    logAndroidZoomTapLatencyProbe('camera_change_meaningful', {
+      zoom: typeof zoom === 'number' ? Number(zoom.toFixed(3)) : 'unknown',
+      effectiveClusterZoom: typeof effectiveClusterZoom === 'number' ? Number(effectiveClusterZoom.toFixed(3)) : 'unknown',
+      isGesture,
+      isProgrammaticCameraMove,
+      zoomDelta: Number(zoomDelta.toFixed(3)),
+      centerMovedMeters: Math.round(centerMovedMeters),
+      isZoomMeaningful,
+      isCenterMeaningful,
+      isHeadingMeaningful,
+      isPitchMeaningful,
+    });
+  }
 
   if (
     Platform.OS === 'android' &&
@@ -5816,6 +5869,15 @@ Clustering refresh: keep zoom → store → recluster in sync
 
       if (!isProgrammaticCameraMove || shouldSyncProgrammaticZoom) {
         try {
+          if (Platform.OS === 'android') {
+            androidZoomTapLatencyProbeRef.current.lastSetZoomAt = Date.now();
+            logAndroidZoomTapLatencyProbe('set_zoom_level_for_recluster', {
+              effectiveClusterZoom: Number(effectiveClusterZoom.toFixed(3)),
+              nativeVisibleBbox: nativeVisibleBbox != null,
+              isProgrammaticCameraMove,
+              shouldSyncProgrammaticZoom,
+            });
+          }
           setZoomLevel(effectiveClusterZoom); // triggers generateClusters(zoom) in the store
         } catch (e) {
           if (DEBUG_MAP_LOAD) console.log('[MapLoad] setZoomLevel error', e);
@@ -5960,14 +6022,34 @@ Clustering refresh: keep zoom → store → recluster in sync
         if (DEBUG_CAMERA_TICKS) {
           console.log('[Viewport] THROTTLED fetch (immediate):', { roundedBbox, timeSinceLastFetch });
         }
+        if (Platform.OS === 'android') {
+          androidZoomTapLatencyProbeRef.current.lastViewportFetchAt = Date.now();
+          logAndroidZoomTapLatencyProbe('viewport_fetch_immediate', {
+            timeSinceLastFetch,
+            roundedBbox,
+          });
+        }
         lastViewportBboxRef.current = roundedBbox;
         lastViewportFetchTimeRef.current = now;
         fetchViewportEvents(roundedBbox);
       } else {
         // DEBOUNCE: Schedule a fetch after movement stops for final accuracy
+        if (Platform.OS === 'android') {
+          logAndroidZoomTapLatencyProbe('viewport_fetch_debounced_scheduled', {
+            timeSinceLastFetch,
+            debounceDelayMs: DEBOUNCE_DELAY,
+            roundedBbox,
+          });
+        }
         viewportFetchTimeoutRef.current = setTimeout(() => {
           if (DEBUG_CAMERA_TICKS) {
             console.log('[Viewport] DEBOUNCED fetch (after stop):', roundedBbox);
+          }
+          if (Platform.OS === 'android') {
+            androidZoomTapLatencyProbeRef.current.lastViewportFetchAt = Date.now();
+            logAndroidZoomTapLatencyProbe('viewport_fetch_debounced_running', {
+              roundedBbox,
+            });
           }
           lastViewportBboxRef.current = roundedBbox;
           lastViewportFetchTimeRef.current = Date.now();
@@ -6017,6 +6099,7 @@ Clustering refresh: keep zoom → store → recluster in sync
   ignoreProgrammaticCameraRef,
   fetchViewportEvents,
   isAndroidStartupCameraPayloadInvalid,
+  logAndroidZoomTapLatencyProbe,
   setZoomLevel
 ]);
 
@@ -6286,12 +6369,23 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
               processingClusterId !== null ||
               (hasRenderedCallout && !isCalloutClosingVisuallyRef.current)
             ) {
+              logAndroidZoomTapLatencyProbe('native_shape_press_blocked', {
+                clustersReadyForInteraction,
+                processingClusterId: processingClusterId ?? 'none',
+                hasRenderedCallout,
+                isCalloutClosingVisually: isCalloutClosingVisuallyRef.current,
+              });
               return;
             }
 
             const feature = event?.features?.[0];
             const clusterId = feature?.properties?.clusterId;
             const cluster = clustersForRender.find((item) => item.id === clusterId);
+            logAndroidZoomTapLatencyProbe('native_shape_press_received', {
+              featureCount: Array.isArray(event?.features) ? event.features.length : 0,
+              clusterId: clusterId ?? 'none',
+              matchedCluster: Boolean(cluster),
+            });
             if (cluster) {
               void handleMarkerPress(cluster);
             }
@@ -6663,7 +6757,23 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
             
           >
             <TouchableOpacity
-              onPress={() => handleMarkerPress(cluster)}
+              onPress={() => {
+                if (Platform.OS === 'android') {
+                  const probe = androidZoomTapLatencyProbeRef.current;
+                  probe.markerTapCount += 1;
+                  logAndroidZoomTapLatencyProbe('marker_touchable_press_received', {
+                    clusterId: cluster.id,
+                    clusterType: cluster.clusterType,
+                    venueCount: cluster.venues?.length ?? 0,
+                    clustersReadyForInteraction,
+                    processingClusterId: processingClusterId ?? 'none',
+                    isMapMoving,
+                    hasRenderedCallout,
+                    isCalloutClosingVisually: isCalloutClosingVisuallyRef.current,
+                  });
+                }
+                void handleMarkerPress(cluster);
+              }}
               testID={isClosestCluster ? "closest-cluster" : undefined}
               disabled={!clustersReadyForInteraction || processingClusterId !== null}
               activeOpacity={0.7}
@@ -6822,6 +6932,10 @@ onLayout={(event) => {
   }
 }}
 onMapIdle={() => {
+  if (Platform.OS === 'android') {
+    androidZoomTapLatencyProbeRef.current.lastMapIdleAt = Date.now();
+    logAndroidZoomTapLatencyProbe('map_idle');
+  }
   notifyHotspotCameraReady('map_idle');
   void reconcileCameraStateFromMapRef('map_idle');
   if (DEBUG_MAP_LOAD) {
@@ -7074,6 +7188,9 @@ onDidFinishLoadingMap={() => {
           onStartShouldSetResponder={() => true}
           onResponderRelease={() => {
             console.log('[map] Touch blocked: clusters not ready yet');
+            logAndroidZoomTapLatencyProbe('clusters_not_ready_overlay_tap_blocked', {
+              clusterCount: clusters.length,
+            });
             traceMapEvent('clusters_not_ready_overlay_tap_blocked', {
               clusterCount: clusters.length,
             });
