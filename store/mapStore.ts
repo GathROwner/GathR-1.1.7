@@ -1945,6 +1945,89 @@ fetchEventDetails: async (eventIds: (string | number)[]) => {
     const venues = groupEventsByVenue(filteredEvents);
     const clusters = clusterVenues(venues, currentZoom);
 
+    if (__DEV__ && currentZoom >= 8.5 && currentZoom <= 12.5 && filteredEvents.length > 0) {
+      const zoomBucket = Math.round(currentZoom * 4) / 4;
+      const debugKey = `${zoomBucket}:${filteredEvents.length}:${venues.length}:${clusters.length}`;
+      if ((globalThis as any).__gathrLastCharlottetownClusterGapDebugKey !== debugKey) {
+        (globalThis as any).__gathrLastCharlottetownClusterGapDebugKey = debugKey;
+
+        const isFiniteCoordinate = (lat: number, lng: number) =>
+          Number.isFinite(lat) && Number.isFinite(lng);
+        const isNearCharlottetown = (lat: number, lng: number) =>
+          isFiniteCoordinate(lat, lng) &&
+          lat >= 46.19 && lat <= 46.27 &&
+          lng >= -63.18 && lng <= -63.06;
+        const centerForVenues = (clusterVenues: Venue[]) => {
+          const coords = clusterVenues
+            .map((venue) => ({
+              lat: Number(venue.latitude),
+              lng: Number(venue.longitude),
+            }))
+            .filter(({ lat, lng }) => isFiniteCoordinate(lat, lng));
+
+          if (coords.length === 0) {
+            return { lat: null, lng: null };
+          }
+
+          return {
+            lat: Number((coords.reduce((sum, coord) => sum + coord.lat, 0) / coords.length).toFixed(5)),
+            lng: Number((coords.reduce((sum, coord) => sum + coord.lng, 0) / coords.length).toFixed(5)),
+          };
+        };
+
+        const nearCharlottetownEvents = filteredEvents.filter((event) =>
+          isNearCharlottetown(Number(event.latitude), Number(event.longitude))
+        );
+        const nearCharlottetownVenues = venues
+          .filter((venue) => isNearCharlottetown(Number(venue.latitude), Number(venue.longitude)))
+          .map((venue) => ({
+            venue: venue.venue,
+            events: venue.events.filter((event) => event.type === 'event').length,
+            specials: venue.events.filter((event) => event.type === 'special').length,
+            lat: Number(Number(venue.latitude).toFixed(5)),
+            lng: Number(Number(venue.longitude).toFixed(5)),
+          }))
+          .sort((a, b) => (b.events + b.specials) - (a.events + a.specials))
+          .slice(0, 12);
+
+        const clusterSummary = clusters.map((cluster) => {
+          const center = centerForVenues(cluster.venues);
+          const topVenues = [...cluster.venues]
+            .sort((a, b) => b.events.length - a.events.length)
+            .slice(0, 5)
+            .map((venue) => ({
+              venue: venue.venue,
+              events: venue.events.filter((event) => event.type === 'event').length,
+              specials: venue.events.filter((event) => event.type === 'special').length,
+            }));
+
+          return {
+            id: cluster.id.slice(0, 80),
+            type: cluster.clusterType,
+            venues: cluster.venues.length,
+            events: cluster.eventCount,
+            specials: cluster.specialCount,
+            center,
+            nearCharlottetown: center.lat !== null && center.lng !== null
+              ? isNearCharlottetown(center.lat, center.lng)
+              : false,
+            topVenues,
+          };
+        });
+
+        console.warn('[CharlottetownClusterGapDebug]', JSON.stringify({
+          zoom: Number(currentZoom.toFixed(2)),
+          filteredEvents: filteredEvents.length,
+          venues: venues.length,
+          clusters: clusters.length,
+          nearCharlottetownEvents: nearCharlottetownEvents.length,
+          nearCharlottetownVenues: nearCharlottetownVenues.length,
+          nearCharlottetownVenueSample: nearCharlottetownVenues,
+          clusterSummary,
+        }));
+      }
+    }
+
     __ML_lastVenueCount = venues.length;
     __ML_lastClusterCount = clusters.length;
     __ML_lastClusterMs = Date.now() - t0;
