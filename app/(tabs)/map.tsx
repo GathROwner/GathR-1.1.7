@@ -2357,6 +2357,11 @@ useEffect(() => {
 
   // Filter pills auto-hide functionality
   const [isMapMoving, setIsMapMoving] = useState<boolean>(false);
+  const isMapMovingRef = useRef<boolean>(false);
+
+  useEffect(() => {
+    isMapMovingRef.current = isMapMoving;
+  }, [isMapMoving]);
 
   // 0 = visible; we'll compute hidden distance from measured height
   const pillsAnimation = useRef(new Animated.Value(0)).current;
@@ -3397,36 +3402,56 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
     setAndroidClusterHitTargets(targets);
   }, []);
 
+  const promoteVenuesToRenderedCallout = useCallback((
+    venuesToRender: Venue[],
+    clusterToRender: Cluster | null,
+    source: string
+  ) => {
+    if (!venuesToRender || venuesToRender.length === 0) {
+      return;
+    }
+
+    if (Platform.OS === 'android') {
+      androidControlsReleaseSequenceRef.current += 1;
+      if (androidControlsReleaseTimerRef.current) {
+        clearTimeout(androidControlsReleaseTimerRef.current);
+        androidControlsReleaseTimerRef.current = null;
+      }
+      setAndroidAncillaryOverlaysNativeVisibility(false);
+      setAndroidAncillaryOverlaysReleasedForClose(false);
+    }
+
+    cancelPendingAndroidCalloutTeardown(source);
+    isCalloutClosingVisuallyRef.current = false;
+    setIsCalloutClosingVisually(false);
+    restoreAndroidCalloutContainerForInteraction();
+    setAndroidRetapOverlayPointerEvents('box-none');
+    calloutOpenTouchGuardUntilRef.current = Date.now() + 900;
+    logCalloutProbe('[CalloutProbe] arming map press guard', {
+      until: calloutOpenTouchGuardUntilRef.current,
+      selectedVenueCount: venuesToRender.length,
+      selectedClusterId: clusterToRender?.id ?? 'none',
+      source,
+    });
+    logCalloutProbe('[CalloutProbe] promoting venues to rendered callout', {
+      selectedVenueCount: venuesToRender.length,
+      selectedClusterId: clusterToRender?.id ?? 'none',
+      venueNames: venuesToRender.slice(0, 5).map((venue) => venue.venue).join(' | '),
+      source,
+    });
+    setCalloutLayoutReadyKey(null);
+    setRenderedCalloutVenues(venuesToRender);
+    setRenderedCalloutCluster(clusterToRender);
+  }, [
+    cancelPendingAndroidCalloutTeardown,
+    restoreAndroidCalloutContainerForInteraction,
+    setAndroidAncillaryOverlaysNativeVisibility,
+    setAndroidRetapOverlayPointerEvents,
+  ]);
+
   useEffect(() => {
     if (selectedVenues && selectedVenues.length > 0) {
-      if (Platform.OS === 'android') {
-        androidControlsReleaseSequenceRef.current += 1;
-        if (androidControlsReleaseTimerRef.current) {
-          clearTimeout(androidControlsReleaseTimerRef.current);
-          androidControlsReleaseTimerRef.current = null;
-        }
-        setAndroidAncillaryOverlaysNativeVisibility(false);
-        setAndroidAncillaryOverlaysReleasedForClose(false);
-      }
-      cancelPendingAndroidCalloutTeardown('selected-venues-promoted');
-      isCalloutClosingVisuallyRef.current = false;
-      setIsCalloutClosingVisually(false);
-      restoreAndroidCalloutContainerForInteraction();
-      setAndroidRetapOverlayPointerEvents('box-none');
-      calloutOpenTouchGuardUntilRef.current = Date.now() + 900;
-      logCalloutProbe('[CalloutProbe] arming map press guard', {
-        until: calloutOpenTouchGuardUntilRef.current,
-        selectedVenueCount: selectedVenues.length,
-        selectedClusterId: selectedCluster?.id ?? 'none',
-      });
-      logCalloutProbe('[CalloutProbe] promoting selected venues to rendered callout', {
-        selectedVenueCount: selectedVenues.length,
-        selectedClusterId: selectedCluster?.id ?? 'none',
-        venueNames: selectedVenues.slice(0, 5).map((venue) => venue.venue).join(' | '),
-      });
-      setCalloutLayoutReadyKey(null);
-      setRenderedCalloutVenues(selectedVenues);
-      setRenderedCalloutCluster(selectedCluster);
+      promoteVenuesToRenderedCallout(selectedVenues, selectedCluster, 'selected-venues-promoted');
       return;
     }
     calloutOpenTouchGuardUntilRef.current = 0;
@@ -3440,13 +3465,10 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
     });
   }, [
     cancelPendingAndroidCalloutCameraMove,
-    cancelPendingAndroidCalloutTeardown,
     hasRenderedCallout,
-    restoreAndroidCalloutContainerForInteraction,
+    promoteVenuesToRenderedCallout,
     selectedCluster,
     selectedVenues,
-    setAndroidAncillaryOverlaysNativeVisibility,
-    setAndroidRetapOverlayPointerEvents,
   ]);
 
   useEffect(() => {
@@ -4757,6 +4779,9 @@ lastOpenedClusterIdRef.current = cluster.id;
       // }));
       
       const calloutCluster = cluster.clusterType === 'multi' ? cluster : null;
+      if (Platform.OS === 'android') {
+        promoteVenuesToRenderedCallout(sortedVenues, calloutCluster, 'marker-press-direct-promote');
+      }
       selectCallout(sortedVenues, calloutCluster);
       traceMapEvent('marker_press_selected', {
         clusterId: cluster.id,
@@ -4856,7 +4881,11 @@ lastOpenedClusterIdRef.current = cluster.id;
       
       // Fallback to original functionality if scoring fails
       const defaultVenues = [...cluster.venues];
-      selectCallout(defaultVenues, cluster.clusterType === 'multi' ? cluster : null);
+      const fallbackCalloutCluster = cluster.clusterType === 'multi' ? cluster : null;
+      if (Platform.OS === 'android') {
+        promoteVenuesToRenderedCallout(defaultVenues, fallbackCalloutCluster, 'marker-press-fallback-direct-promote');
+      }
+      selectCallout(defaultVenues, fallbackCalloutCluster);
       traceMapEvent('marker_press_fallback_selected', {
         clusterId: cluster.id,
         venueCount: defaultVenues.length,
@@ -4885,6 +4914,7 @@ lastOpenedClusterIdRef.current = cluster.id;
     isGuest,
     location,
     logAndroidRetapLatencyProbe,
+    promoteVenuesToRenderedCallout,
     renderedCalloutClusterId,
     renderedCalloutVenueCount,
     selectCallout,
@@ -5307,8 +5337,9 @@ const handleMapMovementStart = useCallback(() => {
   }
 
   // Already moving? Nothing to do.
-  if (isMapMoving) return;
+  if (isMapMovingRef.current) return;
 
+  isMapMovingRef.current = true;
   setIsMapMoving(true);
   mapInteractionStartTime.current = now;
 
@@ -5319,7 +5350,7 @@ const handleMapMovementStart = useCallback(() => {
 
   // Kick off the hard cap: force-show if we stay “moving” too long (e.g., long zoom-out tail)
   hideCapTimeoutRef.current = setTimeout(() => {
-    if (isMapMoving) {
+    if (isMapMovingRef.current) {
       // logPills('MAX_HIDDEN cap reached — forcing show');
       handleMapMovementEnd(); // will call showPills after debounce
     }
@@ -5495,6 +5526,7 @@ const reconcileCameraStateFromMapRef = useCallback(async (source: 'map_idle' = '
 const handleMapMovementEnd = useCallback(() => {
 
   console.log('[DEBUG] 🛑 handleMapMovementEnd called');
+  isMapMovingRef.current = false;
   setIsMapMoving(false);
 
   // analytics session
@@ -6078,7 +6110,7 @@ Clustering refresh: keep zoom → store → recluster in sync
   if (meaningfulChange) {
     if (hideTimeoutRef.current) clearTimeout(hideTimeoutRef.current);
     hideTimeoutRef.current = setTimeout(() => {
-      if (isMapMoving) {
+      if (isMapMovingRef.current) {
         handleMapMovementEnd();
       }
     }, 250);
@@ -6086,7 +6118,7 @@ Clustering refresh: keep zoom → store → recluster in sync
     // Fallback: always ensure pills come back after prolonged movement
     if (showTimeoutRef.current) clearTimeout(showTimeoutRef.current);
     showTimeoutRef.current = setTimeout(() => {
-      if (isMapMoving) {
+      if (isMapMovingRef.current) {
         handleMapMovementEnd();
       }
     }, 1000);
