@@ -5410,7 +5410,7 @@ const handleMapMovementStart = useCallback(() => {
 }, [activeFilterPanel, hidePills, hasInitiallyPositioned, isMapMoving]);
 
 
-const reconcileCameraStateFromMapRef = useCallback(async (source: 'map_idle' = 'map_idle') => {
+const reconcileCameraStateFromMapRef = useCallback(async (source: 'map_idle' | 'movement_end' = 'map_idle') => {
   if (Platform.OS !== 'android' || isAndroidHotspotStartupFlowActive()) {
     return;
   }
@@ -5593,6 +5593,17 @@ const handleMapMovementEnd = useCallback(() => {
   const cameraState = currentCameraStateRef.current;
   console.log('[DEBUG] 📷 Camera state:', cameraState ? 'EXISTS' : 'NULL');
 
+  if (Platform.OS === 'android') {
+    void reconcileCameraStateFromMapRef('movement_end');
+
+    showTimeoutRef.current = setTimeout(() => {
+      showPills('movement_end');
+      postShowLockoutUntilRef.current = Date.now() + POST_SHOW_LOCKOUT_MS;
+    }, 300);
+
+    return;
+  }
+
   if (cameraState) {
     const { width, height } = Dimensions.get('window');
     const center: GeoCoordinate = {
@@ -5637,7 +5648,7 @@ const handleMapMovementEnd = useCallback(() => {
     // After showing, set a brief lockout so a tiny tick can't immediately hide again
     postShowLockoutUntilRef.current = Date.now() + POST_SHOW_LOCKOUT_MS;
   }, 300);
-}, [showPills, analytics, zoomLevel, isGuest, fetchViewportEvents, setZoomLevel]);
+}, [showPills, analytics, zoomLevel, isGuest, fetchViewportEvents, setZoomLevel, reconcileCameraStateFromMapRef]);
 
 
   // Add this right before the return statement in the component
