@@ -45,12 +45,39 @@ export function getDedupeKey(event: Event): string {
   return `${normalizedTitle}|${event.startDate}|${normalizedStartTime}|${normalizedVenue}|${normalizedType}`;
 }
 
+function getEventIdentityKey(event: Event): string {
+  const normalizedTitle = (event.title || '').toLowerCase().trim().replace(/\s+/g, ' ');
+  const normalizedStartTime = (event.startTime || '').toLowerCase().trim();
+  const normalizedType = (event.type || 'event').toLowerCase().trim();
+  return `${normalizedTitle}|${event.startDate}|${normalizedStartTime}|${normalizedType}`;
+}
+
+const isScopedLocationEvent = (event: Event): boolean =>
+  event.locationScope === 'city' || event.locationScope === 'area' || event.locationScope === 'route';
+
 export function dedupeEvents(events: Event[]): Event[] {
   const seen = new Map<string, Event>();
   for (const event of events) {
     seen.set(getDedupeKey(event), event);
   }
-  return Array.from(seen.values());
+
+  const venueDeduped = Array.from(seen.values());
+  const scopedByIdentity = new Map<string, Event>();
+
+  for (const event of venueDeduped) {
+    if (isScopedLocationEvent(event)) {
+      scopedByIdentity.set(getEventIdentityKey(event), event);
+    }
+  }
+
+  if (scopedByIdentity.size === 0) {
+    return venueDeduped;
+  }
+
+  return venueDeduped.filter((event) => {
+    const scopedTwin = scopedByIdentity.get(getEventIdentityKey(event));
+    return !scopedTwin || scopedTwin.id === event.id;
+  });
 }
 
 async function fetchLegacyMinimalByType(type: 'event' | 'special'): Promise<Event[]> {

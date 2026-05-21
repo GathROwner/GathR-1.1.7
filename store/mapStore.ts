@@ -87,6 +87,7 @@ import {
   LEGACY_EVENTS_API_BASE,
   USE_FIRESTORE_EVENTS,
 } from '../lib/config/backend';
+import { EVENTS_MINIMAL } from '../lib/queryKeys';
 
 // Define zoom threshold bands and their corresponding clustering radii
 export interface ZoomThreshold {
@@ -1401,7 +1402,7 @@ fetchEvents: async () => {
   const fetchEventsStartedAt = Date.now();
   logStartupDataTiming('fetch_events_called');
   const qc: any = (global as any)?.__RQ_CLIENT ?? null;
-  const queryKey = ['events-minimal'];
+  const queryKey = EVENTS_MINIMAL;
   const STALE_MS = 1000 * 60 * 3; // 3 minutes default
 
   // One-shot network fetch using unified API (Firestore default + optional legacy fallback)
@@ -1584,6 +1585,11 @@ fetchEvents: async () => {
         return Number.isFinite(lat) && Number.isFinite(lng) && !(lat === 0 && lng === 0);
       };
 
+      const hasScopedLocation = (event: Event): boolean =>
+        event.locationScope === 'city' ||
+        event.locationScope === 'area' ||
+        event.locationScope === 'route';
+
       const inBbox = (event: Event, targetBbox: ViewportBoundingBox = bbox): boolean => {
         const lat = Number(event.latitude);
         const lng = Number(event.longitude);
@@ -1606,6 +1612,9 @@ fetchEvents: async () => {
       // so keep this pass allocation-light and avoid re-deduping the same list.
       for (const event of candidateEvents) {
         if (!hasValidCoordinates(event)) {
+          if (hasScopedLocation(event)) {
+            outsideViewportEvents.push(event);
+          }
           continue;
         }
 

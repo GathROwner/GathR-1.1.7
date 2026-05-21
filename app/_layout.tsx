@@ -623,7 +623,7 @@ useEffect(() => {
     useEffect(() => {
       console.log('ðŸš€ Preloading event data on app start (React Query)â€¦');
 
-      const key = ['events-minimal'] as const;
+      const key = EVENTS_MINIMAL;
 
       // â³ Give PersistQueryClientProvider a moment to rehydrate from AsyncStorage
       const timer = setTimeout(() => {
@@ -728,7 +728,7 @@ try {
     useEffect(() => {
       const sub = AppState.addEventListener('change', (s) => {
         if (s === 'active') {
-          const key = ['events-minimal'] as const;
+          const key = EVENTS_MINIMAL;
           const before = queryClient.getQueryState(key);
           const beforeUpdatedAt = before?.dataUpdatedAt ?? 0;
           const t0 = Date.now();
@@ -784,7 +784,7 @@ useEffect(() => {
   const start = () => {
     if (interval) return;
     interval = setInterval(() => {
-      const key = ['events-minimal'] as const;
+      const key = EVENTS_MINIMAL;
       const before = queryClient.getQueryState(key);
       const beforeUpdatedAt = before?.dataUpdatedAt ?? 0;
       const t0 = Date.now();
