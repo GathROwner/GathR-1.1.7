@@ -6099,6 +6099,9 @@ Clustering refresh: keep zoom → store → recluster in sync
       const ANDROID_PRIORITY_FETCH_MIN_INTERVAL = 180;
       const ANDROID_PRIORITY_ZOOM_DELTA = 0.35;
       const ANDROID_OVERVIEW_ZOOM = ANDROID_LOCATION_PUCK_MIN_ZOOM;
+      const ANDROID_LATE_DEBOUNCE_SKIP_MS = 750;
+      const ANDROID_LATE_DEBOUNCE_MAX_SPAN_RATIO = 0.04;
+      const ANDROID_LATE_DEBOUNCE_MAX_CENTER_DEGREES = 0.004;
       const previousViewportBbox = lastViewportBboxRef.current;
       const previousLngSpan = previousViewportBbox
         ? Math.abs(previousViewportBbox.east - previousViewportBbox.west)
@@ -6148,6 +6151,13 @@ Clustering refresh: keep zoom → store → recluster in sync
           (typeof zoomSinceLastFetch === 'number' && zoomSinceLastFetch >= ANDROID_PRIORITY_ZOOM_DELTA) ||
           (isAndroidOverviewZoom && isAndroidViewportMeaningfullyDifferent)
         );
+      const isAndroidMinorViewportTail =
+        Platform.OS === 'android' &&
+        !shouldUseAndroidPriorityFetch &&
+        typeof bboxSpanChangeRatio === 'number' &&
+        typeof bboxCenterShiftDegrees === 'number' &&
+        bboxSpanChangeRatio <= ANDROID_LATE_DEBOUNCE_MAX_SPAN_RATIO &&
+        bboxCenterShiftDegrees <= ANDROID_LATE_DEBOUNCE_MAX_CENTER_DEGREES;
 
       // Clear any pending debounced fetch
       if (viewportFetchTimeoutRef.current) {
@@ -6194,19 +6204,41 @@ Clustering refresh: keep zoom → store → recluster in sync
             zoomSinceLastFetch,
             bboxSpanChangeRatio,
             bboxCenterShiftDegrees,
+            minorViewportTail: isAndroidMinorViewportTail,
             roundedBbox,
           });
         }
+        const debounceScheduledAt = Date.now();
         viewportFetchTimeoutRef.current = setTimeout(() => {
+          const debounceFiredAfterMs = Date.now() - debounceScheduledAt;
+          if (
+            Platform.OS === 'android' &&
+            isAndroidMinorViewportTail &&
+            debounceFiredAfterMs >= ANDROID_LATE_DEBOUNCE_SKIP_MS
+          ) {
+            viewportFetchTimeoutRef.current = null;
+            logAndroidZoomTapLatencyProbe('viewport_fetch_debounced_skipped_late_minor', {
+              debounceDelayMs: DEBOUNCE_DELAY,
+              debounceFiredAfterMs,
+              zoomSinceLastFetch,
+              bboxSpanChangeRatio,
+              bboxCenterShiftDegrees,
+              roundedBbox,
+            });
+            return;
+          }
+
           if (DEBUG_CAMERA_TICKS) {
             console.log('[Viewport] DEBOUNCED fetch (after stop):', roundedBbox);
           }
           if (Platform.OS === 'android') {
             androidZoomTapLatencyProbeRef.current.lastViewportFetchAt = Date.now();
             logAndroidZoomTapLatencyProbe('viewport_fetch_debounced_running', {
+              debounceFiredAfterMs,
               roundedBbox,
             });
           }
+          viewportFetchTimeoutRef.current = null;
           lastViewportBboxRef.current = roundedBbox;
           lastViewportFetchTimeRef.current = Date.now();
           lastViewportFetchZoomRef.current =
