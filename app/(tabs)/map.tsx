@@ -6507,6 +6507,18 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
     const clustersForRender = shouldAppendHotspotPreviewCluster
       ? [...baseClustersForRender, startupHotspotPreviewCluster]
       : baseClustersForRender;
+    const orderedClustersForRender = Platform.OS === 'android'
+      ? [...clustersForRender].sort((a, b) => {
+          const getPriority = (cluster: Cluster) =>
+            cluster.venues.length * 1000 +
+            (cluster.eventCount || 0) * 10 +
+            (cluster.specialCount || 0) * 10 +
+            (cluster.hasNewContent ? 5 : 0) +
+            (cluster.isBroadcasting ? 3 : 0);
+
+          return getPriority(a) - getPriority(b);
+        })
+      : clustersForRender;
     const activeInterestMarkerFilter =
       interestCarouselFilter?.status === 'active' ? interestCarouselFilter : null;
 
@@ -6535,18 +6547,18 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
         zoom: Math.round(zoomLevel * 100) / 100,
         totalClusters: clusters.length,
         visible: visibleClustersForRender.length,
-        rendered: clustersForRender.length,
+        rendered: orderedClustersForRender.length,
         fullMarkers: fullClusterMarkersEnabled,
         richMarkers: richClusterMarkersEnabled,
         nearVisible: summarizeCharlottetownClusters(visibleClustersForRender),
-        nearRendered: summarizeCharlottetownClusters(clustersForRender),
+        nearRendered: summarizeCharlottetownClusters(orderedClustersForRender),
       }));
     }
 
     markTabTracePhase('map', 'map_markers_render_start', {
       clusterCount: clusters.length,
       visibleCount: visibleClustersForRender.length,
-      renderedCount: clustersForRender.length,
+      renderedCount: orderedClustersForRender.length,
       fullMarkers: fullClusterMarkersEnabled,
       richMarkers: richClusterMarkersEnabled,
       richDetails: richClusterMarkerDetailsEnabled,
@@ -6554,7 +6566,7 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
     markTabTracePhase('map', 'map_markers_render_complete', {
       clusterCount: clusters.length,
       visibleCount: visibleClustersForRender.length,
-      renderedCount: clustersForRender.length,
+      renderedCount: orderedClustersForRender.length,
       fullMarkers: fullClusterMarkersEnabled,
       richMarkers: richClusterMarkersEnabled,
       richDetails: richClusterMarkerDetailsEnabled,
@@ -6583,7 +6595,7 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
     }
 
     if (USE_ANDROID_NATIVE_CLUSTER_MARKER_LAYERS) {
-      const layerMarkerShape = buildAndroidClusterMarkerShape(clustersForRender, {
+      const layerMarkerShape = buildAndroidClusterMarkerShape(orderedClustersForRender, {
         categoryCycleTick: androidCategoryCycleTick,
         clustersReadyForInteraction,
         detailsEnabled: richClusterMarkerDetailsEnabled,
@@ -6616,7 +6628,7 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
 
             const feature = event?.features?.[0];
             const clusterId = feature?.properties?.clusterId;
-            const cluster = clustersForRender.find((item) => item.id === clusterId);
+            const cluster = orderedClustersForRender.find((item) => item.id === clusterId);
             logAndroidZoomTapLatencyProbe('native_shape_press_received', {
               featureCount: Array.isArray(event?.features) ? event.features.length : 0,
               clusterId: clusterId ?? 'none',
@@ -6985,7 +6997,7 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
       );
     }
 
-    return clustersForRender
+    return orderedClustersForRender
       .map((cluster: Cluster, index: number) => {
         // Calculate the coordinates for the cluster
         const coordinates = getClusterRenderCoordinates(cluster);
@@ -7015,7 +7027,10 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
             id={markerKey}
             coordinate={coordinates}
             anchor={{ x: 0.5, y: 1.0 }}
-            
+            allowOverlap={Platform.OS === 'android'}
+            allowOverlapWithPuck={Platform.OS === 'android'}
+            isSelected={isSelected}
+             
           >
             <TouchableOpacity
               onPress={() => {
