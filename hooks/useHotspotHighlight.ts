@@ -340,7 +340,7 @@ function generateTooltipText(cluster: Cluster): { text: string; subtext: string 
     }
 
     // Mix of NOW and TODAY events: "X live now, Y later today"
-    const nowText = nowCount === 1 ? '1 event now' : `${nowCount} events now`;
+    const nowText = nowCount === 1 ? '1 live now' : `${nowCount} live now`;
     const todayText = todayCount === 1 ? '1 later today' : `${todayCount} later today`;
     return {
       text: `${nowText}, ${todayText}`,
@@ -1269,7 +1269,7 @@ export function useHotspotHighlight(
           }
         }
 
-        // Generate tooltip from the zoomed-in cluster (or fall back to original)
+        // Generate tooltip from the same zoomed-in cluster the hotspot will highlight.
         const clusterForTooltip = zoomedCluster || hottest;
         logAndroidHotspotTiming('refinement_cluster_resolved', {
           source,
@@ -1345,7 +1345,7 @@ export function useHotspotHighlight(
         });
 
         if (DEFER_HOTSPOT_VISIBILITY_UNTIL_REFINED) {
-          showRefinedHotspotAfterMapFrame(clusterForTooltip, source, hottest);
+          showRefinedHotspotAfterMapFrame(clusterForTooltip, source);
         }
 
         if (shouldSyncClusterStoreAfterVisible) {

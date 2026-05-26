@@ -29,6 +29,7 @@ const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const HIGHLIGHT_SIZE = 140;
 const PULSE_MAX_SCALE = 1.4;
 const POSITION_POLL_MS = 100;
+const TOOLTIP_MAX_WIDTH = Math.min(SCREEN_WIDTH - 40, 560);
 const ANDROID_HOTSPOT_OVERLAY_DIAGNOSTICS = Platform.OS === 'android';
 const ANDROID_USE_CENTERED_HOTSPOT_POSITION = Platform.OS === 'android';
 
@@ -590,7 +591,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     width: '100%',
-    maxWidth: 380,
+    maxWidth: TOOLTIP_MAX_WIDTH,
     borderWidth: 2,
     ...Platform.select({
       ios: {
@@ -627,6 +628,7 @@ const styles = StyleSheet.create({
   },
   tooltipContent: {
     flex: 1,
+    minWidth: 0,
   },
   tooltipTitle: {
     fontSize: 16,
