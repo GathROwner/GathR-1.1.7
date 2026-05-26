@@ -5410,7 +5410,7 @@ const handleMapMovementStart = useCallback(() => {
 }, [activeFilterPanel, hidePills, hasInitiallyPositioned, isMapMoving]);
 
 
-const reconcileCameraStateFromMapRef = useCallback(async (source: 'map_idle' | 'movement_end' = 'map_idle') => {
+const reconcileCameraStateFromMapRef = useCallback(async (source: 'map_idle' | 'movement_end' | 'hotspot_return' = 'map_idle') => {
   if (Platform.OS !== 'android' || isAndroidHotspotStartupFlowActive()) {
     return;
   }
@@ -5558,6 +5558,36 @@ const reconcileCameraStateFromMapRef = useCallback(async (source: 'map_idle' | '
   setIgnoreProgrammaticTrace,
   setZoomLevel,
 ]);
+
+useEffect(() => {
+  if (Platform.OS !== 'android') {
+    return undefined;
+  }
+
+  const globalAny = global as any;
+  const refreshAfterHotspotReturn = (source = 'hotspot_return') => {
+    if (viewportFetchTimeoutRef.current) {
+      clearTimeout(viewportFetchTimeoutRef.current);
+      viewportFetchTimeoutRef.current = null;
+    }
+
+    logAndroidStartupTiming('hotspot_return_final_viewport_refresh_requested', {
+      source,
+    });
+    traceMapEvent('hotspot_return_final_viewport_refresh_requested', {
+      source,
+    });
+    void reconcileCameraStateFromMapRef('hotspot_return');
+  };
+
+  globalAny.mapHotspotReturnViewportRefreshCallback = refreshAfterHotspotReturn;
+
+  return () => {
+    if (globalAny.mapHotspotReturnViewportRefreshCallback === refreshAfterHotspotReturn) {
+      delete globalAny.mapHotspotReturnViewportRefreshCallback;
+    }
+  };
+}, [reconcileCameraStateFromMapRef]);
 
 
 

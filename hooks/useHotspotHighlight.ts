@@ -51,6 +51,8 @@ const HOTSPOT_TRIGGER_DELAY_MS = 0;
 const HOTSPOT_CAMERA_ZOOM_LEVEL = 14.4;
 const HOTSPOT_RETURN_ZOOM_LEVEL = 12;
 const HOTSPOT_CAMERA_ANIMATION_MS = Platform.OS === 'android' ? 800 : 1000;
+const HOTSPOT_RETURN_CAMERA_ANIMATION_MS = 800;
+const HOTSPOT_RETURN_REFRESH_DELAY_MS = Platform.OS === 'android' ? HOTSPOT_RETURN_CAMERA_ANIMATION_MS + 150 : 900;
 const HOTSPOT_MIN_CAMERA_IDLE_MS = Platform.OS === 'android' ? 400 : 300;
 const HOTSPOT_CAMERA_FINALIZE_BUFFER_MS = Platform.OS === 'android' ? 250 : 100;
 const DEFER_HOTSPOT_VISIBILITY_UNTIL_REFINED = Platform.OS === 'ios' || Platform.OS === 'android';
@@ -415,6 +417,7 @@ export function useHotspotHighlight(
   const hotspotCameraIdleCallbackRef = useRef<(() => void) | null>(null);
   const cameraRefRetryCountRef = useRef(0);
   const dismissTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const dismissReturnFinalizeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hotspotTimingStartRef = useRef<number | null>(null);
   const logAndroidHotspotTiming = useCallback((label: string, details?: Record<string, unknown>) => {
     if (!ANDROID_HOTSPOT_TIMING_DIAGNOSTICS) {
@@ -734,6 +737,10 @@ export function useHotspotHighlight(
       clearTimeout(dismissTimeoutRef.current);
       dismissTimeoutRef.current = null;
     }
+    if (dismissReturnFinalizeTimerRef.current) {
+      clearTimeout(dismissReturnFinalizeTimerRef.current);
+      dismissReturnFinalizeTimerRef.current = null;
+    }
 
     setIsVisible(false);
     overlayPositionReadyRef.current = false;
@@ -784,12 +791,25 @@ export function useHotspotHighlight(
         cameraRef.current.setCamera({
           centerCoordinate: coords,
           zoomLevel: zoom,
-          animationDuration: 800,
+          animationDuration: HOTSPOT_RETURN_CAMERA_ANIMATION_MS,
         });
 
-        setTimeout(() => {
+        dismissReturnFinalizeTimerRef.current = setTimeout(() => {
+          dismissReturnFinalizeTimerRef.current = null;
           setHotspotProgrammaticLock(false, 'dismiss_zoom_back_complete');
-        }, 900);
+
+          if (Platform.OS === 'android') {
+            const refreshCallback = (global as any).mapHotspotReturnViewportRefreshCallback;
+            if (typeof refreshCallback === 'function') {
+              logAndroidHotspotTiming('dismiss_return_final_viewport_refresh_requested', {
+                delayMs: HOTSPOT_RETURN_REFRESH_DELAY_MS,
+              });
+              refreshCallback('dismiss_zoom_back_complete');
+            } else {
+              logAndroidHotspotTiming('dismiss_return_final_viewport_refresh_unavailable');
+            }
+          }
+        }, HOTSPOT_RETURN_REFRESH_DELAY_MS);
       }
     }
 
@@ -1675,6 +1695,10 @@ export function useHotspotHighlight(
       }
       if (dismissTimeoutRef.current) {
         clearTimeout(dismissTimeoutRef.current);
+      }
+      if (dismissReturnFinalizeTimerRef.current) {
+        clearTimeout(dismissReturnFinalizeTimerRef.current);
+        dismissReturnFinalizeTimerRef.current = null;
       }
       if (deferredClusterSyncTimerRef.current) {
         clearTimeout(deferredClusterSyncTimerRef.current);
