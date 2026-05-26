@@ -805,6 +805,7 @@ const buildAndroidClusterMarkerShape = (
     categoryCycleTick: number;
     clustersReadyForInteraction: boolean;
     detailsEnabled: boolean;
+    forceDetailsClusterId?: string | null;
     pulseStep: number;
     processingClusterId: string | null;
     selectedClusterId: string | null;
@@ -818,7 +819,10 @@ const buildAndroidClusterMarkerShape = (
       const color = getTimeStatusColor(cluster.timeStatus);
       const isSelected = cluster.id === options.selectedClusterId;
       const isProcessing = cluster.id === options.processingClusterId;
-      const detailsEnabled = options.detailsEnabled || isSelected;
+      const detailsEnabled =
+        options.detailsEnabled ||
+        isSelected ||
+        cluster.id === options.forceDetailsClusterId;
       const isBroadcasting = detailsEnabled && !!cluster.isBroadcasting;
       const venueCount = getUniqueVenueCount(cluster.venues);
       const totalContentCount = (cluster.eventCount ?? 0) + (cluster.specialCount ?? 0);
@@ -2626,6 +2630,7 @@ const previousFilterCriteria = useRef<FilterCriteria>(filterCriteria);
 const previousClusterCount = useRef<number>(0);
 const startupMarkerSubsetLoggedRef = useRef<boolean>(false);
 const startupHotspotPreviewMarkerLoggedRef = useRef<boolean>(false);
+const startupHotspotPreviewRichMarkerLoggedRef = useRef<boolean>(false);
 const startupInvalidCameraTickLoggedRef = useRef<boolean>(false);
 
   // 🔥 ANALYTICS: Add refs for tracking performance and behavior
@@ -6537,6 +6542,10 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
     const clustersForRender = shouldAppendHotspotPreviewCluster
       ? [...baseClustersForRender, startupHotspotPreviewCluster]
       : baseClustersForRender;
+    const hotspotPreviewClusterId =
+      Platform.OS === 'android'
+        ? startupHotspotPreviewCluster?.id ?? null
+        : null;
     const orderedClustersForRender = Platform.OS === 'android'
       ? [...clustersForRender].sort((a, b) => {
           const getPriority = (cluster: Cluster) =>
@@ -6629,6 +6638,7 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
         categoryCycleTick: androidCategoryCycleTick,
         clustersReadyForInteraction,
         detailsEnabled: richClusterMarkerDetailsEnabled,
+        forceDetailsClusterId: hotspotPreviewClusterId,
         pulseStep: androidMarkerPulseStep,
         processingClusterId,
         selectedClusterId,
@@ -7046,6 +7056,22 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
           !!activeInterestMarkerFilter &&
           !isSelected &&
           !clusterMatchesInterestCarouselFilter(cluster, activeInterestMarkerFilter);
+        const shouldForceHotspotPreviewDetails =
+          Platform.OS === 'android' &&
+          hotspotPreviewClusterId !== null &&
+          cluster.id === hotspotPreviewClusterId &&
+          !richClusterMarkersEnabled;
+        const markerDetailsEnabled = richClusterMarkersEnabled || shouldForceHotspotPreviewDetails;
+
+        if (shouldForceHotspotPreviewDetails && !startupHotspotPreviewRichMarkerLoggedRef.current) {
+          startupHotspotPreviewRichMarkerLoggedRef.current = true;
+          logAndroidStartupTiming('hotspot_preview_marker_forced_rich_details', {
+            clusterId: cluster.id,
+            venueCount: cluster.venues.length,
+            globalRichMarkers: richClusterMarkersEnabled,
+          });
+        }
+
         const markerKey =
           Platform.OS === 'android'
             ? `cluster-${cluster.id}-${androidMarkerTouchEpoch}`
@@ -7091,7 +7117,7 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
                 isSelected={isSelected}
                 isProcessing={processingClusterId === cluster.id}
                 isReady={clustersReadyForInteraction}
-                detailsEnabled={richClusterMarkersEnabled}
+                detailsEnabled={markerDetailsEnabled}
                 isActive={clusterMarkerAnimationsActive}
               />
             </TouchableOpacity>
