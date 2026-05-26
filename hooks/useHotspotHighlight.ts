@@ -1007,9 +1007,10 @@ export function useHotspotHighlight(
     };
 
     const showHotspot = (
-      clusterForTooltip: Cluster,
+      clusterForDisplay: Cluster,
       source: 'camera_ready' | 'camera_unavailable' | 'camera_retry',
-      traceLabel: string
+      traceLabel: string,
+      tooltipSourceCluster: Cluster = clusterForDisplay
     ) => {
       if (initialHotspotShownRef.current) {
         return;
@@ -1018,27 +1019,31 @@ export function useHotspotHighlight(
       initialHotspotShownRef.current = true;
       overlayPositionReadyRef.current = false;
       visibleSourceRef.current = source;
-      const tooltip = generateTooltipText(clusterForTooltip);
-      setTargetCluster(clusterForTooltip);
+      const tooltip = generateTooltipText(tooltipSourceCluster);
+      setTargetCluster(clusterForDisplay);
       setCapturedTooltipText(tooltip.text);
       setCapturedTooltipSubtext(tooltip.subtext);
       setIsVisible(true);
       logAndroidHotspotTiming('visible_state_set', {
         traceLabel,
-        clusterId: clusterForTooltip.id,
-        venueCount: clusterForTooltip.venues?.length ?? 0,
+        clusterId: clusterForDisplay.id,
+        venueCount: clusterForDisplay.venues?.length ?? 0,
+        tooltipClusterId: tooltipSourceCluster.id,
+        tooltipVenueCount: tooltipSourceCluster.venues?.length ?? 0,
         targetLatitude: targetCoordsRef.current?.latitude ?? null,
         targetLongitude: targetCoordsRef.current?.longitude ?? null,
       });
       traceMapEvent(traceLabel, {
-        clusterId: clusterForTooltip.id,
-        venueCount: clusterForTooltip.venues?.length ?? 0,
+        clusterId: clusterForDisplay.id,
+        venueCount: clusterForDisplay.venues?.length ?? 0,
+        tooltipClusterId: tooltipSourceCluster.id,
+        tooltipVenueCount: tooltipSourceCluster.venues?.length ?? 0,
         tooltipText: tooltip.text,
         source,
       });
       if (__DEV__) {
         console.log('[HotspotTiming] visible', {
-          clusterId: clusterForTooltip.id,
+          clusterId: clusterForDisplay.id,
           tooltipText: tooltip.text,
           source,
           traceLabel,
@@ -1051,15 +1056,16 @@ export function useHotspotHighlight(
     };
 
     const showRefinedHotspotAfterMapFrame = (
-      clusterForTooltip: Cluster,
-      source: 'camera_ready' | 'camera_retry'
+      clusterForDisplay: Cluster,
+      source: 'camera_ready' | 'camera_retry',
+      tooltipSourceCluster: Cluster = clusterForDisplay
     ) => {
       if (Platform.OS !== 'android') {
-        showHotspot(clusterForTooltip, source, 'hotspot_visible_refined');
+        showHotspot(clusterForDisplay, source, 'hotspot_visible_refined', tooltipSourceCluster);
         return;
       }
 
-      queueAndroidHotspotPreviewMarker(clusterForTooltip);
+      queueAndroidHotspotPreviewMarker(clusterForDisplay);
       clearHotspotCameraReadyCallback();
       clearHotspotVisibilityFrameTimer();
 
@@ -1074,16 +1080,16 @@ export function useHotspotHighlight(
         clearHotspotVisibilityFrameTimer();
         logAndroidHotspotTiming('visibility_released_after_map_frame', {
           completionSource,
-          clusterId: clusterForTooltip.id,
+          clusterId: clusterForDisplay.id,
         });
-        showHotspot(clusterForTooltip, source, 'hotspot_visible_refined');
+        showHotspot(clusterForDisplay, source, 'hotspot_visible_refined', tooltipSourceCluster);
       };
 
       const readyCallback = () => showOnce('render_frame');
       hotspotCameraReadyCallbackRef.current = readyCallback;
       (global as any).mapHotspotCameraReadyCallback = readyCallback;
       logAndroidHotspotTiming('visibility_waiting_for_post_recenter_frame', {
-        clusterId: clusterForTooltip.id,
+        clusterId: clusterForDisplay.id,
         fallbackMs: ANDROID_HOTSPOT_VISIBILITY_FRAME_FALLBACK_MS,
       });
 
@@ -1339,7 +1345,7 @@ export function useHotspotHighlight(
         });
 
         if (DEFER_HOTSPOT_VISIBILITY_UNTIL_REFINED) {
-          showRefinedHotspotAfterMapFrame(clusterForTooltip, source);
+          showRefinedHotspotAfterMapFrame(clusterForTooltip, source, hottest);
         }
 
         if (shouldSyncClusterStoreAfterVisible) {
