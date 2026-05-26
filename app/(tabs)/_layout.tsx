@@ -1,11 +1,12 @@
 // app\(tabs)\_layout.tsx
 
 import { Tabs } from 'expo-router';
-import { TouchableOpacity, View, TextInput, Text, Animated, Image, InteractionManager, Pressable, Platform } from 'react-native';
+import { TouchableOpacity, View, TextInput, Text, Animated, Image, InteractionManager, Pressable, Platform, Dimensions } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useRouter } from 'expo-router';
 import { useMapStore } from '../../store/mapStore';
 import { Alert, Keyboard } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useEffect, useState, useRef } from 'react';
 
 // ===============================================================
@@ -33,7 +34,10 @@ type InstrumentedTabName = 'events' | 'map' | 'specials';
 const TAB_PRESS_RIPPLE = Platform.OS === 'android'
   ? { color: 'rgba(0, 0, 0, 0.08)', borderless: false }
   : undefined;
-
+const { width: WINDOW_WIDTH, height: WINDOW_HEIGHT } = Dimensions.get('window');
+const IS_ANDROID_TABLET = Platform.OS === 'android' && Math.min(WINDOW_WIDTH, WINDOW_HEIGHT) >= 600;
+const BASE_TAB_BAR_HEIGHT = 56;
+const ANDROID_TABLET_TASKBAR_RESERVE = 52;
 type InstrumentedTabBarButtonProps = any & {
   targetTab: InstrumentedTabName;
 };
@@ -543,6 +547,16 @@ export default function TabLayout() {
   const setHeaderSearchActive = useMapStore((state) => state.setHeaderSearchActive);
   const triggerScrollToTop = useMapStore((state) => state.triggerScrollToTop);
   const analytics = useAnalytics(); // RE-ENABLED
+  const insets = useSafeAreaInsets();
+  const androidTabletTabBarBottomPadding = IS_ANDROID_TABLET
+    ? Math.max(insets.bottom, ANDROID_TABLET_TASKBAR_RESERVE)
+    : 0;
+  const androidTabletTabBarStyle = androidTabletTabBarBottomPadding
+    ? {
+        height: BASE_TAB_BAR_HEIGHT + androidTabletTabBarBottomPadding,
+        paddingBottom: androidTabletTabBarBottomPadding,
+      }
+    : undefined;
   
   const { user } = useAuth();
   const isGuest = !user;
@@ -760,6 +774,7 @@ export default function TabLayout() {
       // but mount them after startup so later tab switches do not pay that cost.
       lazy: !prewarmInactiveTabs,
       freezeOnBlur: Platform.OS === 'android' ? true : false,
+      tabBarStyle: androidTabletTabBarStyle,
     })}>
       <Tabs.Screen
         name="events"
