@@ -47,6 +47,9 @@ if (fallbackType === 'profile') {
     'Sports': require('../assets/fallbacks/categories/sports.webp'),
     'Family Friendly': require('../assets/fallbacks/categories/family-friendly.webp'),
     'Social Gatherings & Parties': require('../assets/fallbacks/categories/social-gatherings.webp'),
+    'Gatherings & Parties': require('../assets/fallbacks/categories/social-gatherings.webp'),
+    'Cinema': require('../assets/fallbacks/categories/Cinema.webp'),
+    'Karaoke': require('../assets/fallbacks/categories/karaoke.webp'),
     
     // Food special categories
     'Happy Hour': require('../assets/fallbacks/categories/happy-hour.webp'),
