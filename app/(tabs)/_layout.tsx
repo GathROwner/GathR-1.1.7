@@ -38,6 +38,7 @@ const { width: WINDOW_WIDTH, height: WINDOW_HEIGHT } = Dimensions.get('window');
 const IS_ANDROID_TABLET = Platform.OS === 'android' && Math.min(WINDOW_WIDTH, WINDOW_HEIGHT) >= 600;
 const BASE_TAB_BAR_HEIGHT = 56;
 const ANDROID_TABLET_TASKBAR_RESERVE = 52;
+const IOS_TAB_BAR_BOTTOM_PADDING_REDUCTION = 8;
 type InstrumentedTabBarButtonProps = any & {
   targetTab: InstrumentedTabName;
 };
@@ -557,6 +558,17 @@ export default function TabLayout() {
         paddingBottom: androidTabletTabBarBottomPadding,
       }
     : undefined;
+  const iosTabBarBottomPadding = Platform.OS === 'ios'
+    ? Math.max(insets.bottom - IOS_TAB_BAR_BOTTOM_PADDING_REDUCTION, 0)
+    : 0;
+  const iosTabBarStyle = Platform.OS === 'ios'
+    ? {
+        height: BASE_TAB_BAR_HEIGHT + iosTabBarBottomPadding,
+        paddingBottom: iosTabBarBottomPadding,
+        paddingTop: 4,
+      }
+    : undefined;
+  const tabBarStyle = androidTabletTabBarStyle ?? iosTabBarStyle;
   
   const { user } = useAuth();
   const isGuest = !user;
@@ -774,7 +786,7 @@ export default function TabLayout() {
       // but mount them after startup so later tab switches do not pay that cost.
       lazy: !prewarmInactiveTabs,
       freezeOnBlur: Platform.OS === 'android' ? true : false,
-      tabBarStyle: androidTabletTabBarStyle,
+      tabBarStyle,
     })}>
       <Tabs.Screen
         name="events"
