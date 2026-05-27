@@ -16,6 +16,7 @@ type UserPrefsState = {
   // Hotspot feature
   showDailyHotspot: boolean;
   hotspotLastShownDate: string | null;
+  hotspotDateKeyMode?: 'local';
   setAll: (p: Partial<UserPrefsState>) => void;
   clear: () => void;
   setShowDailyHotspot: (value: boolean) => void;
@@ -33,6 +34,7 @@ export const useUserPrefsStore = create<UserPrefsState>()(
       lastLoadedAt: undefined,
       showDailyHotspot: true,
       hotspotLastShownDate: null,
+      hotspotDateKeyMode: undefined,
       setAll: (p) => set(p),
       clear: () =>
         set((state) => ({
@@ -46,9 +48,13 @@ export const useUserPrefsStore = create<UserPrefsState>()(
           // This is app/day-scoped, not user-specific. Preserve it so guest refreshes
           // do not rerun the daily hotspot after it has already been shown.
           hotspotLastShownDate: state.hotspotLastShownDate,
+          hotspotDateKeyMode: state.hotspotDateKeyMode,
         })),
       setShowDailyHotspot: (value: boolean) => set({ showDailyHotspot: value }),
-      markHotspotShownToday: () => set({ hotspotLastShownDate: getLocalDateKey() }),
+      markHotspotShownToday: () => set({
+        hotspotLastShownDate: getLocalDateKey(),
+        hotspotDateKeyMode: 'local',
+      }),
     }),
     { name: 'user-prefs-cache', storage: createJSONStorage(() => AsyncStorage) }
   )

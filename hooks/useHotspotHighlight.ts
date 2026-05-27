@@ -380,6 +380,7 @@ export function useHotspotHighlight(
 
   const showDailyHotspot = useUserPrefsStore((state) => state.showDailyHotspot);
   const hotspotLastShownDate = useUserPrefsStore((state) => state.hotspotLastShownDate);
+  const hotspotDateKeyMode = useUserPrefsStore((state) => state.hotspotDateKeyMode);
   const markHotspotShownToday = useUserPrefsStore((state) => state.markHotspotShownToday);
   const setShowDailyHotspot = useUserPrefsStore((state) => state.setShowDailyHotspot);
   const favoriteVenues = useUserPrefsStore((state) => state.favoriteVenues);
@@ -623,6 +624,7 @@ export function useHotspotHighlight(
       tutorialActive: tutorialIsActive,
       showDailyHotspot,
       hotspotLastShownDate,
+      hotspotDateKeyMode: hotspotDateKeyMode ?? 'legacy-utc',
       today: getLocalDateKey(),
       clustersLength: clusters.length,
       hasTriggered: hasTriggeredRef.current,
@@ -659,7 +661,7 @@ export function useHotspotHighlight(
     // 3. Haven't shown today (skip check if DEBUG_IGNORE_DATE is true)
     if (!DEBUG_IGNORE_DATE) {
       const today = getLocalDateKey();
-      if (hotspotLastShownDate === today) {
+      if (hotspotLastShownDate === today && hotspotDateKeyMode === 'local') {
         hotspotDebugLog('[Hotspot] Blocked: already shown today');
         return false;
       }
@@ -681,7 +683,7 @@ export function useHotspotHighlight(
 
     hotspotDebugLog('[Hotspot] All checks passed - hotspot should trigger');
     return true;
-  }, [canEvaluateTrigger, tutorialIsActive, user, showDailyHotspot, hotspotLastShownDate, clusters]);
+  }, [canEvaluateTrigger, tutorialIsActive, user, showDailyHotspot, hotspotLastShownDate, hotspotDateKeyMode, clusters]);
 
   useEffect(() => {
     if (prevShowDailyHotspotRef.current === showDailyHotspot) {
@@ -704,16 +706,18 @@ export function useHotspotHighlight(
       tutorialIsActive,
       showDailyHotspot,
       hotspotLastShownDate: hotspotLastShownDate ?? 'none',
+      hotspotDateKeyMode: hotspotDateKeyMode ?? 'legacy-utc',
       today,
       clusterCount: clusters.length,
       canEvaluateTrigger: canEvaluateTriggerRef.current,
       hasTriggeredThisSession: hasTriggeredRef.current,
       appState: AppState.currentState,
-      blockedBecauseAlreadyShownToday: hotspotLastShownDate === today,
+      blockedBecauseAlreadyShownToday: hotspotLastShownDate === today && hotspotDateKeyMode === 'local',
     });
   }, [
     clusters.length,
     hotspotLastShownDate,
+    hotspotDateKeyMode,
     shouldShowHotspot,
     showDailyHotspot,
     tutorialIsActive,
