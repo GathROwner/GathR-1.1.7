@@ -4,7 +4,7 @@ module.exports = ({ config }) => ({
 
   name: "GathR",
   slug: "gathr",
-  version: "1.1.7",
+  version: "1.1.8",
   orientation: "portrait",
   scheme: "gathr",
   userInterfaceStyle: "automatic",
