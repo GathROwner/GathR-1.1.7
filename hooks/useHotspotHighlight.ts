@@ -23,6 +23,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { Cluster, TimeStatus } from '../types/events';
 import { amplitudeTrack } from '../lib/amplitudeAnalytics';
 import { isEventNow, isEventHappeningToday } from '../utils/dateUtils';
+import { getLocalDateKey } from '../utils/localDateKey';
 import { setMapTraceSnapshot, traceMapEvent } from '../utils/mapTrace';
 
 interface HotspotHighlightState {
@@ -622,7 +623,7 @@ export function useHotspotHighlight(
       tutorialActive: tutorialIsActive,
       showDailyHotspot,
       hotspotLastShownDate,
-      today: new Date().toISOString().split('T')[0],
+      today: getLocalDateKey(),
       clustersLength: clusters.length,
       hasTriggered: hasTriggeredRef.current,
       hotspotSettingChanged,
@@ -657,7 +658,7 @@ export function useHotspotHighlight(
 
     // 3. Haven't shown today (skip check if DEBUG_IGNORE_DATE is true)
     if (!DEBUG_IGNORE_DATE) {
-      const today = new Date().toISOString().split('T')[0];
+      const today = getLocalDateKey();
       if (hotspotLastShownDate === today) {
         hotspotDebugLog('[Hotspot] Blocked: already shown today');
         return false;
@@ -697,7 +698,7 @@ export function useHotspotHighlight(
       return;
     }
 
-    const today = new Date().toISOString().split('T')[0];
+    const today = getLocalDateKey();
     console.log('[HotspotEligibility]', {
       shouldShowHotspot,
       tutorialIsActive,

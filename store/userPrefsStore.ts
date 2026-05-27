@@ -4,6 +4,7 @@ import { persist, createJSONStorage } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { firestore } from '../config/firebaseConfig';
 import { doc, getDoc, onSnapshot, updateDoc } from 'firebase/firestore';
+import { getLocalDateKey } from '../utils/localDateKey';
 
 type UserPrefsState = {
   interests: string[];
@@ -47,7 +48,7 @@ export const useUserPrefsStore = create<UserPrefsState>()(
           hotspotLastShownDate: state.hotspotLastShownDate,
         })),
       setShowDailyHotspot: (value: boolean) => set({ showDailyHotspot: value }),
-      markHotspotShownToday: () => set({ hotspotLastShownDate: new Date().toISOString().split('T')[0] }),
+      markHotspotShownToday: () => set({ hotspotLastShownDate: getLocalDateKey() }),
     }),
     { name: 'user-prefs-cache', storage: createJSONStorage(() => AsyncStorage) }
   )
