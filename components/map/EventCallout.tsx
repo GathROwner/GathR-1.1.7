@@ -1252,6 +1252,7 @@ const EventDetailsContent: React.FC<EventDetailsProps> = ({ event, onImagePress 
             type={event.type}
             style={styles.eventImage}
             fallbackType="post"
+            item={event}
           />
         </TouchableOpacity>
       )}
@@ -2156,6 +2157,7 @@ useUserPrefsStore.getState().setAll({ savedEvents: next });
               type={event.type}
               style={styles.heroImage}
               fallbackType={event.imageUrl ? 'post' : 'profile'}
+              item={event}
               resizeMode="cover"
             />
             
@@ -4294,8 +4296,17 @@ useEffect(() => {
               <MaterialIcons name="unfold-less" size={18} color="#666666" />
             </TouchableOpacity>
             <TouchableOpacity
-              onPress={() => {
-                console.log("CLOSE BUTTON PRESSED - animating close");
+              onPress={(e) => {
+                console.log("CLOSE BUTTON PRESSED - animating close", {
+                  nativeEvent: e?.nativeEvent ? {
+                    locationX: e.nativeEvent.locationX,
+                    locationY: e.nativeEvent.locationY,
+                    pageX: e.nativeEvent.pageX,
+                    pageY: e.nativeEvent.pageY,
+                    timestamp: e.nativeEvent.timestamp,
+                  } : 'NO_NATIVE_EVENT',
+                  stack: new Error('close-button-press').stack,
+                });
                 animateClose();
               }}
               style={styles.closeButton}

@@ -1882,6 +1882,13 @@ fetchEventDetails: async (eventIds: (string | number)[]) => {
     const nextEvents = mergeCollection(events);
     const nextAllEvents = mergeCollection(allEvents);
 
+    const calloutOpenNow =
+      Array.isArray((get() as any).selectedVenues) && (get() as any).selectedVenues.length > 0;
+    console.warn('[EnhanceProbe] mergeIntoStore set({events,allEvents})', {
+      calloutOpen: calloutOpenNow,
+      nextEvents: nextEvents.length,
+    });
+
     set({
       events: nextEvents,
       allEvents: nextAllEvents,
