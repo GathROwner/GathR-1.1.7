@@ -815,34 +815,8 @@ useEffect(() => {
           }
 
           if (items.length > 0) {
-            const store = (useMapStore as any)?.getState?.();
-
-            // Layer 2: never replace the event cache while a callout is open.
-            // setAllEvents swaps the allEvents reference, which regenerates
-            // clusters and re-renders/remounts the open callout subtree — that
-            // remount lets a stray press hit the ✕ button and close the callout.
-            // Defer the update; the next tick (after the callout closes) applies it.
-            const calloutOpen =
-              Array.isArray(store?.selectedVenues) && store.selectedVenues.length > 0;
-            if (calloutOpen) {
-              console.log('[RQ Live] Skipping cache update — callout is open');
-              return;
-            }
-
-            // Layer 1: only update when the event set actually changed. With
-            // staleTime:0 every tick "detects" an update, so without this guard
-            // we replace allEvents with identical content on every tick and churn
-            // the whole map for nothing.
-            const sig = (arr: any[]): string =>
-              Array.isArray(arr) ? `${arr.length}|${arr.map((x) => x?.id).join(',')}` : '0';
-            const nextSig = sig(items);
-            const currentSig = sig(store?.allEvents);
-            if (nextSig === currentSig) {
-              console.log('[RQ Live] Skipping cache update — no content change');
-              return;
-            }
-
             setAllEvents(items);
+            const store = (useMapStore as any)?.getState?.();
             if (store && typeof store.setSpecials === 'function') {
               store.setSpecials(specialsOnly);
             }

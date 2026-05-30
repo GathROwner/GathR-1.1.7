@@ -3419,6 +3419,8 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
     setAndroidClusterHitTargets(targets);
   }, []);
 
+  const lastPromotedVenueSigRef = useRef<string>('');
+
   const promoteVenuesToRenderedCallout = useCallback((
     venuesToRender: Venue[],
     clusterToRender: Cluster | null,
@@ -3456,7 +3458,18 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
       venueNames: venuesToRender.slice(0, 5).map((venue) => venue.venue).join(' | '),
       source,
     });
-    setCalloutLayoutReadyKey(null);
+    // FLICKER FIX: Only reset the layout-ready gate (which hides the callout
+    // until it is re-measured) when the venue SET actually changes. Every open
+    // promotes the same venues at least twice (marker-press-direct-promote, then
+    // selected-venues-promoted), and the event-details enhancement re-promotes
+    // the same venues again when selectedCluster updates (first/uncached open).
+    // Resetting the gate on those same-venue re-promotes hides + re-shows the
+    // callout — that is the flicker. Keep the gate stable; just refresh the data.
+    const venueSignature = venuesToRender.map((venue) => venue.locationKey).join('|');
+    if (venueSignature !== lastPromotedVenueSigRef.current) {
+      lastPromotedVenueSigRef.current = venueSignature;
+      setCalloutLayoutReadyKey(null);
+    }
     setRenderedCalloutVenues(venuesToRender);
     setRenderedCalloutCluster(clusterToRender);
   }, [
@@ -3472,6 +3485,9 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
       return;
     }
     calloutOpenTouchGuardUntilRef.current = 0;
+    // Callout closed: clear the promoted-venue signature so the next open (even
+    // of the same venue) is treated as new and re-measures its layout.
+    lastPromotedVenueSigRef.current = '';
     cancelPendingAndroidCalloutCameraMove('selected-venues-empty');
     if (!hasRenderedCallout) {
       isCalloutClosingVisuallyRef.current = false;
