@@ -2825,6 +2825,7 @@ const [calloutState, setCalloutState] = useState<CalloutState>('expanded');
       return;
     }
 
+    console.warn('[HydrateProbe] DEFER (hydration effect ran)', { clusterId: cluster?.id, venuesLen: venues.length });
     setAndroidInitialContentHydrated(false);
 
     let cancelled = false;
@@ -2836,6 +2837,7 @@ const [calloutState, setCalloutState] = useState<CalloutState>('expanded');
       secondFrame = requestAnimationFrame(() => {
         hydrationTimer = setTimeout(() => {
           if (!cancelled) {
+            console.warn('[HydrateProbe] HYDRATE', { clusterId: cluster?.id });
             setAndroidInitialContentHydrated(true);
           }
         }, ANDROID_INITIAL_CONTENT_HYDRATION_DELAY_MS);
