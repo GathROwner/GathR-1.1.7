@@ -1965,14 +1965,14 @@ useEffect(() => {
   const selectedCalloutSignature = useMemo(
     () =>
       Array.isArray(selectedVenues) && selectedVenues.length > 0
-        ? selectedVenues.map((venue) => venue.locationKey).join('|')
+        ? [...selectedVenues.map((venue) => venue.locationKey)].sort().join('|')
         : '',
     [selectedVenues]
   );
   const renderedCalloutSignature = useMemo(
     () =>
       renderedCalloutVenues.length > 0
-        ? renderedCalloutVenues.map((venue) => venue.locationKey).join('|')
+        ? [...renderedCalloutVenues.map((venue) => venue.locationKey)].sort().join('|')
         : '',
     [renderedCalloutVenues]
   );
@@ -1998,7 +1998,7 @@ useEffect(() => {
   const presentedCalloutSignature = useMemo(
     () =>
       presentedCalloutVenues.length > 0
-        ? presentedCalloutVenues.map((venue) => venue.locationKey).join('|')
+        ? [...presentedCalloutVenues.map((venue) => venue.locationKey)].sort().join('|')
         : '',
     [presentedCalloutVenues]
   );
@@ -3465,7 +3465,7 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
     // the same venues again when selectedCluster updates (first/uncached open).
     // Resetting the gate on those same-venue re-promotes hides + re-shows the
     // callout — that is the flicker. Keep the gate stable; just refresh the data.
-    const venueSignature = venuesToRender.map((venue) => venue.locationKey).join('|');
+    const venueSignature = [...venuesToRender.map((venue) => venue.locationKey)].sort().join('|');
     if (venueSignature !== lastPromotedVenueSigRef.current) {
       lastPromotedVenueSigRef.current = venueSignature;
       setCalloutLayoutReadyKey(null);
@@ -4066,6 +4066,12 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
 
     if (selectedVenues && selectedVenues.length > 0) {
       if (!hasSelectedCalloutRendered) {
+        console.warn('[HideProbe] HIDE reason=NOT_RENDERED (signature mismatch)', {
+          selectedSig: selectedCalloutSignature || 'none',
+          renderedSig: renderedCalloutSignature || 'none',
+          selectedVenueCount,
+          renderedVenueCount: renderedCalloutVenues.length,
+        });
         calloutAnimation.setValue(SCREEN_HEIGHT);
         traceMapEvent('callout_animation_reset_for_open', {
           requestId: animationRequestId,
@@ -4082,6 +4088,11 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
       }
 
       if (!isRenderedCalloutLayoutReady) {
+        console.warn('[HideProbe] HIDE reason=LAYOUT_NOT_READY', {
+          calloutLayoutReadyKey: calloutLayoutReadyKey ?? 'none',
+          renderedCalloutPresentationKey,
+          matches: calloutLayoutReadyKey === renderedCalloutPresentationKey,
+        });
         calloutAnimation.setValue(SCREEN_HEIGHT);
         traceMapEvent('callout_animation_open_waiting_for_layout', {
           requestId: animationRequestId,

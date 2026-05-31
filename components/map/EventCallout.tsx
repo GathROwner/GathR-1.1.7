@@ -2920,7 +2920,7 @@ const [calloutState, setCalloutState] = useState<CalloutState>('expanded');
     const isMinimalEventsContent = events.length <= 1;
     return mixContentWithAds(events, nativeAds, isMinimalEventsContent);
   }, [events, nativeAds]);
-  
+
   const mixedSpecialsContent = useMemo(() => {
     // For specials tab: evaluate only the specials count (independent of events)
     const isMinimalSpecialsContent = specials.length <= 1;
