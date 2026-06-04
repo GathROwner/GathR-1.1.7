@@ -123,6 +123,22 @@ Facebook updates were completed in the logged-in browser session on June 4, 2026
 
 Direct cover/profile image upload was blocked by Chrome extension file-upload permissions. To finish uploads through Codex, enable file URL access for the Codex Chrome Extension in `chrome://extensions`, then retry the upload flow.
 
+Instagram setup completed in the browser session on June 4, 2026:
+
+- Created/logged into Instagram as `@gathrapp.ca`.
+- Confirmed `gathrapp.ca` was accepted as a valid Instagram username during signup.
+- Public name is `GathR`.
+- Bio set to: "Not your usual events app. Local events, specials, live music, trivia, food & drink. Coming soon."
+- Instagram web disabled website editing with the message that links can only be edited in the mobile app. Add `https://www.gathrapp.ca/` from the Instagram mobile app.
+- Profile photo upload was attempted with `gathr-profile-1080.png`, but the browser automation stalled at the native upload/file-picker stage. If it is not visible on the profile, upload it manually from the Instagram mobile app or after enabling extension file URL access.
+
+TikTok setup was attempted in the browser session on June 4, 2026:
+
+- Opened TikTok signup and switched to email signup.
+- TikTok redirected the web flow to `https://www.tiktok.com/login/download-app` with the message: "Continue on the TikTok app. For security purposes, continue on the TikTok app."
+- Finish TikTok creation in the mobile app. Use `@gathrapp.ca` first if available, then `@getgathr`, then `@thegathrapp`.
+- Use display name `GathR`, profile image `gathr-profile-1080.png`, bio "Stop scrolling for plans. GathR finds local events and specials so you know what is happening nearby.", and link `https://www.gathrapp.ca/` if TikTok allows the link on the new account.
+
 ## Handle Availability Check
 
 Checked from the logged-in Chrome browser on June 4, 2026.
@@ -145,7 +161,7 @@ Curated fallback check:
 
 - `@gathr.app`: taken or publicly visible on Instagram and TikTok.
 - `@gathr.ca`: no public profile/account found on Instagram or TikTok.
-- `@gathrapp.ca`: no public profile/account found on Instagram or TikTok.
+- `@gathrapp.ca`: created on Instagram on June 4, 2026; still use as the first TikTok candidate if available.
 - `@getgathr`: no public profile/account found on Instagram or TikTok.
 - `@thegathrapp`: no public profile/account found on Instagram or TikTok.
 
