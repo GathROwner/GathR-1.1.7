@@ -1582,7 +1582,9 @@ const handleLogout = async () => {
                     <View style={styles.shareAppTextContainer}>
                       <View style={styles.shareAppTitleRow}>
                         <Text style={styles.shareAppTitlePrefix}>Share</Text>
-                        <GathrWordmarkLogo width={74} height={32} />
+                        <View style={styles.shareAppWordmarkInline}>
+                          <GathrWordmarkLogo width={50} height={18} color={BRAND.primary} />
+                        </View>
                       </View>
                       <Text style={styles.shareAppSubtext}>Invite a friend to find local events and specials</Text>
                     </View>
@@ -2174,7 +2176,13 @@ const styles = StyleSheet.create({
     color: BRAND.primary,
     fontSize: 16,
     fontWeight: '700',
-    marginRight: 4,
+    lineHeight: 20,
+    marginRight: 6,
+  },
+  shareAppWordmarkInline: {
+    height: 20,
+    justifyContent: 'center',
+      transform: [{ translateY: 0 }],
   },
   shareAppSubtext: {
     color: BRAND.gray,
