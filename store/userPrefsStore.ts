@@ -32,7 +32,7 @@ export const useUserPrefsStore = create<UserPrefsState>()(
       likedEvents: [],
       interestedEvents: [],
       lastLoadedAt: undefined,
-      showDailyHotspot: true,
+      showDailyHotspot: false,
       hotspotLastShownDate: null,
       hotspotDateKeyMode: undefined,
       setAll: (p) => set(p),
@@ -44,7 +44,7 @@ export const useUserPrefsStore = create<UserPrefsState>()(
           likedEvents: [],
           interestedEvents: [],
           lastLoadedAt: undefined,
-          showDailyHotspot: true,
+          showDailyHotspot: false,
           // This is app/day-scoped, not user-specific. Preserve it so guest refreshes
           // do not rerun the daily hotspot after it has already been shown.
           hotspotLastShownDate: state.hotspotLastShownDate,
@@ -56,7 +56,17 @@ export const useUserPrefsStore = create<UserPrefsState>()(
         hotspotDateKeyMode: 'local',
       }),
     }),
-    { name: 'user-prefs-cache', storage: createJSONStorage(() => AsyncStorage) }
+    {
+      name: 'user-prefs-cache',
+      storage: createJSONStorage(() => AsyncStorage),
+      version: 1,
+      migrate: (persistedState) => ({
+        ...(persistedState as Partial<UserPrefsState>),
+        // Previous releases persisted the old default of true. Reset that cache
+        // value so existing installs also get the new off-by-default behavior.
+        showDailyHotspot: false,
+      }),
+    }
   )
 );
 
@@ -84,7 +94,7 @@ export async function startUserPrefsListener(userId: string) {
         favoriteVenues: data.favoriteVenues || [],
         likedEvents: data.likedEvents || [],
         interestedEvents: data.interestedEvents || [],
-        showDailyHotspot: data.showDailyHotspot ?? true,
+        showDailyHotspot: data.showDailyHotspot ?? false,
         lastLoadedAt: Date.now(),
       });
     }
@@ -101,7 +111,7 @@ export async function startUserPrefsListener(userId: string) {
         favoriteVenues: data.favoriteVenues || [],
         likedEvents: data.likedEvents || [],
         interestedEvents: data.interestedEvents || [],
-        showDailyHotspot: data.showDailyHotspot ?? true,
+        showDailyHotspot: data.showDailyHotspot ?? false,
         lastLoadedAt: Date.now(),
       });
     }
