@@ -146,6 +146,8 @@ Prepare these before posting heavily:
 - One "coming soon" graphic
 - One short vertical app demo video
 
+Generated starter assets live in [social-media-assets](social-media-assets/README.md). They include a square profile image, Facebook cover image, three foundational square posts, and one vertical Reel/TikTok title card.
+
 Visual direction:
 
 - Show the app, event categories, and local discovery workflow.
