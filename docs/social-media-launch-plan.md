@@ -17,11 +17,18 @@ Core message:
 
 > Stop scrolling for plans. GathR shows what is happening nearby.
 
+Differentiation angle:
+
+> Not your usual events app. GathR is built for the way people actually make plans: quick, local, and without digging through scattered venue pages.
+
+Use this angle when GathR needs to feel distinct from a generic event directory. The phrase "we do it differently" works best when it is paired with a practical proof point: events plus specials, map/list discovery, local categories, and less manual searching.
+
 Supporting messages:
 
 - Find events, specials, and nights out in one local feed.
 - Discover live music, trivia, food and drink, community events, and more.
 - Spend less time searching and more time going.
+- Not just another event list: GathR is built around how people decide what to do tonight, this weekend, or when they are already out.
 
 ## Account Strategy
 
@@ -114,6 +121,9 @@ Stop scrolling for plans. GathR finds local events and specials so you know what
 - Local plans, all in one place.
 - Know what is happening tonight.
 - Events, specials, and nights out nearby.
+- Not your usual events app.
+- Local discovery, done differently.
+- Built for real plans, not endless searching.
 
 Best default:
 
@@ -169,6 +179,12 @@ Coming soon.
 Finding something to do should not mean checking every venue page one by one.
 
 GathR brings local events and specials into one simple feed so you can spend less time searching and more time going.
+
+### Differentiation
+
+Not your usual events app.
+
+GathR is built for the way people actually make plans: quick, local, and without digging through scattered venue pages. Find events, specials, live music, trivia, food and drink, and other things happening nearby in one place.
 
 ### Venue/Organizer
 
@@ -241,6 +257,7 @@ Avoid:
 - "Never miss an event again"
 - "Official partner of" unless a partnership exists
 - Exact launch dates unless the date is approved
+- "We do events differently" without explaining what is different
 
 Use safer language:
 
@@ -249,6 +266,7 @@ Use safer language:
 - "Local events and specials..."
 - "More details soon..."
 - "Launching first in select areas..."
+- "Not your usual events app..." when followed by a clear reason
 
 ## Launch Sequence
 
