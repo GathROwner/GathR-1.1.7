@@ -17,6 +17,29 @@ Recommended upload order:
 3. Update Facebook bio/about copy.
 4. Publish remaining foundational posts only after final human review.
 
+## After The Cover Is Live
+
+Do this next on Facebook:
+
+1. Confirm the profile image uses `gathr-profile-1080.png`.
+2. Confirm the page button links to `https://www.gathrapp.ca/`. Use "Learn More" unless the landing page has a clear signup or waitlist form.
+3. Pin the launch teaser post that starts with "Stop scrolling for plans."
+4. Invite close supporters only after the profile image, cover, bio, category, website, button, and pinned post all look right.
+
+Do not publish every starter post at once. Use this early cadence instead:
+
+1. Keep the launch teaser as the pinned first post.
+2. Publish the differentiation post 2 to 3 days later.
+3. Publish the local feed post 3 to 5 days after that.
+4. Save the Reel/TikTok draft until there is either a real app screen recording or a deliberate founder-style video.
+
+Next account setup priority:
+
+1. Reserve Instagram and TikTok with the same handle where possible.
+2. Try `@gathrapp.ca` first, then `@getgathr`, then `@thegathrapp`.
+3. Use `gathr-profile-1080.png`, the platform bio copy below, and `https://www.gathrapp.ca/`.
+4. Account creation still needs owner-controlled signup details. Do not invent email, phone, birthday, password, or passkey choices.
+
 ## Facebook Profile Copy
 
 Bio:
