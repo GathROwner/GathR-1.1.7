@@ -18,6 +18,7 @@ import {
   Dimensions,
   StatusBar,
   Clipboard,
+  Share,
 } from 'react-native';
 import { useRouter, useNavigation, usePathname } from 'expo-router';
 import { auth, firestore, storage } from '../config/firebaseConfig';
@@ -48,6 +49,7 @@ const { width, height } = Dimensions.get('window');
 
 // Admin debug features - set to false for production builds
 const SHOW_AD_SDK_LAB = false;
+const ANDROID_APP_SHARE_URL = 'https://play.google.com/store/apps/details?id=com.craigb.gathr';
 
 // Pulsing Hotspot Circle Icon Component
 const HotspotCircleIcon: React.FC<{ isActive: boolean }> = ({ isActive }) => {
@@ -1128,6 +1130,36 @@ const handleLogout = async () => {
     });
   };
 
+  const handleShareApp = async () => {
+    const message =
+      Platform.OS === 'android'
+        ? `Check out GathR for finding local events and specials: ${ANDROID_APP_SHARE_URL}`
+        : 'Check out GathR for finding local events and specials. Search for "GathR" in the App Store or Google Play.';
+
+    try {
+      amplitudeTrack('app_share_tapped', {
+        source: 'profile',
+        platform: Platform.OS,
+      });
+
+      const result = await Share.share({
+        title: 'GathR',
+        message,
+        ...(Platform.OS === 'android' ? { url: ANDROID_APP_SHARE_URL } : {}),
+      });
+
+      if (result.action === Share.sharedAction) {
+        amplitudeTrack('app_share_completed', {
+          source: 'profile',
+          platform: Platform.OS,
+        });
+      }
+    } catch (error) {
+      console.error('Failed to share app:', error);
+      Alert.alert('Share Failed', 'Sorry, GathR could not open the share sheet.');
+    }
+  };
+
   // Copy email to clipboard
   const copyEmailToClipboard = () => {
     Clipboard.setString(email);
@@ -1539,6 +1571,22 @@ const handleLogout = async () => {
                       </TouchableOpacity>
                     )}
                   </View>
+
+                  <TouchableOpacity
+                    style={styles.shareAppButton}
+                    onPress={handleShareApp}
+                    accessibilityRole="button"
+                    accessibilityLabel="Share GathR"
+                  >
+                    <View style={styles.shareAppIconBadge}>
+                      <Ionicons name="share-social-outline" size={22} color={BRAND.white} />
+                    </View>
+                    <View style={styles.shareAppTextContainer}>
+                      <Text style={styles.shareAppTitle}>Share GathR</Text>
+                      <Text style={styles.shareAppSubtext}>Invite a friend to find local events and specials</Text>
+                    </View>
+                    <Ionicons name="chevron-forward" size={20} color={BRAND.primary} />
+                  </TouchableOpacity>
                 </View>
                 </View>
 
@@ -2086,6 +2134,46 @@ const styles = StyleSheet.create({
   hotspotCircleActive: {
     borderColor: '#E65100',
     borderWidth: 3,
+  },
+  shareAppButton: {
+    minHeight: 64,
+    backgroundColor: '#F4FAFF',
+    borderWidth: 1.5,
+    borderColor: BRAND.primary,
+    borderRadius: 24,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 18,
+    paddingVertical: 12,
+    marginTop: 2,
+    shadowColor: BRAND.primary,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.16,
+    shadowRadius: 5,
+    elevation: 3,
+  },
+  shareAppIconBadge: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: BRAND.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  shareAppTextContainer: {
+    flex: 1,
+    paddingRight: 8,
+  },
+  shareAppTitle: {
+    color: BRAND.primary,
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  shareAppSubtext: {
+    color: BRAND.gray,
+    fontSize: 12,
+    marginTop: 2,
   },
   accountActionsContainer: {
   flexDirection: 'row', // Changed from 'column'
