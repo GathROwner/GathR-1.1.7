@@ -49,7 +49,7 @@ const { width, height } = Dimensions.get('window');
 
 // Admin debug features - set to false for production builds
 const SHOW_AD_SDK_LAB = false;
-const ANDROID_APP_SHARE_URL = 'https://play.google.com/store/apps/details?id=com.craigb.gathr';
+const APP_SHARE_URL = 'https://www.gathrapp.ca/app/';
 
 // Pulsing Hotspot Circle Icon Component
 const HotspotCircleIcon: React.FC<{ isActive: boolean }> = ({ isActive }) => {
@@ -1131,10 +1131,7 @@ const handleLogout = async () => {
   };
 
   const handleShareApp = async () => {
-    const message =
-      Platform.OS === 'android'
-        ? `Check out GathR for finding local events and specials: ${ANDROID_APP_SHARE_URL}`
-        : 'Check out GathR for finding local events and specials. Search for "GathR" in the App Store or Google Play.';
+    const message = `Check out GathR for finding local events and specials: ${APP_SHARE_URL}`;
 
     try {
       amplitudeTrack('app_share_tapped', {
@@ -1145,7 +1142,7 @@ const handleLogout = async () => {
       const result = await Share.share({
         title: 'GathR',
         message,
-        ...(Platform.OS === 'android' ? { url: ANDROID_APP_SHARE_URL } : {}),
+        url: APP_SHARE_URL,
       });
 
       if (result.action === Share.sharedAction) {
