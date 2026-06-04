@@ -32,7 +32,8 @@ module.exports = ({ config }) => ({
     googleServicesFile: "GoogleService-Info.plist",
     // Deep linking: Universal Links for iOS
     associatedDomains: [
-      "applinks:link.gathrapp.ca"
+      "applinks:link.gathrapp.ca",
+      "applinks:www.gathrapp.ca"
     ],
     infoPlist: {
       ITSAppUsesNonExemptEncryption: false,
@@ -116,6 +117,18 @@ module.exports = ({ config }) => ({
             scheme: "https",
             host: "link.gathrapp.ca",
             pathPrefix: "/special"
+          }
+        ],
+        category: ["BROWSABLE", "DEFAULT"]
+      },
+      {
+        action: "VIEW",
+        autoVerify: true,
+        data: [
+          {
+            scheme: "https",
+            host: "www.gathrapp.ca",
+            pathPrefix: "/app"
           }
         ],
         category: ["BROWSABLE", "DEFAULT"]

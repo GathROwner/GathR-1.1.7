@@ -4,8 +4,9 @@
  * Handles incoming deep links to open specific events in the lightbox.
  * Supports both:
  * - Custom scheme: gathr://event/123 or gathr://special/456
- * - Universal Links: https://www.gathrapp.ca/event/123
- * - Legacy query params: https://www.gathrapp.ca?eventId=123&type=event
+ * - Universal Links: https://link.gathrapp.ca/event/123
+ * - Generic app link: https://www.gathrapp.ca/app/
+ * - Legacy query params: https://link.gathrapp.ca?eventId=123&type=event
  */
 
 import { useEffect, useRef } from 'react';
@@ -19,6 +20,21 @@ import { areEventIdsEquivalent, toAppEventId } from '../lib/api/firestoreEvents'
 interface DeepLinkParams {
   eventId: string | null;
   type: 'event' | 'special' | null;
+}
+
+function isGenericAppLink(url: string): boolean {
+  try {
+    const parsed = Linking.parse(url);
+    const hostname = String(parsed.hostname ?? '').toLowerCase();
+    const pathParts = String(parsed.path ?? '').split('/').filter(Boolean);
+
+    return (
+      hostname === 'www.gathrapp.ca' &&
+      pathParts[0] === 'app'
+    );
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -90,6 +106,24 @@ export function useDeepLinking() {
     processedUrls.current.add(url);
 
     console.log('[DeepLink] Processing URL:', url);
+
+    if (isGenericAppLink(url)) {
+      console.log('[DeepLink] Generic app link opened:', url);
+
+      try {
+        amplitudeTrack('app_link_opened', {
+          source: 'universal_link',
+          current_screen: pathname,
+        });
+      } catch {}
+
+      if (!pathname.includes('map')) {
+        router.replace('/(tabs)/map');
+      }
+
+      isProcessing.current = false;
+      return;
+    }
 
     const { eventId, type } = parseDeepLink(url);
 
