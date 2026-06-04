@@ -3465,7 +3465,16 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
     // the same venues again when selectedCluster updates (first/uncached open).
     // Resetting the gate on those same-venue re-promotes hides + re-shows the
     // callout — that is the flicker. Keep the gate stable; just refresh the data.
-    const venueSignature = [...venuesToRender.map((venue) => venue.locationKey)].sort().join('|');
+    // Use the cluster id as the primary identity: it is byte-stable across the
+    // two promotes of the same open (marker-press-direct-promote builds venues
+    // from the raw cluster; selected-venues-promoted builds them from the
+    // post-enhancement store, so their venue.locationKey values differ and a
+    // re-derived signature would falsely flip — resetting the gate mid-open and
+    // causing the disappear/reappear flicker). Fall back to a stable venue
+    // identity only when there is no cluster (single-venue opens).
+    const venueSignature = clusterToRender?.id
+      ? clusterToRender.id
+      : [...venuesToRender.map((venue) => venue.locationKey || venue.venue)].sort().join('|');
     if (venueSignature !== lastPromotedVenueSigRef.current) {
       lastPromotedVenueSigRef.current = venueSignature;
       setCalloutLayoutReadyKey(null);
