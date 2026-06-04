@@ -13,6 +13,7 @@ import { getCategoryFallbackImage } from '../../utils/imageUtils';
  * @param {string} [props.type='event']
  * @param {Object} [props.style={}]
  * @param {string} [props.fallbackType='post']
+ * @param {Object|string|null} [props.item=null]
  * @param {string} [props.resizeMode='cover']
  * @param {((isFallback: boolean) => void) | null} [props.onFallback=null] - Callback when fallback is used
  */
@@ -22,6 +23,7 @@ const FallbackImage = ({
   type = 'event',
   style = {},
   fallbackType = 'post',
+  item = null,
   resizeMode = 'cover',
   onFallback = null
 }) => {
@@ -40,7 +42,7 @@ const FallbackImage = ({
   }, [imageUrl, onFallback]);
 
   // Get the appropriate fallback source
-  const fallbackSource = getCategoryFallbackImage(category, type, fallbackType);
+  const fallbackSource = getCategoryFallbackImage(category, type, fallbackType, item);
 
   // If no image URL or error loading image, show fallback
   // Use imageUrl in key to force remount when URL changes - prevents stale image caching

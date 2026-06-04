@@ -960,7 +960,7 @@ amplitudeTrack('ticket_link_opened', {
       return [{ uri: imageUrl }];
     }
     // Otherwise use the local fallback asset
-    return [getCategoryFallbackImage(updatedEvent.category, updatedEvent.type, 'post')];
+    return [getCategoryFallbackImage(updatedEvent.category, updatedEvent.type, 'post', updatedEvent)];
   };
   const images = getImagesForViewer();
 
@@ -1040,6 +1040,7 @@ amplitudeTrack('ticket_link_opened', {
             type={updatedEvent.type}
             style={styles.image}
             fallbackType="post"
+            item={updatedEvent}
             resizeMode="contain"
             onFallback={setIsUsingFallbackImage as any}
           />
@@ -1052,6 +1053,7 @@ amplitudeTrack('ticket_link_opened', {
                 type={updatedEvent.type}
                 style={styles.venueProfileImageSmall}
                 fallbackType="profile"
+                item={updatedEvent}
                 resizeMode="cover"
               />
               <View style={styles.venueFavoriteButtonOverlay}>

@@ -260,6 +260,7 @@ const [backGrad, setBackGrad] = useState<(typeof GRADIENTS)[number]>(GRADIENTS[1
                 type={event.type}
                 style={styles.heroImage}
                 fallbackType={event.imageUrl ? 'post' : 'profile'}
+                item={event}
                 resizeMode="cover"
               />
               <View style={styles.heroOverlay} />

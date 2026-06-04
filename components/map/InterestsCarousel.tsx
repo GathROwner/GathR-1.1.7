@@ -226,6 +226,7 @@ const EventCard = memo(({
           type={event.type}
           style={styles.eventImage}
           fallbackType="post"
+          item={event}
           resizeMode="cover"
         />
 

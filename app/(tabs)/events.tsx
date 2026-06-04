@@ -1079,6 +1079,7 @@ const result = await userService.toggleSavedEvent(event.id, {
               type={event.type}
               style={styles.heroImage}
               fallbackType={event.imageUrl ? 'post' : 'profile'}
+              item={event}
               resizeMode="cover"
             />
             
@@ -1098,6 +1099,7 @@ const result = await userService.toggleSavedEvent(event.id, {
                   type={event.type}
                   style={styles.venueProfileImageSmall}
                   fallbackType="profile"
+                  item={event}
                   resizeMode="cover"
                 />
                 <View style={styles.venueFavoriteButtonOverlay}>
