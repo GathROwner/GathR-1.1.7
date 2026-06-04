@@ -32,6 +32,7 @@ import {
 import { amplitudeTrack, amplitudeSetUserId } from '../lib/amplitudeAnalytics';
 import { TUTORIAL_STEPS } from '../config/tutorialSteps';
 import { useUserPrefsStore, updateShowDailyHotspot } from '../store/userPrefsStore';
+import GathrWordmarkLogo from '../components/common/GathrWordmarkLogo';
 import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
 import { 
@@ -1579,7 +1580,10 @@ const handleLogout = async () => {
                       <Ionicons name="share-social-outline" size={22} color={BRAND.white} />
                     </View>
                     <View style={styles.shareAppTextContainer}>
-                      <Text style={styles.shareAppTitle}>Share GathR</Text>
+                      <View style={styles.shareAppTitleRow}>
+                        <Text style={styles.shareAppTitlePrefix}>Share</Text>
+                        <GathrWordmarkLogo width={74} height={32} />
+                      </View>
                       <Text style={styles.shareAppSubtext}>Invite a friend to find local events and specials</Text>
                     </View>
                     <Ionicons name="chevron-forward" size={20} color={BRAND.primary} />
@@ -2162,10 +2166,15 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingRight: 8,
   },
-  shareAppTitle: {
+  shareAppTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  shareAppTitlePrefix: {
     color: BRAND.primary,
     fontSize: 16,
     fontWeight: '700',
+    marginRight: 4,
   },
   shareAppSubtext: {
     color: BRAND.gray,
