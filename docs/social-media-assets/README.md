@@ -4,6 +4,7 @@ Generated assets:
 
 - gathr-profile-1080.png: square profile image for Facebook, Instagram, and TikTok.
 - facebook-cover-1640x924.png: Facebook cover image.
+- facebook-cover-generated-1640x924.png: polished Facebook cover image with the "Not your usual events app" positioning and desktop-safe crop layout.
 - post-01-launch-teaser.png: launch teaser square post.
 - post-02-not-usual-events-app.png: differentiation square post.
 - post-03-local-feed.png: local feed square post.
@@ -12,7 +13,7 @@ Generated assets:
 Recommended upload order:
 
 1. Profile image.
-2. Facebook cover image.
+2. Facebook cover image. Use `facebook-cover-generated-1640x924.png` for the richer branded version.
 3. Update Facebook bio/about copy.
 4. Publish remaining foundational posts only after final human review.
 
