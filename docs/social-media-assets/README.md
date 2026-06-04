@@ -14,7 +14,7 @@ Recommended upload order:
 1. Profile image.
 2. Facebook cover image.
 3. Update Facebook bio/about copy.
-4. Publish foundational posts only after final human review.
+4. Publish remaining foundational posts only after final human review.
 
 ## Facebook Profile Copy
 
@@ -91,10 +91,11 @@ On-screen text sequence:
 
 ## Browser Execution Notes
 
-Facebook text profile updates were completed in the logged-in browser session on June 4, 2026:
+Facebook updates were completed in the logged-in browser session on June 4, 2026:
 
 - Bio changed from "The official FaceBook landing page for GathR." to the approved differentiated bio above.
 - Category changed from "Phone/Tablet" to "Software Company."
+- First public launch post published with the Post 1 caption and `https://www.gathrapp.ca/` link preview.
 
 Direct cover/profile image upload was blocked by Chrome extension file-upload permissions. To finish uploads through Codex, enable file URL access for the Codex Chrome Extension in `chrome://extensions`, then retry the upload flow.
 
