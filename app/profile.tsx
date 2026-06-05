@@ -1132,7 +1132,17 @@ const handleLogout = async () => {
   };
 
   const handleShareApp = async () => {
-    const message = `Check out GathR for finding local events and specials: ${APP_SHARE_URL}`;
+    const message = 'Check out GathR for finding local events and specials.';
+    const shareContent = Platform.OS === 'ios'
+      ? {
+          title: 'GathR',
+          message,
+          url: APP_SHARE_URL,
+        }
+      : {
+          title: 'GathR',
+          message: `${message} ${APP_SHARE_URL}`,
+        };
 
     try {
       amplitudeTrack('app_share_tapped', {
@@ -1140,11 +1150,7 @@ const handleLogout = async () => {
         platform: Platform.OS,
       });
 
-      const result = await Share.share({
-        title: 'GathR',
-        message,
-        url: APP_SHARE_URL,
-      });
+      const result = await Share.share(shareContent);
 
       if (result.action === Share.sharedAction) {
         amplitudeTrack('app_share_completed', {
