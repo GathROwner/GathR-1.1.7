@@ -42,6 +42,12 @@
   },
   "submit": {
     "production": {
+      "android": {
+        "serviceAccountKeyPath": "C:/Users/craig/.gathr/credentials/google-play-release-uploader.json",
+        "track": "production",
+        "releaseStatus": "completed",
+        "changesNotSentForReview": false
+      },
       "ios": {
         "ascAppId": "6743016252"
       }
