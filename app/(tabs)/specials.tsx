@@ -228,8 +228,20 @@ const normalizeTicketUrl = (url?: string): string => {
 
 const isValidTicketUrl = (url?: string): boolean => Boolean(normalizeTicketUrl(url));
 
+const getTicketUrl = (event: { ticketLinkEvents?: string; ticketLinkPosts?: string; ticketPrice?: string }): string =>
+  normalizeTicketUrl(event.ticketLinkEvents) ||
+  normalizeTicketUrl(event.ticketLinkPosts) ||
+  normalizeTicketUrl(event.ticketPrice);
+
+const hasDisplayableTicketPrice = (price?: string): boolean =>
+  Boolean(price && price !== 'N/A' && normalizeTicketUrl(price) === '');
+
 // Helper function to check if an event is paid
 const isPaidEvent = (price?: string): boolean => {
+  if (normalizeTicketUrl(price)) {
+    return false;
+  }
+
   return Boolean(
     price && 
     price !== "N/A" && 
@@ -814,14 +826,14 @@ const favoriteVenues = useUserPrefsStore((s: UserPrefsState) => s.favoriteVenues
   const handleTickets = (e: GestureResponderEvent) => {
     e.stopPropagation();
     
-    const ticketUrl = event.ticketLinkEvents || event.ticketLinkPosts;
+    const ticketUrl = getTicketUrl(event);
     
     // Track ticket interaction for specials
     analytics.trackUserAction('ticket_link_attempt', {
       event_id: event.id.toString(),
       event_type: 'special',
       special_category: event.category,
-      has_valid_url: isValidTicketUrl(ticketUrl),
+      has_valid_url: Boolean(ticketUrl),
       ticket_price: event.ticketPrice,
       is_guest: isGuest,
       interaction_blocked: isGuest
@@ -832,8 +844,7 @@ const favoriteVenues = useUserPrefsStore((s: UserPrefsState) => s.favoriteVenues
       return;
     }
     
-    const normalizedTicketUrl = normalizeTicketUrl(ticketUrl);
-    if (normalizedTicketUrl) {
+    if (ticketUrl) {
       // Track successful special ticket link opening
       analytics.trackUserAction('ticket_link_opened', {
         event_id: event.id.toString(),
@@ -851,7 +862,7 @@ const favoriteVenues = useUserPrefsStore((s: UserPrefsState) => s.favoriteVenues
         value: isPaidEvent(event.ticketPrice) ? 1 : 0.5
       });
       
-      Linking.openURL(normalizedTicketUrl);
+      Linking.openURL(ticketUrl);
     }
   };
   
@@ -947,8 +958,7 @@ const result = await userService.toggleSavedEvent(event.id, {
   };
   
   // Rest of the component logic (same as events but for specials)
-  const hasTicketLink = isValidTicketUrl(event.ticketLinkEvents) || 
-                        isValidTicketUrl(event.ticketLinkPosts);
+  const hasTicketLink = Boolean(getTicketUrl(event));
   const paid = isPaidEvent(event.ticketPrice);
   
    const safeNumberToString = (value: any): string => {
@@ -991,7 +1001,7 @@ const result = await userService.toggleSavedEvent(event.id, {
   // Always show overlay - share button should always be visible
   const showHeroEngagementOverlay = true;
   const showBuyTicketsButton = hasTicketLink && paid;
-  const showRegisterButton = hasTicketLink && !paid && event.ticketPrice;
+  const showRegisterButton = hasTicketLink && !paid;
   const showTicketedEventBadge = hasTicketLink && 
                                 !showBuyTicketsButton && 
                                 !showRegisterButton;
@@ -1327,8 +1337,7 @@ const result = await userService.toggleSavedEvent(event.id, {
             </View>
           )}
           
-          {event.ticketPrice && 
-           event.ticketPrice !== 'N/A' && 
+          {hasDisplayableTicketPrice(event.ticketPrice) &&
            event.ticketPrice !== "0" &&
            event.ticketPrice !== "Ticketed Event" &&
            !(event.ticketPrice.toLowerCase() === "free" && showRegisterButton) && (

@@ -235,8 +235,20 @@ const normalizeTicketUrl = (url?: string): string => {
 
 const isValidTicketUrl = (url?: string): boolean => Boolean(normalizeTicketUrl(url));
 
+const getTicketUrl = (event: { ticketLinkEvents?: string; ticketLinkPosts?: string; ticketPrice?: string }): string =>
+  normalizeTicketUrl(event.ticketLinkEvents) ||
+  normalizeTicketUrl(event.ticketLinkPosts) ||
+  normalizeTicketUrl(event.ticketPrice);
+
+const hasDisplayableTicketPrice = (price?: string): boolean =>
+  Boolean(price && price !== 'N/A' && normalizeTicketUrl(price) === '');
+
 // Helper function to check if an event is paid
 const isPaidEvent = (price?: string): boolean => {
+  if (normalizeTicketUrl(price)) {
+    return false;
+  }
+
   if (price === "Ticketed Event") {
     return true; 
   }
@@ -792,13 +804,13 @@ const EventListItem: React.FC<EventListItemProps> = ({
   const handleTickets = (e: GestureResponderEvent) => {
     e.stopPropagation();
     
-    const ticketUrl = event.ticketLinkEvents || event.ticketLinkPosts;
+    const ticketUrl = getTicketUrl(event);
     
     // Track ticket interaction attempt
     analytics?.trackUserAction('ticket_link_attempt', {
       event_id: event.id.toString(),
       event_type: event.type,
-      has_valid_url: isValidTicketUrl(ticketUrl),
+      has_valid_url: Boolean(ticketUrl),
       ticket_price: event.ticketPrice,
       is_guest: isGuest,
       interaction_blocked: isGuest
@@ -809,8 +821,7 @@ const EventListItem: React.FC<EventListItemProps> = ({
       return;
     }
     
-    const normalizedTicketUrl = normalizeTicketUrl(ticketUrl);
-    if (normalizedTicketUrl) {
+    if (ticketUrl) {
       // Track successful ticket link opening
       analytics?.trackUserAction('ticket_link_opened', {
         event_id: event.id.toString(),
@@ -827,7 +838,7 @@ const EventListItem: React.FC<EventListItemProps> = ({
         value: isPaidEvent(event.ticketPrice) ? 1 : 0.5
       });
       
-      Linking.openURL(normalizedTicketUrl);
+      Linking.openURL(ticketUrl);
     }
   };
   
@@ -924,8 +935,7 @@ const result = await userService.toggleSavedEvent(event.id, {
   };
   
   // Check if there's a valid ticket URL
-  const hasTicketLink = isValidTicketUrl(event.ticketLinkEvents) || 
-                        isValidTicketUrl(event.ticketLinkPosts);
+  const hasTicketLink = Boolean(getTicketUrl(event));
   
   const paid = isPaidEvent(event.ticketPrice);
   
@@ -960,7 +970,7 @@ const result = await userService.toggleSavedEvent(event.id, {
   const showHeroEngagementOverlay = true;
   
   const showBuyTicketsButton = hasTicketLink && paid;
-  const showRegisterButton = hasTicketLink && !paid && event.ticketPrice;
+  const showRegisterButton = hasTicketLink && !paid;
   const showTicketedEventBadge = hasTicketLink && 
                                 !showBuyTicketsButton && 
                                 !showRegisterButton;
@@ -1372,8 +1382,7 @@ const result = await userService.toggleSavedEvent(event.id, {
             </View>
           )}
           
-          {event.ticketPrice && 
-           event.ticketPrice !== 'N/A' && 
+          {hasDisplayableTicketPrice(event.ticketPrice) &&
            event.ticketPrice !== "0" &&
            event.ticketPrice !== "Ticketed Event" &&
            !(event.ticketPrice.toLowerCase() === "free" && showRegisterButton) && (

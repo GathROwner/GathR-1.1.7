@@ -148,8 +148,20 @@ const normalizeTicketUrl = (url?: string): string => {
 
 const isValidTicketUrl = (url?: string): boolean => Boolean(normalizeTicketUrl(url));
 
+const getTicketUrl = (event: { ticketLinkEvents?: string; ticketLinkPosts?: string; ticketPrice?: string }): string =>
+  normalizeTicketUrl(event.ticketLinkEvents) ||
+  normalizeTicketUrl(event.ticketLinkPosts) ||
+  normalizeTicketUrl(event.ticketPrice);
+
+const hasDisplayableTicketPrice = (price?: string): boolean =>
+  Boolean(price && price !== 'N/A' && normalizeTicketUrl(price) === '');
+
 // Helper function to check if an event is paid
 const isPaidEvent = (price?: string): boolean => {
+  if (normalizeTicketUrl(price)) {
+    return false;
+  }
+
   return Boolean(
     price && 
     price !== "N/A" && 
@@ -508,8 +520,7 @@ const [descAtTop, setDescAtTop] = useState(true);
   }).current;
 
   // Check if there's a valid ticket URL
-  const hasTicketLink = isValidTicketUrl(updatedEvent.ticketLinkEvents) || 
-                        isValidTicketUrl(updatedEvent.ticketLinkPosts);
+  const hasTicketLink = Boolean(getTicketUrl(updatedEvent));
   
   // Determine if it's a paid event
   const paid = isPaidEvent(updatedEvent.ticketPrice);
@@ -883,21 +894,19 @@ const handleTickets = () => {
   }
 
   // Prefer events link, then fall back to posts link
-  const ticketUrl = updatedEvent.ticketLinkEvents || updatedEvent.ticketLinkPosts;
-
-  const normalizedTicketUrl = normalizeTicketUrl(ticketUrl);
-  if (normalizedTicketUrl) {
+  const ticketUrl = getTicketUrl(updatedEvent);
+  if (ticketUrl) {
     // Track before opening (backgrounding may interrupt)
 amplitudeTrack('ticket_link_opened', {
   event_id: String(updatedEvent.id),
   venue_name: updatedEvent.venue,
-  provider: ticketProvider(normalizedTicketUrl),
+  provider: ticketProvider(ticketUrl),
   source: 'lightbox',
   referrer_screen: pathname || '/',
 });
 
 
-    Linking.openURL(normalizedTicketUrl);
+    Linking.openURL(ticketUrl);
   }
 };
 
@@ -1157,7 +1166,7 @@ amplitudeTrack('ticket_link_opened', {
           <View style={[styles.categoryBadge, { backgroundColor: getCategoryColor(updatedEvent.category) }]}>
             <Text style={styles.badgeText}>{updatedEvent.category}</Text>
           </View>
-          {updatedEvent.ticketPrice && updatedEvent.ticketPrice !== 'N/A' && (
+          {hasDisplayableTicketPrice(updatedEvent.ticketPrice) && (
             <View style={styles.priceBadge}>
               <Text style={styles.badgeText}>{updatedEvent.ticketPrice}</Text>
             </View>
@@ -1384,7 +1393,7 @@ amplitudeTrack('ticket_link_opened', {
           </TouchableOpacity>
           
           {/* Only add the tickets button to action container if not displayed next to price already */}
-          {hasTicketLink && !updatedEvent.ticketPrice && (
+          {hasTicketLink && !hasDisplayableTicketPrice(updatedEvent.ticketPrice) && (
             <TouchableOpacity 
               style={[
                 styles.actionButton,

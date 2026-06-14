@@ -335,8 +335,20 @@ const normalizeTicketUrl = (url?: string): string => {
 
 const isValidTicketUrl = (url?: string): boolean => Boolean(normalizeTicketUrl(url));
 
+const getTicketUrl = (event: { ticketLinkEvents?: string; ticketLinkPosts?: string; ticketPrice?: string }): string =>
+  normalizeTicketUrl(event.ticketLinkEvents) ||
+  normalizeTicketUrl(event.ticketLinkPosts) ||
+  normalizeTicketUrl(event.ticketPrice);
+
+const hasDisplayableTicketPrice = (price?: string): boolean =>
+  Boolean(price && price !== 'N/A' && normalizeTicketUrl(price) === '');
+
 // Helper function to check if an event is paid - UPDATED to handle "Ticketed Event" text
 const isPaidEvent = (price?: string): boolean => {
+  if (normalizeTicketUrl(price)) {
+    return false;
+  }
+
   // If price is exactly "Ticketed Event", consider it a paid event
   if (price === "Ticketed Event") {
     return true; 
@@ -1128,18 +1140,16 @@ const shareEvent = async () => {
   
   const buyTickets = () => {
     // Check ticketLinkEvents first, then fall back to ticketLinkPosts if needed
-    const ticketUrl = event.ticketLinkEvents || event.ticketLinkPosts;
+    const ticketUrl = getTicketUrl(event);
     
     // Only open URL if it's a valid URL (not empty, not "N/A")
-    const normalizedTicketUrl = normalizeTicketUrl(ticketUrl);
-    if (normalizedTicketUrl) {
-      Linking.openURL(normalizedTicketUrl);
+    if (ticketUrl) {
+      Linking.openURL(ticketUrl);
     }
   };
   
   // Check if there's a valid ticket URL
-  const hasTicketLink = isValidTicketUrl(event.ticketLinkEvents) || 
-                        isValidTicketUrl(event.ticketLinkPosts);
+  const hasTicketLink = Boolean(getTicketUrl(event));
   
   // Determine if it's a paid event vs. free event
   const paid = isPaidEvent(event.ticketPrice);
@@ -1284,7 +1294,7 @@ const EventDetailsContent: React.FC<EventDetailsProps> = ({ event, onImagePress 
         </View>
       </View>
       
-      {event.ticketPrice && event.ticketPrice !== 'N/A' && (
+      {hasDisplayableTicketPrice(event.ticketPrice) && (
         <View style={styles.priceContainer}>
           <MaterialIcons name="local-offer" size={16} color="#E94E77" />
           <Text style={styles.ticketPrice}>{event.ticketPrice}</Text>
@@ -2068,10 +2078,9 @@ const handleShare = async (e: any) => {
   const handleTickets = (e: any) => {
     e.stopPropagation();
     if (isGuest) return;
-    const ticketUrl = event.ticketLinkEvents || event.ticketLinkPosts;
-    const normalizedTicketUrl = normalizeTicketUrl(ticketUrl);
-    if (normalizedTicketUrl) {
-      Linking.openURL(normalizedTicketUrl);
+    const ticketUrl = getTicketUrl(event);
+    if (ticketUrl) {
+      Linking.openURL(ticketUrl);
     }
   };
   
@@ -2136,7 +2145,7 @@ useUserPrefsStore.getState().setAll({ savedEvents: next });
     return event.category;
   };
   
-  const hasTicketLink = isValidTicketUrl(event.ticketLinkEvents) || isValidTicketUrl(event.ticketLinkPosts);
+  const hasTicketLink = Boolean(getTicketUrl(event));
   const paid = isPaidEvent(event.ticketPrice);
   
   return (
@@ -2358,7 +2367,7 @@ return (
             <View style={styles.ticketedEventBadge}><Text style={styles.ticketedEventText}>Ticketed Event</Text></View>
           )}
           
-          {event.ticketPrice && event.ticketPrice !== 'N/A' && event.ticketPrice !== "0" && event.ticketPrice !== "Ticketed Event" && !(event.ticketPrice.toLowerCase() === "free" && hasTicketLink && !paid) && (
+          {hasDisplayableTicketPrice(event.ticketPrice) && event.ticketPrice !== "0" && event.ticketPrice !== "Ticketed Event" && !(event.ticketPrice.toLowerCase() === "free" && hasTicketLink && !paid) && (
             <View style={styles.priceTag}><Text style={styles.priceText}>{event.ticketPrice}</Text></View>
           )}
           
@@ -2371,7 +2380,7 @@ return (
             </TouchableOpacity>
           )}
 
-          {hasTicketLink && !paid && event.ticketPrice && (
+          {hasTicketLink && !paid && (
             <TouchableOpacity style={[ styles.registerButton, isGuest && styles.disabledPremiumButton ]} onPress={handleTickets} activeOpacity={isGuest ? 1 : 0.7} disabled={isGuest}>
               <View style={styles.premiumButtonContent}>
                 <Text style={[ styles.registerButtonText, isGuest && styles.disabledPremiumButtonText ]}>Register</Text>
@@ -5356,7 +5365,7 @@ const styles = StyleSheet.create({
   cardBottomRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     paddingHorizontal: 16, // Match horizontal padding with other sections
     paddingVertical: 8,
     borderTopWidth: 1,
@@ -5366,10 +5375,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     flexWrap: 'wrap',
+    flex: 1,
+    paddingRight: 8,
+    rowGap: 6,
   },
   rightSection: {
     flexDirection: 'row',
     alignItems: 'center',
+    flexShrink: 0,
   },
   // Note: categoryButton2 to avoid conflict with the filter categoryButton
   categoryButton2: { 
@@ -5406,16 +5419,26 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   priceTag: {
-    backgroundColor: '#FFF0F3',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 4,
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
     marginRight: 8,
+    maxWidth: '100%',
+    borderWidth: 1.5,
+    borderColor: 'rgba(233, 78, 119, 0.55)',
+    shadowColor: BRAND.accent,
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.12,
+    shadowRadius: 3,
+    elevation: 1,
   },
   priceText: {
     color: BRAND.accent, // Updated to accent red
     fontSize: 12,
-    fontWeight: '500',
+    fontWeight: '700',
+    lineHeight: 16,
+    flexShrink: 1,
   },
   buyTicketsButton: {
     backgroundColor: '#1E90FF', // Blue accent for primary actions
