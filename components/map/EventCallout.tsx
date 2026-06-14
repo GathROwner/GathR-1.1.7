@@ -319,10 +319,21 @@ const getTimeStatusColor = (timeStatus: TimeStatus): string => {
   }
 };
 
-// Helper function to validate a ticket URL
-const isValidTicketUrl = (url?: string): boolean => {
-  return Boolean(url && url !== "N/A" && url !== "" && url.includes("http"));
+// Helper functions to normalize and validate ticket URLs.
+// Some backend/parser sources send a bare domain or a labeled value like
+// "Tickets | example.com/event". Treat those as valid ticket URLs in the UI.
+const normalizeTicketUrl = (url?: string): string => {
+  const rawValue = String(url || '').trim();
+  if (!rawValue || rawValue === 'N/A') return '';
+
+  const match = rawValue.match(/https?:\/\/[^\s<>"']+|(?:www\.)?[a-z0-9-]+(?:\.[a-z0-9-]+)+(?:\/[^\s<>"']*)?/i);
+  const candidate = match?.[0]?.replace(/[)\].,;:!?]+$/, '') || '';
+  if (!candidate) return '';
+
+  return /^https?:\/\//i.test(candidate) ? candidate : `https://${candidate}`;
 };
+
+const isValidTicketUrl = (url?: string): boolean => Boolean(normalizeTicketUrl(url));
 
 // Helper function to check if an event is paid - UPDATED to handle "Ticketed Event" text
 const isPaidEvent = (price?: string): boolean => {
@@ -1120,8 +1131,9 @@ const shareEvent = async () => {
     const ticketUrl = event.ticketLinkEvents || event.ticketLinkPosts;
     
     // Only open URL if it's a valid URL (not empty, not "N/A")
-    if (isValidTicketUrl(ticketUrl)) {
-      Linking.openURL(ticketUrl);
+    const normalizedTicketUrl = normalizeTicketUrl(ticketUrl);
+    if (normalizedTicketUrl) {
+      Linking.openURL(normalizedTicketUrl);
     }
   };
   
@@ -2057,8 +2069,9 @@ const handleShare = async (e: any) => {
     e.stopPropagation();
     if (isGuest) return;
     const ticketUrl = event.ticketLinkEvents || event.ticketLinkPosts;
-    if (isValidTicketUrl(ticketUrl)) {
-      Linking.openURL(ticketUrl);
+    const normalizedTicketUrl = normalizeTicketUrl(ticketUrl);
+    if (normalizedTicketUrl) {
+      Linking.openURL(normalizedTicketUrl);
     }
   };
   
