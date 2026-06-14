@@ -219,7 +219,7 @@ const normalizeTicketUrl = (url?: string): string => {
   const rawValue = String(url || '').trim();
   if (!rawValue || rawValue === 'N/A') return '';
 
-  const match = rawValue.match(/https?:\/\/[^\s<>"']+|(?:www\.)?[a-z0-9-]+(?:\.[a-z0-9-]+)+(?:\/[^\s<>"']*)?/i);
+  const match = rawValue.match(/https?:\/\/[^\s<>"']+|(?:www\.)?(?=[a-z0-9.-]*[a-z])[a-z0-9-]+(?:\.[a-z0-9-]+)*\.[a-z]{2,}(?:\/[^\s<>"']*)?/i);
   const candidate = match?.[0]?.replace(/[)\].,;:!?]+$/, '') || '';
   if (!candidate) return '';
 
