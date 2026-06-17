@@ -115,6 +115,25 @@ function isFacebookUrl(value: string): boolean {
   }
 }
 
+function facebookShareKind(snapshot: SharedEventSnapshot): 'event' | 'post' {
+  const value = snapshot.sourceUrl || snapshot.sharedText;
+  try {
+    const url = new URL(value);
+    const path = url.pathname.toLowerCase();
+    if (url.hostname.toLowerCase().includes('fb.me') && path.startsWith('/e/')) return 'event';
+    if (path.includes('/events/')) return 'event';
+    if (path.includes('/share/p') || path.includes('/posts/') || path.includes('/story.php')) return 'post';
+  } catch {
+    if (/facebook\.com\/share\/p|facebook\.com\/.+\/posts\/|story\.php/i.test(value)) return 'post';
+    if (/fb\.me\/e\/|facebook\.com\/events\//i.test(value)) return 'event';
+  }
+  return 'event';
+}
+
+function facebookShareLabel(snapshot: SharedEventSnapshot): string {
+  return facebookShareKind(snapshot) === 'post' ? 'Facebook Post' : 'Facebook Event';
+}
+
 function payloadFromSnapshot(snapshot: SharedEventSnapshot): SharedEventPayload {
   const sourcePlatform = isFacebookUrl(snapshot.sourceUrl) ? 'facebook' : undefined;
 
@@ -317,7 +336,8 @@ export default function SharedEventScreen() {
   const status = statusCopy(phase, result, errorMessage);
   const imageUri = snapshot.mediaUrl;
   const canShowImage = Boolean(imageUri && !imageLoadFailed);
-  const title = snapshot.title || (phase === 'processing' ? 'Reading event...' : 'Facebook event');
+  const shareLabel = facebookShareLabel(snapshot);
+  const title = snapshot.title || (phase === 'processing' ? 'Reading share...' : shareLabel);
   const location = snapshot.address || snapshot.locationName || 'Location to be confirmed';
   const description = snapshot.description;
   const reviewReasons = result?.reviewReasons || [];
@@ -365,7 +385,7 @@ export default function SharedEventScreen() {
             <View style={styles.badgeRow}>
               <View style={styles.sourceBadge}>
                 <Ionicons name="logo-facebook" size={16} color="#1877F2" />
-                <Text style={styles.sourceBadgeText}>Facebook Event</Text>
+                <Text style={styles.sourceBadgeText}>{shareLabel}</Text>
               </View>
               <View style={[
                 styles.visibilityBadge,
