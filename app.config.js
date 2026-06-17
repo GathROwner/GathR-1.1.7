@@ -5,6 +5,9 @@ module.exports = ({ config }) => ({
   name: "GathR",
   slug: "gathr",
   version: "1.1.9",
+  runtimeVersion: {
+    policy: "appVersion"
+  },
   orientation: "portrait",
   scheme: "gathr",
   userInterfaceStyle: "automatic",
@@ -17,7 +20,8 @@ module.exports = ({ config }) => ({
   },
 
   updates: {
-    fallbackToCacheTimeout: 0
+    fallbackToCacheTimeout: 0,
+    url: "https://u.expo.dev/87fd0c8f-0007-49fb-a057-2f4e81afe1db"
   },
 
   assetBundlePatterns: ["**/*"],
@@ -173,6 +177,19 @@ plugins: [
     "expo-asset",
     "expo-font",
     "expo-router",
+    [
+      "expo-share-intent",
+      {
+        iosActivationRules: {
+          NSExtensionActivationSupportsText: true,
+          NSExtensionActivationSupportsWebURLWithMaxCount: 1,
+          NSExtensionActivationSupportsWebPageWithMaxCount: 1,
+          NSExtensionActivationSupportsImageWithMaxCount: 1
+        },
+        androidIntentFilters: ["text/*", "image/*"],
+        iosShareExtensionName: "Save to GathR"
+      }
+    ],
     "expo-tracking-transparency",
     "expo-web-browser",
 

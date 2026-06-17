@@ -7,6 +7,7 @@
     "development": {
       "developmentClient": true,
       "distribution": "internal",
+      "channel": "development",
       "env": {
         "SUPPRESS_XCODE_OUTPUT": "false"
       },
@@ -20,6 +21,7 @@
     },
     "preview": {
       "distribution": "internal",
+      "channel": "preview",
       "ios": {
         "resourceClass": "m-medium"
       },
@@ -31,6 +33,7 @@
     "production": {
       "distribution": "store",
       "autoIncrement": true,
+      "channel": "production",
       "ios": {
         "resourceClass": "m-medium"
       },

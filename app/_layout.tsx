@@ -21,6 +21,7 @@
 import React from 'react';
 import MapboxGL from '@rnmapbox/maps';
 import { Stack, useRouter, useSegments, usePathname } from 'expo-router';
+import { ShareIntentProvider } from 'expo-share-intent';
 import { useGuestLimitationStore } from '../store/guestLimitationStore';
 
 import { useEffect, useRef } from 'react';
@@ -42,6 +43,7 @@ import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
 import { installNotificationDebugListeners } from '../services/notificationService';
 import { useDeepLinking } from '../hooks/useDeepLinking';
+import { useSharedEventIntentRouter } from '../hooks/useSharedEventIntentRouter';
 import { preloadStartupLocation } from '../utils/startupLocationCache';
 import { initializeMapboxAccessToken } from '../utils/mapboxAccessToken';
 
@@ -431,7 +433,8 @@ try {
     
     // â›‘ï¸ Root wrapper so GH gestures (ScrollView, handlers) work on Android.
     //This fixes callout ScrollView not scrolling and the GH error about GestureHandlerRootView.
-    <GestureHandlerRootView style={{ flex: 1 }}> 
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <ShareIntentProvider options={{ scheme: 'gathr', resetOnBackground: false }}>
       <PersistQueryClientProvider
   client={queryClient}
   persistOptions={{
@@ -444,6 +447,7 @@ try {
            <MainNavigator />
         </AuthProvider>
       </PersistQueryClientProvider>
+      </ShareIntentProvider>
 
     </GestureHandlerRootView>
   );
@@ -458,6 +462,7 @@ try {
 
     // Deep linking handler - handles incoming URLs to open specific events
     useDeepLinking();
+    useSharedEventIntentRouter();
 
     // --- screen_view on route change (inside auth context) ---
     const pathname = usePathname();
