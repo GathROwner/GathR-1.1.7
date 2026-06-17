@@ -25,31 +25,44 @@ export type SharedEventPayload = {
   timezone?: string;
 };
 
+export type SharedEventResultEvent = {
+  privateEventId?: string;
+  publicCandidateId?: string;
+  title?: string;
+  description?: string;
+  startDate?: string;
+  endDate?: string;
+  startTime?: string;
+  endTime?: string;
+  locationName?: string;
+  address?: string;
+  mediaUrls?: string[];
+  imageUrl?: string;
+  sourceUrl?: string;
+  sourcePlatform?: string;
+  confidence?: number;
+  needsUserReview?: boolean;
+  reviewReasons?: string[];
+  sequenceIndex?: number;
+  extractedFromShare?: boolean;
+};
+
 export type SharedEventSubmitResult = {
   success: boolean;
   ingestId?: string;
   privateEventId?: string;
+  privateEventIds?: string[];
   publicCandidateId?: string;
+  publicCandidateIds?: string[];
   routing?: 'private_only' | 'public_candidate';
   sourceVisibility?: 'public_verified' | 'restricted_unverified' | 'user_private' | 'unknown';
   status?: 'needs_user_review' | 'saved' | 'submitted_public_candidate';
+  extractedEventCount?: number;
   needsUserReview?: boolean;
   reviewReasons?: string[];
   confidence?: number;
-  event?: {
-    title?: string;
-    description?: string;
-    startDate?: string;
-    endDate?: string;
-    startTime?: string;
-    endTime?: string;
-    locationName?: string;
-    address?: string;
-    mediaUrls?: string[];
-    imageUrl?: string;
-    sourceUrl?: string;
-    sourcePlatform?: string;
-  };
+  event?: SharedEventResultEvent;
+  events?: SharedEventResultEvent[];
   visibilityEvidence?: {
     method?: string;
     reason?: string;
