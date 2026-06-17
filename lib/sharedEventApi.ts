@@ -45,6 +45,8 @@ export type SharedEventSubmitResult = {
     endTime?: string;
     locationName?: string;
     address?: string;
+    mediaUrls?: string[];
+    imageUrl?: string;
     sourceUrl?: string;
     sourcePlatform?: string;
   };
