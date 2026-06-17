@@ -282,6 +282,7 @@ export default function SharedEventScreen() {
   const [phase, setPhase] = useState<Phase>('processing');
   const [result, setResult] = useState<SharedEventSubmitResult | null>(null);
   const [errorMessage, setErrorMessage] = useState('');
+  const [imageLoadFailed, setImageLoadFailed] = useState(false);
 
   const submitSnapshot = useCallback(async (nextSnapshot: SharedEventSnapshot) => {
     if (!hasUsableSnapshot(nextSnapshot)) {
@@ -315,11 +316,16 @@ export default function SharedEventScreen() {
 
   const status = statusCopy(phase, result, errorMessage);
   const imageUri = snapshot.mediaUrl;
+  const canShowImage = Boolean(imageUri && !imageLoadFailed);
   const title = snapshot.title || (phase === 'processing' ? 'Reading event...' : 'Facebook event');
-  const location = snapshot.locationName || snapshot.address || 'Location to be confirmed';
+  const location = snapshot.address || snapshot.locationName || 'Location to be confirmed';
   const description = snapshot.description;
   const reviewReasons = result?.reviewReasons || [];
   const isProcessing = phase === 'processing';
+
+  useEffect(() => {
+    setImageLoadFailed(false);
+  }, [imageUri]);
 
   return (
     <KeyboardAvoidingView
@@ -338,8 +344,13 @@ export default function SharedEventScreen() {
 
       <ScrollView contentContainerStyle={styles.content}>
         <View style={styles.eventCard}>
-          {imageUri ? (
-            <Image source={{ uri: imageUri }} style={styles.heroImage} resizeMode="cover" />
+          {canShowImage ? (
+            <Image
+              source={{ uri: imageUri }}
+              style={styles.heroImage}
+              resizeMode="cover"
+              onError={() => setImageLoadFailed(true)}
+            />
           ) : (
             <View style={styles.heroPlaceholder}>
               {isProcessing ? (
