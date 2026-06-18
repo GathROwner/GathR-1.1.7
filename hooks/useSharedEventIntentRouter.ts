@@ -38,7 +38,7 @@ export function useSharedEventIntentRouter() {
     const title = shareIntent.meta?.title || '';
     const imagePath = firstImagePath(shareIntent);
 
-    router.push({
+    router.replace({
       pathname: '/shared-event',
       params: {
         sourceUrl,

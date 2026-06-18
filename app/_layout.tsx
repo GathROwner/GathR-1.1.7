@@ -867,6 +867,7 @@ useEffect(() => {
     const onInterestSelection = segments[0] === 'interest-selection';
     const inAuthFlow = onLoginScreen || onInterestSelection;
     const inProfileScreen = segments[0] === 'profile';
+    const onSharedEventScreen = segments[0] === 'shared-event';
 
     // Only log when the actual UID changes (avoid 're-login' noise on tab/nav changes)
     const currUid = user?.uid ?? null;
@@ -884,14 +885,14 @@ useEffect(() => {
     if (onLoginScreen) {
       console.log('Redirecting authenticated user from login to main app');
       safeReplace('/(tabs)/map');
-    } else if (!inTabsGroup && !inProfileScreen && !inAuthFlow) {
+    } else if (!inTabsGroup && !inProfileScreen && !inAuthFlow && !onSharedEventScreen) {
       // Redirect from other non-app screens
       console.log('Redirecting authenticated user to main app');
       safeReplace('/(tabs)/map');
     }
   } else {
     // User is not authenticated (guest mode allowed inside (tabs))
-    if (!inAuthFlow && !inTabsGroup && !inProfileScreen) {
+    if (!inAuthFlow && !inTabsGroup && !inProfileScreen && !onSharedEventScreen) {
       // Redirect to login only if we're not already on it
       console.log('Redirecting unauthenticated user to login');
       safeReplace('/');
@@ -955,6 +956,7 @@ useEffect(() => {
           headerBackTitle: 'Back'
         }} />
         <Stack.Screen name="(tabs)" />
+        <Stack.Screen name="shared-event" />
         <Stack.Screen name="profile" options={{ 
           title: 'Profile',
           headerShown: true,
