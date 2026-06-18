@@ -165,7 +165,9 @@ function hasUsableSnapshot(snapshot: SharedEventSnapshot): boolean {
     snapshot.sourceUrl.trim() ||
     snapshot.sharedText.trim() ||
     snapshot.title.trim() ||
-    snapshot.description.trim()
+    snapshot.description.trim() ||
+    snapshot.mediaUrls.length > 0 ||
+    snapshot.mediaFiles.length > 0
   );
 }
 
