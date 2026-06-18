@@ -13,6 +13,7 @@ import {
   LEGACY_EVENTS_API_BASE,
   USE_FIRESTORE_EVENTS,
 } from '../config/backend';
+import { fetchPrivateSharedEventsForCurrentUser } from './privateSharedEvents';
 
 const DEBUG_FETCH = __DEV__ ?? true;
 
@@ -23,7 +24,7 @@ export type FetchMinimalEventsOptions = FirestoreFetchOptions;
 type FetchMinimalEventsResult = {
   combinedData: Event[];
   fetchedAt: number;
-  sources: { googleSheets: number; firestore: number };
+  sources: { googleSheets: number; firestore: number; privateShared: number };
 };
 
 let minimalEventsInFlight:
@@ -43,6 +44,16 @@ export function getDedupeKey(event: Event): string {
   const normalizedStartTime = (event.startTime || '').toLowerCase().trim();
   const normalizedType = (event.type || 'event').toLowerCase().trim();
   return `${normalizedTitle}|${event.startDate}|${normalizedStartTime}|${normalizedVenue}|${normalizedType}`;
+}
+
+function normalizeMergeText(value: unknown): string {
+  return String(value ?? '')
+    .toLowerCase()
+    .replace(/&/g, ' and ')
+    .replace(/['\u2019]/g, '')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+    .replace(/\s+/g, ' ');
 }
 
 function getEventIdentityKey(event: Event): string {
@@ -78,6 +89,52 @@ export function dedupeEvents(events: Event[]): Event[] {
     const scopedTwin = scopedByIdentity.get(getEventIdentityKey(event));
     return !scopedTwin || scopedTwin.id === event.id;
   });
+}
+
+function mergePrivateSharedEvents(publicEvents: Event[], privateSharedEvents: Event[]): Event[] {
+  if (privateSharedEvents.length === 0) return publicEvents;
+
+  const merged = dedupeEvents(publicEvents);
+  const indexByDedupeKey = new Map<string, number>();
+  merged.forEach((event, index) => {
+    indexByDedupeKey.set(getDedupeKey(event), index);
+  });
+
+  for (const privateEvent of privateSharedEvents) {
+    const privateKey = getDedupeKey(privateEvent);
+    const privateIdentityKey = getEventIdentityKey(privateEvent);
+    const privateVenue = normalizeMergeText(privateEvent.venue);
+    let existingIndex = indexByDedupeKey.get(privateKey);
+    if (existingIndex === undefined) {
+      const looseIndex = merged.findIndex((event) => {
+        const venue = normalizeMergeText(event.venue);
+        const venueMatches =
+          Boolean(privateVenue && venue) &&
+          (privateVenue === venue || privateVenue.includes(venue) || venue.includes(privateVenue));
+        return getEventIdentityKey(event) === privateIdentityKey && venueMatches;
+      });
+      if (looseIndex >= 0) {
+        existingIndex = looseIndex;
+      }
+    }
+    if (existingIndex === undefined) {
+      indexByDedupeKey.set(privateKey, merged.length);
+      merged.push(privateEvent);
+      continue;
+    }
+
+    const existing = merged[existingIndex];
+    merged[existingIndex] = {
+      ...existing,
+      sharedEventProvenance: privateEvent.sharedEventProvenance,
+      imageUrl: existing.imageUrl || privateEvent.imageUrl,
+      profileUrl: existing.profileUrl || privateEvent.profileUrl,
+      mediaUrls: existing.mediaUrls?.length ? existing.mediaUrls : privateEvent.mediaUrls,
+      facebookUrl: existing.facebookUrl || privateEvent.facebookUrl,
+    };
+  }
+
+  return dedupeEvents(merged);
 }
 
 async function fetchLegacyMinimalByType(type: 'event' | 'special'): Promise<Event[]> {
@@ -123,12 +180,15 @@ async function fetchMinimalEventsFromSource(
   const t0 = Date.now();
 
   if (USE_FIRESTORE_EVENTS) {
-    const firestoreEvents = await fetchAllFirestoreEvents(options);
-    const combinedData = dedupeEvents(firestoreEvents);
+    const [firestoreEvents, privateSharedEvents] = await Promise.all([
+      fetchAllFirestoreEvents(options),
+      fetchPrivateSharedEventsForCurrentUser(),
+    ]);
+    const combinedData = mergePrivateSharedEvents(firestoreEvents, privateSharedEvents);
 
     if (DEBUG_FETCH) {
       console.log(
-        `[fetchMinimalEvents] Firestore default path totalMs=${Date.now() - t0} events=${combinedData.length}`
+        `[fetchMinimalEvents] Firestore default path totalMs=${Date.now() - t0} events=${combinedData.length} privateShared=${privateSharedEvents.length}`
       );
     }
 
@@ -138,7 +198,8 @@ async function fetchMinimalEventsFromSource(
         fetchedAt: Date.now(),
         sources: {
           googleSheets: 0,
-          firestore: combinedData.length,
+          firestore: firestoreEvents.length,
+          privateShared: privateSharedEvents.length,
         },
       };
     }
@@ -155,6 +216,7 @@ async function fetchMinimalEventsFromSource(
       sources: {
         googleSheets: 0,
         firestore: 0,
+        privateShared: 0,
       },
     };
   }
@@ -167,6 +229,7 @@ async function fetchMinimalEventsFromSource(
       sources: {
         googleSheets: legacyEvents.length,
         firestore: 0,
+        privateShared: 0,
       },
     };
   } catch (error) {
@@ -177,6 +240,7 @@ async function fetchMinimalEventsFromSource(
       sources: {
         googleSheets: 0,
         firestore: 0,
+        privateShared: 0,
       },
     };
   }

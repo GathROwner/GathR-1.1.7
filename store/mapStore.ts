@@ -82,6 +82,7 @@ import {
   fetchFirestoreEventDetailsBatch,
   toAppEventId,
 } from '../lib/api/firestoreEvents';
+import { isPrivateSharedEventId } from '../lib/api/privateSharedEvents';
 import {
   ENABLE_LEGACY_DETAILS_FALLBACK,
   LEGACY_EVENTS_API_BASE,
@@ -1445,7 +1446,8 @@ fetchEvents: async () => {
         // Log source distribution
         const firestoreCount = result.combinedData.filter((e: Event) => e.source === 'firestore').length;
         const googleSheetsCount = result.combinedData.filter((e: Event) => e.source === 'google_sheets').length;
-        console.log(`[MapLoad][fetch_debug] Source distribution: googleSheets=${googleSheetsCount} firestore=${firestoreCount}`);
+        const privateSharedCount = result.combinedData.filter((e: Event) => e.source === 'private_shared').length;
+        console.log(`[MapLoad][fetch_debug] Source distribution: googleSheets=${googleSheetsCount} firestore=${firestoreCount} privateShared=${privateSharedCount}`);
       }
     }
 
@@ -1724,8 +1726,14 @@ fetchEventDetails: async (eventIds: (string | number)[]) => {
 
   const qc: any = (global as any)?.__RQ_CLIENT ?? null;
   const normalizedIds = Array.from(
-    new Set(eventIds.map((id) => toAppEventId(id)).filter(Boolean))
+    new Set(
+      eventIds
+        .filter((id) => !isPrivateSharedEventId(id))
+        .map((id) => toAppEventId(id))
+        .filter(Boolean)
+    )
   );
+  if (normalizedIds.length === 0) return;
   const idsString = normalizedIds.join(',');
   const key = ['event-details', [...normalizedIds].sort().join(',')];
   const STALE_MS = 1000 * 60 * 5;

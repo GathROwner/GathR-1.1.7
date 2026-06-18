@@ -24,6 +24,8 @@ import {
   resolveSharedEventMediaUrls,
   SharedIntentMediaFile,
 } from '../lib/sharedEventMediaUpload';
+import { EVENTS_MINIMAL } from '../lib/queryKeys';
+import { useMapStore } from '../store';
 
 const BRAND = {
   primary: '#1E90FF',
@@ -661,6 +663,16 @@ export default function SharedEventScreen() {
     );
   };
 
+  const handleFinish = useCallback(() => {
+    const queryClient = (globalThis as any).__RQ_CLIENT;
+    queryClient?.removeQueries?.({ queryKey: EVENTS_MINIMAL });
+    queryClient?.invalidateQueries?.({ queryKey: EVENTS_MINIMAL });
+    void useMapStore.getState().fetchEvents().catch((error) => {
+      console.warn('[SharedEvent] Failed to refresh events after shared event submit:', error);
+    });
+    router.replace('/(tabs)/map');
+  }, [router]);
+
   return (
     <KeyboardAvoidingView
       style={styles.root}
@@ -674,7 +686,7 @@ export default function SharedEventScreen() {
           <Image source={GATHR_LOGO} style={styles.headerLogo} resizeMode="contain" />
           <Text style={styles.headerTitle}>Sent to GathR</Text>
         </View>
-        <Pressable style={styles.iconButton} onPress={() => router.replace('/(tabs)/map')}>
+        <Pressable style={styles.iconButton} onPress={handleFinish}>
           <Ionicons name="map-outline" size={22} color={BRAND.ink} />
         </Pressable>
       </View>
@@ -774,7 +786,7 @@ export default function SharedEventScreen() {
         ) : (
           <Pressable
             style={styles.saveButton}
-            onPress={() => router.replace('/(tabs)/map')}
+            onPress={handleFinish}
           >
             <Ionicons name="checkmark-circle-outline" size={21} color="#FFFFFF" />
             <Text style={styles.saveButtonText}>Done</Text>

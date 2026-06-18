@@ -293,16 +293,18 @@ interface BadgeContainerProps {
   isNow: boolean;
   matchesUserInterests: boolean;
   isSaved: boolean;
+  isSharedByUser?: boolean;
 }
 
 const BadgeContainer: React.FC<BadgeContainerProps> = ({ 
   isNow, 
   matchesUserInterests, 
-  isSaved 
+  isSaved,
+  isSharedByUser = false,
 }) => {
-  if (!isNow && !matchesUserInterests && !isSaved) return null;
+  if (!isNow && !matchesUserInterests && !isSaved && !isSharedByUser) return null;
   
-  const activeCount = (isNow ? 1 : 0) + (matchesUserInterests ? 1 : 0) + (isSaved ? 1 : 0);
+  const activeCount = (isNow ? 1 : 0) + (matchesUserInterests ? 1 : 0) + (isSaved ? 1 : 0) + (isSharedByUser ? 1 : 0);
   const multipleActive = activeCount > 1;
   
   return (
@@ -343,6 +345,23 @@ const BadgeContainer: React.FC<BadgeContainerProps> = ({
           />
           {!multipleActive && (
             <Text style={styles.savedBadgeText}>Saved</Text>
+          )}
+        </View>
+      )}
+
+      {isSharedByUser && (
+        <View style={[
+          styles.sharedByUserBadge,
+          multipleActive && styles.compactBadge,
+          multipleActive && styles.iconOnlyBadge
+        ]}>
+          <MaterialIcons
+            name="share"
+            size={12}
+            color="#FFFFFF"
+          />
+          {!multipleActive && (
+            <Text style={styles.badgeText}>Shared by you</Text>
           )}
         </View>
       )}
@@ -1110,6 +1129,7 @@ const result = await userService.toggleSavedEvent(event.id, {
               isNow={timeStatus === 'now'}
               matchesUserInterests={matchesUserInterests}
               isSaved={isSaved}
+              isSharedByUser={event.sharedEventProvenance?.sharedByCurrentUser === true}
             />
 
             {/* Venue profile picture with favorite heart - top left */}
@@ -1896,6 +1916,7 @@ useEffect(() => {
     setTimeout(() => {
       const eventIds = events
         .filter(event => event.type === 'event')
+        .filter(event => event.sharedEventProvenance?.sharedByCurrentUser !== true)
         .filter(event => {
           const hasBeenEnhanced = event.hasOwnProperty('fullDescription') ||
                                   event.hasOwnProperty('ticketLinkPosts') ||
@@ -3326,6 +3347,15 @@ const styles = StyleSheet.create({
   },
   savedBadge: {
     backgroundColor: '#FFD700',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 4,
+    marginLeft: 5,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  sharedByUserBadge: {
+    backgroundColor: BRAND.primary,
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: 4,

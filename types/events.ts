@@ -48,7 +48,22 @@ export interface Event {
   relevanceScore?: number;
 
   // Data source tracking (for parallel API sources)
-  source?: 'google_sheets' | 'firestore';
+  source?: 'google_sheets' | 'firestore' | 'private_shared';
+
+  // User share provenance. This is intentionally separate from `source` so a
+  // public Firestore event can still render normally while showing that the
+  // current user also submitted it through sharing.
+  sharedEventProvenance?: {
+    sharedByCurrentUser: boolean;
+    privateEventId?: string;
+    ingestId?: string;
+    publicCandidateId?: string;
+    sourcePlatform?: 'facebook' | 'instagram' | 'web' | 'unknown';
+    sourceVisibility?: 'public_verified' | 'restricted_unverified' | 'user_private' | 'unknown';
+    routing?: 'private_only' | 'public_candidate' | 'not_public_candidate';
+    sourceUrl?: string;
+    label?: string;
+  };
 
   // Additional media (Firestore events may have multiple images)
   mediaUrls?: string[];

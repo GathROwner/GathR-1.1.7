@@ -367,6 +367,7 @@ interface BadgeContainerProps {
   isNow: boolean;
   matchesUserInterests: boolean;
   isSaved: boolean;
+  isSharedByUser?: boolean;
 }
 
 // Badge Container component for horizontal badge layout
@@ -374,13 +375,14 @@ interface BadgeContainerProps {
 const BadgeContainer: React.FC<BadgeContainerProps> = ({ 
   isNow, 
   matchesUserInterests, 
-  isSaved 
+  isSaved,
+  isSharedByUser = false,
 }) => {
   // If no badges to show, return null
-  if (!isNow && !matchesUserInterests && !isSaved) return null;
+  if (!isNow && !matchesUserInterests && !isSaved && !isSharedByUser) return null;
   
   // Determine how many badges are active for smart display logic
-  const activeCount = (isNow ? 1 : 0) + (matchesUserInterests ? 1 : 0) + (isSaved ? 1 : 0);
+  const activeCount = (isNow ? 1 : 0) + (matchesUserInterests ? 1 : 0) + (isSaved ? 1 : 0) + (isSharedByUser ? 1 : 0);
   const multipleActive = activeCount > 1;
   
   return (
@@ -428,6 +430,23 @@ const BadgeContainer: React.FC<BadgeContainerProps> = ({
           {/* Only show text when it's the only badge */}
           {!multipleActive && (
             <Text style={badgeStyles.savedBadgeText}>Saved</Text>
+          )}
+        </View>
+      )}
+
+      {isSharedByUser && (
+        <View style={[
+          badgeStyles.sharedByUserBadge,
+          multipleActive && badgeStyles.compactBadge,
+          multipleActive && badgeStyles.iconOnlyBadge
+        ]}>
+          <MaterialIcons
+            name="share"
+            size={12}
+            color="#FFFFFF"
+          />
+          {!multipleActive && (
+            <Text style={badgeStyles.badgeText}>Shared by you</Text>
           )}
         </View>
       )}
@@ -2187,6 +2206,7 @@ useUserPrefsStore.getState().setAll({ savedEvents: next });
               isNow={timeStatus === 'now'}
               matchesUserInterests={eventMatchesUserInterests}
               isSaved={isSaved}
+              isSharedByUser={event.sharedEventProvenance?.sharedByCurrentUser === true}
             />
             
             {showHeroEngagementOverlay && (
@@ -4552,6 +4572,22 @@ const badgeStyles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.3)',
     shadowColor: '#FFB800',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  sharedByUserBadge: {
+    backgroundColor: 'rgba(30, 144, 255, 0.92)',
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    borderRadius: 8,
+    marginLeft: 5,
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.3)',
+    shadowColor: '#1E90FF',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.25,
     shadowRadius: 4,
