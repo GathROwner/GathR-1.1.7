@@ -269,9 +269,9 @@ function statusCopy(phase: Phase, result: SharedEventSubmitResult | null, errorM
 } {
   if (phase === 'processing') {
     return {
-      icon: 'sparkles-outline',
-      title: 'Reading Facebook share',
-      detail: 'GathR is checking the shared source and looking for event details.',
+      icon: 'checkmark-circle-outline',
+      title: 'Thanks for submitting',
+      detail: 'GathR is saving this Facebook share. If it is not already tracked, it will be added soon.',
       color: BRAND.primary,
     };
   }
@@ -279,7 +279,7 @@ function statusCopy(phase: Phase, result: SharedEventSubmitResult | null, errorM
   if (phase === 'error') {
     return {
       icon: 'alert-circle-outline',
-      title: 'Could not read event',
+      title: 'Could not save share',
       detail: errorMessage || 'GathR could not process this share.',
       color: BRAND.danger,
     };
@@ -288,10 +288,10 @@ function statusCopy(phase: Phase, result: SharedEventSubmitResult | null, errorM
   if (result?.routing === 'public_candidate') {
     return {
       icon: 'earth-outline',
-      title: 'Submitted for validation',
+      title: 'Thanks for submitting',
       detail: eventCount > 1
-        ? `Saved ${eventCount} events to your GathR and queued them for public review.`
-        : 'Saved to your GathR and queued for public review.',
+        ? `GathR found ${eventCount} possible events. If they are not already tracked, they will be added after review.`
+        : 'If this event is not already tracked, it will be added to GathR after review.',
       color: BRAND.success,
     };
   }
@@ -300,7 +300,7 @@ function statusCopy(phase: Phase, result: SharedEventSubmitResult | null, errorM
     return {
       icon: 'lock-closed-outline',
       title: 'Saved privately',
-      detail: 'Only your account can see this draft while GathR keeps the source private.',
+      detail: 'Only your account can see this share unless it is promoted later.',
       color: BRAND.warning,
     };
   }
@@ -308,9 +308,61 @@ function statusCopy(phase: Phase, result: SharedEventSubmitResult | null, errorM
   return {
     icon: 'lock-closed-outline',
     title: 'Saved privately',
-    detail: 'Only your account can see this event.',
+    detail: 'Only your account can see this share.',
     color: BRAND.success,
   };
+}
+
+function usefulParsedDetailsCount(result: SharedEventSubmitResult | null, eventSnapshots: SharedEventSnapshot[]): number {
+  const resultEventCount = Math.max(
+    result?.extractedEventCount || 0,
+    result?.events?.length || 0,
+    result?.event ? 1 : 0
+  );
+  if (resultEventCount > 0) return resultEventCount;
+  return eventSnapshots.filter((eventSnapshot) => (
+    eventSnapshot.title ||
+    eventSnapshot.startDate ||
+    eventSnapshot.startTime ||
+    eventSnapshot.locationName ||
+    eventSnapshot.address ||
+    eventSnapshot.description ||
+    eventSnapshot.mediaUrl
+  )).length;
+}
+
+function summaryTitleForResult(result: SharedEventSubmitResult | null, parsedDetailsCount: number): string {
+  if (!result) return 'Share received';
+  if (parsedDetailsCount > 1) return `${parsedDetailsCount} possible events found`;
+  if (parsedDetailsCount === 1) return 'Possible event found';
+  return 'Facebook share received';
+}
+
+function summaryDetailForResult(
+  phase: Phase,
+  result: SharedEventSubmitResult | null,
+  parsedDetailsCount: number
+): string {
+  if (phase === 'processing') {
+    return 'You can leave this screen while GathR checks the share.';
+  }
+
+  if (!result) {
+    return 'If this event is not already tracked, it will be added to GathR soon.';
+  }
+
+  if (result.routing === 'public_candidate') {
+    if (parsedDetailsCount > 1) {
+      return 'These were saved and queued for public review.';
+    }
+    return 'It was saved and queued for public review.';
+  }
+
+  if (result.needsUserReview || result.routing === 'private_only') {
+    return 'This share stays private to your account unless it is promoted later.';
+  }
+
+  return 'If this event is not already tracked, it will be added to GathR soon.';
 }
 
 function reviewReasonLabel(value: string): string {
@@ -344,6 +396,7 @@ export default function SharedEventScreen() {
   const [result, setResult] = useState<SharedEventSubmitResult | null>(null);
   const [errorMessage, setErrorMessage] = useState('');
   const [failedImageUrls, setFailedImageUrls] = useState<string[]>([]);
+  const [showDetails, setShowDetails] = useState(false);
 
   const submitSnapshot = useCallback(async (nextSnapshot: SharedEventSnapshot) => {
     if (!hasUsableSnapshot(nextSnapshot)) {
@@ -375,6 +428,7 @@ export default function SharedEventScreen() {
     setSnapshot(initial);
     setEventSnapshots([initial]);
     setSelectedEventIndex(0);
+    setShowDetails(false);
     setResult(null);
     setErrorMessage('');
     void submitSnapshot(initial);
@@ -383,6 +437,13 @@ export default function SharedEventScreen() {
   const eventCount = eventSnapshots.length;
   const cardWidth = Math.max(280, width - 32);
   const status = statusCopy(phase, result, errorMessage, eventCount);
+  const parsedDetailsCount = phase === 'processing' || phase === 'error'
+    ? 0
+    : usefulParsedDetailsCount(result, eventSnapshots);
+  const detailsAvailable = parsedDetailsCount > 0;
+  const shouldShowDetails = showDetails && detailsAvailable;
+  const summaryTitle = summaryTitleForResult(result, parsedDetailsCount);
+  const summaryDetail = summaryDetailForResult(phase, result, parsedDetailsCount);
   const shareLabel = facebookShareLabel(snapshot);
   const isProcessing = phase === 'processing';
 
@@ -513,7 +574,55 @@ export default function SharedEventScreen() {
       </View>
 
       <ScrollView contentContainerStyle={styles.content}>
-        {eventCount > 1 ? (
+        <View style={[styles.statusPanel, { borderColor: status.color }]}>
+          <View style={[styles.statusIcon, { backgroundColor: `${status.color}18` }]}>
+            <Ionicons name={status.icon} size={23} color={status.color} />
+          </View>
+          <View style={styles.statusText}>
+            <Text style={styles.statusTitle}>{status.title}</Text>
+            <Text style={styles.statusDetail}>{status.detail}</Text>
+          </View>
+        </View>
+
+        {phase !== 'processing' && phase !== 'error' && result ? (
+          <View style={styles.summaryPanel}>
+            <View style={styles.summaryBadgeRow}>
+              <View style={styles.sourceBadge}>
+                <Ionicons name="logo-facebook" size={16} color="#1877F2" />
+                <Text style={styles.sourceBadgeText}>{shareLabel}</Text>
+              </View>
+              <View style={[
+                styles.visibilityBadge,
+                result?.routing === 'public_candidate' ? styles.publicBadge : styles.privateBadge,
+              ]}>
+                <Ionicons
+                  name={result?.routing === 'public_candidate' ? 'earth-outline' : 'lock-closed-outline'}
+                  size={14}
+                  color={result?.routing === 'public_candidate' ? BRAND.success : BRAND.warning}
+                />
+                <Text style={[
+                  styles.visibilityBadgeText,
+                  result?.routing === 'public_candidate' ? styles.publicBadgeText : styles.privateBadgeText,
+                ]}>
+                  {result?.routing === 'public_candidate' ? 'Public review' : 'Private'}
+                </Text>
+              </View>
+            </View>
+            <Text style={styles.summaryTitle}>{summaryTitle}</Text>
+            <Text style={styles.summaryDetail}>{summaryDetail}</Text>
+            {detailsAvailable ? (
+              <Pressable
+                style={styles.detailsButton}
+                onPress={() => setShowDetails((current) => !current)}
+              >
+                <Ionicons name={showDetails ? 'chevron-up-outline' : 'list-outline'} size={18} color={BRAND.primaryDark} />
+                <Text style={styles.detailsButtonText}>{showDetails ? 'Hide details' : 'View details'}</Text>
+              </Pressable>
+            ) : null}
+          </View>
+        ) : null}
+
+        {shouldShowDetails && eventCount > 1 ? (
           <View style={styles.carouselSection}>
             <View style={styles.carouselHeader}>
               <Text style={styles.carouselTitle}>{eventCount} events found</Text>
@@ -540,19 +649,9 @@ export default function SharedEventScreen() {
               ))}
             </View>
           </View>
-        ) : (
+        ) : shouldShowDetails ? (
           renderEventCard(eventSnapshots[0] || snapshot, 0)
-        )}
-
-        <View style={[styles.statusPanel, { borderColor: status.color }]}>
-          <View style={[styles.statusIcon, { backgroundColor: `${status.color}18` }]}>
-            <Ionicons name={status.icon} size={23} color={status.color} />
-          </View>
-          <View style={styles.statusText}>
-            <Text style={styles.statusTitle}>{status.title}</Text>
-            <Text style={styles.statusDetail}>{status.detail}</Text>
-          </View>
-        </View>
+        ) : null}
       </ScrollView>
 
       <View style={styles.footer}>
@@ -563,21 +662,11 @@ export default function SharedEventScreen() {
           </Pressable>
         ) : (
           <Pressable
-            style={[styles.saveButton, isProcessing && styles.saveButtonDisabled]}
+            style={styles.saveButton}
             onPress={() => router.replace('/(tabs)/map')}
-            disabled={isProcessing}
           >
-            {isProcessing ? (
-              <>
-                <ActivityIndicator color="#FFFFFF" />
-                <Text style={styles.saveButtonText}>Saving Share</Text>
-              </>
-            ) : (
-              <>
-                <Ionicons name="checkmark-circle-outline" size={21} color="#FFFFFF" />
-                <Text style={styles.saveButtonText}>Done</Text>
-              </>
-            )}
+            <Ionicons name="checkmark-circle-outline" size={21} color="#FFFFFF" />
+            <Text style={styles.saveButtonText}>Done</Text>
           </Pressable>
         )}
       </View>
@@ -795,6 +884,7 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     borderWidth: 1,
     padding: 14,
+    marginBottom: 14,
   },
   statusIcon: {
     width: 44,
@@ -817,6 +907,51 @@ const styles = StyleSheet.create({
     color: BRAND.muted,
     marginTop: 3,
     lineHeight: 18,
+  },
+  summaryPanel: {
+    backgroundColor: BRAND.surface,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: BRAND.border,
+    padding: 16,
+    marginBottom: 14,
+  },
+  summaryBadgeRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 12,
+  },
+  summaryTitle: {
+    color: BRAND.ink,
+    fontSize: 20,
+    lineHeight: 25,
+    fontWeight: '800',
+  },
+  summaryDetail: {
+    color: BRAND.muted,
+    fontSize: 14,
+    lineHeight: 20,
+    marginTop: 6,
+  },
+  detailsButton: {
+    minHeight: 42,
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#CFE2FF',
+    backgroundColor: '#F3F8FF',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginTop: 14,
+  },
+  detailsButtonText: {
+    color: BRAND.primaryDark,
+    fontSize: 14,
+    fontWeight: '800',
   },
   footer: {
     position: 'absolute',
