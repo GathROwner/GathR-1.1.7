@@ -341,6 +341,10 @@ function resultIsFullyExpired(result: SharedEventSubmitResult | null): boolean {
   return result.status === 'expired' || result.reviewReasons?.includes('event_expired') === true;
 }
 
+function resultUsesInitialScanLanguage(result: SharedEventSubmitResult | null): boolean {
+  return result?.routing === 'public_candidate' && result?.sourceVisibility === 'public_verified';
+}
+
 function statusCopy(phase: Phase, result: SharedEventSubmitResult | null, errorMessage: string, eventCount: number): {
   icon: keyof typeof Ionicons.glyphMap;
   title: string;
@@ -379,8 +383,8 @@ function statusCopy(phase: Phase, result: SharedEventSubmitResult | null, errorM
       icon: 'earth-outline',
       title: 'Thanks for submitting',
       detail: eventCount > 1
-        ? `GathR found ${eventCount} possible events. If they are not already tracked, they will be added after review.`
-        : 'If this event is not already tracked, it will be added to GathR after review.',
+        ? `GathR found ${eventCount} initial matches. The full Facebook post may add or update more events after review.`
+        : 'GathR saved this share and will add or update the event after review if it is valid.',
       color: BRAND.success,
     };
   }
@@ -422,6 +426,10 @@ function usefulParsedDetailsCount(result: SharedEventSubmitResult | null, eventS
 function summaryTitleForResult(result: SharedEventSubmitResult | null, parsedDetailsCount: number): string {
   if (!result) return 'Share received';
   if (resultIsFullyExpired(result)) return parsedDetailsCount > 1 ? 'Expired events found' : 'Expired event found';
+  if (resultUsesInitialScanLanguage(result)) {
+    if (parsedDetailsCount > 1) return `${parsedDetailsCount} initial matches`;
+    if (parsedDetailsCount === 1) return 'Initial match found';
+  }
   if (parsedDetailsCount > 1) return `${parsedDetailsCount} possible events found`;
   if (parsedDetailsCount === 1) return 'Possible event found';
   return 'Facebook share received';
@@ -506,6 +514,7 @@ export default function SharedEventScreen() {
   const detailsAvailable = parsedDetailsCount > 0;
   const shouldShowDetails = showDetails && detailsAvailable;
   const summaryTitle = summaryTitleForResult(result, parsedDetailsCount);
+  const usesInitialScanLanguage = resultUsesInitialScanLanguage(result);
   const shareLabel = facebookShareLabel(snapshot);
   const isExpiredResult = resultIsFullyExpired(result);
   const routingLabel = phase === 'processing'
@@ -649,7 +658,7 @@ export default function SharedEventScreen() {
               <View style={styles.receiptDivider} />
               <View style={styles.receiptFoundRow}>
                 <View style={styles.receiptFoundText}>
-                  <Text style={styles.receiptFoundLabel}>Detected</Text>
+                  <Text style={styles.receiptFoundLabel}>{usesInitialScanLanguage ? 'Initial scan' : 'Detected'}</Text>
                   <Text style={styles.receiptFoundTitle}>{summaryTitle}</Text>
                 </View>
                 <Pressable
@@ -667,7 +676,9 @@ export default function SharedEventScreen() {
         {shouldShowDetails && eventCount > 1 ? (
           <View style={styles.carouselSection}>
             <View style={styles.carouselHeader}>
-              <Text style={styles.carouselTitle}>{eventCount} events found</Text>
+              <Text style={styles.carouselTitle}>
+                {usesInitialScanLanguage ? `${eventCount} initial matches` : `${eventCount} events found`}
+              </Text>
               <Text style={styles.carouselCounter}>{selectedEventIndex + 1}/{eventCount}</Text>
             </View>
             <ScrollView
