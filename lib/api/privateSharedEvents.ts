@@ -2,7 +2,11 @@ import { collection, getDocs } from 'firebase/firestore';
 
 import { auth, firestore } from '../../config/firebaseConfig';
 import { Event } from '../../types/events';
-import { FIRESTORE_API_BASE } from '../config/backend';
+import {
+  FIRESTORE_API_BASE,
+  FIRESTORE_MAX_PAGES,
+  FIRESTORE_PAGE_LIMIT,
+} from '../config/backend';
 
 type SharedEventSourcePlatform = 'facebook' | 'instagram' | 'web' | 'unknown';
 type SharedEventSourceVisibility =
@@ -45,11 +49,14 @@ type PrivateSharedEventDoc = {
 
 type VenueDirectoryEntry = {
   id?: string;
+  name?: string;
   pagename?: string;
   title?: string;
   address?: string;
   latitude?: number;
   longitude?: number;
+  lat?: number;
+  lng?: number;
   profileImage?: string;
   facebookUrl?: string;
   instagramUrl?: string;
@@ -57,6 +64,15 @@ type VenueDirectoryEntry = {
   phone?: string;
   categories?: string[];
   category1?: string;
+  aliases?: string[];
+  aliasesNormalized?: string[];
+  normalizedName?: string;
+  coordinates?: {
+    latitude?: number;
+    longitude?: number;
+    lat?: number;
+    lng?: number;
+  };
   placeDetailsParsed?: {
     formatted_address?: string;
     international_phone_number?: string;
@@ -65,6 +81,12 @@ type VenueDirectoryEntry = {
   };
   rating?: number;
   ratingOverall?: number;
+};
+
+type VenueDirectoryResponse = {
+  venues?: VenueDirectoryEntry[];
+  nextPageToken?: string;
+  pageLimit?: number;
 };
 
 let venueDirectoryPromise: Promise<VenueDirectoryEntry[]> | null = null;
@@ -84,6 +106,14 @@ const firstText = (...values: unknown[]): string => {
     if (text) return text;
   }
   return '';
+};
+
+const firstFiniteNumber = (...values: unknown[]): number => {
+  for (const value of values) {
+    const numberValue = Number(value);
+    if (Number.isFinite(numberValue)) return numberValue;
+  }
+  return Number.NaN;
 };
 
 const hasUsableDate = (event: PrivateSharedEventDoc): boolean =>
@@ -125,14 +155,33 @@ const inferCategory = (event: PrivateSharedEventDoc): string => {
 const fetchVenueDirectory = async (): Promise<VenueDirectoryEntry[]> => {
   if (venueDirectoryPromise) return venueDirectoryPromise;
 
-  venueDirectoryPromise = fetch(`${FIRESTORE_API_BASE}/venues`)
-    .then(async (response) => {
-      if (!response.ok) return [];
-      const payload = await response.json();
+  venueDirectoryPromise = (async () => {
+    const venues: VenueDirectoryEntry[] = [];
+    let nextPageToken: string | undefined;
+    let pageCount = 0;
+
+    do {
+      const params = new URLSearchParams();
+      params.set('limit', String(FIRESTORE_PAGE_LIMIT));
+      if (nextPageToken) {
+        params.set('startAfter', nextPageToken);
+      }
+
+      const response = await fetch(`${FIRESTORE_API_BASE}/venues?${params.toString()}`);
+      if (!response.ok) break;
+
+      const payload = (await response.json()) as VenueDirectoryResponse | VenueDirectoryEntry[];
       const rows = Array.isArray(payload) ? payload : payload?.venues;
-      return Array.isArray(rows) ? rows : [];
-    })
-    .catch((error) => {
+      if (Array.isArray(rows)) {
+        venues.push(...rows);
+      }
+
+      nextPageToken = Array.isArray(payload) ? undefined : payload?.nextPageToken;
+      pageCount += 1;
+    } while (nextPageToken && pageCount < FIRESTORE_MAX_PAGES);
+
+    return venues;
+  })().catch((error) => {
       console.warn('[PrivateSharedEvents] Failed to fetch venue directory:', error);
       return [];
     });
@@ -152,13 +201,20 @@ const matchVenue = (
   if (!locationName && !address) return null;
 
   return venues.find((venue) => {
-    const venueName = normalizeText(firstText(venue.pagename, venue.title));
+    const venueNames = [
+      firstText(venue.pagename, venue.name, venue.title),
+      venue.normalizedName,
+      ...(Array.isArray(venue.aliases) ? venue.aliases : []),
+      ...(Array.isArray(venue.aliasesNormalized) ? venue.aliasesNormalized : []),
+    ].map(normalizeText).filter(Boolean);
     const venueAddress = normalizeText(firstText(venue.address, venue.placeDetailsParsed?.formatted_address));
     const nameMatches =
-      Boolean(locationName && venueName) &&
-      (venueName === locationName ||
+      Boolean(locationName && venueNames.length) &&
+      venueNames.some((venueName) =>
+        venueName === locationName ||
         venueName.includes(locationName) ||
-        locationName.includes(venueName));
+        locationName.includes(venueName)
+      );
     const addressMatches =
       Boolean(address && venueAddress) &&
       (venueAddress.includes(address) || address.includes(venueAddress));
@@ -174,13 +230,13 @@ const normalizePrivateSharedEvent = (
 ): Event | null => {
   if (!hasUsableDate(event) || isExpiredForDisplay(event)) return null;
 
-  const latitude = Number(venue.latitude);
-  const longitude = Number(venue.longitude);
+  const latitude = firstFiniteNumber(venue.latitude, venue.lat, venue.coordinates?.latitude, venue.coordinates?.lat);
+  const longitude = firstFiniteNumber(venue.longitude, venue.lng, venue.coordinates?.longitude, venue.coordinates?.lng);
   if (!Number.isFinite(latitude) || !Number.isFinite(longitude) || (latitude === 0 && longitude === 0)) {
     return null;
   }
 
-  const venueName = firstText(event.locationName, event.visibilityEvidence?.locationName, venue.pagename, venue.title);
+  const venueName = firstText(event.locationName, event.visibilityEvidence?.locationName, venue.pagename, venue.name, venue.title);
   const address = firstText(event.address, event.visibilityEvidence?.address, venue.address, venue.placeDetailsParsed?.formatted_address);
   const mediaUrls = Array.isArray(event.mediaUrls) ? event.mediaUrls.filter(Boolean) : [];
   const imageUrl = firstText(mediaUrls[0], event.visibilityEvidence?.imageUrl);
