@@ -2,7 +2,7 @@ import { auth } from '../config/firebaseConfig';
 
 const DEFAULT_FUNCTIONS_BASE_URL = 'https://northamerica-northeast2-gathr-m1.cloudfunctions.net';
 
-const FUNCTIONS_BASE_URL = (
+export const FUNCTIONS_BASE_URL = (
   (typeof process !== 'undefined' && process?.env?.EXPO_PUBLIC_GATHR_FUNCTIONS_BASE_URL) ||
   DEFAULT_FUNCTIONS_BASE_URL
 ).replace(/\/+$/, '');

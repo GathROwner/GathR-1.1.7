@@ -1,5 +1,5 @@
-import { getDownloadURL, ref, uploadBytesResumable } from 'firebase/storage';
-import { auth, storage } from '../config/firebaseConfig';
+import { auth } from '../config/firebaseConfig';
+import { FUNCTIONS_BASE_URL } from './sharedEventApi';
 
 export type SharedIntentMediaFile = {
   path: string;
@@ -40,25 +40,38 @@ async function uploadSharedEventImage(file: SharedIntentMediaFile, index: number
   const extension = extensionForMimeType(file.mimeType || blob.type);
   const fallbackName = `image-${index + 1}.${extension}`;
   const fileName = sanitizeFileName(file.fileName, fallbackName);
-  const uploadPath = `sharedEventUploads/${user.uid}/${Date.now()}-${index + 1}-${fileName}`;
-  const uploadRef = ref(storage, uploadPath);
-  const uploadTask = uploadBytesResumable(uploadRef, blob, {
-    contentType: file.mimeType || blob.type || `image/${extension}`,
-    customMetadata: {
-      source: 'ios_share_extension',
+  const base64Data = await blobToBase64(blob);
+  const token = await user.getIdToken();
+  const uploadResponse = await fetch(`${FUNCTIONS_BASE_URL}/uploadSharedEventImage`, {
+    method: 'POST',
+    headers: {
+      authorization: `Bearer ${token}`,
+      'content-type': 'application/json',
     },
+    body: JSON.stringify({
+      fileName,
+      contentType: file.mimeType || blob.type || `image/${extension}`,
+      base64Data,
+    }),
   });
 
-  return new Promise<string>((resolve, reject) => {
-    uploadTask.on(
-      'state_changed',
-      undefined,
-      reject,
-      async () => {
-        const downloadUrl = await getDownloadURL(uploadTask.snapshot.ref);
-        resolve(downloadUrl);
-      }
-    );
+  const result = await uploadResponse.json().catch(() => ({})) as { mediaUrl?: string; error?: string };
+  if (!uploadResponse.ok || !result.mediaUrl) {
+    throw new Error(result.error || `Shared image upload failed (${uploadResponse.status})`);
+  }
+
+  return result.mediaUrl;
+}
+
+function blobToBase64(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(reader.error || new Error('Could not read shared image.'));
+    reader.onloadend = () => {
+      const result = String(reader.result || '');
+      resolve(result.replace(/^data:[^;]+;base64,/i, ''));
+    };
+    reader.readAsDataURL(blob);
   });
 }
 
