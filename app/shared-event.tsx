@@ -65,6 +65,15 @@ type SharedEventSnapshot = {
   extractedFromShare?: boolean;
 };
 
+type SharedEventSourceContext = {
+  badgeLabel: string;
+  receiptDetail: string;
+  shareSubject: string;
+  publicReviewSource: string;
+  iconName: keyof typeof Ionicons.glyphMap;
+  iconColor: string;
+};
+
 function firstParam(value: string | string[] | undefined): string {
   if (Array.isArray(value)) return value[0] || '';
   return value || '';
@@ -195,8 +204,51 @@ function facebookShareKind(snapshot: SharedEventSnapshot): 'event' | 'post' {
   return 'event';
 }
 
-function facebookShareLabel(snapshot: SharedEventSnapshot): string {
-  return facebookShareKind(snapshot) === 'post' ? 'Facebook Post' : 'Facebook Event';
+function sharedEventSourceContext(snapshot: SharedEventSnapshot): SharedEventSourceContext {
+  const hasMedia = snapshot.mediaUrls.length > 0 || snapshot.mediaFiles.length > 0;
+  if (isFacebookUrl(snapshot.sourceUrl)) {
+    const isPost = facebookShareKind(snapshot) === 'post';
+    return {
+      badgeLabel: isPost ? 'Facebook Post' : 'Facebook Event',
+      receiptDetail: 'Facebook share',
+      shareSubject: 'Facebook share',
+      publicReviewSource: isPost ? 'full Facebook post' : 'Facebook event',
+      iconName: 'logo-facebook',
+      iconColor: '#1877F2',
+    };
+  }
+
+  if (hasMedia && !snapshot.sourceUrl) {
+    const imageCount = snapshot.mediaUrls.length + snapshot.mediaFiles.length;
+    return {
+      badgeLabel: imageCount > 1 ? 'Event Photos' : 'Event Photo',
+      receiptDetail: 'Photo share',
+      shareSubject: 'photo share',
+      publicReviewSource: 'shared image',
+      iconName: 'image-outline',
+      iconColor: BRAND.primaryDark,
+    };
+  }
+
+  if (snapshot.sourceUrl) {
+    return {
+      badgeLabel: hasMedia ? 'Link + Photo' : 'Shared Link',
+      receiptDetail: 'Link share',
+      shareSubject: hasMedia ? 'link and photo share' : 'link share',
+      publicReviewSource: 'shared source',
+      iconName: 'link-outline',
+      iconColor: BRAND.primaryDark,
+    };
+  }
+
+  return {
+    badgeLabel: 'Shared Item',
+    receiptDetail: 'Shared item',
+    shareSubject: 'share',
+    publicReviewSource: 'shared source',
+    iconName: 'share-social-outline',
+    iconColor: BRAND.primaryDark,
+  };
 }
 
 async function payloadFromSnapshot(snapshot: SharedEventSnapshot): Promise<SharedEventPayload> {
@@ -345,7 +397,13 @@ function resultUsesInitialScanLanguage(result: SharedEventSubmitResult | null): 
   return result?.routing === 'public_candidate';
 }
 
-function statusCopy(phase: Phase, result: SharedEventSubmitResult | null, errorMessage: string, eventCount: number): {
+function statusCopy(
+  phase: Phase,
+  result: SharedEventSubmitResult | null,
+  errorMessage: string,
+  eventCount: number,
+  sourceContext: SharedEventSourceContext
+): {
   icon: keyof typeof Ionicons.glyphMap;
   title: string;
   detail: string;
@@ -355,7 +413,7 @@ function statusCopy(phase: Phase, result: SharedEventSubmitResult | null, errorM
     return {
       icon: 'checkmark-circle-outline',
       title: 'Thanks for submitting',
-      detail: 'GathR is saving this Facebook share. If it is not already tracked, it will be added soon.',
+      detail: `GathR is saving this ${sourceContext.shareSubject}. If it is not already tracked, it will be added soon.`,
       color: BRAND.primary,
     };
   }
@@ -383,7 +441,7 @@ function statusCopy(phase: Phase, result: SharedEventSubmitResult | null, errorM
       icon: 'earth-outline',
       title: 'Thanks for submitting',
       detail: eventCount > 1
-        ? `GathR found ${eventCount} initial matches. The full Facebook post may add or update more events after review.`
+        ? `GathR found ${eventCount} initial matches. The ${sourceContext.publicReviewSource} may add or update more events after review.`
         : 'GathR saved this share and will add or update the event after review if it is valid.',
       color: BRAND.success,
     };
@@ -432,7 +490,7 @@ function summaryTitleForResult(result: SharedEventSubmitResult | null, parsedDet
   }
   if (parsedDetailsCount > 1) return `${parsedDetailsCount} possible events found`;
   if (parsedDetailsCount === 1) return 'Possible event found';
-  return 'Facebook share received';
+  return 'Share received';
 }
 
 function reviewReasonLabel(value: string): string {
@@ -507,7 +565,8 @@ export default function SharedEventScreen() {
 
   const eventCount = eventSnapshots.length;
   const cardWidth = Math.max(280, width - 32);
-  const status = statusCopy(phase, result, errorMessage, eventCount);
+  const sourceContext = sharedEventSourceContext(snapshot);
+  const status = statusCopy(phase, result, errorMessage, eventCount, sourceContext);
   const parsedDetailsCount = phase === 'processing' || phase === 'error'
     ? 0
     : usefulParsedDetailsCount(result, eventSnapshots);
@@ -515,7 +574,6 @@ export default function SharedEventScreen() {
   const shouldShowDetails = showDetails && detailsAvailable;
   const summaryTitle = summaryTitleForResult(result, parsedDetailsCount);
   const usesInitialScanLanguage = resultUsesInitialScanLanguage(result);
-  const shareLabel = facebookShareLabel(snapshot);
   const isExpiredResult = resultIsFullyExpired(result);
   const routingLabel = phase === 'processing'
     ? 'Sending'
@@ -565,7 +623,7 @@ export default function SharedEventScreen() {
         <View style={styles.detailBody}>
           <View style={styles.detailHeadingRow}>
             <Text style={styles.detailKicker}>{eventCount > 1 ? `${index + 1} of ${eventCount}` : 'Details'}</Text>
-            <Text style={styles.detailSource}>{shareLabel}</Text>
+            <Text style={styles.detailSource}>{sourceContext.badgeLabel}</Text>
           </View>
 
           <Text style={styles.detailTitle} numberOfLines={3}>{title}</Text>
@@ -627,7 +685,7 @@ export default function SharedEventScreen() {
             <Image source={GATHR_LOGO} style={styles.receiptLogo} resizeMode="contain" />
             <View style={styles.receiptBrandText}>
               <Text style={styles.receiptBrandTitle}>GathR</Text>
-              <Text style={styles.receiptBrandDetail}>Facebook share</Text>
+              <Text style={styles.receiptBrandDetail}>{sourceContext.receiptDetail}</Text>
             </View>
             <View style={[styles.receiptRouteBadge, {
               backgroundColor: `${status.color}12`,
@@ -640,8 +698,8 @@ export default function SharedEventScreen() {
 
           <View style={styles.receiptSourceRow}>
             <View style={styles.sourceBadge}>
-              <Ionicons name="logo-facebook" size={16} color="#1877F2" />
-              <Text style={styles.sourceBadgeText}>{shareLabel}</Text>
+              <Ionicons name={sourceContext.iconName} size={16} color={sourceContext.iconColor} />
+              <Text style={styles.sourceBadgeText}>{sourceContext.badgeLabel}</Text>
             </View>
           </View>
 
