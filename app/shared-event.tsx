@@ -55,6 +55,7 @@ type SharedEventSnapshot = {
   reviewReasons: string[];
   confidence: number;
   needsUserReview: boolean;
+  isExpired?: boolean;
   sequenceIndex?: number;
   extractedFromShare?: boolean;
 };
@@ -203,6 +204,7 @@ function mergeEventIntoSnapshot(
     reviewReasons: event.reviewReasons || snapshot.reviewReasons,
     confidence: event.confidence ?? snapshot.confidence,
     needsUserReview: event.needsUserReview ?? snapshot.needsUserReview,
+    isExpired: event.isExpired ?? snapshot.isExpired,
     sequenceIndex: event.sequenceIndex ?? snapshot.sequenceIndex,
     extractedFromShare: event.extractedFromShare ?? snapshot.extractedFromShare,
   };
@@ -262,6 +264,25 @@ function sourceLabel(snapshot: SharedEventSnapshot): string {
   }
 }
 
+function resultEvents(result: SharedEventSubmitResult | null): SharedEventResultEvent[] {
+  if (!result) return [];
+  if (result.events?.length) return result.events;
+  return result.event ? [result.event] : [];
+}
+
+function resultEventIsExpired(event: SharedEventResultEvent): boolean {
+  return event.isExpired === true ||
+    event.status === 'expired' ||
+    event.reviewReasons?.includes('event_expired') === true;
+}
+
+function resultIsFullyExpired(result: SharedEventSubmitResult | null): boolean {
+  if (!result) return false;
+  const events = resultEvents(result);
+  if (events.length > 0) return events.every(resultEventIsExpired);
+  return result.status === 'expired' || result.reviewReasons?.includes('event_expired') === true;
+}
+
 function statusCopy(phase: Phase, result: SharedEventSubmitResult | null, errorMessage: string, eventCount: number): {
   icon: keyof typeof Ionicons.glyphMap;
   title: string;
@@ -283,6 +304,15 @@ function statusCopy(phase: Phase, result: SharedEventSubmitResult | null, errorM
       title: 'Could not save share',
       detail: errorMessage || 'GathR could not process this share.',
       color: BRAND.danger,
+    };
+  }
+
+  if (resultIsFullyExpired(result)) {
+    return {
+      icon: 'time-outline',
+      title: 'Already happened',
+      detail: 'GathR saved this share, but it looks like the event has already passed.',
+      color: BRAND.warning,
     };
   }
 
@@ -333,6 +363,7 @@ function usefulParsedDetailsCount(result: SharedEventSubmitResult | null, eventS
 
 function summaryTitleForResult(result: SharedEventSubmitResult | null, parsedDetailsCount: number): string {
   if (!result) return 'Share received';
+  if (resultIsFullyExpired(result)) return parsedDetailsCount > 1 ? 'Expired events found' : 'Expired event found';
   if (parsedDetailsCount > 1) return `${parsedDetailsCount} possible events found`;
   if (parsedDetailsCount === 1) return 'Possible event found';
   return 'Facebook share received';
@@ -346,6 +377,8 @@ function reviewReasonLabel(value: string): string {
       return 'Needs date';
     case 'missing_location':
       return 'Needs place';
+    case 'event_expired':
+      return 'Already happened';
     default:
       return value.replace(/_/g, ' ');
   }
@@ -416,10 +449,13 @@ export default function SharedEventScreen() {
   const shouldShowDetails = showDetails && detailsAvailable;
   const summaryTitle = summaryTitleForResult(result, parsedDetailsCount);
   const shareLabel = facebookShareLabel(snapshot);
+  const isExpiredResult = resultIsFullyExpired(result);
   const routingLabel = phase === 'processing'
     ? 'Sending'
     : phase === 'error'
       ? 'Retry needed'
+      : isExpiredResult
+        ? 'Expired'
       : result?.routing === 'public_candidate'
         ? 'Public review'
         : 'Private';
@@ -427,6 +463,8 @@ export default function SharedEventScreen() {
     ? 'sync-outline'
     : phase === 'error'
       ? 'alert-circle-outline'
+      : isExpiredResult
+        ? 'time-outline'
       : result?.routing === 'public_candidate'
         ? 'earth-outline'
         : 'lock-closed-outline';

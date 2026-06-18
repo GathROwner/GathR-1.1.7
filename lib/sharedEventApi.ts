@@ -40,9 +40,12 @@ export type SharedEventResultEvent = {
   imageUrl?: string;
   sourceUrl?: string;
   sourcePlatform?: string;
+  routing?: 'private_only' | 'public_candidate' | 'not_public_candidate';
+  status?: 'needs_user_review' | 'saved' | 'submitted_public_candidate' | 'expired';
   confidence?: number;
   needsUserReview?: boolean;
   reviewReasons?: string[];
+  isExpired?: boolean;
   sequenceIndex?: number;
   extractedFromShare?: boolean;
 };
@@ -54,9 +57,9 @@ export type SharedEventSubmitResult = {
   privateEventIds?: string[];
   publicCandidateId?: string;
   publicCandidateIds?: string[];
-  routing?: 'private_only' | 'public_candidate';
+  routing?: 'private_only' | 'public_candidate' | 'not_public_candidate';
   sourceVisibility?: 'public_verified' | 'restricted_unverified' | 'user_private' | 'unknown';
-  status?: 'needs_user_review' | 'saved' | 'submitted_public_candidate';
+  status?: 'needs_user_review' | 'saved' | 'submitted_public_candidate' | 'expired';
   extractedEventCount?: number;
   needsUserReview?: boolean;
   reviewReasons?: string[];
