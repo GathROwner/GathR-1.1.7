@@ -327,8 +327,7 @@ function usefulParsedDetailsCount(result: SharedEventSubmitResult | null, eventS
     eventSnapshot.startTime ||
     eventSnapshot.locationName ||
     eventSnapshot.address ||
-    eventSnapshot.description ||
-    eventSnapshot.mediaUrl
+    eventSnapshot.description
   )).length;
 }
 
@@ -369,7 +368,6 @@ export default function SharedEventScreen() {
   const [phase, setPhase] = useState<Phase>('processing');
   const [result, setResult] = useState<SharedEventSubmitResult | null>(null);
   const [errorMessage, setErrorMessage] = useState('');
-  const [failedImageUrls, setFailedImageUrls] = useState<string[]>([]);
   const [showDetails, setShowDetails] = useState(false);
 
   const submitSnapshot = useCallback(async (nextSnapshot: SharedEventSnapshot) => {
@@ -433,22 +431,12 @@ export default function SharedEventScreen() {
         ? 'earth-outline'
         : 'lock-closed-outline';
 
-  useEffect(() => {
-    setFailedImageUrls([]);
-  }, [eventSnapshots]);
-
   const onCarouselMomentumEnd = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
     const nextIndex = Math.round(event.nativeEvent.contentOffset.x / (cardWidth + 12));
     setSelectedEventIndex(Math.max(0, Math.min(eventCount - 1, nextIndex)));
   }, [cardWidth, eventCount]);
 
-  const markImageFailed = useCallback((imageUrl: string) => {
-    setFailedImageUrls((current) => current.includes(imageUrl) ? current : [...current, imageUrl]);
-  }, []);
-
   const renderEventDetailsPanel = (eventSnapshot: SharedEventSnapshot, index: number) => {
-    const imageUri = eventSnapshot.mediaUrl;
-    const canShowImage = Boolean(imageUri && !failedImageUrls.includes(imageUri));
     const title = eventSnapshot.title || (eventCount > 1 ? `Possible event ${index + 1}` : summaryTitle);
     const dateTime = eventSnapshot.startDate || eventSnapshot.startTime ? formatDateTime(eventSnapshot) : '';
     const location = eventSnapshot.address || eventSnapshot.locationName;
@@ -469,15 +457,6 @@ export default function SharedEventScreen() {
         key={`${eventSnapshot.startDate || 'event'}-${eventSnapshot.title || index}-${index}`}
         style={[styles.detailPanel, eventCount > 1 && { width: cardWidth }]}
       >
-        {canShowImage ? (
-          <Image
-            source={{ uri: imageUri }}
-            style={styles.detailImage}
-            resizeMode="cover"
-            onError={() => markImageFailed(imageUri)}
-          />
-        ) : null}
-
         <View style={styles.detailBody}>
           <View style={styles.detailHeadingRow}>
             <Text style={styles.detailKicker}>{eventCount > 1 ? `${index + 1} of ${eventCount}` : 'Details'}</Text>
@@ -837,11 +816,6 @@ const styles = StyleSheet.create({
     borderColor: BRAND.border,
     overflow: 'hidden',
     marginBottom: 14,
-  },
-  detailImage: {
-    width: '100%',
-    aspectRatio: 16 / 9,
-    backgroundColor: BRAND.border,
   },
   detailBody: {
     padding: 16,
