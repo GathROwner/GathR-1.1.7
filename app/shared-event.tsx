@@ -537,7 +537,7 @@ export default function SharedEventScreen() {
         </Pressable>
       </View>
 
-      <ScrollView contentContainerStyle={styles.content}>
+      <ScrollView style={styles.scroller} contentContainerStyle={styles.content}>
         <View style={[styles.receiptCard, { borderColor: `${status.color}44` }]}>
           <View style={styles.receiptHeaderRow}>
             <Image source={GATHR_LOGO} style={styles.receiptLogo} resizeMode="contain" />
@@ -678,9 +678,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderRadius: 20,
   },
+  scroller: {
+    flex: 1,
+  },
   content: {
     padding: 16,
-    paddingBottom: 112,
+    paddingBottom: 24,
   },
   receiptCard: {
     backgroundColor: BRAND.surface,
@@ -1135,10 +1138,6 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   footer: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
     padding: 16,
     backgroundColor: BRAND.surface,
     borderTopWidth: 1,
