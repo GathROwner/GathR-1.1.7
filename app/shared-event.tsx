@@ -342,7 +342,7 @@ function resultIsFullyExpired(result: SharedEventSubmitResult | null): boolean {
 }
 
 function resultUsesInitialScanLanguage(result: SharedEventSubmitResult | null): boolean {
-  return result?.routing === 'public_candidate' && result?.sourceVisibility === 'public_verified';
+  return result?.routing === 'public_candidate';
 }
 
 function statusCopy(phase: Phase, result: SharedEventSubmitResult | null, errorMessage: string, eventCount: number): {
