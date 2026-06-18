@@ -184,7 +184,7 @@ plugins: [
           NSExtensionActivationSupportsText: true,
           NSExtensionActivationSupportsWebURLWithMaxCount: 1,
           NSExtensionActivationSupportsWebPageWithMaxCount: 1,
-          NSExtensionActivationSupportsImageWithMaxCount: 1
+          NSExtensionActivationSupportsImageWithMaxCount: 6
         },
         androidIntentFilters: ["text/*", "image/*"],
         iosShareExtensionName: "Save to GathR"

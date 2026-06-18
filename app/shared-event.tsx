@@ -20,6 +20,10 @@ import {
   SharedEventResultEvent,
   SharedEventSubmitResult,
 } from '../lib/sharedEventApi';
+import {
+  resolveSharedEventMediaUrls,
+  SharedIntentMediaFile,
+} from '../lib/sharedEventMediaUpload';
 
 const BRAND = {
   primary: '#1E90FF',
@@ -49,7 +53,8 @@ type SharedEventSnapshot = {
   endTime: string;
   locationName: string;
   address: string;
-  mediaUrl: string;
+  mediaUrls: string[];
+  mediaFiles: SharedIntentMediaFile[];
   visibilityHint: string;
   sourceApp: string;
   reviewReasons: string[];
@@ -78,9 +83,47 @@ function extractUrl(value: string): string {
   return match?.[0]?.replace(/[.,;:!?]+$/, '') || '';
 }
 
+function parseJsonArrayParam<T>(value: string | string[] | undefined): T[] {
+  const raw = firstParam(value);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed as T[] : [];
+  } catch {
+    return [];
+  }
+}
+
+function parseStringListParam(value: string | string[] | undefined): string[] {
+  if (Array.isArray(value)) return value.filter(Boolean);
+  const raw = String(value || '').trim();
+  if (!raw) return [];
+  const parsed = parseJsonArrayParam<string>(raw);
+  if (parsed.length > 0) return parsed.filter(Boolean);
+  return [raw];
+}
+
+function mediaFilesFromParams(params: Record<string, string | string[] | undefined>): SharedIntentMediaFile[] {
+  const files: SharedIntentMediaFile[] = parseJsonArrayParam<SharedIntentMediaFile>(params.mediaFiles)
+    .filter((file) => typeof file?.path === 'string' && file.path.trim().length > 0)
+    .map((file) => ({
+      path: file.path.trim(),
+      mimeType: typeof file.mimeType === 'string' ? file.mimeType : undefined,
+      fileName: typeof file.fileName === 'string' ? file.fileName : undefined,
+    }));
+  const legacyMediaUrl = firstParam(params.mediaUrl);
+  if (legacyMediaUrl && !files.some((file) => file.path === legacyMediaUrl)) {
+    files.unshift({ path: legacyMediaUrl });
+  }
+  return files;
+}
+
 function buildInitialState(params: Record<string, string | string[] | undefined>): SharedEventSnapshot {
   const sharedText = normalizeSharedTextFromParams(params);
   const sourceUrl = firstParam(params.url) || firstParam(params.sourceUrl) || extractUrl(sharedText);
+  const mediaFiles = mediaFilesFromParams(params);
+  const mediaUrls = parseStringListParam(params.mediaUrls)
+    .filter((url) => /^https?:\/\//i.test(url));
 
   return {
     sourceUrl,
@@ -93,7 +136,8 @@ function buildInitialState(params: Record<string, string | string[] | undefined>
     endTime: firstParam(params.endTime),
     locationName: firstParam(params.locationName) || firstParam(params.venueName),
     address: firstParam(params.address),
-    mediaUrl: firstParam(params.mediaUrl),
+    mediaUrls,
+    mediaFiles,
     visibilityHint: firstParam(params.visibilityHint),
     sourceApp: firstParam(params.sourceApp) || firstParam(params.app),
     reviewReasons: [],
@@ -111,7 +155,8 @@ function signatureForSnapshot(snapshot: SharedEventSnapshot): string {
     snapshot.startDate,
     snapshot.startTime,
     snapshot.locationName,
-    snapshot.mediaUrl,
+    snapshot.mediaUrls.join('|'),
+    snapshot.mediaFiles.map((file) => file.path).join('|'),
   ].join('::');
 }
 
@@ -152,8 +197,15 @@ function facebookShareLabel(snapshot: SharedEventSnapshot): string {
   return facebookShareKind(snapshot) === 'post' ? 'Facebook Post' : 'Facebook Event';
 }
 
-function payloadFromSnapshot(snapshot: SharedEventSnapshot): SharedEventPayload {
+async function payloadFromSnapshot(snapshot: SharedEventSnapshot): Promise<SharedEventPayload> {
   const sourcePlatform = isFacebookUrl(snapshot.sourceUrl) ? 'facebook' : undefined;
+  const uploadedMediaUrls = snapshot.mediaFiles.length > 0
+    ? await resolveSharedEventMediaUrls(snapshot.mediaFiles)
+    : [];
+  const mediaUrls = Array.from(new Set([
+    ...snapshot.mediaUrls,
+    ...uploadedMediaUrls,
+  ].filter(Boolean)));
 
   return {
     sourceUrl: snapshot.sourceUrl.trim() || undefined,
@@ -166,7 +218,7 @@ function payloadFromSnapshot(snapshot: SharedEventSnapshot): SharedEventPayload 
     endTime: snapshot.endTime.trim() || undefined,
     locationName: snapshot.locationName.trim() || undefined,
     address: snapshot.address.trim() || undefined,
-    mediaUrls: snapshot.mediaUrl ? [snapshot.mediaUrl] : undefined,
+    mediaUrls: mediaUrls.length > 0 ? mediaUrls : undefined,
     visibilityHint: snapshot.visibilityHint || undefined,
     sourceApp: snapshot.sourceApp || undefined,
     sourcePlatform,
@@ -187,7 +239,11 @@ function mergeEventIntoSnapshot(
   snapshot: SharedEventSnapshot,
   event: SharedEventResultEvent
 ): SharedEventSnapshot {
-  const mediaUrl = event.imageUrl || event.mediaUrls?.[0] || snapshot.mediaUrl;
+  const mediaUrls = event.mediaUrls?.length
+    ? event.mediaUrls
+    : event.imageUrl
+      ? [event.imageUrl]
+      : snapshot.mediaUrls;
 
   return {
     ...snapshot,
@@ -200,7 +256,7 @@ function mergeEventIntoSnapshot(
     endTime: event.endTime || snapshot.endTime,
     locationName: event.locationName || snapshot.locationName,
     address: event.address || snapshot.address,
-    mediaUrl,
+    mediaUrls,
     reviewReasons: event.reviewReasons || snapshot.reviewReasons,
     confidence: event.confidence ?? snapshot.confidence,
     needsUserReview: event.needsUserReview ?? snapshot.needsUserReview,
@@ -414,7 +470,7 @@ export default function SharedEventScreen() {
     setErrorMessage('');
 
     try {
-      const submitResult = await submitSharedEvent(payloadFromSnapshot(nextSnapshot));
+      const submitResult = await submitSharedEvent(await payloadFromSnapshot(nextSnapshot));
       const nextEventSnapshots = snapshotsFromResult(nextSnapshot, submitResult);
       setResult(submitResult);
       setEventSnapshots(nextEventSnapshots);

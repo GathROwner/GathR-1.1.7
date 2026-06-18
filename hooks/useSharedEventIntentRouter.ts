@@ -5,6 +5,7 @@ import { ShareIntent, useShareIntentContext } from 'expo-share-intent';
 
 const SHARE_ROUTE_HOLD_MS = 2000;
 const SHARE_RESET_DELAY_MS = 500;
+const MAX_SHARED_IMAGE_FILES = 6;
 
 function extractUrl(value: string): string {
   const match = value.match(/https?:\/\/[^\s<>"')]+/i);
@@ -22,8 +23,15 @@ function buildSignature(shareIntent: ShareIntent, launchUrl: string | null): str
   ].join('::');
 }
 
-function firstImagePath(shareIntent: ShareIntent): string | undefined {
-  return shareIntent.files?.find((file) => file.mimeType?.startsWith('image/'))?.path || undefined;
+function imageFiles(shareIntent: ShareIntent): { path: string; mimeType?: string; fileName?: string }[] {
+  return (shareIntent.files || [])
+    .filter((file) => file.path && file.mimeType?.startsWith('image/'))
+    .slice(0, MAX_SHARED_IMAGE_FILES)
+    .map((file) => ({
+      path: file.path,
+      mimeType: file.mimeType,
+      fileName: file.fileName,
+    }));
 }
 
 function isShareIntentLaunchUrl(value: string | null): boolean {
@@ -51,7 +59,7 @@ export function useSharedEventIntentRouter(): { isRoutingShareIntent: boolean } 
     const sharedText = shareIntent.text || shareIntent.webUrl || '';
     const sourceUrl = shareIntent.webUrl || extractUrl(sharedText);
     const title = shareIntent.meta?.title || '';
-    const imagePath = firstImagePath(shareIntent);
+    const images = imageFiles(shareIntent);
 
     routedLaunchUrlRef.current = launchUrl || signature;
     setIsRouteHandoffActive(true);
@@ -71,7 +79,8 @@ export function useSharedEventIntentRouter(): { isRoutingShareIntent: boolean } 
         sharedText,
         title,
         sourceApp: 'native_share_sheet',
-        mediaUrl: imagePath || '',
+        mediaUrl: images[0]?.path || '',
+        mediaFiles: JSON.stringify(images),
       },
     });
 
