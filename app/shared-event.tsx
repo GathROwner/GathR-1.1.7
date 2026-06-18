@@ -340,33 +340,6 @@ function summaryTitleForResult(result: SharedEventSubmitResult | null, parsedDet
   return 'Facebook share received';
 }
 
-function summaryDetailForResult(
-  phase: Phase,
-  result: SharedEventSubmitResult | null,
-  parsedDetailsCount: number
-): string {
-  if (phase === 'processing') {
-    return 'You can leave this screen while GathR checks the share.';
-  }
-
-  if (!result) {
-    return 'If this event is not already tracked, it will be added to GathR soon.';
-  }
-
-  if (result.routing === 'public_candidate') {
-    if (parsedDetailsCount > 1) {
-      return 'These were saved and queued for public review.';
-    }
-    return 'It was saved and queued for public review.';
-  }
-
-  if (result.needsUserReview || result.routing === 'private_only') {
-    return 'This share stays private to your account unless it is promoted later.';
-  }
-
-  return 'If this event is not already tracked, it will be added to GathR soon.';
-}
-
 function reviewReasonLabel(value: string): string {
   switch (value) {
     case 'missing_title':
@@ -445,9 +418,22 @@ export default function SharedEventScreen() {
   const detailsAvailable = parsedDetailsCount > 0;
   const shouldShowDetails = showDetails && detailsAvailable;
   const summaryTitle = summaryTitleForResult(result, parsedDetailsCount);
-  const summaryDetail = summaryDetailForResult(phase, result, parsedDetailsCount);
   const shareLabel = facebookShareLabel(snapshot);
   const isProcessing = phase === 'processing';
+  const routingLabel = phase === 'processing'
+    ? 'Sending'
+    : phase === 'error'
+      ? 'Retry needed'
+      : result?.routing === 'public_candidate'
+        ? 'Public review'
+        : 'Private';
+  const routingIcon: keyof typeof Ionicons.glyphMap = phase === 'processing'
+    ? 'sync-outline'
+    : phase === 'error'
+      ? 'alert-circle-outline'
+      : result?.routing === 'public_candidate'
+        ? 'earth-outline'
+        : 'lock-closed-outline';
 
   useEffect(() => {
     setFailedImageUrls([]);
@@ -571,7 +557,7 @@ export default function SharedEventScreen() {
         </Pressable>
         <View style={styles.headerBrand}>
           <Image source={GATHR_LOGO} style={styles.headerLogo} resizeMode="contain" />
-          <Text style={styles.headerTitle}>Save to GathR</Text>
+          <Text style={styles.headerTitle}>Sent to GathR</Text>
         </View>
         <Pressable style={styles.iconButton} onPress={() => router.replace('/(tabs)/map')}>
           <Ionicons name="map-outline" size={22} color={BRAND.ink} />
@@ -579,61 +565,56 @@ export default function SharedEventScreen() {
       </View>
 
       <ScrollView contentContainerStyle={styles.content}>
-        <View style={styles.brandStrip}>
-          <Image source={GATHR_LOGO} style={styles.brandStripLogo} resizeMode="contain" />
-          <View style={styles.brandStripText}>
-            <Text style={styles.brandStripTitle}>GathR</Text>
-            <Text style={styles.brandStripDetail}>Facebook share</Text>
-          </View>
-        </View>
-
-        <View style={[styles.statusPanel, { borderColor: status.color }]}>
-          <View style={[styles.statusIcon, { backgroundColor: `${status.color}18` }]}>
-            <Ionicons name={status.icon} size={23} color={status.color} />
-          </View>
-          <View style={styles.statusText}>
-            <Text style={styles.statusTitle}>{status.title}</Text>
-            <Text style={styles.statusDetail}>{status.detail}</Text>
-          </View>
-        </View>
-
-        {phase !== 'processing' && phase !== 'error' && result ? (
-          <View style={styles.summaryPanel}>
-            <View style={styles.summaryBadgeRow}>
-              <View style={styles.sourceBadge}>
-                <Ionicons name="logo-facebook" size={16} color="#1877F2" />
-                <Text style={styles.sourceBadgeText}>{shareLabel}</Text>
-              </View>
-              <View style={[
-                styles.visibilityBadge,
-                result?.routing === 'public_candidate' ? styles.publicBadge : styles.privateBadge,
-              ]}>
-                <Ionicons
-                  name={result?.routing === 'public_candidate' ? 'earth-outline' : 'lock-closed-outline'}
-                  size={14}
-                  color={result?.routing === 'public_candidate' ? BRAND.success : BRAND.warning}
-                />
-                <Text style={[
-                  styles.visibilityBadgeText,
-                  result?.routing === 'public_candidate' ? styles.publicBadgeText : styles.privateBadgeText,
-                ]}>
-                  {result?.routing === 'public_candidate' ? 'Public review' : 'Private'}
-                </Text>
-              </View>
+        <View style={[styles.receiptCard, { borderColor: `${status.color}44` }]}>
+          <View style={styles.receiptHeaderRow}>
+            <Image source={GATHR_LOGO} style={styles.receiptLogo} resizeMode="contain" />
+            <View style={styles.receiptBrandText}>
+              <Text style={styles.receiptBrandTitle}>GathR</Text>
+              <Text style={styles.receiptBrandDetail}>Facebook share</Text>
             </View>
-            <Text style={styles.summaryTitle}>{summaryTitle}</Text>
-            <Text style={styles.summaryDetail}>{summaryDetail}</Text>
-            {detailsAvailable ? (
-              <Pressable
-                style={styles.detailsButton}
-                onPress={() => setShowDetails((current) => !current)}
-              >
-                <Ionicons name={showDetails ? 'chevron-up-outline' : 'list-outline'} size={18} color={BRAND.primaryDark} />
-                <Text style={styles.detailsButtonText}>{showDetails ? 'Hide details' : 'View details'}</Text>
-              </Pressable>
-            ) : null}
+            <View style={[styles.receiptRouteBadge, {
+              backgroundColor: `${status.color}12`,
+              borderColor: `${status.color}38`,
+            }]}>
+              <Ionicons name={routingIcon} size={14} color={status.color} />
+              <Text style={[styles.receiptRouteText, { color: status.color }]}>{routingLabel}</Text>
+            </View>
           </View>
-        ) : null}
+
+          <View style={styles.receiptSourceRow}>
+            <View style={styles.sourceBadge}>
+              <Ionicons name="logo-facebook" size={16} color="#1877F2" />
+              <Text style={styles.sourceBadgeText}>{shareLabel}</Text>
+            </View>
+          </View>
+
+          <View style={styles.receiptMain}>
+            <View style={[styles.receiptStatusIcon, { backgroundColor: `${status.color}16` }]}>
+              <Ionicons name={status.icon} size={25} color={status.color} />
+            </View>
+            <Text style={styles.receiptTitle}>{status.title}</Text>
+            <Text style={styles.receiptDetail}>{status.detail}</Text>
+          </View>
+
+          {phase !== 'processing' && phase !== 'error' && result && detailsAvailable ? (
+            <>
+              <View style={styles.receiptDivider} />
+              <View style={styles.receiptFoundRow}>
+                <View style={styles.receiptFoundText}>
+                  <Text style={styles.receiptFoundLabel}>Detected</Text>
+                  <Text style={styles.receiptFoundTitle}>{summaryTitle}</Text>
+                </View>
+                <Pressable
+                  style={styles.detailsButton}
+                  onPress={() => setShowDetails((current) => !current)}
+                >
+                  <Ionicons name={showDetails ? 'chevron-up-outline' : 'list-outline'} size={18} color={BRAND.primaryDark} />
+                  <Text style={styles.detailsButtonText}>{showDetails ? 'Hide details' : 'View details'}</Text>
+                </Pressable>
+              </View>
+            </>
+          ) : null}
+        </View>
 
         {shouldShowDetails && eventCount > 1 ? (
           <View style={styles.carouselSection}>
@@ -727,6 +708,118 @@ const styles = StyleSheet.create({
   content: {
     padding: 16,
     paddingBottom: 112,
+  },
+  receiptCard: {
+    backgroundColor: BRAND.surface,
+    borderRadius: 18,
+    borderWidth: 1,
+    padding: 18,
+    marginBottom: 14,
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.08,
+    shadowRadius: 18,
+    elevation: 3,
+  },
+  receiptHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  receiptLogo: {
+    width: 48,
+    height: 48,
+  },
+  receiptBrandText: {
+    flex: 1,
+    minWidth: 0,
+  },
+  receiptBrandTitle: {
+    color: BRAND.ink,
+    fontSize: 18,
+    lineHeight: 22,
+    fontWeight: '800',
+  },
+  receiptBrandDetail: {
+    color: BRAND.muted,
+    fontSize: 13,
+    lineHeight: 17,
+    fontWeight: '700',
+    marginTop: 1,
+  },
+  receiptRouteBadge: {
+    minHeight: 34,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    borderRadius: 999,
+    borderWidth: 1,
+    paddingHorizontal: 10,
+  },
+  receiptRouteText: {
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  receiptSourceRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 16,
+  },
+  receiptMain: {
+    alignItems: 'center',
+    paddingTop: 18,
+  },
+  receiptStatusIcon: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  receiptTitle: {
+    color: BRAND.ink,
+    fontSize: 26,
+    lineHeight: 31,
+    fontWeight: '900',
+    textAlign: 'center',
+    marginTop: 14,
+  },
+  receiptDetail: {
+    color: BRAND.muted,
+    fontSize: 15,
+    lineHeight: 22,
+    textAlign: 'center',
+    marginTop: 7,
+  },
+  receiptDivider: {
+    height: 1,
+    backgroundColor: '#E6EDF5',
+    marginVertical: 18,
+  },
+  receiptFoundRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  receiptFoundText: {
+    flex: 1,
+    minWidth: 0,
+  },
+  receiptFoundLabel: {
+    color: BRAND.muted,
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+  },
+  receiptFoundTitle: {
+    color: BRAND.ink,
+    fontSize: 17,
+    lineHeight: 22,
+    fontWeight: '800',
+    marginTop: 2,
   },
   brandStrip: {
     flexDirection: 'row',
@@ -983,7 +1076,6 @@ const styles = StyleSheet.create({
   },
   detailsButton: {
     minHeight: 42,
-    alignSelf: 'flex-start',
     flexDirection: 'row',
     alignItems: 'center',
     gap: 7,
@@ -993,7 +1085,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#F3F8FF',
     paddingHorizontal: 12,
     paddingVertical: 8,
-    marginTop: 14,
   },
   detailsButtonText: {
     color: BRAND.primaryDark,
