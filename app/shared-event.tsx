@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ActivityIndicator,
   Image,
   KeyboardAvoidingView,
   NativeScrollEvent,
@@ -419,7 +418,6 @@ export default function SharedEventScreen() {
   const shouldShowDetails = showDetails && detailsAvailable;
   const summaryTitle = summaryTitleForResult(result, parsedDetailsCount);
   const shareLabel = facebookShareLabel(snapshot);
-  const isProcessing = phase === 'processing';
   const routingLabel = phase === 'processing'
     ? 'Sending'
     : phase === 'error'
@@ -448,12 +446,18 @@ export default function SharedEventScreen() {
     setFailedImageUrls((current) => current.includes(imageUrl) ? current : [...current, imageUrl]);
   }, []);
 
-  const renderEventCard = (eventSnapshot: SharedEventSnapshot, index: number) => {
+  const renderEventDetailsPanel = (eventSnapshot: SharedEventSnapshot, index: number) => {
     const imageUri = eventSnapshot.mediaUrl;
     const canShowImage = Boolean(imageUri && !failedImageUrls.includes(imageUri));
-    const title = eventSnapshot.title || (phase === 'processing' ? 'Reading share...' : shareLabel);
-    const location = eventSnapshot.address || eventSnapshot.locationName || 'Location to be confirmed';
+    const title = eventSnapshot.title || (eventCount > 1 ? `Possible event ${index + 1}` : summaryTitle);
+    const dateTime = eventSnapshot.startDate || eventSnapshot.startTime ? formatDateTime(eventSnapshot) : '';
+    const location = eventSnapshot.address || eventSnapshot.locationName;
     const description = eventSnapshot.description;
+    const detailRows: { icon: keyof typeof Ionicons.glyphMap; text: string }[] = [
+      ...(dateTime ? [{ icon: 'calendar-outline' as const, text: dateTime }] : []),
+      ...(location ? [{ icon: 'location-outline' as const, text: location }] : []),
+      ...(eventSnapshot.sourceUrl ? [{ icon: 'link-outline' as const, text: sourceLabel(eventSnapshot) }] : []),
+    ];
     const reviewReasons = eventSnapshot.reviewReasons.length > 0
       ? eventSnapshot.reviewReasons
       : eventCount === 1
@@ -463,73 +467,42 @@ export default function SharedEventScreen() {
     return (
       <View
         key={`${eventSnapshot.startDate || 'event'}-${eventSnapshot.title || index}-${index}`}
-        style={[styles.eventCard, eventCount > 1 && { width: cardWidth }]}
+        style={[styles.detailPanel, eventCount > 1 && { width: cardWidth }]}
       >
         {canShowImage ? (
           <Image
             source={{ uri: imageUri }}
-            style={styles.heroImage}
+            style={styles.detailImage}
             resizeMode="cover"
             onError={() => markImageFailed(imageUri)}
           />
-        ) : (
-          <View style={styles.heroPlaceholder}>
-            {isProcessing ? (
-              <ActivityIndicator color={BRAND.primaryDark} />
-            ) : (
-              <Ionicons name="calendar-outline" size={44} color={BRAND.primaryDark} />
-            )}
-          </View>
-        )}
+        ) : null}
 
-        <View style={styles.cardBody}>
-          <View style={styles.badgeRow}>
-            <View style={styles.sourceBadge}>
-              <Ionicons name="logo-facebook" size={16} color="#1877F2" />
-              <Text style={styles.sourceBadgeText}>{shareLabel}</Text>
-            </View>
-            <View style={[
-              styles.visibilityBadge,
-              result?.routing === 'public_candidate' ? styles.publicBadge : styles.privateBadge,
-            ]}>
-              <Ionicons
-                name={result?.routing === 'public_candidate' ? 'earth-outline' : 'lock-closed-outline'}
-                size={14}
-                color={result?.routing === 'public_candidate' ? BRAND.success : BRAND.warning}
-              />
-              <Text style={[
-                styles.visibilityBadgeText,
-                result?.routing === 'public_candidate' ? styles.publicBadgeText : styles.privateBadgeText,
-              ]}>
-                {result?.routing === 'public_candidate' ? 'Public review' : 'Private'}
-              </Text>
-            </View>
-            {eventCount > 1 ? (
-              <View style={styles.countBadge}>
-                <Text style={styles.countBadgeText}>{index + 1} of {eventCount}</Text>
-              </View>
-            ) : null}
+        <View style={styles.detailBody}>
+          <View style={styles.detailHeadingRow}>
+            <Text style={styles.detailKicker}>{eventCount > 1 ? `${index + 1} of ${eventCount}` : 'Details'}</Text>
+            <Text style={styles.detailSource}>{shareLabel}</Text>
           </View>
 
-          <Text style={styles.eventTitle} numberOfLines={3}>{title}</Text>
+          <Text style={styles.detailTitle} numberOfLines={3}>{title}</Text>
 
-          <View style={styles.metaList}>
-            <View style={styles.metaRow}>
-              <Ionicons name="calendar-outline" size={18} color={BRAND.primaryDark} />
-              <Text style={styles.metaText}>{formatDateTime(eventSnapshot)}</Text>
+          {detailRows.length > 0 ? (
+            <View style={styles.detailMetaList}>
+              {detailRows.map((row) => (
+                <View key={`${row.icon}-${row.text}`} style={styles.detailMetaRow}>
+                  <Ionicons name={row.icon} size={18} color={BRAND.primaryDark} />
+                  <Text style={styles.detailMetaText} numberOfLines={2}>{row.text}</Text>
+                </View>
+              ))}
             </View>
-            <View style={styles.metaRow}>
-              <Ionicons name="location-outline" size={18} color={BRAND.primaryDark} />
-              <Text style={styles.metaText} numberOfLines={2}>{location}</Text>
-            </View>
-            <View style={styles.metaRow}>
-              <Ionicons name="link-outline" size={18} color={BRAND.primaryDark} />
-              <Text style={styles.metaText} numberOfLines={1}>{sourceLabel(eventSnapshot)}</Text>
-            </View>
-          </View>
+          ) : (
+            <Text style={styles.detailEmptyText}>
+              GathR saved the share and will attach more event details if they become available.
+            </Text>
+          )}
 
           {description ? (
-            <Text style={styles.description} numberOfLines={5}>{description}</Text>
+            <Text style={styles.detailDescription} numberOfLines={5}>{description}</Text>
           ) : null}
 
           {reviewReasons.length > 0 ? (
@@ -632,7 +605,7 @@ export default function SharedEventScreen() {
               onMomentumScrollEnd={onCarouselMomentumEnd}
               contentContainerStyle={styles.carouselContent}
             >
-              {eventSnapshots.map((eventSnapshot, index) => renderEventCard(eventSnapshot, index))}
+              {eventSnapshots.map((eventSnapshot, index) => renderEventDetailsPanel(eventSnapshot, index))}
             </ScrollView>
             <View style={styles.paginationDots}>
               {eventSnapshots.map((eventSnapshot, index) => (
@@ -644,7 +617,7 @@ export default function SharedEventScreen() {
             </View>
           </View>
         ) : shouldShowDetails ? (
-          renderEventCard(eventSnapshots[0] || snapshot, 0)
+          renderEventDetailsPanel(eventSnapshots[0] || snapshot, 0)
         ) : null}
       </ScrollView>
 
@@ -853,6 +826,76 @@ const styles = StyleSheet.create({
     borderColor: BRAND.border,
     overflow: 'hidden',
     marginBottom: 14,
+  },
+  detailPanel: {
+    backgroundColor: BRAND.surface,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: BRAND.border,
+    overflow: 'hidden',
+    marginBottom: 14,
+  },
+  detailImage: {
+    width: '100%',
+    aspectRatio: 16 / 9,
+    backgroundColor: BRAND.border,
+  },
+  detailBody: {
+    padding: 16,
+  },
+  detailHeadingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+    marginBottom: 8,
+  },
+  detailKicker: {
+    color: BRAND.muted,
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+  },
+  detailSource: {
+    color: BRAND.primaryDark,
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: '800',
+  },
+  detailTitle: {
+    color: BRAND.ink,
+    fontSize: 21,
+    lineHeight: 27,
+    fontWeight: '900',
+  },
+  detailMetaList: {
+    gap: 10,
+    marginTop: 14,
+  },
+  detailMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 9,
+  },
+  detailMetaText: {
+    flex: 1,
+    color: BRAND.ink,
+    fontSize: 15,
+    lineHeight: 20,
+    fontWeight: '600',
+  },
+  detailEmptyText: {
+    color: BRAND.muted,
+    fontSize: 14,
+    lineHeight: 20,
+    marginTop: 10,
+  },
+  detailDescription: {
+    color: BRAND.muted,
+    fontSize: 14,
+    lineHeight: 20,
+    marginTop: 14,
   },
   carouselSection: {
     marginBottom: 14,
