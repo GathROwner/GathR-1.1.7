@@ -1,6 +1,6 @@
 import { Stack, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Image, Pressable, StyleSheet, Text, View } from 'react-native';
 
 const BRAND = {
   primary: '#1E90FF',
@@ -12,6 +12,8 @@ const BRAND = {
   background: '#F4F8FC',
 };
 
+const GATHR_LOGO = require('../assets/icon.png');
+
 export default function NotFoundScreen() {
   const router = useRouter();
 
@@ -21,11 +23,10 @@ export default function NotFoundScreen() {
       <StatusBar style="dark" />
       <View style={styles.container}>
         <View style={styles.panel}>
-          <View style={styles.icon}>
-            <ActivityIndicator color={BRAND.primaryDark} />
-          </View>
+          <Image source={GATHR_LOGO} style={styles.logo} resizeMode="contain" />
           <Text style={styles.title}>Opening GathR</Text>
           <Text style={styles.detail}>Preparing your share...</Text>
+          <ActivityIndicator color={BRAND.primaryDark} style={styles.spinner} />
           <Pressable style={styles.button} onPress={() => router.replace('/(tabs)/map')}>
             <Text style={styles.buttonText}>Go to GathR</Text>
           </Pressable>
@@ -51,13 +52,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 18,
     paddingVertical: 24,
   },
-  icon: {
-    width: 52,
-    height: 52,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: 26,
-    backgroundColor: '#EAF4FF',
+  logo: {
+    width: 86,
+    height: 86,
     marginBottom: 14,
   },
   title: {
@@ -73,6 +70,9 @@ const styles = StyleSheet.create({
     lineHeight: 21,
     textAlign: 'center',
     marginTop: 6,
+  },
+  spinner: {
+    marginTop: 14,
   },
   button: {
     minHeight: 44,

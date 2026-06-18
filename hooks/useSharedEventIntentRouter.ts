@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { useLinkingURL } from 'expo-linking';
 import { useRouter } from 'expo-router';
 import { ShareIntent, useShareIntentContext } from 'expo-share-intent';
 
@@ -21,10 +22,17 @@ function firstImagePath(shareIntent: ShareIntent): string | undefined {
   return shareIntent.files?.find((file) => file.mimeType?.startsWith('image/'))?.path || undefined;
 }
 
-export function useSharedEventIntentRouter() {
+function isShareIntentLaunchUrl(value: string | null): boolean {
+  return Boolean(value?.includes('://dataUrl='));
+}
+
+export function useSharedEventIntentRouter(): { isRoutingShareIntent: boolean } {
   const router = useRouter();
+  const launchUrl = useLinkingURL();
   const { hasShareIntent, shareIntent, resetShareIntent } = useShareIntentContext();
   const lastSignatureRef = useRef('');
+  const routedLaunchUrlRef = useRef('');
+  const isPendingShareLaunch = isShareIntentLaunchUrl(launchUrl) && routedLaunchUrlRef.current !== launchUrl;
 
   useEffect(() => {
     if (!hasShareIntent) return;
@@ -38,6 +46,8 @@ export function useSharedEventIntentRouter() {
     const title = shareIntent.meta?.title || '';
     const imagePath = firstImagePath(shareIntent);
 
+    routedLaunchUrlRef.current = launchUrl || signature;
+
     router.replace({
       pathname: '/shared-event',
       params: {
@@ -50,5 +60,9 @@ export function useSharedEventIntentRouter() {
     });
 
     resetShareIntent();
-  }, [hasShareIntent, resetShareIntent, router, shareIntent]);
+  }, [hasShareIntent, launchUrl, resetShareIntent, router, shareIntent]);
+
+  return {
+    isRoutingShareIntent: hasShareIntent || isPendingShareLaunch,
+  };
 }

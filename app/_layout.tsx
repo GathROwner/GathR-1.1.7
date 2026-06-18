@@ -462,7 +462,7 @@ try {
 
     // Deep linking handler - handles incoming URLs to open specific events
     useDeepLinking();
-    useSharedEventIntentRouter();
+    const { isRoutingShareIntent } = useSharedEventIntentRouter();
 
     // --- screen_view on route change (inside auth context) ---
     const pathname = usePathname();
@@ -868,6 +868,7 @@ useEffect(() => {
     const inAuthFlow = onLoginScreen || onInterestSelection;
     const inProfileScreen = segments[0] === 'profile';
     const onSharedEventScreen = segments[0] === 'shared-event';
+    const inSharedEventFlow = onSharedEventScreen || isRoutingShareIntent;
 
     // Only log when the actual UID changes (avoid 're-login' noise on tab/nav changes)
     const currUid = user?.uid ?? null;
@@ -885,21 +886,21 @@ useEffect(() => {
     if (onLoginScreen) {
       console.log('Redirecting authenticated user from login to main app');
       safeReplace('/(tabs)/map');
-    } else if (!inTabsGroup && !inProfileScreen && !inAuthFlow && !onSharedEventScreen) {
+    } else if (!inTabsGroup && !inProfileScreen && !inAuthFlow && !inSharedEventFlow) {
       // Redirect from other non-app screens
       console.log('Redirecting authenticated user to main app');
       safeReplace('/(tabs)/map');
     }
   } else {
     // User is not authenticated (guest mode allowed inside (tabs))
-    if (!inAuthFlow && !inTabsGroup && !inProfileScreen && !onSharedEventScreen) {
+    if (!inAuthFlow && !inTabsGroup && !inProfileScreen && !inSharedEventFlow) {
       // Redirect to login only if we're not already on it
       console.log('Redirecting unauthenticated user to login');
       safeReplace('/');
     }
   }
 
-  }, [user, segments, isLoading]);
+  }, [user, segments, isLoading, isRoutingShareIntent]);
 
 // âœ… Reset guest interaction counter when returning from login (Continue as Guest)
 useEffect(() => {

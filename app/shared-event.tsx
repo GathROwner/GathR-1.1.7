@@ -35,6 +35,8 @@ const BRAND = {
   danger: '#B42318',
 };
 
+const GATHR_LOGO = require('../assets/icon.png');
+
 type Phase = 'processing' | 'saved' | 'needs_review' | 'error';
 
 type SharedEventSnapshot = {
@@ -567,13 +569,24 @@ export default function SharedEventScreen() {
         <Pressable style={styles.iconButton} onPress={() => router.back()}>
           <Ionicons name="chevron-back" size={24} color={BRAND.ink} />
         </Pressable>
-        <Text style={styles.headerTitle}>Save to GathR</Text>
+        <View style={styles.headerBrand}>
+          <Image source={GATHR_LOGO} style={styles.headerLogo} resizeMode="contain" />
+          <Text style={styles.headerTitle}>Save to GathR</Text>
+        </View>
         <Pressable style={styles.iconButton} onPress={() => router.replace('/(tabs)/map')}>
           <Ionicons name="map-outline" size={22} color={BRAND.ink} />
         </Pressable>
       </View>
 
       <ScrollView contentContainerStyle={styles.content}>
+        <View style={styles.brandStrip}>
+          <Image source={GATHR_LOGO} style={styles.brandStripLogo} resizeMode="contain" />
+          <View style={styles.brandStripText}>
+            <Text style={styles.brandStripTitle}>GathR</Text>
+            <Text style={styles.brandStripDetail}>Facebook share</Text>
+          </View>
+        </View>
+
         <View style={[styles.statusPanel, { borderColor: status.color }]}>
           <View style={[styles.statusIcon, { backgroundColor: `${status.color}18` }]}>
             <Ionicons name={status.icon} size={23} color={status.color} />
@@ -695,6 +708,15 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: BRAND.ink,
   },
+  headerBrand: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  headerLogo: {
+    width: 28,
+    height: 28,
+  },
   iconButton: {
     width: 40,
     height: 40,
@@ -705,6 +727,31 @@ const styles = StyleSheet.create({
   content: {
     padding: 16,
     paddingBottom: 112,
+  },
+  brandStrip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 12,
+  },
+  brandStripLogo: {
+    width: 38,
+    height: 38,
+  },
+  brandStripText: {
+    flex: 1,
+  },
+  brandStripTitle: {
+    color: BRAND.ink,
+    fontSize: 16,
+    lineHeight: 20,
+    fontWeight: '800',
+  },
+  brandStripDetail: {
+    color: BRAND.muted,
+    fontSize: 13,
+    lineHeight: 17,
+    fontWeight: '600',
   },
   eventCard: {
     backgroundColor: BRAND.surface,
