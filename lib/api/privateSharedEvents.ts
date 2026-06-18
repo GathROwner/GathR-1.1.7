@@ -1,4 +1,4 @@
-import { collection, getDocs } from 'firebase/firestore';
+import { collection, getDocs, query, where } from 'firebase/firestore';
 
 import { auth, firestore } from '../../config/firebaseConfig';
 import { Event } from '../../types/events';
@@ -295,22 +295,31 @@ export async function fetchPrivateSharedEventsForCurrentUser(): Promise<Event[]>
   const user = auth.currentUser;
   if (!user?.uid) return [];
 
-  const snapshot = await getDocs(collection(firestore, 'users', user.uid, 'privateSharedEvents'));
-  const candidates = snapshot.docs
-    .map((docSnap) => ({ id: docSnap.id, data: docSnap.data() as PrivateSharedEventDoc }))
-    .filter(({ data }) => hasUsableDate(data) && !isExpiredForDisplay(data));
+  try {
+    const privateEventsQuery = query(
+      collection(firestore, 'users', user.uid, 'privateSharedEvents'),
+      where('ownerUid', '==', user.uid)
+    );
+    const snapshot = await getDocs(privateEventsQuery);
+    const candidates = snapshot.docs
+      .map((docSnap) => ({ id: docSnap.id, data: docSnap.data() as PrivateSharedEventDoc }))
+      .filter(({ data }) => hasUsableDate(data) && !isExpiredForDisplay(data));
 
-  if (candidates.length === 0) return [];
+    if (candidates.length === 0) return [];
 
-  const venues = await fetchVenueDirectory();
-  const events: Event[] = [];
-  candidates.forEach(({ id, data }) => {
-    const venue = matchVenue(data, venues);
-    if (!venue) return;
+    const venues = await fetchVenueDirectory();
+    const events: Event[] = [];
+    candidates.forEach(({ id, data }) => {
+      const venue = matchVenue(data, venues);
+      if (!venue) return;
 
-    const normalized = normalizePrivateSharedEvent(id, data, venue);
-    if (normalized) events.push(normalized);
-  });
+      const normalized = normalizePrivateSharedEvent(id, data, venue);
+      if (normalized) events.push(normalized);
+    });
 
-  return events;
+    return events;
+  } catch (error) {
+    console.warn('[PrivateSharedEvents] Failed to fetch private shared events:', error);
+    return [];
+  }
 }
