@@ -13,7 +13,7 @@
  *   Prevents the map from intercepting callout drags on Android. iOS remains unaffected.
  */
 
-import React, { useEffect, useRef, useState, useMemo, useCallback } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState, useMemo, useCallback } from 'react';
 import { View, Text, StyleSheet, Animated, Dimensions, PixelRatio, TouchableOpacity, Easing, Keyboard, Pressable, Image, Modal, InteractionManager, GestureResponderEvent } from 'react-native';
 import * as Location from 'expo-location';
 import * as Haptics from 'expo-haptics';
@@ -119,6 +119,7 @@ const ANDROID_CLUSTER_TOUCH_OVERLAY_SIZE = 144;
 const ANDROID_CLUSTER_TOUCH_OVERLAY_DURATION_MS = 4500;
 const ANDROID_CLUSTER_TOUCH_OVERLAY_LIMIT = 80;
 const SHARED_EVENT_RETURN_INTERACTION_GUARD_MS = 10000;
+const CALLOUT_OVERLAY_DISMISS_GUARD_MS = 1200;
 const STAGE_CLUSTER_MARKERS_ON_STARTUP = Platform.OS === 'android';
 const STARTUP_CLUSTER_MARKER_LIMIT = 12;
 const FULL_CLUSTER_MARKER_DELAY_MS = 1000;
@@ -1890,6 +1891,8 @@ useEffect(() => {
   const locationSubscription = useRef<Location.LocationSubscription | null>(null);
   const calloutAnimationRequestRef = useRef(0);
   const calloutOpenTouchGuardUntilRef = useRef(0);
+  const calloutOverlayDismissGuardUntilRef = useRef(0);
+  const presentedCalloutGuardKeyRef = useRef<string | null>(null);
   const filterPanelTouchGuardUntilRef = useRef(0);
   const sharedEventReturnGuardUntilRef = useRef(0);
   const isCalloutClosingVisuallyRef = useRef(false);
@@ -2009,6 +2012,38 @@ useEffect(() => {
     () => `${presentedCalloutClusterId ?? 'single'}::${presentedCalloutSignature || 'no-venues'}`,
     [presentedCalloutClusterId, presentedCalloutSignature]
   );
+
+  useLayoutEffect(() => {
+    if (!hasPresentedCallout) {
+      presentedCalloutGuardKeyRef.current = null;
+      calloutOverlayDismissGuardUntilRef.current = 0;
+      return;
+    }
+
+    if (presentedCalloutGuardKeyRef.current === presentedCalloutPresentationKey) {
+      return;
+    }
+
+    presentedCalloutGuardKeyRef.current = presentedCalloutPresentationKey;
+    const guardUntil = Date.now() + CALLOUT_OVERLAY_DISMISS_GUARD_MS;
+    calloutOverlayDismissGuardUntilRef.current = guardUntil;
+    calloutOpenTouchGuardUntilRef.current = Math.max(
+      calloutOpenTouchGuardUntilRef.current,
+      guardUntil
+    );
+    logCalloutProbe('[CalloutProbe] arming presentation overlay dismiss guard', {
+      until: guardUntil,
+      presentedClusterId: presentedCalloutClusterId ?? 'none',
+      presentedVenueCount: presentedCalloutVenueCount,
+      presentedCalloutPresentationKey,
+    });
+  }, [
+    hasPresentedCallout,
+    presentedCalloutClusterId,
+    presentedCalloutPresentationKey,
+    presentedCalloutVenueCount,
+  ]);
+
   const isCalloutBlockingMapInteraction = hasRenderedCallout && !isCalloutClosingVisually;
   const clustersReadyForInteraction = !isLoading && clusters.length > 0;
   const shouldRenderStartupUserLocationMarker =
@@ -7749,14 +7784,23 @@ Owner: Map UX stability on Android • Last validated: 2025-09-04
   }
   onResponderRelease={(event) => {
     const guardRemainingMs = Math.max(0, calloutOpenTouchGuardUntilRef.current - Date.now());
+    const presentationDismissGuardRemainingMs = Math.max(
+      0,
+      calloutOverlayDismissGuardUntilRef.current - Date.now()
+    );
     const sharedEventReturnGuardUntil = Math.max(
       sharedEventReturnGuardUntilRef.current,
       Number((globalThis as any).__gathrSharedEventReturnGuardUntil || 0)
     );
     const sharedEventReturnGuardRemainingMs = Math.max(0, sharedEventReturnGuardUntil - Date.now());
-    if (guardRemainingMs > 0 || sharedEventReturnGuardRemainingMs > 0) {
+    if (
+      guardRemainingMs > 0 ||
+      presentationDismissGuardRemainingMs > 0 ||
+      sharedEventReturnGuardRemainingMs > 0
+    ) {
       logCalloutProbe('[CalloutProbe] overlay release ignored by callout guard', {
         guardRemainingMs,
+        presentationDismissGuardRemainingMs,
         sharedEventReturnGuardRemainingMs,
         selectedClusterId: presentedCalloutClusterId ?? 'none',
         selectedVenueCount: presentedCalloutVenueCount,
