@@ -369,24 +369,42 @@ const groupEventsByVenue = (events: Event[]): Venue[] => {
 /**
  * Create a consistent location key from event data
  */
+const normalizeLocationKeyText = (value: unknown): string =>
+  String(value ?? '')
+    .toLowerCase()
+    .replace(/&/g, ' and ')
+    .replace(/['\u2019]/g, '')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+    .replace(/\s+/g, ' ');
+
 const createLocationKey = (event: Event): string => {
   const venueId = String(event.venueId || '').trim();
   const isScopedLocation =
     event.locationScope === 'city' ||
     event.locationScope === 'area' ||
     event.locationScope === 'route';
-  if (venueId && !isScopedLocation) {
-    return `venue:${venueId}`;
-  }
 
-  const venueName = event.venue.toLowerCase().trim().replace(/\s+/g, ' ');
+  const venueName = normalizeLocationKeyText(event.venue);
   
   try {
-    if (!event.address || event.address.trim() === '') {
+    const address = String(event.address || '').trim();
+    if (!isScopedLocation && address) {
+      const normalizedAddress = normalizeLocationKeyText(address);
+      if (venueName && normalizedAddress) {
+        return `venue-signature:${venueName}_${normalizedAddress}`;
+      }
+    }
+
+    if (venueId && !isScopedLocation) {
+      return `venue:${venueId}`;
+    }
+
+    if (!address) {
       return `${venueName}_${event.latitude.toFixed(5)},${event.longitude.toFixed(5)}`;
     }
     
-    const addressParts = event.address.split(',');
+    const addressParts = address.split(',');
     const street = addressParts[0]?.trim().replace(/\s+/g, ' ') || '';
     
     let city = '';

@@ -38,10 +38,10 @@ const getFetchMinimalEventsKey = (options: FetchMinimalEventsOptions = {}) =>
  * Stronger dedupe key to avoid collapsing distinct same-day occurrences.
  */
 export function getDedupeKey(event: Event): string {
-  const normalizedTitle = (event.title || '').toLowerCase().trim().replace(/\s+/g, ' ');
+  const normalizedTitle = normalizeMergeText(event.title);
   const venuePart = (event.venue || '').split('|')[0];
-  const normalizedVenue = venuePart.toLowerCase().trim().replace(/\s+/g, ' ');
-  const normalizedStartTime = (event.startTime || '').toLowerCase().trim();
+  const normalizedVenue = normalizeMergeText(venuePart);
+  const normalizedStartTime = normalizeTimeForMerge(event.startTime);
   const normalizedType = (event.type || 'event').toLowerCase().trim();
   return `${normalizedTitle}|${event.startDate}|${normalizedStartTime}|${normalizedVenue}|${normalizedType}`;
 }
