@@ -1889,6 +1889,7 @@ useEffect(() => {
   const locationSubscription = useRef<Location.LocationSubscription | null>(null);
   const calloutAnimationRequestRef = useRef(0);
   const calloutOpenTouchGuardUntilRef = useRef(0);
+  const filterPanelTouchGuardUntilRef = useRef(0);
   const isCalloutClosingVisuallyRef = useRef(false);
   const androidRetapOverlayTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const androidRetapOverlayActiveRef = useRef(false);
@@ -2284,6 +2285,50 @@ useEffect(() => {
     setRenderedCalloutCluster,
     setRenderedCalloutVenues,
     setCalloutLayoutReadyKey,
+  ]);
+
+  useEffect(() => {
+    if (!isFocused) {
+      return;
+    }
+
+    const returnedFromSharedEventAt = Number((globalThis as any).__gathrReturningFromSharedEventAt || 0);
+    if (!returnedFromSharedEventAt) {
+      return;
+    }
+
+    delete (globalThis as any).__gathrReturningFromSharedEventAt;
+    console.log('[MapFocusCleanup] resetting transient interaction state after shared event return', {
+      returnedFromSharedEventAt,
+      activeFilterPanel: activeFilterPanel ?? 'none',
+      selectedVenueCount: Array.isArray(selectedVenues) ? selectedVenues.length : 0,
+    });
+
+    calloutOpenTouchGuardUntilRef.current = Date.now() + 900;
+    filterPanelTouchGuardUntilRef.current = Date.now() + 900;
+    clusterProcessingRef.current = null;
+    setProcessingClusterId(null);
+    if (clusterProcessingTimeoutRef.current) {
+      clearTimeout(clusterProcessingTimeoutRef.current);
+      clusterProcessingTimeoutRef.current = null;
+    }
+    if (activeFilterPanel) {
+      setActiveFilterPanel(null);
+    }
+    if (selectedVenues && selectedVenues.length > 0) {
+      selectVenue(null);
+    }
+    setRenderedCalloutVenues([]);
+    setRenderedCalloutCluster(null);
+    setCalloutLayoutReadyKey(null);
+    isCalloutClosingVisuallyRef.current = false;
+    setIsCalloutClosingVisually(false);
+  }, [
+    activeFilterPanel,
+    isFocused,
+    selectedVenues,
+    selectVenue,
+    setActiveFilterPanel,
   ]);
 
   // Hot interest carousel state (for HotFlamePill)
@@ -4624,6 +4669,7 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
 
   // Enhanced handleMarkerPress with comprehensive prioritization
   const handleMarkerPress = useCallback(async (cluster: Cluster): Promise<void> => {
+    calloutOpenTouchGuardUntilRef.current = Date.now() + 1200;
     const androidCalloutTeardownWasInProgress =
       Platform.OS === 'android' &&
       (isCalloutClosingVisuallyRef.current || androidCalloutTeardownTimerRef.current !== null);
@@ -5042,7 +5088,7 @@ lastOpenedClusterIdRef.current = cluster.id;
       targetCount: hitTargets.length,
     });
 
-    hitTargets.forEach((target) => {
+    for (const target of hitTargets) {
       const dx = touchX - target.x;
       const dy = touchY - target.y;
       const distanceSquared = dx * dx + dy * dy;
@@ -5050,7 +5096,7 @@ lastOpenedClusterIdRef.current = cluster.id;
         matchedTarget = target;
         matchedDistanceSquared = distanceSquared;
       }
-    });
+    }
 
     if (!matchedTarget) {
       console.log('[map] Android retap overlay miss', {
@@ -5136,12 +5182,14 @@ lastOpenedClusterIdRef.current = cluster.id;
   // Handle map press to close callout
   const handleMapPress = () => {
     const guardRemainingMs = Math.max(0, calloutOpenTouchGuardUntilRef.current - Date.now());
+    const filterGuardRemainingMs = Math.max(0, filterPanelTouchGuardUntilRef.current - Date.now());
     logCalloutProbe('[CalloutProbe] handleMapPress fired', {
       selectedVenueCount,
       selectedClusterId: selectedClusterId ?? 'none',
       ignoreProgrammatic: ignoreProgrammaticCameraRef.current,
       calloutLayoutReady: isRenderedCalloutLayoutReady,
       guardRemainingMs,
+      filterGuardRemainingMs,
     });
 
     if (ignoreProgrammaticCameraRef.current) {
@@ -5157,6 +5205,20 @@ lastOpenedClusterIdRef.current = cluster.id;
     if (guardRemainingMs > 0) {
       logCalloutProbe('[CalloutProbe] handleMapPress ignored by post-open guard', {
         guardRemainingMs,
+      });
+      return;
+    }
+
+    if (filterGuardRemainingMs > 0) {
+      logCalloutProbe('[CalloutProbe] handleMapPress ignored by filter-panel guard', {
+        filterGuardRemainingMs,
+      });
+      return;
+    }
+
+    if (clusterProcessingRef.current !== null) {
+      logCalloutProbe('[CalloutProbe] handleMapPress ignored during cluster processing', {
+        processingClusterId: clusterProcessingRef.current,
       });
       return;
     }
@@ -6381,6 +6443,7 @@ Clustering refresh: keep zoom → store → recluster in sync
   // Effect to show pills when filter panel opens
   useEffect(() => {
     if (activeFilterPanel) {
+      filterPanelTouchGuardUntilRef.current = Date.now() + 900;
       // If filter panel opens, always show pills
       showPills();
       // Clear any pending timeouts

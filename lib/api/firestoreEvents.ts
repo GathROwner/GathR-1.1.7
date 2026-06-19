@@ -5,6 +5,7 @@
 
 import { Event } from '../../types/events';
 import { FirestoreEvent, FirestoreEventsResponse } from '../../types/firestore';
+import { auth } from '../../config/firebaseConfig';
 import {
   FIRESTORE_API_BASE,
   FIRESTORE_INCLUDE_EXPIRED_DEFAULT,
@@ -98,6 +99,86 @@ const isRecord = (value: unknown): value is Record<string, any> =>
 
 const isScopedLocation = (scope?: string | null): boolean =>
   scope === 'city' || scope === 'area' || scope === 'route';
+
+const normalizeSourcePlatform = (
+  value: unknown
+): NonNullable<Event['sharedEventProvenance']>['sourcePlatform'] => {
+  const raw = String(value || '').toLowerCase();
+  if (raw === 'facebook' || raw === 'instagram' || raw === 'web') return raw;
+  return 'unknown';
+};
+
+const normalizeSourceVisibility = (
+  value: unknown
+): NonNullable<Event['sharedEventProvenance']>['sourceVisibility'] => {
+  const raw = String(value || '').toLowerCase();
+  if (
+    raw === 'public_verified' ||
+    raw === 'restricted_unverified' ||
+    raw === 'user_private'
+  ) {
+    return raw;
+  }
+  return 'public_verified';
+};
+
+const normalizeRouting = (
+  value: unknown
+): NonNullable<Event['sharedEventProvenance']>['routing'] => {
+  const raw = String(value || '').toLowerCase();
+  if (
+    raw === 'private_only' ||
+    raw === 'public_candidate' ||
+    raw === 'not_public_candidate'
+  ) {
+    return raw;
+  }
+  return 'public_candidate';
+};
+
+const sharedEventProvenanceForCurrentUser = (
+  fsEvent: FirestoreEvent
+): Event['sharedEventProvenance'] | undefined => {
+  const metadata = fsEvent.metadata || {};
+  const ownerUid = firstText(
+    fsEvent.sharedEventOwnerUid,
+    metadata.sharedEventOwnerUid
+  );
+
+  if (!ownerUid || ownerUid !== auth.currentUser?.uid) {
+    return undefined;
+  }
+
+  return {
+    sharedByCurrentUser: true,
+    privateEventId: firstText(
+      fsEvent.sharedEventPrivateEventId,
+      metadata.sharedEventPrivateEventId
+    ) || undefined,
+    ingestId: firstText(
+      fsEvent.sharedEventIngestId,
+      metadata.sharedEventIngestId
+    ) || undefined,
+    publicCandidateId: firstText(
+      fsEvent.sharedEventCandidateId,
+      metadata.sharedEventCandidateId
+    ) || undefined,
+    sourcePlatform: normalizeSourcePlatform(
+      fsEvent.sharedEventSourcePlatform ?? metadata.sharedEventSourcePlatform ?? 'facebook'
+    ),
+    sourceVisibility: normalizeSourceVisibility(
+      fsEvent.sharedEventSourceVisibility ?? metadata.sharedEventSourceVisibility
+    ),
+    routing: normalizeRouting(fsEvent.sharedEventRouting ?? metadata.sharedEventRouting),
+    sourceUrl: firstText(
+      fsEvent.sourceUrl,
+      metadata.sourceUrl,
+      metadata.facebookUrl,
+      metadata.cleanedFacebookUrl
+    ) || undefined,
+    label: 'Shared by you',
+  };
+};
 
 /**
  * Normalize a Firestore event to match the app Event interface.
@@ -213,6 +294,7 @@ export function normalizeFirestoreEvent(fsEvent: FirestoreEvent): Event {
     venueFacebookUrl: venueRecord?.facebookUrl || '',
     venueInstagramUrl: venueRecord?.instagramUrl || '',
     venueCategories: venueRecord?.categories || (venueRecord?.category1 ? [venueRecord.category1] : []),
+    sharedEventProvenance: sharedEventProvenanceForCurrentUser(fsEvent),
   };
 }
 

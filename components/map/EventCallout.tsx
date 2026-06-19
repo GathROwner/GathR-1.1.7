@@ -408,7 +408,7 @@ const BadgeContainer: React.FC<BadgeContainerProps> = ({
             color="#FFFFFF" 
           />
           {/* Only show text if single badge or if NOW is not present */}
-          {(!multipleActive || (!isNow && activeCount === 2)) && (
+          {(!multipleActive || (!isNow && activeCount === 2 && !isSharedByUser)) && (
             <Text style={badgeStyles.badgeText}>For You</Text>
           )}
         </View>
@@ -438,16 +438,13 @@ const BadgeContainer: React.FC<BadgeContainerProps> = ({
         <View style={[
           badgeStyles.sharedByUserBadge,
           multipleActive && badgeStyles.compactBadge,
-          multipleActive && badgeStyles.iconOnlyBadge
         ]}>
           <MaterialIcons
             name="share"
             size={12}
             color="#FFFFFF"
           />
-          {!multipleActive && (
-            <Text style={badgeStyles.badgeText}>Shared by you</Text>
-          )}
+          <Text style={badgeStyles.badgeText}>Shared by you</Text>
         </View>
       )}
     </View>

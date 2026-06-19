@@ -1805,6 +1805,7 @@ fetchEventDetails: async (eventIds: (string | number)[]) => {
       venueFacebookUrl: detail?.venueFacebookUrl,
       venueInstagramUrl: detail?.venueInstagramUrl,
       venueCategories: detail?.venueCategories,
+      sharedEventProvenance: detail?.sharedEventProvenance,
     };
   };
 

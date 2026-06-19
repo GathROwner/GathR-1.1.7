@@ -664,6 +664,7 @@ export default function SharedEventScreen() {
   };
 
   const handleFinish = useCallback(() => {
+    (globalThis as any).__gathrReturningFromSharedEventAt = Date.now();
     const queryClient = (globalThis as any).__RQ_CLIENT;
     queryClient?.removeQueries?.({ queryKey: EVENTS_MINIMAL });
     queryClient?.invalidateQueries?.({ queryKey: EVENTS_MINIMAL });

@@ -61,11 +61,21 @@ export interface FirestoreEventMetadata {
   // Additional fields from single-event endpoint
   mediaUrls?: string[];
   facebookUrl?: string;
+  cleanedFacebookUrl?: string;
+  sourceUrl?: string;
   eventType?: string;
   ageRestriction?: string;
   fullDescription?: string;
   ticketLinkPosts?: string;
   ticketLinkEvents?: string;
+  sharedEventCandidateId?: string;
+  sharedEventPrivateEventId?: string;
+  sharedEventIngestId?: string;
+  sharedEventOwnerUid?: string;
+  sharedEventSource?: string;
+  sharedEventSourcePlatform?: string;
+  sharedEventSourceVisibility?: string;
+  sharedEventRouting?: string;
   locationScope?: 'venue' | 'city' | 'area' | 'route' | 'unknown' | null;
   locationLabel?: string | null;
   locationCity?: string | null;
@@ -145,6 +155,15 @@ export interface FirestoreEvent {
   imageUrl?: string;
   relevantImageUrl?: string;
   SharedPostThumbnail?: string | null;
+  sourceUrl?: string;
+  sharedEventCandidateId?: string;
+  sharedEventPrivateEventId?: string;
+  sharedEventIngestId?: string;
+  sharedEventOwnerUid?: string;
+  sharedEventSource?: string;
+  sharedEventSourcePlatform?: string;
+  sharedEventSourceVisibility?: string;
+  sharedEventRouting?: string;
   metadata: FirestoreEventMetadata;
   venueInfo?: FirestoreVenueInfo | null;
 }
