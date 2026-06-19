@@ -63,6 +63,94 @@ function getEventIdentityKey(event: Event): string {
   return `${normalizedTitle}|${event.startDate}|${normalizedStartTime}|${normalizedType}`;
 }
 
+function normalizeTimeForMerge(value: unknown): string {
+  const text = String(value ?? '').trim().toLowerCase();
+  if (!text) return '';
+
+  const isoLike = text.match(/^(\d{1,2}):(\d{2})(?::\d{2})?$/);
+  if (isoLike) {
+    return `${isoLike[1]?.padStart(2, '0')}:${isoLike[2]}`;
+  }
+
+  const ampm = text.match(/^(\d{1,2})(?::(\d{2}))?\s*([ap])\.?m\.?$/);
+  if (ampm) {
+    let hour = Number(ampm[1]);
+    const minute = ampm[2] || '00';
+    const period = ampm[3];
+    if (period === 'p' && hour < 12) hour += 12;
+    if (period === 'a' && hour === 12) hour = 0;
+    return `${String(hour).padStart(2, '0')}:${minute.padStart(2, '0')}`;
+  }
+
+  return text.replace(/\s+/g, '');
+}
+
+const TITLE_STOP_WORDS = new Set([
+  'a',
+  'an',
+  'and',
+  'at',
+  'event',
+  'events',
+  'live',
+  'music',
+  'night',
+  'on',
+  'the',
+  'with',
+]);
+
+function titleTokens(value: unknown): string[] {
+  return normalizeMergeText(value)
+    .split(/\s+/)
+    .filter((token) => token.length > 1 && !TITLE_STOP_WORDS.has(token));
+}
+
+function titlesLooselyMatch(a: unknown, b: unknown): boolean {
+  const normalizedA = normalizeMergeText(a);
+  const normalizedB = normalizeMergeText(b);
+  if (!normalizedA || !normalizedB) return false;
+
+  const shorter = normalizedA.length <= normalizedB.length ? normalizedA : normalizedB;
+  const longer = normalizedA.length > normalizedB.length ? normalizedA : normalizedB;
+  if (shorter.length >= 4 && longer.includes(shorter)) {
+    return true;
+  }
+
+  const tokensA = new Set(titleTokens(normalizedA));
+  const tokensB = new Set(titleTokens(normalizedB));
+  if (tokensA.size === 0 || tokensB.size === 0) return false;
+
+  let overlap = 0;
+  tokensA.forEach((token) => {
+    if (tokensB.has(token)) overlap += 1;
+  });
+
+  return overlap >= 1 && overlap / Math.min(tokensA.size, tokensB.size) >= 0.67;
+}
+
+function venuesLooselyMatch(a: Event, b: Event): boolean {
+  const venueA = normalizeMergeText(a.venue);
+  const venueB = normalizeMergeText(b.venue);
+  if (!venueA || !venueB) return false;
+  return venueA === venueB || venueA.includes(venueB) || venueB.includes(venueA);
+}
+
+function timesCompatible(a: Event, b: Event): boolean {
+  const timeA = normalizeTimeForMerge(a.startTime);
+  const timeB = normalizeTimeForMerge(b.startTime);
+  return !timeA || !timeB || timeA === timeB;
+}
+
+function isLikelySameSharedOccurrence(publicEvent: Event, privateEvent: Event): boolean {
+  return (
+    publicEvent.startDate === privateEvent.startDate &&
+    timesCompatible(publicEvent, privateEvent) &&
+    venuesLooselyMatch(publicEvent, privateEvent) &&
+    titlesLooselyMatch(publicEvent.title, privateEvent.title)
+  );
+}
+
 const isScopedLocationEvent = (event: Event): boolean =>
   event.locationScope === 'city' || event.locationScope === 'area' || event.locationScope === 'route';
 
@@ -111,7 +199,8 @@ function mergePrivateSharedEvents(publicEvents: Event[], privateSharedEvents: Ev
         const venueMatches =
           Boolean(privateVenue && venue) &&
           (privateVenue === venue || privateVenue.includes(venue) || venue.includes(privateVenue));
-        return getEventIdentityKey(event) === privateIdentityKey && venueMatches;
+        return (getEventIdentityKey(event) === privateIdentityKey && venueMatches) ||
+          isLikelySameSharedOccurrence(event, privateEvent);
       });
       if (looseIndex >= 0) {
         existingIndex = looseIndex;

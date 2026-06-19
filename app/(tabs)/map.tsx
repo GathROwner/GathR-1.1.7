@@ -2299,7 +2299,7 @@ useEffect(() => {
   }, []);
 
   useEffect(() => {
-    if (!isCalloutOpen && !hasRenderedCallout) {
+    if (!isCalloutOpen) {
       return;
     }
 
@@ -2316,7 +2316,7 @@ useEffect(() => {
       });
       setHotInterestCarouselActive(false);
     }
-  }, [activeFilterPanel, hasRenderedCallout, isCalloutOpen, setActiveFilterPanel]);
+  }, [activeFilterPanel, isCalloutOpen, setActiveFilterPanel]);
 
   useEffect(() => {
     traceMapEvent('map_screen_mounted');
