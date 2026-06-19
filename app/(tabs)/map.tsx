@@ -1910,6 +1910,38 @@ useEffect(() => {
     closeStartedAt: 0,
     attemptCount: 0,
   });
+  useEffect(() => {
+    const globalAny = globalThis as {
+      __gathrArmMapSurfaceTouchGuard?: (durationMs?: number, reason?: string) => void;
+    };
+    const armMapSurfaceTouchGuard = (durationMs = 1200, reason = 'external') => {
+      const normalizedDurationMs = Number.isFinite(durationMs)
+        ? Math.max(250, durationMs)
+        : 1200;
+      const guardUntil = Date.now() + normalizedDurationMs;
+      calloutOpenTouchGuardUntilRef.current = Math.max(
+        calloutOpenTouchGuardUntilRef.current,
+        guardUntil
+      );
+      filterPanelTouchGuardUntilRef.current = Math.max(
+        filterPanelTouchGuardUntilRef.current,
+        guardUntil
+      );
+      logCalloutProbe('[CalloutProbe] external map surface touch guard armed', {
+        reason,
+        durationMs: normalizedDurationMs,
+        guardUntil,
+      });
+    };
+
+    globalAny.__gathrArmMapSurfaceTouchGuard = armMapSurfaceTouchGuard;
+
+    return () => {
+      if (globalAny.__gathrArmMapSurfaceTouchGuard === armMapSurfaceTouchGuard) {
+        delete globalAny.__gathrArmMapSurfaceTouchGuard;
+      }
+    };
+  }, []);
   const latestLocationRef = useRef<Location.LocationObject | null>(null);
   const latestClusterCountRef = useRef(0);
   const isMapLoadingRef = useRef(false);
@@ -4752,7 +4784,15 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
 
   // Enhanced handleMarkerPress with comprehensive prioritization
   const handleMarkerPress = useCallback(async (cluster: Cluster): Promise<void> => {
-    calloutOpenTouchGuardUntilRef.current = Date.now() + 1200;
+    const markerPressGuardUntil = Date.now() + 1200;
+    calloutOpenTouchGuardUntilRef.current = Math.max(
+      calloutOpenTouchGuardUntilRef.current,
+      markerPressGuardUntil
+    );
+    filterPanelTouchGuardUntilRef.current = Math.max(
+      filterPanelTouchGuardUntilRef.current,
+      markerPressGuardUntil
+    );
     const androidCalloutTeardownWasInProgress =
       Platform.OS === 'android' &&
       (isCalloutClosingVisuallyRef.current || androidCalloutTeardownTimerRef.current !== null);

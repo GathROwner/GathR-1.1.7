@@ -1163,6 +1163,13 @@ React.useEffect(() => {
   const showEventsPanel = effectivePanel === 'events';
   const showSpecialsPanel = effectivePanel === 'specials';
 
+  const armMapSurfaceTouchGuard = (reason: string) => {
+    const guard = (globalThis as any).__gathrArmMapSurfaceTouchGuard;
+    if (typeof guard === 'function') {
+      guard(1200, reason);
+    }
+  };
+
   React.useEffect(() => {
     traceMapEvent('filter_panel_visual_state_changed', {
       activePanel: activePanel ?? 'none',
@@ -1233,6 +1240,9 @@ React.useEffect(() => {
       requestedPanel: panel ?? 'none',
       currentActivePanel: activePanel ?? 'none',
     });
+    if (panel !== null) {
+      armMapSurfaceTouchGuard(`filter-panel-${panel}`);
+    }
     console.log('🎯 togglePanel called:', { 
       requestedPanel: panel, 
       currentActivePanel: activePanel,
