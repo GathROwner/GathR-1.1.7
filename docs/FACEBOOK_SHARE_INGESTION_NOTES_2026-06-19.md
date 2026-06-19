@@ -71,6 +71,30 @@ Verification:
   - rendered venue name: `Peake's Quay`
 - Screenshot showed one Peake venue card with `4 Events | 1 Specials`, not two Peake venue cards.
 
+Second-pass parser-name normalization:
+- The Peake duplicate could still reappear when a parser path produced a venue label like:
+  - `Peake's Quay - Peake's Quay added a new photo.`
+  - `Peake's Quay Restaurant & Bar`
+  - `Peake s Quay` / malformed apostrophe variants
+- Added `utils/venueIdentity.ts` as the shared venue identity normalizer for:
+  - public/private event dedupe keys
+  - loose public/private event merge comparisons
+  - private shared-event venue directory matching
+  - map venue grouping
+- The helper strips city pipe suffixes, apostrophe variants, social-action tails, and generic restaurant/bar suffixes.
+- It also preserves real subvenues such as `Founders' Food Hall and Market - Group Stage`; those should remain separate venue identities unless explicitly aliased upstream.
+
+Second-pass verification:
+- TypeScript check: `npx tsc --noEmit --pretty false`
+- Local helper harness confirmed these all normalize to `peakes quay`:
+  - `Peake's Quay`
+  - `Peake s Quay`
+  - `Peake's Quay | Charlottetown PE`
+  - `Peake's Quay Restaurant & Bar`
+  - `Peake's Quay - Peake's Quay added a new photo.`
+- Android emulator/logcat after clean load showed one `Peake's Quay` venue bucket.
+- Android emulator/logcat after search `Kim` showed `filteredEvents: 1`, `venues: 1`, `clusters: 1`.
+
 ## Backend Follow-Up
 
 The app-side fix handles display and dedupe, but the cleaner upstream fix is still to merge or alias:

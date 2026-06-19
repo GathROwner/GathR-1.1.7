@@ -89,6 +89,7 @@ import {
   USE_FIRESTORE_EVENTS,
 } from '../lib/config/backend';
 import { EVENTS_MINIMAL } from '../lib/queryKeys';
+import { normalizeVenueIdentityText } from '../utils/venueIdentity';
 
 // Define zoom threshold bands and their corresponding clustering radii
 export interface ZoomThreshold {
@@ -385,7 +386,7 @@ const createLocationKey = (event: Event): string => {
     event.locationScope === 'area' ||
     event.locationScope === 'route';
 
-  const venueName = normalizeLocationKeyText(event.venue);
+  const venueName = normalizeVenueIdentityText(event.venue);
   
   try {
     const address = String(event.address || '').trim();

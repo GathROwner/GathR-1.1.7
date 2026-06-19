@@ -7,6 +7,7 @@ import {
   FIRESTORE_MAX_PAGES,
   FIRESTORE_PAGE_LIMIT,
 } from '../config/backend';
+import { normalizeVenueIdentityText } from '../../utils/venueIdentity';
 
 type SharedEventSourcePlatform = 'facebook' | 'instagram' | 'web' | 'unknown';
 type SharedEventSourceVisibility =
@@ -230,6 +231,9 @@ const matchVenue = (
   const locationName = normalizeText(
     firstText(event.locationName, event.visibilityEvidence?.locationName)
   );
+  const locationIdentity = normalizeVenueIdentityText(
+    firstText(event.locationName, event.visibilityEvidence?.locationName)
+  );
   const address = normalizeText(firstText(event.address, event.visibilityEvidence?.address));
 
   if (!locationName && !address) return null;
@@ -240,14 +244,14 @@ const matchVenue = (
       venue.normalizedName,
       ...(Array.isArray(venue.aliases) ? venue.aliases : []),
       ...(Array.isArray(venue.aliasesNormalized) ? venue.aliasesNormalized : []),
-    ].map(normalizeText).filter(Boolean);
+    ].map(normalizeVenueIdentityText).filter(Boolean);
     const venueAddress = normalizeText(firstText(venue.address, venue.placeDetailsParsed?.formatted_address));
     const nameMatches =
-      Boolean(locationName && venueNames.length) &&
+      Boolean(locationIdentity && venueNames.length) &&
       venueNames.some((venueName) =>
-        venueName === locationName ||
-        venueName.includes(locationName) ||
-        locationName.includes(venueName)
+        venueName === locationIdentity ||
+        venueName.includes(locationIdentity) ||
+        locationIdentity.includes(venueName)
       );
     const addressMatches =
       Boolean(address && venueAddress) &&

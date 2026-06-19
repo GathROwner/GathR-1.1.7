@@ -14,6 +14,7 @@ import {
   USE_FIRESTORE_EVENTS,
 } from '../config/backend';
 import { fetchPrivateSharedEventsForCurrentUser } from './privateSharedEvents';
+import { normalizeVenueIdentityText } from '../../utils/venueIdentity';
 
 const DEBUG_FETCH = __DEV__ ?? true;
 
@@ -40,7 +41,7 @@ const getFetchMinimalEventsKey = (options: FetchMinimalEventsOptions = {}) =>
 export function getDedupeKey(event: Event): string {
   const normalizedTitle = normalizeMergeText(event.title);
   const venuePart = (event.venue || '').split('|')[0];
-  const normalizedVenue = normalizeMergeText(venuePart);
+  const normalizedVenue = normalizeVenueIdentityText(venuePart);
   const normalizedStartTime = normalizeTimeForMerge(event.startTime);
   const normalizedType = (event.type || 'event').toLowerCase().trim();
   return `${normalizedTitle}|${event.startDate}|${normalizedStartTime}|${normalizedVenue}|${normalizedType}`;
@@ -57,8 +58,8 @@ function normalizeMergeText(value: unknown): string {
 }
 
 function getEventIdentityKey(event: Event): string {
-  const normalizedTitle = (event.title || '').toLowerCase().trim().replace(/\s+/g, ' ');
-  const normalizedStartTime = (event.startTime || '').toLowerCase().trim();
+  const normalizedTitle = normalizeMergeText(event.title);
+  const normalizedStartTime = normalizeTimeForMerge(event.startTime);
   const normalizedType = (event.type || 'event').toLowerCase().trim();
   return `${normalizedTitle}|${event.startDate}|${normalizedStartTime}|${normalizedType}`;
 }
@@ -130,8 +131,8 @@ function titlesLooselyMatch(a: unknown, b: unknown): boolean {
 }
 
 function venuesLooselyMatch(a: Event, b: Event): boolean {
-  const venueA = normalizeMergeText(a.venue);
-  const venueB = normalizeMergeText(b.venue);
+  const venueA = normalizeVenueIdentityText(a.venue);
+  const venueB = normalizeVenueIdentityText(b.venue);
   if (!venueA || !venueB) return false;
   return venueA === venueB || venueA.includes(venueB) || venueB.includes(venueA);
 }
@@ -191,11 +192,11 @@ function mergePrivateSharedEvents(publicEvents: Event[], privateSharedEvents: Ev
   for (const privateEvent of privateSharedEvents) {
     const privateKey = getDedupeKey(privateEvent);
     const privateIdentityKey = getEventIdentityKey(privateEvent);
-    const privateVenue = normalizeMergeText(privateEvent.venue);
+    const privateVenue = normalizeVenueIdentityText(privateEvent.venue);
     let existingIndex = indexByDedupeKey.get(privateKey);
     if (existingIndex === undefined) {
       const looseIndex = merged.findIndex((event) => {
-        const venue = normalizeMergeText(event.venue);
+        const venue = normalizeVenueIdentityText(event.venue);
         const venueMatches =
           Boolean(privateVenue && venue) &&
           (privateVenue === venue || privateVenue.includes(venue) || venue.includes(privateVenue));
