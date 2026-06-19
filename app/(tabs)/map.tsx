@@ -2251,6 +2251,14 @@ useEffect(() => {
     let cleanupTimer: ReturnType<typeof setTimeout> | null = null;
 
     const runCleanup = () => {
+      if (isFocusedRef.current) {
+        console.log('[MapFocusCleanup] skipped delayed blur cleanup because map is focused again', {
+          activeFilterPanel: activeFilterPanel ?? 'none',
+          selectedVenueCount: Array.isArray(selectedVenues) ? selectedVenues.length : 0,
+        });
+        return;
+      }
+
       console.log('[MapFocusCleanup] clearing map-only UI after blur', {
         activeFilterPanel: activeFilterPanel ?? 'none',
         selectedVenueCount: Array.isArray(selectedVenues) ? selectedVenues.length : 0,
