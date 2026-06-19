@@ -14,6 +14,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import * as Updates from 'expo-updates';
 import {
   submitSharedEvent,
   SharedEventPayload,
@@ -667,6 +668,16 @@ export default function SharedEventScreen() {
     (globalThis as any).__gathrReturningFromSharedEventAt = now;
     (globalThis as any).__gathrSharedEventReturnGuardUntil = now + SHARED_EVENT_RETURN_INTERACTION_GUARD_MS;
     router.replace('/(tabs)/map');
+
+    if (Platform.OS === 'web' || !Updates.isEnabled) {
+      return;
+    }
+
+    setTimeout(() => {
+      Updates.reloadAsync().catch((error) => {
+        console.warn('[shared-event] Failed to reload after shared event completion', error);
+      });
+    }, 250);
   }, [router]);
 
   return (
