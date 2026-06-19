@@ -116,6 +116,40 @@ const firstFiniteNumber = (...values: unknown[]): number => {
   return Number.NaN;
 };
 
+const toTitleCase = (value: string): string =>
+  value.replace(/\b[a-z]/g, (letter) => letter.toUpperCase());
+
+const extractLocationDetail = (rawLocation: string, canonicalVenueName: string): string => {
+  const normalizedLocation = normalizeText(rawLocation);
+  const normalizedVenue = normalizeText(canonicalVenueName);
+  if (!normalizedLocation || !normalizedVenue || normalizedLocation === normalizedVenue) {
+    return '';
+  }
+
+  const locationTokens = normalizedLocation.split(' ').filter(Boolean);
+  const venueTokens = normalizedVenue.split(' ').filter(Boolean);
+  const startsWithVenue =
+    venueTokens.length > 0 &&
+    venueTokens.every((token, index) => locationTokens[index] === token);
+
+  if (!startsWithVenue) {
+    return '';
+  }
+
+  const detail = locationTokens.slice(venueTokens.length).join(' ').trim();
+  return detail ? toTitleCase(detail) : '';
+};
+
+const withLocationDetail = (description: string, locationDetail: string): string => {
+  if (!locationDetail) return description;
+  if (normalizeText(description).includes(normalizeText(locationDetail))) {
+    return description;
+  }
+  return firstText(description)
+    ? `Location: ${locationDetail}. ${description}`
+    : `Location: ${locationDetail}.`;
+};
+
 const hasUsableDate = (event: PrivateSharedEventDoc): boolean =>
   Boolean(String(event.startDate || '').trim());
 
@@ -236,10 +270,13 @@ const normalizePrivateSharedEvent = (
     return null;
   }
 
-  const venueName = firstText(event.locationName, event.visibilityEvidence?.locationName, venue.pagename, venue.name, venue.title);
+  const canonicalVenueName = firstText(venue.pagename, venue.name, venue.title, event.locationName, event.visibilityEvidence?.locationName);
+  const parsedLocationName = firstText(event.locationName, event.visibilityEvidence?.locationName);
+  const locationDetail = extractLocationDetail(parsedLocationName, canonicalVenueName);
   const address = firstText(event.address, event.visibilityEvidence?.address, venue.address, venue.placeDetailsParsed?.formatted_address);
   const mediaUrls = Array.isArray(event.mediaUrls) ? event.mediaUrls.filter(Boolean) : [];
   const imageUrl = firstText(mediaUrls[0], event.visibilityEvidence?.imageUrl);
+  const description = withLocationDetail(firstText(event.description), locationDetail);
 
   return {
     id: `shared_${id}`,
@@ -247,9 +284,9 @@ const normalizePrivateSharedEvent = (
     source: 'private_shared',
     category: inferCategory(event),
     title: firstText(event.title, 'Shared event'),
-    description: firstText(event.description),
+    description,
     venueId: venue.id ?? null,
-    venue: venueName,
+    venue: canonicalVenueName,
     address,
     latitude,
     longitude,
@@ -264,6 +301,7 @@ const normalizePrivateSharedEvent = (
     ticketLinkPosts: '',
     ticketLinkEvents: '',
     mediaUrls,
+    locationLabel: locationDetail || null,
     facebookUrl: firstText(event.sourceUrl),
     venueWebsite: firstText(venue.website, venue.placeDetailsParsed?.website),
     venuePhone: firstText(venue.phone, venue.placeDetailsParsed?.international_phone_number),

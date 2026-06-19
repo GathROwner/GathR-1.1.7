@@ -370,6 +370,15 @@ const groupEventsByVenue = (events: Event[]): Venue[] => {
  * Create a consistent location key from event data
  */
 const createLocationKey = (event: Event): string => {
+  const venueId = String(event.venueId || '').trim();
+  const isScopedLocation =
+    event.locationScope === 'city' ||
+    event.locationScope === 'area' ||
+    event.locationScope === 'route';
+  if (venueId && !isScopedLocation) {
+    return `venue:${venueId}`;
+  }
+
   const venueName = event.venue.toLowerCase().trim().replace(/\s+/g, ' ');
   
   try {
