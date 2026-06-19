@@ -1783,6 +1783,7 @@ useEffect(() => {
   // (Combined object selectors with shallow cause getSnapshot caching issues)
   const clusters = useMapStore((state) => state.clusters);
   const events = useMapStore((state) => state.events);
+  const filteredEvents = useMapStore((state) => state.filteredEvents);
   const viewportEvents = useMapStore((state) => state.viewportEvents);
   const selectedVenue = useMapStore((state) => state.selectedVenue);
   const selectedVenues = useMapStore((state) => state.selectedVenues);
@@ -2077,7 +2078,8 @@ useEffect(() => {
   ]);
 
   const isCalloutBlockingMapInteraction = hasRenderedCallout && !isCalloutClosingVisually;
-  const clustersReadyForInteraction = !isLoading && clusters.length > 0;
+  const hasZeroFilteredResults = !isLoading && filteredEvents.length === 0;
+  const clustersReadyForInteraction = !isLoading && (clusters.length > 0 || hasZeroFilteredResults);
   const shouldRenderStartupUserLocationMarker =
     !mapFirstFrameRendered &&
     Boolean(location || cachedStartupLocation) &&
@@ -7786,7 +7788,7 @@ onDidFinishLoadingMap={() => {
       )}
 
       {/* Transparent overlay to block touches while clusters are not ready */}
-      {!isLoading && !clustersReadyForInteraction && (
+      {!isLoading && !clustersReadyForInteraction && !hasZeroFilteredResults && (
         <View
           style={styles.clustersNotReadyOverlay}
           pointerEvents="box-only"
