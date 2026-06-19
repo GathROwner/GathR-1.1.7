@@ -14,6 +14,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useShareIntentContext } from 'expo-share-intent';
 import {
   submitSharedEvent,
   SharedEventPayload,
@@ -511,6 +512,7 @@ function reviewReasonLabel(value: string): string {
 
 export default function SharedEventScreen() {
   const router = useRouter();
+  const { resetShareIntent } = useShareIntentContext();
   const { width } = useWindowDimensions();
   const params = useLocalSearchParams();
   const initial = useMemo(
@@ -664,10 +666,15 @@ export default function SharedEventScreen() {
 
   const handleFinish = useCallback(() => {
     const now = Date.now();
-    (globalThis as any).__gathrReturningFromSharedEventAt = now;
-    (globalThis as any).__gathrSharedEventReturnGuardUntil = now + SHARED_EVENT_RETURN_INTERACTION_GUARD_MS;
+    const globalAny = globalThis as any;
+    globalAny.__gathrReturningFromSharedEventAt = now;
+    globalAny.__gathrSharedEventReturnGuardUntil = now + SHARED_EVENT_RETURN_INTERACTION_GUARD_MS;
+    globalAny.__gathrDismissedShareIntentUntil = now + 15000;
+    globalAny.__gathrDismissedShareIntentSignature = globalAny.__gathrCurrentShareIntentSignature || '';
+    globalAny.__gathrDismissedShareLaunchUrl = globalAny.__gathrCurrentShareLaunchUrl || '';
+    resetShareIntent();
     router.replace('/(tabs)/map');
-  }, [router]);
+  }, [resetShareIntent, router]);
 
   return (
     <KeyboardAvoidingView

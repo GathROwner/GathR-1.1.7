@@ -480,6 +480,10 @@ const safeReplace = (target: string) => {
   navTargetRef.current = target;
   router.replace(target);
 };
+
+useEffect(() => {
+  navTargetRef.current = null;
+}, [pathname]);
     
     useEffect(() => {
       const screen = pathname || '/';

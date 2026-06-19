@@ -38,6 +38,22 @@ function isShareIntentLaunchUrl(value: string | null): boolean {
   return Boolean(value?.includes('://dataUrl='));
 }
 
+function isDismissedShareIntent(signature: string, launchUrl: string | null): boolean {
+  const globalAny = globalThis as any;
+  const dismissedUntil = Number(globalAny.__gathrDismissedShareIntentUntil || 0);
+  if (dismissedUntil <= Date.now()) {
+    return false;
+  }
+
+  const dismissedSignature = String(globalAny.__gathrDismissedShareIntentSignature || '');
+  const dismissedLaunchUrl = String(globalAny.__gathrDismissedShareLaunchUrl || '');
+
+  return Boolean(
+    (signature && dismissedSignature && signature === dismissedSignature) ||
+    (launchUrl && dismissedLaunchUrl && launchUrl === dismissedLaunchUrl)
+  );
+}
+
 export function useSharedEventIntentRouter(): { isRoutingShareIntent: boolean } {
   const router = useRouter();
   const launchUrl = useLinkingURL();
@@ -47,13 +63,44 @@ export function useSharedEventIntentRouter(): { isRoutingShareIntent: boolean } 
   const routedLaunchUrlRef = useRef('');
   const routeHoldTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const resetTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const isPendingShareLaunch = isShareIntentLaunchUrl(launchUrl) && routedLaunchUrlRef.current !== launchUrl;
+  const currentSignature = hasShareIntent ? buildSignature(shareIntent, launchUrl) : '';
+  const dismissedLaunchUrl = String((globalThis as any).__gathrDismissedShareLaunchUrl || '');
+  const dismissedUntil = Number((globalThis as any).__gathrDismissedShareIntentUntil || 0);
+  const isDismissedLaunchUrl =
+    dismissedUntil > Date.now() &&
+    Boolean(launchUrl && dismissedLaunchUrl && launchUrl === dismissedLaunchUrl);
+  const isDismissedCurrentShare =
+    isDismissedLaunchUrl ||
+    Boolean(currentSignature && isDismissedShareIntent(currentSignature, launchUrl));
+  const isPendingShareLaunch =
+    !isDismissedCurrentShare &&
+    isShareIntentLaunchUrl(launchUrl) &&
+    routedLaunchUrlRef.current !== launchUrl;
 
   useEffect(() => {
     if (!hasShareIntent) return;
 
     const signature = buildSignature(shareIntent, launchUrl);
-    if (!signature || signature === lastSignatureRef.current) return;
+    if (!signature) return;
+
+    if (isDismissedShareIntent(signature, launchUrl)) {
+      lastSignatureRef.current = signature;
+      routedLaunchUrlRef.current = launchUrl || signature;
+      setIsRouteHandoffActive(false);
+      if (routeHoldTimeoutRef.current) {
+        clearTimeout(routeHoldTimeoutRef.current);
+        routeHoldTimeoutRef.current = null;
+      }
+      if (resetTimeoutRef.current) {
+        clearTimeout(resetTimeoutRef.current);
+        resetTimeoutRef.current = null;
+      }
+      resetShareIntent();
+      return;
+    }
+
+    if (signature === lastSignatureRef.current) return;
+
     lastSignatureRef.current = signature;
 
     const sharedText = shareIntent.text || shareIntent.webUrl || '';
@@ -62,6 +109,8 @@ export function useSharedEventIntentRouter(): { isRoutingShareIntent: boolean } 
     const images = imageFiles(shareIntent);
 
     routedLaunchUrlRef.current = launchUrl || signature;
+    (globalThis as any).__gathrCurrentShareIntentSignature = signature;
+    (globalThis as any).__gathrCurrentShareLaunchUrl = launchUrl || '';
     setIsRouteHandoffActive(true);
 
     if (routeHoldTimeoutRef.current) {
@@ -103,6 +152,7 @@ export function useSharedEventIntentRouter(): { isRoutingShareIntent: boolean } 
   }, []);
 
   return {
-    isRoutingShareIntent: hasShareIntent || isPendingShareLaunch || isRouteHandoffActive,
+    isRoutingShareIntent:
+      !isDismissedCurrentShare && (hasShareIntent || isPendingShareLaunch || isRouteHandoffActive),
   };
 }
