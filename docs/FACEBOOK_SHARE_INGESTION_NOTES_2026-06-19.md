@@ -2,6 +2,155 @@
 
 Branch: `codex/facebook-shared-event-intent`
 
+## Checkpoint - 2026-06-19 19:57 Atlantic
+
+This is the current checkpoint for the mobile preview branch, not a production
+release checkpoint.
+
+Repo/worktree:
+- `C:\Windows\System32\GathR-Project\GathR-upgrade-sdk54`
+
+Branch:
+- `codex/facebook-shared-event-intent`
+
+Current feature-code checkpoint commit:
+- `430afd4 Allow map pan with zero search results`
+
+Remote:
+- Pushed to `origin/codex/facebook-shared-event-intent`
+
+Preview OTA updates:
+- iOS preview update group: `15966d30-36ca-4d61-95b9-f8b5eca11473`
+- Android preview update group: `ba01ee77-7fc7-42a2-9b45-788441880e7e`
+- The all-platform EAS update command failed because the existing web export
+  cannot resolve `react-native-image-viewing`. Native-only iOS and Android
+  updates published successfully.
+
+Local working tree caveat:
+- `.claude/settings.local.json` is locally modified and unrelated.
+- `.codex-devserver.*`, `.codex-tsc.log`, and the untracked SDK54 handoff doc
+  are local artifacts and were not included in this checkpoint.
+
+## Working Workflows At This Checkpoint
+
+Facebook share into GathR:
+- Facebook shares route to `app/shared-event.tsx`.
+- The app shows branded `Opening GathR` / `Sent to GathR` screens.
+- The receipt gives a fast confirmation first, then updates when the parser
+  returns initial candidate events.
+- Repeated shares no longer get stuck on stale dismissed share intents.
+- Cold-start share routing now reaches the shared-event screen instead of only
+  opening the app shell.
+
+Facebook event/post parsing:
+- Shared text, source URL, Open Graph/Facebook metadata where available, and
+  attached/preview images are sent through the `submitSharedEvent` Cloud
+  Function endpoint.
+- The app distinguishes Facebook Event vs Facebook Post in the receipt copy.
+- Public-looking Facebook shares can be routed as public candidates for review.
+- Restricted/private/user-only sources remain private/user-scoped unless later
+  promoted.
+- The initial receipt uses "initial matches" language because a public Facebook
+  post scrape may add or update events later after review.
+
+Photo/image share:
+- Direct image shares from Photos are supported.
+- Up to 6 local shared images are uploaded through `uploadSharedEventImage`,
+  then submitted through `submitSharedEvent`.
+- Image shares are treated as private/user-owned by default.
+- Calendar/flyer images can extract multiple event candidates and show them in
+  a compact detail carousel.
+
+Map/list integration:
+- Private shared events are read from
+  `users/{uid}/privateSharedEvents` for the current user only.
+- Private shared events are normalized into the same app `Event` model as
+  public events.
+- Public Firestore events can show current-user shared provenance when backend
+  metadata contains `sharedEventOwnerUid` for the signed-in user.
+- Events, Specials, and map callouts can show a `Shared by you` badge through
+  `sharedEventProvenance.sharedByCurrentUser`.
+- Shared events now appear in normal map/list surfaces instead of a separate
+  isolated share-only UI.
+
+Venue grouping and identity:
+- Public/private event merge keys use normalized title, venue, and time.
+- Map venue grouping prefers normalized venue-name + normalized address when
+  safe, then falls back to raw `venueId`.
+- `utils/venueIdentity.ts` normalizes common parser variations such as:
+  `Peake's Quay`, `Peake s Quay`, `Peake's Quay Restaurant & Bar`, and
+  `Peake's Quay - Peake's Quay added a new photo.`
+- Real subvenues such as `Founders' Food Hall and Market - Group Stage` are
+  preserved as separate display locations unless aliased upstream.
+
+Map return stability:
+- Returning from the shared-event receipt no longer closes newly opened
+  callouts through stale map blur cleanup.
+- The shared-event return guard prevents immediate overlay/map-press cleanup
+  from consuming the next user interaction.
+- Android emulator testing confirmed callouts remain open after returning from
+  a share flow.
+
+Zero-result search behavior:
+- A search/filter state that yields zero filtered events is now treated as a
+  ready empty state.
+- The map no longer renders the transparent "clusters not ready" touch blocker
+  when there are no filtered results.
+- Android emulator testing confirmed a zero-result search could still pan the
+  map and generated non-programmatic camera-change logs.
+
+## Known Limits / Follow-Ups
+
+Full Facebook multi-image posts:
+- iOS/Android share payloads only include what the OS/share extension provides.
+- If Facebook does not pass all post images to the share extension, the app-side
+  initial scan cannot OCR images it never received.
+- Public Facebook post URLs can still be passed onward for backend/full-post
+  review, so the user-facing receipt intentionally says the full post may add
+  or update more events later.
+
+Unknown venues and subvenues:
+- Shared private events use venue matching against the venue directory before
+  they appear on the map.
+- Subvenue naming is currently preserved in the app. If the backend should
+  collapse a subvenue to a parent venue, that should be handled by venue alias
+  or unknown-venue resolution upstream, not by blindly stripping suffixes in the
+  mobile app.
+
+Public promotion/review:
+- The app can submit public candidates and render public events with shared
+  provenance when backend metadata is present.
+- This checkpoint does not claim that every shared candidate is automatically
+  promoted to public Firestore without backend validation.
+- The public review/promotion path should remain separate from private
+  user-owned shared events.
+
+Existing public duplicate data:
+- The Peake's Quay mobile mitigation groups duplicate venue identities for
+  display, but does not delete or rewrite existing public Firestore venue/event
+  documents.
+- Cleaner backend follow-up remains: alias or merge
+  `slug_peakesquaycharlottetown` into `fb_100063789511997`.
+
+## Test Cases Used
+
+Facebook share examples:
+- Hunter's Ale House schedule post: multiple music events extracted and shown
+  in a carousel.
+- Darcy's Trivia post: relative "Thursday" parsing and expired-event handling.
+- Baba's Lounge monthly calendar: large image calendar extraction with expired
+  and future/current event handling.
+- Founders' Food Hall posts/images: multi-event image extraction, image shares,
+  private map/list display, and shared provenance badge.
+- Peake's Quay posts: venue normalization and `Shared by you` badge behavior.
+- Island Tides image share: multiple private photo-share events extracted and
+  later visible on the map.
+
+Automated/local verification:
+- `npx tsc --noEmit --pretty false`
+- Android emulator with adb/logcat for share return, callout stability, venue
+  grouping, and zero-result map pan behavior.
+
 ## Current Share Flow
 
 - Facebook/photo shares land on the shared-event confirmation route.
