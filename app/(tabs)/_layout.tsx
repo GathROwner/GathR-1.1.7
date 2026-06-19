@@ -887,6 +887,10 @@ export default function TabLayout() {
             handleTabSwitch('map', focused);
             InteractionManager.runAfterInteractions(() => {
               if (focused) {
+                const sharedEventReturnGuardUntil = Number((globalThis as any).__gathrSharedEventReturnGuardUntil || 0);
+                if (sharedEventReturnGuardUntil > Date.now()) {
+                  return;
+                }
                 useMapStore.getState().triggerCloseCallout();
               } else {
                 schedulePostSwitchPrefetch(180000);

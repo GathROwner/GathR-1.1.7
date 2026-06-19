@@ -118,6 +118,7 @@ const DEBUG_TREE_MARKER_EVENTS = false;
 const ANDROID_CLUSTER_TOUCH_OVERLAY_SIZE = 144;
 const ANDROID_CLUSTER_TOUCH_OVERLAY_DURATION_MS = 4500;
 const ANDROID_CLUSTER_TOUCH_OVERLAY_LIMIT = 80;
+const SHARED_EVENT_RETURN_INTERACTION_GUARD_MS = 10000;
 const STAGE_CLUSTER_MARKERS_ON_STARTUP = Platform.OS === 'android';
 const STARTUP_CLUSTER_MARKER_LIMIT = 12;
 const FULL_CLUSTER_MARKER_DELAY_MS = 1000;
@@ -1890,6 +1891,7 @@ useEffect(() => {
   const calloutAnimationRequestRef = useRef(0);
   const calloutOpenTouchGuardUntilRef = useRef(0);
   const filterPanelTouchGuardUntilRef = useRef(0);
+  const sharedEventReturnGuardUntilRef = useRef(0);
   const isCalloutClosingVisuallyRef = useRef(false);
   const androidRetapOverlayTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const androidRetapOverlayActiveRef = useRef(false);
@@ -2312,8 +2314,15 @@ useEffect(() => {
       selectedVenueCount: Array.isArray(selectedVenues) ? selectedVenues.length : 0,
     });
 
-    calloutOpenTouchGuardUntilRef.current = Date.now() + 900;
-    filterPanelTouchGuardUntilRef.current = Date.now() + 900;
+    const existingGlobalGuardUntil = Number((globalThis as any).__gathrSharedEventReturnGuardUntil || 0);
+    const guardUntil = Math.max(
+      existingGlobalGuardUntil,
+      Date.now() + SHARED_EVENT_RETURN_INTERACTION_GUARD_MS
+    );
+    (globalThis as any).__gathrSharedEventReturnGuardUntil = guardUntil;
+    calloutOpenTouchGuardUntilRef.current = guardUntil;
+    filterPanelTouchGuardUntilRef.current = guardUntil;
+    sharedEventReturnGuardUntilRef.current = guardUntil;
     clusterProcessingRef.current = null;
     setProcessingClusterId(null);
     if (clusterProcessingTimeoutRef.current) {
@@ -3364,8 +3373,20 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
   useEffect(() => {
     // Only act when the trigger actually increments (not just when it's > 0)
     if (closeCalloutTrigger > previousCloseCalloutTrigger.current) {
+      const sharedEventReturnGuardUntil = Math.max(
+        sharedEventReturnGuardUntilRef.current,
+        Number((globalThis as any).__gathrSharedEventReturnGuardUntil || 0)
+      );
+      const sharedEventReturnGuardRemainingMs = Math.max(0, sharedEventReturnGuardUntil - Date.now());
       console.log('[MapScreen] Received close callout trigger, closing callouts');
       previousCloseCalloutTrigger.current = closeCalloutTrigger;
+
+      if (sharedEventReturnGuardRemainingMs > 0) {
+        console.log('[MapScreen] Ignoring close callout trigger during shared event return guard', {
+          sharedEventReturnGuardRemainingMs,
+        });
+        return;
+      }
       
       // Close any open callouts
       if (selectedVenues && selectedVenues.length > 0) {
@@ -4061,6 +4082,24 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
   ]);
 
   const closeCallout = useCallback((reason: string) => {
+    const sharedEventReturnGuardUntil = Math.max(
+      sharedEventReturnGuardUntilRef.current,
+      Number((globalThis as any).__gathrSharedEventReturnGuardUntil || 0)
+    );
+    const sharedEventReturnGuardRemainingMs = Math.max(0, sharedEventReturnGuardUntil - Date.now());
+    if (
+      sharedEventReturnGuardRemainingMs > 0 &&
+      (reason === 'map-press' || reason === 'tab-repress-trigger')
+    ) {
+      logCalloutProbe('[CalloutProbe] closeCallout ignored during shared event return guard', {
+        reason,
+        sharedEventReturnGuardRemainingMs,
+        selectedVenueCount,
+        selectedClusterId: selectedClusterId ?? 'none',
+      });
+      return;
+    }
+
     logCalloutProbe('[CalloutProbe] closeCallout', {
       reason,
       selectedVenueCount,
@@ -4070,6 +4109,7 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
       ignoreProgrammatic: ignoreProgrammaticCameraRef.current,
       calloutLayoutReady: isRenderedCalloutLayoutReady,
       guardRemainingMs: Math.max(0, calloutOpenTouchGuardUntilRef.current - Date.now()),
+      sharedEventReturnGuardRemainingMs,
     });
     cancelPendingAndroidCalloutCameraMove(reason);
     handleCalloutCloseStart();
@@ -5191,6 +5231,11 @@ lastOpenedClusterIdRef.current = cluster.id;
   const handleMapPress = () => {
     const guardRemainingMs = Math.max(0, calloutOpenTouchGuardUntilRef.current - Date.now());
     const filterGuardRemainingMs = Math.max(0, filterPanelTouchGuardUntilRef.current - Date.now());
+    const sharedEventReturnGuardUntil = Math.max(
+      sharedEventReturnGuardUntilRef.current,
+      Number((globalThis as any).__gathrSharedEventReturnGuardUntil || 0)
+    );
+    const sharedEventReturnGuardRemainingMs = Math.max(0, sharedEventReturnGuardUntil - Date.now());
     logCalloutProbe('[CalloutProbe] handleMapPress fired', {
       selectedVenueCount,
       selectedClusterId: selectedClusterId ?? 'none',
@@ -5198,6 +5243,7 @@ lastOpenedClusterIdRef.current = cluster.id;
       calloutLayoutReady: isRenderedCalloutLayoutReady,
       guardRemainingMs,
       filterGuardRemainingMs,
+      sharedEventReturnGuardRemainingMs,
     });
 
     if (ignoreProgrammaticCameraRef.current) {
@@ -5213,6 +5259,13 @@ lastOpenedClusterIdRef.current = cluster.id;
     if (guardRemainingMs > 0) {
       logCalloutProbe('[CalloutProbe] handleMapPress ignored by post-open guard', {
         guardRemainingMs,
+      });
+      return;
+    }
+
+    if (sharedEventReturnGuardRemainingMs > 0) {
+      logCalloutProbe('[CalloutProbe] handleMapPress ignored by shared event return guard', {
+        sharedEventReturnGuardRemainingMs,
       });
       return;
     }
