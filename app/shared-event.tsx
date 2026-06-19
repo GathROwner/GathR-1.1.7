@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Image,
-  InteractionManager,
   KeyboardAvoidingView,
   NativeScrollEvent,
   NativeSyntheticEvent,
@@ -25,8 +24,6 @@ import {
   resolveSharedEventMediaUrls,
   SharedIntentMediaFile,
 } from '../lib/sharedEventMediaUpload';
-import { EVENTS_MINIMAL } from '../lib/queryKeys';
-import { useMapStore } from '../store';
 
 const BRAND = {
   primary: '#1E90FF',
@@ -669,28 +666,7 @@ export default function SharedEventScreen() {
     const now = Date.now();
     (globalThis as any).__gathrReturningFromSharedEventAt = now;
     (globalThis as any).__gathrSharedEventReturnGuardUntil = now + SHARED_EVENT_RETURN_INTERACTION_GUARD_MS;
-    const queryClient = (globalThis as any).__RQ_CLIENT;
     router.replace('/(tabs)/map');
-
-    const refreshEventsWhenMapIsIdle = (attempt = 0) => {
-      const mapState = useMapStore.getState();
-      const calloutOpen = (mapState.selectedVenues?.length ?? 0) > 0 || Boolean(mapState.selectedCluster);
-      if (calloutOpen && attempt < 8) {
-        setTimeout(() => refreshEventsWhenMapIsIdle(attempt + 1), 1500);
-        return;
-      }
-
-      (globalThis as any).__gathrSharedEventReturnGuardUntil = Date.now() + 5000;
-      queryClient?.invalidateQueries?.({ queryKey: EVENTS_MINIMAL });
-      void useMapStore.getState().fetchEvents().catch((error) => {
-        console.warn('[SharedEvent] Failed to refresh events after shared event submit:', error);
-      });
-    };
-
-    const refreshTask = InteractionManager.runAfterInteractions(() => {
-      setTimeout(() => refreshEventsWhenMapIsIdle(), 1500);
-    });
-    setTimeout(() => refreshTask.cancel?.(), SHARED_EVENT_RETURN_INTERACTION_GUARD_MS);
   }, [router]);
 
   return (
