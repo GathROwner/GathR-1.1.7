@@ -96,9 +96,19 @@ export const getTemporalMultiplier = (eventDate: string, timeStatus: string): nu
  */
 export const formatTime = (time: string): string => {
   if (!time) return '';
+
+  const normalized = time.trim();
+  const twentyFourHour = normalized.match(/^([01]?\d|2[0-3]):([0-5]\d)(?::[0-5]\d)?$/);
+  if (twentyFourHour) {
+    const hour24 = Number(twentyFourHour[1]);
+    const minute = twentyFourHour[2];
+    const period = hour24 >= 12 ? 'PM' : 'AM';
+    const hour12 = hour24 % 12 || 12;
+    return formatTime(`${hour12}:${minute}:00 ${period}`);
+  }
   
   // Handle time format with seconds
-  return time
+  return normalized
     .replace(/:\d{2} (AM|PM)$/i, ' $1') // First remove seconds if present
     .replace(':00 PM', 'pm')
     .replace(':00 AM', 'am')

@@ -332,7 +332,7 @@ function snapshotsFromResult(
 }
 
 function formatTime(value: string): string {
-  const match = value.match(/^([01]?\d|2[0-3]):([0-5]\d)$/);
+  const match = value.trim().match(/^([01]?\d|2[0-3]):([0-5]\d)(?::[0-5]\d)?$/);
   if (!match) return value;
   const hour24 = Number(match[1]);
   const minute = match[2];

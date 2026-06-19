@@ -7,6 +7,7 @@ import {
   FIRESTORE_MAX_PAGES,
   FIRESTORE_PAGE_LIMIT,
 } from '../config/backend';
+import { convert24to12Hour } from './firestoreEvents';
 import { normalizeVenueIdentityText } from '../../utils/venueIdentity';
 
 type SharedEventSourcePlatform = 'facebook' | 'instagram' | 'web' | 'unknown';
@@ -281,6 +282,8 @@ const normalizePrivateSharedEvent = (
   const mediaUrls = Array.isArray(event.mediaUrls) ? event.mediaUrls.filter(Boolean) : [];
   const imageUrl = firstText(mediaUrls[0], event.visibilityEvidence?.imageUrl);
   const description = withLocationDetail(firstText(event.description), locationDetail);
+  const startTime = convert24to12Hour(String(event.startTime || ''));
+  const endTime = convert24to12Hour(String(event.endTime || ''));
 
   return {
     id: `shared_${id}`,
@@ -296,8 +299,8 @@ const normalizePrivateSharedEvent = (
     longitude,
     startDate: String(event.startDate || ''),
     endDate: String(event.endDate || event.startDate || ''),
-    startTime: String(event.startTime || ''),
-    endTime: String(event.endTime || ''),
+    startTime,
+    endTime,
     ticketPrice: '',
     profileUrl: firstText(venue.profileImage),
     imageUrl,
