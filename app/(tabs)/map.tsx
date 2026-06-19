@@ -7748,6 +7748,22 @@ Owner: Map UX stability on Android • Last validated: 2025-09-04
     !isCalloutClosingVisuallyRef.current || androidRetapOverlayActiveRef.current
   }
   onResponderRelease={(event) => {
+    const guardRemainingMs = Math.max(0, calloutOpenTouchGuardUntilRef.current - Date.now());
+    const sharedEventReturnGuardUntil = Math.max(
+      sharedEventReturnGuardUntilRef.current,
+      Number((globalThis as any).__gathrSharedEventReturnGuardUntil || 0)
+    );
+    const sharedEventReturnGuardRemainingMs = Math.max(0, sharedEventReturnGuardUntil - Date.now());
+    if (guardRemainingMs > 0 || sharedEventReturnGuardRemainingMs > 0) {
+      logCalloutProbe('[CalloutProbe] overlay release ignored by callout guard', {
+        guardRemainingMs,
+        sharedEventReturnGuardRemainingMs,
+        selectedClusterId: presentedCalloutClusterId ?? 'none',
+        selectedVenueCount: presentedCalloutVenueCount,
+      });
+      return;
+    }
+
     if (handleAndroidRetapOverlayResponderRelease(event)) {
       return;
     }
