@@ -2309,11 +2309,17 @@ useEffect(() => {
     };
   }, []);
 
-  // Close filter panel and callouts only when the map tab actually loses focus.
-  // A useFocusEffect cleanup tied to selectedVenues was firing during selection
-  // changes and immediately tearing down a freshly opened callout on Android.
+  const blurCleanupWasFocusedRef = useRef(isFocused);
+
+  // Close filter panel and callouts only on an actual focused -> blurred transition.
+  // Do not reschedule this from selectedVenues changes; after returning from the share
+  // flow React Navigation can briefly report the visible map as unfocused, and selection
+  // changes would otherwise tear down a freshly opened callout.
   useEffect(() => {
-    if (isFocused) {
+    const wasFocused = blurCleanupWasFocusedRef.current;
+    blurCleanupWasFocusedRef.current = isFocused;
+
+    if (isFocused || !wasFocused) {
       return;
     }
 
@@ -2321,21 +2327,27 @@ useEffect(() => {
 
     const runCleanup = () => {
       if (isFocusedRef.current) {
+        const currentState = useMapStore.getState();
         console.log('[MapFocusCleanup] skipped delayed blur cleanup because map is focused again', {
-          activeFilterPanel: activeFilterPanel ?? 'none',
-          selectedVenueCount: Array.isArray(selectedVenues) ? selectedVenues.length : 0,
+          activeFilterPanel: currentState.activeFilterPanel ?? 'none',
+          selectedVenueCount: Array.isArray(currentState.selectedVenues) ? currentState.selectedVenues.length : 0,
         });
         return;
       }
 
+      const currentState = useMapStore.getState();
+      const currentActiveFilterPanel = currentState.activeFilterPanel;
+      const currentSelectedVenueCount = Array.isArray(currentState.selectedVenues)
+        ? currentState.selectedVenues.length
+        : 0;
       console.log('[MapFocusCleanup] clearing map-only UI after blur', {
-        activeFilterPanel: activeFilterPanel ?? 'none',
-        selectedVenueCount: Array.isArray(selectedVenues) ? selectedVenues.length : 0,
+        activeFilterPanel: currentActiveFilterPanel ?? 'none',
+        selectedVenueCount: currentSelectedVenueCount,
       });
-      if (activeFilterPanel) {
+      if (currentActiveFilterPanel) {
         setActiveFilterPanel(null);
       }
-      if (selectedVenues && selectedVenues.length > 0) {
+      if (currentSelectedVenueCount > 0) {
         selectVenue(null);
       }
       setRenderedCalloutVenues([]);
@@ -2354,9 +2366,7 @@ useEffect(() => {
       }
     };
   }, [
-    activeFilterPanel,
     isFocused,
-    selectedVenues,
     selectVenue,
     setActiveFilterPanel,
     setRenderedCalloutCluster,
