@@ -44,6 +44,7 @@ import * as Device from 'expo-device';
 import { installNotificationDebugListeners } from '../services/notificationService';
 import { useDeepLinking } from '../hooks/useDeepLinking';
 import { useSharedEventIntentRouter } from '../hooks/useSharedEventIntentRouter';
+import SharedEventProcessingBanner from '../components/sharedEvent/SharedEventProcessingBanner';
 import { preloadStartupLocation } from '../utils/startupLocationCache';
 import { GATHR_MAPBOX_STYLE_URL, initializeMapboxAccessToken } from '../utils/mapboxAccessToken';
 
@@ -974,6 +975,7 @@ useEffect(() => {
           headerShown: false
         }} />
       </Stack>
+      <SharedEventProcessingBanner />
     </TutorialManager>
   );
 }

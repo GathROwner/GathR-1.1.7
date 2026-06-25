@@ -20,11 +20,13 @@ import {
   SharedEventPayload,
   SharedEventResultEvent,
   SharedEventSubmitResult,
+  watchSharedEventIngest,
 } from '../lib/sharedEventApi';
 import {
   resolveSharedEventMediaUrls,
   SharedIntentMediaFile,
 } from '../lib/sharedEventMediaUpload';
+import { trackPendingSharedEventIngest } from '../lib/sharedEventProcessingTracker';
 
 const BRAND = {
   primary: '#1E90FF',
@@ -399,6 +401,10 @@ function resultUsesInitialScanLanguage(result: SharedEventSubmitResult | null): 
   return result?.routing === 'public_candidate';
 }
 
+function resultIsStillProcessing(result: SharedEventSubmitResult | null): boolean {
+  return result?.processingStatus === 'queued' || result?.processingStatus === 'processing';
+}
+
 function statusCopy(
   phase: Phase,
   result: SharedEventSubmitResult | null,
@@ -415,7 +421,7 @@ function statusCopy(
     return {
       icon: 'checkmark-circle-outline',
       title: 'Thanks for submitting',
-      detail: `GathR is saving this ${sourceContext.shareSubject}. If it is not already tracked, it will be added soon.`,
+      detail: `GathR is scanning this ${sourceContext.shareSubject}. You can leave this screen while it finishes.`,
       color: BRAND.primary,
     };
   }
@@ -521,6 +527,7 @@ export default function SharedEventScreen() {
   );
   const initialSignature = useMemo(() => signatureForSnapshot(initial), [initial]);
   const submittedSignatureRef = useRef('');
+  const ingestUnsubscribeRef = useRef<null | (() => void)>(null);
 
   const [snapshot, setSnapshot] = useState<SharedEventSnapshot>(initial);
   const [eventSnapshots, setEventSnapshots] = useState<SharedEventSnapshot[]>([initial]);
@@ -529,6 +536,45 @@ export default function SharedEventScreen() {
   const [result, setResult] = useState<SharedEventSubmitResult | null>(null);
   const [errorMessage, setErrorMessage] = useState('');
   const [showDetails, setShowDetails] = useState(false);
+
+  const stopIngestWatcher = useCallback(() => {
+    ingestUnsubscribeRef.current?.();
+    ingestUnsubscribeRef.current = null;
+  }, []);
+
+  const applySubmitResult = useCallback((baseSnapshot: SharedEventSnapshot, submitResult: SharedEventSubmitResult) => {
+    const nextEventSnapshots = snapshotsFromResult(baseSnapshot, submitResult);
+    setResult(submitResult);
+    setEventSnapshots(nextEventSnapshots);
+    setSelectedEventIndex(0);
+    setSnapshot(nextEventSnapshots[0] || mergeResultIntoSnapshot(baseSnapshot, submitResult));
+    setPhase(submitResult.needsUserReview ? 'needs_review' : 'saved');
+  }, []);
+
+  const startIngestWatcher = useCallback((ingestId: string, baseSnapshot: SharedEventSnapshot) => {
+    stopIngestWatcher();
+    ingestUnsubscribeRef.current = watchSharedEventIngest(
+      ingestId,
+      (nextResult) => {
+        setResult(nextResult);
+        if (nextResult.processingStatus === 'failed') {
+          stopIngestWatcher();
+          setPhase('error');
+          setErrorMessage(nextResult.processingError || 'GathR could not process this share.');
+          return;
+        }
+        if (nextResult.processingStatus === 'completed') {
+          stopIngestWatcher();
+          applySubmitResult(baseSnapshot, nextResult);
+        }
+      },
+      (error) => {
+        stopIngestWatcher();
+        setPhase('error');
+        setErrorMessage(error.message || 'GathR could not watch this share.');
+      }
+    );
+  }, [applySubmitResult, stopIngestWatcher]);
 
   const submitSnapshot = useCallback(async (nextSnapshot: SharedEventSnapshot) => {
     if (!hasUsableSnapshot(nextSnapshot)) {
@@ -539,20 +585,21 @@ export default function SharedEventScreen() {
 
     setPhase('processing');
     setErrorMessage('');
+    stopIngestWatcher();
 
     try {
       const submitResult = await submitSharedEvent(await payloadFromSnapshot(nextSnapshot));
-      const nextEventSnapshots = snapshotsFromResult(nextSnapshot, submitResult);
       setResult(submitResult);
-      setEventSnapshots(nextEventSnapshots);
-      setSelectedEventIndex(0);
-      setSnapshot(nextEventSnapshots[0] || mergeResultIntoSnapshot(nextSnapshot, submitResult));
-      setPhase(submitResult.needsUserReview ? 'needs_review' : 'saved');
+      if (submitResult.ingestId && resultIsStillProcessing(submitResult)) {
+        startIngestWatcher(submitResult.ingestId, nextSnapshot);
+        return;
+      }
+      applySubmitResult(nextSnapshot, submitResult);
     } catch (error) {
       setPhase('error');
       setErrorMessage(error instanceof Error ? error.message : 'Please try again.');
     }
-  }, []);
+  }, [applySubmitResult, startIngestWatcher, stopIngestWatcher]);
 
   useEffect(() => {
     if (submittedSignatureRef.current === initialSignature) return;
@@ -563,8 +610,11 @@ export default function SharedEventScreen() {
     setShowDetails(false);
     setResult(null);
     setErrorMessage('');
+    stopIngestWatcher();
     void submitSnapshot(initial);
-  }, [initial, initialSignature, submitSnapshot]);
+  }, [initial, initialSignature, stopIngestWatcher, submitSnapshot]);
+
+  useEffect(() => () => stopIngestWatcher(), [stopIngestWatcher]);
 
   const eventCount = eventSnapshots.length;
   const cardWidth = Math.max(280, width - 32);
@@ -665,6 +715,12 @@ export default function SharedEventScreen() {
   };
 
   const handleFinish = useCallback(() => {
+    if (result?.ingestId && resultIsStillProcessing(result)) {
+      void trackPendingSharedEventIngest({
+        ingestId: result.ingestId,
+        sourceLabel: sourceContext.badgeLabel,
+      });
+    }
     const now = Date.now();
     const globalAny = globalThis as any;
     globalAny.__gathrReturningFromSharedEventAt = now;
@@ -674,7 +730,7 @@ export default function SharedEventScreen() {
     globalAny.__gathrDismissedShareLaunchUrl = globalAny.__gathrCurrentShareLaunchUrl || '';
     resetShareIntent();
     router.replace('/(tabs)/map');
-  }, [resetShareIntent, router]);
+  }, [resetShareIntent, result, router, sourceContext.badgeLabel]);
 
   return (
     <KeyboardAvoidingView
