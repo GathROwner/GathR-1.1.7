@@ -6,6 +6,11 @@ export const MAPBOX_ACCESS_TOKEN =
   (Constants.expoConfig?.extra?.mapboxAccessToken as string | undefined) ||
   '';
 
+export const GATHR_MAPBOX_STYLE_URL =
+  process.env.EXPO_PUBLIC_MAPBOX_STYLE_URL ||
+  (Constants.expoConfig?.extra?.mapboxStyleUrl as string | undefined) ||
+  'mapbox://styles/mapbox/streets-v12';
+
 type MapboxModule = {
   setAccessToken: (token: string) => void;
 };

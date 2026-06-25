@@ -45,7 +45,7 @@ import { installNotificationDebugListeners } from '../services/notificationServi
 import { useDeepLinking } from '../hooks/useDeepLinking';
 import { useSharedEventIntentRouter } from '../hooks/useSharedEventIntentRouter';
 import { preloadStartupLocation } from '../utils/startupLocationCache';
-import { initializeMapboxAccessToken } from '../utils/mapboxAccessToken';
+import { GATHR_MAPBOX_STYLE_URL, initializeMapboxAccessToken } from '../utils/mapboxAccessToken';
 
 
   // ðŸš€ PERFORMANCE: Preload data on app start
@@ -103,7 +103,7 @@ function StylePreloader() {
     <View style={{ position: 'absolute', width: 1, height: 1, opacity: 0, pointerEvents: 'none' }}>
       <MapboxGL.MapView
         style={{ flex: 1 }}
-        styleURL={MapboxGL.StyleURL.Street}
+        styleURL={GATHR_MAPBOX_STYLE_URL}
         surfaceView={Platform.OS === 'android' ? false : undefined}
         onDidFinishLoadingMap={() => console.log('[MapLoad][preloader] style_loaded')}
 onDidFinishRenderingMapFully={() => {

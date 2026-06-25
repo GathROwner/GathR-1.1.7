@@ -91,7 +91,7 @@ import {
   preloadStartupLocation,
   STARTUP_LOCATION_CACHE_MAX_AGE_MS,
 } from '../../utils/startupLocationCache';
-import { initializeMapboxAccessToken } from '../../utils/mapboxAccessToken';
+import { GATHR_MAPBOX_STYLE_URL, initializeMapboxAccessToken } from '../../utils/mapboxAccessToken';
 import {
   markTabFocus,
   markTabRootLayout,
@@ -7502,7 +7502,7 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
         <MapboxGL.MapView
         ref={mapRef}
         style={styles.map}
-        styleURL={MapboxGL.StyleURL.Street}
+        styleURL={GATHR_MAPBOX_STYLE_URL}
         scaleBarEnabled={true}
         scaleBarPosition={{
           bottom: 12,
