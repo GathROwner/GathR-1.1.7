@@ -53,6 +53,38 @@ export type SharedEventResultEvent = {
 
 export type SharedEventProcessingStatus = 'queued' | 'processing' | 'completed' | 'failed';
 
+export type SharedEventScrapeEnrichmentStatus =
+  | 'reserved'
+  | 'queued'
+  | 'running'
+  | 'processing'
+  | 'completed'
+  | 'duplicate'
+  | 'skipped'
+  | 'failed';
+
+export type SharedEventPublicProcessingStatus =
+  | 'queued'
+  | 'processing'
+  | 'completed'
+  | 'skipped'
+  | 'failed';
+
+export type SharedEventPublicProcessingSummary = {
+  status?: SharedEventPublicProcessingStatus;
+  source?: string;
+  fileId?: string;
+  fileName?: string;
+  runId?: string;
+  createdEventCount?: number;
+  updatedEventCount?: number;
+  duplicateEventCount?: number;
+  unknownVenueCount?: number;
+  skippedCount?: number;
+  errorCount?: number;
+  message?: string;
+};
+
 export type SharedEventSubmitResult = {
   success: boolean;
   ingestId?: string;
@@ -65,6 +97,17 @@ export type SharedEventSubmitResult = {
   status?: 'needs_user_review' | 'saved' | 'submitted_public_candidate' | 'expired';
   processingStatus?: SharedEventProcessingStatus;
   processingError?: string;
+  scrapeEnrichment?: {
+    status?: SharedEventScrapeEnrichmentStatus;
+    enrichmentId?: string;
+    reason?: string;
+    actorRunId?: string;
+    datasetId?: string;
+    fileId?: string;
+    fileName?: string;
+    error?: string;
+  };
+  publicProcessing?: SharedEventPublicProcessingSummary;
   extractedEventCount?: number;
   needsUserReview?: boolean;
   reviewReasons?: string[];
@@ -143,6 +186,34 @@ function resultFromIngestDoc(ingestId: string, data: Record<string, any>): Share
     status: data.status,
     processingStatus: data.processingStatus,
     processingError: typeof data.processingError === 'string' ? data.processingError : undefined,
+    scrapeEnrichment: data.scrapeEnrichment && typeof data.scrapeEnrichment === 'object'
+      ? {
+        status: data.scrapeEnrichment.status,
+        enrichmentId: typeof data.scrapeEnrichment.enrichmentId === 'string' ? data.scrapeEnrichment.enrichmentId : undefined,
+        reason: typeof data.scrapeEnrichment.reason === 'string' ? data.scrapeEnrichment.reason : undefined,
+        actorRunId: typeof data.scrapeEnrichment.actorRunId === 'string' ? data.scrapeEnrichment.actorRunId : undefined,
+        datasetId: typeof data.scrapeEnrichment.datasetId === 'string' ? data.scrapeEnrichment.datasetId : undefined,
+        fileId: typeof data.scrapeEnrichment.fileId === 'string' ? data.scrapeEnrichment.fileId : undefined,
+        fileName: typeof data.scrapeEnrichment.fileName === 'string' ? data.scrapeEnrichment.fileName : undefined,
+        error: typeof data.scrapeEnrichment.error === 'string' ? data.scrapeEnrichment.error : undefined,
+      }
+      : undefined,
+    publicProcessing: data.publicProcessing && typeof data.publicProcessing === 'object'
+      ? {
+        status: data.publicProcessing.status,
+        source: typeof data.publicProcessing.source === 'string' ? data.publicProcessing.source : undefined,
+        fileId: typeof data.publicProcessing.fileId === 'string' ? data.publicProcessing.fileId : undefined,
+        fileName: typeof data.publicProcessing.fileName === 'string' ? data.publicProcessing.fileName : undefined,
+        runId: typeof data.publicProcessing.runId === 'string' ? data.publicProcessing.runId : undefined,
+        createdEventCount: typeof data.publicProcessing.createdEventCount === 'number' ? data.publicProcessing.createdEventCount : undefined,
+        updatedEventCount: typeof data.publicProcessing.updatedEventCount === 'number' ? data.publicProcessing.updatedEventCount : undefined,
+        duplicateEventCount: typeof data.publicProcessing.duplicateEventCount === 'number' ? data.publicProcessing.duplicateEventCount : undefined,
+        unknownVenueCount: typeof data.publicProcessing.unknownVenueCount === 'number' ? data.publicProcessing.unknownVenueCount : undefined,
+        skippedCount: typeof data.publicProcessing.skippedCount === 'number' ? data.publicProcessing.skippedCount : undefined,
+        errorCount: typeof data.publicProcessing.errorCount === 'number' ? data.publicProcessing.errorCount : undefined,
+        message: typeof data.publicProcessing.message === 'string' ? data.publicProcessing.message : undefined,
+      }
+      : undefined,
     extractedEventCount: typeof data.extractedEventCount === 'number' ? data.extractedEventCount : events.length,
     needsUserReview: events.some((event) => event.needsUserReview),
     reviewReasons,

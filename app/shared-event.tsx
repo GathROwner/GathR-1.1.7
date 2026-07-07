@@ -405,6 +405,50 @@ function resultIsStillProcessing(result: SharedEventSubmitResult | null): boolea
   return result?.processingStatus === 'queued' || result?.processingStatus === 'processing';
 }
 
+function publicProcessingCounts(result: SharedEventSubmitResult | null): {
+  created: number;
+  updated: number;
+  unknownVenue: number;
+  skipped: number;
+  errors: number;
+} {
+  return {
+    created: Math.max(0, Number(result?.publicProcessing?.createdEventCount || 0)),
+    updated: Math.max(0, Number(result?.publicProcessing?.updatedEventCount || 0)),
+    unknownVenue: Math.max(0, Number(result?.publicProcessing?.unknownVenueCount || 0)),
+    skipped: Math.max(0, Number(result?.publicProcessing?.skippedCount || 0)),
+    errors: Math.max(0, Number(result?.publicProcessing?.errorCount || 0)),
+  };
+}
+
+function resultHasPendingAsyncWork(result: SharedEventSubmitResult | null): boolean {
+  if (!result) return false;
+  if (resultIsStillProcessing(result)) return true;
+  const publicStatus = result.publicProcessing?.status;
+  if (publicStatus === 'queued' || publicStatus === 'processing') return true;
+  const scrapeStatus = result.scrapeEnrichment?.status;
+  return scrapeStatus === 'reserved' ||
+    scrapeStatus === 'queued' ||
+    scrapeStatus === 'running' ||
+    scrapeStatus === 'processing' ||
+    scrapeStatus === 'duplicate';
+}
+
+function shouldWatchIngest(result: SharedEventSubmitResult | null): boolean {
+  if (!result?.ingestId) return false;
+  if (resultHasPendingAsyncWork(result)) return true;
+  const publicStatus = result.publicProcessing?.status;
+  const scrapeStatus = result.scrapeEnrichment?.status;
+  const terminalPublicStatus = publicStatus === 'completed' || publicStatus === 'failed' || publicStatus === 'skipped';
+  const terminalScrapeStatus = scrapeStatus === 'completed' || scrapeStatus === 'failed' || scrapeStatus === 'skipped';
+  return result.routing === 'public_candidate' && !terminalPublicStatus && !terminalScrapeStatus;
+}
+
+function formatCountFragment(count: number, singular: string, plural: string): string | null {
+  if (count <= 0) return null;
+  return `${count} ${count === 1 ? singular : plural}`;
+}
+
 function statusCopy(
   phase: Phase,
   result: SharedEventSubmitResult | null,
@@ -426,12 +470,65 @@ function statusCopy(
     };
   }
 
+  if (result?.publicProcessing?.status === 'processing' || result?.publicProcessing?.status === 'queued') {
+    return {
+      icon: 'sync-outline',
+      title: 'Thanks for submitting',
+      detail: result.publicProcessing.message ||
+        `GathR is scanning the ${sourceContext.publicReviewSource}. You can leave this screen while it finishes.`,
+      color: BRAND.primary,
+    };
+  }
+
   if (phase === 'error') {
     return {
       icon: 'alert-circle-outline',
       title: 'Could not save share',
       detail: errorMessage || 'GathR could not process this share.',
       color: BRAND.danger,
+    };
+  }
+
+  if (result?.publicProcessing?.status === 'completed') {
+    const counts = publicProcessingCounts(result);
+    const changedCount = counts.created + counts.updated;
+    if (changedCount > 0) {
+      const fragments = [
+        formatCountFragment(counts.created, 'event added', 'events added'),
+        formatCountFragment(counts.updated, 'event updated', 'events updated'),
+        formatCountFragment(counts.unknownVenue, 'needs venue review', 'need venue review'),
+      ].filter(Boolean);
+      return {
+        icon: 'earth-outline',
+        title: 'Added to GathR',
+        detail: fragments.length > 0
+          ? `Full scan finished: ${fragments.join(', ')}.`
+          : result.publicProcessing.message || 'The full scan finished.',
+        color: BRAND.success,
+      };
+    }
+    if (counts.unknownVenue > 0) {
+      return {
+        icon: 'location-outline',
+        title: 'Needs venue review',
+        detail: `${counts.unknownVenue} ${counts.unknownVenue === 1 ? 'event needs' : 'events need'} a venue match before appearing publicly.`,
+        color: BRAND.warning,
+      };
+    }
+    return {
+      icon: 'earth-outline',
+      title: 'Review complete',
+      detail: result.publicProcessing.message || 'The full scan finished with no new public events.',
+      color: BRAND.success,
+    };
+  }
+
+  if (result?.publicProcessing?.status === 'failed') {
+    return {
+      icon: 'alert-circle-outline',
+      title: 'Saved for review',
+      detail: result.publicProcessing.message || 'GathR saved this share, but the full public scan could not finish.',
+      color: BRAND.warning,
     };
   }
 
@@ -491,6 +588,13 @@ function usefulParsedDetailsCount(result: SharedEventSubmitResult | null, eventS
 
 function summaryTitleForResult(result: SharedEventSubmitResult | null, parsedDetailsCount: number): string {
   if (!result) return 'Share received';
+  if (result.publicProcessing?.status === 'completed') {
+    const counts = publicProcessingCounts(result);
+    const changed = counts.created + counts.updated;
+    if (changed > 0 && counts.unknownVenue > 0) return `${changed} added or updated, ${counts.unknownVenue} need venue review`;
+    if (changed > 0) return `${changed} added or updated`;
+    if (counts.unknownVenue > 0) return `${counts.unknownVenue} need venue review`;
+  }
   if (resultIsFullyExpired(result)) return parsedDetailsCount > 1 ? 'Expired events found' : 'Expired event found';
   if (resultUsesInitialScanLanguage(result)) {
     if (parsedDetailsCount > 1) return `${parsedDetailsCount} initial matches`;
@@ -563,9 +667,16 @@ export default function SharedEventScreen() {
           setErrorMessage(nextResult.processingError || 'GathR could not process this share.');
           return;
         }
-        if (nextResult.processingStatus === 'completed') {
-          stopIngestWatcher();
+        if (nextResult.processingStatus === 'completed' || resultEvents(nextResult).length > 0) {
+          const shouldContinueWatching = shouldWatchIngest(nextResult);
+          if (!shouldContinueWatching) {
+            stopIngestWatcher();
+          }
           applySubmitResult(baseSnapshot, nextResult);
+          return;
+        }
+        if (!shouldWatchIngest(nextResult)) {
+          stopIngestWatcher();
         }
       },
       (error) => {
@@ -590,9 +701,11 @@ export default function SharedEventScreen() {
     try {
       const submitResult = await submitSharedEvent(await payloadFromSnapshot(nextSnapshot));
       setResult(submitResult);
-      if (submitResult.ingestId && resultIsStillProcessing(submitResult)) {
+      if (submitResult.ingestId && shouldWatchIngest(submitResult)) {
         startIngestWatcher(submitResult.ingestId, nextSnapshot);
-        return;
+        if (resultIsStillProcessing(submitResult) && resultEvents(submitResult).length === 0) {
+          return;
+        }
       }
       applySubmitResult(nextSnapshot, submitResult);
     } catch (error) {
@@ -627,11 +740,19 @@ export default function SharedEventScreen() {
   const shouldShowDetails = showDetails && detailsAvailable;
   const summaryTitle = summaryTitleForResult(result, parsedDetailsCount);
   const usesInitialScanLanguage = resultUsesInitialScanLanguage(result);
+  const hasFinalPublicProcessing = result?.publicProcessing?.status === 'completed';
   const isExpiredResult = resultIsFullyExpired(result);
+  const publicCounts = publicProcessingCounts(result);
   const routingLabel = phase === 'processing'
     ? 'Sending'
     : phase === 'error'
       ? 'Retry needed'
+      : result?.publicProcessing?.status === 'processing' || result?.publicProcessing?.status === 'queued'
+        ? 'Scanning'
+      : result?.publicProcessing?.status === 'completed' && publicCounts.created + publicCounts.updated > 0
+        ? 'Added'
+      : result?.publicProcessing?.status === 'completed' && publicCounts.unknownVenue > 0
+        ? 'Venue review'
       : isExpiredResult
         ? 'Expired'
       : result?.routing === 'public_candidate'
@@ -641,6 +762,12 @@ export default function SharedEventScreen() {
     ? 'sync-outline'
     : phase === 'error'
       ? 'alert-circle-outline'
+      : result?.publicProcessing?.status === 'processing' || result?.publicProcessing?.status === 'queued'
+        ? 'sync-outline'
+      : result?.publicProcessing?.status === 'completed' && publicCounts.created + publicCounts.updated > 0
+        ? 'checkmark-circle-outline'
+      : result?.publicProcessing?.status === 'completed' && publicCounts.unknownVenue > 0
+        ? 'location-outline'
       : isExpiredResult
         ? 'time-outline'
       : result?.routing === 'public_candidate'
@@ -787,7 +914,9 @@ export default function SharedEventScreen() {
               <View style={styles.receiptDivider} />
               <View style={styles.receiptFoundRow}>
                 <View style={styles.receiptFoundText}>
-                  <Text style={styles.receiptFoundLabel}>{usesInitialScanLanguage ? 'Initial scan' : 'Detected'}</Text>
+                  <Text style={styles.receiptFoundLabel}>
+                    {hasFinalPublicProcessing ? 'Final scan' : usesInitialScanLanguage ? 'Initial scan' : 'Detected'}
+                  </Text>
                   <Text style={styles.receiptFoundTitle}>{summaryTitle}</Text>
                 </View>
                 <Pressable
