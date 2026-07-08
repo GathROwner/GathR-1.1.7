@@ -1109,11 +1109,11 @@ amplitudeTrack('ticket_link_opened', {
   const navigationEnabled = events && events.length > 1 && onNavigate !== undefined;
   const trendingShimmerTranslateX = trendingShimmerProgress.interpolate({
     inputRange: [0, 1],
-    outputRange: [-42, 104],
+    outputRange: [-56, 122],
   });
   const trendingShimmerOpacity = trendingShimmerProgress.interpolate({
     inputRange: [0, 0.18, 0.5, 0.82, 1],
-    outputRange: [0, 0.18, 0.55, 0.18, 0],
+    outputRange: [0, 0.28, 0.78, 0.28, 0],
   });
   const trendingFlameScale = trendingPulseProgress.interpolate({
     inputRange: [0, 0.35, 1],
@@ -1240,7 +1240,9 @@ amplitudeTrack('ticket_link_opened', {
                     <LinearGradient
                       colors={[
                         'rgba(255, 255, 255, 0)',
-                        'rgba(255, 187, 77, 0.48)',
+                        'rgba(255, 159, 28, 0.62)',
+                        'rgba(255, 246, 214, 0.74)',
+                        'rgba(255, 159, 28, 0.62)',
                         'rgba(255, 255, 255, 0)',
                       ]}
                       start={{ x: 0, y: 0.5 }}
@@ -1864,7 +1866,7 @@ const styles = StyleSheet.create({
     top: -10,
     bottom: -10,
     left: 0,
-    width: 28,
+    width: 42,
   },
   trendingShimmerGradient: {
     flex: 1,
