@@ -71,6 +71,9 @@ import { DEFAULT_FILTER_CRITERIA } from '../types/filter';
 // Import cluster interaction tracking
 import { getHasNewContent } from './clusterInteractionStore';
 
+// Shared scoped-location (city-level) predicates
+import { isCityLevelEvent, isScopedLocationEvent } from '../utils/locationScope';
+
 // Import unified events API (Firestore default, legacy fallback optional)
 import {
   dedupeEvents,
@@ -381,10 +384,7 @@ const normalizeLocationKeyText = (value: unknown): string =>
 
 const createLocationKey = (event: Event): string => {
   const venueId = String(event.venueId || '').trim();
-  const isScopedLocation =
-    event.locationScope === 'city' ||
-    event.locationScope === 'area' ||
-    event.locationScope === 'route';
+  const isScopedLocation = isScopedLocationEvent(event);
 
   const venueName = normalizeVenueIdentityText(event.venue);
   
@@ -995,6 +995,7 @@ const clusterVenues = (venues: Venue[], zoom: number = 12): Cluster[] => {
       const timeStatus = determineClusterTimeStatus(venuesInCluster, timeContext);
       const interestLevel = calculateInterestLevel(venuesInCluster);
       const isBroadcasting = timeStatus === 'now';
+      const containsCityLevelEvent = allEvents.some(isCityLevelEvent);
 
       const clusterId = generateClusterId(venuesInCluster);
 
@@ -1020,7 +1021,8 @@ const clusterVenues = (venues: Venue[], zoom: number = 12): Cluster[] => {
         eventCount,
         specialCount,
         categories,
-        hasNewContent
+        hasNewContent,
+        containsCityLevelEvent
       });
     } else {
       // Single point feature
@@ -1038,6 +1040,7 @@ const clusterVenues = (venues: Venue[], zoom: number = 12): Cluster[] => {
       // Use ONLY venue.locationKey for stable tracking across zoom levels
       const stableVenueId = v.locationKey;
       const hasNewContent = getHasNewContent(stableVenueId, allEventIds);
+      const containsCityLevelEvent = allEvents.some(isCityLevelEvent);
 
       // console.log(`[NewContent][Single] Venue: ${v.venue}, StableVenueID: ${stableVenueId}, EventIDs: [${allEventIds.join(',')}], HasNew: ${hasNewContent}`);
 
@@ -1051,7 +1054,8 @@ const clusterVenues = (venues: Venue[], zoom: number = 12): Cluster[] => {
         eventCount,
         specialCount,
         categories,
-        hasNewContent
+        hasNewContent,
+        containsCityLevelEvent
       });
     }
   }
@@ -1621,11 +1625,6 @@ fetchEvents: async () => {
         return Number.isFinite(lat) && Number.isFinite(lng) && !(lat === 0 && lng === 0);
       };
 
-      const hasScopedLocation = (event: Event): boolean =>
-        event.locationScope === 'city' ||
-        event.locationScope === 'area' ||
-        event.locationScope === 'route';
-
       const inBbox = (event: Event, targetBbox: ViewportBoundingBox = bbox): boolean => {
         const lat = Number(event.latitude);
         const lng = Number(event.longitude);
@@ -1648,7 +1647,7 @@ fetchEvents: async () => {
       // so keep this pass allocation-light and avoid re-deduping the same list.
       for (const event of candidateEvents) {
         if (!hasValidCoordinates(event)) {
-          if (hasScopedLocation(event)) {
+          if (isScopedLocationEvent(event)) {
             outsideViewportEvents.push(event);
           }
           continue;

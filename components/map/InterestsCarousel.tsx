@@ -413,12 +413,16 @@ const InterestsCarousel: React.FC = () => {
       return filterCriteria;
     }
 
+    // City filter spans events and specials: both sides get the sentinel so
+    // the carousel shows every city-level item regardless of type.
+    const isCityFilter = interestCarouselFilter.kind === 'city';
+
     return {
       ...filterCriteria,
       eventFilters: {
         ...filterCriteria.eventFilters,
         category:
-          interestCarouselFilter.type === 'event'
+          isCityFilter || interestCarouselFilter.type === 'event'
             ? interestCarouselFilter.category
             : '__FILTER_PILLS_HIDE__',
         categoryFilterSource: 'interest-pills' as const,
@@ -426,7 +430,7 @@ const InterestsCarousel: React.FC = () => {
       specialFilters: {
         ...filterCriteria.specialFilters,
         category:
-          interestCarouselFilter.type === 'special'
+          isCityFilter || interestCarouselFilter.type === 'special'
             ? interestCarouselFilter.category
             : '__FILTER_PILLS_HIDE__',
         categoryFilterSource: 'interest-pills' as const,

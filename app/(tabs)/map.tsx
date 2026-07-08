@@ -108,6 +108,8 @@ import {
   markTabScreenRenderStart,
   markTabTracePhase,
 } from '../../utils/tabSwitchTrace';
+import { useReduceMotion } from '../../hooks/useReduceMotion';
+import { isCityLevelEvent } from '../../utils/locationScope';
 
 // Initialize Mapbox token
 initializeMapboxAccessToken(MapboxGL);
@@ -123,6 +125,11 @@ const DEBUG_CALLOUT_PROBE = true;
 const DEBUG_ANDROID_RETAP_LATENCY_PROBE = true;
 const DEBUG_ANDROID_ZOOM_TAP_LATENCY_PROBE = true;
 const USE_ANDROID_NATIVE_CLUSTER_MARKER_LAYERS = false;
+// City-level (festival) event UI: gold marker effect, lightbox-first tap,
+// city filter pill. Single rollback lever for the whole treatment — city
+// events degrade to plain markers when false.
+const CITY_EVENT_UI_ENABLED = true;
+const CITY_EVENT_GOLD = '#FFC400';
 const DEBUG_TREE_MARKER_EVENTS = false;
 const ANDROID_CLUSTER_TOUCH_OVERLAY_SIZE = 144;
 const ANDROID_CLUSTER_TOUCH_OVERLAY_DURATION_MS = 4500;
@@ -332,6 +339,9 @@ const prepareClusterCallout = (
         const savedScore = isSaved ? 1000 : 0;
         const matchesInterest = userInterestIds.has(event.category);
         const interestScore = matchesInterest ? 100 : 0;
+        // City-level (festival) events lead the callout beneath their
+        // lightbox: above interest matches, below saved events/favorites.
+        const cityEventScore = CITY_EVENT_UI_ENABLED && isCityLevelEvent(event) ? 250 : 0;
 
         const timeScore = isEventNow(event.startDate, event.startTime, event.endDate, event.endTime)
           ? 10
@@ -354,7 +364,7 @@ const prepareClusterCallout = (
         return {
           ...event,
           relevanceScore:
-            savedScore + favoriteVenueScore + interestScore + timeScore + engagementScore + proximityScore,
+            savedScore + favoriteVenueScore + cityEventScore + interestScore + timeScore + engagementScore + proximityScore,
         };
       })
       .sort((a, b) => (b.relevanceScore || 0) - (a.relevanceScore || 0));
@@ -485,6 +495,11 @@ type AndroidClusterMarkerFeatureProperties = {
   broadcastPulseRadius1: number;
   broadcastPulseRadius2: number;
   broadcastPulseRadius3: number;
+  cityGlowOpacity1: number;
+  cityGlowOpacity2: number;
+  cityGlowRadius1: number;
+  cityGlowRadius2: number;
+  containsCityLevelEvent: boolean;
   categoryCountLabel: string;
   categoryIconImage: string;
   categoryTextColor: string;
@@ -566,6 +581,7 @@ const ANDROID_CLUSTER_MARKER_EVENT_ICON_ID = 'gathr-marker-event-count';
 const ANDROID_CLUSTER_MARKER_SPECIAL_ICON_ID = 'gathr-marker-special-count';
 const ANDROID_CLUSTER_MARKER_VENUE_DARK_ICON_ID = 'gathr-marker-venue-dark';
 const ANDROID_CLUSTER_MARKER_VENUE_LIGHT_ICON_ID = 'gathr-marker-venue-light';
+const ANDROID_CLUSTER_MARKER_CITY_FESTIVAL_ICON_ID = 'gathr-marker-city-festival';
 const ANDROID_CLUSTER_MARKER_IMAGES = {
   [ANDROID_CLUSTER_MARKER_CATEGORY_PILL_ID]: require('../../assets/map-markers/marker-category-pill.png'),
   [ANDROID_CLUSTER_CATEGORY_ICON_IDS.bar]: require('../../assets/map-markers/category-bar.png'),
@@ -586,6 +602,7 @@ const ANDROID_CLUSTER_MARKER_IMAGES = {
   [ANDROID_CLUSTER_MARKER_SPECIAL_ICON_ID]: require('../../assets/map-markers/marker-special.png'),
   [ANDROID_CLUSTER_MARKER_VENUE_DARK_ICON_ID]: require('../../assets/map-markers/marker-venue-dark.png'),
   [ANDROID_CLUSTER_MARKER_VENUE_LIGHT_ICON_ID]: require('../../assets/map-markers/marker-venue-light.png'),
+  [ANDROID_CLUSTER_MARKER_CITY_FESTIVAL_ICON_ID]: require('../../assets/map-markers/marker-city-festival.png'),
 };
 
 const getAndroidClusterCategoryIconImage = (category: string): string => {
@@ -681,9 +698,17 @@ const normalizeInterestCategory = (value: string): string => value.trim().toLowe
 const eventMatchesInterestCarouselFilter = (
   event: Event,
   filter: ActiveInterestCarouselFilter
-): boolean =>
-  event.type === filter.type &&
-  normalizeInterestCategory(event.category) === normalizeInterestCategory(filter.category);
+): boolean => {
+  // City filter matches on location scope, not category, and spans both
+  // events and specials.
+  if (filter.kind === 'city') {
+    return isCityLevelEvent(event);
+  }
+  return (
+    event.type === filter.type &&
+    normalizeInterestCategory(event.category) === normalizeInterestCategory(filter.category)
+  );
+};
 
 const clusterMatchesInterestCarouselFilter = (
   cluster: Cluster,
@@ -819,6 +844,7 @@ const buildAndroidClusterMarkerShape = (
     forceDetailsClusterId?: string | null;
     pulseStep: number;
     processingClusterId: string | null;
+    reduceMotionEnabled?: boolean;
     selectedClusterId: string | null;
     userInterests: string[];
   }
@@ -853,6 +879,22 @@ const buildAndroidClusterMarkerShape = (
       const pulseRing1 = getPulseRing(0);
       const pulseRing2 = getPulseRing(4);
       const pulseRing3 = getPulseRing(8);
+      const containsCityLevelEvent =
+        CITY_EVENT_UI_ENABLED && !!cluster.containsCityLevelEvent;
+      // Gold glow rings for city-level events: same pulse math as broadcast
+      // rings; constant ring under reduce-motion.
+      const getCityGlowRing = (offset: number) => {
+        if (!containsCityLevelEvent) {
+          return { opacity: 0, radius: 0 };
+        }
+        if (options.reduceMotionEnabled) {
+          return { opacity: 0.35, radius: markerRadius + 6 };
+        }
+        const ring = getPulseRing(offset);
+        return { opacity: ring.opacity * 1.4, radius: ring.radius };
+      };
+      const cityGlowRing1 = getCityGlowRing(2);
+      const cityGlowRing2 = getCityGlowRing(8);
       const pulseBreath = Math.sin(
         (options.pulseStep % ANDROID_CLUSTER_MARKER_PULSE_STEPS) /
           (ANDROID_CLUSTER_MARKER_PULSE_STEPS - 1) *
@@ -884,6 +926,11 @@ const buildAndroidClusterMarkerShape = (
           broadcastPulseRadius1: pulseRing1.radius,
           broadcastPulseRadius2: pulseRing2.radius,
           broadcastPulseRadius3: pulseRing3.radius,
+          cityGlowOpacity1: cityGlowRing1.opacity,
+          cityGlowOpacity2: cityGlowRing2.opacity,
+          cityGlowRadius1: cityGlowRing1.radius,
+          cityGlowRadius2: cityGlowRing2.radius,
+          containsCityLevelEvent,
           categoryCountLabel: categoryItem ? String(categoryItem.count) : '',
           categoryIconImage: categoryItem
             ? categoryItem.iconImage
@@ -1060,6 +1107,158 @@ const BroadcastingEffect: React.FC<BroadcastingEffectProps> = ({ size, color, is
                 width: size * 2, // Match the tree top size
                 height: size * 2, // Match the tree top size
                 borderRadius: size
+              }
+            ]}
+          />
+        );
+      })}
+    </View>
+  );
+};
+
+interface CityEventEffectProps {
+  size: number;
+  isActive?: boolean;
+}
+
+// Static diagonal anchors for the four sparkles (unit offsets, scaled by size).
+const CITY_SPARKLE_ANCHORS = [
+  { x: -1, y: -1 },
+  { x: 1, y: -1 },
+  { x: -1, y: 1 },
+  { x: 1, y: 1 },
+];
+
+/**
+ * Gold fireworks effect for markers containing a city-level (festival) event:
+ * two staggered expanding rings plus four twinkling sparks that drift upward,
+ * driven by the same two Animated values. Renders a static gold ring under
+ * reduce-motion — the festival badge remains the primary affordance.
+ */
+const CityEventEffect: React.FC<CityEventEffectProps> = ({ size, isActive = true }) => {
+  const reduceMotion = useReduceMotion();
+  const [animations] = useState([new Animated.Value(0), new Animated.Value(0)]);
+
+  const stopAnimations = useCallback(() => {
+    animations.forEach(anim => {
+      anim.stopAnimation();
+      anim.setValue(0);
+    });
+  }, [animations]);
+
+  useMapTabAnimationStopper(stopAnimations);
+
+  useEffect(() => {
+    if (!isActive || reduceMotion) {
+      stopAnimations();
+      return;
+    }
+
+    const createAnimation = (index: number) =>
+      Animated.loop(
+        Animated.sequence([
+          Animated.delay(index * 1200),
+          Animated.timing(animations[index], {
+            toValue: 1,
+            duration: 2400,
+            useNativeDriver: true,
+            easing: Easing.linear
+          }),
+          Animated.timing(animations[index], {
+            toValue: 0,
+            duration: 0,
+            useNativeDriver: true
+          })
+        ])
+      );
+
+    const runningAnimation = Animated.parallel(animations.map((_, index) => createAnimation(index)));
+    runningAnimation.start();
+
+    return () => {
+      runningAnimation.stop();
+      stopAnimations();
+    };
+  }, [animations, isActive, reduceMotion, stopAnimations]);
+
+  if (!isActive || reduceMotion) {
+    return (
+      <View style={styles.broadcastContainer}>
+        <View
+          style={[
+            styles.cityEventStaticRing,
+            {
+              width: size * 2,
+              height: size * 2,
+              borderRadius: size,
+            }
+          ]}
+        />
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.broadcastContainer}>
+      {animations.map((anim, index) => {
+        const opacity = anim.interpolate({
+          inputRange: [0, 0.3, 1],
+          outputRange: [0, 0.55, 0],
+          extrapolate: 'clamp'
+        });
+        const scale = anim.interpolate({
+          inputRange: [0, 1],
+          outputRange: [0.5, 2.6],
+          extrapolate: 'clamp'
+        });
+
+        return (
+          <Animated.View
+            key={`city-ring-${index}`}
+            style={[
+              styles.broadcastRing,
+              {
+                borderColor: CITY_EVENT_GOLD,
+                opacity,
+                transform: [{ scale }],
+                width: size * 2,
+                height: size * 2,
+                borderRadius: size
+              }
+            ]}
+          />
+        );
+      })}
+      {CITY_SPARKLE_ANCHORS.map((anchor, index) => {
+        // Alternate sparks between the two ring animations so the twinkle is
+        // staggered without extra Animated values.
+        const anim = animations[index % 2];
+        const opacity = anim.interpolate({
+          inputRange: [0, 0.2, 0.5, 0.8, 1],
+          outputRange: index < 2 ? [0, 0.9, 0.25, 0.75, 0] : [0, 0.35, 0.85, 0.3, 0],
+          extrapolate: 'clamp'
+        });
+        const drift = anim.interpolate({
+          inputRange: [0, 1],
+          outputRange: [anchor.y * size * 0.9, anchor.y * size * 0.9 - size * 0.7],
+          extrapolate: 'clamp'
+        });
+        const sparkleSize = Math.max(size * 0.28, 4);
+
+        return (
+          <Animated.View
+            key={`city-spark-${index}`}
+            style={[
+              styles.cityEventSparkle,
+              {
+                width: sparkleSize,
+                height: sparkleSize,
+                opacity,
+                transform: [
+                  { translateX: anchor.x * size * 0.95 },
+                  { translateY: drift },
+                  { rotate: '45deg' }
+                ]
               }
             ]}
           />
@@ -1414,6 +1613,11 @@ const TreeMarker: React.FC<TreeMarkerProps> = React.memo(({ cluster, isSelected,
         <BroadcastingEffect size={adjustedSize} color={color} isActive={isActive} />
       )}
 
+      {/* Gold fireworks for city-level (festival) events */}
+      {detailsEnabled && CITY_EVENT_UI_ENABLED && cluster.containsCityLevelEvent && (
+        <CityEventEffect size={adjustedSize} isActive={isActive} />
+      )}
+
       {/* Tree top (circle) */}
       <View
         style={[
@@ -1507,6 +1711,29 @@ const TreeMarker: React.FC<TreeMarkerProps> = React.memo(({ cluster, isSelected,
             </Text>
           </View>
         )}
+
+        {/* Festival badge for city-level events - bottom-left, static so it
+            reads with animations paused or reduce-motion on */}
+        {CITY_EVENT_UI_ENABLED && cluster.containsCityLevelEvent && (
+          <View
+            style={[
+              styles.cityEventBadge,
+              {
+                width: adjustedSize * 0.6,
+                height: adjustedSize * 0.6,
+                borderRadius: adjustedSize * 0.3,
+                bottom: -(adjustedSize * 0.18),
+                left: -(adjustedSize * 0.18),
+              }
+            ]}
+          >
+            <MaterialIcons
+              name="festival"
+              size={Math.max(adjustedSize * 0.38, 8)}
+              color="#4E342E"
+            />
+          </View>
+        )}
       </View>
 
       {/* Tree trunk (rectangle) */}
@@ -1589,6 +1816,7 @@ const TreeMarker: React.FC<TreeMarkerProps> = React.memo(({ cluster, isSelected,
     prevProps.cluster.interestLevel === nextProps.cluster.interestLevel &&
     prevProps.cluster.eventCount === nextProps.cluster.eventCount &&
     prevProps.cluster.specialCount === nextProps.cluster.specialCount &&
+    prevProps.cluster.containsCityLevelEvent === nextProps.cluster.containsCityLevelEvent &&
     prevProps.isSelected === nextProps.isSelected &&
     prevProps.isProcessing === nextProps.isProcessing &&
     prevProps.isReady === nextProps.isReady &&
@@ -1628,6 +1856,8 @@ const RecenterButton: React.FC<{
  */
 const GlobalEventLightbox = () => {
   const globalSelectedImageData = useMapStore((state) => state.selectedImageData);
+  const selectedVenues = useMapStore((state) => state.selectedVenues);
+  const selectedCluster = useMapStore((state) => state.selectedCluster);
   const setGlobalSelectedImageData = useMapStore((state) => state.setSelectedImageData);
   const viewedIndicesRef = useRef<Set<number>>(new Set());
   const wasOpenRef = useRef(false);
@@ -1645,6 +1875,7 @@ const GlobalEventLightbox = () => {
 
     const event = data.events[newIndex];
     const isTrending = data.source === 'trending_manual' || data.source === 'trending_auto';
+    const isCityEventMarker = data.source === 'city_event_marker';
     if (isTrending) {
       amplitudeTrack('trending_navigate', {
         index: newIndex,
@@ -1652,6 +1883,14 @@ const GlobalEventLightbox = () => {
         event_id: String(event.id),
       });
       useClusterInteractionStore.getState().markCarouselEventViewed(event.id);
+    } else if (isCityEventMarker) {
+      amplitudeTrack('city_event_lightbox_navigate', {
+        index: newIndex,
+        direction: newIndex > (data.currentIndex ?? 0) ? 'next' : 'prev',
+        event_id: String(event.id),
+        event_count: data.events.length,
+        location_label: event.locationLabel || '',
+      });
     }
     viewedIndicesRef.current.add(newIndex);
 
@@ -1681,6 +1920,10 @@ const GlobalEventLightbox = () => {
   }, [setGlobalSelectedImageData]);
 
   if (!globalSelectedImageData) return null;
+  const isCityEventLightbox = globalSelectedImageData.source === 'city_event_marker';
+  const isCalloutMounted =
+    !!selectedCluster || (Array.isArray(selectedVenues) && selectedVenues.length > 0);
+  if (isCityEventLightbox && isCalloutMounted) return null;
 
   return (
     <Modal
@@ -1707,6 +1950,7 @@ const GlobalEventLightbox = () => {
           globalSelectedImageData.source === 'trending_manual' ||
           globalSelectedImageData.source === 'trending_auto'
         }
+        isCityEvent={isCityEventLightbox}
       />
     </Modal>
   );
@@ -1935,6 +2179,7 @@ useEffect(() => {
   );
   const [androidCategoryCycleTick, setAndroidCategoryCycleTick] = useState(0);
   const [androidMarkerPulseStep, setAndroidMarkerPulseStep] = useState(0);
+  const reduceMotionEnabled = useReduceMotion();
   const [androidMarkerTouchEpoch, setAndroidMarkerTouchEpoch] = useState(0);
   const [androidRetapOverlayActive, setAndroidRetapOverlayActive] = useState(false);
   const [androidClusterHitTargets, setAndroidClusterHitTargets] = useState<AndroidClusterHitTarget[]>([]);
@@ -2711,6 +2956,47 @@ useEffect(() => {
   // Actual map viewport dimensions (accounting for header, tab bar, safe areas)
   const [mapDimensions, setMapDimensions] = useState<{ width: number; height: number } | null>(null);
   const [mapScreenOffset, setMapScreenOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const [iosMapViewRevision, setIosMapViewRevision] = useState(0);
+  const iosMapViewLayoutRefreshScheduledRef = useRef(false);
+  const iosMapViewLayoutRefreshCompletedRef = useRef(false);
+  const iosMapViewLayoutRefreshFrameRef = useRef<number | null>(null);
+  const iosMapViewLayoutRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const scheduleIosMapViewLayoutRefresh = useCallback((width: number, height: number) => {
+    if (
+      Platform.OS !== 'ios' ||
+      iosMapViewLayoutRefreshScheduledRef.current ||
+      iosMapViewLayoutRefreshCompletedRef.current ||
+      !Number.isFinite(width) ||
+      !Number.isFinite(height) ||
+      width < 100 ||
+      height < 100
+    ) {
+      return;
+    }
+
+    iosMapViewLayoutRefreshScheduledRef.current = true;
+    iosMapViewLayoutRefreshFrameRef.current = requestAnimationFrame(() => {
+      iosMapViewLayoutRefreshFrameRef.current = null;
+      iosMapViewLayoutRefreshTimerRef.current = setTimeout(() => {
+        iosMapViewLayoutRefreshTimerRef.current = null;
+        iosMapViewLayoutRefreshCompletedRef.current = true;
+        iosMapViewLayoutRefreshScheduledRef.current = false;
+        setIosMapViewRevision((revision) => revision + 1);
+      }, 50);
+    });
+  }, []);
+
+  useEffect(() => () => {
+    if (iosMapViewLayoutRefreshFrameRef.current !== null) {
+      cancelAnimationFrame(iosMapViewLayoutRefreshFrameRef.current);
+      iosMapViewLayoutRefreshFrameRef.current = null;
+    }
+    if (iosMapViewLayoutRefreshTimerRef.current) {
+      clearTimeout(iosMapViewLayoutRefreshTimerRef.current);
+      iosMapViewLayoutRefreshTimerRef.current = null;
+    }
+  }, []);
 
 // Debounce + gating
 /**
@@ -5056,6 +5342,7 @@ console.log('[analytics] cluster_opened about to send', {
 amplitudeTrack('cluster_opened', {
   cluster_id: cluster.id,
   cluster_size: cluster.venues.length,
+  contains_city_event: !!cluster.containsCityLevelEvent,
   referrer_screen: '/map',
   source: 'map',
   session_interactions: sessionClusterInteractions.current,
@@ -5097,17 +5384,89 @@ lastOpenedClusterIdRef.current = cluster.id;
       //   return `${i}: ${v.venue} (score: ${v.relevanceScore?.toFixed(2)}, top event: "${topEvent?.title}")`;
       // }));
       
+      const cityEvents =
+        CITY_EVENT_UI_ENABLED && cluster.containsCityLevelEvent
+          ? sortedVenues
+              .flatMap((venue) => venue.events.filter(isCityLevelEvent))
+              .filter((event, index, events) =>
+                events.findIndex((candidate) => String(candidate.id) === String(event.id)) === index
+              )
+          : [];
+      const primaryCityEvent = cityEvents[0];
+      const shouldOpenCalloutForMarker = !primaryCityEvent || sortedVenues.length > 1;
       const calloutCluster = cluster.clusterType === 'multi' ? cluster : null;
-      if (Platform.OS === 'android') {
-        promoteVenuesToRenderedCallout(sortedVenues, calloutCluster, 'marker-press-direct-promote');
+
+      if (shouldOpenCalloutForMarker) {
+        if (Platform.OS === 'android') {
+          promoteVenuesToRenderedCallout(sortedVenues, calloutCluster, 'marker-press-direct-promote');
+        }
+        selectCallout(sortedVenues, calloutCluster);
+        traceMapEvent('marker_press_selected', {
+          clusterId: cluster.id,
+          venueCount: sortedVenues.length,
+          selectedClusterId: cluster.clusterType === 'multi' ? cluster.id : 'none',
+          primaryVenue: sortedVenues[0]?.venue || 'unknown',
+        });
+      } else {
+        selectCallout([], null);
+        traceMapEvent('marker_press_city_lightbox_only', {
+          clusterId: cluster.id,
+          venueCount: sortedVenues.length,
+          eventCount: cityEvents.length,
+          primaryVenue: sortedVenues[0]?.venue || 'unknown',
+        });
       }
-      selectCallout(sortedVenues, calloutCluster);
-      traceMapEvent('marker_press_selected', {
-        clusterId: cluster.id,
-        venueCount: sortedVenues.length,
-        selectedClusterId: cluster.clusterType === 'multi' ? cluster.id : 'none',
-        primaryVenue: sortedVenues[0]?.venue || 'unknown',
-      });
+
+      // City-level (festival) events open the lightbox first. Multi-venue
+      // clusters keep the callout underneath; single-venue city markers close
+      // straight back to the map.
+      if (primaryCityEvent) {
+        const primaryImageUrl = primaryCityEvent
+          ? getTrendingLightboxImageUrl(primaryCityEvent)
+          : '';
+
+        if (primaryCityEvent) {
+          const cityEventVenue = sortedVenues.find((venue) =>
+            venue.events.some((event) => String(event.id) === String(primaryCityEvent.id))
+          );
+          const openCityLightbox = () => {
+            const mapState = useMapStore.getState();
+            if (
+              mapState.selectedImageData ||
+              (shouldOpenCalloutForMarker && mapState.selectedVenues !== sortedVenues)
+            ) {
+              return;
+            }
+
+            amplitudeTrack('city_event_lightbox_opened', {
+              cluster_id: cluster.id,
+              event_id: String(primaryCityEvent.id),
+              event_count: cityEvents.length,
+              location_label: primaryCityEvent.locationLabel || '',
+              callout_underlay: shouldOpenCalloutForMarker,
+            });
+
+            mapState.setSelectedImageData({
+              imageUrl: primaryImageUrl,
+              event: primaryCityEvent,
+              venue: cityEventVenue,
+              cluster,
+              events: cityEvents.length > 1 ? cityEvents : undefined,
+              currentIndex: cityEvents.length > 1 ? 0 : undefined,
+              source: 'city_event_marker',
+            });
+          };
+
+          // Let the callout mount and the camera move settle first when there
+          // is actually a callout underlay. Single-venue city markers open as
+          // lightbox-only and should close straight back to the map.
+          if (shouldOpenCalloutForMarker) {
+            InteractionManager.runAfterInteractions(openCityLightbox);
+          } else {
+            openCityLightbox();
+          }
+        }
+      }
 
       // DEBUG LOG 4: Log which venue is selected when cluster opens (via map tap)
       console.log('[Hotspot] ===== Cluster opened via MAP tap =====');
@@ -5133,7 +5492,12 @@ lastOpenedClusterIdRef.current = cluster.id;
         });
       };
 
-      if (Platform.OS === 'android') {
+      if (!shouldOpenCalloutForMarker) {
+        traceMapEvent('city_lightbox_only_camera_move_skipped', {
+          clusterId: cluster.id,
+          venueCount: sortedVenues.length,
+        });
+      } else if (Platform.OS === 'android') {
         if (androidCalloutCameraMoveTimerRef.current) {
           clearTimeout(androidCalloutCameraMoveTimerRef.current);
           androidCalloutCameraMoveTimerRef.current = null;
@@ -6950,6 +7314,7 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
         forceDetailsClusterId: hotspotPreviewClusterId,
         pulseStep: androidMarkerPulseStep,
         processingClusterId,
+        reduceMotionEnabled,
         selectedClusterId,
         userInterests: getUserInterestsSync(),
       });
@@ -7032,6 +7397,30 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
               circleSortKey: ['get', 'markerSortKey'] as any,
               circleStrokeColor: ['get', 'markerColor'] as any,
               circleStrokeOpacity: ['get', 'broadcastPulseOpacity3'] as any,
+              circleStrokeWidth: 2,
+            }}
+          />
+          <MapboxGL.CircleLayer
+            id="android-cluster-layer-city-glow-1"
+            filter={['==', ['get', 'containsCityLevelEvent'], true] as any}
+            style={{
+              circleColor: 'rgba(255,255,255,0)',
+              circleRadius: ['get', 'cityGlowRadius1'] as any,
+              circleSortKey: ['get', 'markerSortKey'] as any,
+              circleStrokeColor: CITY_EVENT_GOLD,
+              circleStrokeOpacity: ['get', 'cityGlowOpacity1'] as any,
+              circleStrokeWidth: 2,
+            }}
+          />
+          <MapboxGL.CircleLayer
+            id="android-cluster-layer-city-glow-2"
+            filter={['==', ['get', 'containsCityLevelEvent'], true] as any}
+            style={{
+              circleColor: 'rgba(255,255,255,0)',
+              circleRadius: ['get', 'cityGlowRadius2'] as any,
+              circleSortKey: ['get', 'markerSortKey'] as any,
+              circleStrokeColor: CITY_EVENT_GOLD,
+              circleStrokeOpacity: ['get', 'cityGlowOpacity2'] as any,
               circleStrokeWidth: 2,
             }}
           />
@@ -7126,6 +7515,20 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
               circleStrokeWidth: 1,
               circleTranslate: [-9, -9],
               circleTranslateAnchor: 'viewport',
+            }}
+          />
+          <MapboxGL.SymbolLayer
+            id="android-cluster-layer-city-badges"
+            filter={['==', ['get', 'containsCityLevelEvent'], true] as any}
+            style={{
+              iconAllowOverlap: true,
+              iconAnchor: 'center',
+              iconIgnorePlacement: true,
+              iconImage: ANDROID_CLUSTER_MARKER_CITY_FESTIVAL_ICON_ID,
+              iconSize: 0.2,
+              symbolSortKey: ['get', 'markerSortKey'] as any,
+              iconTranslate: [-9, 9],
+              iconTranslateAnchor: 'viewport',
             }}
           />
           <MapboxGL.SymbolLayer
@@ -7534,6 +7937,7 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
         </View>
       ) : (
         <MapboxGL.MapView
+        key={`ios-map-layout-${iosMapViewRevision}`}
         ref={mapRef}
         style={styles.map}
         styleURL={GATHR_MAPBOX_STYLE_URL}
@@ -7547,6 +7951,7 @@ onLayout={(event) => {
   const { width, height, x, y } = event.nativeEvent.layout;
   setMapDimensions({ width, height });
   setMapScreenOffset({ x, y });
+  scheduleIosMapViewLayoutRefresh(width, height);
 
   // Use measureInWindow to get absolute screen coordinates
   // mapRef.current is the MapboxGL.MapView which doesn't have measureInWindow
@@ -8322,6 +8727,29 @@ countText: {
     position: 'absolute',
     borderWidth: 2,
     borderStyle: 'solid',
+  },
+  // City-level (festival) event marker effect
+  cityEventStaticRing: {
+    position: 'absolute',
+    borderWidth: 2,
+    borderStyle: 'solid',
+    borderColor: CITY_EVENT_GOLD,
+    opacity: 0.45,
+  },
+  cityEventSparkle: {
+    position: 'absolute',
+    backgroundColor: '#FFD700',
+    borderWidth: 0.5,
+    borderColor: '#FFF8E1',
+  },
+  cityEventBadge: {
+    position: 'absolute',
+    backgroundColor: CITY_EVENT_GOLD,
+    borderWidth: 1.5,
+    borderColor: 'rgba(255, 255, 255, 0.95)',
+    zIndex: 5,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   // Category Carousel styles
   categoryCarousel: {

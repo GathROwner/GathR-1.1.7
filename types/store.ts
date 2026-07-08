@@ -20,6 +20,9 @@ export type InterestCarouselFilter =
       status: 'active';
       type: 'event' | 'special';
       category: string;
+      // 'city' filters to city-level (festival) events via the
+      // CITY_EVENTS_CATEGORY sentinel; absent/'interest' = category match.
+      kind?: 'interest' | 'city';
     }
   | {
       status: 'cleared';
@@ -85,7 +88,7 @@ export interface MapState {
     // renders swipe/chevron navigation and the "X / N" indicator.
     events?: Event[];
     currentIndex?: number;
-    source?: 'deep_link' | 'trending_manual' | 'trending_auto';
+    source?: 'deep_link' | 'trending_manual' | 'trending_auto' | 'city_event_marker';
   } | null;
 
   // Cluster visibility utility
@@ -125,7 +128,7 @@ export interface MapState {
     cluster?: Cluster;
     events?: Event[];
     currentIndex?: number;
-    source?: 'deep_link' | 'trending_manual' | 'trending_auto';
+    source?: 'deep_link' | 'trending_manual' | 'trending_auto' | 'city_event_marker';
   } | null) => void;
   fetchEvents: () => Promise<void>;
   prefetchIfStale: (maxAgeMs?: number) => Promise<void>;

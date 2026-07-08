@@ -1,1 +1,1 @@
-export const EVENTS_MINIMAL = ['events-minimal', 'city-level-v2'] as const;
+export const EVENTS_MINIMAL = ['events-minimal', 'city-level-v3'] as const;

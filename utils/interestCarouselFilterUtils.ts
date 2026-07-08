@@ -2,6 +2,7 @@ import type { Event } from '../types/events';
 import type { FilterCriteria, TypeFilterCriteria } from '../types/filter';
 import { TimeFilterType } from '../types/filter';
 import { isEventNow, getEventTimeStatus, isEventHappeningToday } from './dateUtils';
+import { CITY_EVENTS_CATEGORY, isCityLevelEvent } from './locationScope';
 
 const getTypeFiltersForEvent = (
   event: Event,
@@ -73,6 +74,11 @@ export const doesEventMatchInterestCarouselActiveCategory = (
 
   if (typeFilters.category.toLowerCase() === '__filter_pills_hide__') {
     return false;
+  }
+
+  // City-events sentinel matches by location scope, not category.
+  if (typeFilters.category === CITY_EVENTS_CATEGORY) {
+    return isCityLevelEvent(event);
   }
 
   return event.category.toLowerCase() === typeFilters.category.toLowerCase();

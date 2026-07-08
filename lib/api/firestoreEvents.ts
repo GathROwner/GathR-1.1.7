@@ -12,6 +12,8 @@ import {
   FIRESTORE_MAX_PAGES,
   FIRESTORE_PAGE_LIMIT,
 } from '../config/backend';
+import { isScopedLocationScope } from '../../utils/locationScope';
+import { resolvePeiCityCentroid } from '../../utils/peiCityCentroids';
 
 // Debug flag for logging
 const DEBUG_FIRESTORE = __DEV__ ?? true;
@@ -96,9 +98,6 @@ const firstText = (...values: Array<unknown>): string => {
 
 const isRecord = (value: unknown): value is Record<string, any> =>
   Boolean(value && typeof value === 'object' && !Array.isArray(value));
-
-const isScopedLocation = (scope?: string | null): boolean =>
-  scope === 'city' || scope === 'area' || scope === 'route';
 
 const normalizeSourcePlatform = (
   value: unknown
@@ -187,11 +186,22 @@ export function normalizeFirestoreEvent(fsEvent: FirestoreEvent): Event {
   const rawVenue = fsEvent.venue;
   const venueRecord = isRecord(rawVenue) ? rawVenue : null;
   const venueText = typeof rawVenue === 'string' ? rawVenue : '';
-  const latitude = fsEvent.venueInfo?.coordinates?.latitude ?? fsEvent.latitude ?? 0;
-  const longitude = fsEvent.venueInfo?.coordinates?.longitude ?? fsEvent.longitude ?? 0;
+  let latitude = fsEvent.venueInfo?.coordinates?.latitude ?? fsEvent.latitude ?? 0;
+  let longitude = fsEvent.venueInfo?.coordinates?.longitude ?? fsEvent.longitude ?? 0;
   const locationScope = fsEvent.locationScope ?? fsEvent.metadata?.locationScope ?? null;
   const locationLabel = fsEvent.locationLabel ?? fsEvent.metadata?.locationLabel ?? null;
-  const scopedLocation = isScopedLocation(locationScope);
+  const locationCity = fsEvent.locationCity ?? fsEvent.metadata?.locationCity ?? null;
+  const scopedLocation = isScopedLocationScope(locationScope);
+
+  // Legacy city-level events were published without coordinates; place them
+  // at the canonical PEI centroid so they can reach the map and clusters.
+  if (scopedLocation && latitude === 0 && longitude === 0) {
+    const centroid = resolvePeiCityCentroid({ locationScope, locationCity, locationLabel });
+    if (centroid) {
+      latitude = centroid.latitude;
+      longitude = centroid.longitude;
+    }
+  }
   const venueProfileImage = fsEvent.venueInfo?.profileImage || venueRecord?.profileImage || '';
   const rawEventProfileUrl = fsEvent.profileUrl || fsEvent.metadata?.icon || '';
   const eventProfileUrl = chooseProfileUrl(venueProfileImage, rawEventProfileUrl);
@@ -243,7 +253,7 @@ export function normalizeFirestoreEvent(fsEvent: FirestoreEvent): Event {
     longitude,
     locationScope,
     locationLabel,
-    locationCity: fsEvent.locationCity ?? fsEvent.metadata?.locationCity ?? null,
+    locationCity,
     locationProvince: fsEvent.locationProvince ?? fsEvent.metadata?.locationProvince ?? null,
     locationPrecision: fsEvent.locationPrecision ?? fsEvent.metadata?.locationPrecision ?? null,
     locationReviewStatus:

@@ -374,6 +374,15 @@ const MapLegend: React.FC<MapLegendProps> = ({
               <MaterialIcons name="thumb-up" size={18} color="#4A90E2" />
             </LegendRow>
             <View style={styles.rowDivider} />
+            <LegendRow label="City-wide event">
+              <View style={styles.cityEventSwatch}>
+                <PulseRing color="#FFC400" size={16} />
+                <View style={styles.cityEventSwatchBadge}>
+                  <MaterialIcons name="festival" size={10} color="#4E342E" />
+                </View>
+              </View>
+            </LegendRow>
+            <View style={styles.rowDivider} />
             <LegendRow label="You are here">
               <View style={styles.userDotWrapper}>
                 <PulseRing color="#4285F4" size={16} />
@@ -631,6 +640,22 @@ const styles = StyleSheet.create({
   userDotWrapper: {
     width: 16,
     height: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cityEventSwatch: {
+    width: 16,
+    height: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cityEventSwatchBadge: {
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    backgroundColor: '#FFC400',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.95)',
     alignItems: 'center',
     justifyContent: 'center',
   },

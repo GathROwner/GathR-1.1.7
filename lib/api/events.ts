@@ -15,6 +15,8 @@ import {
 } from '../config/backend';
 import { fetchPrivateSharedEventsForCurrentUser } from './privateSharedEvents';
 import { normalizeVenueIdentityText } from '../../utils/venueIdentity';
+import { isScopedLocationEvent } from '../../utils/locationScope';
+import { applyCityCentroidFallback } from '../../utils/peiCityCentroids';
 
 const DEBUG_FETCH = __DEV__ ?? true;
 
@@ -152,9 +154,6 @@ function isLikelySameSharedOccurrence(publicEvent: Event, privateEvent: Event): 
   );
 }
 
-const isScopedLocationEvent = (event: Event): boolean =>
-  event.locationScope === 'city' || event.locationScope === 'area' || event.locationScope === 'route';
-
 export function dedupeEvents(events: Event[]): Event[] {
   const seen = new Map<string, Event>();
   for (const event of events) {
@@ -162,11 +161,14 @@ export function dedupeEvents(events: Event[]): Event[] {
   }
 
   const venueDeduped = Array.from(seen.values());
+  const venueResolvedIdentities = new Set<string>();
   const scopedByIdentity = new Map<string, Event>();
 
   for (const event of venueDeduped) {
     if (isScopedLocationEvent(event)) {
       scopedByIdentity.set(getEventIdentityKey(event), event);
+    } else {
+      venueResolvedIdentities.add(getEventIdentityKey(event));
     }
   }
 
@@ -175,8 +177,13 @@ export function dedupeEvents(events: Event[]): Event[] {
   }
 
   return venueDeduped.filter((event) => {
-    const scopedTwin = scopedByIdentity.get(getEventIdentityKey(event));
-    return !scopedTwin || scopedTwin.id === event.id;
+    if (!isScopedLocationEvent(event)) return true;
+    const identity = getEventIdentityKey(event);
+    // A venue-pinned copy of the same event exists; the scoped (city/area)
+    // copy is redundant — the precise location wins.
+    if (venueResolvedIdentities.has(identity)) return false;
+    // Collapse multiple scoped copies of the same event to one.
+    return scopedByIdentity.get(identity)?.id === event.id;
   });
 }
 
@@ -274,7 +281,10 @@ async function fetchMinimalEventsFromSource(
       fetchAllFirestoreEvents(options),
       fetchPrivateSharedEventsForCurrentUser(),
     ]);
-    const combinedData = mergePrivateSharedEvents(firestoreEvents, privateSharedEvents);
+    // Firestore events resolve centroids in normalizeFirestoreEvent; this
+    // pass covers private-shared city-level events the same way.
+    const combinedData = mergePrivateSharedEvents(firestoreEvents, privateSharedEvents)
+      .map(applyCityCentroidFallback);
 
     if (DEBUG_FETCH) {
       console.log(

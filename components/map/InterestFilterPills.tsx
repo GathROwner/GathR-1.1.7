@@ -9,6 +9,8 @@ import { useUserPrefsStore } from '../../store/userPrefsStore';
 import { useClusterInteractionStore } from '../../store/clusterInteractionStore';
 import { doesEventMatchInterestCarouselBaseFilters } from '../../utils/interestCarouselFilterUtils';
 import { markInterestFilterPerfAction } from '../../utils/interestFilterPerfTrace';
+import { CITY_EVENTS_CATEGORY, isCityLevelEvent } from '../../utils/locationScope';
+import { amplitudeTrack } from '../../lib/amplitudeAnalytics';
 
 type PillItem = {
   label: string;
@@ -20,7 +22,7 @@ type PillItem = {
 };
 
 type InterestCarouselUiFilter =
-  | { status: 'active'; type: 'event' | 'special'; category: string }
+  | { status: 'active'; type: 'event' | 'special'; category: string; kind?: 'interest' | 'city' }
   | { status: 'cleared' };
 
 type InterestPillEventContext = {
@@ -74,6 +76,8 @@ const EVENT_COLOR = '#64B5F6'; // Medium-light blue for unselected
 const EVENT_SELECTED = '#1976D2'; // Darker blue when selected
 const SPECIAL_COLOR = '#66BB6A'; // Medium-light green for unselected
 const SPECIAL_SELECTED = '#2E7D32'; // Darker green when selected
+const CITY_COLOR = '#FFD54F'; // Light gold for the city-events pill
+const CITY_SELECTED = '#C79100'; // Darker gold when the city filter is active
 
 // New content indicator dot component (similar to MapLegend)
 const NewContentDot: React.FC = () => {
@@ -279,8 +283,22 @@ const InterestFilterPills: React.FC = () => {
     });
   }, [userInterests, eventCountByKey, specialCountByKey, newContentCountByInterestKey, filterCriteria]);
 
+  // City-level (festival) events on screen that pass the base filters; the
+  // pinned gold pill only shows when this is non-zero.
+  const cityEventCount = useMemo(
+    () =>
+      onScreenEvents.filter(
+        (event) =>
+          isCityLevelEvent(event) &&
+          doesEventMatchInterestCarouselBaseFilters(event, filterCriteria)
+      ).length,
+    [onScreenEvents, filterCriteria]
+  );
+
   const optimisticFilterActive = interestCarouselFilter?.status === 'active';
   const optimisticFilterCleared = interestCarouselFilter?.status === 'cleared';
+  const cityFilterActive =
+    optimisticFilterActive && interestCarouselFilter.kind === 'city';
   const activeEventKey = optimisticFilterActive && interestCarouselFilter.type === 'event'
     ? normalize(interestCarouselFilter.category)
     : optimisticFilterCleared
@@ -464,6 +482,25 @@ const InterestFilterPills: React.FC = () => {
     ]
   );
 
+  // Plain toggle for the pinned city pill: no hold-to-clear, no loop math.
+  const handleCityPress = useCallback(() => {
+    const nextActive = !cityFilterActive;
+    amplitudeTrack('city_filter_toggled', {
+      active: nextActive,
+      on_screen_city_events: cityEventCount,
+    });
+    if (nextActive) {
+      setInterestCarouselFilter({
+        status: 'active',
+        kind: 'city',
+        type: 'event',
+        category: CITY_EVENTS_CATEGORY,
+      });
+    } else {
+      setInterestCarouselFilter({ status: 'cleared' });
+    }
+  }, [cityFilterActive, cityEventCount, setInterestCarouselFilter]);
+
   const fadeOutScrollbar = useCallback(() => {
     if (scrollbarFadeTimeout.current) {
       clearTimeout(scrollbarFadeTimeout.current);
@@ -646,19 +683,25 @@ const InterestFilterPills: React.FC = () => {
     [pills.length, selectedIndexFromFilters, scrollToCenteredIndex, needsScrolling, fadeOutScrollbar]
   );
 
-  if (pills.length === 0) return null;
+  const showCityPill = cityEventCount > 0 || cityFilterActive;
+
+  if (pills.length === 0 && !showCityPill) return null;
 
   // Calculate scrollbar thumb position and height
   const containerHeight = ITEM_HEIGHT * VISIBLE_ITEMS;
-  const contentHeight = pills.length * ITEM_HEIGHT;
+  const contentHeight = Math.max(ITEM_HEIGHT, pills.length * ITEM_HEIGHT);
   const scrollbarHeight = containerHeight;
   const thumbHeight = Math.max(30, (containerHeight / contentHeight) * scrollbarHeight);
 
   // Calculate thumb position based on scroll offset
   const base = pills.length;
   const currentRawIndex = Math.round(scrollOffset / ITEM_HEIGHT);
-  const normalizedScrollIndex = ((currentRawIndex % base) + base) % base;
-  const scrollPercentage = normalizedScrollIndex / (pills.length - 1);
+  const normalizedScrollIndex = base
+    ? ((currentRawIndex % base) + base) % base
+    : 0;
+  const scrollPercentage = pills.length > 1
+    ? normalizedScrollIndex / (pills.length - 1)
+    : 0;
   const thumbPosition = scrollPercentage * (scrollbarHeight - thumbHeight);
 
   // Determine thumb color based on active pill type
@@ -689,9 +732,57 @@ const InterestFilterPills: React.FC = () => {
   return (
     <Animated.View
       {...panResponder.panHandlers}
-      style={[styles.container, { opacity: visibilityAnim }]}
+      style={[styles.stack, { opacity: visibilityAnim }]}
       pointerEvents={activeFilterPanel ? 'none' : 'box-none'}
     >
+      {/* Pinned city-events pill - outside the looping list so it never
+          participates in the loop/snap math */}
+      {showCityPill && (
+        <View style={styles.cityPillWrapper}>
+          <TouchableOpacity
+            activeOpacity={0.85}
+            onPress={handleCityPress}
+            style={[
+              styles.pill,
+              { backgroundColor: cityFilterActive ? CITY_SELECTED : CITY_COLOR },
+            ]}
+          >
+            <Animated.View style={{ marginRight: iconMargin }}>
+              <MaterialIcons
+                name="festival"
+                size={18}
+                color={cityFilterActive ? '#FFFFFF' : '#6B4E16'}
+              />
+            </Animated.View>
+            <Animated.Text
+              style={[
+                styles.pillText,
+                cityFilterActive && styles.pillTextActive,
+                {
+                  opacity: labelOpacity,
+                  maxWidth: labelWidth,
+                  overflow: 'hidden',
+                },
+              ]}
+            >
+              City
+            </Animated.Text>
+            <Animated.View
+              style={[
+                styles.countBadge,
+                cityFilterActive && styles.countBadgeActive,
+                { marginLeft: countMargin },
+              ]}
+            >
+              <Text style={[styles.countText, cityFilterActive && styles.countTextActive]}>
+                {cityEventCount}
+              </Text>
+            </Animated.View>
+          </TouchableOpacity>
+        </View>
+      )}
+      {pills.length > 0 && (
+      <View style={styles.container}>
       {/* Swipeable handle */}
       <View style={styles.handleContainer}>
         <TouchableOpacity
@@ -938,11 +1029,20 @@ const InterestFilterPills: React.FC = () => {
           />
         </View>
       )}
+      </View>
+      )}
     </Animated.View>
   );
 };
 
 const styles = StyleSheet.create({
+  stack: {
+    alignItems: 'flex-end',
+  },
+  cityPillWrapper: {
+    height: ITEM_HEIGHT,
+    justifyContent: 'center',
+  },
   container: {
     alignItems: 'flex-end',
     height: ITEM_HEIGHT * VISIBLE_ITEMS,

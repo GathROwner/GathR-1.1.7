@@ -125,6 +125,7 @@ import {
   combineDateAndTime
 } from '../../utils/dateUtils';
 import { buildGathrSharePayload } from '../../utils/shareUtils';
+import { getTrendingLightboxImageUrl } from '../../utils/trendingLightbox';
 import * as Haptics from 'expo-haptics';
 
 // Import for lazy-loading venue details
@@ -2534,14 +2535,45 @@ const EventCallout: React.FC<EventCalloutProps> = ({
 
   // Get global selectedImageData from mapStore (set by InterestsCarousel)
   const globalSelectedImageDataRaw = useMapStore((state) => state.selectedImageData);
-  // Trending-sourced lightboxes are rendered by the map-root GlobalEventLightbox;
-  // rendering them here too would stack a second modal over it.
+  // Trending is map-root owned. City-event marker lightboxes must render here,
+  // above the callout's native modal layer, while preserving carousel props.
   const globalSelectedImageData =
     globalSelectedImageDataRaw?.source === 'trending_manual' ||
     globalSelectedImageDataRaw?.source === 'trending_auto'
       ? null
       : globalSelectedImageDataRaw;
   const setGlobalSelectedImageData = useMapStore((state) => state.setSelectedImageData);
+
+  const handleGlobalLightboxNavigate = useCallback((newIndex: number) => {
+    const data = useMapStore.getState().selectedImageData;
+    if (!data?.events || newIndex < 0 || newIndex >= data.events.length) {
+      return;
+    }
+
+    const event = data.events[newIndex];
+    const eventVenue =
+      data.cluster?.venues.find((venue) =>
+        venue.events.some((candidate) => String(candidate.id) === String(event.id))
+      ) ?? data.venue;
+
+    if (data.source === 'city_event_marker') {
+      amplitudeTrack('city_event_lightbox_navigate', {
+        index: newIndex,
+        direction: newIndex > (data.currentIndex ?? 0) ? 'next' : 'prev',
+        event_id: String(event.id),
+        event_count: data.events.length,
+        location_label: event.locationLabel || '',
+      });
+    }
+
+    setGlobalSelectedImageData({
+      ...data,
+      imageUrl: getTrendingLightboxImageUrl(event),
+      event,
+      venue: eventVenue,
+      currentIndex: newIndex,
+    });
+  }, [setGlobalSelectedImageData]);
 
   // Helper function to get updated event data from store
   const getUpdatedEvent = (eventId: string | number) => {
@@ -4512,6 +4544,14 @@ useEffect(() => {
             venue={globalSelectedImageData?.venue}
             cluster={globalSelectedImageData?.cluster}
             onClose={handleModalClose}
+            events={globalSelectedImageData?.events}
+            currentIndex={
+              globalSelectedImageData?.events ? globalSelectedImageData.currentIndex : undefined
+            }
+            onNavigate={
+              globalSelectedImageData?.events ? handleGlobalLightboxNavigate : undefined
+            }
+            isCityEvent={globalSelectedImageData?.source === 'city_event_marker'}
           />
         </Modal>
       )}

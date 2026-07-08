@@ -3,6 +3,7 @@ import type { FilterCriteria } from '../types/filter';
 import { doesEventMatchInterestCarouselBaseFilters } from './interestCarouselFilterUtils';
 import { getEventHotEngagementScore, getHotInterestShortLabel } from './hotInterestCarouselUtils';
 import { combineDateAndTime, getEventTimeStatus } from './dateUtils';
+import { CITY_EVENTS_CATEGORY, isCityLevelEvent } from './locationScope';
 
 // Target list size, not a cap: every user interest is guaranteed one slot, so
 // users with more than 10 interests can produce a longer list.
@@ -47,6 +48,11 @@ const doesEventMatchActiveTrendingFilters = (
 
   if (normalize(category) === FILTER_PILLS_HIDE_CATEGORY) {
     return false;
+  }
+
+  // City-events sentinel: the active city filter matches by location scope.
+  if (category === CITY_EVENTS_CATEGORY) {
+    return isCityLevelEvent(event);
   }
 
   return normalize(event.category || '') === normalize(category);
@@ -157,6 +163,20 @@ export const buildTrendingEvents = ({
     selected.push(candidate);
     selectedIds.add(String(candidate.event.id));
   });
+
+  // City-level (festival) events get one guaranteed slot, mirroring the
+  // per-interest guarantee: inclusion, not position.
+  const hasCityCandidate = selected.some((candidate) => isCityLevelEvent(candidate.event));
+  if (!hasCityCandidate) {
+    const topCityCandidate = sorted.find(
+      (candidate) =>
+        isCityLevelEvent(candidate.event) && !selectedIds.has(String(candidate.event.id))
+    );
+    if (topCityCandidate) {
+      selected.push(topCityCandidate);
+      selectedIds.add(String(topCityCandidate.event.id));
+    }
+  }
 
   // Fill pass: pad toward the target with the best remaining candidates from
   // any category (same-interest duplicates allowed; zero engagement allowed).

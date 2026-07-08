@@ -11,8 +11,8 @@ import {
   Alert,
   Animated,
   Easing,
-  AccessibilityInfo,
 } from 'react-native';
+import { useReduceMotion } from '../../hooks/useReduceMotion';
 
 import { usePathname } from 'expo-router';
 import { amplitudeTrack } from '../../lib/amplitudeAnalytics';
@@ -212,6 +212,8 @@ interface EventImageLightboxProps {
   currentIndex?: number;
   onNavigate?: (index: number) => void;
   isTrending?: boolean;
+  // City-level (festival) event opened from its map marker
+  isCityEvent?: boolean;
   // Optional callback when "View Venue" button is clicked
   onViewVenue?: () => void;
 }
@@ -226,6 +228,7 @@ const EventImageLightbox: React.FC<EventImageLightboxProps> = ({
   currentIndex,
   onNavigate,
   isTrending = false,
+  isCityEvent = false,
   onViewVenue,
 }) => {
   // Add store subscription to get fresh event data
@@ -345,8 +348,8 @@ try {
   // Track if the thumbnail is using a fallback image (URL failed to load or was missing)
   const [isUsingFallbackImage, setIsUsingFallbackImage] = useState(false);
 
-  const [isReduceMotionEnabled, setIsReduceMotionEnabled] = useState(false);
-  
+  const isReduceMotionEnabled = useReduceMotion();
+
   // Animation values for swipe-to-close
   const translateY = useRef(new Animated.Value(0)).current;
   const backgroundOpacity = useRef(new Animated.Value(1)).current;
@@ -385,30 +388,6 @@ try {
   useEffect(() => {
     setIsUsingFallbackImage(false);
   }, [imageUrl]);
-
-  useEffect(() => {
-    let isMounted = true;
-
-    AccessibilityInfo.isReduceMotionEnabled()
-      .then((enabled) => {
-        if (isMounted) {
-          setIsReduceMotionEnabled(enabled);
-        }
-      })
-      .catch(() => {});
-
-    const subscription = AccessibilityInfo.addEventListener(
-      'reduceMotionChanged',
-      (enabled: boolean) => {
-        setIsReduceMotionEnabled(enabled);
-      }
-    );
-
-    return () => {
-      isMounted = false;
-      subscription.remove();
-    };
-  }, []);
 
   useEffect(() => {
     const resetTrendingAnimation = () => {
@@ -1269,6 +1248,24 @@ amplitudeTrack('ticket_link_opened', {
             </View>
           )}
 
+          {isCityEvent && !showTrendingOverlay && (
+            <View style={styles.trendingOverlay} pointerEvents="none">
+              <View style={styles.cityEventStatusPill}>
+                <MaterialIcons name="festival" size={15} color="#4E342E" />
+                <Text style={styles.cityEventStatusText} numberOfLines={1}>
+                  City-wide
+                </Text>
+              </View>
+              {events && currentIndex !== undefined && (
+                <View style={styles.trendingPositionPill}>
+                  <Text style={styles.trendingPositionText}>
+                    {`${currentIndex + 1} / ${events.length}`}
+                  </Text>
+                </View>
+              )}
+            </View>
+          )}
+
           {navigationEnabled && (
             <>
               {canNavigatePrev && (
@@ -1656,7 +1653,7 @@ amplitudeTrack('ticket_link_opened', {
         {navigationEnabled && (
           <>
             {/* Position indicator */}
-            {!isTrending && events && currentIndex !== undefined && (
+            {!isTrending && !isCityEvent && events && currentIndex !== undefined && (
               <View style={styles.positionIndicator}>
                 <Text style={styles.positionText}>
                   {currentIndex + 1} / {events.length}
@@ -1856,6 +1853,25 @@ const styles = StyleSheet.create({
   },
   trendingStatusPillReducedMotion: {
     borderColor: 'rgba(255, 138, 0, 0.62)',
+  },
+  cityEventStatusPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    minHeight: 32,
+    paddingVertical: 3,
+    paddingHorizontal: 10,
+    borderRadius: 18,
+    backgroundColor: 'rgba(255, 196, 0, 0.92)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.55)',
+    maxWidth: 128,
+  },
+  cityEventStatusText: {
+    color: '#4E342E',
+    fontSize: 12.5,
+    fontWeight: '700',
+    marginLeft: 5,
+    flexShrink: 1,
   },
   trendingReducedMotionGlow: {
     ...StyleSheet.absoluteFillObject,
