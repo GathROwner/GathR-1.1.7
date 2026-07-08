@@ -379,6 +379,7 @@ export function useHotspotHighlight(
   const userLocation = useMapStore((state) => state.userLocation);
 
   const showDailyHotspot = useUserPrefsStore((state) => state.showDailyHotspot);
+  const showTrendingOnOpen = useUserPrefsStore((state) => state.showTrendingOnOpen);
   const hotspotLastShownDate = useUserPrefsStore((state) => state.hotspotLastShownDate);
   const hotspotDateKeyMode = useUserPrefsStore((state) => state.hotspotDateKeyMode);
   const markHotspotShownToday = useUserPrefsStore((state) => state.markHotspotShownToday);
@@ -651,6 +652,13 @@ export function useHotspotHighlight(
       return false;
     }
 
+    // 1b. Trending auto-open owns the app-open moment; suppress the hotspot
+    // whenever it is enabled so the two never fire in the same session.
+    if (showTrendingOnOpen) {
+      hotspotDebugLog('[Hotspot] Blocked: trending auto-open enabled');
+      return false;
+    }
+
     // 2. User hasn't disabled it (for authenticated users)
     // Guests always see it (showDailyHotspot defaults to true)
     if (user && !showDailyHotspot) {
@@ -683,7 +691,7 @@ export function useHotspotHighlight(
 
     hotspotDebugLog('[Hotspot] All checks passed - hotspot should trigger');
     return true;
-  }, [canEvaluateTrigger, tutorialIsActive, user, showDailyHotspot, hotspotLastShownDate, hotspotDateKeyMode, clusters]);
+  }, [canEvaluateTrigger, tutorialIsActive, user, showDailyHotspot, showTrendingOnOpen, hotspotLastShownDate, hotspotDateKeyMode, clusters]);
 
   useEffect(() => {
     if (prevShowDailyHotspotRef.current === showDailyHotspot) {

@@ -175,6 +175,16 @@ const pendingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
     }
   }, [showWelcome, isActive]);
 
+  // Publish tutorial visibility for consumers outside this provider's state
+  // (useTutorial() keeps isActive in per-instance state, so other hook
+  // instances never see it). The trending auto-open checks this at fire time.
+  useEffect(() => {
+    (global as any).gathrTutorialUiVisible = showWelcome || isActive;
+    return () => {
+      (global as any).gathrTutorialUiVisible = false;
+    };
+  }, [showWelcome, isActive]);
+
   // Ref to track if we need to show welcome screen
   const shouldShowWelcome = useRef(false);
   const hasTriggeredAutoTutorial = useRef(false);

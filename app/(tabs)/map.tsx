@@ -66,6 +66,15 @@ import {
 import { getUserInterestsSync, getSavedEventsSync, getFavoriteVenuesSync } from '../../store/userPrefsStore';
 import { useClusterInteractionStore } from '../../store/clusterInteractionStore';
 
+// Trending lightbox (flame pill + cold-start auto-open)
+import { buildTrendingEvents } from '../../utils/trendingUtils';
+import {
+  getTrendingLightboxImageUrl,
+  openTrendingLightbox,
+  resolveTrendingEventContext,
+} from '../../utils/trendingLightbox';
+import { useTrendingAutoOpen } from '../../hooks/useTrendingAutoOpen';
+
 // Import from store utility - assuming this is exported from your store
 import { ZOOM_THRESHOLDS, getThresholdIndexForZoom, calculateDistance } from '../../store/mapStore';
 
@@ -1612,15 +1621,62 @@ const RecenterButton: React.FC<{
 };
 
 /**
- * DeepLinkLightbox - Standalone lightbox for deep links
- * Renders when globalSelectedImageData is set from deep link handlers
+ * GlobalEventLightbox - Standalone lightbox driven by mapStore.selectedImageData
+ * Renders for deep links (single event) and Trending (multi-event: swipe/chevron
+ * navigation plus the "X / N" indicator via the events/currentIndex props).
  * This is separate from the EventCallout lightbox (which only renders when a cluster is open)
  */
-const DeepLinkLightbox = () => {
+const GlobalEventLightbox = () => {
   const globalSelectedImageData = useMapStore((state) => state.selectedImageData);
   const setGlobalSelectedImageData = useMapStore((state) => state.setSelectedImageData);
+  const viewedIndicesRef = useRef<Set<number>>(new Set());
+  const wasOpenRef = useRef(false);
+
+  useEffect(() => {
+    if (globalSelectedImageData && !wasOpenRef.current) {
+      viewedIndicesRef.current = new Set([globalSelectedImageData.currentIndex ?? 0]);
+    }
+    wasOpenRef.current = !!globalSelectedImageData;
+  }, [globalSelectedImageData]);
+
+  const handleNavigate = useCallback((newIndex: number) => {
+    const data = useMapStore.getState().selectedImageData;
+    if (!data?.events || newIndex < 0 || newIndex >= data.events.length) return;
+
+    const event = data.events[newIndex];
+    const isTrending = data.source === 'trending_manual' || data.source === 'trending_auto';
+    if (isTrending) {
+      amplitudeTrack('trending_navigate', {
+        index: newIndex,
+        direction: newIndex > (data.currentIndex ?? 0) ? 'next' : 'prev',
+        event_id: String(event.id),
+      });
+      useClusterInteractionStore.getState().markCarouselEventViewed(event.id);
+    }
+    viewedIndicesRef.current.add(newIndex);
+
+    const { venue, cluster } = resolveTrendingEventContext(
+      useMapStore.getState().clusters,
+      event.id
+    );
+    useMapStore.getState().setSelectedImageData({
+      ...data,
+      imageUrl: getTrendingLightboxImageUrl(event),
+      event,
+      venue,
+      cluster,
+      currentIndex: newIndex,
+    });
+  }, []);
 
   const handleClose = useCallback(() => {
+    const data = useMapStore.getState().selectedImageData;
+    if (data?.events && (data.source === 'trending_manual' || data.source === 'trending_auto')) {
+      amplitudeTrack('trending_dismissed', {
+        viewed_count: viewedIndicesRef.current.size,
+        auto_opened: data.source === 'trending_auto',
+      });
+    }
     setGlobalSelectedImageData(null);
   }, [setGlobalSelectedImageData]);
 
@@ -1642,6 +1698,15 @@ const DeepLinkLightbox = () => {
         venue={globalSelectedImageData.venue}
         cluster={globalSelectedImageData.cluster}
         onClose={handleClose}
+        events={globalSelectedImageData.events}
+        currentIndex={
+          globalSelectedImageData.events ? globalSelectedImageData.currentIndex : undefined
+        }
+        onNavigate={globalSelectedImageData.events ? handleNavigate : undefined}
+        isTrending={
+          globalSelectedImageData.source === 'trending_manual' ||
+          globalSelectedImageData.source === 'trending_auto'
+        }
       />
     </Modal>
   );
@@ -2430,18 +2495,6 @@ useEffect(() => {
     setActiveFilterPanel,
   ]);
 
-  // Hot interest carousel state (for HotFlamePill)
-  const [hotInterestCarouselActive, setHotInterestCarouselActive] = useState(false);
-  const hotInterestCarouselActiveRef = useRef(false);
-
-  useEffect(() => {
-    hotInterestCarouselActiveRef.current = hotInterestCarouselActive;
-  }, [hotInterestCarouselActive]);
-
-  const handleInterestPillInteraction = useCallback(() => {
-    setHotInterestCarouselActive(false);
-  }, []);
-
   useEffect(() => {
     if (!isCalloutOpen) {
       return;
@@ -2452,13 +2505,6 @@ useEffect(() => {
         activeFilterPanel,
       });
       setActiveFilterPanel(null);
-    }
-
-    if (hotInterestCarouselActiveRef.current) {
-      traceMapEvent('callout_forced_hot_interest_close', {
-        hotModeActive: true,
-      });
-      setHotInterestCarouselActive(false);
     }
   }, [activeFilterPanel, isCalloutOpen, setActiveFilterPanel]);
 
@@ -2487,7 +2533,6 @@ useEffect(() => {
       hasSelectedCalloutRendered,
       calloutLayoutReady: isRenderedCalloutLayoutReady,
       activeFilterPanel: activeFilterPanel ?? null,
-      hotspotFilterActive: hotInterestCarouselActive,
       hasInitiallyPositioned,
       locationPermissionGranted,
       ignoreProgrammatic: ignoreProgrammaticCameraRef.current,
@@ -2500,7 +2545,6 @@ useEffect(() => {
     hasSelectedCalloutRendered,
     hasInitiallyPositioned,
     hasRenderedCallout,
-    hotInterestCarouselActive,
     isRenderedCalloutLayoutReady,
     isCalloutOpen,
     isGuest,
@@ -2545,7 +2589,6 @@ useEffect(() => {
       hasSelectedCalloutRendered,
       calloutLayoutReady: isRenderedCalloutLayoutReady,
       isCalloutOpen,
-      hotInterestCarouselActive,
       activeFilterPanel: activeFilterPanel ?? 'none',
       ignoreProgrammatic: ignoreProgrammaticCameraRef.current,
       clustersReady: clustersReadyForInteraction,
@@ -2559,7 +2602,6 @@ useEffect(() => {
     clustersReadyForInteraction,
     hasSelectedCalloutRendered,
     hasRenderedCallout,
-    hotInterestCarouselActive,
     isRenderedCalloutLayoutReady,
     isCalloutOpen,
     isLoading,
@@ -2605,7 +2647,7 @@ useEffect(() => {
     });
   }, [processingClusterId]);
 
-  // Dismiss interest carousel (both hot mode and category filters)
+  // Dismiss interest carousel (category filters)
   const dismissInterestCarousel = useCallback((reason: string = 'unspecified') => {
     const mapState = useMapStore.getState();
     const liveFilterCriteria = mapState.filterCriteria;
@@ -2615,15 +2657,11 @@ useEffect(() => {
       !!liveFilterCriteria.eventFilters.category ||
       !!liveFilterCriteria.specialFilters.category;
     const hasOptimisticInterestFilter = liveInterestCarouselFilter?.status === 'active';
-    const hotModeWasActive = hotInterestCarouselActiveRef.current;
 
-    if (!hotModeWasActive && !hasActiveCategoryFilter && !hasOptimisticInterestFilter) {
+    if (!hasActiveCategoryFilter && !hasOptimisticInterestFilter) {
       return false;
     }
 
-    if (hotModeWasActive) {
-      setHotInterestCarouselActive(false);
-    }
     if (hasOptimisticInterestFilter) {
       setInterestCarouselFilter({ status: 'cleared' });
     }
@@ -2645,34 +2683,30 @@ useEffect(() => {
     return true;
   }, [setInterestCarouselFilter, setTypeFiltersBatch]);
 
-  // Handle hot flame pill press
-  const handleHotFlamePress = useCallback(() => {
-    if (!hotInterestCarouselActive) {
-      // Hot mode is a separate interest carousel mode; clear category pill filters when activating it.
-      setInterestCarouselFilter({ status: 'cleared' });
-      setTypeFiltersBatch([
-        { type: 'event', typeFilters: { category: undefined } },
-        { type: 'special', typeFilters: { category: undefined } },
-      ]);
+  // Trending pill: open the global lightbox on the hottest on-screen events.
+  const handleTrendingPillPress = useCallback(() => {
+    const mapState = useMapStore.getState();
+    const openSource = mapState.selectedImageData?.source;
+    if (openSource === 'trending_manual' || openSource === 'trending_auto') {
+      // Defensive toggle-off; the modal normally blocks the pill entirely.
+      mapState.setSelectedImageData(null);
+      return;
     }
 
-    setHotInterestCarouselActive((prev) => !prev);
-  }, [hotInterestCarouselActive, setInterestCarouselFilter, setTypeFiltersBatch]);
-
-  // Auto-dismiss hot mode if category filter is activated
-  useEffect(() => {
-    const hasActiveCategoryFilter =
-      !!filterCriteria.eventFilters.category ||
-      !!filterCriteria.specialFilters.category;
-
-    if (hotInterestCarouselActive && hasActiveCategoryFilter) {
-      setHotInterestCarouselActive(false);
+    const trendingEvents = buildTrendingEvents({
+      onScreenEvents: mapState.onScreenEvents,
+      filterCriteria: mapState.filterCriteria,
+      userInterests: getUserInterestsSync(),
+    });
+    if (trendingEvents.length === 0) {
+      return;
     }
-  }, [
-    hotInterestCarouselActive,
-    filterCriteria.eventFilters.category,
-    filterCriteria.specialFilters.category,
-  ]);
+
+    openTrendingLightbox(trendingEvents, 'manual');
+  }, []);
+
+  // Auto-open the trending lightbox once per cold start (never on resume).
+  useTrendingAutoOpen();
 
   // Actual map viewport dimensions (accounting for header, tab bar, safe areas)
   const [mapDimensions, setMapDimensions] = useState<{ width: number; height: number } | null>(null);
@@ -7741,23 +7775,19 @@ onDidFinishLoadingMap={() => {
         >
           <MapLegend topOffset={30} rightOffset={10} />
 
-          {/* Hot Flame Pill - shows "What's hot" filter in top-right */}
+          {/* Trending pill - opens the trending lightbox from the top-right */}
           <HotFlamePill
             top={134}
             right={10}
-            isActive={hotInterestCarouselActive}
-            onPress={handleHotFlamePress}
+            onPress={handleTrendingPillPress}
           />
 
           <View pointerEvents="box-none" style={styles.interestPillsContainer}>
-            <InterestFilterPills onPillInteraction={handleInterestPillInteraction} />
+            <InterestFilterPills />
           </View>
 
           {/* Interests Carousel - appears when interest pill is selected */}
-          <InterestsCarousel
-            hotModeActive={hotInterestCarouselActive}
-            onDismissHotMode={() => setHotInterestCarouselActive(false)}
-          />
+          <InterestsCarousel />
         </View>
       )}
 
@@ -8018,7 +8048,7 @@ Owner: Map UX stability on Android • Last validated: 2025-09-04
       {isGuest && <RegistrationPrompt />}
 
       {/* Deep link lightbox - renders when globalSelectedImageData is set from deep link */}
-      <DeepLinkLightbox />
+      <GlobalEventLightbox />
 
       {MAP_TRACE_UI_ENABLED && (
         <MapTracePanel

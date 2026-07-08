@@ -129,11 +129,7 @@ const NewContentDot: React.FC = () => {
   );
 };
 
-type InterestFilterPillsProps = {
-  onPillInteraction?: () => void;
-};
-
-const InterestFilterPills: React.FC<InterestFilterPillsProps> = ({ onPillInteraction }) => {
+const InterestFilterPills: React.FC = () => {
   const userInterests = useUserPrefsStore((s) => s.interests);
   const isFocused = useIsFocused();
 
@@ -148,7 +144,6 @@ const InterestFilterPills: React.FC<InterestFilterPillsProps> = ({ onPillInterac
   const {
     hasNewContent: checkHasNewContent,
     carouselViewedEventIds,
-    interactions,
   } = useClusterInteractionStore();
 
   const eventCountByKey = useMemo(() => {
@@ -218,7 +213,7 @@ const InterestFilterPills: React.FC<InterestFilterPillsProps> = ({ onPillInterac
     });
 
     return counts;
-  }, [onScreenEvents, filterCriteria, eventContextById, checkHasNewContent, carouselViewedEventIds, interactions]);
+  }, [onScreenEvents, filterCriteria, eventContextById, checkHasNewContent, carouselViewedEventIds]);
 
   const pills = useMemo<PillItem[]>(() => {
     if (!userInterests || userInterests.length === 0) return [];
@@ -255,27 +250,33 @@ const InterestFilterPills: React.FC<InterestFilterPillsProps> = ({ onPillInterac
     });
 
     const pillArray = Array.from(pillMap.values());
+    const eventFilterCategory = filterCriteria.eventFilters.category;
+    const specialFilterCategory = filterCriteria.specialFilters.category;
+    const eventFilterPillCategoryActive =
+      filterCriteria.eventFilters.categoryFilterSource === 'filter-pills' &&
+      !!eventFilterCategory;
+    const specialFilterPillCategoryActive =
+      filterCriteria.specialFilters.categoryFilterSource === 'filter-pills' &&
+      !!specialFilterCategory;
 
-    // If a filter-pills category is active, only show pills matching that category
-    if (filterCriteria.eventFilters.categoryFilterSource === 'filter-pills' &&
-        filterCriteria.eventFilters.category) {
-      return pillArray.filter(pill =>
-        pill.originalInterests.some(interest =>
-          interest.toLowerCase() === filterCriteria.eventFilters.category?.toLowerCase()
-        )
-      );
-    }
+    return pillArray.filter((pill) => {
+      const matchesEventFilterCategory =
+        eventFilterCategory &&
+        pill.originalInterests.some((interest) => normalize(interest) === normalize(eventFilterCategory));
+      const matchesSpecialFilterCategory =
+        specialFilterCategory &&
+        pill.originalInterests.some((interest) => normalize(interest) === normalize(specialFilterCategory));
 
-    if (filterCriteria.specialFilters.categoryFilterSource === 'filter-pills' &&
-        filterCriteria.specialFilters.category) {
-      return pillArray.filter(pill =>
-        pill.originalInterests.some(interest =>
-          interest.toLowerCase() === filterCriteria.specialFilters.category?.toLowerCase()
-        )
-      );
-    }
+      if (pill.type === 'event' && eventFilterPillCategoryActive) {
+        return matchesEventFilterCategory;
+      }
 
-    return pillArray;
+      if (pill.type === 'special' && specialFilterPillCategoryActive) {
+        return matchesSpecialFilterCategory;
+      }
+
+      return true;
+    });
   }, [userInterests, eventCountByKey, specialCountByKey, newContentCountByInterestKey, filterCriteria]);
 
   const optimisticFilterActive = interestCarouselFilter?.status === 'active';
@@ -417,7 +418,6 @@ const InterestFilterPills: React.FC<InterestFilterPillsProps> = ({ onPillInterac
           type: item.type,
           index,
         });
-        onPillInteraction?.();
         const clearedFilter: InterestCarouselUiFilter = { status: 'cleared' };
         setInterestCarouselFilter(clearedFilter);
         cancelClearArmed();
@@ -432,7 +432,6 @@ const InterestFilterPills: React.FC<InterestFilterPillsProps> = ({ onPillInterac
           type: item.type,
           index,
         });
-        onPillInteraction?.();
         const clearedFilter: InterestCarouselUiFilter = { status: 'cleared' };
         setInterestCarouselFilter(clearedFilter);
         scrollToCenteredIndex(highestCountIndex, true);
@@ -445,7 +444,6 @@ const InterestFilterPills: React.FC<InterestFilterPillsProps> = ({ onPillInterac
         type: item.type,
         index,
       });
-      onPillInteraction?.();
 
       const selectedFilter: InterestCarouselUiFilter = {
         status: 'active',
@@ -463,7 +461,6 @@ const InterestFilterPills: React.FC<InterestFilterPillsProps> = ({ onPillInterac
       highestCountIndex,
       clearArmed,
       cancelClearArmed,
-      onPillInteraction,
     ]
   );
 

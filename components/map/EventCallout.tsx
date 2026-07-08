@@ -2533,7 +2533,14 @@ const EventCallout: React.FC<EventCalloutProps> = ({
   const storeEvents = useMapStore((state) => state.events);
 
   // Get global selectedImageData from mapStore (set by InterestsCarousel)
-  const globalSelectedImageData = useMapStore((state) => state.selectedImageData);
+  const globalSelectedImageDataRaw = useMapStore((state) => state.selectedImageData);
+  // Trending-sourced lightboxes are rendered by the map-root GlobalEventLightbox;
+  // rendering them here too would stack a second modal over it.
+  const globalSelectedImageData =
+    globalSelectedImageDataRaw?.source === 'trending_manual' ||
+    globalSelectedImageDataRaw?.source === 'trending_auto'
+      ? null
+      : globalSelectedImageDataRaw;
   const setGlobalSelectedImageData = useMapStore((state) => state.setSelectedImageData);
 
   // Helper function to get updated event data from store

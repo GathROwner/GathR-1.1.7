@@ -13,14 +13,12 @@ import { MaterialIcons, Ionicons } from '@expo/vector-icons';
 import { useIsFocused } from '@react-navigation/native';
 import { useMapStore } from '../../store';
 import { useInterestCarouselUiStore } from '../../store/interestCarouselUiStore';
-import { useUserPrefsStore } from '../../store/userPrefsStore';
 import { Event, Venue, Cluster } from '../../types/events';
 import { isEventNow, getEventTimeStatus } from '../../utils/dateUtils';
 import FallbackImage from '../common/FallbackImage';
 import EventImageLightbox from './EventImageLightbox';
 import { useClusterInteractionStore } from '../../store/clusterInteractionStore';
 import { doesEventMatchInterestCarouselActiveCategory } from '../../utils/interestCarouselFilterUtils';
-import { buildHotInterestCarouselEvents } from '../../utils/hotInterestCarouselUtils';
 import { registerMapTraceSampler, traceMapEvent } from '../../utils/mapTrace';
 import {
   clearInterestFilterPerfAction,
@@ -33,9 +31,7 @@ const readAnimatedValue = (value: Animated.Value): number | string =>
 
 // Constants from InterestFilterPills for consistency
 const EVENT_COLOR = '#64B5F6';
-const EVENT_SELECTED = '#1976D2';
 const SPECIAL_COLOR = '#66BB6A';
-const SPECIAL_SELECTED = '#2E7D32';
 
 const CARD_WIDTH = 160;
 const CARD_HEIGHT = 120;
@@ -209,7 +205,6 @@ const EventCard = memo(({
     event.endTime || ''
   );
 
-  const categoryColor = event.type === 'event' ? EVENT_SELECTED : SPECIAL_SELECTED;
   const categoryBgColor = event.type === 'event' ? EVENT_COLOR : SPECIAL_COLOR;
 
   return (
@@ -363,11 +358,6 @@ const PaginationDots = memo(({
 
 PaginationDots.displayName = 'PaginationDots';
 
-type InterestsCarouselProps = {
-  hotModeActive?: boolean;
-  onDismissHotMode?: () => void;
-};
-
 type CarouselEventContext = {
   cluster: Cluster;
   venue: Venue;
@@ -375,12 +365,8 @@ type CarouselEventContext = {
 };
 
 // Main Carousel Component
-const InterestsCarousel: React.FC<InterestsCarouselProps> = ({
-  hotModeActive = false,
-  onDismissHotMode,
-}) => {
+const InterestsCarousel: React.FC = () => {
   const isFocused = useIsFocused();
-  const userInterests = useUserPrefsStore((s) => s.interests);
   const onScreenEvents = useMapStore((state) => state.onScreenEvents);
   const filterCriteria = useMapStore((state) => state.filterCriteria);
   const clusters = useMapStore((state) => state.clusters);
@@ -392,7 +378,6 @@ const InterestsCarousel: React.FC<InterestsCarouselProps> = ({
   const {
     hasNewContent: checkHasNewContent,
     recordInteraction,
-    interactions,
     carouselViewedEventIds,
     markCarouselEventViewed,
     markCarouselEventsViewed,
@@ -455,16 +440,6 @@ const InterestsCarousel: React.FC<InterestsCarouselProps> = ({
     );
   }, [onScreenEvents, carouselFilterCriteria]);
 
-  const hotCarouselEvents = useMemo(
-    () =>
-      buildHotInterestCarouselEvents({
-        onScreenEvents,
-        filterCriteria,
-        userInterests,
-      }),
-    [onScreenEvents, filterCriteria, userInterests]
-  );
-
   // Only activate carousel for interest-pills filters, not filter-pills
   const optimisticFilterActive = interestCarouselFilter?.status === 'active';
   const optimisticFilterCleared = interestCarouselFilter?.status === 'cleared';
@@ -474,13 +449,9 @@ const InterestsCarousel: React.FC<InterestsCarouselProps> = ({
       (filterCriteria.eventFilters.categoryFilterSource === 'interest-pills' ||
         filterCriteria.specialFilters.categoryFilterSource === 'interest-pills'));
 
-  const activeMode: 'hot' | 'category' | null = hotModeActive
-    ? 'hot'
-    : hasInterestPillCategoryFilter
-    ? 'category'
-    : null;
+  const activeMode: 'category' | null = hasInterestPillCategoryFilter ? 'category' : null;
 
-  const carouselEvents = activeMode === 'hot' ? hotCarouselEvents : categoryCarouselEvents;
+  const carouselEvents = categoryCarouselEvents;
 
   // Determine which events have new content
   // Map from event.id to boolean indicating if event is new
@@ -505,7 +476,7 @@ const InterestsCarousel: React.FC<InterestsCarouselProps> = ({
     });
 
     return map;
-  }, [carouselEvents, checkHasNewContent, getEventContext, interactions]);
+  }, [carouselEvents, checkHasNewContent, getEventContext]);
 
   // Local state for lightbox (not mapStore)
   const [selectedImageData, setSelectedImageData] = useState<{
@@ -525,17 +496,8 @@ const InterestsCarousel: React.FC<InterestsCarouselProps> = ({
   const flatListRef = useRef<FlatList<Event>>(null); // Ref for scrolling carousel
   const carouselVisibleRef = useRef(false);
 
-  // Dismissal handler - hot mode closes locally, category mode clears carousel UI state.
+  // Dismissal handler - clears the category carousel UI state.
   const handleDismiss = useCallback(() => {
-    if (hotModeActive) {
-      markInterestFilterPerfAction({
-        action: 'dismiss-hot-carousel',
-        label: 'hot',
-      });
-      onDismissHotMode?.();
-      return;
-    }
-
     if (activeMode === 'category' || interestCarouselFilter?.status === 'active') {
       markInterestFilterPerfAction({
         action: 'dismiss-carousel',
@@ -544,8 +506,6 @@ const InterestsCarousel: React.FC<InterestsCarouselProps> = ({
       setInterestCarouselFilter({ status: 'cleared' });
     }
   }, [
-    hotModeActive,
-    onDismissHotMode,
     setInterestCarouselFilter,
     activeMode,
     interestCarouselFilter?.status,
@@ -638,7 +598,6 @@ const InterestsCarousel: React.FC<InterestsCarouselProps> = ({
     traceMapEvent('interests_carousel_state_changed', {
       activeMode: activeMode ?? 'none',
       isVisible,
-      hotModeActive,
       activeFilterPanel: activeFilterPanel ?? 'none',
       carouselEventCount: carouselEvents.length,
       hasSelectedImage: !!selectedImageData,
@@ -666,7 +625,6 @@ const InterestsCarousel: React.FC<InterestsCarouselProps> = ({
     activeFilterPanel,
     activeMode,
     carouselEvents.length,
-    hotModeActive,
     isVisible,
     opacityAnim,
     selectedImageData,
@@ -677,7 +635,6 @@ const InterestsCarousel: React.FC<InterestsCarouselProps> = ({
     return registerMapTraceSampler('interests_carousel', () => ({
       activeMode: activeMode ?? 'none',
       isVisible,
-      hotModeActive,
       activeFilterPanel: activeFilterPanel ?? 'none',
       slideY: readAnimatedValue(slideAnim),
       opacity: readAnimatedValue(opacityAnim),
@@ -689,7 +646,6 @@ const InterestsCarousel: React.FC<InterestsCarouselProps> = ({
     activeFilterPanel,
     activeMode,
     carouselEvents.length,
-    hotModeActive,
     isFocused,
     isVisible,
     opacityAnim,

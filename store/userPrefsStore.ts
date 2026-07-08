@@ -17,10 +17,15 @@ type UserPrefsState = {
   showDailyHotspot: boolean;
   hotspotLastShownDate: string | null;
   hotspotDateKeyMode?: 'local';
+  // Trending auto-open feature
+  showTrendingOnOpen: boolean;
+  trendingLastAutoShownAt: number | null;
   setAll: (p: Partial<UserPrefsState>) => void;
   clear: () => void;
   setShowDailyHotspot: (value: boolean) => void;
   markHotspotShownToday: () => void;
+  setShowTrendingOnOpen: (value: boolean) => void;
+  markTrendingAutoShown: () => void;
 };
 
 export const useUserPrefsStore = create<UserPrefsState>()(
@@ -35,6 +40,8 @@ export const useUserPrefsStore = create<UserPrefsState>()(
       showDailyHotspot: false,
       hotspotLastShownDate: null,
       hotspotDateKeyMode: undefined,
+      showTrendingOnOpen: true,
+      trendingLastAutoShownAt: null,
       setAll: (p) => set(p),
       clear: () =>
         set((state) => ({
@@ -49,23 +56,38 @@ export const useUserPrefsStore = create<UserPrefsState>()(
           // do not rerun the daily hotspot after it has already been shown.
           hotspotLastShownDate: state.hotspotLastShownDate,
           hotspotDateKeyMode: state.hotspotDateKeyMode,
+          showTrendingOnOpen: true,
+          // Device-scoped like hotspotLastShownDate: preserve so sign-out does
+          // not immediately re-trigger the trending auto-open.
+          trendingLastAutoShownAt: state.trendingLastAutoShownAt,
         })),
       setShowDailyHotspot: (value: boolean) => set({ showDailyHotspot: value }),
       markHotspotShownToday: () => set({
         hotspotLastShownDate: getLocalDateKey(),
         hotspotDateKeyMode: 'local',
       }),
+      setShowTrendingOnOpen: (value: boolean) => set({ showTrendingOnOpen: value }),
+      markTrendingAutoShown: () => set({ trendingLastAutoShownAt: Date.now() }),
     }),
     {
       name: 'user-prefs-cache',
       storage: createJSONStorage(() => AsyncStorage),
-      version: 1,
-      migrate: (persistedState) => ({
-        ...(persistedState as Partial<UserPrefsState>),
-        // Previous releases persisted the old default of true. Reset that cache
-        // value so existing installs also get the new off-by-default behavior.
-        showDailyHotspot: false,
-      }),
+      version: 2,
+      migrate: (persistedState, version) => {
+        const state = { ...(persistedState as Partial<UserPrefsState>) };
+        if (version < 1) {
+          // Releases before v1 persisted the old default of true. Reset that
+          // cache value so those installs get the off-by-default behavior.
+          // Must stay version-gated: re-running it for v1+ users would wipe a
+          // deliberate opt-in.
+          state.showDailyHotspot = false;
+        }
+        if (version < 2) {
+          state.showTrendingOnOpen = true;
+          state.trendingLastAutoShownAt = null;
+        }
+        return state;
+      },
     }
   )
 );
@@ -78,6 +100,8 @@ export const getLikedEventsSync = () => useUserPrefsStore.getState().likedEvents
 export const getInterestedEventsSync = () => useUserPrefsStore.getState().interestedEvents;
 export const getShowDailyHotspotSync = () => useUserPrefsStore.getState().showDailyHotspot;
 export const getHotspotLastShownDateSync = () => useUserPrefsStore.getState().hotspotLastShownDate;
+export const getShowTrendingOnOpenSync = () => useUserPrefsStore.getState().showTrendingOnOpen;
+export const getTrendingLastAutoShownAtSync = () => useUserPrefsStore.getState().trendingLastAutoShownAt;
 
 let unsubscribe: (() => void) | null = null;
 
@@ -95,6 +119,7 @@ export async function startUserPrefsListener(userId: string) {
         likedEvents: data.likedEvents || [],
         interestedEvents: data.interestedEvents || [],
         showDailyHotspot: data.showDailyHotspot ?? false,
+        showTrendingOnOpen: data.showTrendingOnOpen ?? true,
         lastLoadedAt: Date.now(),
       });
     }
@@ -112,6 +137,7 @@ export async function startUserPrefsListener(userId: string) {
         likedEvents: data.likedEvents || [],
         interestedEvents: data.interestedEvents || [],
         showDailyHotspot: data.showDailyHotspot ?? false,
+        showTrendingOnOpen: data.showTrendingOnOpen ?? true,
         lastLoadedAt: Date.now(),
       });
     }
@@ -140,4 +166,8 @@ export async function updateFavoriteVenues(userId: string, favoriteVenues: strin
 export async function updateShowDailyHotspot(userId: string, showDailyHotspot: boolean) {
   const ref = doc(firestore, 'users', userId);
   await updateDoc(ref, { showDailyHotspot });
+}
+export async function updateShowTrendingOnOpen(userId: string, showTrendingOnOpen: boolean) {
+  const ref = doc(firestore, 'users', userId);
+  await updateDoc(ref, { showTrendingOnOpen });
 }

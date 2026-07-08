@@ -4,10 +4,9 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { useMapStore } from '../../store';
 import { useUserPrefsStore } from '../../store/userPrefsStore';
 import { useClusterInteractionStore } from '../../store/clusterInteractionStore';
-import { buildHotInterestCarouselEvents } from '../../utils/hotInterestCarouselUtils';
+import { buildTrendingEvents } from '../../utils/trendingUtils';
 
 type HotFlamePillProps = {
-  isActive: boolean;
   onPress: () => void;
   top?: number;
   right?: number;
@@ -67,22 +66,25 @@ const NewContentDot: React.FC = () => {
 };
 
 const HotFlamePill: React.FC<HotFlamePillProps> = ({
-  isActive,
   onPress,
   top = 134,
   right = 10,
 }) => {
   const userInterests = useUserPrefsStore((s) => s.interests);
   const { onScreenEvents, filterCriteria, clusters, activeFilterPanel } = useMapStore();
+  const isActive = useMapStore(
+    (state) =>
+      state.selectedImageData?.source === 'trending_manual' ||
+      state.selectedImageData?.source === 'trending_auto'
+  );
   const {
     hasNewContent: checkHasNewContent,
     carouselViewedEventIds,
-    interactions,
   } = useClusterInteractionStore();
 
   const hotEvents = useMemo(
     () =>
-      buildHotInterestCarouselEvents({
+      buildTrendingEvents({
         onScreenEvents,
         filterCriteria,
         userInterests,
@@ -126,11 +128,7 @@ const HotFlamePill: React.FC<HotFlamePillProps> = ({
     });
 
     return count;
-  }, [hotEvents, venueByEventId, checkHasNewContent, carouselViewedEventIds, interactions]);
-
-  if (!userInterests || userInterests.length === 0) {
-    return null;
-  }
+  }, [hotEvents, venueByEventId, checkHasNewContent, carouselViewedEventIds]);
 
   const disabled = hotEvents.length === 0 && !isActive;
 
@@ -151,7 +149,7 @@ const HotFlamePill: React.FC<HotFlamePillProps> = ({
         }}
         activeOpacity={0.85}
         accessibilityRole="button"
-        accessibilityLabel="What's hot interest filter"
+        accessibilityLabel="Trending events"
       >
         <MaterialIcons
           name="local-fire-department"

@@ -81,6 +81,11 @@ export interface MapState {
     event: Event;
     venue?: Venue;
     cluster?: Cluster;
+    // Multi-event navigation (trending lightbox): when present the lightbox
+    // renders swipe/chevron navigation and the "X / N" indicator.
+    events?: Event[];
+    currentIndex?: number;
+    source?: 'deep_link' | 'trending_manual' | 'trending_auto';
   } | null;
 
   // Cluster visibility utility
@@ -96,11 +101,11 @@ export interface MapState {
     source?: 'filter-pills' | 'interest-pills'
   ) => void;
   setTypeFiltersBatch: (
-    updates: Array<{
+    updates: {
       type: 'event' | 'special';
       typeFilters: Partial<TypeFilterCriteria>;
       source?: 'filter-pills' | 'interest-pills';
-    }>
+    }[]
   ) => void;
   selectVenue: (venue: Venue | null) => void;
   selectVenues: (venues: Venue[]) => void;
@@ -113,7 +118,15 @@ export interface MapState {
   setSearchQuery: (query: string) => void;
   triggerScrollToTop: (tab: 'events' | 'specials') => void;
   triggerCloseCallout: () => void;
-  setSelectedImageData: (data: { imageUrl: string; event: Event; venue?: Venue; cluster?: Cluster } | null) => void;
+  setSelectedImageData: (data: {
+    imageUrl: string;
+    event: Event;
+    venue?: Venue;
+    cluster?: Cluster;
+    events?: Event[];
+    currentIndex?: number;
+    source?: 'deep_link' | 'trending_manual' | 'trending_auto';
+  } | null) => void;
   fetchEvents: () => Promise<void>;
   prefetchIfStale: (maxAgeMs?: number) => Promise<void>;
   getFilteredEvents: () => Event[];

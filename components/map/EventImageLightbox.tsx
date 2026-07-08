@@ -9,7 +9,9 @@ import {
   Linking,
   Platform,
   Alert,
-  Animated
+  Animated,
+  Easing,
+  AccessibilityInfo,
 } from 'react-native';
 
 import { usePathname } from 'expo-router';
@@ -209,6 +211,7 @@ interface EventImageLightboxProps {
   events?: Event[];
   currentIndex?: number;
   onNavigate?: (index: number) => void;
+  isTrending?: boolean;
   // Optional callback when "View Venue" button is clicked
   onViewVenue?: () => void;
 }
@@ -222,6 +225,7 @@ const EventImageLightbox: React.FC<EventImageLightboxProps> = ({
   events,
   currentIndex,
   onNavigate,
+  isTrending = false,
   onViewVenue,
 }) => {
   // Add store subscription to get fresh event data
@@ -340,6 +344,8 @@ try {
 
   // Track if the thumbnail is using a fallback image (URL failed to load or was missing)
   const [isUsingFallbackImage, setIsUsingFallbackImage] = useState(false);
+
+  const [isReduceMotionEnabled, setIsReduceMotionEnabled] = useState(false);
   
   // Animation values for swipe-to-close
   const translateY = useRef(new Animated.Value(0)).current;
@@ -348,6 +354,10 @@ try {
   // Animation value for horizontal swipe navigation
   const translateX = useRef(new Animated.Value(0)).current;
 
+  // Animation values for the Trending badge attention cue
+  const trendingShimmerProgress = useRef(new Animated.Value(0)).current;
+  const trendingPulseProgress = useRef(new Animated.Value(0)).current;
+
   // Refs for gesture handler coordination
   const verticalPanRef = useRef(null);
   const horizontalPanRef = useRef(null);
@@ -355,6 +365,9 @@ try {
   // Navigation state
   const canNavigatePrev = events && currentIndex !== undefined && currentIndex > 0;
   const canNavigateNext = events && currentIndex !== undefined && currentIndex < events.length - 1;
+  const showTrendingOverlay = Boolean(isTrending && events && currentIndex !== undefined);
+  const trendingPositionLabel =
+    events && currentIndex !== undefined ? `${currentIndex + 1} / ${events.length}` : '';
 
   // Refs to track current values for gesture handlers (avoids stale closure)
   const currentIndexRef = useRef(currentIndex);
@@ -372,6 +385,101 @@ try {
   useEffect(() => {
     setIsUsingFallbackImage(false);
   }, [imageUrl]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    AccessibilityInfo.isReduceMotionEnabled()
+      .then((enabled) => {
+        if (isMounted) {
+          setIsReduceMotionEnabled(enabled);
+        }
+      })
+      .catch(() => {});
+
+    const subscription = AccessibilityInfo.addEventListener(
+      'reduceMotionChanged',
+      (enabled: boolean) => {
+        setIsReduceMotionEnabled(enabled);
+      }
+    );
+
+    return () => {
+      isMounted = false;
+      subscription.remove();
+    };
+  }, []);
+
+  useEffect(() => {
+    const resetTrendingAnimation = () => {
+      trendingShimmerProgress.stopAnimation();
+      trendingPulseProgress.stopAnimation();
+      trendingShimmerProgress.setValue(0);
+      trendingPulseProgress.setValue(0);
+    };
+
+    resetTrendingAnimation();
+
+    if (!showTrendingOverlay || isReduceMotionEnabled) {
+      return;
+    }
+
+    const playTrendingCue = () =>
+      Animated.sequence([
+        Animated.parallel([
+          Animated.timing(trendingShimmerProgress, {
+            toValue: 1,
+            duration: 900,
+            easing: Easing.out(Easing.cubic),
+            useNativeDriver: true,
+          }),
+          Animated.timing(trendingPulseProgress, {
+            toValue: 1,
+            duration: 680,
+            easing: Easing.out(Easing.quad),
+            useNativeDriver: true,
+          }),
+        ]),
+        Animated.parallel([
+          Animated.timing(trendingShimmerProgress, {
+            toValue: 0,
+            duration: 1,
+            useNativeDriver: true,
+          }),
+          Animated.timing(trendingPulseProgress, {
+            toValue: 0,
+            duration: 1,
+            useNativeDriver: true,
+          }),
+        ]),
+      ]);
+
+    const trendingAnimation = Animated.sequence([
+      Animated.delay(700),
+      playTrendingCue(),
+      Animated.loop(
+        Animated.sequence([
+          Animated.delay(3000),
+          playTrendingCue(),
+        ])
+      ),
+    ]);
+
+    trendingAnimation.start();
+
+    return () => {
+      trendingAnimation.stop();
+      resetTrendingAnimation();
+    };
+  }, [
+    currentIndex,
+    imageUrl,
+    isReduceMotionEnabled,
+    showTrendingOverlay,
+    trendingPulseProgress,
+    trendingShimmerProgress,
+    updatedEvent.id,
+  ]);
 
   // Start/stop like, share, and interested listeners
   useEffect(() => {
@@ -999,6 +1107,18 @@ amplitudeTrack('ticket_link_opened', {
 
   // Check if navigation is enabled
   const navigationEnabled = events && events.length > 1 && onNavigate !== undefined;
+  const trendingShimmerTranslateX = trendingShimmerProgress.interpolate({
+    inputRange: [0, 1],
+    outputRange: [-42, 104],
+  });
+  const trendingShimmerOpacity = trendingShimmerProgress.interpolate({
+    inputRange: [0, 0.18, 0.5, 0.82, 1],
+    outputRange: [0, 0.18, 0.55, 0.18, 0],
+  });
+  const trendingFlameScale = trendingPulseProgress.interpolate({
+    inputRange: [0, 0.35, 1],
+    outputRange: [1, 1.18, 1],
+  });
 
   return (
   <GestureHandlerRootView style={{ flex: 1 }}>
@@ -1092,6 +1212,87 @@ amplitudeTrack('ticket_link_opened', {
           <View style={styles.zoomIconOverlay}>
             <MaterialIcons name="zoom-in" size={24} color="rgba(255, 255, 255, 0.8)" />
           </View>
+
+          {showTrendingOverlay && (
+            <View style={styles.trendingOverlay} pointerEvents="none">
+              <View
+                style={[
+                  styles.trendingStatusPill,
+                  isReduceMotionEnabled && styles.trendingStatusPillReducedMotion,
+                ]}
+              >
+                {isReduceMotionEnabled ? (
+                  <View style={styles.trendingReducedMotionGlow} pointerEvents="none" />
+                ) : (
+                  <Animated.View
+                    style={[
+                      styles.trendingShimmer,
+                      {
+                        opacity: trendingShimmerOpacity,
+                        transform: [
+                          { translateX: trendingShimmerTranslateX },
+                          { rotate: '18deg' },
+                        ],
+                      },
+                    ]}
+                    pointerEvents="none"
+                  >
+                    <LinearGradient
+                      colors={[
+                        'rgba(255, 255, 255, 0)',
+                        'rgba(255, 187, 77, 0.48)',
+                        'rgba(255, 255, 255, 0)',
+                      ]}
+                      start={{ x: 0, y: 0.5 }}
+                      end={{ x: 1, y: 0.5 }}
+                      style={styles.trendingShimmerGradient}
+                    />
+                  </Animated.View>
+                )}
+                <Animated.View
+                  style={[
+                    styles.trendingFlameIcon,
+                    !isReduceMotionEnabled && {
+                      transform: [{ scale: trendingFlameScale }],
+                    },
+                  ]}
+                >
+                  <MaterialIcons name="local-fire-department" size={15} color="#FF8A00" />
+                </Animated.View>
+                <Text style={styles.trendingStatusText}>Trending</Text>
+              </View>
+              <View style={styles.trendingPositionPill}>
+                <Text style={styles.trendingPositionText}>{trendingPositionLabel}</Text>
+              </View>
+            </View>
+          )}
+
+          {navigationEnabled && (
+            <>
+              {canNavigatePrev && (
+                <TouchableOpacity
+                  style={styles.navArrowLeft}
+                  onPress={() => onNavigate && currentIndex !== undefined && onNavigate(currentIndex - 1)}
+                  activeOpacity={0.7}
+                >
+                  <View style={styles.navArrowContainer}>
+                    <MaterialIcons name="chevron-left" size={38} color="#FFFFFF" />
+                  </View>
+                </TouchableOpacity>
+              )}
+              {canNavigateNext && (
+                <TouchableOpacity
+                  style={styles.navArrowRight}
+                  onPress={() => onNavigate && currentIndex !== undefined && onNavigate(currentIndex + 1)}
+                  activeOpacity={0.7}
+                >
+                  <View style={styles.navArrowContainer}>
+                    <MaterialIcons name="chevron-right" size={38} color="#FFFFFF" />
+                  </View>
+                </TouchableOpacity>
+              )}
+            </>
+          )}
 
           {/* Engagement overlay - like and share counts */}
           {showEngagementOverlay && (
@@ -1449,35 +1650,11 @@ amplitudeTrack('ticket_link_opened', {
           </TouchableOpacity>
         )}
 
-        {/* Navigation arrows for swipe between events */}
+        {/* Navigation position indicator for non-trending carousels */}
         {navigationEnabled && (
           <>
-            {/* Left arrow - previous event */}
-            {canNavigatePrev && (
-              <TouchableOpacity
-                style={styles.navArrowLeft}
-                onPress={() => onNavigate && currentIndex !== undefined && onNavigate(currentIndex - 1)}
-                activeOpacity={0.7}
-              >
-                <View style={styles.navArrowContainer}>
-                  <MaterialIcons name="chevron-left" size={32} color="#FFFFFF" />
-                </View>
-              </TouchableOpacity>
-            )}
-            {/* Right arrow - next event */}
-            {canNavigateNext && (
-              <TouchableOpacity
-                style={styles.navArrowRight}
-                onPress={() => onNavigate && currentIndex !== undefined && onNavigate(currentIndex + 1)}
-                activeOpacity={0.7}
-              >
-                <View style={styles.navArrowContainer}>
-                  <MaterialIcons name="chevron-right" size={32} color="#FFFFFF" />
-                </View>
-              </TouchableOpacity>
-            )}
             {/* Position indicator */}
-            {events && currentIndex !== undefined && (
+            {!isTrending && events && currentIndex !== undefined && (
               <View style={styles.positionIndicator}>
                 <Text style={styles.positionText}>
                   {currentIndex + 1} / {events.length}
@@ -1653,6 +1830,70 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: '#333333',
     fontWeight: '500',
+  },
+  trendingOverlay: {
+    position: 'absolute',
+    bottom: 12,
+    left: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    zIndex: 12,
+  },
+  trendingStatusPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    minHeight: 32,
+    paddingVertical: 3,
+    paddingHorizontal: 9,
+    borderRadius: 18,
+    backgroundColor: 'rgba(17, 17, 17, 0.82)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.16)',
+    overflow: 'hidden',
+    position: 'relative',
+  },
+  trendingStatusPillReducedMotion: {
+    borderColor: 'rgba(255, 138, 0, 0.62)',
+  },
+  trendingReducedMotionGlow: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(255, 138, 0, 0.16)',
+  },
+  trendingShimmer: {
+    position: 'absolute',
+    top: -10,
+    bottom: -10,
+    left: 0,
+    width: 28,
+  },
+  trendingShimmerGradient: {
+    flex: 1,
+  },
+  trendingFlameIcon: {
+    zIndex: 1,
+  },
+  trendingStatusText: {
+    marginLeft: 4,
+    fontSize: 12,
+    color: '#FFFFFF',
+    fontWeight: '700',
+    zIndex: 1,
+  },
+  trendingPositionPill: {
+    minHeight: 32,
+    marginLeft: 5,
+    paddingVertical: 3,
+    paddingHorizontal: 8,
+    borderRadius: 18,
+    backgroundColor: 'rgba(17, 17, 17, 0.72)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.12)',
+    justifyContent: 'center',
+  },
+  trendingPositionText: {
+    fontSize: 12,
+    color: '#FFFFFF',
+    fontWeight: '700',
   },
   badgeContainer: {
     flexDirection: 'row',
@@ -1866,21 +2107,23 @@ description: {
   // Navigation arrow styles for swipe between events
   navArrowLeft: {
     position: 'absolute',
-    left: -8,
-    top: '40%',
+    left: 8,
+    top: '50%',
+    transform: [{ translateY: -23 }],
     zIndex: 10,
   },
   navArrowRight: {
     position: 'absolute',
-    right: -8,
-    top: '40%',
+    right: 8,
+    top: '50%',
+    transform: [{ translateY: -23 }],
     zIndex: 10,
   },
   navArrowContainer: {
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    borderRadius: 20,
-    width: 40,
-    height: 40,
+    borderRadius: 23,
+    width: 46,
+    height: 46,
     justifyContent: 'center',
     alignItems: 'center',
   },

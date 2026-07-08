@@ -31,10 +31,10 @@ import {
 } from 'firebase/auth';
 import { amplitudeTrack, amplitudeSetUserId } from '../lib/amplitudeAnalytics';
 import { TUTORIAL_STEPS } from '../config/tutorialSteps';
-import { useUserPrefsStore, updateShowDailyHotspot } from '../store/userPrefsStore';
+import { useUserPrefsStore, updateShowDailyHotspot, updateShowTrendingOnOpen } from '../store/userPrefsStore';
 import GathrWordmarkLogo from '../components/common/GathrWordmarkLogo';
 import * as ImagePicker from 'expo-image-picker';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import { 
   ref, 
   uploadBytesResumable, 
@@ -645,6 +645,10 @@ export default function ProfileScreen() {
   // Daily hotspot preference
   const showDailyHotspot = useUserPrefsStore((state) => state.showDailyHotspot);
   const setShowDailyHotspot = useUserPrefsStore((state) => state.setShowDailyHotspot);
+
+  // Trending auto-open preference
+  const showTrendingOnOpen = useUserPrefsStore((state) => state.showTrendingOnOpen);
+  const setShowTrendingOnOpen = useUserPrefsStore((state) => state.setShowTrendingOnOpen);
   
   // Animation values
   const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -1131,6 +1135,28 @@ const handleLogout = async () => {
     });
   };
 
+  // Toggle trending-on-open setting
+  const handleToggleTrending = async () => {
+    const newValue = !showTrendingOnOpen;
+    setShowTrendingOnOpen(newValue);
+
+    // Persist to Firestore
+    const currentUser = auth.currentUser;
+    if (currentUser) {
+      try {
+        await updateShowTrendingOnOpen(currentUser.uid, newValue);
+      } catch (error) {
+        console.error('Failed to update trending setting:', error);
+      }
+    }
+
+    // Track analytics
+    amplitudeTrack('trending_setting_toggled', {
+      enabled: newValue,
+      source: 'profile',
+    });
+  };
+
   const handleShareApp = async () => {
     const message = 'Check out GathR for finding local events and specials.';
     const shareContent = Platform.OS === 'ios'
@@ -1574,6 +1600,40 @@ const handleLogout = async () => {
                         </View>
                       </TouchableOpacity>
                     )}
+                  </View>
+
+                  {/* Row 3: Trending on open */}
+                  <View style={styles.buttonGridRow}>
+                    <TouchableOpacity
+                      style={[
+                        styles.gridButton,
+                        !showTrendingOnOpen && { borderColor: BRAND.lightGray }
+                      ]}
+                      onPress={handleToggleTrending}
+                    >
+                      <View style={styles.buttonIconContainer}>
+                        <MaterialIcons
+                          name="local-fire-department"
+                          size={20}
+                          color={showTrendingOnOpen ? BRAND.primary : BRAND.gray}
+                        />
+                      </View>
+                      <View style={styles.buttonTextContainer}>
+                        <Text style={[styles.gridButtonText, !showTrendingOnOpen && { color: BRAND.gray }]}>
+                          Show Trending on open
+                        </Text>
+                        <Text style={[styles.gridButtonSubtext, !showTrendingOnOpen && { color: BRAND.gray }]}>
+                          Top events when you launch
+                        </Text>
+                      </View>
+                      <View style={styles.buttonIconContainer}>
+                        <Ionicons
+                          name={showTrendingOnOpen ? "checkmark-circle" : "ellipse-outline"}
+                          size={20}
+                          color={showTrendingOnOpen ? BRAND.primary : BRAND.gray}
+                        />
+                      </View>
+                    </TouchableOpacity>
                   </View>
 
                   <TouchableOpacity
