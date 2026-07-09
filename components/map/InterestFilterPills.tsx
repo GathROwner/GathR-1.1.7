@@ -9,7 +9,10 @@ import { useUserPrefsStore } from '../../store/userPrefsStore';
 import { useClusterInteractionStore } from '../../store/clusterInteractionStore';
 import { doesEventMatchInterestCarouselBaseFilters } from '../../utils/interestCarouselFilterUtils';
 import { markInterestFilterPerfAction } from '../../utils/interestFilterPerfTrace';
-import { CITY_EVENTS_CATEGORY, isCityLevelEvent } from '../../utils/locationScope';
+import {
+  buildCityEventLightboxEvents,
+  openCityEventLightbox,
+} from '../../utils/cityEventLightbox';
 import { amplitudeTrack } from '../../lib/amplitudeAnalytics';
 
 type PillItem = {
@@ -141,6 +144,7 @@ const InterestFilterPills: React.FC = () => {
   const activeFilterPanel = useMapStore((state) => state.activeFilterPanel);
   const onScreenEvents = useMapStore((state) => state.onScreenEvents);
   const clusters = useMapStore((state) => state.clusters);
+  const selectedImageData = useMapStore((state) => state.selectedImageData);
   const eventCounts = useMapStore((state) => state.getCategoryFilterCounts('event'));
   const specialCounts = useMapStore((state) => state.getCategoryFilterCounts('special'));
   const interestCarouselFilter = useInterestCarouselUiStore((state) => state.interestCarouselFilter);
@@ -285,30 +289,31 @@ const InterestFilterPills: React.FC = () => {
 
   // City-level (festival) events on screen that pass the base filters; the
   // pinned gold pill only shows when this is non-zero.
-  const cityEventCount = useMemo(
-    () =>
-      onScreenEvents.filter(
-        (event) =>
-          isCityLevelEvent(event) &&
-          doesEventMatchInterestCarouselBaseFilters(event, filterCriteria)
-      ).length,
+  const cityEventsForLightbox = useMemo(
+    () => buildCityEventLightboxEvents({ onScreenEvents, filterCriteria }),
     [onScreenEvents, filterCriteria]
   );
+  const cityEventCount = cityEventsForLightbox.length;
 
   const optimisticFilterActive = interestCarouselFilter?.status === 'active';
   const optimisticFilterCleared = interestCarouselFilter?.status === 'cleared';
-  const cityFilterActive =
-    optimisticFilterActive && interestCarouselFilter.kind === 'city';
-  const activeEventKey = optimisticFilterActive && interestCarouselFilter.type === 'event'
-    ? normalize(interestCarouselFilter.category)
-    : optimisticFilterCleared
-    ? ''
-    : normalize(filterCriteria.eventFilters.category || '');
-  const activeSpecialKey = optimisticFilterActive && interestCarouselFilter.type === 'special'
-    ? normalize(interestCarouselFilter.category)
-    : optimisticFilterCleared
-    ? ''
-    : normalize(filterCriteria.specialFilters.category || '');
+  const cityFilterActive = selectedImageData?.source === 'city_event_marker';
+  const activeEventKey =
+    optimisticFilterActive &&
+    interestCarouselFilter.kind !== 'city' &&
+    interestCarouselFilter.type === 'event'
+      ? normalize(interestCarouselFilter.category)
+      : optimisticFilterCleared
+      ? ''
+      : normalize(filterCriteria.eventFilters.category || '');
+  const activeSpecialKey =
+    optimisticFilterActive &&
+    interestCarouselFilter.kind !== 'city' &&
+    interestCarouselFilter.type === 'special'
+      ? normalize(interestCarouselFilter.category)
+      : optimisticFilterCleared
+      ? ''
+      : normalize(filterCriteria.specialFilters.category || '');
   const hasActiveFilter = !!activeEventKey || !!activeSpecialKey;
 
   const isActive = useCallback((item: PillItem) => {
@@ -484,22 +489,26 @@ const InterestFilterPills: React.FC = () => {
 
   // Plain toggle for the pinned city pill: no hold-to-clear, no loop math.
   const handleCityPress = useCallback(() => {
-    const nextActive = !cityFilterActive;
     amplitudeTrack('city_filter_toggled', {
-      active: nextActive,
+      active: true,
       on_screen_city_events: cityEventCount,
+      opens_lightbox: true,
     });
-    if (nextActive) {
-      setInterestCarouselFilter({
-        status: 'active',
-        kind: 'city',
-        type: 'event',
-        category: CITY_EVENTS_CATEGORY,
-      });
-    } else {
+
+    if (interestCarouselFilter?.status === 'active') {
       setInterestCarouselFilter({ status: 'cleared' });
     }
-  }, [cityFilterActive, cityEventCount, setInterestCarouselFilter]);
+
+    openCityEventLightbox({
+      events: cityEventsForLightbox,
+      openedBy: 'pill',
+    });
+  }, [
+    cityEventCount,
+    cityEventsForLightbox,
+    interestCarouselFilter?.status,
+    setInterestCarouselFilter,
+  ]);
 
   const fadeOutScrollbar = useCallback(() => {
     if (scrollbarFadeTimeout.current) {
