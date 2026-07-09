@@ -1,4 +1,42 @@
 // app.config.js
+const fs = require("fs");
+const path = require("path");
+
+function readDotEnvValue(filePath, key) {
+  try {
+    const contents = fs.readFileSync(filePath, "utf8");
+    for (const rawLine of contents.split(/\r?\n/)) {
+      const line = rawLine.trim();
+      if (!line || line.startsWith("#")) continue;
+
+      const separatorIndex = line.indexOf("=");
+      if (separatorIndex === -1) continue;
+
+      const name = line.slice(0, separatorIndex).trim();
+      if (name !== key) continue;
+
+      const rawValue = line.slice(separatorIndex + 1).trim();
+      return rawValue.replace(/^['"]|['"]$/g, "").trim();
+    }
+  } catch {
+    return "";
+  }
+
+  return "";
+}
+
+function firstNonEmpty(...values) {
+  return values.find((value) => typeof value === "string" && value.trim().length > 0)?.trim() ?? "";
+}
+
+const localEnvPath = path.join(__dirname, ".env.local");
+const resolvedMapboxAccessToken = firstNonEmpty(
+  process.env.EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN,
+  process.env.MAPBOX_ACCESS_TOKEN,
+  readDotEnvValue(localEnvPath, "EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN"),
+  readDotEnvValue(localEnvPath, "MAPBOX_ACCESS_TOKEN")
+);
+
 module.exports = ({ config }) => ({
   ...config,
 
@@ -241,10 +279,7 @@ plugins: [
   extra: {
     eas: { projectId: "87fd0c8f-0007-49fb-a057-2f4e81afe1db" },
     router: { origin: false },
-    mapboxAccessToken:
-      process.env.EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN ??
-      process.env.MAPBOX_ACCESS_TOKEN ??
-      "",
+    mapboxAccessToken: resolvedMapboxAccessToken,
 
     "react-native-google-mobile-ads": {
       ios_app_id: "ca-app-pub-9606287073864764~2166199571",

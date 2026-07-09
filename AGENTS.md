@@ -81,6 +81,7 @@
   - Uses Mapbox SDK with download token configuration
   - Location permissions for event discovery
   - Calendar integration for event scheduling
+  - Before any EAS OTA publish, run `npm run verify:mapbox`. A missing runtime Mapbox token causes the map base tiles/details to disappear while cached markers/clusters still render. `app.config.js` intentionally reads `.env.local` because EAS/Expo can load env vars too late for manifest `extra.mapboxAccessToken`.
 
   Build & Platform Configuration:
   - iOS: Uses static frameworks, modular headers enabled

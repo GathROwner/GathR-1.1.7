@@ -10,6 +10,7 @@
     "web": "expo start --web",
     "test": "jest --watchAll",
     "lint": "expo lint",
+    "verify:mapbox": "node ./scripts/verify-mapbox-runtime-config.js",
     "postinstall": "patch-package"
   },
   "jest": {
