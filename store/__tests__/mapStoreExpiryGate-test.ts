@@ -45,7 +45,7 @@ import {
 } from '../mapStore';
 import { getEventTimeStatus } from '../../utils/dateUtils';
 import { TimeFilterType, TypeFilterCriteria } from '../../types/filter';
-import type { Event } from '../../types/events';
+import type { Cluster, Event, Venue } from '../../types/events';
 
 let nextId = 0;
 const makeEvent = (overrides: Partial<Event>): Event =>
@@ -199,6 +199,54 @@ describe('pruneExpiredEvents ticker action', () => {
     expect(state.allEvents).toBe(arrays.allEvents);
     expect(state.viewportEvents).toBe(arrays.viewportEvents);
     expect(state.filteredEvents).toBe(arrays.filteredEvents);
+  });
+
+  it('removes expired events from selected callout and lightbox state', () => {
+    const stale = endedYesterday();
+    const live = liveTonight();
+    const venue: Venue = {
+      locationKey: 'venue-1',
+      venue: 'Some Venue',
+      address: '123 Main St',
+      latitude: 46.23,
+      longitude: -63.12,
+      events: [stale, live],
+    };
+    const cluster: Cluster = {
+      id: 'cluster-1',
+      clusterType: 'single',
+      venues: [venue],
+      timeStatus: 'today',
+      interestLevel: 'medium',
+      isBroadcasting: false,
+      eventCount: 2,
+      specialCount: 0,
+      categories: ['Live Music'],
+      containsCityLevelEvent: false,
+    };
+
+    useMapStore.setState({
+      selectedVenue: venue,
+      selectedVenues: [venue],
+      selectedCluster: cluster,
+      selectedImageData: {
+        imageUrl: stale.imageUrl,
+        event: stale,
+        venue,
+        cluster,
+        events: [stale, live],
+        currentIndex: 0,
+      },
+    });
+
+    useMapStore.getState().pruneExpiredEvents();
+
+    const state = useMapStore.getState();
+    expect(state.selectedVenue?.events.map((event) => event.id)).toEqual([live.id]);
+    expect(state.selectedVenues[0]?.events.map((event) => event.id)).toEqual([live.id]);
+    expect(state.selectedCluster?.venues[0]?.events.map((event) => event.id)).toEqual([live.id]);
+    expect(state.selectedCluster?.eventCount).toBe(1);
+    expect(state.selectedImageData).toBeNull();
   });
 });
 

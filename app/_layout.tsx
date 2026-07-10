@@ -863,15 +863,18 @@ useEffect(() => {
 useEffect(() => {
   let interval: any;
 
+  const pruneNow = () => {
+    try {
+      useMapStore.getState().pruneExpiredEvents();
+    } catch (err) {
+      console.warn('[ExpiryTicker] prune failed:', err);
+    }
+  };
+
   const start = () => {
+    pruneNow();
     if (interval) return;
-    interval = setInterval(() => {
-      try {
-        useMapStore.getState().pruneExpiredEvents();
-      } catch (err) {
-        console.warn('[ExpiryTicker] prune failed:', err);
-      }
-    }, 60 * 1000);
+    interval = setInterval(pruneNow, 60 * 1000);
   };
 
   const stop = () => {

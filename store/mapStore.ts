@@ -1213,30 +1213,116 @@ export const useMapStore = create<MapState>((set, get) => ({
       return next.length === list.length ? list : next;
     };
 
+    const summarizeVenues = (venues: Venue[]) => {
+      const venueEvents = venues.flatMap((venue) => venue.events);
+      const eventCount = venueEvents.filter((event) => event.type === 'event').length;
+      const specialCount = venueEvents.filter((event) => event.type === 'special').length;
+      const categories = Array.from(
+        new Set(venueEvents.map((event) => event.category).filter(Boolean))
+      );
+
+      return {
+        eventCount,
+        specialCount,
+        categories,
+        timeStatus: determineClusterTimeStatus(venues, timeContext),
+        containsCityLevelEvent: venueEvents.some(isCityLevelEvent),
+      };
+    };
+
+    const pruneVenue = (venue: Venue | null): Venue | null => {
+      if (!venue) return venue;
+      const venueEvents = prune(venue.events);
+      if (venueEvents.length === 0) return null;
+      return venueEvents === venue.events ? venue : { ...venue, events: venueEvents };
+    };
+
+    const pruneVenues = (venues: Venue[]): Venue[] => {
+      if (!Array.isArray(venues) || venues.length === 0) return venues;
+      let changed = false;
+      const nextVenues = venues.reduce<Venue[]>((acc, venue) => {
+        const nextVenue = pruneVenue(venue);
+        if (!nextVenue) {
+          changed = true;
+          return acc;
+        }
+        if (nextVenue !== venue) changed = true;
+        acc.push(nextVenue);
+        return acc;
+      }, []);
+
+      return changed ? nextVenues : venues;
+    };
+
+    const pruneCluster = (cluster: Cluster | null): Cluster | null => {
+      if (!cluster) return cluster;
+      const venues = pruneVenues(cluster.venues);
+      if (venues.length === 0) return null;
+      if (venues === cluster.venues) return cluster;
+      return {
+        ...cluster,
+        venues,
+        ...summarizeVenues(venues),
+      };
+    };
+
+    const pruneSelectedImageData = (data: MapState['selectedImageData']) => {
+      if (!data) return data;
+      if (isEventPastFast(data.event, timeContext)) return null;
+      if (!data.events) return data;
+
+      const events = prune(data.events);
+      if (events.length === 0) return null;
+      if (events === data.events) return data;
+
+      const currentIndex = events.findIndex((event) => event.id === data.event.id);
+      return {
+        ...data,
+        events,
+        currentIndex:
+          currentIndex >= 0 ? currentIndex : Math.min(data.currentIndex ?? 0, events.length - 1),
+      };
+    };
+
     const allEvents = prune(state.allEvents);
     const events = prune(state.events);
+    const specials = prune(state.specials);
     const viewportEvents = prune(state.viewportEvents);
     const outsideViewportEvents = prune(state.outsideViewportEvents);
     const onScreenEvents = prune(state.onScreenEvents);
     const filteredEvents = prune(state.filteredEvents);
+    const selectedVenue = pruneVenue(state.selectedVenue);
+    const selectedVenues = pruneVenues(state.selectedVenues);
+    const selectedCluster = pruneCluster(state.selectedCluster);
+    const selectedImageData = pruneSelectedImageData(state.selectedImageData);
 
     const changed =
       allEvents !== state.allEvents ||
       events !== state.events ||
+      specials !== state.specials ||
       viewportEvents !== state.viewportEvents ||
       outsideViewportEvents !== state.outsideViewportEvents ||
       onScreenEvents !== state.onScreenEvents ||
-      filteredEvents !== state.filteredEvents;
+      filteredEvents !== state.filteredEvents ||
+      selectedVenue !== state.selectedVenue ||
+      selectedVenues !== state.selectedVenues ||
+      selectedCluster !== state.selectedCluster ||
+      selectedImageData !== state.selectedImageData;
 
     if (!changed) return;
 
     set({
       allEvents,
       events,
+      specials,
       viewportEvents,
       outsideViewportEvents,
       onScreenEvents,
       filteredEvents,
+      selectedVenue,
+      selectedVenues,
+      selectedCluster,
+      selectedImageData,
     });
 
     // Force the supercluster index to rebuild with the pruned venue set
