@@ -42,7 +42,7 @@ module.exports = ({ config }) => ({
 
   name: "GathR",
   slug: "gathr",
-  version: "1.1.9",
+  version: "1.1.10",
   runtimeVersion: {
     policy: "appVersion"
   },
