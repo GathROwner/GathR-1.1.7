@@ -209,15 +209,24 @@ describe('engine parity: getEventTimeStatus (dateUtils) vs getEventTimeStatusFas
     ['live later today', liveTonight()],
     ['future next week', nextWeek()],
     [
-      // Backend times carry seconds ("2:00:00 PM"); the dateUtils engine's
-      // parseDateTime misparses seconds-less 12h times (pre-existing quirk),
-      // so parity fixtures use the real backend format.
+      // Real backend format: times carry seconds ("2:00:00 PM").
       'happening right now',
       makeEvent({
         startDate: '2026-07-10',
         endDate: '2026-07-10',
         startTime: '2:00:00 PM',
         endTime: '5:00:00 PM',
+      }),
+    ],
+    [
+      // Seconds-less 12h times parse correctly too now that parseDateTime
+      // isValid-checks each format (see utils/__tests__/dateUtils-test.ts).
+      'happening right now (seconds-less times)',
+      makeEvent({
+        startDate: '2026-07-10',
+        endDate: '2026-07-10',
+        startTime: '2:00 PM',
+        endTime: '5:00 PM',
       }),
     ],
     [

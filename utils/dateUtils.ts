@@ -10,6 +10,7 @@ import {
   isTomorrow as dateFnsIsTomorrow,
   parseISO,
   parse,
+  isValid,
   isWithinInterval,
   isSameDay
 } from 'date-fns';
@@ -314,60 +315,63 @@ export const isMultiDayEvent = (startDate: string, endDate?: string): boolean =>
   }
 };
 
+// Formats tried in order by parseDateTime; 12h before 24h so "7:00 PM"
+// never half-matches a 24h pattern.
+const DATE_TIME_FORMATS = [
+  'yyyy-MM-dd h:mm:ss a', // 12h with seconds - the backend format ("7:00:00 PM")
+  'yyyy-MM-dd h:mm a',    // 12h without seconds ("7:00 PM")
+  'yyyy-MM-dd H:mm:ss',   // 24h with seconds ("19:00:00")
+  'yyyy-MM-dd H:mm',      // 24h ("19:00")
+];
+
 /**
  * Parse a date-time string with multiple fallback approaches
  * @param {string} dateStr - Date string (YYYY-MM-DD)
- * @param {string} timeStr - Time string 
- * @returns {Date|null} Parsed date or null if parsing fails
+ * @param {string} timeStr - Time string
+ * @returns {Date|null} Parsed date, or null (never an Invalid Date) if parsing fails
  */
 const parseDateTime = (dateStr: string, timeStr: string): Date | null => {
   if (!dateStr) return null;
-  
+
   // If no time, use noon
   if (!timeStr) {
     const date = parseISO(dateStr);
+    if (!isValid(date)) return null;
     date.setHours(12, 0, 0, 0);
     return date;
   }
-  
-  // Strategy 1: Try with seconds format
-  try {
-    return parse(`${dateStr} ${timeStr}`, 'yyyy-MM-dd h:mm:ss a', new Date());
-  } catch (e) {
-    // Strategy 2: Try without seconds
-    try {
-      return parse(`${dateStr} ${timeStr}`, 'yyyy-MM-dd h:mm a', new Date());
-    } catch (e2) {
-      // Strategy 3: Manual regex parsing
-      try {
-        const timeParts = timeStr.match(/(\d+):(\d+)(?::(\d+))?\s*(AM|PM|am|pm)/i);
-        if (timeParts) {
-          const date = parseISO(dateStr);
-          let hours = parseInt(timeParts[1]);
-          const minutes = parseInt(timeParts[2]);
-          const ampm = timeParts[4].toUpperCase();
-          
-          if (ampm === 'PM' && hours < 12) hours += 12;
-          if (ampm === 'AM' && hours === 12) hours = 0;
-          
-          date.setHours(hours, minutes, 0, 0);
-          return date;
-        }
-      } catch (e3) {
-        // All parsing strategies failed
-        console.error(`Failed to parse datetime: ${dateStr} ${timeStr}`);
-      }
+
+  // date-fns parse() signals a format mismatch by returning an Invalid Date
+  // rather than throwing, so each result must be isValid-checked to fall
+  // through to the next format.
+  for (const formatStr of DATE_TIME_FORMATS) {
+    const parsed = parse(`${dateStr} ${timeStr}`, formatStr, new Date());
+    if (isValid(parsed)) return parsed;
+  }
+
+  // Fallback: manual regex parsing for looser 12h strings
+  const timeParts = timeStr.match(/(\d+):(\d+)(?::(\d+))?\s*(AM|PM|am|pm)/i);
+  if (timeParts) {
+    const date = parseISO(dateStr);
+    if (isValid(date)) {
+      let hours = parseInt(timeParts[1]);
+      const minutes = parseInt(timeParts[2]);
+      const ampm = timeParts[4].toUpperCase();
+
+      if (ampm === 'PM' && hours < 12) hours += 12;
+      if (ampm === 'AM' && hours === 12) hours = 0;
+
+      date.setHours(hours, minutes, 0, 0);
+      return date;
     }
   }
-  
+
   // Last resort: just use the date at noon
-  try {
-    const date = parseISO(dateStr);
-    date.setHours(12, 0, 0, 0);
-    return date;
-  } catch (e) {
-    return null;
-  }
+  console.error(`Failed to parse datetime: ${dateStr} ${timeStr}`);
+  const date = parseISO(dateStr);
+  if (!isValid(date)) return null;
+  date.setHours(12, 0, 0, 0);
+  return date;
 };
 
 /**
