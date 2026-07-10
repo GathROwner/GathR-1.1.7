@@ -263,6 +263,7 @@ function findHottestCluster(clusters: Cluster[]): Cluster | null {
       now: 0,
       today: 1,
       future: 2,
+      past: 3,
     };
     const statusDiff = statusPriority[a.timeStatus] - statusPriority[b.timeStatus];
     if (statusDiff !== 0) return statusDiff;

@@ -4,15 +4,17 @@
  * to ensure consistent time handling across all components.
  */
 
-import { 
-  format, 
-  isToday as dateFnsIsToday, 
-  isTomorrow as dateFnsIsTomorrow, 
-  parseISO, 
+import {
+  format,
+  isToday as dateFnsIsToday,
+  isTomorrow as dateFnsIsTomorrow,
+  parseISO,
   parse,
   isWithinInterval,
   isSameDay
 } from 'date-fns';
+import type { TimeStatus } from '../types/events';
+import { isEventPast } from './eventExpiry';
 
 // ===============================================================
 // NEW: TEMPORAL DISTANCE SYSTEM FOR PRIORITY CALCULATIONS
@@ -487,7 +489,12 @@ export const isEventHappeningToday = (event: {
     if (isEventNow(event.startDate, event.startTime, event.endDate, event.endTime)) {
       return true;
     }
-    
+
+    // Ended events (past end time + grace) are never "today"
+    if (isEventPast(event)) {
+      return false;
+    }
+
     const now = getNowInUserTimezone();
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const todayIso = format(today, 'yyyy-MM-dd');
@@ -534,23 +541,27 @@ export const isEventHappeningToday = (event: {
 /**
  * Determine the time status of an event
  * @param {Object} event - Event object with date properties
- * @returns {string} Time status: 'now', 'today', or 'future'
+ * @returns {string} Time status: 'now', 'today', 'future', or 'past'
  */
 export const getEventTimeStatus = (event: {
   startDate: string;
   startTime: string;
   endDate?: string;
   endTime?: string;
-}): 'now' | 'today' | 'future' => {
+}): TimeStatus => {
   try {
     if (isEventNow(event.startDate, event.startTime, event.endDate, event.endTime)) {
       return 'now';
     }
-    
+
+    if (isEventPast(event)) {
+      return 'past';
+    }
+
     if (isEventHappeningToday(event)) {
       return 'today';
     }
-    
+
     return 'future';
   } catch (error) {
     console.warn(`Error determining event time status: ${error}`);

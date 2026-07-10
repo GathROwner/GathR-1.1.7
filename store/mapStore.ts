@@ -93,6 +93,11 @@ import {
 } from '../lib/config/backend';
 import { EVENTS_MINIMAL } from '../lib/queryKeys';
 import { normalizeVenueIdentityText } from '../utils/venueIdentity';
+import {
+  getEventDateKey,
+  isEventPastFast,
+  parseTimeMinutes,
+} from '../utils/eventExpiry';
 
 // Define zoom threshold bands and their corresponding clustering radii
 export interface ZoomThreshold {
@@ -468,7 +473,6 @@ export type EventTimeContext = {
   nowMinutes: number;
 };
 
-const DATE_KEY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const NOON_MINUTES = 12 * 60;
 const END_OF_DAY_MINUTES = 23 * 60 + 59;
 
@@ -491,53 +495,6 @@ export const createEventTimeContext = (now = new Date()): EventTimeContext => ({
   yesterdayKey: addDaysKey(now, -1),
   nowMinutes: now.getHours() * 60 + now.getMinutes(),
 });
-
-const getEventDateKey = (dateStr?: string | null): string => {
-  if (!dateStr) return '';
-
-  const rawKey = dateStr.slice(0, 10);
-  if (DATE_KEY_PATTERN.test(rawKey)) {
-    return rawKey;
-  }
-
-  const parsed = new Date(dateStr);
-  if (!Number.isNaN(parsed.getTime())) {
-    return formatLocalDateKey(parsed);
-  }
-
-  return '';
-};
-
-const parseTimeMinutes = (
-  timeStr?: string | null,
-  fallbackMinutes: number | null = null
-): number | null => {
-  if (!timeStr) return fallbackMinutes;
-
-  const trimmed = timeStr.trim();
-  const twelveHour = trimmed.match(/^(\d{1,2})(?::(\d{2}))?(?::\d{2})?\s*(AM|PM)$/i);
-  if (twelveHour) {
-    let hours = Number(twelveHour[1]);
-    const minutes = Number(twelveHour[2] ?? 0);
-    const ampm = twelveHour[3].toUpperCase();
-
-    if (ampm === 'PM' && hours < 12) hours += 12;
-    if (ampm === 'AM' && hours === 12) hours = 0;
-
-    return hours * 60 + minutes;
-  }
-
-  const twentyFourHour = trimmed.match(/^(\d{1,2}):(\d{2})(?::\d{2})?$/);
-  if (twentyFourHour) {
-    const hours = Number(twentyFourHour[1]);
-    const minutes = Number(twentyFourHour[2]);
-    if (hours >= 0 && hours < 24 && minutes >= 0 && minutes < 60) {
-      return hours * 60 + minutes;
-    }
-  }
-
-  return fallbackMinutes;
-};
 
 const isEventNowFast = (event: Pick<Event, 'startDate' | 'startTime' | 'endDate' | 'endTime'>, context: EventTimeContext): boolean => {
   const startKey = getEventDateKey(event.startDate);
@@ -587,6 +544,10 @@ const isEventHappeningTodayFast = (
     return true;
   }
 
+  if (isEventPastFast(event, context)) {
+    return false;
+  }
+
   const startKey = getEventDateKey(event.startDate);
   if (!startKey) return false;
 
@@ -621,6 +582,7 @@ export const getEventTimeStatusFast = (
   context: EventTimeContext
 ): TimeStatus => {
   if (isEventNowFast(event, context)) return 'now';
+  if (isEventPastFast(event, context)) return 'past';
   if (isEventHappeningTodayFast(event, context)) return 'today';
   return 'future';
 };
@@ -633,6 +595,11 @@ export const doesEventMatchTypeFilters = (
   typeFilters: TypeFilterCriteria,
   timeContext: EventTimeContext = createEventTimeContext()
 ): boolean => {
+  // Ended events (past end time + grace) never show, regardless of time filter
+  if (isEventPastFast(event, timeContext)) {
+    return false;
+  }
+
   // Check time filter
   if (typeFilters.timeFilter === TimeFilterType.ALL) {
     // No time filtering - show all events
@@ -800,6 +767,8 @@ const calculateTimeFilterCounts = (
       if (!matchesSearch) continue;
     }
 
+    if (isEventPastFast(event, timeContext)) continue;
+
     counts[TimeFilterType.ALL] += 1;
 
     const isNow = isEventNowFast(event, timeContext);
@@ -848,6 +817,8 @@ const calculateCategoryFilterCounts = (
       (event.type === 'special' && currentCriteria.showSpecials);
 
     if (!isVisible) continue;
+
+    if (isEventPastFast(event, timeContext)) continue;
 
     if (typeFilters.timeFilter === TimeFilterType.NOW) {
       const isNow = isEventNowFast(event, timeContext);
@@ -1201,12 +1172,21 @@ export const useMapStore = create<MapState>((set, get) => ({
    * This populates the global cache but does NOT affect viewport filtering
    */
   setAllEvents: (events) => {
+    // Expiry gate: every producer funnels through here (network refreshes and
+    // the persisted-cache cold-start hydration), so ended events — including
+    // yesterday's from a stale AsyncStorage snapshot — never enter the store.
+    const timeContext = createEventTimeContext();
+    const liveEvents = Array.isArray(events)
+      ? events.filter((event) => !isEventPastFast(event, timeContext))
+      : events;
+
     // DEBUG: summarize address/coords in incoming batch
     try {
-      const addrCount = Array.isArray(events) ? events.filter(e => e?.address && e.address !== 'N/A').length : 0;
-      const coordCount = Array.isArray(events) ? events.filter(e => e?.latitude != null && e?.longitude != null).length : 0;
+      const addrCount = Array.isArray(liveEvents) ? liveEvents.filter(e => e?.address && e.address !== 'N/A').length : 0;
+      const coordCount = Array.isArray(liveEvents) ? liveEvents.filter(e => e?.latitude != null && e?.longitude != null).length : 0;
       console.log('[AddressFlow][setAllEvents] Global cache update', {
-        total: Array.isArray(events) ? events.length : -1,
+        total: Array.isArray(liveEvents) ? liveEvents.length : -1,
+        prunedExpired: Array.isArray(events) ? events.length - liveEvents.length : 0,
         withAddress: addrCount,
         withCoords: coordCount,
       });
@@ -1214,8 +1194,54 @@ export const useMapStore = create<MapState>((set, get) => ({
 
     // ONLY update the global cache - do NOT touch viewport data
     set({
-      allEvents: events,
+      allEvents: liveEvents,
     });
+  },
+
+  /**
+   * Remove events whose end time (plus grace) has passed from every event
+   * array, so events that end while the app is open disappear from all
+   * surfaces. No-ops (no re-render) when nothing expired.
+   */
+  pruneExpiredEvents: () => {
+    const state = get();
+    const timeContext = createEventTimeContext();
+
+    const prune = (list: Event[]): Event[] => {
+      if (!Array.isArray(list) || list.length === 0) return list;
+      const next = list.filter((event) => !isEventPastFast(event, timeContext));
+      return next.length === list.length ? list : next;
+    };
+
+    const allEvents = prune(state.allEvents);
+    const events = prune(state.events);
+    const viewportEvents = prune(state.viewportEvents);
+    const outsideViewportEvents = prune(state.outsideViewportEvents);
+    const onScreenEvents = prune(state.onScreenEvents);
+    const filteredEvents = prune(state.filteredEvents);
+
+    const changed =
+      allEvents !== state.allEvents ||
+      events !== state.events ||
+      viewportEvents !== state.viewportEvents ||
+      outsideViewportEvents !== state.outsideViewportEvents ||
+      onScreenEvents !== state.onScreenEvents ||
+      filteredEvents !== state.filteredEvents;
+
+    if (!changed) return;
+
+    set({
+      allEvents,
+      events,
+      viewportEvents,
+      outsideViewportEvents,
+      onScreenEvents,
+      filteredEvents,
+    });
+
+    // Force the supercluster index to rebuild with the pruned venue set
+    filtersChanged = true;
+    get().generateClusters(get().zoomLevel);
   },
 
   /**

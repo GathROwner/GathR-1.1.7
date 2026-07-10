@@ -100,7 +100,7 @@ export interface Event {
 /**
  * Time status enum for event and cluster timing
  */
-export type TimeStatus = 'now' | 'today' | 'future';
+export type TimeStatus = 'now' | 'today' | 'future' | 'past';
 
 /**
  * Interest level enum for cluster popularity

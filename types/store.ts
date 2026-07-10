@@ -132,6 +132,7 @@ export interface MapState {
   } | null) => void;
   fetchEvents: () => Promise<void>;
   prefetchIfStale: (maxAgeMs?: number) => Promise<void>;
+  pruneExpiredEvents: () => void;
   getFilteredEvents: () => Event[];
   generateClusters: (zoom?: number) => void;
   getClustersForZoom: (zoom: number) => Cluster[];

@@ -857,6 +857,43 @@ useEffect(() => {
   };
 }, []);
 
+// Expiry ticker while app is active: prune events whose end time (plus
+// grace) passed since the last fetch, so they disappear from every surface
+// (tabs, map clusters, callout, trending) within ~1 minute of ending.
+useEffect(() => {
+  let interval: any;
+
+  const start = () => {
+    if (interval) return;
+    interval = setInterval(() => {
+      try {
+        useMapStore.getState().pruneExpiredEvents();
+      } catch (err) {
+        console.warn('[ExpiryTicker] prune failed:', err);
+      }
+    }, 60 * 1000);
+  };
+
+  const stop = () => {
+    if (interval) {
+      clearInterval(interval);
+      interval = undefined;
+    }
+  };
+
+  const sub = AppState.addEventListener('change', (s) => {
+    if (s === 'active') start();
+    else stop();
+  });
+
+  if (AppState.currentState === 'active') start();
+
+  return () => {
+    sub.remove();
+    stop();
+  };
+}, []);
+
   // (Removed duplicate auth redirect effect)
 
   useEffect(() => {

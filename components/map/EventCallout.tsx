@@ -124,6 +124,7 @@ import {
   getRelativeTimeDescription,
   combineDateAndTime
 } from '../../utils/dateUtils';
+import { isEventPast } from '../../utils/eventExpiry';
 import { buildGathrSharePayload } from '../../utils/shareUtils';
 import { getTrendingLightboxImageUrl } from '../../utils/trendingLightbox';
 import * as Haptics from 'expo-haptics';
@@ -496,8 +497,11 @@ const sortAndPrioritizeCalloutEvents = (
   userInterests: string[] = [],
   userLocation?: { coords: { latitude: number; longitude: number } } | null
 ): Event[] => {
+  // Ended events never appear in the callout, regardless of upstream filters
+  const liveEvents = events.filter(event => !isEventPast(event));
+
   // Create a copy of events with priority scores added using the proper system
-  const eventsWithScores = events.map(event => {
+  const eventsWithScores = liveEvents.map(event => {
     // Check saved status
     const isSaved = savedEvents.includes(event.id.toString());
     
@@ -511,7 +515,7 @@ const sortAndPrioritizeCalloutEvents = (
     
     // Calculate base score using the proper BASE_SCORES system
     const scoreCategory = matchesInterest ? 'INTEREST_MATCH' : 'NON_INTEREST';
-    const baseScore = BASE_SCORES[scoreCategory][timeStatus];
+    const baseScore = timeStatus === 'past' ? 0 : BASE_SCORES[scoreCategory][timeStatus];
     
     // Calculate proximity multiplier and actual distance for tie-breaking
     let proximityMultiplier = 1.0; // Default if no location available
@@ -1529,6 +1533,8 @@ const VenueInfoContent: React.FC<VenueInfoProps> = ({ venue }) => {
   };
 
   const eventsByDate = venue.events.reduce((acc, event) => {
+    // Ended events never appear under "Upcoming Events"
+    if (isEventPast(event)) return acc;
     const date = event.startDate;
     if (!acc[date]) acc[date] = [];
     acc[date].push(event);

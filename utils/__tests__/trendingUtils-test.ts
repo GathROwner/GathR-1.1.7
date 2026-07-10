@@ -97,6 +97,23 @@ describe('buildTrendingEvents city-level slot', () => {
     expect(trending.every((event) => !event.locationScope)).toBe(true);
   });
 
+  it('excludes events that have already ended', () => {
+    const endedEvent = makeEvent({
+      title: 'Yesterday Jam',
+      startDate: '2000-01-01',
+      endDate: '2000-01-01',
+      usersResponded: '999',
+    });
+    const events = [...highEngagementEvents(3), endedEvent];
+    const trending = buildTrendingEvents({
+      onScreenEvents: events,
+      filterCriteria: criteria(),
+      userInterests: [],
+    });
+    expect(trending).toHaveLength(3);
+    expect(trending.every((event) => event.title !== 'Yesterday Jam')).toBe(true);
+  });
+
   it('respects the active city filter sentinel (only city events remain)', () => {
     const events = [...highEngagementEvents(4), cityEvent()];
     const trending = buildTrendingEvents({

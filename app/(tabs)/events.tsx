@@ -2321,7 +2321,7 @@ setSelectedImageData({ imageUrl, event });
       event: Event;
       isSaved: boolean;
       isFromFavoriteVenue: boolean;
-      timeStatus: 'now' | 'today' | 'future';
+      timeStatus: 'now' | 'today' | 'future' | 'past';
       compositeScore: number;
       distance: number;
     };
@@ -2341,7 +2341,7 @@ setSelectedImageData({ imageUrl, event });
       const isFromFavoriteVenue = favoriteVenueSet.has(eventLocationKey);
 
       const scoreCategory = matchesInterest ? 'INTEREST_MATCH' : 'NON_INTEREST';
-      const baseScore = BASE_SCORES[scoreCategory][timeStatus];
+      const baseScore = timeStatus === 'past' ? 0 : BASE_SCORES[scoreCategory][timeStatus];
 
       let proximityMultiplier = 1.0;
       let distance = Infinity;

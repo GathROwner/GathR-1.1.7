@@ -3,6 +3,7 @@ import type { FilterCriteria } from '../types/filter';
 import { doesEventMatchInterestCarouselBaseFilters } from './interestCarouselFilterUtils';
 import { getEventHotEngagementScore, getHotInterestShortLabel } from './hotInterestCarouselUtils';
 import { combineDateAndTime, getEventTimeStatus } from './dateUtils';
+import { isEventPast } from './eventExpiry';
 import { CITY_EVENTS_CATEGORY, isCityLevelEvent } from './locationScope';
 
 // Target list size, not a cap: every user interest is guaranteed one slot, so
@@ -58,10 +59,11 @@ const doesEventMatchActiveTrendingFilters = (
   return normalize(event.category || '') === normalize(category);
 };
 
-const TIME_STATUS_RANK: Record<'now' | 'today' | 'future', number> = {
+const TIME_STATUS_RANK: Record<'now' | 'today' | 'future' | 'past', number> = {
   now: 0,
   today: 1,
   future: 2,
+  past: 3,
 };
 
 const getTimeStatusRank = (candidate: TrendingCandidate): number => {
@@ -131,6 +133,11 @@ export const buildTrendingEvents = ({
 
   const candidates: TrendingCandidate[] = [];
   onScreenEvents.forEach((event) => {
+    // Ended events are never trending
+    if (isEventPast(event)) {
+      return;
+    }
+
     if (!doesEventMatchActiveTrendingFilters(event, filterCriteria)) {
       return;
     }

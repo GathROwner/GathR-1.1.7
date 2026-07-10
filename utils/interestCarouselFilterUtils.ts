@@ -2,6 +2,7 @@ import type { Event } from '../types/events';
 import type { FilterCriteria, TypeFilterCriteria } from '../types/filter';
 import { TimeFilterType } from '../types/filter';
 import { isEventNow, getEventTimeStatus, isEventHappeningToday } from './dateUtils';
+import { isEventPast } from './eventExpiry';
 import { CITY_EVENTS_CATEGORY, isCityLevelEvent } from './locationScope';
 
 const getTypeFiltersForEvent = (
@@ -19,6 +20,11 @@ export const doesEventMatchInterestCarouselBaseFilters = (
   event: Event,
   criteria: FilterCriteria
 ): boolean => {
+  // Ended events never match, regardless of the active time filter
+  if (isEventPast(event)) {
+    return false;
+  }
+
   if (!isEventTypeVisible(event, criteria)) {
     return false;
   }
