@@ -7,7 +7,7 @@
  * A persisted cooldown keeps frequent re-opens from feeling naggy.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { AppState } from 'react-native';
+import { AppState, Platform } from 'react-native';
 import { useMapStore } from '../store/mapStore';
 import { useUserPrefsStore } from '../store/userPrefsStore';
 import { buildTrendingEvents } from '../utils/trendingUtils';
@@ -17,7 +17,12 @@ const TRENDING_AUTO_OPEN_COOLDOWN_MS = 4 * 60 * 60 * 1000; // 4 hours
 // Fires after the tutorial's 1000ms auto-trigger delay (TUTORIAL_CONFIG
 // AUTO_TRIGGER_DELAY, invoked from interest-selection -> map) so the
 // fire-time tutorial check below wins that race for brand-new users.
-const TRENDING_AUTO_OPEN_FIRE_DELAY_MS = 1500;
+const TRENDING_AUTO_OPEN_FIRE_DELAY_MS = Platform.OS === 'android' ? 3000 : 1500;
+
+type TrendingAutoOpenOptions = {
+  startupReady?: boolean;
+  startupReason?: string;
+};
 
 // Module scope: survives MapScreen remounts, resets only on a new JS runtime
 // (cold start). Backgrounding the app does not reset it.
@@ -25,12 +30,25 @@ let hasAutoOpenedThisSession = false;
 
 export const getHasTrendingAutoOpenedThisSession = () => hasAutoOpenedThisSession;
 
-export function useTrendingAutoOpen(): void {
+const warnAndroidTrendingAutoOpenTiming = (
+  phase: string,
+  payload: Record<string, unknown> = {}
+): void => {
+  if (Platform.OS !== 'android') {
+    return;
+  }
+
+  console.warn('[TrendingAutoOpenTiming]', phase, payload);
+};
+
+export function useTrendingAutoOpen(options: TrendingAutoOpenOptions = {}): void {
   const onScreenEvents = useMapStore((state) => state.onScreenEvents);
   const filterCriteria = useMapStore((state) => state.filterCriteria);
   const showTrendingOnOpen = useUserPrefsStore((state) => state.showTrendingOnOpen);
   const trendingLastAutoShownAt = useUserPrefsStore((state) => state.trendingLastAutoShownAt);
   const interests = useUserPrefsStore((state) => state.interests);
+  const startupReady = options.startupReady ?? true;
+  const startupReason = options.startupReason ?? 'ready';
 
   // Evaluate only while foregrounded (mirrors the hotspot's gating).
   const [canEvaluateTrigger, setCanEvaluateTrigger] = useState(
@@ -38,6 +56,12 @@ export function useTrendingAutoOpen(): void {
   );
   const fireTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const loggedEligibilityRef = useRef(false);
+  const loggedStartupBlockedRef = useRef(false);
+  const startupReadyRef = useRef(startupReady);
+  const startupReasonRef = useRef(startupReason);
+
+  startupReadyRef.current = startupReady;
+  startupReasonRef.current = startupReason;
 
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (nextAppState) => {
@@ -52,6 +76,12 @@ export function useTrendingAutoOpen(): void {
     if (hasAutoOpenedThisSession) return;
     // Re-check everything against fresh state at fire time.
     if (AppState.currentState !== 'active') return;
+    if (!startupReadyRef.current) {
+      warnAndroidTrendingAutoOpenTiming('fire_skipped_startup_not_ready', {
+        startupReason: startupReasonRef.current,
+      });
+      return;
+    }
 
     // The tutorial owns the first-run experience. Consume this session's
     // auto-open so trending does not pop up right after the tutorial ends.
@@ -93,6 +123,10 @@ export function useTrendingAutoOpen(): void {
 
     hasAutoOpenedThisSession = true;
     prefs.markTrendingAutoShown();
+    warnAndroidTrendingAutoOpenTiming('opened', {
+      eventCount: trendingEvents.length,
+      startupReason: startupReasonRef.current,
+    });
     openTrendingLightbox(trendingEvents, 'auto');
   }, []);
 
@@ -101,6 +135,15 @@ export function useTrendingAutoOpen(): void {
     if (fireTimerRef.current) return;
     if (!canEvaluateTrigger) return;
     if (!showTrendingOnOpen) return;
+    if (!startupReady) {
+      if (!loggedStartupBlockedRef.current) {
+        loggedStartupBlockedRef.current = true;
+        warnAndroidTrendingAutoOpenTiming('blocked_startup_not_ready', {
+          startupReason,
+        });
+      }
+      return;
+    }
     if (
       trendingLastAutoShownAt &&
       Date.now() - trendingLastAutoShownAt < TRENDING_AUTO_OPEN_COOLDOWN_MS
@@ -123,6 +166,12 @@ export function useTrendingAutoOpen(): void {
         lastAutoShownAt: trendingLastAutoShownAt ?? 'never',
       });
     }
+    warnAndroidTrendingAutoOpenTiming('scheduled', {
+      delayMs: TRENDING_AUTO_OPEN_FIRE_DELAY_MS,
+      eventCount: trendingEvents.length,
+      startupReason,
+      lastAutoShownAt: trendingLastAutoShownAt ?? 'never',
+    });
 
     fireTimerRef.current = setTimeout(fire, TRENDING_AUTO_OPEN_FIRE_DELAY_MS);
   }, [
@@ -132,6 +181,8 @@ export function useTrendingAutoOpen(): void {
     interests,
     onScreenEvents,
     showTrendingOnOpen,
+    startupReady,
+    startupReason,
     trendingLastAutoShownAt,
   ]);
 

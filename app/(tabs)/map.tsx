@@ -2950,8 +2950,29 @@ useEffect(() => {
     openTrendingLightbox(trendingEvents, 'manual');
   }, []);
 
+  const hasClusterMarkersToSettle = clusters.length > 0;
+  const trendingAutoOpenStartupReady =
+    Platform.OS !== 'android' ||
+    (
+      !isLoading &&
+      clustersReadyForInteraction &&
+      (!hasClusterMarkersToSettle || (fullClusterMarkersEnabled && richClusterMarkersEnabled))
+    );
+  const trendingAutoOpenStartupReason = Platform.OS === 'android'
+    ? [
+        `loading=${isLoading}`,
+        `clustersReady=${clustersReadyForInteraction}`,
+        `clusters=${clusters.length}`,
+        `fullMarkers=${fullClusterMarkersEnabled}`,
+        `richMarkers=${richClusterMarkersEnabled}`,
+      ].join(';')
+    : 'non_android';
+
   // Auto-open the trending lightbox once per cold start (never on resume).
-  useTrendingAutoOpen();
+  useTrendingAutoOpen({
+    startupReady: trendingAutoOpenStartupReady,
+    startupReason: trendingAutoOpenStartupReason,
+  });
 
   // Actual map viewport dimensions (accounting for header, tab bar, safe areas)
   const [mapDimensions, setMapDimensions] = useState<{ width: number; height: number } | null>(null);
