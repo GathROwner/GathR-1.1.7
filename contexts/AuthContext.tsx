@@ -5,6 +5,7 @@ import { onAuthStateChanged, User } from 'firebase/auth';
 import { auth } from '../config/firebaseConfig';
 import { startUserPrefsListener, stopUserPrefsListener } from '../store/userPrefsStore';
 import { useQueryClient } from '@tanstack/react-query';
+import { EVENTS_MINIMAL } from '../lib/queryKeys';
 
 interface AuthContextType {
   user: User | null;
@@ -15,6 +16,9 @@ const AuthContext = createContext<AuthContextType>({
   user: null,
   isLoading: true,
 });
+
+const isSharedBootstrapQuery = (queryKey: readonly unknown[]) =>
+  queryKey[0] === EVENTS_MINIMAL[0];
 
 interface AuthProviderProps {
   children: ReactNode;
@@ -39,12 +43,15 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         // Keep shared bootstrap data (events-minimal), clear user-scoped queries
         queryClient.invalidateQueries({
           predicate: (q) =>
-            !(Array.isArray(q.queryKey) && q.queryKey[0] === 'events-minimal')
+            !isSharedBootstrapQuery(q.queryKey)
         });
         startUserPrefsListener(user.uid);
       } else {
-        // Clear user-specific data
-        queryClient.clear();
+        // Clear user-specific data, but keep shared event bootstrap data so
+        // guest startup can hydrate the map before the foreground refresh.
+        queryClient.removeQueries({
+          predicate: (q) => !isSharedBootstrapQuery(q.queryKey),
+        });
         stopUserPrefsListener();
       }
 

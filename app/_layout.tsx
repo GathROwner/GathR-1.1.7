@@ -84,7 +84,7 @@ initializeMapboxAccessToken(MapboxGL);
 void preloadStartupLocation();
 
 // Prevent auto-hiding splash screen
-SplashScreen.preventAutoHideAsync();SplashScreen.preventAutoHideAsync();
+SplashScreen.preventAutoHideAsync();
 
 // --- Amplitude Analytics (namespaced wrapper) ---
 const AMPLITUDE_API_KEY =
