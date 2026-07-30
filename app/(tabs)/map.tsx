@@ -1996,7 +1996,9 @@ const __ml_firstClustersReadyRef = React.useRef<boolean>(false);
 const __ml_userStartAppliedRef = React.useRef<boolean>(false);
 const __ml_styleReadyRef = React.useRef<boolean>(true);  // Set to true since callbacks don't work
 const __ml_initialSnapDoneRef = React.useRef<boolean>(false);
-const ANDROID_STARTUP_TIMING_DIAGNOSTICS = __DEV__ && Platform.OS === 'android';
+const ANDROID_STARTUP_TIMING_DIAGNOSTICS =
+  Platform.OS === 'android' &&
+  (__DEV__ || process.env.EXPO_PUBLIC_GATHR_STARTUP_DIAGNOSTICS === '1');
 const logAndroidStartupTiming = (label: string, details?: Record<string, unknown>) => {
   if (!ANDROID_STARTUP_TIMING_DIAGNOSTICS) {
     return;
