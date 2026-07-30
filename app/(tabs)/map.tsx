@@ -3396,31 +3396,48 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
   useEffect(() => {
     const requestLocationPermission = async () => {
       try {
-        logAndroidStartupTiming('location_permission_request_started');
-        // 🔥 ANALYTICS: Track location permission request
-        analytics.trackMapInteraction('location_permission_requested');
+        logAndroidStartupTiming('location_permission_status_check_started');
+        // Avoid reopening Android permission UI when the user has already denied location.
         
-        const { status } = await Location.requestForegroundPermissionsAsync();
-        const granted = status === 'granted';
+        const currentPermission = await Location.getForegroundPermissionsAsync();
+        let status = currentPermission.status;
+        let granted = status === 'granted';
+        let promptedForPermission = false;
+
+        if (!granted && status === 'undetermined') {
+          logAndroidStartupTiming('location_permission_request_started');
+          analytics.trackMapInteraction('location_permission_requested');
+
+          const requestedPermission = await Location.requestForegroundPermissionsAsync();
+          status = requestedPermission.status;
+          granted = status === 'granted';
+          promptedForPermission = true;
+        }
         setLocationPermissionGranted(granted);
-        logAndroidStartupTiming('location_permission_request_completed', {
+        logAndroidStartupTiming('location_permission_resolved', {
           status,
           granted,
+          canAskAgain: currentPermission.canAskAgain,
+          prompted: promptedForPermission,
         });
         
         // 🔥 ANALYTICS: Track location permission result
-        analytics.trackMapInteraction('location_permission_result', {
-          granted,
-          status,
-          is_guest: isGuest
-        });
+        if (promptedForPermission) {
+          analytics.trackMapInteraction('location_permission_result', {
+            granted,
+            status,
+            is_guest: isGuest
+          });
+        }
         
         if (!granted) {
           console.log('Location permission denied');
           // 🔥 ANALYTICS: Track specific denial for analysis
-          analytics.trackUserAction('location_permission_denied', {
-            user_type: isGuest ? 'guest' : 'registered'
-          });
+          if (promptedForPermission) {
+            analytics.trackUserAction('location_permission_denied', {
+              user_type: isGuest ? 'guest' : 'registered'
+            });
+          }
           setStartupLocationResolved(true);
           return;
         }
@@ -3446,6 +3463,9 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
           logAndroidStartupTiming('permission_last_known_location_applied', {
             accuracy: lastKnownLocation.coords.accuracy ?? null,
           });
+        } else {
+          setStartupLocationResolved(true);
+          logAndroidStartupTiming('permission_no_last_known_location_using_fallback');
         }
       } catch (error) {
         console.error('Error requesting location permission:', error);
