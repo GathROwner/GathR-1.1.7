@@ -123,7 +123,7 @@ module.exports = ({ config }) => ({
   },
 
   android: {
-    newArchEnabled: true,
+    newArchEnabled: false,
     icon: "./assets/icon.png",
     adaptiveIcon: {
       foregroundImage: "./assets/adaptive-icon.png",
@@ -182,7 +182,9 @@ module.exports = ({ config }) => ({
     bundler: "metro"
   },
 
-  newArchEnabled: true,  // SDK 54 defaults to New Architecture; keep Android aligned with rnmapbox 10.3.0's Fabric-first runtime.
+  // Keep Android on the old architecture for SDK 54 Mapbox stability.
+  // iOS opts into the New Architecture explicitly above.
+  newArchEnabled: false,
 
 plugins: [
     [
