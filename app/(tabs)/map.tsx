@@ -3392,19 +3392,22 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
     startupViewportRecoveryAttemptedRef.current = false;
   }, []);
   
-  // Request location permissions as soon as possible
+  // Resolve startup location state without opening Android's permission UI.
   useEffect(() => {
-    const requestLocationPermission = async () => {
+    const resolveStartupLocationPermission = async () => {
       try {
         logAndroidStartupTiming('location_permission_status_check_started');
-        // Avoid reopening Android permission UI when the user has already denied location.
         
         const currentPermission = await Location.getForegroundPermissionsAsync();
         let status = currentPermission.status;
         let granted = status === 'granted';
         let promptedForPermission = false;
+        const shouldPromptAtStartup =
+          Platform.OS !== 'android' &&
+          !granted &&
+          status === 'undetermined';
 
-        if (!granted && status === 'undetermined') {
+        if (shouldPromptAtStartup) {
           logAndroidStartupTiming('location_permission_request_started');
           analytics.trackMapInteraction('location_permission_requested');
 
@@ -3419,6 +3422,8 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
           granted,
           canAskAgain: currentPermission.canAskAgain,
           prompted: promptedForPermission,
+          androidStartupPromptSkipped:
+            Platform.OS === 'android' && !granted && status === 'undetermined',
         });
         
         // 🔥 ANALYTICS: Track location permission result
@@ -3481,7 +3486,7 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
       }
     };
 
-    requestLocationPermission();
+    resolveStartupLocationPermission();
   }, []); // 🔥 STABLE: Empty dependency array - runs once only
 
   // Set up location tracking when permission is granted
