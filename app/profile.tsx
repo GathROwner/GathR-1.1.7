@@ -21,6 +21,8 @@ import {
   Share,
 } from 'react-native';
 import { useRouter, useNavigation, usePathname } from 'expo-router';
+import Constants from 'expo-constants';
+import * as Updates from 'expo-updates';
 import { auth, firestore, storage } from '../config/firebaseConfig';
 import { doc, getDoc, updateDoc, deleteDoc, addDoc, collection, query, where, getDocs, serverTimestamp } from 'firebase/firestore';
 import { 
@@ -51,6 +53,34 @@ const { width, height } = Dimensions.get('window');
 // Admin debug features - set to false for production builds
 const SHOW_AD_SDK_LAB = false;
 const APP_SHARE_URL = 'https://www.gathrapp.ca/app/';
+
+const APP_RUNTIME_VERSION = Updates.runtimeVersion || (__DEV__ ? 'development' : Constants.expoConfig?.version) || 'unknown';
+const APP_DISPLAY_VERSION = Updates.runtimeVersion || (__DEV__ ? 'development' : Constants.expoConfig?.version) || 'unknown';
+const APP_NATIVE_BUILD = Platform.OS === 'ios'
+  ? Constants.platform?.ios?.buildNumber
+  : Platform.OS === 'android'
+    ? Constants.platform?.android?.versionCode?.toString()
+    : null;
+const APP_UPDATE_CHANNEL = Updates.channel || (__DEV__ ? 'development' : 'unassigned');
+const APP_UPDATE_SOURCE = !Updates.isEnabled
+  ? 'Development'
+  : Updates.isEmbeddedLaunch
+    ? 'Embedded'
+    : 'OTA';
+const APP_UPDATE_ID = Updates.updateId || null;
+const APP_SHORT_UPDATE_ID = APP_UPDATE_ID?.slice(0, 8) || APP_UPDATE_SOURCE;
+const APP_CHANNEL_LABEL = APP_UPDATE_CHANNEL.charAt(0).toUpperCase() + APP_UPDATE_CHANNEL.slice(1);
+const APP_VERSION_SUMMARY = `GathR ${APP_DISPLAY_VERSION}${APP_NATIVE_BUILD ? ` (${APP_NATIVE_BUILD})` : ''} · ${APP_CHANNEL_LABEL}`;
+const APP_UPDATE_SUMMARY = `Runtime ${APP_RUNTIME_VERSION} · ${APP_UPDATE_SOURCE}${APP_UPDATE_ID ? ` ${APP_SHORT_UPDATE_ID}` : ''}`;
+const APP_VERSION_DETAILS = [
+  `App: ${APP_DISPLAY_VERSION}`,
+  `Build: ${APP_NATIVE_BUILD || 'unknown'}`,
+  `Channel: ${APP_UPDATE_CHANNEL}`,
+  `Runtime: ${APP_RUNTIME_VERSION}`,
+  `Source: ${APP_UPDATE_SOURCE}`,
+  `Update: ${APP_UPDATE_ID || 'none'}`,
+  `Created: ${Updates.createdAt?.toISOString() || 'unknown'}`,
+].join('\n');
 
 // Pulsing Hotspot Circle Icon Component
 const HotspotCircleIcon: React.FC<{ isActive: boolean }> = ({ isActive }) => {
@@ -1318,6 +1348,20 @@ const handleLogout = async () => {
     });
   };
 
+  const handleVersionInfoPress = () => {
+    Alert.alert(
+      'GathR version',
+      APP_VERSION_DETAILS,
+      [
+        {
+          text: 'Copy',
+          onPress: () => Clipboard.setString(APP_VERSION_DETAILS),
+        },
+        { text: 'Done', style: 'cancel' },
+      ]
+    );
+  };
+
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
@@ -1684,6 +1728,19 @@ const handleLogout = async () => {
                       <Text style={styles.logoutButtonText} numberOfLines={1}>Log Out</Text>
                     </TouchableOpacity>
                   </View>
+
+                  <TouchableOpacity
+                    style={styles.versionInfoContainer}
+                    onPress={handleVersionInfoPress}
+                    activeOpacity={0.7}
+                    accessibilityRole="button"
+                    accessibilityLabel={`${APP_VERSION_SUMMARY}. ${APP_UPDATE_SUMMARY}`}
+                    accessibilityHint="Shows detailed app and update information"
+                    testID="app-version-info"
+                  >
+                    <Text style={styles.versionInfoPrimary}>{APP_VERSION_SUMMARY}</Text>
+                    <Text style={styles.versionInfoSecondary}>{APP_UPDATE_SUMMARY}</Text>
+                  </TouchableOpacity>
               </>
             )}
           </View>
@@ -2275,6 +2332,26 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.2,
     shadowRadius: 4,
     elevation: 3,
+  },
+  versionInfoContainer: {
+    alignItems: 'center',
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: BRAND.lightGray,
+    marginTop: 18,
+    paddingTop: 14,
+    paddingBottom: 2,
+  },
+  versionInfoPrimary: {
+    color: BRAND.gray,
+    fontSize: 12,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  versionInfoSecondary: {
+    color: BRAND.textLight,
+    fontSize: 10,
+    marginTop: 3,
+    textAlign: 'center',
   },
   saveButtonText: {
     color: BRAND.white,
