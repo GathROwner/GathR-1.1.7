@@ -21,6 +21,7 @@ import {
   Share,
 } from 'react-native';
 import { useRouter, useNavigation, usePathname } from 'expo-router';
+import * as Application from 'expo-application';
 import Constants from 'expo-constants';
 import * as Updates from 'expo-updates';
 import { auth, firestore, storage } from '../config/firebaseConfig';
@@ -55,12 +56,8 @@ const SHOW_AD_SDK_LAB = false;
 const APP_SHARE_URL = 'https://www.gathrapp.ca/app/';
 
 const APP_RUNTIME_VERSION = Updates.runtimeVersion || (__DEV__ ? 'development' : Constants.expoConfig?.version) || 'unknown';
-const APP_DISPLAY_VERSION = Updates.runtimeVersion || (__DEV__ ? 'development' : Constants.expoConfig?.version) || 'unknown';
-const APP_NATIVE_BUILD = Platform.OS === 'ios'
-  ? Constants.platform?.ios?.buildNumber
-  : Platform.OS === 'android'
-    ? Constants.platform?.android?.versionCode?.toString()
-    : null;
+const APP_DISPLAY_VERSION = Application.nativeApplicationVersion || Updates.runtimeVersion || (__DEV__ ? 'development' : Constants.expoConfig?.version) || 'unknown';
+const APP_NATIVE_BUILD = Application.nativeBuildVersion;
 const APP_UPDATE_CHANNEL = Updates.channel || (__DEV__ ? 'development' : 'unassigned');
 const APP_UPDATE_SOURCE = !Updates.isEnabled
   ? 'Development'
