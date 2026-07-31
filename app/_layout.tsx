@@ -33,7 +33,13 @@ import { TutorialManager } from '../components/tutorial/TutorialManager';
 // â›‘ï¸ Required for react-native-gesture-handler components (e.g., GH ScrollView)
 // Without this, Android throws: "NativeViewGestureHandler must be used as a descendant of GestureHandlerRootView"
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import { QueryClient, QueryClientProvider, focusManager, useQueryClient } from '@tanstack/react-query';
+import {
+  QueryClient,
+  QueryClientProvider,
+  focusManager,
+  useIsRestoring,
+  useQueryClient,
+} from '@tanstack/react-query';
 import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client';
 import { createAsyncStoragePersister } from '@tanstack/query-async-storage-persister';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -47,6 +53,11 @@ import { useSharedEventIntentRouter } from '../hooks/useSharedEventIntentRouter'
 import SharedEventProcessingBanner from '../components/sharedEvent/SharedEventProcessingBanner';
 import { preloadStartupLocation } from '../utils/startupLocationCache';
 import { GATHR_MAPBOX_STYLE_URL, initializeMapboxAccessToken } from '../utils/mapboxAccessToken';
+import {
+  EVENTS_PERSIST_MAX_AGE_MS,
+  EVENTS_QUERY_GC_MS,
+  EVENTS_QUERY_STALE_MS,
+} from '../lib/eventCachePolicy';
 
 
   // ðŸš€ PERFORMANCE: Preload data on app start
@@ -127,8 +138,8 @@ export default function RootLayout() {
     const qc = new QueryClient({
       defaultOptions: {
         queries: {
-          staleTime: 1000 * 60 * 3,   // default 3 min
-          gcTime:   1000 * 60 * 10,   // keep cached results up to 10 min
+          staleTime: EVENTS_QUERY_STALE_MS,
+          gcTime: EVENTS_QUERY_GC_MS,
           refetchOnWindowFocus: true,
           refetchOnReconnect: true,
           retry: 1,
@@ -440,8 +451,7 @@ try {
   client={queryClient}
   persistOptions={{
     persister: asyncStoragePersister,
-    // Auto-expire persisted data after 12 hours (tweak as you like)
-    maxAge: 1000 * 60 * 60 * 12,
+    maxAge: EVENTS_PERSIST_MAX_AGE_MS,
   }}
 >
         <AuthProvider>
@@ -576,6 +586,8 @@ useEffect(() => {
 
     // ðŸš€ PERFORMANCE: Start preloading with React Query as soon as the app starts
     const queryClient = useQueryClient();
+    const isRestoringEventCache = useIsRestoring();
+    const startupEventDataInitializedRef = useRef(false);
     const { setAllEvents } = useMapStore();
 
     // 📢 AdMob SDK initialization (moved from index.tsx to ensure it runs regardless of auth state)
@@ -633,10 +645,15 @@ useEffect(() => {
     useEffect(() => {
       console.log('ðŸš€ Preloading event data on app start (React Query)â€¦');
 
+      if (isRestoringEventCache || startupEventDataInitializedRef.current) {
+        return;
+      }
+
+      startupEventDataInitializedRef.current = true;
       const key = EVENTS_MINIMAL;
 
-      // â³ Give PersistQueryClientProvider a moment to rehydrate from AsyncStorage
-      const timer = setTimeout(() => {
+      // PersistQueryClientProvider has completed restoration here. Reading the
+      // query now avoids treating a slow AsyncStorage restore as a real miss.
         // 1) If persisted cache is already present, hydrate immediately from last run
         const persisted: any = queryClient.getQueryData(key);
         const persistedItems = Array.isArray(persisted?.combinedData) ? persisted.combinedData : [];
@@ -680,8 +697,8 @@ try {
           .fetchQuery({
             queryKey: key,
             queryFn: rqFetchEventsMinimal,
-            staleTime: 1000 * 60 * 3,
-            gcTime: 1000 * 60 * 10,
+            staleTime: EVENTS_QUERY_STALE_MS,
+            gcTime: EVENTS_QUERY_GC_MS,
           })
         .then((result: any) => {
           const after = queryClient.getQueryState(key);
@@ -729,10 +746,7 @@ try {
           .catch((error) => {
             console.error('Prefetch failed:', error);
           });
-      }, 180);
-
-      return () => clearTimeout(timer);
-    }, []);
+    }, [isRestoringEventCache, queryClient, setAllEvents]);
 
     // ðŸ”„ Foreground refresh: when app becomes active, reconcile with server and report cache vs network
     useEffect(() => {
@@ -747,8 +761,8 @@ try {
             .fetchQuery({
               queryKey: key,
               queryFn: rqFetchEventsMinimal,
-              staleTime: 1000 * 60 * 3,
-              gcTime: 1000 * 60 * 10,
+              staleTime: EVENTS_QUERY_STALE_MS,
+              gcTime: EVENTS_QUERY_GC_MS,
             })
             .then((result: any) => {
               const after = queryClient.getQueryState(key);
@@ -804,7 +818,7 @@ useEffect(() => {
           queryKey: key,
           queryFn: rqFetchEventsMinimal,
           staleTime: 0,              // force a network check each tick
-          gcTime: 1000 * 60 * 10,
+          gcTime: EVENTS_QUERY_GC_MS,
         })
         .then((result: any) => {
           const after = queryClient.getQueryState(key);

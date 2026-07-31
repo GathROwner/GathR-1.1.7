@@ -92,6 +92,10 @@ import {
   USE_FIRESTORE_EVENTS,
 } from '../lib/config/backend';
 import { EVENTS_MINIMAL } from '../lib/queryKeys';
+import {
+  EVENTS_QUERY_GC_MS,
+  EVENTS_QUERY_STALE_MS,
+} from '../lib/eventCachePolicy';
 import { normalizeVenueIdentityText } from '../utils/venueIdentity';
 import {
   getEventDateKey,
@@ -155,6 +159,7 @@ export interface ZoomThreshold {
    __minimalEventsInFlight = { key, promise, startedAt };
    return promise;
  };
+ let __viewportFetchSequence = 0;
  let __ML_fetchCount = 0;
  let __ML_lastFetchMs = 0;
  let __ML_lastEventsBytes = 0;
@@ -1554,7 +1559,6 @@ fetchEvents: async () => {
   logStartupDataTiming('fetch_events_called');
   const qc: any = (global as any)?.__RQ_CLIENT ?? null;
   const queryKey = EVENTS_MINIMAL;
-  const STALE_MS = 1000 * 60 * 3; // 3 minutes default
 
   // One-shot network fetch using unified API (Firestore default + optional legacy fallback)
   const fetchFresh = async () => {
@@ -1607,23 +1611,8 @@ fetchEvents: async () => {
     });
     filtersChanged = true; // force recluster
     get().setAllEvents(cached.combinedData);
-    set({ isLoading: false, error: null, lastFetchedAt: Date.now() });
-
-    // Background refresh
-    qc!.fetchQuery({
-      queryKey,
-      queryFn: fetchFresh,
-      staleTime: STALE_MS,
-      gcTime: 1000 * 60 * 10,
-    }).then((fresh: { combinedData: any[]; fetchedAt: number }) => {
-      filtersChanged = true;
-      get().setAllEvents(fresh.combinedData);
-      set({ lastFetchedAt: Date.now() });
-    }).catch((err: unknown) => {
-      const msg = err instanceof Error ? err.message : String(err);
-      console.warn('[MapStore] background events refresh error:', msg);
-    });
-
+    const cachedUpdatedAt = qc?.getQueryState(queryKey)?.dataUpdatedAt ?? Date.now();
+    set({ isLoading: false, error: null, lastFetchedAt: cachedUpdatedAt });
 
     return;
   }
@@ -1635,7 +1624,12 @@ fetchEvents: async () => {
   set({ isLoading: true, error: null });
   try {
     const fresh = qc
-      ? await qc.fetchQuery({ queryKey, queryFn: fetchFresh, staleTime: STALE_MS, gcTime: 1000 * 60 * 10 })
+      ? await qc.fetchQuery({
+          queryKey,
+          queryFn: fetchFresh,
+          staleTime: EVENTS_QUERY_STALE_MS,
+          gcTime: EVENTS_QUERY_GC_MS,
+        })
       : await fetchFresh();
 
     filtersChanged = true;
@@ -1664,7 +1658,9 @@ fetchEvents: async () => {
    */
   fetchViewportEvents: async (bbox: { west: number; south: number; east: number; north: number }) => {
     const startedAt = Date.now();
+    const requestId = ++__viewportFetchSequence;
     logStartupDataTiming('viewport_fetch_called', {
+      requestId,
       bbox,
       allEvents: get().allEvents.length,
       filteredEvents: get().filteredEvents.length,
@@ -1711,6 +1707,15 @@ fetchEvents: async () => {
           fetchOptions,
         });
         const result = await fetchMinimalEventsShared(fetchOptions);
+        if (requestId !== __viewportFetchSequence) {
+          logStartupDataTiming('viewport_fetch_superseded', {
+            requestId,
+            latestRequestId: __viewportFetchSequence,
+            elapsedMs: Date.now() - startedAt,
+          });
+          return;
+        }
+
         const dedupedAll = dedupeEvents(result.combinedData);
         candidateEvents = dedupedAll.filter(matchesTypeFilter);
         get().setAllEvents(dedupedAll);

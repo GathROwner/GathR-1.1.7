@@ -29,6 +29,7 @@ import {
 } from '../../utils/tabSwitchTrace';
 
 const TAB_PREWARM_FALLBACK_DELAY_MS = 30000;
+const MAP_READY_TAB_PREWARM_DELAY_MS = 6000;
 const POST_TAB_PREFETCH_DELAY_MS = 8000;
 type InstrumentedTabName = 'events' | 'map' | 'specials';
 const TAB_PRESS_RIPPLE = Platform.OS === 'android'
@@ -685,7 +686,8 @@ export default function TabLayout() {
   }, []);
 
   useEffect(() => {
-    let timeout: ReturnType<typeof setTimeout> | null = null;
+    let fallbackTimeout: ReturnType<typeof setTimeout> | null = null;
+    let mapReadyDelayTimeout: ReturnType<typeof setTimeout> | null = null;
     let cancelled = false;
     const globalAny = global as any;
 
@@ -695,21 +697,39 @@ export default function TabLayout() {
       }
 
       tabPrewarmStartedRef.current = true;
+      const delayMs = source === 'fallback_timer' ? 0 : MAP_READY_TAB_PREWARM_DELAY_MS;
       if (__DEV__) {
         console.log('[GathRTabPerf]', JSON.stringify({
-          phase: 'tab_prewarm_start',
+          phase: 'tab_prewarm_scheduled',
           source,
+          delayMs,
           wallTime: new Date().toISOString(),
         }));
       }
-      navigation.preload?.('events');
-      navigation.preload?.('specials');
-      setPrewarmInactiveTabs(true);
+
+      mapReadyDelayTimeout = setTimeout(() => {
+        mapReadyDelayTimeout = null;
+        if (cancelled) {
+          return;
+        }
+
+        if (__DEV__) {
+          console.log('[GathRTabPerf]', JSON.stringify({
+            phase: 'tab_prewarm_start',
+            source,
+            delayMs,
+            wallTime: new Date().toISOString(),
+          }));
+        }
+        navigation.preload?.('events');
+        navigation.preload?.('specials');
+        setPrewarmInactiveTabs(true);
+      }, delayMs);
     };
 
     globalAny.mapReadyForTabPrewarmCallback = prewarmTabs;
 
-    timeout = setTimeout(() => {
+    fallbackTimeout = setTimeout(() => {
       prewarmTabs('fallback_timer');
     }, TAB_PREWARM_FALLBACK_DELAY_MS);
 
@@ -718,8 +738,11 @@ export default function TabLayout() {
       if (globalAny.mapReadyForTabPrewarmCallback === prewarmTabs) {
         delete globalAny.mapReadyForTabPrewarmCallback;
       }
-      if (timeout) {
-        clearTimeout(timeout);
+      if (fallbackTimeout) {
+        clearTimeout(fallbackTimeout);
+      }
+      if (mapReadyDelayTimeout) {
+        clearTimeout(mapReadyDelayTimeout);
       }
     };
   }, [navigation]);
