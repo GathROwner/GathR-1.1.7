@@ -483,6 +483,7 @@ const [descAtTop, setDescAtTop] = useState(true);
 
 
   // Gesture-handler setup: scroll in description; swipe-to-close elsewhere
+  const titleScrollRef = useRef(null);
   const descriptionScrollRef = useRef(null);
 
   const onPanGestureEvent = useRef(
@@ -1129,6 +1130,7 @@ amplitudeTrack('ticket_link_opened', {
         ref={horizontalPanRef}
         enabled={navigationEnabled && !isImageViewerVisible && !justClosedImageViewer}
         simultaneousHandlers={verticalPanRef}
+        waitFor={titleScrollRef}
         activeOffsetX={[-20, 20]}
         failOffsetY={[-15, 15]}
         onGestureEvent={onHorizontalPanGestureEvent}
@@ -1144,7 +1146,24 @@ amplitudeTrack('ticket_link_opened', {
         {/* Header */}
         <View style={styles.header}>
           <View style={styles.headerTextContainer}>
-            <Text style={styles.title} numberOfLines={1}>{updatedEvent.title}</Text>
+            <GestureScrollView
+              ref={titleScrollRef}
+              horizontal
+              nestedScrollEnabled
+              bounces={false}
+              showsHorizontalScrollIndicator={false}
+              overScrollMode="never"
+              style={styles.titleScroll}
+              contentContainerStyle={styles.titleScrollContent}
+            >
+              <Text
+                style={styles.title}
+                numberOfLines={1}
+                accessibilityLabel={updatedEvent.title}
+              >
+                {updatedEvent.title}
+              </Text>
+            </GestureScrollView>
             <Text style={styles.subtitle}>{updatedEvent.venue}</Text>
           </View>
           <TouchableOpacity style={styles.closeButton} onPress={handleCloseButton}>
@@ -1721,10 +1740,19 @@ const styles = StyleSheet.create({
     flex: 1,
     marginRight: 10,
   },
+  titleScroll: {
+    maxWidth: '100%',
+    flexGrow: 0,
+    flexShrink: 1,
+  },
+  titleScrollContent: {
+    paddingRight: 18,
+  },
   title: {
     fontSize: 18,
     fontWeight: 'bold',
     color: '#FFFFFF',
+    flexShrink: 0,
   },
   subtitle: {
     fontSize: 14,
