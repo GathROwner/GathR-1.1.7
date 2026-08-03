@@ -64,6 +64,7 @@ import { useGuestLimitationStore } from '../../store/guestLimitationStore';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const APP_HEADER_HEIGHT = Platform.OS === 'ios' ? 44 : 56;
+const LIGHTBOX_HEADER_SEAM_OVERLAP = Platform.OS === 'ios' ? 5 : 0;
 
 // --- Local helper to derive label/start/end from already-formatted strings ---
 // Returns { label } (base without trailing " at <start>" if present),
@@ -238,7 +239,10 @@ const EventImageLightbox: React.FC<EventImageLightboxProps> = ({
   const safeAreaInsets = useSafeAreaInsets();
   const tabBarHeight = useBottomTabBarHeight();
   const { height: windowHeight } = useWindowDimensions();
-  const lightboxTop = safeAreaInsets.top + APP_HEADER_HEIGHT;
+  const lightboxTop = Math.max(
+    0,
+    safeAreaInsets.top + APP_HEADER_HEIGHT - LIGHTBOX_HEADER_SEAM_OVERLAP
+  );
   const lightboxHeight = Math.max(0, windowHeight - lightboxTop - tabBarHeight);
   const imageHeight = Math.min(windowHeight * 0.35, lightboxHeight * 0.45);
 
