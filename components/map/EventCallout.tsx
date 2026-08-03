@@ -4705,8 +4705,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(255, 255, 255, 0.18)',
-    // Opaque equivalent of the app blue beneath the 50% callout dim layer.
-    backgroundColor: '#0F487F',
+    backgroundColor: '#080A0D',
   },
   // New wrapper for the draggable area (left + center)
   headerDraggableArea: {
