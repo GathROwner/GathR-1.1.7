@@ -7860,10 +7860,6 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
       presentedVenueCount: presentedCalloutVenueCount,
       presentedClusterId: presentedCalloutClusterId ?? 'none',
     });
-    if (Platform.OS !== 'ios') {
-      return content;
-    }
-
     return (
       <Modal
         transparent={true}

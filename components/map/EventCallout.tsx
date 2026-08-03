@@ -269,7 +269,6 @@ function formatEndDateLabel(dateStr: string) {
 
 const CALLOUT_NORMAL_HEIGHT = 440; // Increased to accommodate venue selector in all cases
 const CALLOUT_MIN_HEIGHT = 300;
-const CALLOUT_MAX_HEIGHT = SCREEN_HEIGHT - 100; // Nearly full screen
 const DRAG_THRESHOLD = 50;
 const VELOCITY_THRESHOLD = 0.3;
 const LARGE_SWIPE_DISTANCE = 250;  // Pixels for "large" swipe to dismiss (increased for better differentiation)
@@ -2178,18 +2177,10 @@ useUserPrefsStore.getState().setAll({ savedEvents: next });
       }}
       style={[
         styles.specialCard,
-        timeStatus === 'now' && styles.nowSpecialCard,
-        eventMatchesUserInterests && styles.interestMatchCard,
-        isSaved && styles.savedCard,
         isHighlighted && tutorialStyle, // Apply tutorial style when highlighted
         isHighlighted && { zIndex: 99999 } // Lift the card above the tutorial overlay
       ]}
     >
-      <View style={[
-        styles.cardIndicator, 
-        { backgroundColor: getCategoryColor(event.category) }
-      ]} />
-      
       <View style={styles.heroImageSection}>
         <View style={styles.heroImageContainer}>
           <TouchableOpacity
@@ -3382,7 +3373,7 @@ try {
   };
 
   const getCalloutHeightForState = (state: CalloutState) => {
-    if (state === 'expanded') return CALLOUT_MAX_HEIGHT;
+    if (state === 'expanded') return expandedCalloutHeight;
     if (state === 'minimized') return CALLOUT_MIN_HEIGHT;
     return CALLOUT_NORMAL_HEIGHT;
   };
@@ -3532,8 +3523,9 @@ const insets = useSafeAreaInsets();
 const tabBarHeight = useBottomTabBarHeight();
 const navBarOffset = tabBarHeight + (insets?.bottom ?? 0);
 const bottomInset = Math.max(16, navBarOffset + 12); // pad list above the tab bar + a small buffer
-// Expanded snap offset: match prior behavior (safe-area + 22)
-const safeTopOffset = Math.max(0, (insets?.top ?? 0) + 22);
+// Fill the screen beneath the status bar so the callout owns the app-header area.
+const expandedCalloutHeight = SCREEN_HEIGHT - Math.max(0, insets?.top ?? 0);
+const safeTopOffset = 0;
 // iOS preview/store builds have a long-standing callout visibility bug where the
 // state updates and dismissal overlay render, but the animated sheet itself can
 // fail to paint. Use a static absolute presentation on iOS and keep the animated
@@ -4379,7 +4371,7 @@ useEffect(() => {
               style={styles.resetButton}
               activeOpacity={0.7}
             >
-              <MaterialIcons name="unfold-less" size={18} color="#666666" />
+              <MaterialIcons name="unfold-less" size={18} color="#FFFFFF" />
             </TouchableOpacity>
             <TouchableOpacity
               onPress={(e) => {
@@ -4398,7 +4390,7 @@ useEffect(() => {
               style={styles.closeButton}
               activeOpacity={0.7}
             >
-              <MaterialIcons name="close" size={22} color="#666666" />
+              <MaterialIcons name="close" size={22} color="#FFFFFF" />
             </TouchableOpacity>
           </View>
         </View>
@@ -4681,13 +4673,12 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    // Transparent to see map through header
-    backgroundColor: 'transparent',
+    backgroundColor: '#080A0D',
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     // Soft inner highlight for premium edge
     borderWidth: 1,
-    borderColor: 'rgba(0, 0, 0, 0.08)', 
+    borderColor: 'rgba(255, 255, 255, 0.10)',
     borderBottomWidth: 0,
     // Modern floating shadow: diffuse, lifted, not heavy
     shadowColor: '#000',
@@ -4697,8 +4688,8 @@ const styles = StyleSheet.create({
     },
     shadowOpacity: 0.10,
     shadowRadius: 20,
-    elevation: 14,
-    zIndex: 5, 
+    elevation: 50,
+    zIndex: 50,
     overflow: 'hidden',
   },
   calloutContainerIosStatic: {
@@ -4707,12 +4698,12 @@ const styles = StyleSheet.create({
   compactHeaderContainer: {
     flexDirection: 'row',
     paddingHorizontal: 18,
-    paddingVertical: 6,
+    paddingVertical: 8,
     justifyContent: 'space-between',
     alignItems: 'center',
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(0, 0, 0, 0.03)', // Very subtle divider
-    backgroundColor: 'transparent', // Transparent - map shows through
+    borderBottomColor: 'rgba(255, 255, 255, 0.18)',
+    backgroundColor: BRAND.primary,
   },
   // New wrapper for the draggable area (left + center)
   headerDraggableArea: {
@@ -4730,7 +4721,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'flex-end',
-    width: 5,
+    minWidth: 72,
   },
   headerCenterSectionAbsolute: {
     position: 'absolute',
@@ -4763,10 +4754,10 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#FBF9F3', // Solid background - visible over map
+    backgroundColor: 'rgba(0, 0, 0, 0.18)',
     marginRight: 8,
     borderWidth: 1,
-    borderColor: 'rgba(0, 0, 0, 0.1)',
+    borderColor: 'rgba(255, 255, 255, 0.28)',
   },
   closeButton: {
     width: 28,
@@ -4774,14 +4765,14 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#FBF9F3', // Solid background - visible over map
+    backgroundColor: 'rgba(0, 0, 0, 0.18)',
     zIndex: 10,
     borderWidth: 1,
-    borderColor: 'rgba(0, 0, 0, 0.1)',
+    borderColor: 'rgba(255, 255, 255, 0.28)',
   },
   venueSelectorDivider: {
     height: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.06)', // Soft glass divider
+    backgroundColor: 'rgba(255, 255, 255, 0.12)',
     marginHorizontal: 0,
   },
   venueTopContent: {
@@ -4789,13 +4780,13 @@ const styles = StyleSheet.create({
 },
   tabContainer: {
   flexDirection: 'row',
-  backgroundColor: 'transparent',
+  backgroundColor: '#080A0D',
   paddingHorizontal: 2,
   paddingVertical: 2,
   justifyContent: 'space-around',
   gap: 4,
   borderBottomWidth: 1,
-  borderBottomColor: 'rgba(0, 0, 0, 0.06)',
+  borderBottomColor: 'rgba(255, 255, 255, 0.12)',
 },
   tabPill: {
     flex: 1,
@@ -4874,7 +4865,7 @@ const styles = StyleSheet.create({
   contentContainer: {
     flex: 1,
     overflow: 'hidden',
-    backgroundColor: 'transparent',
+    backgroundColor: '#080A0D',
   },
   scrollContentContainer: {
     flexGrow: 1,
@@ -4882,6 +4873,7 @@ const styles = StyleSheet.create({
   },
   calloutContent: {
     flex: 1,
+    backgroundColor: '#080A0D',
   },
   smallBottomPadding: {
     height: 16,
@@ -4908,7 +4900,7 @@ const styles = StyleSheet.create({
   // Venue selector progress bar styles
   venueProgressContainer: {
     height: 3,
-    backgroundColor: 'rgba(0,0,0,0.1)',
+    backgroundColor: 'rgba(255,255,255,0.12)',
     marginHorizontal: 12,
   },
   venueProgressBar: {
@@ -5053,10 +5045,10 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   venueSelectorWrapper: {
-    backgroundColor: 'transparent',
+    backgroundColor: '#080A0D',
     paddingVertical: 2,
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(0, 0, 0, 0.05)',
+    borderBottomColor: 'rgba(255, 255, 255, 0.10)',
   },
   venueSelectorContainer: {
     flexGrow: 1,
@@ -5216,7 +5208,7 @@ const styles = StyleSheet.create({
   },
   // Removed cardDivider - now using borderBottom on each card like events tab
   specialCard: {
-    backgroundColor: '#FBF9F3', // Solid background - readable over map
+    backgroundColor: '#FFFFFF',
     paddingBottom: 0,
     overflow: 'hidden',
     position: 'relative',
@@ -5231,41 +5223,6 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.10,
     shadowRadius: 12,
     elevation: 5,
-  },
-  nowSpecialCard: {
-    borderLeftColor: '#34A853',
-    borderLeftWidth: 4,
-    backgroundColor: '#E6F4EA', // Solid light green
-    shadowColor: '#34A853',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.12,
-    shadowRadius: 8,
-  },
-  interestMatchCard: {
-    borderLeftColor: '#1E90FF',
-    borderLeftWidth: 4,
-    backgroundColor: '#E8F4FD', // Solid light blue
-    shadowColor: '#1E90FF',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.12,
-    shadowRadius: 8,
-  },
-  savedCard: {
-    borderLeftColor: '#FFB800',
-    borderLeftWidth: 4,
-    backgroundColor: 'rgba(255, 184, 0, 0.04)', // Subtle gold glass tint
-    shadowColor: '#FFB800',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.10,
-    shadowRadius: 8,
-  },
-  cardIndicator: {
-    width: 3, // Slightly thinner for cleaner look
-    height: '100%',
-    position: 'absolute',
-    left: 0,
-    top: 0,
-    zIndex: 1,
   },
   heroImageSection: {
     width: '100%',
