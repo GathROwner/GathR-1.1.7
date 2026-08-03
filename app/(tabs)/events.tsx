@@ -2837,7 +2837,7 @@ setSelectedImageData({ imageUrl, event });
               styles.timeFilterText,
               filterCriteria.eventFilters.timeFilter === TimeFilterType.NOW && styles.activeTimeFilterText
             ]}>
-              Happening Now ({timeFilterCounts[TimeFilterType.NOW]})
+              Now ({timeFilterCounts[TimeFilterType.NOW]})
             </Text>
           </TouchableOpacity>
           
