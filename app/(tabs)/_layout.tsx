@@ -42,6 +42,32 @@ type InstrumentedTabBarButtonProps = any & {
   targetTab: InstrumentedTabName;
 };
 
+const ACTIVE_TAB_INDICATOR_COLORS: Record<InstrumentedTabName, string> = {
+  events: '#007AFF',
+  map: '#111111',
+  specials: '#34A853',
+};
+
+const ActiveTabIndicator = ({ targetTab, visible }: { targetTab: InstrumentedTabName; visible: boolean }) => (
+  visible ? (
+    <View
+      pointerEvents="none"
+      style={{
+        position: 'absolute',
+        top: 0,
+        left: '50%',
+        marginLeft: -28,
+        width: 56,
+        height: 3,
+        borderBottomLeftRadius: 2,
+        borderBottomRightRadius: 2,
+        backgroundColor: ACTIVE_TAB_INDICATOR_COLORS[targetTab],
+        zIndex: 2,
+      }}
+    />
+  ) : null
+);
+
 const pauseMapAnimationsForTabHandoff = (targetTab: InstrumentedTabName, isSelected: boolean) => {
   if (Platform.OS !== 'android' || isSelected || targetTab === 'map') {
     return;
@@ -54,8 +80,8 @@ const pauseMapAnimationsForTabHandoff = (targetTab: InstrumentedTabName, isSelec
 };
 
 const InstrumentedTabBarButton = (props: InstrumentedTabBarButtonProps) => {
-  const { children, onPress, onLongPress, targetTab, accessibilityState } = props;
-  const isSelected = Boolean(accessibilityState?.selected);
+  const { children, onPress, onLongPress, targetTab, accessibilityState, 'aria-selected': ariaSelected } = props;
+  const isSelected = Boolean(ariaSelected ?? accessibilityState?.selected);
 
   useEffect(() => {
     if (isSelected) {
@@ -80,8 +106,9 @@ const InstrumentedTabBarButton = (props: InstrumentedTabBarButtonProps) => {
       onPress={handlePress}
       onLongPress={onLongPress}
       android_ripple={TAB_PRESS_RIPPLE}
-      style={{ flex: 1 }}
+      style={{ flex: 1, position: 'relative' }}
     >
+      <ActiveTabIndicator targetTab={targetTab} visible={isSelected} />
       <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
         {children}
       </View>
@@ -90,8 +117,8 @@ const InstrumentedTabBarButton = (props: InstrumentedTabBarButtonProps) => {
 };
 
 const TutorialAwareTabBarButton = (props: InstrumentedTabBarButtonProps) => {
-  const { children, onPress, onLongPress, targetTab, accessibilityState } = props;
-  const isSelected = Boolean(accessibilityState?.selected);
+  const { children, onPress, onLongPress, targetTab, accessibilityState, 'aria-selected': ariaSelected } = props;
+  const isSelected = Boolean(ariaSelected ?? accessibilityState?.selected);
   const viewRef = useRef<View>(null);
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const [isHighlighted, setIsHighlighted] = useState(false);
@@ -166,8 +193,9 @@ const TutorialAwareTabBarButton = (props: InstrumentedTabBarButtonProps) => {
       onPress={handlePress}
       onLongPress={onLongPress}
       android_ripple={TAB_PRESS_RIPPLE}
-      style={{ flex: 1 }}
+      style={{ flex: 1, position: 'relative' }}
     >
+      <ActiveTabIndicator targetTab={targetTab} visible={isSelected} />
       <Animated.View
         ref={viewRef}
         style={[
@@ -182,8 +210,8 @@ const TutorialAwareTabBarButton = (props: InstrumentedTabBarButtonProps) => {
 };
 
 const TutorialAwareSpecialsTabBarButton = (props: InstrumentedTabBarButtonProps) => {
-  const { children, onPress, onLongPress, targetTab, accessibilityState } = props;
-  const isSelected = Boolean(accessibilityState?.selected);
+  const { children, onPress, onLongPress, targetTab, accessibilityState, 'aria-selected': ariaSelected } = props;
+  const isSelected = Boolean(ariaSelected ?? accessibilityState?.selected);
   const viewRef = useRef<View>(null);
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const [isHighlighted, setIsHighlighted] = useState(false);
@@ -254,8 +282,9 @@ const TutorialAwareSpecialsTabBarButton = (props: InstrumentedTabBarButtonProps)
       onPress={handlePress}
       onLongPress={onLongPress}
       android_ripple={TAB_PRESS_RIPPLE}
-      style={{ flex: 1 }}
+      style={{ flex: 1, position: 'relative' }}
     >
+      <ActiveTabIndicator targetTab={targetTab} visible={isSelected} />
       <Animated.View
         ref={viewRef}
         style={[
@@ -786,7 +815,7 @@ export default function TabLayout() {
           // invalid-surface behavior from disabling freeze globally.
           freezeOnBlur: false,
           tabBarActiveTintColor: '#007AFF',
-          tabBarInactiveTintColor: '#5F6368',
+          tabBarInactiveTintColor: '#202124',
           tabBarIcon: ({ color, focused }) => <Ionicons name={focused ? "calendar" : "calendar-outline"} size={24} color={color} />,
           tabBarButton: renderEventsTabBarButton,
            headerLeft: () => (
@@ -843,8 +872,8 @@ export default function TabLayout() {
         options={({ route }) => ({
           title: 'Map',
           headerTitle: () => <HeaderTitle route={route} />,
-          tabBarActiveTintColor: '#1A1A1A',
-          tabBarInactiveTintColor: '#5F6368',
+          tabBarActiveTintColor: '#111111',
+          tabBarInactiveTintColor: '#202124',
           headerLeft: () => (
             !isHeaderSearchActive ? (
               <TouchableOpacity onPress={handleSearchActivation} style={{ marginLeft: 16 }}>
@@ -914,7 +943,7 @@ export default function TabLayout() {
           // invalid-surface behavior from disabling freeze globally.
           freezeOnBlur: false,
           tabBarActiveTintColor: '#34A853',
-          tabBarInactiveTintColor: '#5F6368',
+          tabBarInactiveTintColor: '#202124',
           tabBarIcon: ({ color, focused }) => <Ionicons name={focused ? "restaurant" : "restaurant-outline"} size={24} color={color} />,
           tabBarButton: renderSpecialsTabBarButton,
           headerLeft: () => (
