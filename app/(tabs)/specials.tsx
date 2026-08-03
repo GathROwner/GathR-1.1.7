@@ -2742,7 +2742,7 @@ useEffect(() => {
       borderWidth: 3,
       borderColor: '#FF8C42',
       borderRadius: 12,
-      backgroundColor: '#FFFFFF', // ← was rgba(255,255,255,0.95)
+      backgroundColor: '#0B0D10',
       transform: [{ scale: specialsFiltersPulseAnim }],
     } : {}
   ]}
@@ -2791,7 +2791,7 @@ useEffect(() => {
                 <MaterialIcons 
                   name="access-time" 
                   size={14} 
-                  color={filterCriteria.specialFilters.timeFilter === TimeFilterType.NOW ? '#FFFFFF' : '#666666'} 
+                  color={filterCriteria.specialFilters.timeFilter === TimeFilterType.NOW ? '#FFFFFF' : '#D5DAE2'}
                   style={styles.timeFilterIcon}
                 />
                 <Text style={[
@@ -2813,7 +2813,7 @@ useEffect(() => {
                 <MaterialIcons 
                   name="today" 
                   size={14} 
-                  color={filterCriteria.specialFilters.timeFilter === TimeFilterType.TODAY ? '#FFFFFF' : '#666666'} 
+                  color={filterCriteria.specialFilters.timeFilter === TimeFilterType.TODAY ? '#FFFFFF' : '#D5DAE2'}
                   style={styles.timeFilterIcon}
                 />
                 <Text style={[
@@ -2835,7 +2835,7 @@ useEffect(() => {
                 <MaterialIcons 
                   name="wb-sunny" 
                   size={14} 
-                  color={filterCriteria.specialFilters.timeFilter === TimeFilterType.TOMORROW ? '#FFFFFF' : '#666666'} 
+                  color={filterCriteria.specialFilters.timeFilter === TimeFilterType.TOMORROW ? '#FFFFFF' : '#D5DAE2'}
                   style={styles.timeFilterIcon}
                 />
                 <Text style={[
@@ -2857,7 +2857,7 @@ useEffect(() => {
                 <MaterialIcons 
                   name="event" 
                   size={14} 
-                  color={filterCriteria.specialFilters.timeFilter === TimeFilterType.UPCOMING ? '#FFFFFF' : '#666666'} 
+                  color={filterCriteria.specialFilters.timeFilter === TimeFilterType.UPCOMING ? '#FFFFFF' : '#D5DAE2'}
                   style={styles.timeFilterIcon}
                 />
                 <Text style={[
@@ -2890,6 +2890,7 @@ useEffect(() => {
                   type="special" 
                   counts={sortedCounts}
                   onCategorySelect={handleCategorySelect}
+                  appearance="dark"
                 />
               );
             })()}
@@ -3085,12 +3086,12 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 0,
     right: 0,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#0B0D10',
     zIndex: 10,
     elevation: 5,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
+    shadowOpacity: 0.3,
     shadowRadius: 4,
   },
   centerContainer: {
@@ -3184,11 +3185,11 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   filtersContainer: {
-    backgroundColor: '#F8F8F8',
-    paddingTop: 1,
-    paddingBottom: 1,
+    backgroundColor: '#0B0D10',
+    paddingTop: 2,
+    paddingBottom: 2,
     borderBottomWidth: 1,
-    borderBottomColor: '#EEEEEE',
+    borderBottomColor: '#2A2F36',
   },
   sectionHeaderContainer: {
     flexDirection: 'row',
@@ -3200,7 +3201,7 @@ const styles = StyleSheet.create({
   filterSectionTitle: {
     fontSize: 11,
     fontWeight: '600',
-    color: '#333333',
+    color: '#F2F4F7',
   },
   filterClearButton: {
     paddingVertical: 2,
@@ -3208,12 +3209,12 @@ const styles = StyleSheet.create({
   },
   clearButtonText: {
     fontSize: 11,
-    color: BRAND.primary,
+    color: '#64B5F6',
     fontWeight: '500',
   },
   filterDivider: {
     height: 1,
-    backgroundColor: '#EEEEEE',
+    backgroundColor: '#2A2F36',
     marginVertical: 1,
   },
   timeFilterContainer: {
@@ -3226,20 +3227,20 @@ const styles = StyleSheet.create({
     paddingRight: 8,
   },
   timeFilterPill: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#1A1D22',
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 16,
     marginHorizontal: 3,
     borderWidth: 1,
-    borderColor: '#EEEEEE',
+    borderColor: '#343941',
     ...(Platform.OS === 'android' ? {
       elevation: 0,
     } : {
       shadowColor: '#000',
       shadowOffset: { width: 0, height: 1 },
-      shadowOpacity: 0.1,
-      shadowRadius: 1,
+      shadowOpacity: 0.28,
+      shadowRadius: 2,
     }),
     flexDirection: 'row',
     alignItems: 'center',
@@ -3269,7 +3270,7 @@ const styles = StyleSheet.create({
   },
   timeFilterText: {
     fontSize: 12,
-    color: '#666666',
+    color: '#F2F4F7',
     fontWeight: '500',
   },
   activeTimeFilterText: {

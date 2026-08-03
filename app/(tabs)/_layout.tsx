@@ -786,7 +786,7 @@ export default function TabLayout() {
           // invalid-surface behavior from disabling freeze globally.
           freezeOnBlur: false,
           tabBarActiveTintColor: '#007AFF',
-          tabBarInactiveTintColor: '#B0B0B0',
+          tabBarInactiveTintColor: '#5F6368',
           tabBarIcon: ({ color, focused }) => <Ionicons name={focused ? "calendar" : "calendar-outline"} size={24} color={color} />,
           tabBarButton: renderEventsTabBarButton,
            headerLeft: () => (
@@ -844,7 +844,7 @@ export default function TabLayout() {
           title: 'Map',
           headerTitle: () => <HeaderTitle route={route} />,
           tabBarActiveTintColor: '#1A1A1A',
-          tabBarInactiveTintColor: '#B0B0B0',
+          tabBarInactiveTintColor: '#5F6368',
           headerLeft: () => (
             !isHeaderSearchActive ? (
               <TouchableOpacity onPress={handleSearchActivation} style={{ marginLeft: 16 }}>
@@ -914,7 +914,7 @@ export default function TabLayout() {
           // invalid-surface behavior from disabling freeze globally.
           freezeOnBlur: false,
           tabBarActiveTintColor: '#34A853',
-          tabBarInactiveTintColor: '#B0B0B0',
+          tabBarInactiveTintColor: '#5F6368',
           tabBarIcon: ({ color, focused }) => <Ionicons name={focused ? "restaurant" : "restaurant-outline"} size={24} color={color} />,
           tabBarButton: renderSpecialsTabBarButton,
           headerLeft: () => (
