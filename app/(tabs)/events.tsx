@@ -2956,6 +2956,7 @@ setSelectedImageData({ imageUrl, event });
      {/* Event list with ads */}
       <FlatList
           ref={flatListRef}
+          style={styles.eventList}
           data={isFocusedContentReady ? eventsWithAds : []}
           keyExtractor={keyExtractor}
           onScroll={handleScroll}
@@ -3103,7 +3104,7 @@ setSelectedImageData({ imageUrl, event });
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#0B0D10',
     paddingTop: 3,
     // Keep the collapsible filter overlay clipped to the scene so it can tuck
     // under the navigator header instead of visually painting over it on iOS.
@@ -3130,6 +3131,10 @@ const styles = StyleSheet.create({
   listContent: {
     paddingVertical: 16,
     paddingTop: 0,
+    paddingBottom: 16,
+  },
+  eventList: {
+    backgroundColor: '#0B0D10',
   },
   emptyContainer: {
     padding: 20,
@@ -3138,7 +3143,7 @@ const styles = StyleSheet.create({
   },
   statusText: {
     fontSize: 16,
-    color: '#666666',
+    color: '#C5CAD3',
     marginTop: 12,
     textAlign: 'center',
   },
@@ -3281,18 +3286,17 @@ const styles = StyleSheet.create({
     position: 'relative',
     // NEW: Rounded border around each card
     borderRadius: 16,
-    borderWidth: 2,
-    borderColor: '#E8E8E8',
-    marginHorizontal: 2, // Add side margins so border is visible
-    marginRight: 4,
-    marginBottom: 4, // Replace bottom border with margin
+    borderWidth: 1,
+    borderColor: '#DDE1E7',
+    marginHorizontal: 6,
+    marginBottom: 10,
     ...(Platform.OS === 'android' ? {
       elevation: 0,
     } : {
       shadowColor: '#000',
       shadowOffset: { width: 0, height: 2 },
-      shadowOpacity: 0.08,
-      shadowRadius: 4,
+      shadowOpacity: 0.35,
+      shadowRadius: 6,
     }),
   },
   nowEventCard: {
@@ -3780,7 +3784,7 @@ const styles = StyleSheet.create({
   dividerLine: {
     flex: 1,
     height: 1,
-    backgroundColor: '#E0E0E0',
+    backgroundColor: '#3A3E45',
   },
   dividerTextContainer: {
     flexDirection: 'row',
@@ -3790,7 +3794,7 @@ const styles = StyleSheet.create({
   },
   dividerText: {
     fontSize: 14,
-    color: '#999',
+    color: '#AEB4BE',
     fontWeight: '500',
   },
 });
