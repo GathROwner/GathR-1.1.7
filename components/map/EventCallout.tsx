@@ -4393,7 +4393,9 @@ useEffect(() => {
           {/* Right section with reset and close buttons */}
           <View style={styles.headerRightSection}>
             <TouchableOpacity 
-              onPress={() => setCalloutStateWithAnimation('expanded')}
+              onPress={() => setCalloutStateWithAnimation(
+                currentStateRef.current === 'expanded' ? 'normal' : 'expanded'
+              )}
               style={styles.resetButton}
               activeOpacity={0.7}
             >
