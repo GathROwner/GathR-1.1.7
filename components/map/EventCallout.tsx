@@ -4347,9 +4347,9 @@ useEffect(() => {
           }
         }}
       >
-        <View style={styles.compactHeaderContainer}>
-          {/* Draggable count area */}
-          <View {...shellPanHandlers} style={styles.headerDraggableArea}>
+        {/* One continuous vertical drag surface; taps still reach the child buttons. */}
+        <View {...shellPanHandlers} style={styles.compactHeaderContainer}>
+          <View style={styles.headerDraggableArea}>
             <View style={styles.headerLeftSection}>
               <Text style={styles.venueTitleSmall} numberOfLines={1}>
                 {isMultiVenue 
@@ -4367,14 +4367,14 @@ useEffect(() => {
           </View>
           {/* Center against the full header, independent of left/right content widths. */}
           <View pointerEvents="box-none" style={styles.headerCenterSectionAbsolute}>
-            <View {...shellPanHandlers} style={styles.handleContainer}>
+            <View style={styles.handleContainer}>
               <View style={styles.handle} />
               <Animated.View style={{ transform: [{ rotateZ }], marginTop: -2 }}>
                 <MaterialIcons name="keyboard-arrow-up" size={20} color="rgba(255, 255, 255, 0.95)" />
               </Animated.View>
             </View>
           </View>
-          {/* Non-draggable area: Right section with reset and close buttons */}
+          {/* Right section with reset and close buttons */}
           <View style={styles.headerRightSection}>
             <TouchableOpacity 
               onPress={() => setCalloutStateWithAnimation('normal')} 
