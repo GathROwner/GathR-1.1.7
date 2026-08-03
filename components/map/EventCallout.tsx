@@ -3916,10 +3916,10 @@ const setCalloutStateWithAnimation = (state: CalloutState) => {
   const onCloseRef = useRef(animateClose);
 
   // Attach the PanResponder to the fixed shell controls above the scroll content.
-  const panResponder = useMemo(
-    () => PanResponder.create({
+  const createShellPanResponder = useCallback(
+    (claimOnStart = false) => PanResponder.create({
       // Don't claim gesture on touch start - let ScrollView have a chance
-      onStartShouldSetPanResponder: () => false,
+      onStartShouldSetPanResponder: () => claimOnStart,
 
       // Android children such as GH horizontal ScrollViews and Touchables can
       // take the responder before the parent shell sees the bubbling move.
@@ -4040,7 +4040,16 @@ const setCalloutStateWithAnimation = (state: CalloutState) => {
       translateY,
     ]
   );
-const shellPanHandlers = EVENT_CALLOUT_SHELL_ISOLATION_DEBUG ? {} : panResponder.panHandlers;
+  const panResponder = useMemo(
+    () => createShellPanResponder(),
+    [createShellPanResponder]
+  );
+  const headerPanResponder = useMemo(
+    () => createShellPanResponder(true),
+    [createShellPanResponder]
+  );
+  const shellPanHandlers = EVENT_CALLOUT_SHELL_ISOLATION_DEBUG ? {} : panResponder.panHandlers;
+  const headerPanHandlers = EVENT_CALLOUT_SHELL_ISOLATION_DEBUG ? {} : headerPanResponder.panHandlers;
 
     useEffect(() => {
     const backHandler = BackHandler.addEventListener('hardwareBackPress', () => {
@@ -4348,7 +4357,7 @@ useEffect(() => {
         }}
       >
         {/* One continuous vertical drag surface; taps still reach the child buttons. */}
-        <View {...shellPanHandlers} style={styles.compactHeaderContainer}>
+        <View style={styles.compactHeaderContainer}>
           <View style={styles.headerDraggableArea}>
             <View style={styles.headerLeftSection}>
               <Text style={styles.venueTitleSmall} numberOfLines={1}>
@@ -4374,6 +4383,13 @@ useEffect(() => {
               </Animated.View>
             </View>
           </View>
+          {/* A direct native touch target keeps header drags out of child Text handling. */}
+          <View
+            {...headerPanHandlers}
+            collapsable={false}
+            testID="callout-header-drag-surface"
+            style={styles.headerDragSurface}
+          />
           {/* Right section with reset and close buttons */}
           <View style={styles.headerRightSection}>
             <TouchableOpacity 
@@ -4733,6 +4749,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'flex-end',
     minWidth: 72,
+    zIndex: 3,
+  },
+  headerDragSurface: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    left: 0,
+    right: 90,
     zIndex: 2,
   },
   headerCenterSectionAbsolute: {
