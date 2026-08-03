@@ -1090,20 +1090,10 @@ const result = await userService.toggleSavedEvent(event.id, {
     <Animated.View style={isFirstItem && isHighlighted ? tutorialHighlightStyle : {}}>
       <TouchableOpacity
         ref={tutorialRef}
-        style={[
-          styles.eventCard,
-          timeStatus === 'now' && styles.nowEventCard,
-          matchesUserInterests && styles.interestMatchCard,
-          isSaved && styles.savedCard
-        ]}
+        style={styles.eventCard}
         onPress={onPress}
         activeOpacity={0.7}
       >
-      <View style={[
-        styles.cardIndicator, 
-        { backgroundColor: getCategoryColor(event.category) }
-      ]} />
-      
       {/* Hero Image Section - NEW */}
       <View style={styles.heroImageSection}>
         <View style={styles.heroImageContainer}>
@@ -3298,29 +3288,6 @@ const styles = StyleSheet.create({
       shadowOpacity: 0.35,
       shadowRadius: 6,
     }),
-  },
-  nowEventCard: {
-    borderLeftColor: '#34A853',
-    borderLeftWidth: 4, // Thick left border instead of full border
-    backgroundColor: '#FAFFF9',
-  },
-  interestMatchCard: {
-    borderLeftColor: BRAND.primary,
-    borderLeftWidth: 4, // Thick left border instead of full border
-    backgroundColor: '#F5F9FF',
-  },
-  savedCard: {
-    borderLeftColor: '#FFD700',
-    borderLeftWidth: 4, // Thick left border instead of full border
-    backgroundColor: '#FFFBEB',
-  },
-  cardIndicator: {
-    width: 3,
-    height: '100%',
-    position: 'absolute',
-    left: 0,
-    top: 0,
-    zIndex: 1,
   },
   badgeContainer: {
     position: 'absolute',
