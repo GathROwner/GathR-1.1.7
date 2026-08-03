@@ -18,7 +18,8 @@ import {
   Keyboard,
   Pressable,
   InteractionManager,
-  Platform
+  Platform,
+  useColorScheme
 } from 'react-native';
 import { MaterialIcons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
@@ -39,6 +40,7 @@ import CategoryFilterOptions from '../../components/map/CategoryFilterOptions';
 // Import components
 import EventImageLightbox from '../../components/map/EventImageLightbox';
 import FullSizeSdkAdCard, { FULL_SIZE_SDK_AD_ROW_HEIGHT } from '../../components/ads/FullSizeSdkAdCard';
+import { AdColors } from '../../constants/AdTheme';
 
 // Import utilities
 import {
@@ -1470,6 +1472,7 @@ const MemoizedEventListItem = React.memo(EventListItem, (prevProps, nextProps) =
 
 // Main Specials Screen component
 function SpecialsScreen() {
+  const adColors = AdColors[useColorScheme() ?? 'light'];
   markTabScreenRenderStart('specials');
 
   
@@ -2934,7 +2937,10 @@ useEffect(() => {
           if (item.type === 'ad') {
             return (
               <View
-                style={styles.adContainer}
+                style={[
+                  styles.adContainer,
+                  { backgroundColor: adColors.cardBackground },
+                ]}
                 onLayout={() => {
                   if (index === 0) {
                     handleFirstListItemLayout();
@@ -3126,7 +3132,6 @@ const styles = StyleSheet.create({
   },
   adContainer: {
     height: FULL_SIZE_SDK_AD_ROW_HEIGHT,
-    backgroundColor: '#FFFFFF',
     paddingBottom: 12,
     marginBottom: 12, // Changed from borderBottomWidth to margin
     overflow: 'hidden',

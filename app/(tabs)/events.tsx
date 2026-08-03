@@ -19,7 +19,8 @@ import {
   Keyboard,
   Pressable,
   InteractionManager,
-  Platform
+  Platform,
+  useColorScheme
 } from 'react-native';
 import { usePathname } from 'expo-router';
 
@@ -41,6 +42,7 @@ import CategoryFilterOptions from '../../components/map/CategoryFilterOptions';
 // Import components
 import EventImageLightbox from '../../components/map/EventImageLightbox';
 import FullSizeSdkAdCard, { FULL_SIZE_SDK_AD_ROW_HEIGHT } from '../../components/ads/FullSizeSdkAdCard';
+import { AdColors } from '../../constants/AdTheme';
 
 // Import utilities
 import { 
@@ -1515,6 +1517,7 @@ const MemoizedEventListItem = React.memo(EventListItem, (prevProps, nextProps) =
 
 // Main Events Screen component
 function EventsScreen() {
+  const adColors = AdColors[useColorScheme() ?? 'light'];
   markTabScreenRenderStart('events');
   // ===============================================================
   // ANALYTICS INTEGRATION - RE-ENABLED
@@ -2965,7 +2968,13 @@ setSelectedImageData({ imageUrl, event });
             if (item.type === 'ad') {
               return (
                 <View
-                  style={styles.adContainer}
+                  style={[
+                    styles.adContainer,
+                    {
+                      backgroundColor: adColors.cardBackground,
+                      borderColor: adColors.cardBorder,
+                    },
+                  ]}
                   onLayout={() => {
                     if (index === 0) {
                       handleFirstListItemLayout();
@@ -3145,13 +3154,11 @@ const styles = StyleSheet.create({
   },
   adContainer: {
     height: FULL_SIZE_SDK_AD_ROW_HEIGHT,
-    backgroundColor: '#FFFFFF',
     paddingBottom: 12,
     // marginHorizontal removed - inner component already has margins
     marginBottom: 12,
     borderRadius: 16,
     borderWidth: 2,
-    borderColor: '#E8E8E8',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.08,
