@@ -3521,10 +3521,16 @@ if (lastDefaultIdRef.current !== newId) {
   
 const insets = useSafeAreaInsets();
 const tabBarHeight = useBottomTabBarHeight();
-const navBarOffset = tabBarHeight + (insets?.bottom ?? 0);
-const bottomInset = Math.max(16, navBarOffset + 12); // pad list above the tab bar + a small buffer
-// Fill the screen beneath the status bar so the callout owns the app-header area.
-const expandedCalloutHeight = SCREEN_HEIGHT - Math.max(0, insets?.top ?? 0);
+// The modal spans the full screen, but the sheet should meet the top of the
+// app's tab bar so the real Events / Map / Specials navigation remains visible.
+const navBarOffset = tabBarHeight;
+const calloutBottomOffset = navBarOffset;
+const bottomInset = 16;
+// Fill the space between the status bar and the bottom tab bar.
+const expandedCalloutHeight = Math.max(
+  CALLOUT_NORMAL_HEIGHT,
+  SCREEN_HEIGHT - Math.max(0, insets?.top ?? 0) - calloutBottomOffset,
+);
 const safeTopOffset = 0;
 // iOS preview/store builds have a long-standing callout visibility bug where the
 // state updates and dismissal overlay render, but the animated sheet itself can
@@ -3539,6 +3545,7 @@ const calloutContainerStyle = EVENT_CALLOUT_SHELL_ISOLATION_DEBUG
       styles.calloutContainer,
       {
         height: currentCalloutHeight,
+        bottom: calloutBottomOffset,
         transform: [{ translateY: calloutState === 'expanded' ? safeTopOffset : 0 }],
       },
     ]
@@ -3548,6 +3555,7 @@ const calloutContainerStyle = EVENT_CALLOUT_SHELL_ISOLATION_DEBUG
       styles.calloutContainerIosStatic,
       {
         height: currentCalloutHeight,
+        bottom: calloutBottomOffset,
         opacity: isLightboxOpen ? 0.3 : 1,
       },
     ]
@@ -3555,6 +3563,7 @@ const calloutContainerStyle = EVENT_CALLOUT_SHELL_ISOLATION_DEBUG
       styles.calloutContainer,
       {
         height: currentCalloutHeight,
+        bottom: calloutBottomOffset,
         transform: [{ translateY: translateY }],
         opacity: isLightboxOpen ? 0.3 : 1,
       }
@@ -4506,7 +4515,7 @@ useEffect(() => {
                 styles.backToTopButton,
                 {
                   opacity: backToTopOpacity,
-                  bottom: (calloutState === 'expanded' ? 1 : 15) + navBarOffset,
+                  bottom: calloutState === 'expanded' ? 1 : 15,
                 }
               ]}
             >
