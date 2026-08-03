@@ -4359,7 +4359,7 @@ useEffect(() => {
               <View style={styles.handleContainer}>
                 <View style={styles.handle} />
                 <Animated.View style={{ transform: [{ rotateZ }], marginTop: -2 }}>
-                  <MaterialIcons name="keyboard-arrow-up" size={20} color="rgba(255, 255, 255, 0.85)" />
+                  <MaterialIcons name="keyboard-arrow-up" size={20} color="rgba(255, 255, 255, 0.95)" />
                 </Animated.View>
               </View>
             </View>
@@ -4703,7 +4703,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(255, 255, 255, 0.18)',
-    backgroundColor: BRAND.primary,
+    // Opaque equivalent of the app blue beneath the 50% callout dim layer.
+    backgroundColor: '#0F487F',
   },
   // New wrapper for the draggable area (left + center)
   headerDraggableArea: {
@@ -4740,7 +4741,7 @@ const styles = StyleSheet.create({
     width: 40,
     height: 5,
     borderRadius: 2.5,
-    backgroundColor: 'rgba(255, 255, 255, 0.7)', // Light - visible over darkened map
+    backgroundColor: 'rgba(255, 255, 255, 0.90)',
   },
   venueTitleSmall: {
     fontSize: 11,
@@ -4754,10 +4755,10 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.18)',
+    backgroundColor: 'rgba(255, 255, 255, 0.12)',
     marginRight: 8,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.28)',
+    borderColor: 'rgba(255, 255, 255, 0.32)',
   },
   closeButton: {
     width: 28,
@@ -4765,10 +4766,10 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.18)',
+    backgroundColor: 'rgba(255, 255, 255, 0.12)',
     zIndex: 10,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.28)',
+    borderColor: 'rgba(255, 255, 255, 0.32)',
   },
   venueSelectorDivider: {
     height: 1,
