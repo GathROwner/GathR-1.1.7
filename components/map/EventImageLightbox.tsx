@@ -11,8 +11,11 @@ import {
   Alert,
   Animated,
   Easing,
+  useWindowDimensions,
 } from 'react-native';
 import { useReduceMotion } from '../../hooks/useReduceMotion';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 
 import { usePathname } from 'expo-router';
 import { amplitudeTrack } from '../../lib/amplitudeAnalytics';
@@ -60,6 +63,7 @@ import { RegistrationPrompt } from '../RegistrationPrompt';
 import { useGuestLimitationStore } from '../../store/guestLimitationStore';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+const APP_HEADER_HEIGHT = Platform.OS === 'ios' ? 44 : 56;
 
 // --- Local helper to derive label/start/end from already-formatted strings ---
 // Returns { label } (base without trailing " at <start>" if present),
@@ -231,6 +235,13 @@ const EventImageLightbox: React.FC<EventImageLightboxProps> = ({
   isCityEvent = false,
   onViewVenue,
 }) => {
+  const safeAreaInsets = useSafeAreaInsets();
+  const tabBarHeight = useBottomTabBarHeight();
+  const { height: windowHeight } = useWindowDimensions();
+  const lightboxTop = safeAreaInsets.top + APP_HEADER_HEIGHT;
+  const lightboxHeight = Math.max(0, windowHeight - lightboxTop - tabBarHeight);
+  const imageHeight = Math.min(windowHeight * 0.35, lightboxHeight * 0.45);
+
   // Add store subscription to get fresh event data
   const storeEvents = useMapStore((state) => state.events);
   
@@ -1138,8 +1149,13 @@ amplitudeTrack('ticket_link_opened', {
       >
       {/* Content container */}
       <Animated.View
+        testID="event-lightbox-panel"
         style={[
           styles.contentContainer,
+          {
+            top: lightboxTop,
+            bottom: tabBarHeight,
+          },
           { transform: [{ translateY: translateY }, { translateX: translateX }] }
         ]}
       >
@@ -1177,7 +1193,7 @@ amplitudeTrack('ticket_link_opened', {
             imageUrl={imageUrl}
             category={updatedEvent.category}
             type={updatedEvent.type}
-            style={styles.image}
+            style={[styles.image, { height: imageHeight }]}
             fallbackType="post"
             item={updatedEvent}
             resizeMode="contain"
@@ -1722,10 +1738,10 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0, 0, 0, 0.65)',
   },
   contentContainer: {
-    width: SCREEN_WIDTH * 0.96,
-    maxHeight: SCREEN_HEIGHT * 0.85,
+    position: 'absolute',
+    left: 0,
+    right: 0,
     backgroundColor: '#222222',
-    borderRadius: 12,
     overflow: 'hidden',
   },
   header: {
@@ -1768,7 +1784,6 @@ const styles = StyleSheet.create({
   },
   image: {
     width: '100%',
-    height: SCREEN_HEIGHT * 0.35, // Fixed height at 35% of screen height
     backgroundColor: '#000000',
   },
   imageWrapper: {
@@ -2035,24 +2050,26 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   descriptionContainer: {
-  paddingHorizontal: 16,
-  paddingVertical: 0,
-  backgroundColor: '#242424',
-  position: 'relative',
-  borderRadius: 8,
-  overflow: 'hidden',
-  borderWidth: StyleSheet.hairlineWidth,
-  borderColor: 'rgba(255,255,255,0.06)',
-},
+    flex: 1,
+    minHeight: 0,
+    paddingHorizontal: 16,
+    paddingVertical: 0,
+    backgroundColor: '#242424',
+    position: 'relative',
+    borderRadius: 8,
+    overflow: 'hidden',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255,255,255,0.06)',
+  },
 
 
-  descriptionScroll: {   // This is where you chaneg the size of the scrollable container for
-  maxHeight: SCREEN_HEIGHT * 0.24, // tighter: keeps time + actions visible
-  marginBottom: 8,
-},
-descriptionContent: {
-  paddingBottom: 2
-},
+  descriptionScroll: {
+    flex: 1,
+    marginBottom: 8,
+  },
+  descriptionContent: {
+    paddingBottom: 2,
+  },
 descriptionFadeBottom: {
   position: 'absolute',
   left: 16,
