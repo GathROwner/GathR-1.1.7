@@ -4339,7 +4339,7 @@ useEffect(() => {
         }}
       >
         <View style={styles.compactHeaderContainer}>
-          {/* Draggable area: Left section + Center (drag handle) */}
+          {/* Draggable count area */}
           <View {...shellPanHandlers} style={styles.headerDraggableArea}>
             <View style={styles.headerLeftSection}>
               <Text style={styles.venueTitleSmall} numberOfLines={1}>
@@ -4355,13 +4355,14 @@ useEffect(() => {
                 }
               </Text>
             </View>
-            <View style={styles.headerCenterSectionAbsolute}>
-              <View style={styles.handleContainer}>
-                <View style={styles.handle} />
-                <Animated.View style={{ transform: [{ rotateZ }], marginTop: -2 }}>
-                  <MaterialIcons name="keyboard-arrow-up" size={20} color="rgba(255, 255, 255, 0.95)" />
-                </Animated.View>
-              </View>
+          </View>
+          {/* Center against the full header, independent of left/right content widths. */}
+          <View pointerEvents="box-none" style={styles.headerCenterSectionAbsolute}>
+            <View {...shellPanHandlers} style={styles.handleContainer}>
+              <View style={styles.handle} />
+              <Animated.View style={{ transform: [{ rotateZ }], marginTop: -2 }}>
+                <MaterialIcons name="keyboard-arrow-up" size={20} color="rgba(255, 255, 255, 0.95)" />
+              </Animated.View>
             </View>
           </View>
           {/* Non-draggable area: Right section with reset and close buttons */}
@@ -4696,6 +4697,7 @@ const styles = StyleSheet.create({
     zIndex: 25,
   },
   compactHeaderContainer: {
+    position: 'relative',
     flexDirection: 'row',
     paddingHorizontal: 18,
     paddingVertical: 8,
@@ -4723,6 +4725,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'flex-end',
     minWidth: 72,
+    zIndex: 2,
   },
   headerCenterSectionAbsolute: {
     position: 'absolute',
@@ -4730,11 +4733,13 @@ const styles = StyleSheet.create({
     right: 0,
     alignItems: 'center',
     justifyContent: 'center',
+    zIndex: 1,
   },
   handleContainer: {
     alignItems: 'center',
     justifyContent: 'center',
-    marginLeft: 9,
+    minWidth: 72,
+    minHeight: 36,
     paddingTop: 5,
   },
   handle: {
