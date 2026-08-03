@@ -7,12 +7,14 @@ interface CategoryFilterOptionsProps {
   type: 'event' | 'special';
   counts?: { [category: string]: number }; // Add counts prop
   onCategorySelect?: (category: string) => void; // NEW: Callback for interaction tracking
+  appearance?: 'light' | 'dark';
 }
 
 const CategoryFilterOptions: React.FC<CategoryFilterOptionsProps> = ({ 
   type, 
   counts,
-  onCategorySelect // NEW: Accept interaction tracking callback
+  onCategorySelect, // NEW: Accept interaction tracking callback
+  appearance = 'light'
 }) => {
   const { categories, filterCriteria, setTypeFilters, events } = useMapStore();
   
@@ -126,6 +128,7 @@ const typeCategories = counts
                 key={category}
                 style={[
                   styles.option,
+                  appearance === 'dark' && styles.darkOption,
                   activeCategory === category && styles.selectedOption
                 ]}
                 onPress={() => handleCategorySelected(category)} // UPDATED: Now includes interaction tracking
@@ -134,12 +137,13 @@ const typeCategories = counts
                 <MaterialIcons
                     name={iconName as any}
                     size={14}
-                    color={activeCategory === category ? '#FFFFFF' : '#666'}
+                    color={activeCategory === category ? '#FFFFFF' : appearance === 'dark' ? '#D5DAE2' : '#666'}
                     style={styles.categoryIcon}
                   />
                   <Text 
                     style={[
                       styles.optionText,
+                      appearance === 'dark' && styles.darkOptionText,
                       activeCategory === category && styles.selectedOptionText
                     ]}
                   >
@@ -149,6 +153,7 @@ const typeCategories = counts
                     <Text 
                       style={[
                         styles.countText,
+                        appearance === 'dark' && styles.darkCountText,
                         activeCategory === category && styles.selectedCountText
                       ]}
                     >
@@ -196,6 +201,12 @@ option: {
   elevation: 1,
 },
 
+  darkOption: {
+    backgroundColor: '#1A1D22',
+    borderColor: '#343941',
+    shadowOpacity: 0.28,
+  },
+
   selectedOption: {
     backgroundColor: '#2196F3',
     borderColor: '#2196F3',
@@ -211,6 +222,9 @@ option: {
     fontSize: 12,
     color: '#333',
   },
+  darkOptionText: {
+    color: '#F2F4F7',
+  },
   selectedOptionText: {
     color: 'white',
     fontWeight: '500',
@@ -220,6 +234,9 @@ option: {
     color: '#666',
     marginLeft: 4,
     fontWeight: '400',
+  },
+  darkCountText: {
+    color: '#B8BEC8',
   },
   selectedCountText: {
     color: 'rgba(255, 255, 255, 0.9)',
