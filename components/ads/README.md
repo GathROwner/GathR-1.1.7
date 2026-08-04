@@ -14,10 +14,10 @@ This directory contains the native ad display components for GathR.
 All ad loading is managed through a centralized Zustand store that provides:
 
 - **Shared ad pool** - Events and specials tabs share the same pool of loaded ads
-- **Two-phase loading** - Fast initial batch (3 ads) + background loading (12 more)
+- **Small bounded pools** - Eight ads cover four list placements plus four callout placements
 - **Rate limiting** - 30-second cooldown between load attempts to avoid AdMob throttling
 - **Deduplication** - Ads are deduplicated by content hash (headline + advertiser + body)
-- **Eager preloading** - Ads preload 500ms after app start (before user opens callout)
+- **Focused loading** - Ads load only after a screen or callout actually requests them
 
 ### Hook: `useNativeAds(count, tabType, startIndex)`
 
@@ -142,25 +142,16 @@ The SKAdNetwork identifiers in `app.config.js` have been optimized to ~25 essent
 | Constant | Value | Description |
 |----------|-------|-------------|
 | `MIN_LOAD_INTERVAL_MS` | 30000 | 30 seconds between load attempts |
-| `DEFAULT_POOL_SIZE` | 15 | Target number of ads per pool |
-| `INITIAL_FAST_LOAD` | 3 | Ads loaded immediately on startup |
-| `MAX_ATTEMPTS` | 20 | Max API calls per load cycle |
+| `DEFAULT_POOL_SIZE` | 8 | Four list placements plus four callout placements |
+| `INITIAL_FAST_LOAD` | 2 | First batch when explicit preloading is requested |
+| `MAX_ATTEMPTS` | 8 | Max API calls per load cycle |
 | `STALE_AGE_MS` | 300000 | 5 minutes before refresh |
 
-## Preloading
+## Loading
 
-Ads are preloaded in `app/_layout.tsx` 500ms after app start:
-
-```typescript
-useEffect(() => {
-  const adTimer = setTimeout(() => {
-    useAdPoolStore.getState().preloadAds();
-  }, 500);
-  return () => clearTimeout(adTimer);
-}, []);
-```
-
-This ensures ads are ready before the user opens their first callout.
+`useNativeAds` requests a small pool only after its Events, Specials, or callout
+surface is focused. The app does not mount hidden ad views or eagerly request
+both content types during startup.
 
 ## Troubleshooting
 
@@ -171,4 +162,5 @@ Check that both viewport AND outside-viewport sections in `events.tsx`/`specials
 Ensure `startIndex` (venueIndex) is passed to `useNativeAds` in `EventCallout.tsx`.
 
 ### Ads take too long to appear
-The two-phase preload should have 3 ads ready within ~1 second of app start. Check console for `[AdPool] Phase 1 ✅` logs.
+Confirm the focused surface requested its pool and that the SDK returned at
+least one ad. Development builds use Google's sample native ad unit.

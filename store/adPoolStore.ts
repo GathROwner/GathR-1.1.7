@@ -1,10 +1,32 @@
 import { create } from 'zustand';
-import { NativeAd } from 'react-native-google-mobile-ads';
+import { Platform } from 'react-native';
+import { NativeAd, TestIds } from 'react-native-google-mobile-ads';
 
-// Ad unit IDs
-const AD_UNIT_IDS = {
-  events: 'ca-app-pub-9606287073864764/7793096624',
-  specials: 'ca-app-pub-9606287073864764/6692005621',
+type AdType = 'events' | 'specials';
+
+// Keep revenue attribution separated by platform. Development builds always
+// use Google's sample native unit so local QA can never create live traffic.
+const PRODUCTION_AD_UNIT_IDS: Record<'ios' | 'android', Record<AdType, string>> = {
+  ios: {
+    events: 'ca-app-pub-9606287073864764/7793096624',
+    specials: 'ca-app-pub-9606287073864764/6692005621',
+  },
+  android: {
+    events: 'ca-app-pub-9606287073864764/7924894925',
+    specials: 'ca-app-pub-9606287073864764/2661278732',
+  },
+};
+
+const getAdUnitId = (type: AdType): string => {
+  if (__DEV__) {
+    return TestIds.NATIVE;
+  }
+
+  if (Platform.OS === 'ios' || Platform.OS === 'android') {
+    return PRODUCTION_AD_UNIT_IDS[Platform.OS][type];
+  }
+
+  throw new Error(`[AdPool] Native ads are not configured for ${Platform.OS}`);
 };
 
 // Keywords for contextual targeting
@@ -42,14 +64,12 @@ const LOCATION_KEYWORDS = ['local', 'nearby', 'neighborhood'];
 
 // Configuration
 const MIN_LOAD_INTERVAL_MS = 30000; // 30 seconds between loads
-const DEFAULT_POOL_SIZE = 15; // Load up to 15 ads per type
-const INITIAL_FAST_LOAD = 3; // Load this many ads quickly first
-const MAX_ATTEMPTS = 20; // More attempts than before
+const DEFAULT_POOL_SIZE = 8; // Four visible slots plus four reserved for a second surface
+const INITIAL_FAST_LOAD = 2; // Small first batch for responsive rendering
+const MAX_ATTEMPTS = 8;
 const STALE_AGE_MS = 5 * 60 * 1000; // 5 minutes
 const AD_POOL_DEBUG_ENABLED = false;
 const MAX_LOGGED_ADS = 5;
-
-type AdType = 'events' | 'specials';
 
 interface AdPoolState {
   // State
@@ -227,7 +247,7 @@ export const useAdPoolStore = create<AdPoolState>((set, get) => ({
       isLoading: state.isLoading[type],
       isPreloaded: state.isPreloaded[type],
       lastLoadAgeMs: state.lastLoadTime[type] > 0 ? timeSinceLastLoad : null,
-      adUnitId: AD_UNIT_IDS[type],
+      adUnitId: getAdUnitId(type),
     });
     logPoolSnapshot(type, currentAds, 'before_load');
     if (timeSinceLastLoad < MIN_LOAD_INTERVAL_MS && currentAds.length > 0) {
@@ -254,7 +274,7 @@ export const useAdPoolStore = create<AdPoolState>((set, get) => ({
 
     const loadedAds: NativeAd[] = [];
     const localUsedIds = new Set<string>();
-    const adUnitId = AD_UNIT_IDS[type];
+    const adUnitId = getAdUnitId(type);
     const keywords = type === 'events' ? EVENTS_KEYWORDS : SPECIALS_KEYWORDS;
     const keywordPool = [...keywords, ...LOCATION_KEYWORDS];
     logAdPool(type, 'load_started', {
@@ -423,7 +443,7 @@ export const useAdPoolStore = create<AdPoolState>((set, get) => ({
 
       const loadedAds: NativeAd[] = [];
       const localUsedIds = new Set<string>();
-      const adUnitId = AD_UNIT_IDS[type];
+      const adUnitId = getAdUnitId(type);
       const keywords = type === 'events' ? EVENTS_KEYWORDS : SPECIALS_KEYWORDS;
       const keywordPool = [...keywords, ...LOCATION_KEYWORDS];
       logAdPool(type, 'preload_phase1_started', {

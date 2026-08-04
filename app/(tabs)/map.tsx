@@ -53,7 +53,6 @@ import EventImageLightbox from '../../components/map/EventImageLightbox';
 import HotspotHighlight from '../../components/map/HotspotHighlight';
 import MapTracePanel from '../../components/debug/MapTracePanel';
 import StaticDebugCallout from '../../components/map/StaticDebugCallout';
-import CompactCalloutAdWarmup from '../../components/ads/CompactCalloutAdWarmup';
 
 // Import centralized date utilities
 import { 
@@ -118,7 +117,6 @@ initializeMapboxAccessToken(MapboxGL);
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 const HOTSPOT_HARD_DISABLED_FOR_PREVIEW_DEBUG = false;
 const STATIC_CALLOUT_ISOLATION_DEBUG = false;
-const IOS_CALLOUT_NATIVE_AD_ISOLATION_DEBUG = Platform.OS === 'ios';
 const ANDROID_MAPBOX_STARTUP_ISOLATION_DEBUG = false;
 const ANDROID_CLUSTER_MARKERVIEW_ISOLATION_DEBUG = false;
 const DEBUG_CALLOUT_PROBE = true;
@@ -8451,8 +8449,6 @@ Owner: Map UX stability on Android • Last validated: 2025-09-04
       {!HOTSPOT_HARD_DISABLED_FOR_PREVIEW_DEBUG && clustersReadyForInteraction && (
         <HotspotHighlight ignoreProgrammaticCameraRef={ignoreProgrammaticCameraRef} />
       )}
-
-      {!IOS_CALLOUT_NATIVE_AD_ISOLATION_DEBUG && <CompactCalloutAdWarmup />}
 
       {/* Guest limitation registration prompt - only for guests */}
       {isGuest && <RegistrationPrompt />}

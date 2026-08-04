@@ -15,7 +15,7 @@ export type AdDebugInfo = string[];
 const DEBUG_ADS = false;
 const MAX_LOGGED_ADS = 5;
 const ANDROID_FOCUSED_AD_WORK_DELAY_MS = 8000;
-const ANDROID_FOCUSED_AD_LOAD_COUNT = 2;
+const ANDROID_FOCUSED_AD_LOAD_COUNT = 8;
 const ANDROID_AD_REFRESH_MAX_AGE_MS = 20 * 60 * 1000;
 
 const summarizeAd = (ad: NativeAd | null) => {
@@ -61,7 +61,7 @@ const summarizeAd = (ad: NativeAd | null) => {
  * - All screens share the same pool of ads (no duplicate loading)
  * - Rate limiting is handled centrally (30s cooldown between loads)
  * - Ads persist across tab switches and callout opens
- * - Better ad variety since pool loads more ads upfront (15 vs 5-6)
+ * - Small pools keep requests close to placements users can realistically view
  *
  * @param count - Number of ads needed for display (will cycle if pool is smaller)
  * @param tabType - 'events' or 'specials' to determine which ad pool to use

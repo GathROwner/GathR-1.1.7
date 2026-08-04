@@ -53,8 +53,6 @@ import { GATHR_MAPBOX_STYLE_URL, initializeMapboxAccessToken } from '../utils/ma
   import { EVENTS_MINIMAL } from '../lib/queryKeys';
   import { fetchMinimalEvents } from '../lib/api/events';
   import { useMapStore } from '../store';
-  // 📢 PERFORMANCE: Preload ad pool on app start
-  import { useAdPoolStore } from '../store/adPoolStore';
   // 📢 AdMob SDK initialization (moved from index.tsx to ensure it runs regardless of auth state)
   import mobileAds, { MaxAdContentRating } from 'react-native-google-mobile-ads';
   import { requestTrackingPermissionsAsync } from 'expo-tracking-transparency';
@@ -604,12 +602,8 @@ useEffect(() => {
           mobileAds().setAppMuted(false);
           mobileAds().setAppVolume(1.0);
 
-          // iOS can warm ads early. On Android, list screens load ads after focus so
-          // startup and tab switches are not interrupted by a fixed preload timer.
-          if (Platform.OS !== 'android') {
-            console.log('📢 Preloading ad pool after SDK init...');
-            useAdPoolStore.getState().preloadAds();
-          }
+          // Focused ad surfaces load their own small pools. Avoid requesting ads
+          // for screens the user may never open.
 
         } catch (error) {
           console.error('Error initializing AdMob:', error);

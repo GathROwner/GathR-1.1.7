@@ -2956,7 +2956,7 @@ const [calloutState, setCalloutState] = useState<CalloutState>('expanded');
         adCount = Math.ceil(activeContent.length / 2);
         
         // Increase reasonable limits for longer lists
-        const maxAds = Math.min(15, Math.ceil(activeContent.length / 2)); // Up to 15 ads or half the content, whichever is smaller
+        const maxAds = Math.min(4, Math.ceil(activeContent.length / 2));
         adCount = Math.min(adCount, maxAds);
       }
     }

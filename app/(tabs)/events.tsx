@@ -1746,7 +1746,7 @@ useEffect(() => {
   const totalEventCount = events.length;
   const calculatedAdCount = Math.ceil(totalEventCount / adFrequency);
   const minAdCount = 2;
-  const maxAdCount = 10;
+  const maxAdCount = 4;
   const adCount = Math.max(minAdCount, Math.min(calculatedAdCount, maxAdCount));
   const nativeAds = useNativeAds(adCount, 'events');
   
