@@ -7939,7 +7939,9 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
         styleURL={GATHR_MAPBOX_STYLE_URL}
         scaleBarEnabled={true}
         scaleBarPosition={{
-          bottom: 12,
+          // iOS reserves extra space beneath the visible rule. Offset only that
+          // platform so Android keeps its existing native ornament placement.
+          bottom: Platform.OS === 'ios' ? -12 : 12,
           left: Math.round((Dimensions.get('window').width / 2) - 50)
         }}
         surfaceView={Platform.OS === 'android' ? false : undefined}
