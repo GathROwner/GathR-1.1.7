@@ -64,7 +64,7 @@ const LOCATION_KEYWORDS = ['local', 'nearby', 'neighborhood'];
 
 // Configuration
 const MIN_LOAD_INTERVAL_MS = 30000; // 30 seconds between loads
-const DEFAULT_POOL_SIZE = 8; // Four visible slots plus four reserved for a second surface
+const DEFAULT_POOL_SIZE = 4; // Maximum visible slots on the focused surface
 const INITIAL_FAST_LOAD = 2; // Small first batch for responsive rendering
 const MAX_ATTEMPTS = 8;
 const STALE_AGE_MS = 5 * 60 * 1000; // 5 minutes

@@ -15,7 +15,7 @@ export type AdDebugInfo = string[];
 const DEBUG_ADS = false;
 const MAX_LOGGED_ADS = 5;
 const ANDROID_FOCUSED_AD_WORK_DELAY_MS = 8000;
-const ANDROID_FOCUSED_AD_LOAD_COUNT = 8;
+const ANDROID_FOCUSED_AD_LOAD_COUNT = 4;
 const ANDROID_AD_REFRESH_MAX_AGE_MS = 20 * 60 * 1000;
 
 const summarizeAd = (ad: NativeAd | null) => {
@@ -203,8 +203,7 @@ export default function useNativeAds(
 
           logMessage(`Pool empty - loading ads`);
           const focusedLoadCount = Platform.OS === 'android'
-            // Keep enough capacity for the focused list and a map callout.
-            // Native ad instances cannot be mounted by two owners at once.
+            // Fill the maximum number of slots on the focused surface.
             ? Math.max(state.count, ANDROID_FOCUSED_AD_LOAD_COUNT)
             : undefined;
           state.loadAds(state.tabType, focusedLoadCount);
@@ -244,13 +243,15 @@ export default function useNativeAds(
       return () => {
         isFocusedRef.current = false;
         cancelFocusedAdWork();
+        const state = latestStateRef.current;
+        state.releaseAds(state.tabType, ownerIdRef.current);
+        updateIfChanged(makeEmptySlots(state.count, false));
       };
-    }, [cancelFocusedAdWork, scheduleFocusedAdWork])
+    }, [cancelFocusedAdWork, makeEmptySlots, scheduleFocusedAdWork, updateIfChanged])
   );
 
-  // Keep focus changes from forcing the list screens to re-render. Pool updates
-  // still refresh ads while focused, but blur no longer clears native ad state
-  // during the tab transition.
+  // Pool updates refresh ads while focused. Blur releases the native instances
+  // so an off-screen tab cannot block the next visible surface from claiming them.
   useEffect(() => {
     logStructured('hook_state_changed', {
       tabType,
