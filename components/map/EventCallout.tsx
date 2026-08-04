@@ -2939,6 +2939,10 @@ const [calloutState, setCalloutState] = useState<CalloutState>('expanded');
   
   // Calculate the number of ads needed based on the content
   const calculateAdCount = useMemo(() => {
+    if (activeTab !== 'events' && activeTab !== 'specials') {
+      return 0;
+    }
+
     let adCount = 1; // Default minimum
     
     // Get active content based on current tab
@@ -2968,7 +2972,9 @@ const [calloutState, setCalloutState] = useState<CalloutState>('expanded');
   // Load native ads for the current tab
   // Pass activeVenueIndex as startIndex so different venues show different ads from the pool
   const requestedNativeAdCount =
-    EVENT_CALLOUT_DISABLE_NATIVE_ADS_DEBUG || shouldDeferAndroidCalloutContent
+    EVENT_CALLOUT_DISABLE_NATIVE_ADS_DEBUG ||
+    shouldDeferAndroidCalloutContent ||
+    (activeTab !== 'events' && activeTab !== 'specials')
       ? 0
       : calculateAdCount;
   const nativeAds = useNativeAds(

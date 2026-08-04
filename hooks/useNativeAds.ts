@@ -203,7 +203,9 @@ export default function useNativeAds(
 
           logMessage(`Pool empty - loading ads`);
           const focusedLoadCount = Platform.OS === 'android'
-            ? Math.max(1, Math.min(state.count, ANDROID_FOCUSED_AD_LOAD_COUNT))
+            // Keep enough capacity for the focused list and a map callout.
+            // Native ad instances cannot be mounted by two owners at once.
+            ? Math.max(state.count, ANDROID_FOCUSED_AD_LOAD_COUNT)
             : undefined;
           state.loadAds(state.tabType, focusedLoadCount);
           updateIfChanged(makeEmptySlots(state.count, false));
