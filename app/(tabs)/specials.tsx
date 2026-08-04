@@ -3134,6 +3134,7 @@ const styles = StyleSheet.create({
     height: FULL_SIZE_SDK_AD_ROW_HEIGHT,
     paddingBottom: 12,
     marginBottom: 12, // Changed from borderBottomWidth to margin
+    borderRadius: 16,
     overflow: 'hidden',
   },
   placeholderAdCard: {
