@@ -7938,12 +7938,20 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
         style={styles.map}
         styleURL={GATHR_MAPBOX_STYLE_URL}
         scaleBarEnabled={true}
-        scaleBarPosition={{
-          // iOS reserves extra space beneath the visible rule. Offset only that
-          // platform so Android keeps its existing native ornament placement.
-          bottom: Platform.OS === 'ios' ? -12 : 12,
-          left: Math.round((Dimensions.get('window').width / 2) - 50)
-        }}
+        scaleBarPosition={
+          Platform.OS === 'ios' && mapDimensions?.height
+            ? {
+                // Negative bottom margins are clamped by Mapbox on iOS. Anchor
+                // from the measured top instead so the visible rule sits in the
+                // same bottom row as the logo and attribution button.
+                top: Math.max(0, Math.round(mapDimensions.height - 28)),
+                left: Math.round((Dimensions.get('window').width / 2) - 50),
+              }
+            : {
+                bottom: 12,
+                left: Math.round((Dimensions.get('window').width / 2) - 50),
+              }
+        }
         surfaceView={Platform.OS === 'android' ? false : undefined}
 onLayout={(event) => {
   const { width, height, x, y } = event.nativeEvent.layout;
