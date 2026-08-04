@@ -7939,11 +7939,10 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
         styleURL={GATHR_MAPBOX_STYLE_URL}
         scaleBarEnabled={true}
         scaleBarPosition={
-          Platform.OS === 'ios' && mapDimensions?.height
+          mapDimensions?.height
             ? {
-                // Negative bottom margins are clamped by Mapbox on iOS. Anchor
-                // from the measured top instead so the visible rule sits in the
-                // same bottom row as the logo and attribution button.
+                // Bottom margins reserve ornament clearance. Anchor from the
+                // measured top so the visible rule shares the attribution row.
                 top: Math.max(0, Math.round(mapDimensions.height - 28)),
                 left: Math.round((Dimensions.get('window').width / 2) - 50),
               }
