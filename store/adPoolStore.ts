@@ -340,6 +340,18 @@ export const useAdPoolStore = create<AdPoolState>((set, get) => ({
         consecutiveErrors = 0;
         localUsedIds.add(adId);
         loadedAds.push(nativeAd);
+
+        // Make the first successful ad available immediately when starting from
+        // an empty pool. The remaining reserve can continue loading without
+        // holding every placement behind the full diversity-attempt batch.
+        if (currentAds.length === 0 && loadedAds.length === 1) {
+          if (type === 'events') {
+            set({ eventsAds: [...loadedAds] });
+          } else {
+            set({ specialsAds: [...loadedAds] });
+          }
+        }
+
         logAdPool(type, 'load_attempt_succeeded', {
           attempt: attemptCount,
           loadedCount: loadedAds.length,
@@ -377,8 +389,12 @@ export const useAdPoolStore = create<AdPoolState>((set, get) => ({
       newPoolSize: loadedAds.length,
     });
     logPoolSnapshot(type, oldAds, 'before_replace');
+    const nextPoolInstanceIds = new Set(loadedAds.map(getAdInstanceId));
     oldAds.forEach((ad) => {
       const instanceId = getAdInstanceId(ad);
+      if (nextPoolInstanceIds.has(instanceId)) {
+        return;
+      }
       if (leasedAdOwners[type][instanceId]) {
         retiredAdsByType[type].push(ad);
         retainedClaimedAds++;
