@@ -34,6 +34,8 @@ export interface Event {
   longitude: number;
   ticketLinkPosts: string;
   ticketLinkEvents: string;
+  ticketsBuyUrl?: string;
+  ticketLink?: string;
   relevantImageUrl?: string;
   likes?: number | string;
   shares?: number | string;

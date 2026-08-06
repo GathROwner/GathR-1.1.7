@@ -68,6 +68,8 @@ export interface FirestoreEventMetadata {
   fullDescription?: string;
   ticketLinkPosts?: string;
   ticketLinkEvents?: string;
+  ticketsBuyUrl?: string;
+  ticketLink?: string;
   sharedEventCandidateId?: string;
   sharedEventPrivateEventId?: string;
   sharedEventIngestId?: string;
@@ -150,6 +152,8 @@ export interface FirestoreEvent {
   price?: string | null;
   ticketLinkPosts?: string;
   ticketLinkEvents?: string;
+  ticketsBuyUrl?: string;
+  ticketLink?: string;
   fullDescription?: string;
   profileUrl?: string;
   imageUrl?: string;

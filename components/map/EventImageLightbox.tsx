@@ -42,6 +42,7 @@ import {
 } from '../../utils/dateUtils';
 import { createLocationKeyFromEvent } from '../../utils/priorityUtils';
 import { buildGathrSharePayload } from '../../utils/shareUtils';
+import { getTicketUrl, normalizeTicketUrl } from '../../utils/ticketUrls';
 import { areEventIdsEquivalent } from '../../lib/api/firestoreEvents';
 
 // Store imports for like/share functionality
@@ -138,27 +139,6 @@ const getCategoryColor = (category: string): string => {
     default: return '#757575';
   }
 };
-
-// Helper functions to normalize and validate ticket URLs.
-// Some backend/parser sources send a bare domain or a labeled value like
-// "Tickets | example.com/event". Treat those as valid ticket URLs in the UI.
-const normalizeTicketUrl = (url?: string): string => {
-  const rawValue = String(url || '').trim();
-  if (!rawValue || rawValue === 'N/A') return '';
-
-  const match = rawValue.match(/https?:\/\/[^\s<>"']+|(?:www\.)?(?=[a-z0-9.-]*[a-z])[a-z0-9-]+(?:\.[a-z0-9-]+)*\.[a-z]{2,}(?:\/[^\s<>"']*)?/i);
-  const candidate = match?.[0]?.replace(/[)\].,;:!?]+$/, '') || '';
-  if (!candidate) return '';
-
-  return /^https?:\/\//i.test(candidate) ? candidate : `https://${candidate}`;
-};
-
-const isValidTicketUrl = (url?: string): boolean => Boolean(normalizeTicketUrl(url));
-
-const getTicketUrl = (event: { ticketLinkEvents?: string; ticketLinkPosts?: string; ticketPrice?: string }): string =>
-  normalizeTicketUrl(event.ticketLinkEvents) ||
-  normalizeTicketUrl(event.ticketLinkPosts) ||
-  normalizeTicketUrl(event.ticketPrice);
 
 const hasDisplayableTicketPrice = (price?: string): boolean =>
   Boolean(price && price !== 'N/A' && normalizeTicketUrl(price) === '');

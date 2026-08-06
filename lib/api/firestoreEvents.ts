@@ -14,6 +14,7 @@ import {
 } from '../config/backend';
 import { isScopedLocationScope } from '../../utils/locationScope';
 import { resolvePeiCityCentroid } from '../../utils/peiCityCentroids';
+import { getTicketUrl, normalizeTicketUrl } from '../../utils/ticketUrls';
 
 // Debug flag for logging
 const DEBUG_FIRESTORE = __DEV__ ?? true;
@@ -229,6 +230,10 @@ export function normalizeFirestoreEvent(fsEvent: FirestoreEvent): Event {
   const address = scopedLocation
     ? firstText(fsEvent.address, locationLabel, fsEvent.metadata?.address, venueRecord?.address)
     : firstText(fsEvent.venueInfo?.address, fsEvent.metadata?.address, fsEvent.address, venueRecord?.address);
+  const ticketsBuyUrl =
+    normalizeTicketUrl(fsEvent.ticketsBuyUrl) ||
+    normalizeTicketUrl(fsEvent.metadata?.ticketsBuyUrl);
+  const resolvedTicketUrl = getTicketUrl(fsEvent);
 
   return {
     // Preserve existing app expectation that Firestore IDs are namespaced.
@@ -279,9 +284,20 @@ export function normalizeFirestoreEvent(fsEvent: FirestoreEvent): Event {
     usersResponded: fsEvent.metadata?.usersResponded ?? '0',
 
     // Ticketing
-    ticketPrice: fsEvent.price || '',
-    ticketLinkPosts: fsEvent.ticketLinkPosts || fsEvent.metadata?.ticketLinkPosts || '',
-    ticketLinkEvents: fsEvent.ticketLinkEvents || fsEvent.metadata?.ticketLinkEvents || '',
+    // `ticketsBuyUrl` explicitly represents a purchase action. When the
+    // backend has no display price, reuse the app's existing non-price marker
+    // so the CTA says "Buy Tickets" rather than "Register".
+    ticketPrice: fsEvent.price || (ticketsBuyUrl ? 'Ticketed Event' : ''),
+    ticketLinkPosts:
+      normalizeTicketUrl(fsEvent.ticketLinkPosts) ||
+      normalizeTicketUrl(fsEvent.metadata?.ticketLinkPosts),
+    // Canonicalize the best backend ticket URL into the field consumed by all
+    // existing app surfaces. This also keeps older clients/components working.
+    ticketLinkEvents: resolvedTicketUrl,
+    ticketsBuyUrl,
+    ticketLink:
+      normalizeTicketUrl(fsEvent.ticketLink) ||
+      normalizeTicketUrl(fsEvent.metadata?.ticketLink),
 
     // Additional media/details
     mediaUrls: fsEvent.metadata?.mediaUrls || [],
