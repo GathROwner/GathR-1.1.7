@@ -32,4 +32,33 @@ describe('Firestore ticket URL mapping', () => {
     );
     expect(normalized.ticketPrice).toBe('Ticketed Event');
   });
+
+  it('maps a classified HPI schedule without creating a ticket CTA', () => {
+    const event = {
+      id: 'L3NgkSMZqgvxRPryIJp0',
+      title: 'Live Race Nights (Thursdays at Top of the Park)',
+      description: '',
+      startDate: '2026-08-06',
+      startTime: '18:00',
+      venueId: 'fb_100052606604879',
+      venue: 'redshoresPEI',
+      category: 'Live Music',
+      isEvent: true,
+      price: null,
+      actionLinks: [
+        {
+          url: 'https://hpibet.com/Racing/Schedule',
+          role: 'schedule',
+          label: 'View Schedule',
+        },
+      ],
+      metadata: {},
+    } as FirestoreEvent;
+
+    const normalized = normalizeFirestoreEvent(event);
+
+    expect(normalized.ticketLinkEvents).toBe('');
+    expect(normalized.ticketPrice).toBe('');
+    expect(normalized.actionLinks).toEqual(event.actionLinks);
+  });
 });

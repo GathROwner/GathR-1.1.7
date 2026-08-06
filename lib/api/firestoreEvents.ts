@@ -298,6 +298,11 @@ export function normalizeFirestoreEvent(fsEvent: FirestoreEvent): Event {
     ticketLink:
       normalizeTicketUrl(fsEvent.ticketLink) ||
       normalizeTicketUrl(fsEvent.metadata?.ticketLink),
+    actionLinks: Array.isArray(fsEvent.actionLinks)
+      ? fsEvent.actionLinks
+      : Array.isArray(fsEvent.metadata?.actionLinks)
+        ? fsEvent.metadata.actionLinks
+        : [],
 
     // Additional media/details
     mediaUrls: fsEvent.metadata?.mediaUrls || [],

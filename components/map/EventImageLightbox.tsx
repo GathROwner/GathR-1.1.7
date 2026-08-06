@@ -28,6 +28,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import ImageView from "react-native-image-viewing";
 import FallbackImage from '../common/FallbackImage';
 import TicketCtaPill from '../common/TicketCtaPill';
+import EventActionLinkPill from '../common/EventActionLinkPill';
 import { VenueFavoriteButton } from '../common/VenueFavoriteButton';
 import Autolink from 'react-native-autolink';
 
@@ -44,6 +45,7 @@ import {
 import { createLocationKeyFromEvent } from '../../utils/priorityUtils';
 import { buildGathrSharePayload } from '../../utils/shareUtils';
 import { getTicketUrl, normalizeTicketUrl } from '../../utils/ticketUrls';
+import { getPrimaryNonTicketAction } from '../../utils/eventActionLinks';
 import { areEventIdsEquivalent } from '../../lib/api/firestoreEvents';
 
 // Store imports for like/share functionality
@@ -605,6 +607,7 @@ const [descAtTop, setDescAtTop] = useState(true);
 
   // Check if there's a valid ticket URL
   const hasTicketLink = Boolean(getTicketUrl(updatedEvent));
+  const nonTicketAction = getPrimaryNonTicketAction(updatedEvent);
   
   // Determine if it's a paid event
   const paid = isPaidEvent(updatedEvent.ticketPrice);
@@ -992,6 +995,18 @@ amplitudeTrack('ticket_link_opened', {
 
     Linking.openURL(ticketUrl);
   }
+};
+
+const handleNonTicketAction = () => {
+  if (isGuest || !nonTicketAction) return;
+  amplitudeTrack('event_action_link_opened', {
+    event_id: String(updatedEvent.id),
+    venue_name: updatedEvent.venue,
+    action_role: nonTicketAction.role,
+    source: 'lightbox',
+    referrer_screen: pathname || '/',
+  });
+  Linking.openURL(nonTicketAction.url);
 };
 
 
@@ -1432,6 +1447,15 @@ amplitudeTrack('ticket_link_opened', {
                 )}
               </View>
             </TouchableOpacity>
+          )}
+          {!hasTicketLink && nonTicketAction && (
+            <EventActionLinkPill
+              disabled={isGuest}
+              label={nonTicketAction.label}
+              onPress={handleNonTicketAction}
+              role={nonTicketAction.role}
+              style={styles.ticketCtaPill}
+            />
           )}
         </View>
 

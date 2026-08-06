@@ -70,6 +70,7 @@ export interface FirestoreEventMetadata {
   ticketLinkEvents?: string;
   ticketsBuyUrl?: string;
   ticketLink?: string;
+  actionLinks?: import('./events').EventActionLink[];
   sharedEventCandidateId?: string;
   sharedEventPrivateEventId?: string;
   sharedEventIngestId?: string;
@@ -154,6 +155,7 @@ export interface FirestoreEvent {
   ticketLinkEvents?: string;
   ticketsBuyUrl?: string;
   ticketLink?: string;
+  actionLinks?: import('./events').EventActionLink[];
   fullDescription?: string;
   profileUrl?: string;
   imageUrl?: string;

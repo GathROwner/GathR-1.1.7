@@ -127,6 +127,7 @@ import {
 import { isEventPast } from '../../utils/eventExpiry';
 import { buildGathrSharePayload } from '../../utils/shareUtils';
 import { getTicketUrl, isValidTicketUrl, normalizeTicketUrl } from '../../utils/ticketUrls';
+import { getPrimaryNonTicketAction } from '../../utils/eventActionLinks';
 import { getTrendingLightboxImageUrl } from '../../utils/trendingLightbox';
 import * as Haptics from 'expo-haptics';
 
@@ -138,6 +139,7 @@ import useNativeAds from '../../hooks/useNativeAds';
 import CompactNativeAdComponent from '../ads/CompactNativeAdComponent';
 import CompactSdkAdCard from '../ads/CompactSdkAdCard';
 import TicketCtaPill from '../common/TicketCtaPill';
+import EventActionLinkPill from '../common/EventActionLinkPill';
 import { traceMapEvent } from '../../utils/mapTrace';
 
 const EVENT_CALLOUT_SHELL_ISOLATION_DEBUG = false;
@@ -1151,6 +1153,7 @@ const shareEvent = async () => {
   
   // Check if there's a valid ticket URL
   const hasTicketLink = Boolean(getTicketUrl(event));
+  const nonTicketAction = getPrimaryNonTicketAction(event);
   
   // Determine if it's a paid event vs. free event
   const paid = isPaidEvent(event.ticketPrice);
@@ -1184,6 +1187,15 @@ const shareEvent = async () => {
           <Text style={styles.ticketButtonText}>
             {paid ? "Buy Tickets" : "Register"}
           </Text>
+        </TouchableOpacity>
+      )}
+      {!hasTicketLink && nonTicketAction && (
+        <TouchableOpacity
+          style={styles.ticketButton}
+          onPress={() => Linking.openURL(nonTicketAction.url)}
+          activeOpacity={0.7}
+        >
+          <Text style={styles.ticketButtonText}>{nonTicketAction.label}</Text>
         </TouchableOpacity>
       )}
     </View>
@@ -2086,6 +2098,20 @@ const handleShare = async (e: any) => {
       Linking.openURL(ticketUrl);
     }
   };
+
+  const nonTicketAction = getPrimaryNonTicketAction(event);
+  const handleNonTicketAction = (e: any) => {
+    e.stopPropagation();
+    if (isGuest || !nonTicketAction) return;
+    amplitudeTrack('event_action_link_opened', {
+      event_id: String(event.id),
+      venue_name: event.venue,
+      action_role: nonTicketAction.role,
+      source: 'map_callout',
+      referrer_screen: '/map',
+    });
+    Linking.openURL(nonTicketAction.url);
+  };
   
 const toggleBookmark = async (e: any) => {
   e.stopPropagation();
@@ -2379,6 +2405,15 @@ return (
                 {isGuest && <MaterialIcons name="lock" size={12} color="#FFFFFF" />}
               </View>
             </TouchableOpacity>
+          )}
+          {!hasTicketLink && nonTicketAction && (
+            <EventActionLinkPill
+              disabled={isGuest}
+              label={nonTicketAction.label}
+              onPress={handleNonTicketAction}
+              role={nonTicketAction.role}
+              style={styles.ticketCtaPill}
+            />
           )}
         </View>
         

@@ -10,6 +10,24 @@ export interface Coordinates {
   longitude: number;
 }
 
+export type EventActionLinkRole =
+  | 'ticket_purchase'
+  | 'registration'
+  | 'event_info'
+  | 'schedule'
+  | 'livestream'
+  | 'wagering'
+  | 'unknown';
+
+export interface EventActionLink {
+  url: string;
+  role: EventActionLinkRole;
+  label: string;
+  confidence?: number;
+  source?: string;
+  evidence?: string;
+}
+
 /**
  * Main Event interface representing event data from the API
  */
@@ -36,6 +54,7 @@ export interface Event {
   ticketLinkEvents: string;
   ticketsBuyUrl?: string;
   ticketLink?: string;
+  actionLinks?: EventActionLink[];
   relevantImageUrl?: string;
   likes?: number | string;
   shares?: number | string;

@@ -28,6 +28,7 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import FallbackImage from '../../components/common/FallbackImage';
 import TicketCtaPill from '../../components/common/TicketCtaPill';
+import EventActionLinkPill from '../../components/common/EventActionLinkPill';
 import { VenueFavoriteButton } from '../../components/common/VenueFavoriteButton';
 import Autolink from 'react-native-autolink';
 
@@ -60,6 +61,7 @@ import {
 import { addToCalendar } from '../../utils/calendarUtils';
 import { buildGathrSharePayload } from '../../utils/shareUtils';
 import { getTicketUrl, normalizeTicketUrl } from '../../utils/ticketUrls';
+import { getPrimaryNonTicketAction } from '../../utils/eventActionLinks';
 
 // Import priority utilities, user service, and distance calculation
 import {
@@ -840,6 +842,19 @@ const EventListItem: React.FC<EventListItemProps> = ({
       Linking.openURL(ticketUrl);
     }
   };
+
+  const nonTicketAction = getPrimaryNonTicketAction(event);
+  const handleNonTicketAction = (e: GestureResponderEvent) => {
+    e.stopPropagation();
+    if (isGuest || !nonTicketAction) return;
+    analytics?.trackUserAction('event_action_link_opened', {
+      event_id: event.id.toString(),
+      event_type: event.type,
+      action_role: nonTicketAction.role,
+      venue_name: event.venue,
+    });
+    Linking.openURL(nonTicketAction.url);
+  };
   
   const toggleBookmark = async (e: GestureResponderEvent) => {
     e.stopPropagation();
@@ -1403,6 +1418,16 @@ const result = await userService.toggleSavedEvent(event.id, {
                 )}
               </View>
             </TouchableOpacity>
+          )}
+
+          {!hasTicketLink && nonTicketAction && (
+            <EventActionLinkPill
+              disabled={isGuest}
+              label={nonTicketAction.label}
+              onPress={handleNonTicketAction}
+              role={nonTicketAction.role}
+              style={styles.ticketCtaPill}
+            />
           )}
         </View>
         
