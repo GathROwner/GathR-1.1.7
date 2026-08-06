@@ -137,6 +137,7 @@ import { fetchVenueDetailsByName, VenueContactInfo } from '../../lib/api/firesto
 import useNativeAds from '../../hooks/useNativeAds';
 import CompactNativeAdComponent from '../ads/CompactNativeAdComponent';
 import CompactSdkAdCard from '../ads/CompactSdkAdCard';
+import TicketCtaPill from '../common/TicketCtaPill';
 import { traceMapEvent } from '../../utils/mapTrace';
 
 const EVENT_CALLOUT_SHELL_ISOLATION_DEBUG = false;
@@ -2358,21 +2359,17 @@ return (
             <Text style={styles.categoryText}>{getCategoryTag()}</Text>
           </View>
           
-          {hasTicketLink && !paid && !event.ticketPrice && (
-            <View style={styles.ticketedEventBadge}><Text style={styles.ticketedEventText}>Ticketed Event</Text></View>
-          )}
-          
-          {hasDisplayableTicketPrice(event.ticketPrice) && event.ticketPrice !== "0" && event.ticketPrice !== "Ticketed Event" && !(event.ticketPrice.toLowerCase() === "free" && hasTicketLink && !paid) && (
+          {hasDisplayableTicketPrice(event.ticketPrice) && event.ticketPrice !== "0" && event.ticketPrice !== "Ticketed Event" && !(hasTicketLink && paid) && !(event.ticketPrice.toLowerCase() === "free" && hasTicketLink && !paid) && (
             <View style={styles.priceTag}><Text style={styles.priceText}>{event.ticketPrice}</Text></View>
           )}
           
           {hasTicketLink && paid && (
-            <TouchableOpacity style={[ styles.buyTicketsButton, isGuest && styles.disabledPremiumButton ]} onPress={handleTickets} activeOpacity={isGuest ? 1 : 0.7} disabled={isGuest}>
-              <View style={styles.premiumButtonContent}>
-                <Text style={[ styles.buyTicketsText, isGuest && styles.disabledPremiumButtonText ]}>Buy Tickets</Text>
-                {isGuest && <MaterialIcons name="lock" size={12} color="#FFFFFF" />}
-              </View>
-            </TouchableOpacity>
+            <TicketCtaPill
+              disabled={isGuest}
+              onPress={handleTickets}
+              price={event.ticketPrice}
+              style={styles.ticketCtaPill}
+            />
           )}
 
           {hasTicketLink && !paid && (
@@ -5472,21 +5469,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '500',
   },
-  // Added style for Ticketed Event badge
-  ticketedEventBadge: {
-    backgroundColor: 'rgba(30, 144, 255, 0.1)', // Subtle blue glass
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 8,
-    marginRight: 8,
-    borderWidth: 1.5,
-    borderColor: 'rgba(30, 144, 255, 0.4)',
-  },
-  ticketedEventText: {
-    color: '#1E90FF', // Blue accent
-    fontSize: 12,
-    fontWeight: '600',
-  },
   priceTag: {
     backgroundColor: '#FFFFFF',
     paddingHorizontal: 10,
@@ -5509,21 +5491,8 @@ const styles = StyleSheet.create({
     lineHeight: 16,
     flexShrink: 1,
   },
-  buyTicketsButton: {
-    backgroundColor: '#1E90FF', // Blue accent for primary actions
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 8,
-    shadowColor: '#1E90FF',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  buyTicketsText: {
-    color: '#FFFFFF',
-    fontSize: 12,
-    fontWeight: '500',
+  ticketCtaPill: {
+    marginRight: 8,
   },
   registerButton: {
     backgroundColor: '#4CAF50',

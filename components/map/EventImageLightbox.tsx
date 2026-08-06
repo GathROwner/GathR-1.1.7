@@ -27,6 +27,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 
 import ImageView from "react-native-image-viewing";
 import FallbackImage from '../common/FallbackImage';
+import TicketCtaPill from '../common/TicketCtaPill';
 import { VenueFavoriteButton } from '../common/VenueFavoriteButton';
 import Autolink from 'react-native-autolink';
 
@@ -1385,7 +1386,9 @@ amplitudeTrack('ticket_link_opened', {
           <View style={[styles.categoryBadge, { backgroundColor: getCategoryColor(updatedEvent.category) }]}>
             <Text style={styles.badgeText}>{updatedEvent.category}</Text>
           </View>
-          {hasDisplayableTicketPrice(updatedEvent.ticketPrice) && (
+          {hasDisplayableTicketPrice(updatedEvent.ticketPrice) &&
+            updatedEvent.ticketPrice !== 'Ticketed Event' &&
+            !(hasTicketLink && paid) && (
             <View style={styles.priceBadge}>
               <Text style={styles.badgeText}>{updatedEvent.ticketPrice}</Text>
             </View>
@@ -1393,33 +1396,12 @@ amplitudeTrack('ticket_link_opened', {
           
           {/* Add ticket/register button near price - grayed out for guests */}
           {hasTicketLink && paid && (
-            <TouchableOpacity 
-              style={[
-                styles.buyTicketsButton,
-                isGuest && styles.disabledButton
-              ]}
-              onPress={handleTickets}
-              activeOpacity={isGuest ? 1 : 0.7}
+            <TicketCtaPill
               disabled={isGuest}
-            >
-              <View style={styles.buttonContent}>
-                <Text style={[
-                  styles.buyTicketsText,
-                  isGuest && styles.disabledButtonText
-                ]}>
-                  Buy Tickets
-                </Text>
-                {isGuest && (
-                  <View style={styles.buttonLockOverlay}>
-                    <MaterialIcons 
-                      name="lock" 
-                      size={12} 
-                      color="#FFFFFF" 
-                    />
-                  </View>
-                )}
-              </View>
-            </TouchableOpacity>
+              onPress={handleTickets}
+              price={updatedEvent.ticketPrice}
+              style={styles.ticketCtaPill}
+            />
           )}
           
           {hasTicketLink && !paid && (
@@ -1975,17 +1957,9 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     fontSize: 12,
   },
-  buyTicketsButton: {
-    backgroundColor: '#E94E77',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 4,
+  ticketCtaPill: {
+    marginRight: 8,
     marginBottom: 6,
-  },
-  buyTicketsText: {
-    color: '#FFFFFF',
-    fontSize: 12,
-    fontWeight: '600',
   },
   registerButton: {
     backgroundColor: '#4CAF50',

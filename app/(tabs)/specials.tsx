@@ -24,6 +24,7 @@ import {
 import { MaterialIcons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import FallbackImage from '../../components/common/FallbackImage';
+import TicketCtaPill from '../../components/common/TicketCtaPill';
 import { VenueFavoriteButton } from '../../components/common/VenueFavoriteButton';
 import Autolink from 'react-native-autolink';
 
@@ -1000,10 +1001,6 @@ const result = await userService.toggleSavedEvent(event.id, {
   const showHeroEngagementOverlay = true;
   const showBuyTicketsButton = hasTicketLink && paid;
   const showRegisterButton = hasTicketLink && !paid;
-  const showTicketedEventBadge = hasTicketLink && 
-                                !showBuyTicketsButton && 
-                                !showRegisterButton;
-  
   const formatFullDateTime = (): string => {
     let dateTimeStr = formatEventDateTime(event.startDate, event.startTime, event);
     
@@ -1320,15 +1317,10 @@ const result = await userService.toggleSavedEvent(event.id, {
             <Text style={styles.categoryText}>{event.category}</Text>
           </View>
           
-          {showTicketedEventBadge && (
-            <View style={styles.ticketedEventBadge}>
-              <Text style={styles.ticketedEventText}>Ticketed Event</Text>
-            </View>
-          )}
-          
           {hasDisplayableTicketPrice(event.ticketPrice) &&
            event.ticketPrice !== "0" &&
            event.ticketPrice !== "Ticketed Event" &&
+           !showBuyTicketsButton &&
            !(event.ticketPrice.toLowerCase() === "free" && showRegisterButton) && (
             <View style={styles.priceTag}>
               <Text style={styles.priceText}>{event.ticketPrice}</Text>
@@ -1336,27 +1328,12 @@ const result = await userService.toggleSavedEvent(event.id, {
           )}
           
           {showBuyTicketsButton && (
-            <TouchableOpacity 
-              style={[
-                styles.buyTicketsButton,
-                isGuest && styles.disabledPremiumButton
-              ]}
-              onPress={handleTickets}
-              activeOpacity={isGuest ? 1 : 0.7}
+            <TicketCtaPill
               disabled={isGuest}
-            >
-              <View style={styles.premiumButtonContent}>
-                <Text style={[
-                  styles.buyTicketsText,
-                  isGuest && styles.disabledPremiumButtonText
-                ]}>
-                  Buy Tickets
-                </Text>
-                {isGuest && (
-                  <MaterialIcons name="lock" size={12} color="#FFFFFF" />
-                )}
-              </View>
-            </TouchableOpacity>
+              onPress={handleTickets}
+              price={event.ticketPrice}
+              style={styles.ticketCtaPill}
+            />
           )}
 
           {showRegisterButton && (
@@ -3577,20 +3554,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '500',
   },
-  ticketedEventBadge: {
-    backgroundColor: '#F0F8FF',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 4,
-    marginRight: 8,
-    borderWidth: 1,
-    borderColor: BRAND.primary,
-  },
-  ticketedEventText: {
-    color: BRAND.primary,
-    fontSize: 12,
-    fontWeight: '500',
-  },
   priceTag: {
     backgroundColor: '#FFF0F3',
     paddingHorizontal: 8,
@@ -3603,16 +3566,8 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '500',
   },
-  buyTicketsButton: {
-    backgroundColor: BRAND.accent,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 4,
-  },
-  buyTicketsText: {
-    color: '#FFFFFF',
-    fontSize: 12,
-    fontWeight: '500',
+  ticketCtaPill: {
+    marginRight: 8,
   },
   registerButton: {
     backgroundColor: '#4CAF50',
