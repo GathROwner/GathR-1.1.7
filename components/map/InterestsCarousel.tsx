@@ -227,7 +227,25 @@ const EventCard = memo(({
           resizeMode="cover"
         />
 
-        {/* Category Badge */}
+        {/* Venue identity overlay */}
+        <View style={[styles.venueOverlay, isNow && styles.venueOverlayWithNow]}>
+          <View style={styles.venueAvatarShell}>
+            <FallbackImage
+              imageUrl={event.profileUrl}
+              category={event.category}
+              type={event.type}
+              style={styles.venueAvatar}
+              fallbackType="profile"
+              item={event}
+              resizeMode="cover"
+            />
+          </View>
+          <Text style={styles.venueOverlayText} numberOfLines={2}>
+            {event.venue}
+          </Text>
+        </View>
+
+        {/* Category badge */}
         <View style={[styles.categoryBadge, { backgroundColor: categoryBgColor }]}>
           {event.category.toLowerCase().includes('learn') ||
            event.category.toLowerCase().includes('workshop') ? (
@@ -258,23 +276,6 @@ const EventCard = memo(({
 
       {/* Event Info */}
       <View style={styles.cardContent}>
-        <View style={styles.venueIdentityRow}>
-          <View style={styles.venueAvatarShell}>
-            <FallbackImage
-              imageUrl={event.profileUrl}
-              category={event.category}
-              type={event.type}
-              style={styles.venueAvatar}
-              fallbackType="profile"
-              item={event}
-              resizeMode="cover"
-            />
-          </View>
-          <Text style={styles.venueText} numberOfLines={1}>
-            {event.venue}
-          </Text>
-        </View>
-
         <Text style={styles.eventTitle} numberOfLines={2}>
           {event.title}
         </Text>
@@ -956,8 +957,8 @@ const styles = StyleSheet.create({
   },
   categoryBadge: {
     position: 'absolute',
-    top: 6,
-    left: 6,
+    right: 6,
+    bottom: 6,
     width: 20,
     height: 20,
     borderRadius: 10,
@@ -991,32 +992,38 @@ const styles = StyleSheet.create({
   },
   cardContent: {
     paddingHorizontal: 8,
-    paddingTop: 0,
+    paddingTop: 6,
     paddingBottom: 6,
-    height: 82,
+    height: 62,
   },
-  venueIdentityRow: {
-    height: 22,
+  venueOverlay: {
+    position: 'absolute',
+    top: 6,
+    left: 6,
+    maxWidth: CARD_WIDTH - 18,
+    minHeight: VENUE_AVATAR_SIZE,
     flexDirection: 'row',
     alignItems: 'center',
-    paddingLeft: VENUE_AVATAR_SIZE + 6,
+    paddingRight: 8,
+    backgroundColor: 'rgba(18, 18, 18, 0.76)',
+    borderRadius: VENUE_AVATAR_SIZE / 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.25,
+    shadowRadius: 2,
+    elevation: 3,
+  },
+  venueOverlayWithNow: {
+    maxWidth: 100,
   },
   venueAvatarShell: {
-    position: 'absolute',
-    left: 0,
-    top: -(VENUE_AVATAR_SIZE / 2),
     width: VENUE_AVATAR_SIZE,
     height: VENUE_AVATAR_SIZE,
     borderRadius: VENUE_AVATAR_SIZE / 2,
     backgroundColor: '#FFFFFF',
-    borderWidth: 2,
+    borderWidth: 1.5,
     borderColor: '#FFFFFF',
     overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.22,
-    shadowRadius: 2,
-    elevation: 3,
   },
   venueAvatar: {
     width: '100%',
@@ -1029,11 +1036,13 @@ const styles = StyleSheet.create({
     color: '#1A1A1A',
     lineHeight: 16,
   },
-  venueText: {
-    flex: 1,
-    fontSize: 10.5,
-    color: '#5F6368',
-    fontWeight: '600',
+  venueOverlayText: {
+    flexShrink: 1,
+    marginLeft: 5,
+    fontSize: 9.5,
+    lineHeight: 11,
+    color: '#FFFFFF',
+    fontWeight: '700',
   },
   timeRow: {
     flexDirection: 'row',
