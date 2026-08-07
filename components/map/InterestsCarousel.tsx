@@ -1088,14 +1088,27 @@ const styles = StyleSheet.create({
   },
   // Pagination dots
   paginationContainer: {
+    alignSelf: 'center',
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-    paddingVertical: 8,
+    minHeight: PAGINATION_HEIGHT,
+    marginTop: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
     gap: 4,
+    backgroundColor: 'rgba(18, 18, 18, 0.72)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.18)',
+    borderRadius: PAGINATION_HEIGHT / 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3,
+    elevation: 3,
   },
   paginationDot: {
-    backgroundColor: '#333333',
+    backgroundColor: '#FFFFFF',
   },
   // New content indicator
   newDot: {
