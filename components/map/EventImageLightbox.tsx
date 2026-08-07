@@ -1161,6 +1161,26 @@ const handleNonTicketAction = () => {
       >
         {/* Header */}
         <View style={styles.header}>
+          <View style={styles.headerVenueAvatarContainer}>
+            <FallbackImage
+              imageUrl={updatedEvent.profileUrl}
+              category={updatedEvent.category}
+              type={updatedEvent.type}
+              style={styles.headerVenueAvatar}
+              fallbackType="profile"
+              item={updatedEvent}
+              resizeMode="cover"
+            />
+            <View style={styles.headerVenueFavoriteOverlay}>
+              <VenueFavoriteButton
+                locationKey={createLocationKeyFromEvent(updatedEvent)}
+                venueName={updatedEvent.venue}
+                size={12}
+                source="event_image_lightbox"
+                style={styles.headerVenueFavoriteButton}
+              />
+            </View>
+          </View>
           <View style={styles.headerTextContainer}>
             <GestureScrollView
               ref={titleScrollRef}
@@ -1180,7 +1200,9 @@ const handleNonTicketAction = () => {
                 {updatedEvent.title}
               </Text>
             </GestureScrollView>
-            <Text style={styles.subtitle}>{updatedEvent.venue}</Text>
+            <Text style={styles.subtitle} numberOfLines={1}>
+              {updatedEvent.venue}
+            </Text>
           </View>
           <TouchableOpacity style={styles.closeButton} onPress={handleCloseButton}>
             <MaterialIcons name="close" size={24} color="#FFFFFF" />
@@ -1199,29 +1221,6 @@ const handleNonTicketAction = () => {
             resizeMode="contain"
             onFallback={setIsUsingFallbackImage as any}
           />
-          {/* Venue profile overlay with favorite heart */}
-          <View style={styles.venueProfileOverlay}>
-            <View style={styles.venueProfileImageContainer}>
-              <FallbackImage
-                imageUrl={updatedEvent.profileUrl}
-                category={updatedEvent.category}
-                type={updatedEvent.type}
-                style={styles.venueProfileImageSmall}
-                fallbackType="profile"
-                item={updatedEvent}
-                resizeMode="cover"
-              />
-              <View style={styles.venueFavoriteButtonOverlay}>
-                <VenueFavoriteButton
-                  locationKey={createLocationKeyFromEvent(updatedEvent)}
-                  venueName={updatedEvent.venue}
-                  size={12}
-                  source="event_image_lightbox"
-                  style={styles.venueFavoriteButtonSmall}
-                />
-              </View>
-            </View>
-          </View>
           {/* Add a subtle zoom icon overlay */}
           <View style={styles.zoomIconOverlay}>
             <MaterialIcons name="zoom-in" size={24} color="rgba(255, 255, 255, 0.8)" />
@@ -1459,7 +1458,22 @@ const handleNonTicketAction = () => {
           )}
         </View>
 
-        {/* Description — scrollable area (blocks swipe-to-close while scrolling) */}
+        {/* Essential event information */}
+        <View style={styles.infoContainer}>
+          <View style={styles.infoRow}>
+            <MaterialIcons name="access-time" size={20} color="#FFFFFF" />
+            <Text style={styles.infoText}>
+              {dateTimeDisplay}
+            </Text>
+          </View>
+
+          <View style={styles.infoRow}>
+            <MaterialIcons name="place" size={20} color="#FFFFFF" />
+            <Text style={styles.infoText}>{updatedEvent.address}</Text>
+          </View>
+        </View>
+
+        {/* Description — fixed flexible area; scrolls internally for long copy */}
 <View style={styles.descriptionContainer}>
   <GestureScrollView
     ref={descriptionScrollRef}
@@ -1513,7 +1527,7 @@ const handleNonTicketAction = () => {
   {/* Bottom fade: shows only when there’s more to read and you’re not at the end */}
   {descCanScroll && !descAtEnd && (
     <LinearGradient
-  colors={['rgba(36,36,36,0)', 'rgba(36,36,36,0.5)', '#242424']}
+  colors={['rgba(34,34,34,0)', 'rgba(34,34,34,0.5)', '#222222']}
   style={styles.descriptionFadeBottom}
   pointerEvents="none"
 />
@@ -1534,21 +1548,6 @@ const handleNonTicketAction = () => {
 </View>
 
                   
-        {/* Time and location info */}
-        <View style={styles.infoContainer}>
-          <View style={styles.infoRow}>
-            <MaterialIcons name="access-time" size={20} color="#FFFFFF" />
-            <Text style={styles.infoText}>
-              {dateTimeDisplay}
-            </Text>
-          </View>
-          
-          <View style={styles.infoRow}>
-            <MaterialIcons name="place" size={20} color="#FFFFFF" />
-            <Text style={styles.infoText}>{updatedEvent.address}</Text>
-          </View>
-        </View>
-        
         {/* Actions */}
         <View style={styles.actionContainer}>
           <TouchableOpacity
@@ -1779,37 +1778,33 @@ const styles = StyleSheet.create({
   imageWrapper: {
     position: 'relative',
   },
-  venueProfileOverlay: {
-    position: 'absolute',
-    top: 12,
-    left: 12,
-    zIndex: 5,
-  },
-  venueProfileImageContainer: {
+  headerVenueAvatarContainer: {
     width: 40,
     height: 40,
     borderRadius: 20,
     backgroundColor: '#FFFFFF',
+    marginRight: 10,
+    flexShrink: 0,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
+    shadowOpacity: 0.24,
     shadowRadius: 4,
     elevation: 4,
   },
-  venueProfileImageSmall: {
+  headerVenueAvatar: {
     width: 40,
     height: 40,
     borderRadius: 20,
     borderWidth: 2,
     borderColor: '#FFFFFF',
   },
-  venueFavoriteButtonOverlay: {
+  headerVenueFavoriteOverlay: {
     position: 'absolute',
     bottom: -4,
     right: -4,
     zIndex: 6,
   },
-  venueFavoriteButtonSmall: {
+  headerVenueFavoriteButton: {
     padding: 2,
     borderRadius: 10,
     backgroundColor: 'rgba(255, 255, 255, 0.95)',
@@ -2017,17 +2012,21 @@ const styles = StyleSheet.create({
   },
   infoContainer: {
     paddingHorizontal: 16,
-    paddingBottom: 4,
-    paddingTop: 10,
+    paddingTop: 8,
+    paddingBottom: 8,
+    gap: 6,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: 'rgba(255, 255, 255, 0.08)',
   },
   infoRow: {
     flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 6,
+    alignItems: 'flex-start',
   },
   infoText: {
     color: '#FFFFFF',
-    fontSize: 12,
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: '500',
     marginLeft: 6,
     flex: 1,
   },
@@ -2035,13 +2034,10 @@ const styles = StyleSheet.create({
     flex: 1,
     minHeight: 0,
     paddingHorizontal: 16,
-    paddingVertical: 0,
-    backgroundColor: '#242424',
+    paddingTop: 6,
+    backgroundColor: 'transparent',
     position: 'relative',
-    borderRadius: 8,
     overflow: 'hidden',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(255,255,255,0.06)',
   },
 
 
