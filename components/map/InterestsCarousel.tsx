@@ -35,8 +35,9 @@ const EVENT_COLOR = '#64B5F6';
 const SPECIAL_COLOR = '#66BB6A';
 
 const CARD_WIDTH = 160;
-const CARD_HEIGHT = 120;
+const CARD_HEIGHT = 112;
 const CARD_GAP = 12;
+const VENUE_AVATAR_SIZE = 30;
 const BOTTOM_SPACING = 0; // Above tab bar
 const TAB_BAR_HEIGHT = 40; // Tab bar height (24px icon + padding)
 
@@ -257,15 +258,31 @@ const EventCard = memo(({
 
       {/* Event Info */}
       <View style={styles.cardContent}>
+        <View style={styles.venueIdentityRow}>
+          <View style={styles.venueAvatarShell}>
+            <FallbackImage
+              imageUrl={event.profileUrl}
+              category={event.category}
+              type={event.type}
+              style={styles.venueAvatar}
+              fallbackType="profile"
+              item={event}
+              resizeMode="cover"
+            />
+          </View>
+          <Text style={styles.venueText} numberOfLines={1}>
+            {event.venue}
+          </Text>
+        </View>
+
         <Text style={styles.eventTitle} numberOfLines={2}>
           {event.title}
         </Text>
-        <Text style={styles.venueText} numberOfLines={1}>
-          {event.venue}
-        </Text>
         <View style={styles.timeRow}>
-          <MaterialIcons name="schedule" size={12} color="#5F6368" />
-          <Text style={styles.timeText}>{formatEventTime(event)}</Text>
+          <MaterialIcons name="schedule" size={13} color="#1967D2" />
+          <Text style={styles.timeText} numberOfLines={1}>
+            {formatEventTime(event)}
+          </Text>
         </View>
       </View>
     </TouchableOpacity>
@@ -941,9 +958,9 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 6,
     left: 6,
-    width: 24,
-    height: 24,
-    borderRadius: 12,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
     justifyContent: 'center',
     alignItems: 'center',
     shadowColor: '#000',
@@ -974,30 +991,61 @@ const styles = StyleSheet.create({
   },
   cardContent: {
     paddingHorizontal: 8,
-    paddingTop: 6,
-    paddingBottom: 4,
+    paddingTop: 0,
+    paddingBottom: 6,
+    height: 82,
+  },
+  venueIdentityRow: {
+    height: 22,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingLeft: VENUE_AVATAR_SIZE + 6,
+  },
+  venueAvatarShell: {
+    position: 'absolute',
+    left: 0,
+    top: -(VENUE_AVATAR_SIZE / 2),
+    width: VENUE_AVATAR_SIZE,
+    height: VENUE_AVATAR_SIZE,
+    borderRadius: VENUE_AVATAR_SIZE / 2,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.22,
+    shadowRadius: 2,
+    elevation: 3,
+  },
+  venueAvatar: {
+    width: '100%',
+    height: '100%',
+    borderRadius: VENUE_AVATAR_SIZE / 2,
   },
   eventTitle: {
     fontSize: 13,
-    fontWeight: '600',
+    fontWeight: '700',
     color: '#1A1A1A',
-    marginBottom: 2,
     lineHeight: 16,
   },
   venueText: {
-    fontSize: 10,
+    flex: 1,
+    fontSize: 10.5,
     color: '#5F6368',
-    marginBottom: 3,
+    fontWeight: '600',
   },
   timeRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 3,
+    marginTop: 'auto',
   },
   timeText: {
-    fontSize: 10,
-    color: '#5F6368',
-    fontWeight: '600',
+    flex: 1,
+    fontSize: 10.5,
+    color: '#1967D2',
+    fontWeight: '700',
   },
   // Handle styles
   handleContainer: {
