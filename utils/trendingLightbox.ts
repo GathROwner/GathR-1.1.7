@@ -3,6 +3,7 @@ import { useMapStore } from '../store/mapStore';
 import { useClusterInteractionStore } from '../store/clusterInteractionStore';
 import { amplitudeTrack } from '../lib/amplitudeAnalytics';
 import { getEventHotEngagementScore } from './hotInterestCarouselUtils';
+import { getLightboxImageUrl } from './lightboxImageUrl';
 
 export type TrendingEventContext = {
   venue?: Venue;
@@ -28,7 +29,7 @@ export const resolveTrendingEventContext = (
 };
 
 export const getTrendingLightboxImageUrl = (event: Event): string =>
-  event.imageUrl || event.SharedPostThumbnail || '';
+  getLightboxImageUrl(event);
 
 // Opens the global lightbox (hosted by GlobalEventLightbox in map.tsx) on the
 // most trending event with swipe navigation through the full list.
