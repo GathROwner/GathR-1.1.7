@@ -1,4 +1,5 @@
 import { buildCityEventLightboxEvents } from '../cityEventLightboxEvents';
+import { getLightboxImageUrl } from '../lightboxImageUrl';
 import { TimeFilterType, type FilterCriteria } from '../../types/filter';
 import type { Event } from '../../types/events';
 
@@ -100,5 +101,25 @@ describe('buildCityEventLightboxEvents', () => {
     });
 
     expect(events).toEqual([cityEvent]);
+  });
+});
+
+describe('getLightboxImageUrl', () => {
+  it('rejects Facebook lookaside crawler media and falls back to no image URL', () => {
+    const event = makeEvent({
+      imageUrl: 'https://lookaside.fbsbx.com/lookaside/crawler/media/?media_id=1607254180584029',
+      SharedPostThumbnail: '',
+    });
+
+    expect(getLightboxImageUrl(event)).toBe('');
+  });
+
+  it('uses a direct thumbnail when the primary image is Facebook lookaside media', () => {
+    const event = makeEvent({
+      imageUrl: 'https://lookaside.fbsbx.com/lookaside/crawler/media/?media_id=1607254180584029',
+      SharedPostThumbnail: 'https://example.com/poster.jpg',
+    });
+
+    expect(getLightboxImageUrl(event)).toBe('https://example.com/poster.jpg');
   });
 });

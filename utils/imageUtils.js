@@ -283,18 +283,36 @@ if (fallbackType === 'profile') {
   }
 };
 
+export const isFacebookLookasideCrawlerMediaUrl = (url) => {
+  const value = String(url || '').trim();
+  if (!value) return false;
+
+  try {
+    const parsed = new URL(value);
+    const host = parsed.hostname.toLowerCase();
+    const path = parsed.pathname.toLowerCase().replace(/\/+$/, '');
+    return (
+      (host === 'lookaside.fbsbx.com' || host.endsWith('.fbsbx.com')) &&
+      path === '/lookaside/crawler/media'
+    );
+  } catch {
+    return false;
+  }
+};
+
 /**
  * Validates if a provided image URL is usable
  * @param {string} url - The URL to validate
  * @returns {boolean} - Whether the URL appears valid
  */
 export const isValidImageUrl = (url) => {
-  if (!url) return false;
-  if (url === '') return false;
-  if (url === 'N/A') return false;
+  const value = String(url || '').trim();
+  if (!value) return false;
+  if (value === 'N/A') return false;
+  if (isFacebookLookasideCrawlerMediaUrl(value)) return false;
   
   // Basic URL validation (checks for http/https prefix)
-  return url.startsWith('http://') || url.startsWith('https://');
+  return value.startsWith('http://') || value.startsWith('https://');
 };
 
 /**

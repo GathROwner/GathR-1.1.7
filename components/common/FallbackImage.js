@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Image } from 'react-native';
-import { getCategoryFallbackImage } from '../../utils/imageUtils';
+import { getCategoryFallbackImage, isValidImageUrl } from '../../utils/imageUtils';
 
 /**
  * A component that displays an image with fallback support
@@ -28,6 +28,7 @@ const FallbackImage = ({
   onFallback = null
 }) => {
   const [imageError, setImageError] = useState(false);
+  const hasUsableImageUrl = isValidImageUrl(imageUrl);
 
   // Reset error state when imageUrl changes (e.g., navigating between items)
   useEffect(() => {
@@ -36,17 +37,17 @@ const FallbackImage = ({
 
   // Notify parent when using fallback due to missing/empty URL
   useEffect(() => {
-    if ((!imageUrl || imageUrl === "") && onFallback) {
+    if (!hasUsableImageUrl && onFallback) {
       onFallback(true);
     }
-  }, [imageUrl, onFallback]);
+  }, [hasUsableImageUrl, onFallback]);
 
   // Get the appropriate fallback source
   const fallbackSource = getCategoryFallbackImage(category, type, fallbackType, item);
 
   // If no image URL or error loading image, show fallback
   // Use imageUrl in key to force remount when URL changes - prevents stale image caching
-  if (!imageUrl || imageUrl === "" || imageError) {
+  if (!hasUsableImageUrl || imageError) {
     return (
       <Image
         key={`fallback-${imageUrl || 'empty'}`}
@@ -68,7 +69,7 @@ const FallbackImage = ({
   return (
     <Image
       key={`remote-${imageUrl}`}
-      source={{ uri: imageUrl }}
+      source={{ uri: String(imageUrl).trim() }}
       style={style}
       onError={handleError}
       resizeMode={resizeMode}
