@@ -242,6 +242,16 @@ export function normalizeFirestoreEvent(fsEvent: FirestoreEvent): Event {
 
     // Basic event info
     category: fsEvent.category || 'Other',
+    familyFriendlyScore:
+      fsEvent.familyFriendlyScore ?? fsEvent.metadata?.familyFriendlyScore ?? null,
+    familyFriendlyLevel:
+      fsEvent.familyFriendlyLevel ?? fsEvent.metadata?.familyFriendlyLevel ?? null,
+    familyFriendlyReasons:
+      fsEvent.familyFriendlyReasons ?? fsEvent.metadata?.familyFriendlyReasons ?? [],
+    familyFriendlyScoringVersion:
+      fsEvent.familyFriendlyScoringVersion ??
+      fsEvent.metadata?.familyFriendlyScoringVersion ??
+      null,
     title: fsEvent.title || '',
     description: rawDescription,
     venueId: fsEvent.venueId ?? null,

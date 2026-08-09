@@ -132,3 +132,39 @@ describe('buildTrendingEvents city-level slot', () => {
     expect(trending[0].locationScope).toBe('city');
   });
 });
+
+describe('buildTrendingEvents family-friendly facet', () => {
+  it('guarantees a scored cross-category event for the family-friendly interest', () => {
+    const familySports = makeEvent({
+      title: 'Youth Golf Day',
+      category: 'Sports',
+      familyFriendlyScore: 75,
+      usersResponded: '0',
+    });
+    const events = [...highEngagementEvents(TRENDING_TARGET_COUNT + 5), familySports];
+    const trending = buildTrendingEvents({
+      onScreenEvents: events,
+      filterCriteria: criteria(),
+      userInterests: ['Family Friendly'],
+    });
+    expect(trending.some((item) => item.id === familySports.id)).toBe(true);
+  });
+
+  it('respects the family-friendly facet as an active category filter', () => {
+    const familyMusic = makeEvent({ familyFriendlyScore: 80 });
+    const adultMusic = makeEvent({ familyFriendlyScore: 10 });
+    const trending = buildTrendingEvents({
+      onScreenEvents: [familyMusic, adultMusic],
+      filterCriteria: criteria({
+        eventFilters: {
+          timeFilter: TimeFilterType.ALL,
+          category: 'Family Friendly',
+          search: undefined,
+          savedOnly: false,
+        },
+      }),
+      userInterests: ['Family Friendly'],
+    });
+    expect(trending.map((item) => item.id)).toEqual([familyMusic.id]);
+  });
+});

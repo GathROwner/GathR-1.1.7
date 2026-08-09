@@ -25,6 +25,7 @@ import { amplitudeTrack } from '../lib/amplitudeAnalytics';
 import { isEventNow, isEventHappeningToday } from '../utils/dateUtils';
 import { getLocalDateKey } from '../utils/localDateKey';
 import { setMapTraceSnapshot, traceMapEvent } from '../utils/mapTrace';
+import { doesEventMatchAnyInterest } from '../utils/familyFriendly';
 
 interface HotspotHighlightState {
   shouldShow: boolean;
@@ -190,7 +191,7 @@ function calculateVenueRelevanceScore(
 
   let maxEventScore = 0;
   for (const event of (venue.events || [])) {
-    const interestScore = userInterests.includes(event.category) ? 100 : 0;
+    const interestScore = doesEventMatchAnyInterest(event, userInterests) ? 100 : 0;
 
     let timeScore = 1; // Default: future
     const eventIsNow = isEventNow(

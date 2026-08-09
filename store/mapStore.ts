@@ -73,6 +73,10 @@ import { getHasNewContent } from './clusterInteractionStore';
 
 // Shared scoped-location (city-level) predicates
 import { isCityLevelEvent, isScopedLocationEvent } from '../utils/locationScope';
+import {
+  doesEventMatchCategoryOrFacet,
+  getEventFacetKeys,
+} from '../utils/familyFriendly';
 
 // Import unified events API (Firestore default, legacy fallback optional)
 import {
@@ -626,8 +630,8 @@ export const doesEventMatchTypeFilters = (
 
   
   // Check category filter
-  if (typeFilters.category && 
-      event.category.toLowerCase() !== typeFilters.category.toLowerCase()) {
+  if (typeFilters.category &&
+      !doesEventMatchCategoryOrFacet(event, typeFilters.category)) {
     return false;
   }
   
@@ -759,7 +763,7 @@ const calculateTimeFilterCounts = (
 
     if (!isVisible || event.type !== eventType) continue;
 
-    if (categoryFilter && event.category.toLowerCase() !== categoryFilter) {
+    if (categoryFilter && !doesEventMatchCategoryOrFacet(event, categoryFilter)) {
       continue;
     }
 
@@ -813,9 +817,10 @@ const calculateCategoryFilterCounts = (
   for (const event of events) {
     if (event.type !== eventType) continue;
 
-    if (counts[event.category] === undefined) {
-      counts[event.category] = 0;
-    }
+    const facetKeys = getEventFacetKeys(event);
+    facetKeys.forEach((key) => {
+      if (counts[key] === undefined) counts[key] = 0;
+    });
 
     const isVisible =
       (event.type === 'event' && currentCriteria.showEvents) ||
@@ -848,7 +853,9 @@ const calculateCategoryFilterCounts = (
       if (!matchesSearch) continue;
     }
 
-    counts[event.category] += 1;
+    facetKeys.forEach((key) => {
+      counts[key] += 1;
+    });
   }
   
   return counts;

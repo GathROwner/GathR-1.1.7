@@ -1,9 +1,16 @@
-import type { Event } from '../types/events';
+import type { Cluster, Event, TimeStatus, Venue } from '../types/events';
 import type { FilterCriteria, TypeFilterCriteria } from '../types/filter';
+import type { InterestCarouselFilter } from '../types/store';
 import { TimeFilterType } from '../types/filter';
 import { isEventNow, getEventTimeStatus, isEventHappeningToday } from './dateUtils';
 import { isEventPast } from './eventExpiry';
 import { CITY_EVENTS_CATEGORY, isCityLevelEvent } from './locationScope';
+import {
+  doesEventMatchCategoryOrFacet,
+  isFamilyFriendlyInterest,
+} from './familyFriendly';
+
+type ActiveInterestCarouselFilter = Extract<InterestCarouselFilter, { status: 'active' }>;
 
 const getTypeFiltersForEvent = (
   event: Event,
@@ -87,6 +94,64 @@ export const doesEventMatchInterestCarouselActiveCategory = (
     return isCityLevelEvent(event);
   }
 
-  return event.category.toLowerCase() === typeFilters.category.toLowerCase();
+  return doesEventMatchCategoryOrFacet(event, typeFilters.category);
+};
+
+/**
+ * Match the personalized side-pill filter. Family Friendly is a cross-type
+ * facet, so it intentionally includes scored events and scored specials.
+ * Ordinary interests retain their existing event/special separation.
+ */
+export const doesEventMatchInterestCarouselFilter = (
+  event: Event,
+  filter: ActiveInterestCarouselFilter
+): boolean => {
+  if (filter.kind === 'city') return isCityLevelEvent(event);
+  if (isFamilyFriendlyInterest(filter.category)) {
+    return doesEventMatchCategoryOrFacet(event, filter.category);
+  }
+  return event.type === filter.type && doesEventMatchCategoryOrFacet(event, filter.category);
+};
+
+const getFilteredClusterTimeStatus = (events: Event[], fallback: TimeStatus): TimeStatus => {
+  const statuses = events.map(getEventTimeStatus);
+  if (statuses.includes('now')) return 'now';
+  if (statuses.includes('today')) return 'today';
+  if (statuses.includes('future')) return 'future';
+  return statuses.includes('past') ? 'past' : fallback;
+};
+
+/**
+ * Remove nonmatching records from a cluster before it is rendered or opened.
+ * Without this, a qualifying event can keep a geographic cluster visible while
+ * the callout exposes unrelated records from nearby venues.
+ */
+export const filterClusterForInterestCarouselFilter = (
+  cluster: Cluster,
+  filter: ActiveInterestCarouselFilter
+): Cluster | null => {
+  const venues: Venue[] = cluster.venues
+    .map((venue) => ({
+      ...venue,
+      events: venue.events.filter((event) => doesEventMatchInterestCarouselFilter(event, filter)),
+    }))
+    .filter((venue) => venue.events.length > 0);
+
+  if (venues.length === 0) return null;
+
+  const events = venues.flatMap((venue) => venue.events);
+  const timeStatus = getFilteredClusterTimeStatus(events, cluster.timeStatus);
+
+  return {
+    ...cluster,
+    clusterType: venues.length === 1 ? 'single' : 'multi',
+    venues,
+    timeStatus,
+    isBroadcasting: timeStatus === 'now',
+    eventCount: events.filter((event) => event.type === 'event').length,
+    specialCount: events.filter((event) => event.type === 'special').length,
+    categories: Array.from(new Set(events.map((event) => event.category))),
+    containsCityLevelEvent: events.some(isCityLevelEvent),
+  };
 };
 

@@ -1,5 +1,6 @@
 // utils/priorityUtils.js
 import { getEventTimeStatus } from '../utils/dateUtils';
+import { doesEventMatchAnyInterest } from './familyFriendly';
 
 // Time category base scores - UPDATED to allow one-tier jumps but prevent two-tier jumps
 export const BASE_SCORES = {
@@ -90,9 +91,7 @@ export function calculateEventPriority(event, userInterests, userFavorites, user
   const timeStatus = getEventTimeStatus(event);
   
   // Check for interest match
-  const matchesInterest = userInterests.some(interest => 
-    interest.toLowerCase() === event.category.toLowerCase()
-  );
+  const matchesInterest = doesEventMatchAnyInterest(event, userInterests);
   
   // Calculate base score
   const scoreCategory = matchesInterest ? 'INTEREST_MATCH' : 'NON_INTEREST';

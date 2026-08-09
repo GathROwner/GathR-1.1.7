@@ -26,6 +26,7 @@ import { usePathname } from 'expo-router';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import FallbackImage from '../../components/common/FallbackImage';
+import FamilyFriendlyBadge from '../../components/common/FamilyFriendlyBadge';
 import { VenueFavoriteButton } from '../../components/common/VenueFavoriteButton';
 import Autolink from 'react-native-autolink';
 
@@ -75,6 +76,7 @@ import {
 } from '../../store/mapStore';
 import { useUserPrefsStore } from '../../store/userPrefsStore';
 import { areEventIdsEquivalent } from '../../lib/api/firestoreEvents';
+import { doesEventMatchAnyInterest } from '../../utils/familyFriendly';
 
 // Import for loading native ads
 import useNativeAds from '../../hooks/useNativeAds';
@@ -1386,6 +1388,7 @@ const result = await userService.toggleSavedEvent(event.id, {
       {/* Bottom action section */}
       <View style={styles.cardBottomRow}>
         <View style={styles.leftSection}>
+          <FamilyFriendlyBadge event={event} />
           <View style={[
             styles.categoryButton2,
             { backgroundColor: getCategoryColor(event.category) }
@@ -1516,6 +1519,7 @@ const MemoizedEventListItem = React.memo(EventListItem, (prevProps, nextProps) =
   // Only re-render if these specific props change
   return (
     prevProps.event.id === nextProps.event.id &&
+    prevProps.event.familyFriendlyScore === nextProps.event.familyFriendlyScore &&
     prevProps.matchesUserInterests === nextProps.matchesUserInterests &&
     prevProps.isSaved === nextProps.isSaved &&
     prevProps.isGuest === nextProps.isGuest &&
@@ -2154,7 +2158,7 @@ setSelectedImageData({ imageUrl, event });
   // Helper functions
   const matchesUserInterests = (event: Event): boolean => {
     if (userInterestLowerSet.size === 0) return false;
-    return userInterestLowerSet.has(event.category.toLowerCase());
+    return doesEventMatchAnyInterest(event, userInterestLowerSet);
   };
   
   const isEventSaved = (event: Event): boolean => {
@@ -2619,7 +2623,7 @@ setSelectedImageData({ imageUrl, event });
       if (userInterestLowerSet.size === 0) return new Set<string>();
       const matchingIds = new Set<string>();
       eventsWithAds.forEach(item => {
-        if (item.type === 'event' && userInterestLowerSet.has(item.data.category.toLowerCase())) {
+        if (item.type === 'event' && doesEventMatchAnyInterest(item.data, userInterestLowerSet)) {
           matchingIds.add(String(item.data.id));
         }
       });

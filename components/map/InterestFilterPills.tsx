@@ -14,6 +14,7 @@ import {
   openCityEventLightbox,
 } from '../../utils/cityEventLightbox';
 import { amplitudeTrack } from '../../lib/amplitudeAnalytics';
+import { getEventFacetKeys, isFamilyFriendlyInterest } from '../../utils/familyFriendly';
 
 type PillItem = {
   label: string;
@@ -216,8 +217,10 @@ const InterestFilterPills: React.FC = () => {
         return;
       }
 
-      const categoryKey = normalize(event.category);
-      counts[categoryKey] = (counts[categoryKey] ?? 0) + 1;
+      getEventFacetKeys(event).forEach((facet) => {
+        const facetKey = normalize(facet);
+        counts[facetKey] = (counts[facetKey] ?? 0) + 1;
+      });
     });
 
     return counts;
@@ -234,20 +237,23 @@ const InterestFilterPills: React.FC = () => {
       const eventCount = eventCountByKey[key] ?? 0;
       const specialCount = specialCountByKey[key] ?? 0;
       const newContentCount = newContentCountByInterestKey[key] ?? 0;
+      const displayCount = isFamilyFriendlyInterest(interest)
+        ? eventCount + specialCount
+        : eventCount || specialCount;
 
-      if (eventCount > 0 || specialCount > 0) {
+      if (displayCount > 0) {
         const existingPill = pillMap.get(shortLabel);
 
         if (existingPill) {
           // Combine counts for same short label (e.g., "Drink" combines Happy Hour + Drink Specials)
-          existingPill.count += (eventCount || specialCount);
+          existingPill.count += displayCount;
           existingPill.originalInterests.push(interest);
           existingPill.newContentCount = (existingPill.newContentCount ?? 0) + newContentCount;
           existingPill.hasNewContent = (existingPill.newContentCount ?? 0) > 0;
         } else {
           pillMap.set(shortLabel, {
             label: shortLabel,
-            count: eventCount || specialCount,
+            count: displayCount,
             type: eventCount > 0 ? 'event' : 'special',
             originalInterests: [interest],
             hasNewContent: newContentCount > 0,
