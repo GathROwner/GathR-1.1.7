@@ -1069,9 +1069,11 @@ const handleNonTicketAction = () => {
   const showRange = (timeStatus === 'now' || timeStatus === 'today' || timeStatus === 'future') && !!rangeOrUndefined;
   const endDateSuffix =
     showRange && isFutureDate(updatedEvent.endDate) ? ` • (Until ${formatEndDateLabel(updatedEvent.endDate!)})` : '';
-  const dateTimeDisplay = showRange
-    ? `${label} • ${s}${e ? ` – ${e}` : ''}${endDateSuffix}`
-    : labelWithTime;
+  const dateTimeDisplay = isHappeningNow
+    ? `Now${showRange ? ` • ${s}${e ? ` – ${e}` : ''}${endDateSuffix}` : ''}`
+    : showRange
+      ? `${label} • ${s}${e ? ` – ${e}` : ''}${endDateSuffix}`
+      : labelWithTime;
 
   // Prepare images array for the image viewer
   // Use fallback if: URL is invalid OR the thumbnail reported a load error
@@ -1395,7 +1397,7 @@ const handleNonTicketAction = () => {
         <View style={styles.badgeContainer}>
           {isHappeningNow && (
             <View style={styles.nowBadge}>
-              <Text style={styles.badgeText}>HAPPENING NOW</Text>
+              <Text style={styles.badgeText}>Now</Text>
             </View>
           )}
           <FamilyFriendlyBadge event={updatedEvent} />
