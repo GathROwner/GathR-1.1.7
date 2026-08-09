@@ -29,6 +29,7 @@ import ImageView from "react-native-image-viewing";
 import FallbackImage from '../common/FallbackImage';
 import TicketCtaPill from '../common/TicketCtaPill';
 import EventActionLinkPill from '../common/EventActionLinkPill';
+import FamilyFriendlyBadge from '../common/FamilyFriendlyBadge';
 import { VenueFavoriteButton } from '../common/VenueFavoriteButton';
 import Autolink from 'react-native-autolink';
 
@@ -1397,6 +1398,7 @@ const handleNonTicketAction = () => {
               <Text style={styles.badgeText}>HAPPENING NOW</Text>
             </View>
           )}
+          <FamilyFriendlyBadge event={updatedEvent} />
           <View style={[styles.categoryBadge, { backgroundColor: getCategoryColor(updatedEvent.category) }]}>
             <Text style={styles.badgeText}>{updatedEvent.category}</Text>
           </View>

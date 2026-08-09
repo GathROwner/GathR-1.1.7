@@ -2,6 +2,7 @@
 import { getUserInterests, getUserFavorites } from '../services/userService';
 import { calculateDistance } from '../utils/locationUtils';
 import { getEventTimeStatus } from '../utils/dateUtils';
+import { doesEventMatchAnyInterest } from './familyFriendly';
 import { BASE_SCORES, DISTANCE_BANDS, ENGAGEMENT_TIERS, calculateEngagementTier } from './priorityUtils';
 
 // Main scoring function that incorporates all priority factors
@@ -14,9 +15,7 @@ export async function calculateEventRelevanceScore(event, userLocation) {
   const timeStatus = getEventTimeStatus(event);
   
   // Determine if event matches user interests
-  const matchesInterests = userInterests.some(interest => 
-    interest.toLowerCase() === event.category.toLowerCase()
-  );
+  const matchesInterests = doesEventMatchAnyInterest(event, userInterests);
   
   // Determine if event is saved
   const isSaved = userFavorites.includes(event.id.toString());

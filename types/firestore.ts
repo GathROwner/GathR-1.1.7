@@ -65,6 +65,10 @@ export interface FirestoreEventMetadata {
   sourceUrl?: string;
   eventType?: string;
   ageRestriction?: string;
+  familyFriendlyScore?: number | null;
+  familyFriendlyLevel?: 'unlikely' | 'possible' | 'likely' | 'high' | null;
+  familyFriendlyReasons?: string[];
+  familyFriendlyScoringVersion?: string | null;
   fullDescription?: string;
   ticketLinkPosts?: string;
   ticketLinkEvents?: string;
@@ -144,6 +148,10 @@ export interface FirestoreEvent {
   locationReviewStatus?: 'not_needed' | 'needs_review' | 'approved' | 'rejected' | null;
   mapMode?: 'venue' | 'area' | 'none' | null;
   category: string | null;  // Can be null
+  familyFriendlyScore?: number | null;
+  familyFriendlyLevel?: 'unlikely' | 'possible' | 'likely' | 'high' | null;
+  familyFriendlyReasons?: string[];
+  familyFriendlyScoringVersion?: string | null;
   isEvent: boolean | null;  // Can be null - default to true
   // Top-level recurrence fields (materialized recurring instances)
   isRecurring?: boolean;

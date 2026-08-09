@@ -35,6 +35,10 @@ export interface Event {
   id: string | number;
   type: 'event' | 'special';
   category: string;
+  familyFriendlyScore?: number | null;
+  familyFriendlyLevel?: 'unlikely' | 'possible' | 'likely' | 'high' | null;
+  familyFriendlyReasons?: string[];
+  familyFriendlyScoringVersion?: string | null;
   title: string;
   description: string;
   venueId?: string | null;

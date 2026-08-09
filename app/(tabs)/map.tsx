@@ -40,6 +40,7 @@ import { useInterestCarouselUiStore } from '../../store/interestCarouselUiStore'
 import type { Event, Venue, Cluster, TimeStatus, InterestLevel } from '../../types/events';
 import { FilterCriteria, TimeFilterType } from '../../types/filter';
 import type { InterestCarouselFilter } from '../../types/store';
+import { filterClusterForInterestCarouselFilter } from '../../utils/interestCarouselFilterUtils';
 
 // Import components
 import FilterPills from '../../components/map/FilterPills';
@@ -109,6 +110,9 @@ import {
 } from '../../utils/tabSwitchTrace';
 import { useReduceMotion } from '../../hooks/useReduceMotion';
 import { isCityLevelEvent } from '../../utils/locationScope';
+import {
+  doesEventMatchAnyInterest,
+} from '../../utils/familyFriendly';
 
 // Initialize Mapbox token
 initializeMapboxAccessToken(MapboxGL);
@@ -335,7 +339,7 @@ const prepareClusterCallout = (
       .map((event): Event => {
         const isSaved = savedEventIds.has(event.id.toString());
         const savedScore = isSaved ? 1000 : 0;
-        const matchesInterest = userInterestIds.has(event.category);
+        const matchesInterest = doesEventMatchAnyInterest(event, userInterestIds);
         const interestScore = matchesInterest ? 100 : 0;
         // City-level (festival) events lead the callout beneath their
         // lightbox: above interest matches, below saved events/favorites.
@@ -639,7 +643,7 @@ const getAndroidClusterCategoryItems = (cluster: Cluster, userInterests: string[
     venue.events.forEach(event => {
       const iconImage = getAndroidClusterCategoryIconImage(event.category);
       const currentItem = categoryMap.get(iconImage);
-      const isUserInterest = userInterests.includes(event.category);
+      const isUserInterest = doesEventMatchAnyInterest(event, userInterests);
 
       if (currentItem) {
         currentItem.count += 1;
@@ -688,33 +692,6 @@ const getClusterCoordinate = (cluster: Cluster): [number, number] => {
     totals.latitude / cluster.venues.length,
   ];
 };
-
-type ActiveInterestCarouselFilter = Extract<InterestCarouselFilter, { status: 'active' }>;
-
-const normalizeInterestCategory = (value: string): string => value.trim().toLowerCase();
-
-const eventMatchesInterestCarouselFilter = (
-  event: Event,
-  filter: ActiveInterestCarouselFilter
-): boolean => {
-  // City filter matches on location scope, not category, and spans both
-  // events and specials.
-  if (filter.kind === 'city') {
-    return isCityLevelEvent(event);
-  }
-  return (
-    event.type === filter.type &&
-    normalizeInterestCategory(event.category) === normalizeInterestCategory(filter.category)
-  );
-};
-
-const clusterMatchesInterestCarouselFilter = (
-  cluster: Cluster,
-  filter: ActiveInterestCarouselFilter
-): boolean =>
-  cluster.venues.some((venue) =>
-    venue.events.some((event) => eventMatchesInterestCarouselFilter(event, filter))
-  );
 
 type AndroidClusterHitTarget = {
   cluster: Cluster;
@@ -7231,6 +7208,11 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
       : clustersForRender;
     const activeInterestMarkerFilter =
       interestCarouselFilter?.status === 'active' ? interestCarouselFilter : null;
+    const interestFilteredClustersForRender = activeInterestMarkerFilter
+      ? orderedClustersForRender
+          .map((cluster) => filterClusterForInterestCarouselFilter(cluster, activeInterestMarkerFilter))
+          .filter((cluster): cluster is Cluster => cluster !== null)
+      : orderedClustersForRender;
 
     if (typeof __DEV__ !== 'undefined' && __DEV__ && Platform.OS === 'android' && zoomLevel >= 8.5 && zoomLevel <= 12.8) {
       const summarizeCharlottetownClusters = (renderClusters: Cluster[]) =>
@@ -7305,7 +7287,7 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
     }
 
     if (USE_ANDROID_NATIVE_CLUSTER_MARKER_LAYERS) {
-      const layerMarkerShape = buildAndroidClusterMarkerShape(orderedClustersForRender, {
+      const layerMarkerShape = buildAndroidClusterMarkerShape(interestFilteredClustersForRender, {
         categoryCycleTick: androidCategoryCycleTick,
         clustersReadyForInteraction,
         detailsEnabled: richClusterMarkerDetailsEnabled,
@@ -7340,7 +7322,7 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
 
             const feature = event?.features?.[0];
             const clusterId = feature?.properties?.clusterId;
-            const cluster = orderedClustersForRender.find((item) => item.id === clusterId);
+            const cluster = interestFilteredClustersForRender.find((item) => item.id === clusterId);
             logAndroidZoomTapLatencyProbe('native_shape_press_received', {
               featureCount: Array.isArray(event?.features) ? event.features.length : 0,
               clusterId: clusterId ?? 'none',
@@ -7747,7 +7729,7 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
       );
     }
 
-    return orderedClustersForRender
+    return interestFilteredClustersForRender
       .map((cluster: Cluster, index: number) => {
         // Calculate the coordinates for the cluster
         const coordinates = getClusterRenderCoordinates(cluster);
@@ -7762,10 +7744,7 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
 
         // 🎯 TUTORIAL INTEGRATION: Add targeting for closest cluster
         const isClosestCluster = index === 0; // First cluster is prioritized
-        const isDimmedByInterestFilter =
-          !!activeInterestMarkerFilter &&
-          !isSelected &&
-          !clusterMatchesInterestCarouselFilter(cluster, activeInterestMarkerFilter);
+        const isDimmedByInterestFilter = false;
         const shouldForceHotspotPreviewDetails =
           Platform.OS === 'android' &&
           hotspotPreviewClusterId !== null &&

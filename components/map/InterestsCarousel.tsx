@@ -19,6 +19,7 @@ import FallbackImage from '../common/FallbackImage';
 import EventImageLightbox from './EventImageLightbox';
 import { useClusterInteractionStore } from '../../store/clusterInteractionStore';
 import { doesEventMatchInterestCarouselActiveCategory } from '../../utils/interestCarouselFilterUtils';
+import { isFamilyFriendlyInterest } from '../../utils/familyFriendly';
 import { registerMapTraceSampler, traceMapEvent } from '../../utils/mapTrace';
 import {
   clearInterestFilterPerfAction,
@@ -435,13 +436,15 @@ const InterestsCarousel: React.FC = () => {
     // City filter spans events and specials: both sides get the sentinel so
     // the carousel shows every city-level item regardless of type.
     const isCityFilter = interestCarouselFilter.kind === 'city';
+    const isCrossTypeFilter =
+      isCityFilter || isFamilyFriendlyInterest(interestCarouselFilter.category);
 
     return {
       ...filterCriteria,
       eventFilters: {
         ...filterCriteria.eventFilters,
         category:
-          isCityFilter || interestCarouselFilter.type === 'event'
+          isCrossTypeFilter || interestCarouselFilter.type === 'event'
             ? interestCarouselFilter.category
             : '__FILTER_PILLS_HIDE__',
         categoryFilterSource: 'interest-pills' as const,
@@ -449,7 +452,7 @@ const InterestsCarousel: React.FC = () => {
       specialFilters: {
         ...filterCriteria.specialFilters,
         category:
-          isCityFilter || interestCarouselFilter.type === 'special'
+          isCrossTypeFilter || interestCarouselFilter.type === 'special'
             ? interestCarouselFilter.category
             : '__FILTER_PILLS_HIDE__',
         categoryFilterSource: 'interest-pills' as const,

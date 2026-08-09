@@ -5,6 +5,7 @@ import { getEventHotEngagementScore, getHotInterestShortLabel } from './hotInter
 import { combineDateAndTime, getEventTimeStatus } from './dateUtils';
 import { isEventPast } from './eventExpiry';
 import { CITY_EVENTS_CATEGORY, isCityLevelEvent } from './locationScope';
+import { doesEventMatchCategoryOrFacet } from './familyFriendly';
 
 // Target list size, not a cap: every user interest is guaranteed one slot, so
 // users with more than 10 interests can produce a longer list.
@@ -20,7 +21,7 @@ type TrendingCandidate = {
   event: Event;
   engagementScore: number;
   matchesInterest: boolean;
-  groupLabel?: string;
+  groupLabels: string[];
   // Lazily computed: date parsing is only needed when engagement ties (the
   // sparse-engagement case), and this builder re-runs on every viewport change.
   timeStatusRank?: number;
@@ -56,7 +57,7 @@ const doesEventMatchActiveTrendingFilters = (
     return isCityLevelEvent(event);
   }
 
-  return normalize(event.category || '') === normalize(category);
+  return doesEventMatchCategoryOrFacet(event, category);
 };
 
 const TIME_STATUS_RANK: Record<'now' | 'today' | 'future' | 'past', number> = {
@@ -142,12 +143,16 @@ export const buildTrendingEvents = ({
       return;
     }
 
-    const groupLabel = labelByInterestKey.get(normalize(event.category || ''));
+    const groupLabels = Array.from(new Set(
+      Array.from(labelByInterestKey.entries())
+        .filter(([interest]) => doesEventMatchCategoryOrFacet(event, interest))
+        .map(([, label]) => label)
+    ));
     candidates.push({
       event,
       engagementScore: getEventHotEngagementScore(event),
-      matchesInterest: groupLabel !== undefined,
-      groupLabel,
+      matchesInterest: groupLabels.length > 0,
+      groupLabels,
     });
   });
 
@@ -163,12 +168,16 @@ export const buildTrendingEvents = ({
   const selectedIds = new Set<string>();
   const seenGroups = new Set<string>();
   sorted.forEach((candidate) => {
-    if (!candidate.groupLabel || seenGroups.has(candidate.groupLabel)) {
+    const unseenGroups = candidate.groupLabels.filter((label) => !seenGroups.has(label));
+    if (unseenGroups.length === 0) {
       return;
     }
-    seenGroups.add(candidate.groupLabel);
-    selected.push(candidate);
-    selectedIds.add(String(candidate.event.id));
+    unseenGroups.forEach((label) => seenGroups.add(label));
+    const id = String(candidate.event.id);
+    if (!selectedIds.has(id)) {
+      selected.push(candidate);
+      selectedIds.add(id);
+    }
   });
 
   // City-level (festival) events get one guaranteed slot, mirroring the

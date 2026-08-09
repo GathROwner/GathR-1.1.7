@@ -140,7 +140,9 @@ import CompactNativeAdComponent from '../ads/CompactNativeAdComponent';
 import CompactSdkAdCard from '../ads/CompactSdkAdCard';
 import TicketCtaPill from '../common/TicketCtaPill';
 import EventActionLinkPill from '../common/EventActionLinkPill';
+import FamilyFriendlyBadge from '../common/FamilyFriendlyBadge';
 import { traceMapEvent } from '../../utils/mapTrace';
+import { doesEventMatchAnyInterest } from '../../utils/familyFriendly';
 
 const EVENT_CALLOUT_SHELL_ISOLATION_DEBUG = false;
 const EVENT_CALLOUT_DISABLE_NATIVE_ADS_DEBUG = false;
@@ -491,9 +493,7 @@ const sortAndPrioritizeCalloutEvents = (
     const timeStatus = getEventTimeStatus(event);
     
     // Check for interest match
-    const matchesInterest = userInterests.some(interest => 
-      interest.toLowerCase() === event.category.toLowerCase()
-    );
+    const matchesInterest = doesEventMatchAnyInterest(event, userInterests);
     
     // Calculate base score using the proper BASE_SCORES system
     const scoreCategory = matchesInterest ? 'INTEREST_MATCH' : 'NON_INTEREST';
@@ -1842,9 +1842,7 @@ const SpecialCard: React.FC<SpecialCardProps> = ({
   }, [isSaved]);
 
   const eventMatchesUserInterests = matchesUserInterests || (
-    userInterests.length > 0 && userInterests.some(interest => 
-      interest.toLowerCase() === event.category.toLowerCase()
-    )
+    userInterests.length > 0 && doesEventMatchAnyInterest(event, userInterests)
   );
   
   const safeNumberToString = (value: any): string => {
@@ -2381,6 +2379,7 @@ return (
       
       <View style={styles.cardBottomRow}>
         <View style={styles.leftSection}>
+          <FamilyFriendlyBadge event={event} />
           <View style={[ styles.categoryButton2, { backgroundColor: getCategoryColor(event.category) } ]}>
             <Text style={styles.categoryText}>{getCategoryTag()}</Text>
           </View>
@@ -2440,6 +2439,7 @@ return (
 // NEW: Memoized wrapper to prevent unnecessary re-renders of SpecialCard
 const MemoSpecialCard = React.memo(SpecialCard, (prev, next) => {
   return prev.event.id === next.event.id &&
+    prev.event.familyFriendlyScore === next.event.familyFriendlyScore &&
     prev.event.ticketLinkPosts === next.event.ticketLinkPosts &&  // Add this
     prev.event.ticketLinkEvents === next.event.ticketLinkEvents && // Add this
     prev.event.description === next.event.description &&           // Add this
@@ -2506,9 +2506,7 @@ const sortedEvents = useMemo(() => {
              showVenueName={isMultiVenue}
              onImagePress={onImagePress}
              isSaved={savedEvents.includes(event.id.toString())}
-             matchesUserInterests={userInterests.some(interest => 
-               interest.toLowerCase() === event.category.toLowerCase()
-             )}
+             matchesUserInterests={doesEventMatchAnyInterest(event, userInterests)}
              userInterests={userInterests}
              isGuest={isGuest}
            />
@@ -4294,9 +4292,7 @@ useEffect(() => {
             showVenueName={isMultiVenue}
             onImagePress={handleImagePress}
             isSaved={savedEvents.includes(event.id.toString())}
-            matchesUserInterests={userInterests.some(interest => 
-              interest.toLowerCase() === event.category.toLowerCase()
-            )}
+            matchesUserInterests={doesEventMatchAnyInterest(event, userInterests)}
             userInterests={userInterests}
             isGuest={isGuest}
             // Pass the prop to the first card in the list

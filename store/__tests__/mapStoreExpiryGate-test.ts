@@ -153,6 +153,42 @@ describe('doesEventMatchTypeFilters past gate', () => {
       doesEventMatchTypeFilters(endedYesterday(), typeFilters(TimeFilterType.UPCOMING), context)
     ).toBe(false);
   });
+
+  it('treats Family Friendly as a score-backed facet across primary categories', () => {
+    const context = createEventTimeContext(NOW);
+    const filters = {
+      ...typeFilters(TimeFilterType.ALL),
+      category: 'Family Friendly',
+    };
+    expect(doesEventMatchTypeFilters(nextWeek(), filters, context)).toBe(false);
+    expect(
+      doesEventMatchTypeFilters(
+        makeEvent({
+          startDate: '2026-07-15',
+          endDate: '2026-07-15',
+          category: 'Sports',
+          familyFriendlyScore: 75,
+        }),
+        filters,
+        context
+      )
+    ).toBe(true);
+    expect(
+      doesEventMatchTypeFilters(
+        makeEvent({
+          startDate: '2026-07-15',
+          endDate: '2026-07-15',
+          type: 'special',
+          category: 'Happy Hour',
+          title: 'Oyster Happy Hour',
+          venue: 'Landmark Oyster House',
+          familyFriendlyScore: 15,
+        }),
+        filters,
+        context
+      )
+    ).toBe(false);
+  });
 });
 
 describe('pruneExpiredEvents ticker action', () => {
