@@ -16,6 +16,7 @@ import { useInterestCarouselUiStore } from '../../store/interestCarouselUiStore'
 import { Event, Venue, Cluster } from '../../types/events';
 import { isEventNow, getEventTimeStatus } from '../../utils/dateUtils';
 import FallbackImage from '../common/FallbackImage';
+import FamilyFriendlyBadge from '../common/FamilyFriendlyBadge';
 import EventImageLightbox from './EventImageLightbox';
 import { useClusterInteractionStore } from '../../store/clusterInteractionStore';
 import { doesEventMatchInterestCarouselActiveCategory } from '../../utils/interestCarouselFilterUtils';
@@ -246,18 +247,21 @@ const EventCard = memo(({
           </Text>
         </View>
 
-        {/* Category badge */}
-        <View style={[styles.categoryBadge, { backgroundColor: categoryBgColor }]}>
-          {event.category.toLowerCase().includes('learn') ||
-           event.category.toLowerCase().includes('workshop') ? (
-            <Ionicons name="school" size={12} color="#FFFFFF" />
-          ) : (
-            <MaterialIcons
-              name={getCategoryIconName(event.category) as any}
-              size={12}
-              color="#FFFFFF"
-            />
-          )}
+        {/* Primary category plus the optional Family Friendly secondary facet. */}
+        <View style={styles.imageFacetBadges}>
+          <FamilyFriendlyBadge event={event} style={styles.carouselFamilyFriendlyBadge} />
+          <View style={[styles.categoryBadge, { backgroundColor: categoryBgColor }]}>
+            {event.category.toLowerCase().includes('learn') ||
+             event.category.toLowerCase().includes('workshop') ? (
+              <Ionicons name="school" size={12} color="#FFFFFF" />
+            ) : (
+              <MaterialIcons
+                name={getCategoryIconName(event.category) as any}
+                size={12}
+                color="#FFFFFF"
+              />
+            )}
+          </View>
         </View>
 
         {/* NOW Badge */}
@@ -958,10 +962,20 @@ const styles = StyleSheet.create({
     width: '100%',
     height: '100%',
   },
-  categoryBadge: {
+  imageFacetBadges: {
     position: 'absolute',
     right: 6,
     bottom: 6,
+    flexDirection: 'row',
+    alignItems: 'center',
+    zIndex: 4,
+  },
+  carouselFamilyFriendlyBadge: {
+    width: 24,
+    height: 20,
+    marginRight: 4,
+  },
+  categoryBadge: {
     width: 20,
     height: 20,
     borderRadius: 10,
