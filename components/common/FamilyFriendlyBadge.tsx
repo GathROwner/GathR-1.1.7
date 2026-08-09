@@ -26,9 +26,9 @@ const FamilyFriendlyBadge: React.FC<FamilyFriendlyBadgeProps> = ({ event, style 
       testID="family-friendly-badge"
       style={[styles.badge, style]}
     >
-      <MaterialIcons name="family-restroom" size={15} color="#176B3A" />
+      <MaterialIcons name="family-restroom" size={14} color="#176B3A" />
       <View style={styles.checkBadge}>
-        <MaterialIcons name="check" size={8} color="#FFFFFF" />
+        <MaterialIcons name="check" size={7} color="#FFFFFF" />
       </View>
     </View>
   );
@@ -37,7 +37,7 @@ const FamilyFriendlyBadge: React.FC<FamilyFriendlyBadgeProps> = ({ event, style 
 const styles = StyleSheet.create({
   badge: {
     width: 28,
-    height: 28,
+    height: 22,
     alignItems: 'center',
     justifyContent: 'center',
     alignSelf: 'flex-start',
@@ -52,14 +52,14 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: -3,
     right: -3,
-    width: 12,
-    height: 12,
+    width: 10,
+    height: 10,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#34A853',
     borderColor: '#FFFFFF',
-    borderWidth: 1.5,
-    borderRadius: 6,
+    borderWidth: 1,
+    borderRadius: 5,
   },
 });
 
