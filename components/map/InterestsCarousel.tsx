@@ -249,7 +249,11 @@ const EventCard = memo(({
 
         {/* Primary category plus the optional Family Friendly secondary facet. */}
         <View style={styles.imageFacetBadges}>
-          <FamilyFriendlyBadge event={event} style={styles.carouselFamilyFriendlyBadge} />
+          <FamilyFriendlyBadge
+            event={event}
+            variant="carousel"
+            style={styles.carouselFamilyFriendlyBadge}
+          />
           <View style={[styles.categoryBadge, { backgroundColor: categoryBgColor }]}>
             {event.category.toLowerCase().includes('learn') ||
              event.category.toLowerCase().includes('workshop') ? (
@@ -971,8 +975,6 @@ const styles = StyleSheet.create({
     zIndex: 4,
   },
   carouselFamilyFriendlyBadge: {
-    width: 24,
-    height: 20,
     marginRight: 4,
   },
   categoryBadge: {

@@ -8,6 +8,7 @@ import { isFamilyFriendlyEvent } from '../../utils/familyFriendly';
 type FamilyFriendlyBadgeProps = {
   event: Pick<Event, 'category' | 'familyFriendlyScore'>;
   style?: StyleProp<ViewStyle>;
+  variant?: 'default' | 'carousel';
 };
 
 /**
@@ -15,8 +16,14 @@ type FamilyFriendlyBadgeProps = {
  * primary category instead of replacing it (for example, Live Music can also
  * be Family Friendly).
  */
-const FamilyFriendlyBadge: React.FC<FamilyFriendlyBadgeProps> = ({ event, style }) => {
+const FamilyFriendlyBadge: React.FC<FamilyFriendlyBadgeProps> = ({
+  event,
+  style,
+  variant = 'default',
+}) => {
   if (!isFamilyFriendlyEvent(event)) return null;
+
+  const isCarousel = variant === 'carousel';
 
   return (
     <View
@@ -24,11 +31,11 @@ const FamilyFriendlyBadge: React.FC<FamilyFriendlyBadgeProps> = ({ event, style 
       accessibilityLabel="Family Friendly"
       accessibilityRole="image"
       testID="family-friendly-badge"
-      style={[styles.badge, style]}
+      style={[styles.badge, isCarousel && styles.carouselBadge, style]}
     >
-      <MaterialIcons name="family-restroom" size={14} color="#176B3A" />
-      <View style={styles.checkBadge}>
-        <MaterialIcons name="check" size={7} color="#FFFFFF" />
+      <MaterialIcons name="family-restroom" size={isCarousel ? 12 : 14} color="#176B3A" />
+      <View style={[styles.checkBadge, isCarousel && styles.carouselCheckBadge]}>
+        <MaterialIcons name="check" size={isCarousel ? 5 : 7} color="#FFFFFF" />
       </View>
     </View>
   );
@@ -60,6 +67,23 @@ const styles = StyleSheet.create({
     borderColor: '#FFFFFF',
     borderWidth: 1,
     borderRadius: 5,
+  },
+  carouselBadge: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  carouselCheckBadge: {
+    top: -2,
+    right: -2,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
   },
 });
 
