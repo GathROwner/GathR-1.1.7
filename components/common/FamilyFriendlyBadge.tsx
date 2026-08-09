@@ -1,5 +1,5 @@
 import React from 'react';
-import { StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
+import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 
 import type { Event } from '../../types/events';
@@ -20,34 +20,46 @@ const FamilyFriendlyBadge: React.FC<FamilyFriendlyBadgeProps> = ({ event, style 
 
   return (
     <View
+      accessible
       accessibilityLabel="Family Friendly"
+      accessibilityRole="image"
       testID="family-friendly-badge"
       style={[styles.badge, style]}
     >
-      <MaterialIcons name="family-restroom" size={13} color="#176B3A" />
-      <Text style={styles.text}>Family Friendly</Text>
+      <MaterialIcons name="family-restroom" size={15} color="#176B3A" />
+      <View style={styles.checkBadge}>
+        <MaterialIcons name="check" size={8} color="#FFFFFF" />
+      </View>
     </View>
   );
 };
 
 const styles = StyleSheet.create({
   badge: {
-    flexDirection: 'row',
+    width: 28,
+    height: 28,
     alignItems: 'center',
+    justifyContent: 'center',
     alignSelf: 'flex-start',
     backgroundColor: '#E8F5E9',
     borderColor: '#79B98B',
     borderWidth: 1,
-    borderRadius: 8,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
+    borderRadius: 14,
     marginRight: 8,
+    position: 'relative',
   },
-  text: {
-    color: '#176B3A',
-    fontSize: 12,
-    fontWeight: '700',
-    marginLeft: 4,
+  checkBadge: {
+    position: 'absolute',
+    top: -3,
+    right: -3,
+    width: 12,
+    height: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#34A853',
+    borderColor: '#FFFFFF',
+    borderWidth: 1.5,
+    borderRadius: 6,
   },
 });
 
