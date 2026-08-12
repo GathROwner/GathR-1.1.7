@@ -13,11 +13,11 @@ This directory contains the native ad display components for GathR.
 
 All ad loading is managed through a centralized Zustand store that provides:
 
-- **Shared ad pool** - Events and specials tabs share the same pool of loaded ads
+- **Separate surface pools** - Events and Specials use different ad unit IDs and pools
 - **Two-phase loading** - Fast initial batch (3 ads) + background loading (12 more)
 - **Rate limiting** - 30-second cooldown between load attempts to avoid AdMob throttling
-- **Deduplication** - Ads are deduplicated by content hash (headline + advertiser + body)
-- **Eager preloading** - Ads preload 500ms after app start (before user opens callout)
+- **Instance ownership** - Every rendered placement owns a distinct `NativeAd` object, even when AdMob returns identical creative text
+- **Platform-aware loading** - iOS preloads at startup; Android defers loading until the list has focus
 
 ### Hook: `useNativeAds(count, tabType, startIndex)`
 
@@ -53,12 +53,14 @@ sortedViewportEvents.forEach((event, index) => {
 outsideViewportToShow.forEach((event, index) => {
   result.push({ type: 'event', data: event });
   if ((index + 1) % adFrequency === 0 && nativeAds.length > 0) {
-    // Insert ad - uses same adIndex counter for cycling
+    // Insert the next distinct loaded NativeAd instance
   }
 });
 ```
 
 **Critical:** Ads must be inserted in BOTH viewport and outside-viewport sections, otherwise ads stop appearing when users scroll past the divider.
+
+If fewer ad instances are loaded than placements, leave later placements empty. Never cycle the same `NativeAd` object into several `NativeAdView`s. AdMob can return visually identical creatives as separate objects; those objects are valid separate placements and must not be collapsed by headline/body text.
 
 ## Critical Implementation Details
 
@@ -149,18 +151,7 @@ The SKAdNetwork identifiers in `app.config.js` have been optimized to ~25 essent
 
 ## Preloading
 
-Ads are preloaded in `app/_layout.tsx` 500ms after app start:
-
-```typescript
-useEffect(() => {
-  const adTimer = setTimeout(() => {
-    useAdPoolStore.getState().preloadAds();
-  }, 500);
-  return () => clearTimeout(adTimer);
-}, []);
-```
-
-This ensures ads are ready before the user opens their first callout.
+iOS can preload both pools after SDK initialization. Android delays ad loading until a list surface is focused so Chromium/AdMob work does not compete with map startup. Loaded instances are leased to one owner and destroyed when no longer referenced.
 
 ## Troubleshooting
 
@@ -169,6 +160,9 @@ Check that both viewport AND outside-viewport sections in `events.tsx`/`specials
 
 ### Same ad showing across venue tabs
 Ensure `startIndex` (venueIndex) is passed to `useNativeAds` in `EventCallout.tsx`.
+
+### Later feed ads show a static fallback of the first ad
+Verify the pool kept separate `NativeAd` instances even if their creative fields match, and confirm the feed indexes instances without modulo cycling. Each placement should render media from its own SDK object.
 
 ### Ads take too long to appear
 The two-phase preload should have 3 ads ready within ~1 second of app start. Check console for `[AdPool] Phase 1 ✅` logs.

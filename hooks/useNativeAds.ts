@@ -15,7 +15,7 @@ export type AdDebugInfo = string[];
 const DEBUG_ADS = false;
 const MAX_LOGGED_ADS = 5;
 const ANDROID_FOCUSED_AD_WORK_DELAY_MS = 8000;
-const ANDROID_FOCUSED_AD_LOAD_COUNT = 2;
+const ANDROID_FOCUSED_AD_LOAD_COUNT = 10;
 const ANDROID_AD_REFRESH_MAX_AGE_MS = 20 * 60 * 1000;
 
 const summarizeAd = (ad: NativeAd | null) => {
@@ -58,12 +58,12 @@ const summarizeAd = (ad: NativeAd | null) => {
  *
  * This hook now uses a shared ad pool (adPoolStore) instead of loading ads independently.
  * Benefits:
- * - All screens share the same pool of ads (no duplicate loading)
+ * - Each ad type uses one centralized pool (no duplicate loaders per screen)
  * - Rate limiting is handled centrally (30s cooldown between loads)
  * - Ads persist across tab switches and callout opens
  * - Better ad variety since pool loads more ads upfront (15 vs 5-6)
  *
- * @param count - Number of ads needed for display (will cycle if pool is smaller)
+ * @param count - Number of distinct ad instances needed for display
  * @param tabType - 'events' or 'specials' to determine which ad pool to use
  * @param startIndex - Optional offset to start from in the ad pool (useful for showing different ads per venue tab)
  * @param onDebugLog - Optional callback for debug logging (kept for backwards compatibility)
