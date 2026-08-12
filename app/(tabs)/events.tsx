@@ -3129,7 +3129,6 @@ const styles = StyleSheet.create({
   },
   adContainer: {
     height: FULL_SIZE_SDK_AD_ROW_HEIGHT,
-    paddingBottom: 12,
     // marginHorizontal removed - inner component already has margins
     marginBottom: 12,
     borderRadius: 16,

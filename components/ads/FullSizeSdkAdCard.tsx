@@ -15,7 +15,7 @@ type FullSizeSdkAdCardProps = {
 };
 
 export const FULL_SIZE_SDK_AD_CARD_HEIGHT = 324;
-export const FULL_SIZE_SDK_AD_ROW_HEIGHT = FULL_SIZE_SDK_AD_CARD_HEIGHT + 12;
+export const FULL_SIZE_SDK_AD_ROW_HEIGHT = FULL_SIZE_SDK_AD_CARD_HEIGHT;
 
 export default function FullSizeSdkAdCard({
   nativeAd,
