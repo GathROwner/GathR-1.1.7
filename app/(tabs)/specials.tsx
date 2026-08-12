@@ -1680,15 +1680,6 @@ function SpecialsScreen() {
     }, [isGuest])
   );
   
-  // Native ads setup
-  const adFrequency = 4;
-  const totalEventCount = events.length;
-  const calculatedAdCount = Math.ceil(totalEventCount / adFrequency);
-  const minAdCount = 2;
-  const maxAdCount = 10;
-  const adCount = Math.max(minAdCount, Math.min(calculatedAdCount, maxAdCount));
-  const nativeAds = useNativeAds(adCount, 'specials');
-  
   // UI state
   const [selectedEvent, setSelectedEvent] = useState<Event | null>(null);
   const [detailsVisible, setDetailsVisible] = useState(false);
@@ -2422,6 +2413,24 @@ useEffect(() => {
       return sortAndPrioritizeSpecials(specialsToSort);
     });
   }, [filteredOutsideViewportSpecials, outsideViewportLoadCount, userLocation, savedEventSet, favoriteVenueSet, userInterestLowerSet, eventTimeContext]);
+
+  // Request one distinct NativeAd instance for every placement in the currently
+  // exposed page. The target grows with pagination instead of stopping at four.
+  const displayedOutsideViewportSpecialCount = Math.min(
+    sortedOutsideViewportSpecials.length,
+    outsideViewportLoadCount
+  );
+  const regularSpecialAdPlacements =
+    Math.floor(sortedViewportSpecials.length / 4) +
+    Math.floor(displayedOutsideViewportSpecialCount / 4);
+  const lowCountSpecialAdPlacement =
+    sortedViewportSpecials.length > 0 &&
+    sortedViewportSpecials.length < 4 &&
+    displayedOutsideViewportSpecialCount === 0
+      ? 1
+      : 0;
+  const adCount = Math.max(2, regularSpecialAdPlacements + lowCountSpecialAdPlacement);
+  const nativeAds = useNativeAds(adCount, 'specials');
 
   // Create specials with ads list
   type SpecialListItem = {

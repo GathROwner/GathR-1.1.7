@@ -60,4 +60,24 @@ describe('adPoolStore instance ownership', () => {
       null,
     ]);
   });
+
+  it('extends a short pool without destroying instances already used by earlier placements', async () => {
+    const initialAds = [makeAd(), makeAd()];
+    initialAds.forEach((ad) => mockCreateForAdRequest.mockResolvedValueOnce(ad));
+    await useAdPoolStore.getState().loadAds('events', initialAds.length);
+
+    expect(useAdPoolStore.getState().claimAds('events', 'feed-owner', 2)).toEqual(initialAds);
+
+    const appendedAds = [makeAd(), makeAd(), makeAd()];
+    appendedAds.forEach((ad) => mockCreateForAdRequest.mockResolvedValueOnce(ad));
+    await useAdPoolStore.getState().loadAds('events', 5);
+
+    expect(useAdPoolStore.getState().eventsAds).toEqual([...initialAds, ...appendedAds]);
+    initialAds.forEach((ad) => expect(ad.destroy).not.toHaveBeenCalled());
+    expect(useAdPoolStore.getState().claimAds('events', 'feed-owner', 5)).toEqual([
+      ...initialAds,
+      ...appendedAds,
+    ]);
+  });
+
 });
