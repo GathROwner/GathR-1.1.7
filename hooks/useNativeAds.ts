@@ -211,6 +211,11 @@ export default function useNativeAds(
           return;
         }
 
+        if (state.poolAds.length < state.count && !state.isLoading) {
+          logMessage(`Pool short (${state.poolAds.length}/${state.count}) - extending pool`);
+          void state.loadAds(state.tabType, state.count);
+        }
+
         logMessage(`Pool has ${state.poolAds.length} ads - checking freshness`);
         state.refreshIfStale(
           state.tabType,

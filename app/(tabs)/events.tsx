@@ -1727,15 +1727,6 @@ useEffect(() => {
     }, [isGuest])
   );
   
-  // Native ads setup
-  const adFrequency = 4;
-  const totalEventCount = events.length;
-  const calculatedAdCount = Math.ceil(totalEventCount / adFrequency);
-  const minAdCount = 2;
-  const maxAdCount = 4;
-  const adCount = Math.max(minAdCount, Math.min(calculatedAdCount, maxAdCount));
-  const nativeAds = useNativeAds(adCount, 'events');
-  
   // UI state
   const [selectedEvent, setSelectedEvent] = useState<Event | null>(null);
   const [detailsVisible, setDetailsVisible] = useState(false);
@@ -2431,6 +2422,24 @@ setSelectedImageData({ imageUrl, event });
       return sortAndPrioritizeEvents(eventsToSort);
     });
   }, [filteredOutsideViewportEvents, outsideViewportLoadCount, userLocation, userInterestLowerSet, savedEventSet, favoriteVenueSet, eventTimeContext]);
+
+  // Request one distinct NativeAd instance for every placement in the currently
+  // exposed page. The target grows with pagination instead of stopping at four.
+  const displayedOutsideViewportEventCount = Math.min(
+    sortedOutsideViewportEvents.length,
+    outsideViewportLoadCount
+  );
+  const regularEventAdPlacements =
+    Math.floor(sortedViewportEvents.length / 4) +
+    Math.floor(displayedOutsideViewportEventCount / 4);
+  const lowCountEventAdPlacement =
+    sortedViewportEvents.length > 0 &&
+    sortedViewportEvents.length < 4 &&
+    displayedOutsideViewportEventCount === 0
+      ? 1
+      : 0;
+  const adCount = Math.max(2, regularEventAdPlacements + lowCountEventAdPlacement);
+  const nativeAds = useNativeAds(adCount, 'events');
 
   // Create events with ads list
   type EventListItem = {

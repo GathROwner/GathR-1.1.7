@@ -66,7 +66,7 @@ const LOCATION_KEYWORDS = ['local', 'nearby', 'neighborhood'];
 const MIN_LOAD_INTERVAL_MS = 30000; // 30 seconds between loads
 const DEFAULT_POOL_SIZE = 4; // Maximum visible slots on the focused surface
 const INITIAL_FAST_LOAD = 2; // Small first batch for responsive rendering
-const MAX_ATTEMPTS = 8;
+const MIN_LOAD_ATTEMPTS = 8;
 const STALE_AGE_MS = 5 * 60 * 1000; // 5 minutes
 const AD_POOL_DEBUG_ENABLED = false;
 const MAX_LOGGED_ADS = 5;
@@ -250,7 +250,8 @@ export const useAdPoolStore = create<AdPoolState>((set, get) => ({
       adUnitId: getAdUnitId(type),
     });
     logPoolSnapshot(type, currentAds, 'before_load');
-    if (timeSinceLastLoad < MIN_LOAD_INTERVAL_MS && currentAds.length > 0) {
+    const isPoolExpansion = currentAds.length > 0 && count > currentAds.length;
+    if (timeSinceLastLoad < MIN_LOAD_INTERVAL_MS && currentAds.length > 0 && !isPoolExpansion) {
       logAdPool(type, 'load_skipped_rate_limited', {
         currentPoolSize: currentAds.length,
         timeSinceLastLoadMs: timeSinceLastLoad,
@@ -270,7 +271,8 @@ export const useAdPoolStore = create<AdPoolState>((set, get) => ({
     }
 
     set((s) => ({ isLoading: { ...s.isLoading, [type]: true } }));
-    console.log(`[AdPool] Loading ${count} ${type} ads...`);
+    const adsToLoad = isPoolExpansion ? count - currentAds.length : count;
+    console.log(`[AdPool] Loading ${adsToLoad} ${type} ads...`);
 
     const loadedAds: NativeAd[] = [];
     const localUsedInstanceIds = new Set<string>();
@@ -279,6 +281,8 @@ export const useAdPoolStore = create<AdPoolState>((set, get) => ({
     const keywordPool = [...keywords, ...LOCATION_KEYWORDS];
     logAdPool(type, 'load_started', {
       targetCount: count,
+      adsToLoad,
+      isPoolExpansion,
       keywordPoolSize: keywordPool.length,
       currentPoolSize: currentAds.length,
     });
@@ -287,7 +291,8 @@ export const useAdPoolStore = create<AdPoolState>((set, get) => ({
     let consecutiveDuplicates = 0;
     let consecutiveErrors = 0;
 
-    while (loadedAds.length < count && attemptCount < MAX_ATTEMPTS) {
+    const maxAttempts = Math.max(MIN_LOAD_ATTEMPTS, adsToLoad + 4);
+    while (loadedAds.length < adsToLoad && attemptCount < maxAttempts) {
       attemptCount++;
 
       try {
@@ -302,7 +307,7 @@ export const useAdPoolStore = create<AdPoolState>((set, get) => ({
           attempt: attemptCount,
           targetCount: count,
           loadedCount: loadedAds.length,
-          remainingCount: count - loadedAds.length,
+          remainingCount: adsToLoad - loadedAds.length,
           consecutiveDuplicates,
           consecutiveErrors,
           keywords: shuffledKeywords,
@@ -380,16 +385,21 @@ export const useAdPoolStore = create<AdPoolState>((set, get) => ({
       }
     }
 
-    // Cleanup old ads before replacing. Claimed ads are retired instead of destroyed so
-    // mounted SDK views can keep owning them until release.
+    // Expanding a focused list preserves the objects already assigned to earlier
+    // placements and appends only newly loaded instances. A refresh still replaces
+    // the pool and retires any instance owned by a mounted SDK view.
     const oldAds = type === 'events' ? get().eventsAds : get().specialsAds;
+    const nextAds = isPoolExpansion
+      ? dedupeAdsByInstance([...oldAds, ...loadedAds])
+      : loadedAds;
     let retainedClaimedAds = 0;
-    logAdPool(type, 'replacing_existing_pool', {
+    logAdPool(type, isPoolExpansion ? 'expanding_existing_pool' : 'replacing_existing_pool', {
       oldPoolSize: oldAds.length,
-      newPoolSize: loadedAds.length,
+      loadedCount: loadedAds.length,
+      newPoolSize: nextAds.length,
     });
     logPoolSnapshot(type, oldAds, 'before_replace');
-    const nextPoolInstanceIds = new Set(loadedAds.map(getAdInstanceId));
+    const nextPoolInstanceIds = new Set(nextAds.map(getAdInstanceId));
     oldAds.forEach((ad) => {
       const instanceId = getAdInstanceId(ad);
       if (nextPoolInstanceIds.has(instanceId)) {
@@ -402,18 +412,18 @@ export const useAdPoolStore = create<AdPoolState>((set, get) => ({
       }
       destroyAdSafely(ad);
     });
-    pruneRetiredAds(type, loadedAds);
+    pruneRetiredAds(type, nextAds);
 
     // Update state with new ads
     if (type === 'events') {
       set({
-        eventsAds: loadedAds,
+        eventsAds: nextAds,
         lastLoadTime: { ...get().lastLoadTime, events: Date.now() },
         isLoading: { ...get().isLoading, events: false },
       });
     } else {
       set({
-        specialsAds: loadedAds,
+        specialsAds: nextAds,
         lastLoadTime: { ...get().lastLoadTime, specials: Date.now() },
         isLoading: { ...get().isLoading, specials: false },
       });
@@ -422,11 +432,13 @@ export const useAdPoolStore = create<AdPoolState>((set, get) => ({
     console.log(`[AdPool] 🎯 Loaded ${loadedAds.length} ${type} ads in ${attemptCount} attempts`);
     logAdPool(type, 'load_completed', {
       loadedCount: loadedAds.length,
+      poolSize: nextAds.length,
+      isPoolExpansion,
       attemptCount,
       retainedClaimedAds,
       retiredClaimedAds: retiredAdsByType[type].length,
     });
-    logPoolSnapshot(type, loadedAds, 'load_completed');
+    logPoolSnapshot(type, nextAds, 'load_completed');
     set((s) => ({ isPreloaded: { ...s.isPreloaded, [type]: true } }));
   },
 
@@ -562,7 +574,7 @@ export const useAdPoolStore = create<AdPoolState>((set, get) => ({
         let consecutiveDuplicates = 0;
         let consecutiveErrors = 0;
 
-        while (moreAds.length < remaining && bgAttemptCount < MAX_ATTEMPTS) {
+        while (moreAds.length < remaining && bgAttemptCount < MIN_LOAD_ATTEMPTS) {
           bgAttemptCount++;
 
           try {
