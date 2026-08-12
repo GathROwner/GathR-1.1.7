@@ -144,7 +144,7 @@ The SKAdNetwork identifiers in `app.config.js` have been optimized to ~25 essent
 | Constant | Value | Description |
 |----------|-------|-------------|
 | `MIN_LOAD_INTERVAL_MS` | 30000 | 30 seconds between load attempts |
-| `DEFAULT_POOL_SIZE` | 8 | Four list placements plus four callout placements |
+| `DEFAULT_POOL_SIZE` | 4 | Maximum visible slots on the focused surface |
 | `INITIAL_FAST_LOAD` | 2 | First batch when explicit preloading is requested |
 | `MAX_ATTEMPTS` | 8 | Max API calls per load cycle |
 | `STALE_AGE_MS` | 300000 | 5 minutes before refresh |
