@@ -655,6 +655,7 @@ const mixContentWithAds = (
   isMinimalContent: boolean
 ): ContentItem[] => {
   if (contentItems.length === 0) return [];
+  const validAds = ads.filter((entry) => entry.ad !== null && !entry.loading);
   
   // For minimal content (1 event or 1 special or 1 of each)
   if (isMinimalContent) {
@@ -665,8 +666,8 @@ const mixContentWithAds = (
     }));
     
     // Append one ad if available
-    if (ads.length > 0) {
-      const selectedAd = ads[0];
+    if (validAds.length > 0) {
+      const selectedAd = validAds[0];
       result.push({
         type: 'ad',
         data: {
@@ -683,7 +684,6 @@ const mixContentWithAds = (
   // For multiple items (insert an ad after every second item)
   const result: ContentItem[] = [];
   let adIndex = 0;
-  const adOccurrenceCounts = new Map<string, number>();
   
   contentItems.forEach((item, index) => {
     // Add the content item
@@ -692,18 +692,17 @@ const mixContentWithAds = (
       data: item
     });
     
-    // After every second item, add an ad (cycle through available ads)
-    if ((index + 1) % 2 === 0 && ads.length > 0) {
-      const selectedAd = ads[adIndex % ads.length];
-      const adSignature = getAdContentSignature(selectedAd);
-      const nextOccurrence = (adOccurrenceCounts.get(adSignature) ?? 0) + 1;
-      adOccurrenceCounts.set(adSignature, nextOccurrence);
+    // After every second item, use the next distinct instance. Do not cycle one
+    // NativeAd object into multiple mounted NativeAdViews.
+    if ((index + 1) % 2 === 0) {
+      const selectedAd = validAds[adIndex];
+      if (!selectedAd) return;
       result.push({
         type: 'ad',
         data: {
           ...selectedAd,
           key: getAdContentKey(selectedAd, adIndex),
-          allowMedia: nextOccurrence === 1,
+          allowMedia: true,
         }
       });
       adIndex++;
