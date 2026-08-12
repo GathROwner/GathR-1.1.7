@@ -2437,14 +2437,6 @@ useEffect(() => {
     []
   );
 
-  const getAdSignature = useCallback((entry: { ad: any; loading: boolean }) => {
-    const ad = entry.ad;
-    const headline = typeof ad?.headline === 'string' ? ad.headline : 'none';
-    const advertiser = typeof ad?.advertiser === 'string' ? ad.advertiser : 'none';
-    const body = typeof ad?.body === 'string' ? ad.body : 'none';
-    return `${headline}::${advertiser}::${body}`.toLowerCase().trim();
-  }, []);
-  
   const specialsWithAds = useMemo<ListItem[]>(() => {
     return measureListTabStage('specials', 'build_list_with_ads', {
       ready: isFocusedContentReady,
@@ -2459,7 +2451,7 @@ useEffect(() => {
       const result: ListItem[] = [];
       const adFrequency = 4;
       let adIndex = 0;
-      const adOccurrenceCounts = new Map<string, number>();
+      const validAds = nativeAds.filter(ad => ad.ad !== null && !ad.loading);
 
     // Add viewport specials with ads
     sortedViewportSpecials.forEach((special, index) => {
@@ -2467,18 +2459,14 @@ useEffect(() => {
 
       // Insert ad every 4 specials
       if ((index + 1) % adFrequency === 0 && nativeAds.length > 0) {
-        const validAds = nativeAds.filter(ad => ad.ad !== null && !ad.loading);
-        if (validAds.length > 0) {
-          const selectedAd = validAds[adIndex % validAds.length];
-          const adSignature = getAdSignature(selectedAd);
-          const nextOccurrence = (adOccurrenceCounts.get(adSignature) ?? 0) + 1;
-          adOccurrenceCounts.set(adSignature, nextOccurrence);
+        const selectedAd = validAds[adIndex];
+        if (selectedAd) {
           result.push({
             type: 'ad',
             data: {
               ...selectedAd,
               key: getAdListKey(selectedAd, adIndex),
-              allowMedia: nextOccurrence === 1,
+              allowMedia: true,
             }
           });
           adIndex++;
@@ -2505,18 +2493,14 @@ useEffect(() => {
 
       // Continue inserting ads every 4 specials in outside-viewport section
       if ((index + 1) % adFrequency === 0 && nativeAds.length > 0) {
-        const validAds = nativeAds.filter(ad => ad.ad !== null && !ad.loading);
-        if (validAds.length > 0) {
-          const selectedAd = validAds[adIndex % validAds.length];
-          const adSignature = getAdSignature(selectedAd);
-          const nextOccurrence = (adOccurrenceCounts.get(adSignature) ?? 0) + 1;
-          adOccurrenceCounts.set(adSignature, nextOccurrence);
+        const selectedAd = validAds[adIndex];
+        if (selectedAd) {
           result.push({
             type: 'ad',
             data: {
               ...selectedAd,
               key: getAdListKey(selectedAd, adIndex),
-              allowMedia: nextOccurrence === 1,
+              allowMedia: true,
             }
           });
           adIndex++;
@@ -2526,18 +2510,14 @@ useEffect(() => {
 
     // Low-count fallback for viewport section
     if (sortedViewportSpecials.length > 0 && sortedViewportSpecials.length < adFrequency && nativeAds.length > 0 && sortedOutsideViewportSpecials.length === 0) {
-      const validAds = nativeAds.filter(ad => ad.ad !== null && !ad.loading);
-      if (validAds.length > 0) {
-        const selectedAd = validAds[0];
-        const adSignature = getAdSignature(selectedAd);
-        const nextOccurrence = (adOccurrenceCounts.get(adSignature) ?? 0) + 1;
-        adOccurrenceCounts.set(adSignature, nextOccurrence);
+      const selectedAd = validAds[0];
+      if (selectedAd) {
         result.push({
           type: 'ad',
           data: {
             ...selectedAd,
             key: getAdListKey(selectedAd, adIndex),
-            allowMedia: nextOccurrence === 1,
+            allowMedia: true,
           }
         });
       }
@@ -2553,7 +2533,7 @@ useEffect(() => {
 
       return result;
     });
-  }, [getAdListKey, getAdSignature, isFocusedContentReady, sortedViewportSpecials, sortedOutsideViewportSpecials, filteredOutsideViewportSpecials.length, nativeAds, outsideViewportLoadCount]);
+  }, [getAdListKey, isFocusedContentReady, sortedViewportSpecials, sortedOutsideViewportSpecials, filteredOutsideViewportSpecials.length, nativeAds, outsideViewportLoadCount]);
 
   // Pre-compute lookup Sets for O(1) access during render
   const interestMatchSet = useMemo(() => {

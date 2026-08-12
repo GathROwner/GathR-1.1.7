@@ -58,12 +58,12 @@ const summarizeAd = (ad: NativeAd | null) => {
  *
  * This hook now uses a shared ad pool (adPoolStore) instead of loading ads independently.
  * Benefits:
- * - All screens share the same pool of ads (no duplicate loading)
+ * - Each ad type uses one centralized pool (no duplicate loaders per screen)
  * - Rate limiting is handled centrally (30s cooldown between loads)
  * - Ads persist across tab switches and callout opens
  * - Small pools keep requests close to placements users can realistically view
  *
- * @param count - Number of ads needed for display (will cycle if pool is smaller)
+ * @param count - Number of distinct ad instances needed for display
  * @param tabType - 'events' or 'specials' to determine which ad pool to use
  * @param startIndex - Optional offset to start from in the ad pool (useful for showing different ads per venue tab)
  * @param onDebugLog - Optional callback for debug logging (kept for backwards compatibility)

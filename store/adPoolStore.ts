@@ -273,7 +273,7 @@ export const useAdPoolStore = create<AdPoolState>((set, get) => ({
     console.log(`[AdPool] Loading ${count} ${type} ads...`);
 
     const loadedAds: NativeAd[] = [];
-    const localUsedIds = new Set<string>();
+    const localUsedInstanceIds = new Set<string>();
     const adUnitId = getAdUnitId(type);
     const keywords = type === 'events' ? EVENTS_KEYWORDS : SPECIALS_KEYWORDS;
     const keywordPool = [...keywords, ...LOCATION_KEYWORDS];
@@ -314,8 +314,8 @@ export const useAdPoolStore = create<AdPoolState>((set, get) => ({
           contentUrl: `https://gathrapp.ca/${type}`,
         });
 
-        const adId = getAdId(nativeAd);
-        if (localUsedIds.has(adId)) {
+        const instanceId = getAdInstanceId(nativeAd);
+        if (localUsedInstanceIds.has(instanceId)) {
           consecutiveDuplicates++;
           logAdPool(type, 'load_attempt_duplicate', {
             attempt: attemptCount,
@@ -338,7 +338,7 @@ export const useAdPoolStore = create<AdPoolState>((set, get) => ({
         // Reset counters on success
         consecutiveDuplicates = 0;
         consecutiveErrors = 0;
-        localUsedIds.add(adId);
+        localUsedInstanceIds.add(instanceId);
         loadedAds.push(nativeAd);
 
         // Make the first successful ad available immediately when starting from
@@ -458,7 +458,7 @@ export const useAdPoolStore = create<AdPoolState>((set, get) => ({
       console.log(`[AdPool] Phase 1: Loading ${INITIAL_FAST_LOAD} ${type} ads quickly...`);
 
       const loadedAds: NativeAd[] = [];
-      const localUsedIds = new Set<string>();
+      const localUsedInstanceIds = new Set<string>();
       const adUnitId = getAdUnitId(type);
       const keywords = type === 'events' ? EVENTS_KEYWORDS : SPECIALS_KEYWORDS;
       const keywordPool = [...keywords, ...LOCATION_KEYWORDS];
@@ -488,8 +488,8 @@ export const useAdPoolStore = create<AdPoolState>((set, get) => ({
             contentUrl: `https://gathrapp.ca/${type}`,
           });
 
-          const adId = getAdId(nativeAd);
-          if (localUsedIds.has(adId)) {
+          const instanceId = getAdInstanceId(nativeAd);
+          if (localUsedInstanceIds.has(instanceId)) {
             logAdPool(type, 'preload_phase1_duplicate', {
               attempt: attemptCount,
               duplicateAd: summarizeAd(nativeAd),
@@ -498,7 +498,7 @@ export const useAdPoolStore = create<AdPoolState>((set, get) => ({
             continue;
           }
 
-          localUsedIds.add(adId);
+          localUsedInstanceIds.add(instanceId);
           loadedAds.push(nativeAd);
           logAdPool(type, 'preload_phase1_succeeded', {
             attempt: attemptCount,
@@ -539,7 +539,7 @@ export const useAdPoolStore = create<AdPoolState>((set, get) => ({
       // Phase 2: Continue loading more ads in background
       setTimeout(async () => {
         const currentAds = type === 'events' ? get().eventsAds : get().specialsAds;
-        const currentIds = new Set(currentAds.map(getAdId));
+        const currentInstanceIds = new Set(currentAds.map(getAdInstanceId));
         const remaining = DEFAULT_POOL_SIZE - currentAds.length;
         logAdPool(type, 'preload_phase2_started', {
           currentPoolSize: currentAds.length,
@@ -587,8 +587,8 @@ export const useAdPoolStore = create<AdPoolState>((set, get) => ({
               contentUrl: `https://gathrapp.ca/${type}`,
             });
 
-            const adId = getAdId(nativeAd);
-            if (currentIds.has(adId)) {
+            const instanceId = getAdInstanceId(nativeAd);
+            if (currentInstanceIds.has(instanceId)) {
               consecutiveDuplicates++;
               logAdPool(type, 'preload_phase2_duplicate', {
                 attempt: bgAttemptCount,
@@ -602,7 +602,7 @@ export const useAdPoolStore = create<AdPoolState>((set, get) => ({
 
             consecutiveDuplicates = 0;
             consecutiveErrors = 0;
-            currentIds.add(adId);
+            currentInstanceIds.add(instanceId);
             moreAds.push(nativeAd);
             logAdPool(type, 'preload_phase2_succeeded', {
               attempt: bgAttemptCount,
@@ -667,11 +667,9 @@ export const useAdPoolStore = create<AdPoolState>((set, get) => ({
       return [];
     }
 
-    // Return ads with cycling if needed
-    const result: NativeAd[] = [];
-    for (let i = 0; i < count; i++) {
-      result.push(ads[i % ads.length]);
-    }
+    // A NativeAd object can only belong to one rendered NativeAdView at a time.
+    // Never cycle an instance into multiple placements when the pool is short.
+    const result = ads.slice(0, count);
     logAdPool(type, 'get_ads_for_display_result', {
       requestedCount: count,
       poolSize: ads.length,
