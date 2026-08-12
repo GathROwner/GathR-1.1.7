@@ -85,6 +85,7 @@ export default function useNativeAds(
   const ownerIdRef = useRef(`native-ads-${Math.random().toString(36).slice(2, 10)}`);
   const lastPoolSignatureRef = useRef('');
   const lastSelectionSignatureRef = useRef('');
+  const lastClaimStartIndexRef = useRef<number | null>(null);
   const isFocusedRef = useRef(false);
   const focusedAdWorkCancelRef = useRef<(() => void) | null>(null);
   const [nativeAdsData, setNativeAdsData] = useState<NativeAdData[]>(
@@ -220,6 +221,18 @@ export default function useNativeAds(
           state.tabType,
           Platform.OS === 'android' ? ANDROID_AD_REFRESH_MAX_AGE_MS : undefined
         );
+
+        // A callout keeps the same hook owner while the user switches venues.
+        // Release that owner's old lease before applying a new rotation offset;
+        // otherwise claimAds correctly retains the old instances and startIndex
+        // never changes what the next venue displays.
+        if (
+          lastClaimStartIndexRef.current !== null &&
+          lastClaimStartIndexRef.current !== state.startIndex
+        ) {
+          state.releaseAds(state.tabType, ownerId);
+        }
+        lastClaimStartIndexRef.current = state.startIndex;
 
         const claimed = state.claimAds(state.tabType, ownerId, state.count, state.startIndex);
         const next = claimed.map((ad) => ({ ad, loading: false }));

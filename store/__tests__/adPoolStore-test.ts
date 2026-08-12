@@ -80,4 +80,20 @@ describe('adPoolStore instance ownership', () => {
     ]);
   });
 
+  it('rotates a released callout owner to the next venue offset', () => {
+    const ads = [makeAd(), makeAd(), makeAd(), makeAd()];
+    useAdPoolStore.setState({ eventsAds: ads as never[] });
+
+    expect(useAdPoolStore.getState().claimAds('events', 'callout-owner', 2, 0)).toEqual([
+      ads[0],
+      ads[1],
+    ]);
+
+    useAdPoolStore.getState().releaseAds('events', 'callout-owner');
+    expect(useAdPoolStore.getState().claimAds('events', 'callout-owner', 2, 1)).toEqual([
+      ads[1],
+      ads[2],
+    ]);
+  });
+
 });
