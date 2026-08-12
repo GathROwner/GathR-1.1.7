@@ -4,6 +4,9 @@ jest.mock('react-native-google-mobile-ads', () => ({
   NativeAd: {
     createForAdRequest: (...args: unknown[]) => mockCreateForAdRequest(...args),
   },
+  TestIds: {
+    NATIVE: 'test-native-ad-unit',
+  },
 }));
 
 import { useAdPoolStore } from '../adPoolStore';
