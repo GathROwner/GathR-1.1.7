@@ -3422,10 +3422,11 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 12,
     left: 12,
-    maxWidth: '72%',
+    width: '72%',
     zIndex: 10,
   },
   venueIdentityPill: {
+    width: '100%',
     minHeight: 40,
     flexDirection: 'row',
     alignItems: 'center',
