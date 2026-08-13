@@ -1142,9 +1142,23 @@ const result = await userService.toggleSavedEvent(event.id, {
                     />
                   </View>
                 </View>
-                <Text style={styles.venueIdentityText} numberOfLines={1}>
-                  {event.venue}
-                </Text>
+                <ScrollView
+                  horizontal
+                  nestedScrollEnabled
+                  bounces={false}
+                  showsHorizontalScrollIndicator={false}
+                  overScrollMode="never"
+                  style={styles.venueIdentityNameScroll}
+                  contentContainerStyle={styles.venueIdentityNameScrollContent}
+                >
+                  <Text
+                    style={styles.venueIdentityText}
+                    numberOfLines={1}
+                    accessibilityLabel={event.venue}
+                  >
+                    {event.venue}
+                  </Text>
+                </ScrollView>
                 {hasVenueAddress && (
                   <MaterialIcons
                     name={addressExpanded ? 'expand-less' : 'expand-more'}
@@ -3456,12 +3470,18 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255, 255, 255, 0.95)',
   },
   venueIdentityText: {
-    flexShrink: 1,
-    marginLeft: 8,
     fontSize: 13,
     lineHeight: 16,
     color: '#FFFFFF',
     fontWeight: '700',
+  },
+  venueIdentityNameScroll: {
+    flex: 1,
+    marginLeft: 8,
+  },
+  venueIdentityNameScrollContent: {
+    alignItems: 'center',
+    paddingRight: 4,
   },
   venueIdentityChevron: {
     marginLeft: 4,
