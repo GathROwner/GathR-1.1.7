@@ -1094,19 +1094,21 @@ const result = await userService.toggleSavedEvent(event.id, {
       {/* Hero Image Section - NEW */}
       <View style={styles.heroImageSection}>
         <View style={styles.heroImageContainer}>
-          <TouchableOpacity
-            activeOpacity={0.9}
-            onPress={() => onImagePress(event.imageUrl || event.profileUrl, event)}
-          >
-            <FallbackImage 
+          <View>
+            <TouchableOpacity
+              activeOpacity={0.9}
+              onPress={() => onImagePress(event.imageUrl || event.profileUrl, event)}
+            >
+              <FallbackImage
               imageUrl={event.imageUrl || event.profileUrl}
               category={event.category}
               type={event.type}
               style={styles.heroImage}
               fallbackType={event.imageUrl ? 'post' : 'profile'}
               item={event}
-              resizeMode="cover"
-            />
+                resizeMode="cover"
+              />
+            </TouchableOpacity>
             
             {/* Badge container positioned at top right of hero image */}
             <BadgeContainer
@@ -1260,7 +1262,7 @@ const result = await userService.toggleSavedEvent(event.id, {
                 })}
               </View>
             )}
-          </TouchableOpacity>
+          </View>
         </View>
       </View>
       
