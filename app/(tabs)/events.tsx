@@ -1152,7 +1152,6 @@ const result = await userService.toggleSavedEvent(event.id, {
                 >
                   <Text
                     style={styles.venueIdentityText}
-                    numberOfLines={1}
                     accessibilityLabel={event.venue}
                   >
                     {event.venue}
