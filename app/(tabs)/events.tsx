@@ -1149,6 +1149,7 @@ const result = await userService.toggleSavedEvent(event.id, {
                   overScrollMode="never"
                   style={styles.venueIdentityNameScroll}
                   contentContainerStyle={styles.venueIdentityNameScrollContent}
+                  onTouchStart={(touchEvent) => touchEvent.stopPropagation()}
                 >
                   <Text
                     style={styles.venueIdentityText}
