@@ -21,6 +21,7 @@ import {
   Platform,
   useColorScheme
 } from 'react-native';
+import { ScrollView as GestureScrollView } from 'react-native-gesture-handler';
 import { MaterialIcons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import FallbackImage from '../../components/common/FallbackImage';
@@ -1088,7 +1089,7 @@ const result = await userService.toggleSavedEvent(event.id, {
                     />
                   </View>
                 </View>
-                <ScrollView
+                <GestureScrollView
                   horizontal
                   nestedScrollEnabled
                   bounces={false}
@@ -1104,7 +1105,7 @@ const result = await userService.toggleSavedEvent(event.id, {
                   >
                     {event.venue}
                   </Text>
-                </ScrollView>
+                </GestureScrollView>
                 {hasVenueAddress && (
                   <TouchableOpacity
                     style={styles.venueIdentityChevronButton}

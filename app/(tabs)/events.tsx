@@ -23,6 +23,7 @@ import {
   useColorScheme
 } from 'react-native';
 import { usePathname } from 'expo-router';
+import { ScrollView as GestureScrollView } from 'react-native-gesture-handler';
 
 import { MaterialIcons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
@@ -1138,7 +1139,7 @@ const result = await userService.toggleSavedEvent(event.id, {
                     />
                   </View>
                 </View>
-                <ScrollView
+                <GestureScrollView
                   horizontal
                   nestedScrollEnabled
                   bounces={false}
@@ -1154,7 +1155,7 @@ const result = await userService.toggleSavedEvent(event.id, {
                   >
                     {event.venue}
                   </Text>
-                </ScrollView>
+                </GestureScrollView>
                 {hasVenueAddress && (
                   <TouchableOpacity
                     style={styles.venueIdentityChevronButton}
