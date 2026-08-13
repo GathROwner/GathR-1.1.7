@@ -1117,11 +1117,7 @@ const result = await userService.toggleSavedEvent(event.id, {
 
             {/* Venue identity and address disclosure - top left */}
             <View style={styles.venueIdentityOverlay}>
-              <TouchableOpacity
-                style={styles.venueIdentityPill}
-                onPress={handleVenuePress}
-                activeOpacity={hasVenueAddress ? 0.75 : 1}
-              >
+              <View style={styles.venueIdentityPill}>
                 <View style={styles.venueProfileImageContainer}>
                   <FallbackImage
                     imageUrl={event.profileUrl}
@@ -1160,14 +1156,21 @@ const result = await userService.toggleSavedEvent(event.id, {
                   </Text>
                 </ScrollView>
                 {hasVenueAddress && (
-                  <MaterialIcons
-                    name={addressExpanded ? 'expand-less' : 'expand-more'}
-                    size={18}
-                    color="#FFFFFF"
-                    style={styles.venueIdentityChevron}
-                  />
+                  <TouchableOpacity
+                    style={styles.venueIdentityChevronButton}
+                    onPress={handleVenuePress}
+                    activeOpacity={0.7}
+                    accessibilityRole="button"
+                    accessibilityLabel={addressExpanded ? 'Hide venue address' : 'Show venue address'}
+                  >
+                    <MaterialIcons
+                      name={addressExpanded ? 'expand-less' : 'expand-more'}
+                      size={18}
+                      color="#FFFFFF"
+                    />
+                  </TouchableOpacity>
                 )}
-              </TouchableOpacity>
+              </View>
               {hasVenueAddress && addressExpanded && (
                 <View style={styles.venueAddressOverlay}>
                   <MaterialIcons name="place" size={13} color="#FFFFFF" />
@@ -3484,8 +3487,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingRight: 4,
   },
-  venueIdentityChevron: {
-    marginLeft: 4,
+  venueIdentityChevronButton: {
+    width: 32,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 2,
   },
   venueAddressOverlay: {
     alignSelf: 'flex-start',
