@@ -1115,28 +1115,53 @@ const result = await userService.toggleSavedEvent(event.id, {
               isSharedByUser={event.sharedEventProvenance?.sharedByCurrentUser === true}
             />
 
-            {/* Venue profile picture with favorite heart - top left */}
-            <View style={styles.venueProfileOverlay}>
-              <View style={styles.venueProfileImageContainer}>
-                <FallbackImage
-                  imageUrl={event.profileUrl}
-                  category={event.category}
-                  type={event.type}
-                  style={styles.venueProfileImageSmall}
-                  fallbackType="profile"
-                  item={event}
-                  resizeMode="cover"
-                />
-                <View style={styles.venueFavoriteButtonOverlay}>
-                  <VenueFavoriteButton
-                    locationKey={createLocationKeyFromEvent(event)}
-                    venueName={event.venue}
-                    size={12}
-                    source="events_tab"
-                    style={styles.venueFavoriteButtonSmall}
+            {/* Venue identity and address disclosure - top left */}
+            <View style={styles.venueIdentityOverlay}>
+              <TouchableOpacity
+                style={styles.venueIdentityPill}
+                onPress={handleVenuePress}
+                activeOpacity={hasVenueAddress ? 0.75 : 1}
+              >
+                <View style={styles.venueProfileImageContainer}>
+                  <FallbackImage
+                    imageUrl={event.profileUrl}
+                    category={event.category}
+                    type={event.type}
+                    style={styles.venueProfileImageSmall}
+                    fallbackType="profile"
+                    item={event}
+                    resizeMode="cover"
                   />
+                  <View style={styles.venueFavoriteButtonOverlay}>
+                    <VenueFavoriteButton
+                      locationKey={createLocationKeyFromEvent(event)}
+                      venueName={event.venue}
+                      size={12}
+                      source="events_tab"
+                      style={styles.venueFavoriteButtonSmall}
+                    />
+                  </View>
                 </View>
-              </View>
+                <Text style={styles.venueIdentityText} numberOfLines={1}>
+                  {event.venue}
+                </Text>
+                {hasVenueAddress && (
+                  <MaterialIcons
+                    name={addressExpanded ? 'expand-less' : 'expand-more'}
+                    size={18}
+                    color="#FFFFFF"
+                    style={styles.venueIdentityChevron}
+                  />
+                )}
+              </TouchableOpacity>
+              {hasVenueAddress && addressExpanded && (
+                <View style={styles.venueAddressOverlay}>
+                  <MaterialIcons name="place" size={13} color="#FFFFFF" />
+                  <Text style={styles.venueAddressOverlayText} numberOfLines={2}>
+                    {event.address}
+                  </Text>
+                </View>
+              )}
             </View>
 
             {showHeroEngagementOverlay && (
@@ -1221,60 +1246,10 @@ const result = await userService.toggleSavedEvent(event.id, {
         </View>
       </View>
       
-      {/* Content Section - Now below the hero image */}
+      {/* Content hierarchy: time, title, then description */}
       <View style={styles.contentSection}>
-        <Text 
-          style={styles.cardTitle} 
-          numberOfLines={2}
-          adjustsFontSizeToFit={false}
-        >
-          {event.title}
-        </Text>
-        
-        <View style={styles.venueContainer}>
-          <TouchableOpacity
-            style={[
-              styles.venueRow,
-              hasVenueAddress && styles.venueRowInteractive
-            ]}
-            onPress={handleVenuePress}
-            activeOpacity={hasVenueAddress ? 0.7 : 1}
-          >
-            <MaterialIcons name="place" size={14} color="#666666" />
-            <Text 
-              style={[
-                styles.venueText,
-                hasVenueAddress && styles.venueTextActive
-              ]} 
-              numberOfLines={1}
-              adjustsFontSizeToFit={true}
-              minimumFontScale={0.8}
-            >
-              {event.venue}
-            </Text>
-            {hasVenueAddress && (
-              <MaterialIcons
-                name={addressExpanded ? 'expand-less' : 'expand-more'}
-                size={18}
-                color="#666666"
-                style={styles.venueChevron}
-              />
-            )}
-          </TouchableOpacity>
-          {hasVenueAddress && addressExpanded && (
-            <Text 
-              style={styles.addressText} 
-              numberOfLines={1}
-              adjustsFontSizeToFit={true}
-              minimumFontScale={0.8}
-            >
-              {event.address}
-            </Text>
-          )}
-        </View>
-        
         <View style={styles.dateTimeRow}>
-          <MaterialIcons name="access-time" size={14} color="#666666" />
+          <MaterialIcons name="access-time" size={14} color={BRAND.primaryDark} />
           {(() => {
             const base = formatEventDateTime(event.startDate, event.startTime, event);
             const timeStatus = getEventTimeStatus(event);
@@ -1316,6 +1291,14 @@ const result = await userService.toggleSavedEvent(event.id, {
             );
           })()}
         </View>
+
+        <Text
+          style={styles.cardTitle}
+          numberOfLines={2}
+          adjustsFontSizeToFit={false}
+        >
+          {event.title}
+        </Text>
 
         
       </View>
@@ -3421,12 +3404,23 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#333333',
   },
-  // Venue profile picture overlay - top left of hero image
-  venueProfileOverlay: {
+  // Venue identity overlay - top left of hero image
+  venueIdentityOverlay: {
     position: 'absolute',
     top: 12,
     left: 12,
+    maxWidth: '72%',
     zIndex: 10,
+  },
+  venueIdentityPill: {
+    minHeight: 40,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingRight: 8,
+    borderRadius: 20,
+    backgroundColor: 'rgba(18, 18, 18, 0.78)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.22)',
   },
   venueProfileImageContainer: {
     position: 'relative',
@@ -3461,67 +3455,67 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     backgroundColor: 'rgba(255, 255, 255, 0.95)',
   },
+  venueIdentityText: {
+    flexShrink: 1,
+    marginLeft: 8,
+    fontSize: 13,
+    lineHeight: 16,
+    color: '#FFFFFF',
+    fontWeight: '700',
+  },
+  venueIdentityChevron: {
+    marginLeft: 4,
+  },
+  venueAddressOverlay: {
+    alignSelf: 'flex-start',
+    maxWidth: '100%',
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginTop: 4,
+    marginLeft: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: 12,
+    backgroundColor: 'rgba(18, 18, 18, 0.84)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.18)',
+  },
+  venueAddressOverlayText: {
+    flexShrink: 1,
+    marginLeft: 5,
+    fontSize: 11,
+    lineHeight: 14,
+    color: '#FFFFFF',
+    fontWeight: '500',
+  },
   // UPDATED: Content section now full-width below image
   contentSection: {
     paddingHorizontal: 16, // Horizontal padding for edge spacing
-    paddingVertical: 12,
-    paddingTop: 4, // Reduced since we have spacing from heroImageSection
-    paddingBottom: 8, // Reduced to closer connect with description
+    paddingTop: 2,
+    paddingBottom: 6,
   },
   // NEW: Description section that takes full width
   descriptionSection: {
     paddingHorizontal: 16, // Match horizontal padding with top section
-    paddingBottom: 8,
+    paddingBottom: 10,
   },
   cardTitle: {
-    fontSize: 16,
+    fontSize: 17,
+    lineHeight: 21,
     fontWeight: '700',
-    color: '#333333',
-    marginBottom: 4,
-  },
-  venueContainer: {
-    marginBottom: 4,
-  },
-  venueRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 2,
-  },
-  venueRowInteractive: {
-    paddingVertical: 2,
-    paddingHorizontal: 2,
-    borderRadius: 6,
-  },
-  venueText: {
-    fontSize: 13,
-    color: '#666666',
-    marginLeft: 4,
-    marginRight: 6,
-    flexShrink: 1,
-    flexGrow: 0,
-  },
-  venueTextActive: {
-    color: BRAND.primaryDark,
-  },
-  addressText: {
-    fontSize: 12,
-    color: '#999999',
-    marginLeft: 18,
-    marginTop: 2,
-  },
-  venueChevron: {
-    marginLeft: 2,
+    color: '#222222',
   },
   dateTimeRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: 5,
   },
   dateTimeText: {
-    fontSize: 13,
-    color: '#666666',
+    fontSize: 12,
+    color: BRAND.primaryDark,
     marginLeft: 4,
     flex: 1,
+    fontWeight: '600',
   },
   cardDescription: {
     fontSize: 14,
