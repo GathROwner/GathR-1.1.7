@@ -1149,10 +1149,10 @@ const result = await userService.toggleSavedEvent(event.id, {
                   overScrollMode="never"
                   style={styles.venueIdentityNameScroll}
                   contentContainerStyle={styles.venueIdentityNameScrollContent}
-                  onTouchStart={(touchEvent) => touchEvent.stopPropagation()}
                 >
                   <Text
                     style={styles.venueIdentityText}
+                    numberOfLines={1}
                     accessibilityLabel={event.venue}
                   >
                     {event.venue}
@@ -3481,6 +3481,7 @@ const styles = StyleSheet.create({
     lineHeight: 16,
     color: '#FFFFFF',
     fontWeight: '700',
+    flexShrink: 0,
   },
   venueIdentityNameScroll: {
     flex: 1,
