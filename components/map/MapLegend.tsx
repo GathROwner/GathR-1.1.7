@@ -587,11 +587,10 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.12,
     shadowRadius: 10,
     elevation: 8,
-    maxHeight: LEGEND_PANEL_MAX_HEIGHT,
     overflow: 'hidden',
   },
   panelScroll: {
-    flexGrow: 0,
+    maxHeight: LEGEND_PANEL_MAX_HEIGHT,
   },
   panelContent: {
     paddingBottom: 2,
