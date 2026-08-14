@@ -2172,7 +2172,7 @@ useEffect(() => {
   const [androidCategoryCycleTick, setAndroidCategoryCycleTick] = useState(0);
   const [androidMarkerPulseStep, setAndroidMarkerPulseStep] = useState(0);
   const reduceMotionEnabled = useReduceMotion();
-  const [androidMarkerTouchEpoch, setAndroidMarkerTouchEpoch] = useState(0);
+  const [markerViewEpoch, setMarkerViewEpoch] = useState(0);
   const [androidRetapOverlayActive, setAndroidRetapOverlayActive] = useState(false);
   const [androidClusterHitTargets, setAndroidClusterHitTargets] = useState<AndroidClusterHitTarget[]>([]);
   const [androidAncillaryOverlaysReleasedForClose, setAndroidAncillaryOverlaysReleasedForClose] = useState(false);
@@ -2202,6 +2202,7 @@ useEffect(() => {
     previousStyle: MapStyleChoice;
   } | null>(null);
   const mapStyleRestoreTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const mapStyleMarkerRemountTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const locationSubscription = useRef<Location.LocationSubscription | null>(null);
   const calloutAnimationRequestRef = useRef(0);
   const calloutOpenTouchGuardUntilRef = useRef(0);
@@ -3145,6 +3146,17 @@ const restorePendingMapStyleCamera = useCallback((source: 'style_loaded' | 'map_
     pendingMapStyleCameraRef.current = null;
     mapStyleSwitchInFlightRef.current = false;
     setMapStyleChanging(false);
+    if (mapStyleMarkerRemountTimerRef.current) {
+      clearTimeout(mapStyleMarkerRemountTimerRef.current);
+    }
+    // MarkerView annotations keep native size/position state across a style
+    // reload. Remount them only after the replacement style has completed so
+    // RNMapbox can measure each custom marker against the live map surface.
+    mapStyleMarkerRemountTimerRef.current = setTimeout(() => {
+      mapStyleMarkerRemountTimerRef.current = null;
+      setMarkerViewEpoch((epoch) => epoch + 1);
+      traceMapEvent('map_style_marker_views_remounted', { source });
+    }, 250);
     mapStyleRestoreTimerRef.current = setTimeout(() => {
       mapStyleRestoreTimerRef.current = null;
       setIgnoreProgrammaticTrace(false, 'map_style_restore_complete');
@@ -3159,6 +3171,8 @@ const restorePendingMapStyleCamera = useCallback((source: 'style_loaded' | 'map_
     pendingMapStyleCameraRef.current = null;
     mapStyleSwitchInFlightRef.current = false;
     setMapStyleChanging(false);
+    setMarkerViewEpoch((epoch) => epoch + 1);
+    traceMapEvent('map_style_marker_views_remounted', { source: 'style_loaded_fallback' });
     setIgnoreProgrammaticTrace(false, 'map_style_restore_fallback_complete');
   }, 1800);
 }, [mapStyleChoice, setIgnoreProgrammaticTrace, setZoomLevel]);
@@ -3204,6 +3218,10 @@ useEffect(() => () => {
   if (mapStyleRestoreTimerRef.current) {
     clearTimeout(mapStyleRestoreTimerRef.current);
     mapStyleRestoreTimerRef.current = null;
+  }
+  if (mapStyleMarkerRemountTimerRef.current) {
+    clearTimeout(mapStyleMarkerRemountTimerRef.current);
+    mapStyleMarkerRemountTimerRef.current = null;
   }
 }, []);
 
@@ -5838,7 +5856,7 @@ lastOpenedClusterIdRef.current = cluster.id;
 
     return undefined;
   }, [
-    androidMarkerTouchEpoch,
+    markerViewEpoch,
     androidRetapOverlayActive,
     fullClusterMarkersEnabled,
     getAndroidProjectedClusterHitTargets,
@@ -7896,10 +7914,7 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
           });
         }
 
-        const markerKey =
-          Platform.OS === 'android'
-            ? `cluster-${cluster.id}-${androidMarkerTouchEpoch}`
-            : `cluster-${cluster.id}`;
+        const markerKey = `cluster-${cluster.id}-${markerViewEpoch}`;
 
         return (
           <MapboxGL.MarkerView
