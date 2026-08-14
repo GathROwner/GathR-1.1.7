@@ -5,7 +5,9 @@ import { useIsFocused } from '@react-navigation/native';
 import { useMapStore } from '../../store';
 import { registerMapTraceSampler, traceMapEvent } from '../../utils/mapTrace';
 
-export type MapStyleChoice = 'current' | 'standard';
+export type MapStyleChoice = 'current' | 'standard' | 'gathr';
+export type MapLightPreset = 'day' | 'dusk' | 'night';
+export type MapPerspective = '2d' | '3d';
 
 type MapLegendProps = {
   containerStyle?: ViewStyle;
@@ -15,6 +17,10 @@ type MapLegendProps = {
   mapStyle?: MapStyleChoice;
   mapStyleChanging?: boolean;
   onMapStyleChange?: (style: MapStyleChoice) => void;
+  mapLightPreset?: MapLightPreset;
+  onMapLightPresetChange?: (preset: MapLightPreset) => void;
+  mapPerspective?: MapPerspective;
+  onMapPerspectiveChange?: (perspective: MapPerspective) => void;
 };
 
 const readAnimatedValue = (value: Animated.Value): number | string =>
@@ -76,11 +82,11 @@ const PulseRing: React.FC<{ color: string; size: number }> = ({ color, size }) =
   );
 };
 
-const LegendTree: React.FC<{ color: string; showPulse?: boolean }> = ({ color, showPulse }) => (
+const LegendTree: React.FC<{ color: string; showPulse?: boolean; beacon?: boolean }> = ({ color, showPulse, beacon }) => (
   <View style={styles.treeWrapper}>
     {showPulse && <PulseRing color={color} size={18} />}
-    <View style={[styles.treeTop, { backgroundColor: color }]} />
-    <View style={[styles.treeTrunk, { backgroundColor: color }]} />
+    <View style={[styles.treeTop, beacon && styles.beaconTop, { backgroundColor: color }]} />
+    <View style={[beacon ? styles.beaconTip : styles.treeTrunk, { backgroundColor: color }]} />
   </View>
 );
 
@@ -158,6 +164,10 @@ const MapLegend: React.FC<MapLegendProps> = ({
   mapStyle = 'current',
   mapStyleChanging = false,
   onMapStyleChange,
+  mapLightPreset = 'day',
+  onMapLightPresetChange,
+  mapPerspective = '2d',
+  onMapPerspectiveChange,
 }) => {
   const [open, setOpen] = useState(false);
   const panelAnim = useRef(new Animated.Value(0)).current;
@@ -294,6 +304,7 @@ const MapLegend: React.FC<MapLegendProps> = ({
   const verticalStyle = typeof topOffset === 'number' ? { top: topOffset } : { bottom: bottomOffset };
   const panelPlacement = typeof topOffset === 'number' ? { top: 48 } : { bottom: 48 };
   const buttonPlacement = typeof topOffset === 'number' ? { top: 54 } : { bottom: 54 };
+  const isGathrStandard = mapStyle === 'gathr';
 
   return (
     <Animated.View style={[styles.container, containerStyle, { opacity: visibilityAnim }]} pointerEvents={activeFilterPanel ? 'none' : 'box-none'}>
@@ -320,9 +331,13 @@ const MapLegend: React.FC<MapLegendProps> = ({
             <Text style={styles.sectionTitle}>Map Style</Text>
           </View>
           <View style={styles.styleSwitcher} accessibilityRole="radiogroup">
-            {(['current', 'standard'] as MapStyleChoice[]).map((styleChoice) => {
+            {(['current', 'standard', 'gathr'] as MapStyleChoice[]).map((styleChoice) => {
               const selected = mapStyle === styleChoice;
-              const label = styleChoice === 'current' ? 'Current' : 'Standard';
+              const label = styleChoice === 'current'
+                ? 'Current'
+                : styleChoice === 'standard'
+                  ? 'Standard'
+                  : 'GathR';
               return (
                 <Pressable
                   key={styleChoice}
@@ -349,10 +364,41 @@ const MapLegend: React.FC<MapLegendProps> = ({
           <Text testID="map-style-status" style={styles.styleStatus} numberOfLines={2}>
             {mapStyleChanging
               ? 'Switching basemap...'
-              : mapStyle === 'standard'
+              : mapStyle === 'gathr'
+                ? 'GathR palette | beacon markers | focused POIs'
+                : mapStyle === 'standard'
                 ? 'Faded day style | low-density POIs | 3D enabled'
                 : 'Mapbox Streets v12'}
           </Text>
+          {isGathrStandard && (
+            <View style={styles.lightingRow}>
+              <Text style={styles.lightingLabel}>LIGHT</Text>
+              <View style={styles.lightingSwitcher} accessibilityRole="radiogroup">
+                {(['day', 'dusk', 'night'] as MapLightPreset[]).map((preset) => {
+                  const selected = mapLightPreset === preset;
+                  return (
+                    <Pressable
+                      key={preset}
+                      testID={`map-light-${preset}`}
+                      accessibilityRole="radio"
+                      accessibilityLabel={`${preset} map lighting`}
+                      accessibilityState={{ selected }}
+                      onPress={() => onMapLightPresetChange?.(preset)}
+                      style={({ pressed }) => [
+                        styles.lightingChoice,
+                        selected && styles.lightingChoiceSelected,
+                        pressed && styles.styleChoicePressed,
+                      ]}
+                    >
+                      <Text style={[styles.lightingChoiceText, selected && styles.lightingChoiceTextSelected]}>
+                        {preset[0].toUpperCase() + preset.slice(1)}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </View>
+          )}
         </View>
 
         <View style={[styles.sectionCard, styles.sectionCardGreen]}>
@@ -366,19 +412,19 @@ const MapLegend: React.FC<MapLegendProps> = ({
           <View style={styles.sectionGrid}>
             <LegendRow label="Happening Now">
               <View style={styles.rowCombo}>
-                <LegendTree color="#34A853" showPulse />
+                <LegendTree color="#34A853" showPulse beacon={isGathrStandard} />
                 <LegendBadge label="NOW" bg="#34A853" />
               </View>
             </LegendRow>
             <View style={styles.rowDivider} />
             <LegendRow label="Today">
               <View style={styles.rowCombo}>
-                <LegendTree color="#FBBC05" />
+                <LegendTree color="#FBBC05" beacon={isGathrStandard} />
               </View>
             </LegendRow>
             <View style={styles.rowDivider} />
             <LegendRow label="Upcoming">
-              <LegendTree color="#9AA0A6" />
+              <LegendTree color="#9AA0A6" beacon={isGathrStandard} />
             </LegendRow>
           </View>
         </View>
@@ -455,6 +501,28 @@ const MapLegend: React.FC<MapLegendProps> = ({
           }}
         >
           <MaterialIcons name="layers" size={18} color="#333" />
+        </TouchableOpacity>
+        <TouchableOpacity
+          testID="map-perspective-toggle"
+          accessibilityRole="button"
+          accessibilityLabel={`Switch to ${mapPerspective === '3d' ? '2D' : '3D'} map view`}
+          style={[
+            styles.button,
+            styles.buttonFloating,
+            styles.perspectiveButton,
+            buttonPlacement,
+            mapPerspective === '3d' && styles.perspectiveButtonActive,
+          ]}
+          onPress={() => onMapPerspectiveChange?.(mapPerspective === '3d' ? '2d' : '3d')}
+        >
+          <MaterialIcons
+            name={mapPerspective === '3d' ? 'view-in-ar' : 'layers'}
+            size={15}
+            color={mapPerspective === '3d' ? '#FFFFFF' : '#155D86'}
+          />
+          <Text style={[styles.perspectiveButtonText, mapPerspective === '3d' && styles.perspectiveButtonTextActive]}>
+            {mapPerspective === '3d' ? '3D' : '2D'}
+          </Text>
         </TouchableOpacity>
       </View>
     </Animated.View>
@@ -548,6 +616,27 @@ const styles = StyleSheet.create({
   sectionCardGreen: {
     backgroundColor: '#F3FBF6',
     borderColor: '#D6F1DF',
+  },
+  perspectiveButton: {
+    right: 48,
+    minWidth: 44,
+    height: 36,
+    paddingHorizontal: 8,
+    paddingVertical: 0,
+    justifyContent: 'center',
+    gap: 3,
+  },
+  perspectiveButtonActive: {
+    backgroundColor: '#155D86',
+    borderColor: '#155D86',
+  },
+  perspectiveButtonText: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#155D86',
+  },
+  perspectiveButtonTextActive: {
+    color: '#FFFFFF',
   },
   sectionCardMapStyle: {
     backgroundColor: '#F0F8FC',
@@ -651,6 +740,43 @@ const styles = StyleSheet.create({
     color: '#5F6E76',
     textAlign: 'center',
   },
+  lightingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    marginTop: 4,
+  },
+  lightingLabel: {
+    fontSize: 7.5,
+    fontWeight: '800',
+    letterSpacing: 0.4,
+    color: '#687A84',
+  },
+  lightingSwitcher: {
+    flex: 1,
+    flexDirection: 'row',
+    padding: 2,
+    borderRadius: 7,
+    backgroundColor: '#DFEAF0',
+  },
+  lightingChoice: {
+    flex: 1,
+    minHeight: 22,
+    borderRadius: 5,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  lightingChoiceSelected: {
+    backgroundColor: '#155D86',
+  },
+  lightingChoiceText: {
+    fontSize: 7.5,
+    fontWeight: '700',
+    color: '#52636D',
+  },
+  lightingChoiceTextSelected: {
+    color: '#FFFFFF',
+  },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -701,10 +827,27 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: '#FFFFFF',
   },
+  beaconTop: {
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    borderWidth: 2.5,
+    zIndex: 2,
+  },
   treeTrunk: {
     width: 6,
     height: 4,
     marginTop: -1,
+  },
+  beaconTip: {
+    width: 7,
+    height: 7,
+    marginTop: -4,
+    transform: [{ rotate: '45deg' }],
+    borderRightWidth: 1.5,
+    borderBottomWidth: 1.5,
+    borderColor: '#FFFFFF',
+    zIndex: 1,
   },
   badge: {
     minWidth: 20,

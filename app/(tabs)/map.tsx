@@ -44,7 +44,11 @@ import { filterClusterForInterestCarouselFilter } from '../../utils/interestCaro
 
 // Import components
 import FilterPills from '../../components/map/FilterPills';
-import MapLegend, { type MapStyleChoice } from '../../components/map/MapLegend';
+import MapLegend, {
+  type MapLightPreset,
+  type MapPerspective,
+  type MapStyleChoice,
+} from '../../components/map/MapLegend';
 import InterestFilterPills from '../../components/map/InterestFilterPills';
 import InterestsCarousel from '../../components/map/InterestsCarousel';
 import HotFlamePill from '../../components/map/HotFlamePill';
@@ -144,6 +148,39 @@ const GATHR_STANDARD_STYLE_CONFIG = {
   showLandmarkIcons: true,
   showLandmarkIconLabels: true,
 } satisfies Record<string, string | boolean | number>;
+const GATHR_STANDARD_PLUS_STYLE_CONFIG = {
+  theme: 'faded',
+  showPlaceLabels: true,
+  showRoadLabels: true,
+  showPointOfInterestLabels: true,
+  densityPointOfInterestLabels: 1,
+  colorModePointOfInterestLabels: 'single',
+  backgroundPointOfInterestLabels: 'none',
+  showTransitLabels: false,
+  showAdminBoundaries: false,
+  showPedestrianRoads: true,
+  show3dBuildings: true,
+  show3dLandmarks: true,
+  show3dFacades: true,
+  show3dTrees: false,
+  showLandmarkIcons: true,
+  showLandmarkIconLabels: true,
+  colorWater: '#B9E2F4',
+  colorGreenspace: '#DCEEDA',
+  colorLand: '#F7F4EC',
+  colorCommercial: '#F1EEE7',
+  colorEducation: '#E8F0EF',
+  colorMedical: '#F4EAEA',
+  colorIndustrial: '#ECEFF1',
+  colorBuildings: '#E3DFD7',
+  colorMotorways: '#E7C98D',
+  colorTrunks: '#D8E2E6',
+  colorRoads: '#FFFFFF',
+  colorPlaceLabels: '#27404D',
+  colorRoadLabels: '#506773',
+  colorPointOfInterestLabels: '#657681',
+} satisfies Record<string, string | boolean | number>;
+type ClusterMarkerAppearance = 'tree' | 'beacon';
 // City-level (festival) event UI: gold marker effect, lightbox-first tap,
 // city filter pill. Single rollback lever for the whole treatment — city
 // events degrade to plain markers when false.
@@ -1568,9 +1605,10 @@ interface TreeMarkerProps {
   isReady?: boolean;
   detailsEnabled?: boolean;
   isActive?: boolean;
+  appearance?: ClusterMarkerAppearance;
 }
 
-const TreeMarker: React.FC<TreeMarkerProps> = React.memo(({ cluster, isSelected, isProcessing = false, isReady = true, detailsEnabled = true, isActive = true }) => {
+const TreeMarker: React.FC<TreeMarkerProps> = React.memo(({ cluster, isSelected, isProcessing = false, isReady = true, detailsEnabled = true, isActive = true, appearance = 'tree' }) => {
   // Determine color based on time status
   const color = getTimeStatusColor(cluster.timeStatus);
 
@@ -1580,6 +1618,17 @@ const TreeMarker: React.FC<TreeMarkerProps> = React.memo(({ cluster, isSelected,
   // Scale up if selected
   const scaleFactor = Platform.OS === 'android' ? 1 : isSelected ? 1.2 : 1;
   const adjustedSize = size * scaleFactor;
+  const isBeacon = appearance === 'beacon';
+  const isMultiVenue = cluster.venues.length > 1;
+  const beaconGlyph = (
+    isMultiVenue
+      ? 'home'
+      : cluster.eventCount > 0 && cluster.specialCount > 0
+        ? 'local-activity'
+        : cluster.specialCount > 0
+          ? 'restaurant'
+          : 'event'
+  ) as React.ComponentProps<typeof MaterialIcons>['name'];
 
   // Check if cluster contains Firestore-sourced events
   const hasFirestoreEvents = detailsEnabled
@@ -1614,6 +1663,8 @@ const TreeMarker: React.FC<TreeMarkerProps> = React.memo(({ cluster, isSelected,
       <View
         style={[
           styles.treeTop,
+          isBeacon && styles.beaconTop,
+          isBeacon && isSelected && styles.beaconTopSelected,
           {
             backgroundColor: color,
             width: adjustedSize * 1.5,
@@ -1639,26 +1690,28 @@ const TreeMarker: React.FC<TreeMarkerProps> = React.memo(({ cluster, isSelected,
           ]}
         >
           <MaterialIcons
-            name="home"
-            size={adjustedSize / 2} // Adjusted size factor for a larger icon
+            name={isBeacon ? beaconGlyph : 'home'}
+            size={isBeacon ? adjustedSize * 0.58 : adjustedSize / 2}
             color={['#34A853', '#FBBC05'].includes(color) ? '#000000' : '#FFFFFF'}
             style={{ marginRight: 0 }} // Increased margin for clarity
           />
-          <Text
-            style={[
-              styles.venueCountText,
-              {
-                color: ['#34A853', '#FBBC05'].includes(color) ? '#000000' : '#FFFFFF',
-                fontSize: adjustedSize / 2.5, // Adjusted font size for larger text
-                textAlign: 'center'
-              }
-            ]}
-            numberOfLines={1}
-            adjustsFontSizeToFit
-            minimumFontScale={0.2}
-          >
-            {cluster.venues.length}
-          </Text>
+          {(!isBeacon || isMultiVenue) && (
+            <Text
+              style={[
+                styles.venueCountText,
+                {
+                  color: ['#34A853', '#FBBC05'].includes(color) ? '#000000' : '#FFFFFF',
+                  fontSize: adjustedSize / 2.5,
+                  textAlign: 'center'
+                }
+              ]}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              minimumFontScale={0.2}
+            >
+              {cluster.venues.length}
+            </Text>
+          )}
         </View>
 
         {/* New content indicator - animated red dot */}
@@ -1728,14 +1781,14 @@ const TreeMarker: React.FC<TreeMarkerProps> = React.memo(({ cluster, isSelected,
         )}
       </View>
 
-      {/* Tree trunk (rectangle) */}
+      {/* Tree trunk on the legacy marker; map-pin tip on the GathR beacon. */}
       <View 
         style={[
-          styles.treeTrunk, 
+          isBeacon ? styles.beaconTip : styles.treeTrunk,
           { 
             backgroundColor: color, 
-            width: adjustedSize / 2.5, 
-            height: adjustedSize / 2,
+            width: isBeacon ? adjustedSize * 0.58 : adjustedSize / 2.5,
+            height: isBeacon ? adjustedSize * 0.58 : adjustedSize / 2,
           }
         ]} 
       />
@@ -1745,6 +1798,7 @@ const TreeMarker: React.FC<TreeMarkerProps> = React.memo(({ cluster, isSelected,
         <View
           style={[
             styles.markerLabel,
+            isBeacon && styles.beaconLabel,
             {
               width: Math.max(adjustedSize * 3.4, 58),
               height: Math.max(adjustedSize * 0.5, 16),
@@ -1757,9 +1811,9 @@ const TreeMarker: React.FC<TreeMarkerProps> = React.memo(({ cluster, isSelected,
               <MaterialIcons
                 name="event"
                 size={Math.max(adjustedSize / 3, 11)}
-                color="#2196F3"
+                color={isBeacon ? '#8FD1FF' : '#2196F3'}
               />
-              <Text style={[styles.countText, { color: '#2196F3' }]}>{cluster.eventCount}</Text>
+              <Text style={[styles.countText, { color: isBeacon ? '#C7E9FF' : '#2196F3' }]}>{cluster.eventCount}</Text>
             </View>
           )}
 
@@ -1769,9 +1823,9 @@ const TreeMarker: React.FC<TreeMarkerProps> = React.memo(({ cluster, isSelected,
               <MaterialIcons
                 name="restaurant"
                 size={Math.max(adjustedSize / 3, 11)}
-                color="#34A853"
+                color={isBeacon ? '#72E29B' : '#34A853'}
               />
-              <Text style={[styles.countText, { color: '#34A853' }]}>{cluster.specialCount}</Text>
+              <Text style={[styles.countText, { color: isBeacon ? '#B8F3CE' : '#34A853' }]}>{cluster.specialCount}</Text>
             </View>
           )}
         </View>
@@ -1813,7 +1867,8 @@ const TreeMarker: React.FC<TreeMarkerProps> = React.memo(({ cluster, isSelected,
     prevProps.isProcessing === nextProps.isProcessing &&
     prevProps.isReady === nextProps.isReady &&
     prevProps.detailsEnabled === nextProps.detailsEnabled &&
-    prevProps.isActive === nextProps.isActive
+    prevProps.isActive === nextProps.isActive &&
+    prevProps.appearance === nextProps.appearance
   );
 });
 
@@ -2185,6 +2240,12 @@ useEffect(() => {
   const [mapTabOverlaysReady, setMapTabOverlaysReady] = useState<boolean>(Platform.OS !== 'android');
   const [mapStyleChoice, setMapStyleChoice] = useState<MapStyleChoice>('current');
   const [mapStyleChanging, setMapStyleChanging] = useState(false);
+  const [mapLightPreset, setMapLightPreset] = useState<MapLightPreset>('day');
+  const [mapPerspective, setMapPerspective] = useState<MapPerspective>('2d');
+  const gathrStandardStyleConfig = useMemo(
+    () => ({ ...GATHR_STANDARD_PLUS_STYLE_CONFIG, lightPreset: mapLightPreset }),
+    [mapLightPreset]
+  );
   const cameraRef = useRef<MapboxGL.Camera>(null);
   const calloutAnimation = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
   const calloutContainerRef = useRef<View>(null);
@@ -2203,6 +2264,7 @@ useEffect(() => {
   } | null>(null);
   const mapStyleRestoreTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mapStyleMarkerRemountTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const mapPerspectiveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const locationSubscription = useRef<Location.LocationSubscription | null>(null);
   const calloutAnimationRequestRef = useRef(0);
   const calloutOpenTouchGuardUntilRef = useRef(0);
@@ -3185,6 +3247,30 @@ const handleMapStyleChange = useCallback(async (nextStyle: MapStyleChoice) => {
   mapStyleSwitchInFlightRef.current = true;
   setMapStyleChanging(true);
 
+  // Standard and GathR Standard share the same native basemap. RNMapbox can
+  // update the imported Standard configuration in place, so do not trigger a
+  // full style reload (or disturb the camera) when comparing those two.
+  if (mapStyleChoice !== 'current' && nextStyle !== 'current') {
+    traceMapEvent('map_style_import_config_change_requested', {
+      from: mapStyleChoice,
+      to: nextStyle,
+    });
+    setMapStyleChoice(nextStyle);
+    if (mapStyleRestoreTimerRef.current) {
+      clearTimeout(mapStyleRestoreTimerRef.current);
+    }
+    mapStyleRestoreTimerRef.current = setTimeout(() => {
+      mapStyleRestoreTimerRef.current = null;
+      mapStyleSwitchInFlightRef.current = false;
+      setMapStyleChanging(false);
+      // The GathR preset changes the React Native marker silhouette, so give
+      // MarkerView a fresh native measurement after the new children settle.
+      setMarkerViewEpoch((epoch) => epoch + 1);
+      traceMapEvent('map_style_import_config_change_completed', { to: nextStyle });
+    }, 350);
+    return;
+  }
+
   const fallbackState = currentCameraStateRef.current;
   const [nativeCenter, nativeZoom] = await Promise.all([
     mapRef.current?.getCenter().catch(() => null) ?? Promise.resolve(null),
@@ -3214,6 +3300,39 @@ const handleMapStyleChange = useCallback(async (nextStyle: MapStyleChoice) => {
   setMapStyleChoice(nextStyle);
 }, [mapStyleChoice, zoomLevel]);
 
+const handleMapLightPresetChange = useCallback((nextPreset: MapLightPreset) => {
+  if (nextPreset === mapLightPreset) return;
+  setMapLightPreset(nextPreset);
+  traceMapEvent('map_light_preset_changed', {
+    mapStyle: mapStyleChoice,
+    from: mapLightPreset,
+    to: nextPreset,
+  });
+}, [mapLightPreset, mapStyleChoice]);
+
+const handleMapPerspectiveChange = useCallback((nextPerspective: MapPerspective) => {
+  if (nextPerspective === mapPerspective) return;
+
+  if (mapPerspectiveTimerRef.current) {
+    clearTimeout(mapPerspectiveTimerRef.current);
+  }
+  setMapPerspective(nextPerspective);
+  setIgnoreProgrammaticTrace(true, 'map_perspective_toggle');
+  cameraRef.current?.setCamera({
+    pitch: nextPerspective === '3d' ? 38 : 0,
+    animationDuration: 650,
+  });
+  mapPerspectiveTimerRef.current = setTimeout(() => {
+    mapPerspectiveTimerRef.current = null;
+    setIgnoreProgrammaticTrace(false, 'map_perspective_toggle_complete');
+  }, 750);
+  traceMapEvent('map_perspective_changed', {
+    perspective: nextPerspective,
+    pitch: nextPerspective === '3d' ? 38 : 0,
+    mapStyle: mapStyleChoice,
+  });
+}, [mapPerspective, mapStyleChoice, setIgnoreProgrammaticTrace]);
+
 useEffect(() => () => {
   if (mapStyleRestoreTimerRef.current) {
     clearTimeout(mapStyleRestoreTimerRef.current);
@@ -3222,6 +3341,10 @@ useEffect(() => () => {
   if (mapStyleMarkerRemountTimerRef.current) {
     clearTimeout(mapStyleMarkerRemountTimerRef.current);
     mapStyleMarkerRemountTimerRef.current = null;
+  }
+  if (mapPerspectiveTimerRef.current) {
+    clearTimeout(mapPerspectiveTimerRef.current);
+    mapPerspectiveTimerRef.current = null;
   }
 }, []);
 
@@ -6774,7 +6897,11 @@ if (isGesture && !userGestureSeenRef.current) {
   // Update "previous" refs after computing deltas
   if (centerArr) previousCenterRef.current = centerArr;
   if (typeof heading === 'number') previousHeadingRef.current = heading;
-  if (typeof pitch === 'number') previousPitchRef.current = pitch;
+  if (typeof pitch === 'number') {
+    previousPitchRef.current = pitch;
+    const nextPerspective: MapPerspective = pitch >= 12 ? '3d' : '2d';
+    setMapPerspective((previous) => previous === nextPerspective ? previous : nextPerspective);
+  }
 
   // Store current camera state for viewport fetching on movement end
   if (centerArr && typeof effectiveClusterZoom === 'number' && !isAndroidStartupViewportPayloadInvalid) {
@@ -7958,6 +8085,7 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
                 isReady={clustersReadyForInteraction}
                 detailsEnabled={markerDetailsEnabled}
                 isActive={clusterMarkerAnimationsActive}
+                appearance={mapStyleChoice === 'gathr' ? 'beacon' : 'tree'}
               />
             </TouchableOpacity>
           </MapboxGL.MarkerView>
@@ -8063,7 +8191,7 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
         key={`ios-map-layout-${iosMapViewRevision}`}
         ref={mapRef}
         style={styles.map}
-        styleURL={mapStyleChoice === 'standard' ? GATHR_MAPBOX_STANDARD_STYLE_URL : GATHR_MAPBOX_STYLE_URL}
+        styleURL={mapStyleChoice === 'current' ? GATHR_MAPBOX_STYLE_URL : GATHR_MAPBOX_STANDARD_STYLE_URL}
         scaleBarEnabled={true}
         scaleBarPosition={
           mapDimensions?.height
@@ -8267,13 +8395,15 @@ onDidFinishLoadingMap={() => {
 
         onPress={handleMapPress}
       >
-{mapStyleChoice === 'standard' && (
+{mapStyleChoice !== 'current' && (
   // RNMapbox 10.3 types this dictionary as string-only, while its native
   // bridge correctly accepts the boolean and numeric Standard properties.
   <MapboxGL.StyleImport
     id="basemap"
     existing
-    config={GATHR_STANDARD_STYLE_CONFIG as unknown as Record<string, string>}
+    config={(mapStyleChoice === 'gathr'
+      ? gathrStandardStyleConfig
+      : GATHR_STANDARD_STYLE_CONFIG) as unknown as Record<string, string>}
   />
 )}
 <MapboxGL.Camera
@@ -8346,6 +8476,10 @@ onDidFinishLoadingMap={() => {
             mapStyle={mapStyleChoice}
             mapStyleChanging={mapStyleChanging}
             onMapStyleChange={handleMapStyleChange}
+            mapLightPreset={mapLightPreset}
+            onMapLightPresetChange={handleMapLightPresetChange}
+            mapPerspective={mapPerspective}
+            onMapPerspectiveChange={handleMapPerspectiveChange}
           />
 
           {/* Trending pill - opens the trending lightbox from the top-right */}
@@ -8778,6 +8912,26 @@ const styles = StyleSheet.create({
     elevation: 5,
     zIndex: 3,
   },
+  beaconTop: {
+    borderWidth: 3,
+    borderColor: 'rgba(255, 255, 255, 0.98)',
+    shadowColor: '#102A3A',
+    shadowOffset: {
+      width: 0,
+      height: 4,
+    },
+    shadowOpacity: 0.34,
+    shadowRadius: 5,
+    elevation: 8,
+  },
+  beaconTopSelected: {
+    borderColor: '#0B6F9C',
+    borderWidth: 4,
+    shadowColor: '#00A8E8',
+    shadowOpacity: 0.58,
+    shadowRadius: 7,
+    elevation: 10,
+  },
 venueCountContainer: {
   position: 'absolute',
   width: '100%',
@@ -8805,6 +8959,22 @@ venueCountContainer: {
     elevation: 3,
     zIndex: 2,
   },
+  beaconTip: {
+    marginTop: -7,
+    transform: [{ rotate: '45deg' }],
+    borderRightWidth: 2.5,
+    borderBottomWidth: 2.5,
+    borderColor: 'rgba(255, 255, 255, 0.98)',
+    shadowColor: '#102A3A',
+    shadowOffset: {
+      width: 2,
+      height: 2,
+    },
+    shadowOpacity: 0.25,
+    shadowRadius: 2,
+    elevation: 6,
+    zIndex: 2,
+  },
   markerLabel: {
     backgroundColor: '#F5F3E8',
     borderRadius: 10,
@@ -8826,6 +8996,17 @@ venueCountContainer: {
     shadowRadius: 2,
     elevation: 3,
     zIndex: 1,
+  },
+  beaconLabel: {
+    backgroundColor: 'rgba(17, 35, 47, 0.94)',
+    borderColor: 'rgba(255, 255, 255, 0.9)',
+    borderWidth: 1.5,
+    borderRadius: 12,
+    marginTop: 2,
+    shadowColor: '#102A3A',
+    shadowOpacity: 0.28,
+    shadowRadius: 4,
+    elevation: 6,
   },
   iconContainer: {
     flexDirection: 'row',
