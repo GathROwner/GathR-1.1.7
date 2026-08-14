@@ -44,7 +44,7 @@ import { filterClusterForInterestCarouselFilter } from '../../utils/interestCaro
 
 // Import components
 import FilterPills from '../../components/map/FilterPills';
-import MapLegend from '../../components/map/MapLegend';
+import MapLegend, { type MapStyleChoice } from '../../components/map/MapLegend';
 import InterestFilterPills from '../../components/map/InterestFilterPills';
 import InterestsCarousel from '../../components/map/InterestsCarousel';
 import HotFlamePill from '../../components/map/HotFlamePill';
@@ -100,7 +100,11 @@ import {
   preloadStartupLocation,
   STARTUP_LOCATION_CACHE_MAX_AGE_MS,
 } from '../../utils/startupLocationCache';
-import { GATHR_MAPBOX_STYLE_URL, initializeMapboxAccessToken } from '../../utils/mapboxAccessToken';
+import {
+  GATHR_MAPBOX_STANDARD_STYLE_URL,
+  GATHR_MAPBOX_STYLE_URL,
+  initializeMapboxAccessToken,
+} from '../../utils/mapboxAccessToken';
 import {
   markTabFocus,
   markTabRootLayout,
@@ -127,6 +131,19 @@ const DEBUG_CALLOUT_PROBE = true;
 const DEBUG_ANDROID_RETAP_LATENCY_PROBE = true;
 const DEBUG_ANDROID_ZOOM_TAP_LATENCY_PROBE = true;
 const USE_ANDROID_NATIVE_CLUSTER_MARKER_LAYERS = false;
+const GATHR_STANDARD_STYLE_CONFIG = {
+  lightPreset: 'day',
+  theme: 'faded',
+  showPlaceLabels: true,
+  showRoadLabels: true,
+  showPointOfInterestLabels: true,
+  densityPointOfInterestLabels: 1,
+  backgroundPointOfInterestLabels: 'none',
+  showTransitLabels: false,
+  show3dObjects: true,
+  showLandmarkIcons: true,
+  showLandmarkIconLabels: true,
+} satisfies Record<string, string | boolean | number>;
 // City-level (festival) event UI: gold marker effect, lightbox-first tap,
 // city filter pill. Single rollback lever for the whole treatment — city
 // events degrade to plain markers when false.
@@ -2166,6 +2183,8 @@ useEffect(() => {
   const [isCalloutClosingVisually, setIsCalloutClosingVisually] = useState(false);
   const [mapFirstFrameRendered, setMapFirstFrameRendered] = useState<boolean>(false);
   const [mapTabOverlaysReady, setMapTabOverlaysReady] = useState<boolean>(Platform.OS !== 'android');
+  const [mapStyleChoice, setMapStyleChoice] = useState<MapStyleChoice>('current');
+  const [mapStyleChanging, setMapStyleChanging] = useState(false);
   const cameraRef = useRef<MapboxGL.Camera>(null);
   const calloutAnimation = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
   const calloutContainerRef = useRef<View>(null);
@@ -2174,6 +2193,15 @@ useEffect(() => {
   const ancillaryOverlayContainerRef = useRef<View>(null);
   const androidRetapOverlayRef = useRef<View>(null);
   const mapRef = useRef<MapboxGL.MapView>(null);
+  const mapStyleSwitchInFlightRef = useRef(false);
+  const pendingMapStyleCameraRef = useRef<{
+    center: [number, number] | null;
+    zoom: number | null;
+    heading: number | null;
+    pitch: number | null;
+    previousStyle: MapStyleChoice;
+  } | null>(null);
+  const mapStyleRestoreTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const locationSubscription = useRef<Location.LocationSubscription | null>(null);
   const calloutAnimationRequestRef = useRef(0);
   const calloutOpenTouchGuardUntilRef = useRef(0);
@@ -3071,6 +3099,113 @@ const startupMarkerSubsetLoggedRef = useRef<boolean>(false);
 const startupHotspotPreviewMarkerLoggedRef = useRef<boolean>(false);
 const startupHotspotPreviewRichMarkerLoggedRef = useRef<boolean>(false);
 const startupInvalidCameraTickLoggedRef = useRef<boolean>(false);
+
+const restorePendingMapStyleCamera = useCallback((source: 'style_loaded' | 'map_loaded') => {
+  const snapshot = pendingMapStyleCameraRef.current;
+  if (!snapshot) {
+    return;
+  }
+
+  const cameraSettings: {
+    centerCoordinate?: [number, number];
+    zoomLevel?: number;
+    heading?: number;
+    pitch?: number;
+    animationDuration: number;
+    animationMode: 'none';
+  } = {
+    animationDuration: 0,
+    animationMode: 'none',
+  };
+
+  if (snapshot.center) cameraSettings.centerCoordinate = snapshot.center;
+  if (typeof snapshot.zoom === 'number') cameraSettings.zoomLevel = snapshot.zoom;
+  if (typeof snapshot.heading === 'number') cameraSettings.heading = snapshot.heading;
+  if (typeof snapshot.pitch === 'number') cameraSettings.pitch = snapshot.pitch;
+
+  setIgnoreProgrammaticTrace(true, `map_style_${source}`);
+  cameraRef.current?.setCamera(cameraSettings);
+  if (typeof snapshot.zoom === 'number') {
+    setZoomLevel(snapshot.zoom);
+  }
+
+  traceMapEvent('map_style_camera_restored', {
+    source,
+    mapStyle: mapStyleChoice,
+    hasCenter: snapshot.center !== null,
+    zoom: snapshot.zoom ?? 'unknown',
+    heading: snapshot.heading ?? 'unknown',
+    pitch: snapshot.pitch ?? 'unknown',
+  });
+  if (mapStyleRestoreTimerRef.current) {
+    clearTimeout(mapStyleRestoreTimerRef.current);
+  }
+
+  if (source === 'map_loaded') {
+    pendingMapStyleCameraRef.current = null;
+    mapStyleSwitchInFlightRef.current = false;
+    setMapStyleChanging(false);
+    mapStyleRestoreTimerRef.current = setTimeout(() => {
+      mapStyleRestoreTimerRef.current = null;
+      setIgnoreProgrammaticTrace(false, 'map_style_restore_complete');
+    }, 350);
+    return;
+  }
+
+  // Some native builds emit only the style-ready callback for a style swap.
+  // Release the guard after a short fallback window if map-loaded never follows.
+  mapStyleRestoreTimerRef.current = setTimeout(() => {
+    mapStyleRestoreTimerRef.current = null;
+    pendingMapStyleCameraRef.current = null;
+    mapStyleSwitchInFlightRef.current = false;
+    setMapStyleChanging(false);
+    setIgnoreProgrammaticTrace(false, 'map_style_restore_fallback_complete');
+  }, 1800);
+}, [mapStyleChoice, setIgnoreProgrammaticTrace, setZoomLevel]);
+
+const handleMapStyleChange = useCallback(async (nextStyle: MapStyleChoice) => {
+  if (nextStyle === mapStyleChoice || mapStyleSwitchInFlightRef.current) {
+    return;
+  }
+
+  mapStyleSwitchInFlightRef.current = true;
+  setMapStyleChanging(true);
+
+  const fallbackState = currentCameraStateRef.current;
+  const [nativeCenter, nativeZoom] = await Promise.all([
+    mapRef.current?.getCenter().catch(() => null) ?? Promise.resolve(null),
+    mapRef.current?.getZoom().catch(() => null) ?? Promise.resolve(null),
+  ]);
+  const center = getCoordinatePairFromPosition(nativeCenter) ?? fallbackState?.center ?? null;
+  const zoom = typeof nativeZoom === 'number' && Number.isFinite(nativeZoom)
+    ? nativeZoom
+    : fallbackState?.zoom ?? zoomLevel;
+
+  pendingMapStyleCameraRef.current = {
+    center,
+    zoom: Number.isFinite(zoom) ? zoom : null,
+    heading: previousHeadingRef.current,
+    pitch: previousPitchRef.current,
+    previousStyle: mapStyleChoice,
+  };
+
+  traceMapEvent('map_style_change_requested', {
+    from: mapStyleChoice,
+    to: nextStyle,
+    hasCenter: center !== null,
+    zoom: Number.isFinite(zoom) ? zoom : 'unknown',
+    heading: previousHeadingRef.current ?? 'unknown',
+    pitch: previousPitchRef.current ?? 'unknown',
+  });
+  setMapStyleChoice(nextStyle);
+}, [mapStyleChoice, zoomLevel]);
+
+useEffect(() => () => {
+  if (mapStyleRestoreTimerRef.current) {
+    clearTimeout(mapStyleRestoreTimerRef.current);
+    mapStyleRestoreTimerRef.current = null;
+  }
+}, []);
 
   // 🔥 ANALYTICS: Add refs for tracking performance and behavior
 const mapInteractionStartTime = useRef<number | null>(null);
@@ -7913,7 +8048,7 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
         key={`ios-map-layout-${iosMapViewRevision}`}
         ref={mapRef}
         style={styles.map}
-        styleURL={GATHR_MAPBOX_STYLE_URL}
+        styleURL={mapStyleChoice === 'standard' ? GATHR_MAPBOX_STANDARD_STYLE_URL : GATHR_MAPBOX_STYLE_URL}
         scaleBarEnabled={true}
         scaleBarPosition={
           mapDimensions?.height
@@ -8007,7 +8142,15 @@ onDidFinishRenderingFrameFully={() => {
 }}
 
 
+onDidFinishLoadingStyle={() => {
+  restorePendingMapStyleCamera('style_loaded');
+}}
+
 onDidFinishLoadingMap={() => {
+  const isStyleComparisonReload = mapStyleSwitchInFlightRef.current;
+  if (isStyleComparisonReload) {
+    restorePendingMapStyleCamera('map_loaded');
+  }
   notifyHotspotCameraReady('map_loaded');
   markTabTracePhase('map', 'mapbox_loaded', {
     firstStartupFrameRendered: mapFirstFrameRenderedRef.current,
@@ -8039,7 +8182,7 @@ onDidFinishLoadingMap={() => {
 
   // Instantly set camera to the best-known start center (no fly animation),
   // unless the daily hotspot has already taken control of startup camera motion.
-  if (!hotspotOwnsStartupCamera) {
+  if (!hotspotOwnsStartupCamera && !isStyleComparisonReload) {
     try {
       const startCenter = computeStartCenter();
       if (Platform.OS === 'android') {
@@ -8057,7 +8200,7 @@ onDidFinishLoadingMap={() => {
     } catch (e) {
       if (DEBUG_MAP_LOAD) console.log('[MapLoad] setCamera error', e);
     }
-  } else {
+  } else if (hotspotOwnsStartupCamera) {
     logAndroidStartupTiming('map_loaded_start_camera_snap_skipped_for_hotspot', {
       hotspotStartupPhase,
     });
@@ -8074,7 +8217,7 @@ onDidFinishLoadingMap={() => {
 
   // Do NOT allow hides until the first real user gesture. If the hotspot owns
   // startup camera motion, its own lock controls this period.
-  if (!hotspotOwnsStartupCamera) {
+  if (!hotspotOwnsStartupCamera && !isStyleComparisonReload) {
     userGestureSeenRef.current = false;
     autoHideEnabledRef.current = false;
     setIgnoreProgrammaticTrace(true, 'map_loaded_initial_lock');
@@ -8088,6 +8231,19 @@ onDidFinishLoadingMap={() => {
           console.log('Map failed to load');
           // 🔥 ANALYTICS: Track map load errors
           analytics.trackError('map_load_error', 'Map failed to load', { screen: 'map' });
+          const pendingStyleCamera = pendingMapStyleCameraRef.current;
+          if (pendingStyleCamera && mapStyleChoice !== pendingStyleCamera.previousStyle) {
+            traceMapEvent('map_style_change_failed_rolling_back', {
+              failedStyle: mapStyleChoice,
+              rollbackStyle: pendingStyleCamera.previousStyle,
+            });
+            setMapStyleChoice(pendingStyleCamera.previousStyle);
+          } else if (pendingStyleCamera) {
+            pendingMapStyleCameraRef.current = null;
+            mapStyleSwitchInFlightRef.current = false;
+            setMapStyleChanging(false);
+            setIgnoreProgrammaticTrace(false, 'map_style_load_failed');
+          }
         }}
      
           onCameraChanged={handleCameraChange}
@@ -8096,6 +8252,15 @@ onDidFinishLoadingMap={() => {
 
         onPress={handleMapPress}
       >
+{mapStyleChoice === 'standard' && (
+  // RNMapbox 10.3 types this dictionary as string-only, while its native
+  // bridge correctly accepts the boolean and numeric Standard properties.
+  <MapboxGL.StyleImport
+    id="basemap"
+    existing
+    config={GATHR_STANDARD_STYLE_CONFIG as unknown as Record<string, string>}
+  />
+)}
 <MapboxGL.Camera
   ref={cameraRef}
   defaultSettings={{
@@ -8160,7 +8325,13 @@ onDidFinishLoadingMap={() => {
             },
           ]}
         >
-          <MapLegend topOffset={30} rightOffset={10} />
+          <MapLegend
+            topOffset={30}
+            rightOffset={10}
+            mapStyle={mapStyleChoice}
+            mapStyleChanging={mapStyleChanging}
+            onMapStyleChange={handleMapStyleChange}
+          />
 
           {/* Trending pill - opens the trending lightbox from the top-right */}
           <HotFlamePill

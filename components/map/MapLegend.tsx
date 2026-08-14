@@ -5,11 +5,16 @@ import { useIsFocused } from '@react-navigation/native';
 import { useMapStore } from '../../store';
 import { registerMapTraceSampler, traceMapEvent } from '../../utils/mapTrace';
 
+export type MapStyleChoice = 'current' | 'standard';
+
 type MapLegendProps = {
   containerStyle?: ViewStyle;
   rightOffset?: number;
   topOffset?: number;
   bottomOffset?: number;
+  mapStyle?: MapStyleChoice;
+  mapStyleChanging?: boolean;
+  onMapStyleChange?: (style: MapStyleChoice) => void;
 };
 
 const readAnimatedValue = (value: Animated.Value): number | string =>
@@ -150,6 +155,9 @@ const MapLegend: React.FC<MapLegendProps> = ({
   rightOffset = 12,
   topOffset,
   bottomOffset = 140,
+  mapStyle = 'current',
+  mapStyleChanging = false,
+  onMapStyleChange,
 }) => {
   const [open, setOpen] = useState(false);
   const panelAnim = useRef(new Animated.Value(0)).current;
@@ -299,9 +307,52 @@ const MapLegend: React.FC<MapLegendProps> = ({
         >
         <View style={styles.panelHeader}>
           <View style={styles.panelHeaderText}>
-            <Text style={styles.panelTitle}>Legend</Text>
-            <Text style={styles.panelSubtitle}>Map markers & signals</Text>
+            <Text style={styles.panelTitle}>Map</Text>
+            <Text style={styles.panelSubtitle}>Style, markers & signals</Text>
           </View>
+        </View>
+
+        <View style={[styles.sectionCard, styles.sectionCardMapStyle]}>
+          <View style={styles.sectionHeader}>
+            <View style={[styles.sectionPill, styles.sectionPillMapStyle]}>
+              <MaterialIcons name="map" size={12} color="#155D86" />
+            </View>
+            <Text style={styles.sectionTitle}>Map Style</Text>
+          </View>
+          <View style={styles.styleSwitcher} accessibilityRole="radiogroup">
+            {(['current', 'standard'] as MapStyleChoice[]).map((styleChoice) => {
+              const selected = mapStyle === styleChoice;
+              const label = styleChoice === 'current' ? 'Current' : 'Standard';
+              return (
+                <Pressable
+                  key={styleChoice}
+                  testID={`map-style-${styleChoice}`}
+                  accessibilityRole="radio"
+                  accessibilityLabel={`${label} map style`}
+                  accessibilityState={{ selected, disabled: mapStyleChanging }}
+                  disabled={mapStyleChanging}
+                  onPress={() => onMapStyleChange?.(styleChoice)}
+                  style={({ pressed }) => [
+                    styles.styleChoice,
+                    selected && styles.styleChoiceSelected,
+                    pressed && !mapStyleChanging && styles.styleChoicePressed,
+                    mapStyleChanging && styles.styleChoiceDisabled,
+                  ]}
+                >
+                  <Text style={[styles.styleChoiceText, selected && styles.styleChoiceTextSelected]}>
+                    {label}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+          <Text testID="map-style-status" style={styles.styleStatus} numberOfLines={2}>
+            {mapStyleChanging
+              ? 'Switching basemap...'
+              : mapStyle === 'standard'
+                ? 'Faded day style | low-density POIs | 3D enabled'
+                : 'Mapbox Streets v12'}
+          </Text>
         </View>
 
         <View style={[styles.sectionCard, styles.sectionCardGreen]}>
@@ -498,6 +549,10 @@ const styles = StyleSheet.create({
     backgroundColor: '#F3FBF6',
     borderColor: '#D6F1DF',
   },
+  sectionCardMapStyle: {
+    backgroundColor: '#F0F8FC',
+    borderColor: '#CFE7F4',
+  },
   sectionCardBlue: {
     backgroundColor: '#F2F6FF',
     borderColor: '#D9E5FF',
@@ -531,6 +586,9 @@ const styles = StyleSheet.create({
   sectionPillGreen: {
     backgroundColor: '#DDF3E6',
   },
+  sectionPillMapStyle: {
+    backgroundColor: '#D7EDF8',
+  },
   sectionPillBlue: {
     backgroundColor: '#DDE7FF',
   },
@@ -547,6 +605,51 @@ const styles = StyleSheet.create({
   },
   sectionGrid: {
     gap: 2,
+  },
+  styleSwitcher: {
+    flexDirection: 'row',
+    padding: 2,
+    borderRadius: 9,
+    backgroundColor: '#DFEAF0',
+  },
+  styleChoice: {
+    flex: 1,
+    minHeight: 28,
+    borderRadius: 7,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 5,
+  },
+  styleChoiceSelected: {
+    backgroundColor: '#FFFFFF',
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.12,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  styleChoicePressed: {
+    opacity: 0.72,
+  },
+  styleChoiceDisabled: {
+    opacity: 0.68,
+  },
+  styleChoiceText: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: '#52636D',
+  },
+  styleChoiceTextSelected: {
+    color: '#155D86',
+    fontWeight: '700',
+  },
+  styleStatus: {
+    marginTop: 5,
+    minHeight: 22,
+    fontSize: 8.5,
+    lineHeight: 11,
+    color: '#5F6E76',
+    textAlign: 'center',
   },
   row: {
     flexDirection: 'row',

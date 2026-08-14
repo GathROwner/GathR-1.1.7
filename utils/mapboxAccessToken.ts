@@ -11,6 +11,8 @@ export const GATHR_MAPBOX_STYLE_URL =
   (Constants.expoConfig?.extra?.mapboxStyleUrl as string | undefined) ||
   'mapbox://styles/mapbox/streets-v12';
 
+export const GATHR_MAPBOX_STANDARD_STYLE_URL = 'mapbox://styles/mapbox/standard';
+
 type MapboxModule = {
   setAccessToken: (token: string) => void;
 };
