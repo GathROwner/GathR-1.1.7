@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Animated, Dimensions, Pressable, ScrollView, StyleSheet, Text, TouchableOpacity, View, ViewStyle } from 'react-native';
+import { Animated, Pressable, StyleSheet, Text, TouchableOpacity, View, ViewStyle } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useIsFocused } from '@react-navigation/native';
 import { useMapStore } from '../../store';
@@ -8,8 +8,6 @@ import { registerMapTraceSampler, traceMapEvent } from '../../utils/mapTrace';
 export type MapStyleChoice = 'current' | 'standard' | 'gathr';
 export type MapLightPreset = 'day' | 'dusk' | 'night';
 export type MapPerspective = '2d' | '3d';
-const LEGEND_PANEL_MAX_HEIGHT = Math.max(360, Dimensions.get('window').height - 260);
-
 type MapLegendProps = {
   containerStyle?: ViewStyle;
   rightOffset?: number;
@@ -317,13 +315,6 @@ const MapLegend: React.FC<MapLegendProps> = ({
           pointerEvents={open ? 'auto' : 'none'}
           style={[styles.panel, panelPlacement, panelStyle]}
         >
-        <ScrollView
-          style={styles.panelScroll}
-          contentContainerStyle={styles.panelContent}
-          showsVerticalScrollIndicator
-          bounces={false}
-          nestedScrollEnabled
-        >
         <View style={styles.panelHeader}>
           <View style={styles.panelHeaderText}>
             <Text style={styles.panelTitle}>Map</Text>
@@ -495,7 +486,6 @@ const MapLegend: React.FC<MapLegendProps> = ({
             </LegendRow>
           </View>
         </View>
-        </ScrollView>
       </Animated.View>
 
         <TouchableOpacity
@@ -587,12 +577,6 @@ const styles = StyleSheet.create({
     shadowRadius: 10,
     elevation: 8,
     overflow: 'hidden',
-  },
-  panelScroll: {
-    height: LEGEND_PANEL_MAX_HEIGHT,
-  },
-  panelContent: {
-    paddingBottom: 2,
   },
   panelHeader: {
     flexDirection: 'row',
