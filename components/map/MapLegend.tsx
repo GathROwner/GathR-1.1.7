@@ -369,16 +369,7 @@ const MapLegend: React.FC<MapLegendProps> = ({
               );
             })}
           </View>
-          <Text testID="map-style-status" style={styles.styleStatus} numberOfLines={2}>
-            {mapStyleChanging
-              ? 'Switching basemap...'
-              : mapStyle === 'gathr'
-                ? 'GathR palette | beacon markers | focused POIs'
-                : mapStyle === 'standard'
-                ? 'Faded day style | low-density POIs | 3D enabled'
-                : 'Mapbox Streets v12'}
-          </Text>
-          {isGathrStandard && (
+          {isGathrStandard ? (
             <View style={styles.lightingRow}>
               <Text style={styles.lightingLabel}>LIGHT</Text>
               <View style={styles.lightingSwitcher} accessibilityRole="radiogroup">
@@ -406,6 +397,14 @@ const MapLegend: React.FC<MapLegendProps> = ({
                 })}
               </View>
             </View>
+          ) : (
+            <Text testID="map-style-status" style={styles.styleStatus} numberOfLines={2}>
+              {mapStyleChanging
+                ? 'Switching basemap...'
+                : mapStyle === 'standard'
+                  ? 'Faded day style | low-density POIs | 3D enabled'
+                  : 'Mapbox Streets v12'}
+            </Text>
           )}
         </View>
 
@@ -599,7 +598,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 12,
+    marginBottom: 6,
     paddingRight: 26,
   },
   panelHeaderText: {
@@ -622,7 +621,7 @@ const styles = StyleSheet.create({
   },
   sectionCard: {
     borderRadius: 12,
-    padding: 6,
+    padding: 5,
     marginBottom: 4,
     borderWidth: 1,
   },
@@ -671,7 +670,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
-    marginBottom: 4,
+    marginBottom: 2,
   },
   sectionDivider: {
     height: 1,
@@ -679,7 +678,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#E8E2D6',
     borderStyle: 'dashed',
-    marginBottom: 4,
+    marginBottom: 2,
   },
   sectionPill: {
     width: 20,
@@ -820,7 +819,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#ECE7DD',
     borderStyle: 'dashed',
-    marginVertical: 3,
+    marginVertical: 2,
   },
   treeWrapper: {
     alignItems: 'center',
