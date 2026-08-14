@@ -590,7 +590,7 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   panelScroll: {
-    maxHeight: LEGEND_PANEL_MAX_HEIGHT,
+    height: LEGEND_PANEL_MAX_HEIGHT,
   },
   panelContent: {
     paddingBottom: 2,
