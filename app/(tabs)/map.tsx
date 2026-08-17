@@ -1587,7 +1587,7 @@ const ClusterEventStage: React.FC<ClusterEventStageProps> = ({
   const activeItem = visibleItems[currentIndex] ?? visibleItems[0];
   const activeAccent = getClusterStageAccentColor(activeItem.category);
   const overflowCount = Math.max(0, categoryItems.length - visibleItems.length);
-  const stageWidth = Math.max(size * 4.25, 88);
+  const stageWidth = isSelected ? Math.max(size * 4.25, 88) : Math.max(size * 2.8, 62);
   const iconSize = Math.max(size * 0.6, 12);
   const translateX = transitionAnim.interpolate({
     inputRange: [-1, 0, 1],
@@ -1600,18 +1600,26 @@ const ClusterEventStage: React.FC<ClusterEventStageProps> = ({
 
   return (
     <View
-      style={[styles.clusterEventStageShell, { width: stageWidth }]}
+      style={[
+        styles.clusterEventStageShell,
+        !isSelected && styles.clusterEventStageShellCompact,
+        { width: stageWidth },
+      ]}
       accessibilityLabel={`${categoryItems.length} event categories in this cluster`}
     >
-      <View style={styles.clusterEventStageHeader}>
-        <View style={[styles.clusterEventStageLiveDot, { backgroundColor: cluster.isBroadcasting ? '#34D399' : '#7DD3FC' }]} />
-        <Text style={styles.clusterEventStageTitle} numberOfLines={1}>
-          {cluster.isBroadcasting ? 'LIVE NEARBY' : 'IN THIS CLUSTER'}
-        </Text>
-        {overflowCount > 0 && (
-          <Text style={styles.clusterEventStageOverflow}>+{overflowCount}</Text>
-        )}
-      </View>
+      {isSelected ? (
+        <View style={styles.clusterEventStageHeader}>
+          <View style={[styles.clusterEventStageLiveDot, { backgroundColor: cluster.isBroadcasting ? '#34D399' : '#7DD3FC' }]} />
+          <Text style={styles.clusterEventStageTitle} numberOfLines={1}>
+            {cluster.isBroadcasting ? 'LIVE NEARBY' : 'IN THIS CLUSTER'}
+          </Text>
+          {overflowCount > 0 && (
+            <Text style={styles.clusterEventStageOverflow}>+{overflowCount}</Text>
+          )}
+        </View>
+      ) : cluster.isBroadcasting ? (
+        <View style={styles.clusterEventStageCompactLiveDot} />
+      ) : null}
 
       <Animated.View
         style={[
@@ -1628,16 +1636,19 @@ const ClusterEventStage: React.FC<ClusterEventStageProps> = ({
               key={`${item.iconImage}-${item.category}`}
               style={[
                 styles.clusterEventStageItem,
+                !isSelected && styles.clusterEventStageItemCompact,
                 isCurrent && styles.clusterEventStageItemActive,
+                isCurrent && !isSelected && styles.clusterEventStageItemCompactActive,
                 isCurrent && { borderColor: accentColor, backgroundColor: `${accentColor}2B` },
+                !isSelected && !isCurrent && { borderColor: `${accentColor}70` },
               ]}
             >
               <MaterialIcons
                 name={getCategoryIcon(item.category) as any}
                 size={isCurrent ? iconSize : iconSize * 0.78}
-                color={isCurrent ? '#FFFFFF' : '#A9C5D4'}
+                color={isCurrent ? '#FFFFFF' : isSelected ? '#A9C5D4' : accentColor}
               />
-              {isCurrent && (
+              {isSelected && isCurrent && (
                 <Text style={[styles.clusterEventStageCount, { backgroundColor: activeAccent }]}>
                   {item.count}
                 </Text>
@@ -9390,6 +9401,15 @@ countText: {
     elevation: 9,
     zIndex: 8,
   },
+  clusterEventStageShellCompact: {
+    minHeight: 28,
+    marginBottom: 3,
+    paddingHorizontal: 4,
+    paddingTop: 3,
+    paddingBottom: 3,
+    borderRadius: 12,
+    borderColor: 'rgba(172, 221, 245, 0.62)',
+  },
   clusterEventStageHeader: {
     height: 10,
     paddingHorizontal: 2,
@@ -9401,6 +9421,18 @@ countText: {
     height: 4,
     borderRadius: 2,
     marginRight: 3,
+  },
+  clusterEventStageCompactLiveDot: {
+    position: 'absolute',
+    top: 3,
+    left: 4,
+    width: 4,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: '#34D399',
+    borderWidth: 0.5,
+    borderColor: '#E8FFF2',
+    zIndex: 3,
   },
   clusterEventStageTitle: {
     flex: 1,
@@ -9433,6 +9465,14 @@ countText: {
     backgroundColor: 'rgba(89, 128, 148, 0.12)',
     opacity: 0.72,
   },
+  clusterEventStageItemCompact: {
+    width: 16,
+    height: 19,
+    borderRadius: 7,
+    borderWidth: 1,
+    backgroundColor: 'rgba(89, 128, 148, 0.08)',
+    opacity: 0.9,
+  },
   clusterEventStageItemActive: {
     width: 29,
     height: 24,
@@ -9444,6 +9484,13 @@ countText: {
     shadowOpacity: 0.26,
     shadowRadius: 2,
     elevation: 5,
+  },
+  clusterEventStageItemCompactActive: {
+    width: 19,
+    height: 21,
+    borderRadius: 8,
+    borderWidth: 1.25,
+    elevation: 3,
   },
   clusterEventStageCount: {
     position: 'absolute',
