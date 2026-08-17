@@ -1314,6 +1314,28 @@ interface CategoryItem {
   isUserInterest: boolean;
 }
 
+const CLUSTER_STAGE_VISIBLE_CATEGORY_LIMIT = 3;
+const CLUSTER_STAGE_CYCLE_MS = 3400;
+
+const getClusterStageAccentColor = (category: string): string => {
+  const categoryLower = category.toLowerCase();
+
+  if (categoryLower.includes('live music') || categoryLower.includes('music')) return '#8B5CF6';
+  if (categoryLower.includes('comedy')) return '#F59E0B';
+  if (categoryLower.includes('sport')) return '#2563EB';
+  if (categoryLower.includes('trivia')) return '#0D9488';
+  if (categoryLower.includes('workshop') || categoryLower.includes('class')) return '#EA580C';
+  if (categoryLower.includes('religious') || categoryLower.includes('church')) return '#A16207';
+  if (categoryLower.includes('family')) return '#DB2777';
+  if (categoryLower.includes('gathering') || categoryLower.includes('parties') || categoryLower.includes('party')) return '#6366F1';
+  if (categoryLower.includes('cinema') || categoryLower.includes('movie') || categoryLower.includes('film')) return '#DC2626';
+  if (categoryLower.includes('happy hour') || categoryLower.includes('bar')) return '#0891B2';
+  if (categoryLower.includes('food') || categoryLower.includes('wing') || categoryLower.includes('restaurant')) return '#16A34A';
+  if (categoryLower.includes('drink')) return '#0284C7';
+
+  return '#3B82F6';
+};
+
 const CategoryCarousel: React.FC<CategoryCarouselProps> = ({ cluster, size, isActive = true }) => {
   const [currentIndex, setCurrentIndex] = useState(0);
   const fadeAnim = useRef(new Animated.Value(1)).current;
@@ -1472,6 +1494,163 @@ const CategoryCarousel: React.FC<CategoryCarouselProps> = ({ cluster, size, isAc
   );
 };
 
+interface ClusterEventStageProps {
+  cluster: Cluster;
+  isActive: boolean;
+  isSelected: boolean;
+  reduceMotionEnabled: boolean;
+  size: number;
+}
+
+/**
+ * GathR's richer cluster preview. Three category glyphs stay visible so a
+ * cluster's variety is readable immediately. Only selected/live clusters
+ * advance the reel, keeping the map calm and avoiding continuous animation on
+ * every MarkerView.
+ */
+const ClusterEventStage: React.FC<ClusterEventStageProps> = ({
+  cluster,
+  isActive,
+  isSelected,
+  reduceMotionEnabled,
+  size,
+}) => {
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const transitionAnim = useRef(new Animated.Value(0)).current;
+  const userInterests = getUserInterestsSync();
+  const categoryItems = useMemo(
+    () => getAndroidClusterCategoryItems(cluster, userInterests),
+    [cluster, userInterests]
+  );
+  const visibleItems = useMemo(
+    () => categoryItems.slice(0, CLUSTER_STAGE_VISIBLE_CATEGORY_LIMIT),
+    [categoryItems]
+  );
+  const shouldAnimate =
+    isActive &&
+    !reduceMotionEnabled &&
+    visibleItems.length > 1 &&
+    (isSelected || cluster.isBroadcasting);
+
+  const stopStageAnimation = useCallback(() => {
+    transitionAnim.stopAnimation();
+    transitionAnim.setValue(0);
+  }, [transitionAnim]);
+
+  useMapTabAnimationStopper(stopStageAnimation);
+
+  useEffect(() => {
+    if (visibleItems.length === 0) {
+      setCurrentIndex(0);
+      return;
+    }
+    if (currentIndex >= visibleItems.length) {
+      setCurrentIndex(0);
+    }
+  }, [currentIndex, visibleItems.length]);
+
+  useEffect(() => {
+    if (!shouldAnimate) {
+      stopStageAnimation();
+      return undefined;
+    }
+
+    const interval = setInterval(() => {
+      Animated.timing(transitionAnim, {
+        toValue: 1,
+        duration: 180,
+        easing: Easing.in(Easing.cubic),
+        useNativeDriver: true,
+      }).start(({ finished }) => {
+        if (!finished) return;
+
+        setCurrentIndex((index) => (index + 1) % visibleItems.length);
+        transitionAnim.setValue(-1);
+        Animated.spring(transitionAnim, {
+          toValue: 0,
+          damping: 15,
+          stiffness: 180,
+          mass: 0.7,
+          useNativeDriver: true,
+        }).start();
+      });
+    }, CLUSTER_STAGE_CYCLE_MS);
+
+    return () => {
+      clearInterval(interval);
+      stopStageAnimation();
+    };
+  }, [shouldAnimate, stopStageAnimation, transitionAnim, visibleItems.length]);
+
+  if (visibleItems.length === 0) return null;
+
+  const activeItem = visibleItems[currentIndex] ?? visibleItems[0];
+  const activeAccent = getClusterStageAccentColor(activeItem.category);
+  const overflowCount = Math.max(0, categoryItems.length - visibleItems.length);
+  const stageWidth = Math.max(size * 4.25, 88);
+  const iconSize = Math.max(size * 0.6, 12);
+  const translateX = transitionAnim.interpolate({
+    inputRange: [-1, 0, 1],
+    outputRange: [-10, 0, 10],
+  });
+  const opacity = transitionAnim.interpolate({
+    inputRange: [-1, 0, 1],
+    outputRange: [0.3, 1, 0.3],
+  });
+
+  return (
+    <View
+      style={[styles.clusterEventStageShell, { width: stageWidth }]}
+      accessibilityLabel={`${categoryItems.length} event categories in this cluster`}
+    >
+      <View style={styles.clusterEventStageHeader}>
+        <View style={[styles.clusterEventStageLiveDot, { backgroundColor: cluster.isBroadcasting ? '#34D399' : '#7DD3FC' }]} />
+        <Text style={styles.clusterEventStageTitle} numberOfLines={1}>
+          {cluster.isBroadcasting ? 'LIVE NEARBY' : 'IN THIS CLUSTER'}
+        </Text>
+        {overflowCount > 0 && (
+          <Text style={styles.clusterEventStageOverflow}>+{overflowCount}</Text>
+        )}
+      </View>
+
+      <Animated.View
+        style={[
+          styles.clusterEventStageReel,
+          { opacity, transform: [{ translateX }] },
+        ]}
+      >
+        {visibleItems.map((item, index) => {
+          const isCurrent = index === currentIndex;
+          const accentColor = getClusterStageAccentColor(item.category);
+
+          return (
+            <View
+              key={`${item.iconImage}-${item.category}`}
+              style={[
+                styles.clusterEventStageItem,
+                isCurrent && styles.clusterEventStageItemActive,
+                isCurrent && { borderColor: accentColor, backgroundColor: `${accentColor}2B` },
+              ]}
+            >
+              <MaterialIcons
+                name={getCategoryIcon(item.category) as any}
+                size={isCurrent ? iconSize : iconSize * 0.78}
+                color={isCurrent ? '#FFFFFF' : '#A9C5D4'}
+              />
+              {isCurrent && (
+                <Text style={[styles.clusterEventStageCount, { backgroundColor: activeAccent }]}>
+                  {item.count}
+                </Text>
+              )}
+            </View>
+          );
+        })}
+      </Animated.View>
+      <View style={styles.clusterEventStageTail} />
+    </View>
+  );
+};
+
 /**
  * Native user-location puck. Keeping this off MarkerView lets it appear without
  * waiting for the slower Android annotation path used by event cluster markers.
@@ -1606,9 +1785,10 @@ interface TreeMarkerProps {
   detailsEnabled?: boolean;
   isActive?: boolean;
   appearance?: ClusterMarkerAppearance;
+  reduceMotionEnabled?: boolean;
 }
 
-const TreeMarker: React.FC<TreeMarkerProps> = React.memo(({ cluster, isSelected, isProcessing = false, isReady = true, detailsEnabled = true, isActive = true, appearance = 'tree' }) => {
+const TreeMarker: React.FC<TreeMarkerProps> = React.memo(({ cluster, isSelected, isProcessing = false, isReady = true, detailsEnabled = true, isActive = true, appearance = 'tree', reduceMotionEnabled = false }) => {
   // Determine color based on time status
   const color = getTimeStatusColor(cluster.timeStatus);
 
@@ -1620,6 +1800,9 @@ const TreeMarker: React.FC<TreeMarkerProps> = React.memo(({ cluster, isSelected,
   const adjustedSize = size * scaleFactor;
   const isBeacon = appearance === 'beacon';
   const isMultiVenue = cluster.venues.length > 1;
+  const stageCategoryItems = isBeacon && detailsEnabled
+    ? getAndroidClusterCategoryItems(cluster, getUserInterestsSync()).slice(0, CLUSTER_STAGE_VISIBLE_CATEGORY_LIMIT)
+    : [];
   const beaconGlyph = (
     isMultiVenue
       ? 'home'
@@ -1646,8 +1829,21 @@ const TreeMarker: React.FC<TreeMarkerProps> = React.memo(({ cluster, isSelected,
 
   return (
     <View style={styles.markerWrapper}>
-      {/* Category Carousel - positioned above the tree */}
-      {detailsEnabled && <CategoryCarousel cluster={cluster} size={adjustedSize} isActive={isActive} />}
+      {/* The legacy styles keep their compact carousel; GathR gets the richer
+          event stage so multiple categories are legible without waiting. */}
+      {detailsEnabled && (
+        isBeacon ? (
+          <ClusterEventStage
+            cluster={cluster}
+            size={adjustedSize}
+            isActive={isActive}
+            isSelected={isSelected}
+            reduceMotionEnabled={reduceMotionEnabled}
+          />
+        ) : (
+          <CategoryCarousel cluster={cluster} size={adjustedSize} isActive={isActive} />
+        )
+      )}
 
       {/* Broadcasting effect for 'now' events */}
       {detailsEnabled && cluster.isBroadcasting && (
@@ -1676,6 +1872,22 @@ const TreeMarker: React.FC<TreeMarkerProps> = React.memo(({ cluster, isSelected,
           }
         ]}
       >
+        {isBeacon && stageCategoryItems.length > 0 && (
+          <View style={styles.beaconCategorySpectrum} pointerEvents="none">
+            {stageCategoryItems.map((item, index) => (
+              <View
+                key={`${item.iconImage}-${index}`}
+                style={[
+                  styles.beaconCategorySpectrumSegment,
+                  {
+                    backgroundColor: getClusterStageAccentColor(item.category),
+                    flex: Math.max(1, item.count),
+                  },
+                ]}
+              />
+            ))}
+          </View>
+        )}
         {/* Venue count indicator */}
         <View
           style={[
@@ -8086,6 +8298,7 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
                 detailsEnabled={markerDetailsEnabled}
                 isActive={clusterMarkerAnimationsActive}
                 appearance={mapStyleChoice === 'gathr' ? 'beacon' : 'tree'}
+                reduceMotionEnabled={reduceMotionEnabled}
               />
             </TouchableOpacity>
           </MapboxGL.MarkerView>
@@ -8923,6 +9136,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.34,
     shadowRadius: 5,
     elevation: 8,
+    overflow: 'visible',
   },
   beaconTopSelected: {
     borderColor: '#0B6F9C',
@@ -8931,6 +9145,25 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.58,
     shadowRadius: 7,
     elevation: 10,
+  },
+  beaconCategorySpectrum: {
+    position: 'absolute',
+    top: -5,
+    left: '17%',
+    right: '17%',
+    height: 5,
+    flexDirection: 'row',
+    overflow: 'hidden',
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.96)',
+    backgroundColor: '#17384A',
+    zIndex: 7,
+    elevation: 10,
+  },
+  beaconCategorySpectrumSegment: {
+    height: '100%',
+    minWidth: 4,
   },
 venueCountContainer: {
   position: 'absolute',
@@ -9138,6 +9371,109 @@ countText: {
     textShadowColor: 'rgba(255, 255, 255, 0.9)',
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 2,
+  },
+  clusterEventStageShell: {
+    position: 'relative',
+    minHeight: 43,
+    marginBottom: 4,
+    paddingHorizontal: 5,
+    paddingTop: 4,
+    paddingBottom: 5,
+    borderRadius: 13,
+    backgroundColor: 'rgba(12, 31, 43, 0.96)',
+    borderWidth: 1.25,
+    borderColor: 'rgba(172, 221, 245, 0.76)',
+    shadowColor: '#06131B',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.38,
+    shadowRadius: 5,
+    elevation: 9,
+    zIndex: 8,
+  },
+  clusterEventStageHeader: {
+    height: 10,
+    paddingHorizontal: 2,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  clusterEventStageLiveDot: {
+    width: 4,
+    height: 4,
+    borderRadius: 2,
+    marginRight: 3,
+  },
+  clusterEventStageTitle: {
+    flex: 1,
+    color: '#B8D6E5',
+    fontSize: 6.5,
+    lineHeight: 8,
+    fontWeight: '800',
+    letterSpacing: 0.7,
+  },
+  clusterEventStageOverflow: {
+    color: '#E6F5FC',
+    fontSize: 7,
+    lineHeight: 8,
+    fontWeight: '800',
+  },
+  clusterEventStageReel: {
+    minHeight: 24,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-evenly',
+  },
+  clusterEventStageItem: {
+    width: 22,
+    height: 20,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(132, 175, 196, 0.22)',
+    backgroundColor: 'rgba(89, 128, 148, 0.12)',
+    opacity: 0.72,
+  },
+  clusterEventStageItemActive: {
+    width: 29,
+    height: 24,
+    borderRadius: 9,
+    borderWidth: 1.5,
+    opacity: 1,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.26,
+    shadowRadius: 2,
+    elevation: 5,
+  },
+  clusterEventStageCount: {
+    position: 'absolute',
+    top: -5,
+    right: -5,
+    minWidth: 13,
+    height: 13,
+    paddingHorizontal: 3,
+    borderRadius: 7,
+    overflow: 'hidden',
+    color: '#FFFFFF',
+    fontSize: 7,
+    lineHeight: 13,
+    fontWeight: '900',
+    textAlign: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.94)',
+  },
+  clusterEventStageTail: {
+    position: 'absolute',
+    bottom: -4,
+    left: '50%',
+    width: 8,
+    height: 8,
+    marginLeft: -4,
+    backgroundColor: 'rgba(12, 31, 43, 0.96)',
+    borderRightWidth: 1.25,
+    borderBottomWidth: 1.25,
+    borderColor: 'rgba(172, 221, 245, 0.76)',
+    transform: [{ rotate: '45deg' }],
   },
   calloutAnimatedContainer: {
     ...StyleSheet.absoluteFillObject,
