@@ -1419,7 +1419,7 @@ interface CategoryItem {
   isUserInterest: boolean;
 }
 
-const CLUSTER_STAGE_VISIBLE_CATEGORY_LIMIT = 3;
+const CLUSTER_SUMMARY_VISIBLE_CATEGORY_LIMIT = 3;
 const CLUSTER_STAGE_CYCLE_MS = 3400;
 
 const getClusterStageAccentColor = (category: string): string => {
@@ -1650,14 +1650,10 @@ const ClusterEventStage: React.FC<ClusterEventStageProps> = ({
     () => getAndroidClusterCategoryItems(cluster, userInterests),
     [cluster, userInterests]
   );
-  const visibleItems = useMemo(
-    () => categoryItems.slice(0, CLUSTER_STAGE_VISIBLE_CATEGORY_LIMIT),
-    [categoryItems]
-  );
   const shouldAnimate =
     isActive &&
     !reduceMotionEnabled &&
-    visibleItems.length > 1 &&
+    categoryItems.length > 1 &&
     (
       isSelected ||
       cluster.isBroadcasting ||
@@ -1673,14 +1669,14 @@ const ClusterEventStage: React.FC<ClusterEventStageProps> = ({
   useMapTabAnimationStopper(stopStageAnimation);
 
   useEffect(() => {
-    if (visibleItems.length === 0) {
+    if (categoryItems.length === 0) {
       setCurrentIndex(0);
       return;
     }
-    if (currentIndex >= visibleItems.length) {
+    if (currentIndex >= categoryItems.length) {
       setCurrentIndex(0);
     }
-  }, [currentIndex, visibleItems.length]);
+  }, [categoryItems.length, currentIndex]);
 
   useEffect(() => {
     if (!shouldAnimate) {
@@ -1697,7 +1693,7 @@ const ClusterEventStage: React.FC<ClusterEventStageProps> = ({
       }).start(({ finished }) => {
         if (!finished) return;
 
-        setCurrentIndex((index) => (index + 1) % visibleItems.length);
+        setCurrentIndex((index) => (index + 1) % categoryItems.length);
         transitionAnim.setValue(-1);
         Animated.spring(transitionAnim, {
           toValue: 0,
@@ -1713,9 +1709,9 @@ const ClusterEventStage: React.FC<ClusterEventStageProps> = ({
       clearInterval(interval);
       stopStageAnimation();
     };
-  }, [shouldAnimate, stopStageAnimation, transitionAnim, visibleItems.length]);
+  }, [categoryItems.length, shouldAnimate, stopStageAnimation, transitionAnim]);
 
-  const activeItem = visibleItems[currentIndex] ?? visibleItems[0] ?? null;
+  const activeItem = categoryItems[currentIndex] ?? categoryItems[0] ?? null;
 
   useEffect(() => {
     if (activeItem) {
@@ -1727,16 +1723,27 @@ const ClusterEventStage: React.FC<ClusterEventStageProps> = ({
 
   const activeAccent = getClusterStageAccentColor(activeItem.category);
   const activeLabel = getClusterStageShortLabel(activeItem.category);
-  const totalContentCount = (cluster.eventCount ?? 0) + (cluster.specialCount ?? 0);
-  const showTotalContext = totalContentCount > activeItem.count;
-  const overflowCount = Math.max(0, categoryItems.length - visibleItems.length);
-  const labelWidth = Math.min(58, Math.max(26, activeLabel.length * 4.6));
+  const eventCount = cluster.eventCount ?? 0;
+  const specialCount = cluster.specialCount ?? 0;
+  const totalContentCount = eventCount + specialCount;
+  const contentTypeLabel = eventCount > 0 && specialCount === 0
+    ? (totalContentCount === 1 ? 'event' : 'events')
+    : specialCount > 0 && eventCount === 0
+      ? (totalContentCount === 1 ? 'special' : 'specials')
+      : (totalContentCount === 1 ? 'listing' : 'listings');
+  const showAggregateContext = categoryItems.length > 1 || totalContentCount > activeItem.count;
+  const aggregateContextLabel = `${totalContentCount} ${contentTypeLabel} · ${categoryItems.length} ${categoryItems.length === 1 ? 'type' : 'types'}`;
+  const labelWidth = Math.min(72, Math.max(31, activeLabel.length * 5.35));
+  const countWidth = Math.max(8, String(activeItem.count).length * 6.8);
+  const aggregateContextWidth = showAggregateContext
+    ? Math.min(122, Math.max(80, aggregateContextLabel.length * 4.7))
+    : 0;
   const stageWidth = isSelected
-    ? Math.max(size * 5.5, 116)
+    ? Math.max(size * 5.9, 138)
     : showCategoryLabel
-      ? Math.max(size * 3.4, 43 + labelWidth + (overflowCount > 0 ? 15 : 0))
-      : Math.max(size * 2.55, 58 + (overflowCount > 0 ? 10 : 0));
-  const iconSize = Math.max(size * 0.62, 13);
+      ? Math.min(138, Math.max(size * 4.3, 48 + labelWidth + countWidth, aggregateContextWidth + 12))
+      : Math.max(size * 2.7, 61 + countWidth);
+  const iconSize = Math.max(size * 0.68, 14);
   const translateX = transitionAnim.interpolate({
     inputRange: [-1, 0, 1],
     outputRange: [-10, 0, 10],
@@ -1751,17 +1758,17 @@ const ClusterEventStage: React.FC<ClusterEventStageProps> = ({
       style={[
         styles.clusterEventStageShell,
         !isSelected && styles.clusterEventStageShellCompact,
-        !isSelected && showTotalContext && styles.clusterEventStageShellCompactWithContext,
+        !isSelected && showAggregateContext && styles.clusterEventStageShellCompactWithContext,
         {
           width: stageWidth,
           borderColor: `${activeAccent}D9`,
           shadowColor: activeAccent,
         },
       ]}
-      accessibilityLabel={`${categoryItems.length} event categories in this cluster`}
+      accessibilityLabel={`${totalContentCount} ${contentTypeLabel} across ${categoryItems.length} categories; showing ${activeLabel}, ${activeItem.count}`}
     >
       <View style={styles.clusterEventStageMixRail} pointerEvents="none">
-        {visibleItems.map((item, index) => {
+        {categoryItems.map((item, index) => {
           const isCurrent = index === currentIndex;
           return (
             <View
@@ -1779,23 +1786,22 @@ const ClusterEventStage: React.FC<ClusterEventStageProps> = ({
         })}
       </View>
 
-      {!isSelected && showTotalContext && (
-        <Text style={styles.clusterEventStageTotalEyebrow} pointerEvents="none">
-          {totalContentCount} total
-        </Text>
+      {!isSelected && showAggregateContext && (
+        <View style={styles.clusterEventStageAggregateContext} pointerEvents="none">
+          <Text style={styles.clusterEventStageAggregateContextText} numberOfLines={1}>
+            {aggregateContextLabel.toUpperCase()}
+          </Text>
+        </View>
       )}
 
       {isSelected ? (
         <View style={styles.clusterEventStageHeader}>
           <View style={[styles.clusterEventStageLiveDot, { backgroundColor: cluster.isBroadcasting ? '#34D399' : '#7DD3FC' }]} />
           <Text style={styles.clusterEventStageTitle} numberOfLines={1}>
-            {cluster.isBroadcasting ? 'LIVE NEARBY' : 'IN THIS CLUSTER'}
+            {cluster.isBroadcasting ? 'LIVE NEARBY' : aggregateContextLabel.toUpperCase()}
           </Text>
-          {showTotalContext && (
-            <Text style={styles.clusterEventStageHeaderTotal}>{totalContentCount} total</Text>
-          )}
-          {overflowCount > 0 && (
-            <Text style={styles.clusterEventStageOverflow}>+{overflowCount}</Text>
+          {cluster.isBroadcasting && showAggregateContext && (
+            <Text style={styles.clusterEventStageHeaderTotal}>{totalContentCount} items</Text>
           )}
         </View>
       ) : cluster.isBroadcasting ? (
@@ -1843,9 +1849,6 @@ const ClusterEventStage: React.FC<ClusterEventStageProps> = ({
           </Text>
         </View>
 
-        {overflowCount > 0 && !isSelected && (
-          <Text style={styles.clusterEventStageCompactOverflow}>+{overflowCount}</Text>
-        )}
       </Animated.View>
       <View
         style={[
@@ -2070,15 +2073,15 @@ const VenueIndicatorRail: React.FC<VenueIndicatorRailProps> = ({
       style={[
         styles.beaconVenueRail,
         {
-          minWidth: Math.max(size * 1.65, 34),
-          height: Math.max(size * 0.48, 14),
+          minWidth: Math.max(size * 1.8, 38),
+          height: Math.max(size * 0.55, 16),
         },
       ]}
       accessibilityLabel={activeVenueOrdinal > 0
         ? `Venue ${activeVenueOrdinal} of ${venueCount}`
         : `${venueCount} venues`}
     >
-      <MaterialIcons name="home" size={Math.max(size * 0.34, 9)} color="#A9DDF4" />
+      <MaterialIcons name="home" size={Math.max(size * 0.38, 10)} color="#A9DDF4" />
       <Text style={styles.beaconVenueRailText}>{label}</Text>
     </View>
   );
@@ -2192,7 +2195,7 @@ const ClusterSummaryBeacon: React.FC<ClusterSummaryBeaconProps> = ({
   isProcessing,
   isReady,
 }) => {
-  const visibleCategoryItems = categoryItems.slice(0, CLUSTER_STAGE_VISIBLE_CATEGORY_LIMIT);
+  const visibleCategoryItems = categoryItems.slice(0, CLUSTER_SUMMARY_VISIBLE_CATEGORY_LIMIT);
   const dominantCategory = visibleCategoryItems[0]?.category ?? '';
   const accentColor = dominantCategory
     ? getClusterStageAccentColor(dominantCategory)
@@ -2255,7 +2258,7 @@ const ClusterSummaryBeacon: React.FC<ClusterSummaryBeaconProps> = ({
 
         {venueCount > 1 && (
           <View style={styles.clusterSummaryVenueContext}>
-            <MaterialIcons name="home" size={8} color="#A9DDF4" />
+            <MaterialIcons name="home" size={9} color="#A9DDF4" />
             <Text style={styles.clusterSummaryVenueText}>{venueCount}</Text>
           </View>
         )}
@@ -2304,7 +2307,7 @@ const TreeMarker: React.FC<TreeMarkerProps> = React.memo(({ cluster, isSelected,
   const clusterCategoryItems = isBeacon && detailsEnabled
     ? getAndroidClusterCategoryItems(cluster, getUserInterestsSync())
     : [];
-  const stageCategoryItems = clusterCategoryItems.slice(0, CLUSTER_STAGE_VISIBLE_CATEGORY_LIMIT);
+  const stageCategoryItems = clusterCategoryItems;
   const [activeStageCategory, setActiveStageCategory] = useState(stageCategoryItems[0]?.category || '');
   const activeCategory = stageCategoryItems.some((item) => item.category === activeStageCategory)
     ? activeStageCategory
@@ -2312,7 +2315,10 @@ const TreeMarker: React.FC<TreeMarkerProps> = React.memo(({ cluster, isSelected,
   const primaryCategoryAccent = activeCategory
     ? getClusterStageAccentColor(activeCategory)
     : '#4A90E2';
-  const showCategoryLabel = isSelected || detailMode !== 'overview';
+  // The summary presentation owns the genuinely compact overview. Once a
+  // marker graduates to the story presentation, never make users decode an
+  // icon without its category label—even at the transition zoom.
+  const showCategoryLabel = isStoryBeacon || isSelected;
   // Once a beacon expands into its story treatment, the lower lens always
   // represents the venue. Category identity already belongs to the marquee.
   const allowHeroFallback = isStoryBeacon;
@@ -9837,8 +9843,8 @@ const styles = StyleSheet.create({
   },
   beaconVenueRailText: {
     color: '#D9F1FC',
-    fontSize: 6.5,
-    lineHeight: 9,
+    fontSize: 8,
+    lineHeight: 10,
     fontWeight: '900',
     letterSpacing: 0.25,
     marginLeft: 2,
@@ -10144,8 +10150,8 @@ countText: {
   clusterSummaryTotal: {
     marginLeft: 4,
     color: '#FFFFFF',
-    fontSize: 10,
-    lineHeight: 13,
+    fontSize: 11,
+    lineHeight: 14,
     fontWeight: '900',
   },
   clusterSummaryVenueContext: {
@@ -10161,8 +10167,8 @@ countText: {
   clusterSummaryVenueText: {
     marginLeft: 2,
     color: '#D9F1FC',
-    fontSize: 7,
-    lineHeight: 9,
+    fontSize: 8,
+    lineHeight: 10,
     fontWeight: '900',
   },
   clusterSummaryNewDot: {
@@ -10200,20 +10206,20 @@ countText: {
     zIndex: 8,
   },
   clusterEventStageShellCompact: {
-    minHeight: 31,
+    minHeight: 36,
     marginBottom: 1,
     paddingHorizontal: 4,
-    paddingTop: 5,
-    paddingBottom: 3,
+    paddingTop: 4,
+    paddingBottom: 4,
     borderRadius: 12,
     borderColor: 'rgba(172, 221, 245, 0.62)',
   },
   clusterEventStageShellCompactWithContext: {
-    minHeight: 35,
-    paddingTop: 9,
+    minHeight: 47,
+    paddingTop: 18,
   },
   clusterEventStageHeader: {
-    height: 10,
+    height: 12,
     paddingHorizontal: 2,
     flexDirection: 'row',
     alignItems: 'center',
@@ -10254,44 +10260,49 @@ countText: {
   clusterEventStageTitle: {
     flex: 1,
     color: '#B8D6E5',
-    fontSize: 6.5,
-    lineHeight: 8,
+    fontSize: 8.5,
+    lineHeight: 11,
     fontWeight: '800',
-    letterSpacing: 0.7,
-  },
-  clusterEventStageOverflow: {
-    color: '#E6F5FC',
-    fontSize: 7,
-    lineHeight: 8,
-    fontWeight: '800',
+    letterSpacing: 0.45,
   },
   clusterEventStageHeaderTotal: {
     color: '#D8ECF6',
-    fontSize: 6.5,
-    lineHeight: 8,
+    fontSize: 8,
+    lineHeight: 11,
     fontWeight: '800',
     marginLeft: 4,
   },
-  clusterEventStageTotalEyebrow: {
+  clusterEventStageAggregateContext: {
     position: 'absolute',
-    top: 3,
-    right: 6,
+    top: 5,
+    left: 5,
+    right: 5,
+    height: 14,
+    paddingHorizontal: 4,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 7,
+    backgroundColor: 'rgba(216, 239, 250, 0.13)',
+    borderWidth: 0.5,
+    borderColor: 'rgba(195, 229, 244, 0.34)',
+  },
+  clusterEventStageAggregateContextText: {
     color: '#AFC8D5',
-    fontSize: 5.5,
-    lineHeight: 7,
+    fontSize: 8.5,
+    lineHeight: 11,
     fontWeight: '800',
-    letterSpacing: 0.15,
+    letterSpacing: 0.2,
   },
   clusterEventStageReel: {
-    minHeight: 24,
+    minHeight: 27,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
   },
   clusterEventStageFeatureIcon: {
-    width: 23,
-    height: 23,
-    borderRadius: 9,
+    width: 26,
+    height: 26,
+    borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1.25,
@@ -10299,15 +10310,15 @@ countText: {
   },
   clusterEventStageFeatureCopy: {
     minWidth: 24,
-    maxWidth: 68,
+    maxWidth: 82,
     flexShrink: 1,
     flexDirection: 'row',
     alignItems: 'baseline',
   },
   clusterEventStageFeatureCount: {
     color: '#FFFFFF',
-    fontSize: 10,
-    lineHeight: 12,
+    fontSize: 12,
+    lineHeight: 15,
     fontWeight: '900',
   },
   clusterEventStageFeatureCountAfterLabel: {
@@ -10316,16 +10327,9 @@ countText: {
   clusterEventStageFeatureLabel: {
     flexShrink: 1,
     color: '#C8DCE7',
-    fontSize: 7.5,
-    lineHeight: 10,
+    fontSize: 9.5,
+    lineHeight: 13,
     fontWeight: '700',
-  },
-  clusterEventStageCompactOverflow: {
-    color: '#AFC8D5',
-    fontSize: 6.5,
-    lineHeight: 9,
-    fontWeight: '800',
-    marginLeft: 2,
   },
   clusterEventStageTail: {
     position: 'absolute',
