@@ -1731,12 +1731,11 @@ const ClusterEventStage: React.FC<ClusterEventStageProps> = ({
   const showTotalContext = totalContentCount > activeItem.count;
   const overflowCount = Math.max(0, categoryItems.length - visibleItems.length);
   const labelWidth = Math.min(58, Math.max(26, activeLabel.length * 4.6));
-  const totalContextWidth = showTotalContext ? 31 : 0;
   const stageWidth = isSelected
     ? Math.max(size * 5.5, 116)
     : showCategoryLabel
-      ? Math.max(size * 3.4, 43 + labelWidth + totalContextWidth + (overflowCount > 0 ? 15 : 0))
-      : Math.max(size * 2.55, 58 + totalContextWidth + (overflowCount > 0 ? 10 : 0));
+      ? Math.max(size * 3.4, 43 + labelWidth + (overflowCount > 0 ? 15 : 0))
+      : Math.max(size * 2.55, 58 + (overflowCount > 0 ? 10 : 0));
   const iconSize = Math.max(size * 0.62, 13);
   const translateX = transitionAnim.interpolate({
     inputRange: [-1, 0, 1],
@@ -1752,6 +1751,7 @@ const ClusterEventStage: React.FC<ClusterEventStageProps> = ({
       style={[
         styles.clusterEventStageShell,
         !isSelected && styles.clusterEventStageShellCompact,
+        !isSelected && showTotalContext && styles.clusterEventStageShellCompactWithContext,
         {
           width: stageWidth,
           borderColor: `${activeAccent}D9`,
@@ -1779,12 +1779,21 @@ const ClusterEventStage: React.FC<ClusterEventStageProps> = ({
         })}
       </View>
 
+      {!isSelected && showTotalContext && (
+        <Text style={styles.clusterEventStageTotalEyebrow} pointerEvents="none">
+          {totalContentCount} total
+        </Text>
+      )}
+
       {isSelected ? (
         <View style={styles.clusterEventStageHeader}>
           <View style={[styles.clusterEventStageLiveDot, { backgroundColor: cluster.isBroadcasting ? '#34D399' : '#7DD3FC' }]} />
           <Text style={styles.clusterEventStageTitle} numberOfLines={1}>
             {cluster.isBroadcasting ? 'LIVE NEARBY' : 'IN THIS CLUSTER'}
           </Text>
+          {showTotalContext && (
+            <Text style={styles.clusterEventStageHeaderTotal}>{totalContentCount} total</Text>
+          )}
           {overflowCount > 0 && (
             <Text style={styles.clusterEventStageOverflow}>+{overflowCount}</Text>
           )}
@@ -1833,12 +1842,6 @@ const ClusterEventStage: React.FC<ClusterEventStageProps> = ({
             {activeItem.count}
           </Text>
         </View>
-
-        {showTotalContext && (
-          <View style={styles.clusterEventStageTotalContext}>
-            <Text style={styles.clusterEventStageTotalContextText}>{totalContentCount} total</Text>
-          </View>
-        )}
 
         {overflowCount > 0 && !isSelected && (
           <Text style={styles.clusterEventStageCompactOverflow}>+{overflowCount}</Text>
@@ -10205,6 +10208,10 @@ countText: {
     borderRadius: 12,
     borderColor: 'rgba(172, 221, 245, 0.62)',
   },
+  clusterEventStageShellCompactWithContext: {
+    minHeight: 35,
+    paddingTop: 9,
+  },
   clusterEventStageHeader: {
     height: 10,
     paddingHorizontal: 2,
@@ -10258,6 +10265,23 @@ countText: {
     lineHeight: 8,
     fontWeight: '800',
   },
+  clusterEventStageHeaderTotal: {
+    color: '#D8ECF6',
+    fontSize: 6.5,
+    lineHeight: 8,
+    fontWeight: '800',
+    marginLeft: 4,
+  },
+  clusterEventStageTotalEyebrow: {
+    position: 'absolute',
+    top: 3,
+    right: 6,
+    color: '#AFC8D5',
+    fontSize: 5.5,
+    lineHeight: 7,
+    fontWeight: '800',
+    letterSpacing: 0.15,
+  },
   clusterEventStageReel: {
     minHeight: 24,
     flexDirection: 'row',
@@ -10275,7 +10299,7 @@ countText: {
   },
   clusterEventStageFeatureCopy: {
     minWidth: 24,
-    maxWidth: 52,
+    maxWidth: 68,
     flexShrink: 1,
     flexDirection: 'row',
     alignItems: 'baseline',
@@ -10295,24 +10319,6 @@ countText: {
     fontSize: 7.5,
     lineHeight: 10,
     fontWeight: '700',
-  },
-  clusterEventStageTotalContext: {
-    minWidth: 29,
-    height: 15,
-    marginLeft: 4,
-    paddingHorizontal: 4,
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(216, 239, 250, 0.13)',
-    borderWidth: 0.75,
-    borderColor: 'rgba(195, 229, 244, 0.42)',
-  },
-  clusterEventStageTotalContextText: {
-    color: '#D8ECF6',
-    fontSize: 6.5,
-    lineHeight: 8,
-    fontWeight: '800',
   },
   clusterEventStageCompactOverflow: {
     color: '#AFC8D5',
