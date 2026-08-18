@@ -1935,7 +1935,7 @@ const VenueLens: React.FC<VenueLensProps> = ({
 }) => {
   const [imageFailed, setImageFailed] = useState(false);
   const imageOpacity = useRef(new Animated.Value(0)).current;
-  const lensSize = size * 1.12;
+  const lensSize = size * 1.2;
 
   useEffect(() => {
     setImageFailed(false);
@@ -1994,7 +1994,7 @@ const VenueLens: React.FC<VenueLensProps> = ({
 
       {isMultiVenue && (
         <View style={styles.beaconVenueLensVenueBadge}>
-          <MaterialIcons name="home" size={Math.max(size * 0.29, 7)} color="#FFFFFF" />
+          <MaterialIcons name="home" size={Math.max(size * 0.23, 6)} color="#FFFFFF" />
           <Text style={styles.beaconVenueLensVenueCount}>{venueCount}</Text>
         </View>
       )}
@@ -9448,12 +9448,12 @@ const styles = StyleSheet.create({
   },
   beaconVenueLensVenueBadge: {
     position: 'absolute',
-    right: -5,
-    bottom: -4,
-    minWidth: 17,
-    height: 14,
-    paddingHorizontal: 2,
-    borderRadius: 7,
+    right: -4,
+    bottom: -3,
+    minWidth: 15,
+    height: 12,
+    paddingHorizontal: 1.5,
+    borderRadius: 6,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -9463,8 +9463,8 @@ const styles = StyleSheet.create({
   },
   beaconVenueLensVenueCount: {
     color: '#FFFFFF',
-    fontSize: 7,
-    lineHeight: 9,
+    fontSize: 6,
+    lineHeight: 8,
     fontWeight: '900',
     marginLeft: 1,
   },
