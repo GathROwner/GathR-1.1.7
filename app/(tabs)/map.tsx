@@ -1336,6 +1336,25 @@ const getClusterStageAccentColor = (category: string): string => {
   return '#3B82F6';
 };
 
+const getClusterStageShortLabel = (category: string): string => {
+  const categoryLower = category.toLowerCase();
+
+  if (categoryLower.includes('live music') || categoryLower.includes('music')) return 'Music';
+  if (categoryLower.includes('comedy')) return 'Comedy';
+  if (categoryLower.includes('sport')) return 'Sports';
+  if (categoryLower.includes('trivia')) return 'Trivia';
+  if (categoryLower.includes('workshop') || categoryLower.includes('class')) return 'Classes';
+  if (categoryLower.includes('religious') || categoryLower.includes('church')) return 'Community';
+  if (categoryLower.includes('family')) return 'Family';
+  if (categoryLower.includes('gathering') || categoryLower.includes('parties') || categoryLower.includes('party')) return 'Social';
+  if (categoryLower.includes('cinema') || categoryLower.includes('movie') || categoryLower.includes('film')) return 'Cinema';
+  if (categoryLower.includes('happy hour') || categoryLower.includes('bar')) return 'Happy Hour';
+  if (categoryLower.includes('food') || categoryLower.includes('wing') || categoryLower.includes('restaurant')) return 'Food';
+  if (categoryLower.includes('drink')) return 'Drinks';
+
+  return category.split(/[,&/]/)[0]?.trim() || 'Events';
+};
+
 const CategoryCarousel: React.FC<CategoryCarouselProps> = ({ cluster, size, isActive = true }) => {
   const [currentIndex, setCurrentIndex] = useState(0);
   const fadeAnim = useRef(new Animated.Value(1)).current;
@@ -1503,10 +1522,10 @@ interface ClusterEventStageProps {
 }
 
 /**
- * GathR's richer cluster preview. Three category glyphs stay visible so a
- * cluster's variety is readable immediately. Only selected/live clusters
- * advance the reel, keeping the map calm and avoiding continuous animation on
- * every MarkerView.
+ * GathR's cluster marquee. The active category and its local count answer
+ * "what is happening here?", while the weighted color rail keeps the full
+ * category mix visible. Only selected/live clusters advance the reel, keeping
+ * dense parts of the map calm.
  */
 const ClusterEventStage: React.FC<ClusterEventStageProps> = ({
   cluster,
@@ -1586,9 +1605,14 @@ const ClusterEventStage: React.FC<ClusterEventStageProps> = ({
 
   const activeItem = visibleItems[currentIndex] ?? visibleItems[0];
   const activeAccent = getClusterStageAccentColor(activeItem.category);
+  const activeLabel = getClusterStageShortLabel(activeItem.category);
   const overflowCount = Math.max(0, categoryItems.length - visibleItems.length);
-  const stageWidth = isSelected ? Math.max(size * 4.25, 88) : Math.max(size * 2.8, 62);
-  const iconSize = Math.max(size * 0.6, 12);
+  const stageWidth = isSelected
+    ? Math.max(size * 5.1, 108)
+    : visibleItems.length > 1
+      ? Math.max(size * 3.35, 72)
+      : Math.max(size * 3.05, 64);
+  const iconSize = Math.max(size * 0.62, 13);
   const translateX = transitionAnim.interpolate({
     inputRange: [-1, 0, 1],
     outputRange: [-10, 0, 10],
@@ -1603,10 +1627,33 @@ const ClusterEventStage: React.FC<ClusterEventStageProps> = ({
       style={[
         styles.clusterEventStageShell,
         !isSelected && styles.clusterEventStageShellCompact,
-        { width: stageWidth },
+        {
+          width: stageWidth,
+          borderColor: `${activeAccent}D9`,
+          shadowColor: activeAccent,
+        },
       ]}
       accessibilityLabel={`${categoryItems.length} event categories in this cluster`}
     >
+      <View style={styles.clusterEventStageMixRail} pointerEvents="none">
+        {visibleItems.map((item, index) => {
+          const isCurrent = index === currentIndex;
+          return (
+            <View
+              key={`stage-rail-${item.iconImage}-${item.category}`}
+              style={[
+                styles.clusterEventStageMixSegment,
+                {
+                  backgroundColor: getClusterStageAccentColor(item.category),
+                  flex: Math.max(1, item.count),
+                  opacity: isCurrent ? 1 : 0.42,
+                },
+              ]}
+            />
+          );
+        })}
+      </View>
+
       {isSelected ? (
         <View style={styles.clusterEventStageHeader}>
           <View style={[styles.clusterEventStageLiveDot, { backgroundColor: cluster.isBroadcasting ? '#34D399' : '#7DD3FC' }]} />
@@ -1627,37 +1674,43 @@ const ClusterEventStage: React.FC<ClusterEventStageProps> = ({
           { opacity, transform: [{ translateX }] },
         ]}
       >
-        {visibleItems.map((item, index) => {
-          const isCurrent = index === currentIndex;
-          const accentColor = getClusterStageAccentColor(item.category);
+        <View
+          style={[
+            styles.clusterEventStageFeatureIcon,
+            { borderColor: activeAccent, backgroundColor: `${activeAccent}38` },
+          ]}
+        >
+          <MaterialIcons
+            name={getCategoryIcon(activeItem.category) as any}
+            size={iconSize}
+            color="#FFFFFF"
+          />
+        </View>
 
-          return (
-            <View
-              key={`${item.iconImage}-${item.category}`}
-              style={[
-                styles.clusterEventStageItem,
-                !isSelected && styles.clusterEventStageItemCompact,
-                isCurrent && styles.clusterEventStageItemActive,
-                isCurrent && !isSelected && styles.clusterEventStageItemCompactActive,
-                isCurrent && { borderColor: accentColor, backgroundColor: `${accentColor}2B` },
-                !isSelected && !isCurrent && { borderColor: `${accentColor}70` },
-              ]}
-            >
-              <MaterialIcons
-                name={getCategoryIcon(item.category) as any}
-                size={isCurrent ? iconSize : iconSize * 0.78}
-                color={isCurrent ? '#FFFFFF' : isSelected ? '#A9C5D4' : accentColor}
-              />
-              {isSelected && isCurrent && (
-                <Text style={[styles.clusterEventStageCount, { backgroundColor: activeAccent }]}>
-                  {item.count}
-                </Text>
-              )}
-            </View>
-          );
-        })}
+        <View style={styles.clusterEventStageFeatureCopy}>
+          <Text style={styles.clusterEventStageFeatureCount} numberOfLines={1}>
+            {activeItem.count}
+          </Text>
+          <Text
+            style={styles.clusterEventStageFeatureLabel}
+            numberOfLines={1}
+            adjustsFontSizeToFit
+            minimumFontScale={0.72}
+          >
+            {activeLabel}
+          </Text>
+        </View>
+
+        {overflowCount > 0 && !isSelected && (
+          <Text style={styles.clusterEventStageCompactOverflow}>+{overflowCount}</Text>
+        )}
       </Animated.View>
-      <View style={styles.clusterEventStageTail} />
+      <View
+        style={[
+          styles.clusterEventStageTail,
+          { borderColor: `${activeAccent}D9` },
+        ]}
+      />
     </View>
   );
 };
@@ -1814,9 +1867,14 @@ const TreeMarker: React.FC<TreeMarkerProps> = React.memo(({ cluster, isSelected,
   const stageCategoryItems = isBeacon && detailsEnabled
     ? getAndroidClusterCategoryItems(cluster, getUserInterestsSync()).slice(0, CLUSTER_STAGE_VISIBLE_CATEGORY_LIMIT)
     : [];
+  const primaryCategoryAccent = stageCategoryItems.length > 0
+    ? getClusterStageAccentColor(stageCategoryItems[0].category)
+    : '#4A90E2';
   const beaconGlyph = (
     isMultiVenue
       ? 'home'
+      : stageCategoryItems.length > 0
+        ? getCategoryIcon(stageCategoryItems[0].category)
       : cluster.eventCount > 0 && cluster.specialCount > 0
         ? 'local-activity'
         : cluster.specialCount > 0
@@ -1883,6 +1941,15 @@ const TreeMarker: React.FC<TreeMarkerProps> = React.memo(({ cluster, isSelected,
           }
         ]}
       >
+        {isBeacon && (
+          <View
+            pointerEvents="none"
+            style={[
+              styles.beaconPrimaryHalo,
+              { borderColor: `${primaryCategoryAccent}C7` },
+            ]}
+          />
+        )}
         {isBeacon && stageCategoryItems.length > 0 && (
           <View style={styles.beaconCategorySpectrum} pointerEvents="none">
             {stageCategoryItems.map((item, index) => (
@@ -2022,6 +2089,7 @@ const TreeMarker: React.FC<TreeMarkerProps> = React.memo(({ cluster, isSelected,
           style={[
             styles.markerLabel,
             isBeacon && styles.beaconLabel,
+            isBeacon && { borderColor: `${primaryCategoryAccent}A8` },
             {
               width: Math.max(adjustedSize * 3.4, 58),
               height: Math.max(adjustedSize * 0.5, 16),
@@ -9157,6 +9225,18 @@ const styles = StyleSheet.create({
     shadowRadius: 7,
     elevation: 10,
   },
+  beaconPrimaryHalo: {
+    position: 'absolute',
+    top: -5,
+    right: -5,
+    bottom: -5,
+    left: -5,
+    borderRadius: 999,
+    borderWidth: 2.5,
+    backgroundColor: 'transparent',
+    opacity: 0.72,
+    zIndex: -1,
+  },
   beaconCategorySpectrum: {
     position: 'absolute',
     top: -5,
@@ -9246,7 +9326,7 @@ venueCountContainer: {
     borderColor: 'rgba(255, 255, 255, 0.9)',
     borderWidth: 1.5,
     borderRadius: 12,
-    marginTop: 2,
+    marginTop: -2,
     shadowColor: '#102A3A',
     shadowOpacity: 0.28,
     shadowRadius: 4,
@@ -9386,7 +9466,7 @@ countText: {
   clusterEventStageShell: {
     position: 'relative',
     minHeight: 43,
-    marginBottom: 4,
+    marginBottom: 1,
     paddingHorizontal: 5,
     paddingTop: 4,
     paddingBottom: 5,
@@ -9402,10 +9482,10 @@ countText: {
     zIndex: 8,
   },
   clusterEventStageShellCompact: {
-    minHeight: 28,
-    marginBottom: 3,
+    minHeight: 31,
+    marginBottom: 1,
     paddingHorizontal: 4,
-    paddingTop: 3,
+    paddingTop: 5,
     paddingBottom: 3,
     borderRadius: 12,
     borderColor: 'rgba(172, 221, 245, 0.62)',
@@ -9434,6 +9514,21 @@ countText: {
     borderColor: '#E8FFF2',
     zIndex: 3,
   },
+  clusterEventStageMixRail: {
+    position: 'absolute',
+    top: 0,
+    left: 7,
+    right: 7,
+    height: 3,
+    flexDirection: 'row',
+    overflow: 'hidden',
+    borderBottomLeftRadius: 3,
+    borderBottomRightRadius: 3,
+  },
+  clusterEventStageMixSegment: {
+    height: 3,
+    minWidth: 3,
+  },
   clusterEventStageTitle: {
     flex: 1,
     color: '#B8D6E5',
@@ -9452,62 +9547,44 @@ countText: {
     minHeight: 24,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-evenly',
+    justifyContent: 'center',
   },
-  clusterEventStageItem: {
-    width: 22,
-    height: 20,
-    borderRadius: 8,
+  clusterEventStageFeatureIcon: {
+    width: 23,
+    height: 23,
+    borderRadius: 9,
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(132, 175, 196, 0.22)',
-    backgroundColor: 'rgba(89, 128, 148, 0.12)',
-    opacity: 0.72,
-  },
-  clusterEventStageItemCompact: {
-    width: 16,
-    height: 19,
-    borderRadius: 7,
-    borderWidth: 1,
-    backgroundColor: 'rgba(89, 128, 148, 0.08)',
-    opacity: 0.9,
-  },
-  clusterEventStageItemActive: {
-    width: 29,
-    height: 24,
-    borderRadius: 9,
-    borderWidth: 1.5,
-    opacity: 1,
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.26,
-    shadowRadius: 2,
-    elevation: 5,
-  },
-  clusterEventStageItemCompactActive: {
-    width: 19,
-    height: 21,
-    borderRadius: 8,
     borderWidth: 1.25,
-    elevation: 3,
+    marginRight: 4,
   },
-  clusterEventStageCount: {
-    position: 'absolute',
-    top: -5,
-    right: -5,
-    minWidth: 13,
-    height: 13,
-    paddingHorizontal: 3,
-    borderRadius: 7,
-    overflow: 'hidden',
+  clusterEventStageFeatureCopy: {
+    minWidth: 24,
+    maxWidth: 52,
+    flexShrink: 1,
+    flexDirection: 'row',
+    alignItems: 'baseline',
+  },
+  clusterEventStageFeatureCount: {
     color: '#FFFFFF',
-    fontSize: 7,
-    lineHeight: 13,
+    fontSize: 10,
+    lineHeight: 12,
     fontWeight: '900',
-    textAlign: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.94)',
+    marginRight: 3,
+  },
+  clusterEventStageFeatureLabel: {
+    flexShrink: 1,
+    color: '#C8DCE7',
+    fontSize: 7.5,
+    lineHeight: 10,
+    fontWeight: '700',
+  },
+  clusterEventStageCompactOverflow: {
+    color: '#AFC8D5',
+    fontSize: 6.5,
+    lineHeight: 9,
+    fontWeight: '800',
+    marginLeft: 2,
   },
   clusterEventStageTail: {
     position: 'absolute',
