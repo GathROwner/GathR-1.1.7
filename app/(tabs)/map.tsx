@@ -1620,6 +1620,7 @@ const CategoryCarousel: React.FC<CategoryCarouselProps> = ({ cluster, size, isAc
 
 interface ClusterEventStageProps {
   cluster: Cluster;
+  detailMode: ClusterMarkerDetailMode;
   isActive: boolean;
   isSelected: boolean;
   reduceMotionEnabled: boolean;
@@ -1636,6 +1637,7 @@ interface ClusterEventStageProps {
  */
 const ClusterEventStage: React.FC<ClusterEventStageProps> = ({
   cluster,
+  detailMode,
   isActive,
   isSelected,
   reduceMotionEnabled,
@@ -1732,16 +1734,31 @@ const ClusterEventStage: React.FC<ClusterEventStageProps> = ({
       ? (totalContentCount === 1 ? 'special' : 'specials')
       : (totalContentCount === 1 ? 'listing' : 'listings');
   const showAggregateContext = categoryItems.length > 1 || totalContentCount > activeItem.count;
-  const aggregateContextLabel = `${totalContentCount} ${contentTypeLabel} · ${categoryItems.length} ${categoryItems.length === 1 ? 'type' : 'types'}`;
+  const aggregatePrimaryLabel = `${totalContentCount} ${contentTypeLabel}`;
+  const aggregateTypesLabel = `${categoryItems.length} ${categoryItems.length === 1 ? 'type' : 'types'}`;
+  const aggregateContextLabel = `${aggregatePrimaryLabel} · ${aggregateTypesLabel}`;
+  const showAggregateBand = showAggregateContext && !isSelected && detailMode === 'media';
+  const showInlineAggregate = showAggregateContext && !isSelected && !showAggregateBand;
   const labelWidth = Math.min(72, Math.max(31, activeLabel.length * 5.35));
   const countWidth = Math.max(8, String(activeItem.count).length * 6.8);
-  const aggregateContextWidth = showAggregateContext
-    ? Math.min(122, Math.max(80, aggregateContextLabel.length * 4.7))
+  const aggregateContextWidth = showAggregateBand
+    ? Math.min(142, Math.max(112, aggregateContextLabel.length * 5.5 + 12))
     : 0;
+  const inlineAggregateWidth = showInlineAggregate
+    ? Math.max(38, String(totalContentCount).length * 6.5 + 31)
+    : 0;
+  const activeFeatureWidth = 48 + labelWidth + countWidth;
   const stageWidth = isSelected
-    ? Math.max(size * 5.9, 138)
+    ? Math.max(size * 6, 142)
     : showCategoryLabel
-      ? Math.min(138, Math.max(size * 4.3, 48 + labelWidth + countWidth, aggregateContextWidth + 12))
+      ? Math.min(
+          showAggregateBand ? 154 : 148,
+          Math.max(
+            size * 4.3,
+            activeFeatureWidth + inlineAggregateWidth,
+            aggregateContextWidth + 12
+          )
+        )
       : Math.max(size * 2.7, 61 + countWidth);
   const iconSize = Math.max(size * 0.68, 14);
   const translateX = transitionAnim.interpolate({
@@ -1758,7 +1775,7 @@ const ClusterEventStage: React.FC<ClusterEventStageProps> = ({
       style={[
         styles.clusterEventStageShell,
         !isSelected && styles.clusterEventStageShellCompact,
-        !isSelected && showAggregateContext && styles.clusterEventStageShellCompactWithContext,
+        showAggregateBand && styles.clusterEventStageShellCompactWithContext,
         {
           width: stageWidth,
           borderColor: `${activeAccent}D9`,
@@ -1786,10 +1803,14 @@ const ClusterEventStage: React.FC<ClusterEventStageProps> = ({
         })}
       </View>
 
-      {!isSelected && showAggregateContext && (
+      {showAggregateBand && (
         <View style={styles.clusterEventStageAggregateContext} pointerEvents="none">
           <Text style={styles.clusterEventStageAggregateContextText} numberOfLines={1}>
-            {aggregateContextLabel.toUpperCase()}
+            {aggregatePrimaryLabel.toUpperCase()}
+          </Text>
+          <View style={styles.clusterEventStageAggregateDivider} />
+          <Text style={styles.clusterEventStageAggregateContextText} numberOfLines={1}>
+            {aggregateTypesLabel.toUpperCase()}
           </Text>
         </View>
       )}
@@ -1848,6 +1869,14 @@ const ClusterEventStage: React.FC<ClusterEventStageProps> = ({
             {activeItem.count}
           </Text>
         </View>
+
+        {showInlineAggregate && (
+          <View style={styles.clusterEventStageInlineAggregate} pointerEvents="none">
+            <Text style={styles.clusterEventStageInlineAggregateText} numberOfLines={1}>
+              {totalContentCount} total
+            </Text>
+          </View>
+        )}
 
       </Animated.View>
       <View
@@ -2391,6 +2420,7 @@ const TreeMarker: React.FC<TreeMarkerProps> = React.memo(({ cluster, isSelected,
         isBeacon ? (
           <ClusterEventStage
             cluster={cluster}
+            detailMode={detailMode}
             size={adjustedSize}
             isActive={isActive}
             isSelected={isSelected}
@@ -10279,6 +10309,7 @@ countText: {
     right: 5,
     height: 14,
     paddingHorizontal: 4,
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: 7,
@@ -10292,6 +10323,13 @@ countText: {
     lineHeight: 11,
     fontWeight: '800',
     letterSpacing: 0.2,
+  },
+  clusterEventStageAggregateDivider: {
+    width: 3,
+    height: 3,
+    marginHorizontal: 5,
+    borderRadius: 1.5,
+    backgroundColor: '#7DD3FC',
   },
   clusterEventStageReel: {
     minHeight: 27,
@@ -10330,6 +10368,24 @@ countText: {
     fontSize: 9.5,
     lineHeight: 13,
     fontWeight: '700',
+  },
+  clusterEventStageInlineAggregate: {
+    height: 20,
+    marginLeft: 6,
+    paddingHorizontal: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 10,
+    backgroundColor: 'rgba(216, 239, 250, 0.13)',
+    borderWidth: 0.75,
+    borderColor: 'rgba(195, 229, 244, 0.34)',
+  },
+  clusterEventStageInlineAggregateText: {
+    color: '#D8ECF6',
+    fontSize: 9,
+    lineHeight: 11,
+    fontWeight: '900',
+    letterSpacing: 0.1,
   },
   clusterEventStageTail: {
     position: 'absolute',
