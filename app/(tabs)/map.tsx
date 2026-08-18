@@ -865,6 +865,28 @@ const projectCoordinateToViewportPoint = (
   return { x, y };
 };
 
+const getGathrBeaconTopDockOffset = (
+  projectedAnchorY: number,
+  safeTop: number,
+  estimatedMarkerHeight: number
+): number => {
+  if (
+    !Number.isFinite(projectedAnchorY) ||
+    !Number.isFinite(safeTop) ||
+    !Number.isFinite(estimatedMarkerHeight)
+  ) {
+    return 0;
+  }
+
+  // MarkerViews are bottom-anchored, so reserve the beacon's full visual
+  // height beneath the floating filter controls. Cap the dock distance so a
+  // nearly-offscreen coordinate cannot pull its marker deep into the map.
+  return Math.min(
+    104,
+    Math.max(0, safeTop + Math.max(0, estimatedMarkerHeight) - projectedAnchorY)
+  );
+};
+
 const buildAndroidClusterMarkerShape = (
   clustersForRender: Cluster[],
   options: {
@@ -1941,15 +1963,15 @@ const VenueIndicatorRail: React.FC<VenueIndicatorRailProps> = ({
   venueCount,
 }) => {
   const label = activeVenueOrdinal > 0
-    ? `VENUE ${activeVenueOrdinal}/${venueCount}`
-    : `${venueCount} VENUES`;
+    ? `${activeVenueOrdinal}/${venueCount}`
+    : `${venueCount}`;
 
   return (
     <View
       style={[
         styles.beaconVenueRail,
         {
-          minWidth: Math.max(size * 2.8, 48),
+          minWidth: Math.max(size * 1.65, 34),
           height: Math.max(size * 0.48, 14),
         },
       ]}
@@ -1982,7 +2004,7 @@ const VenueLens: React.FC<VenueLensProps> = ({
 }) => {
   const [imageFailed, setImageFailed] = useState(false);
   const imageOpacity = useRef(new Animated.Value(0)).current;
-  const lensSize = size * 1.2;
+  const lensSize = size * 1.44;
 
   useEffect(() => {
     setImageFailed(false);
@@ -3574,6 +3596,7 @@ useEffect(() => {
 
   // Actual map viewport dimensions (accounting for header, tab bar, safe areas)
   const [mapDimensions, setMapDimensions] = useState<{ width: number; height: number } | null>(null);
+  const [, setBeaconProjectionEpoch] = useState(0);
   const [mapScreenOffset, setMapScreenOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [iosMapViewRevision, setIosMapViewRevision] = useState(0);
   const iosMapViewLayoutRefreshScheduledRef = useRef(false);
@@ -8584,6 +8607,27 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
           cluster.id === hotspotPreviewClusterId &&
           !richClusterMarkersEnabled;
         const markerDetailsEnabled = richClusterMarkersEnabled || shouldForceHotspotPreviewDetails;
+        const projectedPoint =
+          mapStyleChoice === 'gathr' &&
+          markerDetailsEnabled &&
+          !isMapMoving &&
+          mapDimensions &&
+          currentCameraStateRef.current?.visibleBbox
+            ? projectCoordinateToViewportPoint(
+                coordinates,
+                currentCameraStateRef.current.visibleBbox,
+                mapDimensions
+              )
+            : null;
+        const estimatedMarkerHeight = cluster.venues.length > 1 ? 92 : 76;
+        const beaconTopDockOffset = projectedPoint
+          ? getGathrBeaconTopDockOffset(
+              projectedPoint.y,
+              TOP_OFFSET + pillsHeight + 8,
+              estimatedMarkerHeight
+            )
+          : 0;
+        const isBeaconTopDocked = beaconTopDockOffset > 0.5;
 
         if (shouldForceHotspotPreviewDetails && !startupHotspotPreviewRichMarkerLoggedRef.current) {
           startupHotspotPreviewRichMarkerLoggedRef.current = true;
@@ -8629,8 +8673,16 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
               disabled={!clustersReadyForInteraction || processingClusterId !== null}
               activeOpacity={0.7}
               hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-              style={isDimmedByInterestFilter ? styles.interestFilteredMarkerDimmed : undefined}
+              style={[
+                isDimmedByInterestFilter && styles.interestFilteredMarkerDimmed,
+                isBeaconTopDocked && { transform: [{ translateY: beaconTopDockOffset }] },
+              ]}
             >
+              {isBeaconTopDocked && (
+                <View pointerEvents="none" style={styles.beaconEdgeDockCue}>
+                  <MaterialIcons name="keyboard-arrow-up" size={10} color="#D9F1FC" />
+                </View>
+              )}
               <TreeMarker
                 cluster={cluster}
                 isSelected={isSelected}
@@ -8798,7 +8850,9 @@ onMapIdle={() => {
     logAndroidZoomTapLatencyProbe('map_idle');
   }
   notifyHotspotCameraReady('map_idle');
-  void reconcileCameraStateFromMapRef('map_idle');
+  void reconcileCameraStateFromMapRef('map_idle').finally(() => {
+    setBeaconProjectionEpoch((epoch) => epoch + 1);
+  });
   if (DEBUG_MAP_LOAD) {
     const t1b = Date.now();
     const delta = t1b - __ml_t0Ref.current;
@@ -9514,7 +9568,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 5,
+    paddingHorizontal: 4,
     marginTop: 1,
     borderRadius: 8,
     backgroundColor: 'rgba(9, 25, 35, 0.96)',
@@ -9533,6 +9587,26 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     letterSpacing: 0.25,
     marginLeft: 2,
+  },
+  beaconEdgeDockCue: {
+    position: 'absolute',
+    top: -11,
+    left: '50%',
+    width: 20,
+    height: 11,
+    marginLeft: -10,
+    borderRadius: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(9, 25, 35, 0.96)',
+    borderWidth: 1,
+    borderColor: 'rgba(126, 201, 236, 0.78)',
+    shadowColor: '#06131B',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.28,
+    shadowRadius: 2,
+    elevation: 8,
+    zIndex: 12,
   },
   beaconCategorySpectrum: {
     position: 'absolute',
