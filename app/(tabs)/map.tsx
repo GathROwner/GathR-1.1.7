@@ -1989,6 +1989,20 @@ interface VenueLensMedia {
 const isRemoteMarkerImageUrl = (value: unknown): value is string =>
   typeof value === 'string' && /^https?:\/\//i.test(value.trim());
 
+const getVenueLensFallbackLabel = (venueName: string): string => {
+  const meaningfulWords = venueName
+    .trim()
+    .split(/\s+/)
+    .map((word) => word.replace(/[^a-z0-9]/gi, ''))
+    .filter((word) => word.length > 0)
+    .filter((word) => !['the', 'of', 'and', 'at'].includes(word.toLowerCase()));
+
+  if (meaningfulWords.length === 0) return '';
+  if (meaningfulWords.length === 1) return meaningfulWords[0].slice(0, 2).toUpperCase();
+
+  return `${meaningfulWords[0][0]}${meaningfulWords[1][0]}`.toUpperCase();
+};
+
 const getVenueLensMediaOptions = (
   cluster: Cluster,
   category: string,
@@ -2071,6 +2085,7 @@ interface VenueLensProps {
   accentColor: string;
   fallbackGlyph: React.ComponentProps<typeof MaterialIcons>['name'];
   fallbackGlyphColor: string;
+  fallbackLabel?: string;
   imageUrl: string;
   size: number;
   venueName: string;
@@ -2080,6 +2095,7 @@ const VenueLens: React.FC<VenueLensProps> = ({
   accentColor,
   fallbackGlyph,
   fallbackGlyphColor,
+  fallbackLabel = '',
   imageUrl,
   size,
   venueName,
@@ -2116,7 +2132,7 @@ const VenueLens: React.FC<VenueLensProps> = ({
           borderColor: accentColor,
         },
       ]}
-      accessibilityLabel={showImage ? `${venueName} venue image` : undefined}
+      accessibilityLabel={showImage ? `${venueName} venue image` : `${venueName} venue`}
     >
       {showImage ? (
         <Animated.Image
@@ -2135,6 +2151,19 @@ const VenueLens: React.FC<VenueLensProps> = ({
           onLoad={revealImage}
           onError={() => setImageFailed(true)}
         />
+      ) : fallbackLabel ? (
+        <Text
+          style={[
+            styles.beaconVenueLensFallbackText,
+            {
+              color: fallbackGlyphColor,
+              fontSize: Math.max(8, size * 0.46),
+            },
+          ]}
+          numberOfLines={1}
+        >
+          {fallbackLabel}
+        </Text>
       ) : (
         <MaterialIcons
           name={fallbackGlyph}
@@ -2281,13 +2310,13 @@ const TreeMarker: React.FC<TreeMarkerProps> = React.memo(({ cluster, isSelected,
     ? getClusterStageAccentColor(activeCategory)
     : '#4A90E2';
   const showCategoryLabel = isSelected || detailMode !== 'overview';
-  const allowHeroFallback =
-    isSelected || isMultiVenue || cluster.interestLevel === 'high' || detailMode === 'media';
+  // Once a beacon expands into its story treatment, the lower lens always
+  // represents the venue. Category identity already belongs to the marquee.
+  const allowHeroFallback = isStoryBeacon;
   const shouldLoadVenueLens =
     isStoryBeacon &&
     detailsEnabled &&
-    Boolean(activeCategory) &&
-    (isSelected || isMultiVenue || cluster.interestLevel === 'high' || detailMode === 'media');
+    Boolean(activeCategory);
   const venueLensMediaOptions = useMemo(
     () => shouldLoadVenueLens
       ? getVenueLensMediaOptions(cluster, activeCategory, allowHeroFallback)
@@ -2312,16 +2341,12 @@ const TreeMarker: React.FC<TreeMarkerProps> = React.memo(({ cluster, isSelected,
 
   const venueLensMedia = venueLensMediaOptions[activeVenueMediaIndex] ?? venueLensMediaOptions[0] ?? null;
   const activeVenueOrdinal = venueLensMedia ? venueLensMedia.venueIndex + 1 : 0;
+  const fallbackVenueName = cluster.venues[0]?.venue?.trim() || 'Venue';
+  const fallbackVenueLabel = isMultiVenue ? '' : getVenueLensFallbackLabel(fallbackVenueName);
   const beaconGlyph = (
     isMultiVenue
       ? 'home'
-      : activeCategory
-        ? getCategoryIcon(activeCategory)
-      : cluster.eventCount > 0 && cluster.specialCount > 0
-        ? 'local-activity'
-        : cluster.specialCount > 0
-          ? 'restaurant'
-          : 'event'
+      : 'storefront'
   ) as React.ComponentProps<typeof MaterialIcons>['name'];
 
   // Check if cluster contains Firestore-sourced events
@@ -2421,15 +2446,18 @@ const TreeMarker: React.FC<TreeMarkerProps> = React.memo(({ cluster, isSelected,
             ))}
           </View>
         )}
-        {/* Venue lens: load media only for high-interest/selected/close markers. */}
-        {isBeacon && venueLensMedia ? (
+        {/* The rich beacon's lower lens is always venue identity. The marquee
+            above owns category identity, so an image-less venue gets a neutral
+            monogram instead of a duplicate category glyph. */}
+        {isStoryBeacon ? (
           <VenueLens
             accentColor={primaryCategoryAccent}
             fallbackGlyph={beaconGlyph}
             fallbackGlyphColor={['#34A853', '#FBBC05'].includes(color) ? '#000000' : '#FFFFFF'}
-            imageUrl={venueLensMedia.imageUrl}
+            fallbackLabel={fallbackVenueLabel}
+            imageUrl={venueLensMedia?.imageUrl ?? ''}
             size={adjustedSize}
-            venueName={venueLensMedia.venueName}
+            venueName={venueLensMedia?.venueName ?? fallbackVenueName}
           />
         ) : (
           <View
@@ -9782,6 +9810,11 @@ const styles = StyleSheet.create({
   },
   beaconVenueLensImage: {
     backgroundColor: 'rgba(8, 24, 34, 0.78)',
+  },
+  beaconVenueLensFallbackText: {
+    fontWeight: '900',
+    letterSpacing: 0.2,
+    textAlign: 'center',
   },
   beaconVenueRail: {
     flexDirection: 'row',
