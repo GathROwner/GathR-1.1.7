@@ -868,6 +868,9 @@ const projectCoordinateToViewportPoint = (
 type GathrClusterPresentation = 'summary' | 'story';
 type GathrBeaconEdgeDirection = 'up' | 'down' | 'left' | 'right' | null;
 
+const GATHR_CLUSTER_STORY_MIN_ZOOM = 14.65;
+const GATHR_CLUSTER_MEDIA_DETAIL_MIN_ZOOM = 15.75;
+
 interface GathrBeaconDockResult {
   direction: GathrBeaconEdgeDirection;
   translateX: number;
@@ -889,7 +892,7 @@ const getGathrClusterPresentation = (
     cluster.interestLevel === 'high';
 
   // City and neighbourhood views should scan like a map, not a wall of cards.
-  if (zoom < 14.65) return 'summary';
+  if (zoom < GATHR_CLUSTER_STORY_MIN_ZOOM) return 'summary';
 
   // At the first close-detail tier, only small, relevant clusters tell their
   // full story. Larger clusters remain stable summaries until users zoom in.
@@ -8976,7 +8979,13 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
                 detailsEnabled={markerDetailsEnabled}
                 isActive={clusterMarkerAnimationsActive}
                 appearance={mapStyleChoice === 'gathr' ? 'beacon' : 'tree'}
-                detailMode={zoomLevel >= 15.25 ? 'media' : zoomLevel >= 14.65 ? 'label' : 'overview'}
+                detailMode={
+                  zoomLevel >= GATHR_CLUSTER_MEDIA_DETAIL_MIN_ZOOM
+                    ? 'media'
+                    : zoomLevel >= GATHR_CLUSTER_STORY_MIN_ZOOM
+                      ? 'label'
+                      : 'overview'
+                }
                 presentation={mapStyleChoice === 'gathr' ? gathrPresentation : 'story'}
                 reduceMotionEnabled={reduceMotionEnabled}
               />
