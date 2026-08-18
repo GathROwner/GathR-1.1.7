@@ -865,26 +865,108 @@ const projectCoordinateToViewportPoint = (
   return { x, y };
 };
 
-const getGathrBeaconTopDockOffset = (
-  projectedAnchorY: number,
-  safeTop: number,
-  estimatedMarkerHeight: number
-): number => {
-  if (
-    !Number.isFinite(projectedAnchorY) ||
-    !Number.isFinite(safeTop) ||
-    !Number.isFinite(estimatedMarkerHeight)
-  ) {
-    return 0;
+type GathrClusterPresentation = 'summary' | 'story';
+type GathrBeaconEdgeDirection = 'up' | 'down' | 'left' | 'right' | null;
+
+interface GathrBeaconDockResult {
+  direction: GathrBeaconEdgeDirection;
+  translateX: number;
+  translateY: number;
+}
+
+const getGathrClusterPresentation = (
+  cluster: Cluster,
+  zoom: number,
+  isSelected: boolean
+): GathrClusterPresentation => {
+  if (isSelected) return 'story';
+
+  const venueCount = getUniqueVenueCount(cluster.venues);
+  const totalContentCount = (cluster.eventCount ?? 0) + (cluster.specialCount ?? 0);
+  const isPriorityCluster =
+    cluster.isBroadcasting ||
+    cluster.hasNewContent ||
+    cluster.interestLevel === 'high';
+
+  // City and neighbourhood views should scan like a map, not a wall of cards.
+  if (zoom < 14.65) return 'summary';
+
+  // At the first close-detail tier, only small, relevant clusters tell their
+  // full story. Larger clusters remain stable summaries until users zoom in.
+  if (zoom < 15.25) {
+    return isPriorityCluster && venueCount <= 4 && totalContentCount <= 12
+      ? 'story'
+      : 'summary';
   }
 
-  // MarkerViews are bottom-anchored, so reserve the beacon's full visual
-  // height beneath the floating filter controls. Cap the dock distance so a
-  // nearly-offscreen coordinate cannot pull its marker deep into the map.
-  return Math.min(
-    104,
-    Math.max(0, safeTop + Math.max(0, estimatedMarkerHeight) - projectedAnchorY)
-  );
+  if (zoom < 15.75) {
+    return venueCount <= 8 && totalContentCount <= 24 ? 'story' : 'summary';
+  }
+
+  // Very large clusters stay compact even close in; tapping them opens the
+  // purpose-built venue/event callout instead of cycling dozens of avatars.
+  return venueCount <= 12 && totalContentCount <= 60 ? 'story' : 'summary';
+};
+
+const getGathrBeaconViewportDock = (options: {
+  markerHeight: number;
+  markerWidth: number;
+  point: { x: number; y: number };
+  safeBottom: number;
+  safeLeft: number;
+  safeRight: number;
+  safeTop: number;
+}): GathrBeaconDockResult => {
+  const {
+    markerHeight,
+    markerWidth,
+    point,
+    safeBottom,
+    safeLeft,
+    safeRight,
+    safeTop,
+  } = options;
+
+  if (
+    !Number.isFinite(point.x) ||
+    !Number.isFinite(point.y) ||
+    !Number.isFinite(markerHeight) ||
+    !Number.isFinite(markerWidth)
+  ) {
+    return { direction: null, translateX: 0, translateY: 0 };
+  }
+
+  const halfWidth = Math.max(0, markerWidth / 2);
+  const markerLeft = point.x - halfWidth;
+  const markerRight = point.x + halfWidth;
+  const markerTop = point.y - Math.max(0, markerHeight);
+  const markerBottom = point.y + 4;
+  let translateX = 0;
+  let translateY = 0;
+
+  if (markerLeft < safeLeft) {
+    translateX = safeLeft - markerLeft;
+  } else if (markerRight > safeRight) {
+    translateX = safeRight - markerRight;
+  }
+
+  if (markerTop < safeTop) {
+    translateY = safeTop - markerTop;
+  } else if (markerBottom > safeBottom) {
+    translateY = safeBottom - markerBottom;
+  }
+
+  translateX = Math.max(-92, Math.min(92, translateX));
+  translateY = Math.max(-104, Math.min(104, translateY));
+
+  const direction: GathrBeaconEdgeDirection =
+    Math.abs(translateY) >= Math.abs(translateX) && Math.abs(translateY) > 0.5
+      ? translateY > 0 ? 'up' : 'down'
+      : Math.abs(translateX) > 0.5
+        ? translateX > 0 ? 'left' : 'right'
+        : null;
+
+  return { direction, translateX, translateY };
 };
 
 const buildAndroidClusterMarkerShape = (
@@ -2065,6 +2147,101 @@ const VenueLens: React.FC<VenueLensProps> = ({
   );
 };
 
+interface ClusterSummaryBeaconProps {
+  categoryItems: CategoryItem[];
+  cluster: Cluster;
+  isProcessing: boolean;
+  isReady: boolean;
+}
+
+const ClusterSummaryBeacon: React.FC<ClusterSummaryBeaconProps> = ({
+  categoryItems,
+  cluster,
+  isProcessing,
+  isReady,
+}) => {
+  const visibleCategoryItems = categoryItems.slice(0, CLUSTER_STAGE_VISIBLE_CATEGORY_LIMIT);
+  const dominantCategory = visibleCategoryItems[0]?.category ?? '';
+  const accentColor = dominantCategory
+    ? getClusterStageAccentColor(dominantCategory)
+    : '#4A90E2';
+  const totalContentCount = Math.max(1, (cluster.eventCount ?? 0) + (cluster.specialCount ?? 0));
+  const venueCount = getUniqueVenueCount(cluster.venues);
+  const width = Math.max(
+    58,
+    35 + String(totalContentCount).length * 7 + (venueCount > 1 ? 29 : 0)
+  );
+  const timeColor = getTimeStatusColor(cluster.timeStatus);
+
+  return (
+    <View
+      style={styles.markerWrapper}
+      accessibilityLabel={`${totalContentCount} items at ${venueCount} ${venueCount === 1 ? 'venue' : 'venues'}`}
+    >
+      <View
+        style={[
+          styles.clusterSummaryShell,
+          {
+            width,
+            borderColor: `${accentColor}D9`,
+            shadowColor: accentColor,
+            opacity: !isReady ? 0.42 : isProcessing ? 0.64 : 1,
+          },
+        ]}
+      >
+        {visibleCategoryItems.length > 0 && (
+          <View style={styles.clusterSummarySpectrum} pointerEvents="none">
+            {visibleCategoryItems.map((item, index) => (
+              <View
+                key={`summary-spectrum-${item.iconImage}-${index}`}
+                style={[
+                  styles.clusterSummarySpectrumSegment,
+                  {
+                    backgroundColor: getClusterStageAccentColor(item.category),
+                    flex: Math.max(1, item.count),
+                  },
+                ]}
+              />
+            ))}
+          </View>
+        )}
+
+        <View
+          style={[
+            styles.clusterSummaryIcon,
+            { borderColor: accentColor, backgroundColor: `${accentColor}38` },
+          ]}
+        >
+          <MaterialIcons
+            name={(dominantCategory ? getCategoryIcon(dominantCategory) : 'local-activity') as any}
+            size={13}
+            color="#FFFFFF"
+          />
+        </View>
+
+        <Text style={styles.clusterSummaryTotal}>{totalContentCount}</Text>
+
+        {venueCount > 1 && (
+          <View style={styles.clusterSummaryVenueContext}>
+            <MaterialIcons name="home" size={8} color="#A9DDF4" />
+            <Text style={styles.clusterSummaryVenueText}>{venueCount}</Text>
+          </View>
+        )}
+
+        {cluster.hasNewContent && <View style={styles.clusterSummaryNewDot} />}
+      </View>
+
+      <View
+        style={[
+          styles.beaconTip,
+          styles.clusterSummaryTip,
+          { backgroundColor: timeColor },
+        ]}
+      />
+    </View>
+  );
+};
+
 // Tree Marker component for map points
 interface TreeMarkerProps {
   cluster: Cluster;
@@ -2075,10 +2252,11 @@ interface TreeMarkerProps {
   isActive?: boolean;
   appearance?: ClusterMarkerAppearance;
   detailMode: ClusterMarkerDetailMode;
+  presentation?: GathrClusterPresentation;
   reduceMotionEnabled?: boolean;
 }
 
-const TreeMarker: React.FC<TreeMarkerProps> = React.memo(({ cluster, isSelected, isProcessing = false, isReady = true, detailsEnabled = true, isActive = true, appearance = 'tree', detailMode, reduceMotionEnabled = false }) => {
+const TreeMarker: React.FC<TreeMarkerProps> = React.memo(({ cluster, isSelected, isProcessing = false, isReady = true, detailsEnabled = true, isActive = true, appearance = 'tree', detailMode, presentation = 'story', reduceMotionEnabled = false }) => {
   // Determine color based on time status
   const color = getTimeStatusColor(cluster.timeStatus);
 
@@ -2089,6 +2267,7 @@ const TreeMarker: React.FC<TreeMarkerProps> = React.memo(({ cluster, isSelected,
   const scaleFactor = Platform.OS === 'android' ? 1 : isSelected ? 1.2 : 1;
   const adjustedSize = size * scaleFactor;
   const isBeacon = appearance === 'beacon';
+  const isStoryBeacon = isBeacon && presentation === 'story';
   const isMultiVenue = cluster.venues.length > 1;
   const clusterCategoryItems = isBeacon && detailsEnabled
     ? getAndroidClusterCategoryItems(cluster, getUserInterestsSync())
@@ -2105,7 +2284,7 @@ const TreeMarker: React.FC<TreeMarkerProps> = React.memo(({ cluster, isSelected,
   const allowHeroFallback =
     isSelected || isMultiVenue || cluster.interestLevel === 'high' || detailMode === 'media';
   const shouldLoadVenueLens =
-    isBeacon &&
+    isStoryBeacon &&
     detailsEnabled &&
     Boolean(activeCategory) &&
     (isSelected || isMultiVenue || cluster.interestLevel === 'high' || detailMode === 'media');
@@ -2157,6 +2336,17 @@ const TreeMarker: React.FC<TreeMarkerProps> = React.memo(({ cluster, isSelected,
     const fsEventCount = cluster.venues.reduce((count, venue) =>
       count + venue.events.filter(e => e.source === 'firestore').length, 0);
     console.log(`[TreeMarker] Cluster ${cluster.id} has ${fsEventCount} Firestore events`);
+  }
+
+  if (isBeacon && presentation === 'summary') {
+    return (
+      <ClusterSummaryBeacon
+        categoryItems={clusterCategoryItems}
+        cluster={cluster}
+        isProcessing={isProcessing}
+        isReady={isReady}
+      />
+    );
   }
 
   return (
@@ -2443,6 +2633,7 @@ const TreeMarker: React.FC<TreeMarkerProps> = React.memo(({ cluster, isSelected,
     prevProps.isActive === nextProps.isActive &&
     prevProps.appearance === nextProps.appearance &&
     prevProps.detailMode === nextProps.detailMode &&
+    prevProps.presentation === nextProps.presentation &&
     prevProps.reduceMotionEnabled === nextProps.reduceMotionEnabled
   );
 });
@@ -8607,6 +8798,7 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
           cluster.id === hotspotPreviewClusterId &&
           !richClusterMarkersEnabled;
         const markerDetailsEnabled = richClusterMarkersEnabled || shouldForceHotspotPreviewDetails;
+        const gathrPresentation = getGathrClusterPresentation(cluster, zoomLevel, isSelected);
         const projectedPoint =
           mapStyleChoice === 'gathr' &&
           markerDetailsEnabled &&
@@ -8619,15 +8811,36 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
                 mapDimensions
               )
             : null;
-        const estimatedMarkerHeight = cluster.venues.length > 1 ? 92 : 76;
-        const beaconTopDockOffset = projectedPoint
-          ? getGathrBeaconTopDockOffset(
-              projectedPoint.y,
-              TOP_OFFSET + pillsHeight + 8,
-              estimatedMarkerHeight
-            )
-          : 0;
-        const isBeaconTopDocked = beaconTopDockOffset > 0.5;
+        const estimatedMarkerHeight = gathrPresentation === 'summary'
+          ? 38
+          : cluster.venues.length > 1 ? 92 : 76;
+        const estimatedMarkerWidth = gathrPresentation === 'summary' ? 84 : 136;
+        const beaconDock = projectedPoint && mapDimensions
+          ? getGathrBeaconViewportDock({
+              markerHeight: estimatedMarkerHeight,
+              markerWidth: estimatedMarkerWidth,
+              point: projectedPoint,
+              safeBottom: Math.max(TOP_OFFSET + pillsHeight + 80, mapDimensions.height - 52),
+              safeLeft: 8,
+              safeRight: Math.max(96, mapDimensions.width - 74),
+              safeTop: TOP_OFFSET + pillsHeight + 8,
+            })
+          : { direction: null, translateX: 0, translateY: 0 };
+        const isBeaconDocked = beaconDock.direction !== null;
+        const beaconEdgeCueIcon = beaconDock.direction === 'up'
+          ? 'keyboard-arrow-up'
+          : beaconDock.direction === 'down'
+            ? 'keyboard-arrow-down'
+            : beaconDock.direction === 'left'
+              ? 'keyboard-arrow-left'
+              : 'keyboard-arrow-right';
+        const beaconEdgeCuePosition = beaconDock.direction === 'up'
+          ? styles.beaconEdgeCueUp
+          : beaconDock.direction === 'down'
+            ? styles.beaconEdgeCueDown
+            : beaconDock.direction === 'left'
+              ? styles.beaconEdgeCueLeft
+              : styles.beaconEdgeCueRight;
 
         if (shouldForceHotspotPreviewDetails && !startupHotspotPreviewRichMarkerLoggedRef.current) {
           startupHotspotPreviewRichMarkerLoggedRef.current = true;
@@ -8675,12 +8888,17 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
               hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
               style={[
                 isDimmedByInterestFilter && styles.interestFilteredMarkerDimmed,
-                isBeaconTopDocked && { transform: [{ translateY: beaconTopDockOffset }] },
+                isBeaconDocked && {
+                  transform: [
+                    { translateX: beaconDock.translateX },
+                    { translateY: beaconDock.translateY },
+                  ],
+                },
               ]}
             >
-              {isBeaconTopDocked && (
-                <View pointerEvents="none" style={styles.beaconEdgeDockCue}>
-                  <MaterialIcons name="keyboard-arrow-up" size={10} color="#D9F1FC" />
+              {isBeaconDocked && (
+                <View pointerEvents="none" style={[styles.beaconEdgeCue, beaconEdgeCuePosition]}>
+                  <MaterialIcons name={beaconEdgeCueIcon} size={10} color="#0B4F6C" />
                 </View>
               )}
               <TreeMarker
@@ -8691,7 +8909,8 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
                 detailsEnabled={markerDetailsEnabled}
                 isActive={clusterMarkerAnimationsActive}
                 appearance={mapStyleChoice === 'gathr' ? 'beacon' : 'tree'}
-                detailMode={zoomLevel >= 13.25 ? 'media' : zoomLevel >= 12.85 ? 'label' : 'overview'}
+                detailMode={zoomLevel >= 15.25 ? 'media' : zoomLevel >= 14.65 ? 'label' : 'overview'}
+                presentation={mapStyleChoice === 'gathr' ? gathrPresentation : 'story'}
                 reduceMotionEnabled={reduceMotionEnabled}
               />
             </TouchableOpacity>
@@ -9588,25 +9807,38 @@ const styles = StyleSheet.create({
     letterSpacing: 0.25,
     marginLeft: 2,
   },
-  beaconEdgeDockCue: {
+  beaconEdgeCue: {
     position: 'absolute',
-    top: -11,
-    left: '50%',
-    width: 20,
-    height: 11,
-    marginLeft: -10,
-    borderRadius: 6,
+    width: 12,
+    height: 12,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(9, 25, 35, 0.96)',
-    borderWidth: 1,
-    borderColor: 'rgba(126, 201, 236, 0.78)',
-    shadowColor: '#06131B',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.28,
-    shadowRadius: 2,
+    shadowColor: '#FFFFFF',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.95,
+    shadowRadius: 2.5,
     elevation: 8,
     zIndex: 12,
+  },
+  beaconEdgeCueUp: {
+    top: -10,
+    left: '50%',
+    marginLeft: -6,
+  },
+  beaconEdgeCueDown: {
+    bottom: -10,
+    left: '50%',
+    marginLeft: -6,
+  },
+  beaconEdgeCueLeft: {
+    left: -10,
+    top: '50%',
+    marginTop: -6,
+  },
+  beaconEdgeCueRight: {
+    right: -10,
+    top: '50%',
+    marginTop: -6,
   },
   beaconCategorySpectrum: {
     position: 'absolute',
@@ -9833,6 +10065,85 @@ countText: {
     textShadowColor: 'rgba(255, 255, 255, 0.9)',
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 2,
+  },
+  clusterSummaryShell: {
+    position: 'relative',
+    height: 31,
+    paddingHorizontal: 4,
+    paddingTop: 3,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 12,
+    backgroundColor: 'rgba(12, 31, 43, 0.96)',
+    borderWidth: 1.25,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.34,
+    shadowRadius: 4,
+    elevation: 8,
+  },
+  clusterSummarySpectrum: {
+    position: 'absolute',
+    top: 0,
+    left: 7,
+    right: 7,
+    height: 3,
+    flexDirection: 'row',
+    overflow: 'hidden',
+    borderBottomLeftRadius: 3,
+    borderBottomRightRadius: 3,
+  },
+  clusterSummarySpectrumSegment: {
+    height: 3,
+    minWidth: 3,
+  },
+  clusterSummaryIcon: {
+    width: 23,
+    height: 23,
+    borderRadius: 9,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1.25,
+  },
+  clusterSummaryTotal: {
+    marginLeft: 4,
+    color: '#FFFFFF',
+    fontSize: 10,
+    lineHeight: 13,
+    fontWeight: '900',
+  },
+  clusterSummaryVenueContext: {
+    height: 16,
+    marginLeft: 5,
+    paddingLeft: 5,
+    paddingRight: 3,
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderLeftWidth: 1,
+    borderLeftColor: 'rgba(195, 229, 244, 0.28)',
+  },
+  clusterSummaryVenueText: {
+    marginLeft: 2,
+    color: '#D9F1FC',
+    fontSize: 7,
+    lineHeight: 9,
+    fontWeight: '900',
+  },
+  clusterSummaryNewDot: {
+    position: 'absolute',
+    top: -3,
+    right: -3,
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#FF3B30',
+    borderWidth: 1,
+    borderColor: '#FFFFFF',
+  },
+  clusterSummaryTip: {
+    width: 10,
+    height: 10,
+    marginTop: -6,
   },
   clusterEventStageShell: {
     position: 'relative',
