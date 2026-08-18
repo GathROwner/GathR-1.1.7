@@ -8957,6 +8957,7 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
               activeOpacity={0.7}
               hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
               style={[
+                styles.clusterMarkerTouchableFrame,
                 isDimmedByInterestFilter && styles.interestFilteredMarkerDimmed,
                 isBeaconDocked && {
                   transform: [
@@ -10408,6 +10409,14 @@ countText: {
     borderBottomWidth: 1.25,
     borderColor: 'rgba(172, 221, 245, 0.76)',
     transform: [{ rotate: '45deg' }],
+  },
+  // MarkerView measures its direct React child on the native render thread.
+  // The responsive beacon can change width as its category story advances, so
+  // keep that measurement frame nonzero throughout the transition.
+  clusterMarkerTouchableFrame: {
+    minWidth: 1,
+    minHeight: 1,
+    alignItems: 'center',
   },
   calloutAnimatedContainer: {
     ...StyleSheet.absoluteFillObject,
