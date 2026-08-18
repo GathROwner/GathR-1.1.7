@@ -2039,12 +2039,13 @@ const TreeMarker: React.FC<TreeMarkerProps> = React.memo(({ cluster, isSelected,
     ? getClusterStageAccentColor(activeCategory)
     : '#4A90E2';
   const showCategoryLabel = isSelected || detailMode !== 'overview';
-  const allowHeroFallback = isSelected || cluster.interestLevel === 'high' || detailMode === 'media';
+  const allowHeroFallback =
+    isSelected || isMultiVenue || cluster.interestLevel === 'high' || detailMode === 'media';
   const shouldLoadVenueLens =
     isBeacon &&
     detailsEnabled &&
     Boolean(activeCategory) &&
-    (isSelected || cluster.interestLevel === 'high' || detailMode === 'media');
+    (isSelected || isMultiVenue || cluster.interestLevel === 'high' || detailMode === 'media');
   const venueLensMedia = shouldLoadVenueLens
     ? getVenueLensMedia(cluster, activeCategory, allowHeroFallback)
     : null;
