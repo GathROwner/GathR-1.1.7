@@ -1527,8 +1527,8 @@ interface ClusterEventStageProps {
 /**
  * GathR's cluster marquee. The active category and its local count answer
  * "what is happening here?", while the weighted color rail keeps the full
- * category mix visible. Only selected/live clusters advance the reel, keeping
- * dense parts of the map calm.
+ * category mix visible. Selected, live, high-interest, and multi-venue clusters
+ * advance the reel; ordinary single-venue markers stay calm in dense areas.
  */
 const ClusterEventStage: React.FC<ClusterEventStageProps> = ({
   cluster,
@@ -1554,7 +1554,12 @@ const ClusterEventStage: React.FC<ClusterEventStageProps> = ({
     isActive &&
     !reduceMotionEnabled &&
     visibleItems.length > 1 &&
-    (isSelected || cluster.isBroadcasting || cluster.interestLevel === 'high');
+    (
+      isSelected ||
+      cluster.isBroadcasting ||
+      cluster.interestLevel === 'high' ||
+      cluster.venues.length > 1
+    );
 
   const stopStageAnimation = useCallback(() => {
     transitionAnim.stopAnimation();
