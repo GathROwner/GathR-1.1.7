@@ -1618,13 +1618,16 @@ const ClusterEventStage: React.FC<ClusterEventStageProps> = ({
 
   const activeAccent = getClusterStageAccentColor(activeItem.category);
   const activeLabel = getClusterStageShortLabel(activeItem.category);
+  const totalContentCount = (cluster.eventCount ?? 0) + (cluster.specialCount ?? 0);
+  const showTotalContext = totalContentCount > activeItem.count;
   const overflowCount = Math.max(0, categoryItems.length - visibleItems.length);
   const labelWidth = Math.min(58, Math.max(26, activeLabel.length * 4.6));
+  const totalContextWidth = showTotalContext ? 31 : 0;
   const stageWidth = isSelected
     ? Math.max(size * 5.5, 116)
     : showCategoryLabel
-      ? Math.max(size * 3.4, 43 + labelWidth + (overflowCount > 0 ? 15 : 0))
-      : Math.max(size * 2.55, 58 + (overflowCount > 0 ? 10 : 0));
+      ? Math.max(size * 3.4, 43 + labelWidth + totalContextWidth + (overflowCount > 0 ? 15 : 0))
+      : Math.max(size * 2.55, 58 + totalContextWidth + (overflowCount > 0 ? 10 : 0));
   const iconSize = Math.max(size * 0.62, 13);
   const translateX = transitionAnim.interpolate({
     inputRange: [-1, 0, 1],
@@ -1721,6 +1724,12 @@ const ClusterEventStage: React.FC<ClusterEventStageProps> = ({
             {activeItem.count}
           </Text>
         </View>
+
+        {showTotalContext && (
+          <View style={styles.clusterEventStageTotalContext}>
+            <Text style={styles.clusterEventStageTotalContextText}>{totalContentCount} total</Text>
+          </View>
+        )}
 
         {overflowCount > 0 && !isSelected && (
           <Text style={styles.clusterEventStageCompactOverflow}>+{overflowCount}</Text>
@@ -1863,6 +1872,7 @@ const IndicatorDot: React.FC<IndicatorDotProps> = ({ hasNewContent, isActive = t
 
 interface VenueLensMedia {
   imageUrl: string;
+  venueIndex: number;
   venueName: string;
   source: 'avatar' | 'hero';
 }
@@ -1870,46 +1880,82 @@ interface VenueLensMedia {
 const isRemoteMarkerImageUrl = (value: unknown): value is string =>
   typeof value === 'string' && /^https?:\/\//i.test(value.trim());
 
-const getVenueLensMedia = (
+const getVenueLensMediaOptions = (
   cluster: Cluster,
   category: string,
   allowHeroFallback: boolean
-): VenueLensMedia | null => {
+): VenueLensMedia[] => {
   const normalizedCategory = category.trim().toLowerCase();
-  const matchingEntries = cluster.venues.flatMap((venue) =>
-    venue.events
-      .filter((event) => event.category.trim().toLowerCase() === normalizedCategory)
-      .map((event) => ({ event, venue }))
+  const collectOptions = (matchActiveCategory: boolean): VenueLensMedia[] =>
+    cluster.venues.flatMap((venue, venueIndex): VenueLensMedia[] => {
+      const candidateEvents = matchActiveCategory
+        ? venue.events.filter((event) => event.category.trim().toLowerCase() === normalizedCategory)
+        : venue.events;
+      if (candidateEvents.length === 0) return [];
+
+      const avatarEvent = candidateEvents.find((event) => isRemoteMarkerImageUrl(event.profileUrl));
+      if (avatarEvent) {
+        return [{
+          imageUrl: avatarEvent.profileUrl.trim(),
+          venueIndex,
+          venueName: venue.venue,
+          source: 'avatar',
+        }];
+      }
+
+      if (!allowHeroFallback) return [];
+
+      const heroEvent = candidateEvents.find((event) =>
+        isRemoteMarkerImageUrl(event.imageUrl) || isRemoteMarkerImageUrl(event.SharedPostThumbnail)
+      );
+      if (!heroEvent) return [];
+
+      return [{
+        imageUrl: isRemoteMarkerImageUrl(heroEvent.imageUrl)
+          ? heroEvent.imageUrl.trim()
+          : heroEvent.SharedPostThumbnail.trim(),
+        venueIndex,
+        venueName: venue.venue,
+        source: 'hero',
+      }];
+    });
+
+  const categoryOptions = collectOptions(true);
+  return categoryOptions.length > 0 ? categoryOptions : collectOptions(false);
+};
+
+interface VenueIndicatorRailProps {
+  activeVenueOrdinal: number;
+  size: number;
+  venueCount: number;
+}
+
+const VenueIndicatorRail: React.FC<VenueIndicatorRailProps> = ({
+  activeVenueOrdinal,
+  size,
+  venueCount,
+}) => {
+  const label = activeVenueOrdinal > 0
+    ? `VENUE ${activeVenueOrdinal}/${venueCount}`
+    : `${venueCount} VENUES`;
+
+  return (
+    <View
+      style={[
+        styles.beaconVenueRail,
+        {
+          minWidth: Math.max(size * 2.8, 48),
+          height: Math.max(size * 0.48, 14),
+        },
+      ]}
+      accessibilityLabel={activeVenueOrdinal > 0
+        ? `Venue ${activeVenueOrdinal} of ${venueCount}`
+        : `${venueCount} venues`}
+    >
+      <MaterialIcons name="home" size={Math.max(size * 0.34, 9)} color="#A9DDF4" />
+      <Text style={styles.beaconVenueRailText}>{label}</Text>
+    </View>
   );
-  const candidateEntries = matchingEntries.length > 0
-    ? matchingEntries
-    : cluster.venues.flatMap((venue) => venue.events.map((event) => ({ event, venue })));
-
-  const avatarEntry = candidateEntries.find(({ event }) => isRemoteMarkerImageUrl(event.profileUrl));
-  if (avatarEntry) {
-    return {
-      imageUrl: avatarEntry.event.profileUrl.trim(),
-      venueName: avatarEntry.venue.venue,
-      source: 'avatar',
-    };
-  }
-
-  if (!allowHeroFallback) return null;
-
-  const heroEntry = candidateEntries.find(({ event }) =>
-    isRemoteMarkerImageUrl(event.imageUrl) || isRemoteMarkerImageUrl(event.SharedPostThumbnail)
-  );
-  if (!heroEntry) return null;
-
-  const heroUrl = isRemoteMarkerImageUrl(heroEntry.event.imageUrl)
-    ? heroEntry.event.imageUrl.trim()
-    : heroEntry.event.SharedPostThumbnail.trim();
-
-  return {
-    imageUrl: heroUrl,
-    venueName: heroEntry.venue.venue,
-    source: 'hero',
-  };
 };
 
 interface VenueLensProps {
@@ -1917,9 +1963,7 @@ interface VenueLensProps {
   fallbackGlyph: React.ComponentProps<typeof MaterialIcons>['name'];
   fallbackGlyphColor: string;
   imageUrl: string;
-  isMultiVenue: boolean;
   size: number;
-  venueCount: number;
   venueName: string;
 }
 
@@ -1928,9 +1972,7 @@ const VenueLens: React.FC<VenueLensProps> = ({
   fallbackGlyph,
   fallbackGlyphColor,
   imageUrl,
-  isMultiVenue,
   size,
-  venueCount,
   venueName,
 }) => {
   const [imageFailed, setImageFailed] = useState(false);
@@ -1992,12 +2034,6 @@ const VenueLens: React.FC<VenueLensProps> = ({
         />
       )}
 
-      {isMultiVenue && (
-        <View style={styles.beaconVenueLensVenueBadge}>
-          <MaterialIcons name="home" size={Math.max(size * 0.23, 6)} color="#FFFFFF" />
-          <Text style={styles.beaconVenueLensVenueCount}>{venueCount}</Text>
-        </View>
-      )}
     </View>
   );
 };
@@ -2046,13 +2082,30 @@ const TreeMarker: React.FC<TreeMarkerProps> = React.memo(({ cluster, isSelected,
     detailsEnabled &&
     Boolean(activeCategory) &&
     (isSelected || isMultiVenue || cluster.interestLevel === 'high' || detailMode === 'media');
-  const venueLensMedia = shouldLoadVenueLens
-    ? getVenueLensMedia(cluster, activeCategory, allowHeroFallback)
-    : null;
-  const hasRedundantBeaconTotals =
-    isBeacon &&
-    clusterCategoryItems.length === 1 &&
-    (cluster.eventCount === 0 || cluster.specialCount === 0);
+  const venueLensMediaOptions = useMemo(
+    () => shouldLoadVenueLens
+      ? getVenueLensMediaOptions(cluster, activeCategory, allowHeroFallback)
+      : [],
+    [activeCategory, allowHeroFallback, cluster, shouldLoadVenueLens]
+  );
+  const venueLensMediaKey = venueLensMediaOptions
+    .map((option) => `${option.venueIndex}:${option.imageUrl}`)
+    .join('|');
+  const [activeVenueMediaIndex, setActiveVenueMediaIndex] = useState(0);
+
+  useEffect(() => {
+    setActiveVenueMediaIndex(0);
+    if (!isActive || reduceMotionEnabled || venueLensMediaOptions.length < 2) return undefined;
+
+    const interval = setInterval(() => {
+      setActiveVenueMediaIndex((index) => (index + 1) % venueLensMediaOptions.length);
+    }, CLUSTER_STAGE_CYCLE_MS);
+
+    return () => clearInterval(interval);
+  }, [isActive, reduceMotionEnabled, venueLensMediaKey, venueLensMediaOptions.length]);
+
+  const venueLensMedia = venueLensMediaOptions[activeVenueMediaIndex] ?? venueLensMediaOptions[0] ?? null;
+  const activeVenueOrdinal = venueLensMedia ? venueLensMedia.venueIndex + 1 : 0;
   const beaconGlyph = (
     isMultiVenue
       ? 'home'
@@ -2158,9 +2211,7 @@ const TreeMarker: React.FC<TreeMarkerProps> = React.memo(({ cluster, isSelected,
             fallbackGlyph={beaconGlyph}
             fallbackGlyphColor={['#34A853', '#FBBC05'].includes(color) ? '#000000' : '#FFFFFF'}
             imageUrl={venueLensMedia.imageUrl}
-            isMultiVenue={isMultiVenue}
             size={adjustedSize}
-            venueCount={cluster.venues.length}
             venueName={venueLensMedia.venueName}
           />
         ) : (
@@ -2278,9 +2329,17 @@ const TreeMarker: React.FC<TreeMarkerProps> = React.memo(({ cluster, isSelected,
           }
         ]} 
       />
+
+      {detailsEnabled && isBeacon && isMultiVenue && (
+        <VenueIndicatorRail
+          activeVenueOrdinal={activeVenueOrdinal}
+          size={adjustedSize}
+          venueCount={cluster.venues.length}
+        />
+      )}
       
       {/* Label area with category icons */}
-      {detailsEnabled && !hasRedundantBeaconTotals && (
+      {detailsEnabled && !isBeacon && (
         <View
           style={[
             styles.markerLabel,
@@ -9446,27 +9505,29 @@ const styles = StyleSheet.create({
   beaconVenueLensImage: {
     backgroundColor: 'rgba(8, 24, 34, 0.78)',
   },
-  beaconVenueLensVenueBadge: {
-    position: 'absolute',
-    right: -4,
-    bottom: -3,
-    minWidth: 15,
-    height: 12,
-    paddingHorizontal: 1.5,
-    borderRadius: 6,
+  beaconVenueRail: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(9, 21, 29, 0.96)',
+    paddingHorizontal: 5,
+    marginTop: 1,
+    borderRadius: 8,
+    backgroundColor: 'rgba(9, 25, 35, 0.96)',
     borderWidth: 1,
-    borderColor: '#FFFFFF',
+    borderColor: 'rgba(126, 201, 236, 0.78)',
+    shadowColor: '#06131B',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.32,
+    shadowRadius: 3,
+    elevation: 7,
   },
-  beaconVenueLensVenueCount: {
-    color: '#FFFFFF',
-    fontSize: 6,
-    lineHeight: 8,
+  beaconVenueRailText: {
+    color: '#D9F1FC',
+    fontSize: 6.5,
+    lineHeight: 9,
     fontWeight: '900',
-    marginLeft: 1,
+    letterSpacing: 0.25,
+    marginLeft: 2,
   },
   beaconCategorySpectrum: {
     position: 'absolute',
@@ -9811,6 +9872,24 @@ countText: {
     fontSize: 7.5,
     lineHeight: 10,
     fontWeight: '700',
+  },
+  clusterEventStageTotalContext: {
+    minWidth: 29,
+    height: 15,
+    marginLeft: 4,
+    paddingHorizontal: 4,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(216, 239, 250, 0.13)',
+    borderWidth: 0.75,
+    borderColor: 'rgba(195, 229, 244, 0.42)',
+  },
+  clusterEventStageTotalContextText: {
+    color: '#D8ECF6',
+    fontSize: 6.5,
+    lineHeight: 8,
+    fontWeight: '800',
   },
   clusterEventStageCompactOverflow: {
     color: '#AFC8D5',
