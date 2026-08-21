@@ -4,16 +4,22 @@ import {
   buildRouteStopFeatureCollection,
   getRouteBounds,
   getRouteCertaintyLabel,
+  getRouteFeatureCalloutPresentation,
+  getRouteSegmentCallout,
+  getRouteStopCallout,
   hasDrawableRoute,
   shouldSuppressOrdinaryMapMarkers,
 } from '../routeEvent';
 
 const routeEvent = {
   id: 'gold-cup',
+  address: 'Start and finish at Queen Charlotte Intermediate School',
   locationScope: 'route',
   routeData: {
     version: 1,
     status: 'partial',
+    sourceLabel: 'Official organizer route map',
+    geometrySource: 'Street-following trace of the organizer-listed route.',
     confirmedStreets: ['North River Road'],
     stops: [
       {
@@ -26,6 +32,7 @@ const routeEvent = {
       {
         id: 'finish',
         label: 'Parade finish',
+        address: 'Fitzroy Street, Charlottetown, PE',
         coordinates: { longitude: -63.126, latitude: 46.238 },
         kind: 'finish',
         certainty: 'confirmed',
@@ -115,6 +122,101 @@ describe('route event map contract', () => {
       northEast: [-63.126, 46.248],
       southWest: [-63.142, 46.238],
     });
+  });
+
+  it('builds a stop callout from specific metadata before event-level fallback', () => {
+    expect(getRouteStopCallout(routeEvent, 'finish')).toEqual(
+      expect.objectContaining({
+        title: 'Parade finish',
+        statusLabel: 'Confirmed finish',
+        locationText: 'Fitzroy Street, Charlottetown, PE',
+        sourceLabel: 'Official organizer route map',
+      })
+    );
+    expect(getRouteStopCallout(routeEvent, 'start')).toEqual(
+      expect.objectContaining({
+        statusLabel: 'Confirmed start',
+        locationText: 'Start and finish at Queen Charlotte Intermediate School',
+      })
+    );
+  });
+
+  it('does not mislabel an event start address as an intermediate stop address', () => {
+    const eventWithPossibleStop = {
+      ...routeEvent,
+      routeData: {
+        ...routeEvent.routeData,
+        stops: [
+          ...(routeEvent.routeData?.stops || []),
+          {
+            id: 'turnaround',
+            label: 'Possible turnaround',
+            coordinates: { longitude: -63.13, latitude: 46.24 },
+            kind: 'stop' as const,
+            certainty: 'approximate' as const,
+          },
+        ],
+      },
+    } as Event;
+
+    expect(getRouteStopCallout(eventWithPossibleStop, 'turnaround')).toEqual(
+      expect.objectContaining({
+        statusLabel: 'Possible stop',
+        locationText: undefined,
+      })
+    );
+  });
+
+  it('labels a shared start/finish point as both roles', () => {
+    const loopEvent = {
+      ...routeEvent,
+      routeData: {
+        ...routeEvent.routeData,
+        stops: [
+          {
+            id: 'shared-start-finish',
+            label: 'Start and finish — Cornwall Civic Centre',
+            coordinates: { longitude: -63.216882, latitude: 46.23067 },
+            kind: 'start' as const,
+            certainty: 'confirmed' as const,
+          },
+        ],
+      },
+    } as Event;
+
+    expect(getRouteStopCallout(loopEvent, 'shared-start-finish')).toEqual(
+      expect.objectContaining({ statusLabel: 'Confirmed start and finish' })
+    );
+  });
+
+  it('explains the evidence and certainty behind a tapped route line', () => {
+    expect(
+      getRouteSegmentCallout(routeEvent, 'listed-street-estimate', {
+        longitude: -63.132,
+        latitude: 46.242,
+      })
+    ).toEqual(
+      expect.objectContaining({
+        title: 'North River Road route section',
+        statusLabel: 'Estimated on organizer-listed streets',
+        locationText: 'Along North River Road',
+        description: 'Street-following trace of the organizer-listed route.',
+        sourceLabel: 'Official organizer route map',
+        coordinate: { longitude: -63.132, latitude: 46.242 },
+      })
+    );
+  });
+
+  it('keeps callouts inside map edges and below top controls', () => {
+    expect(
+      getRouteFeatureCalloutPresentation({ tapX: 20, tapY: 200, mapWidth: 390 })
+    ).toEqual({ anchorX: 0.08, placement: 'below' });
+    expect(
+      getRouteFeatureCalloutPresentation({ tapX: 370, tapY: 700, mapWidth: 390 })
+    ).toEqual({ anchorX: 0.92, placement: 'above' });
+    expect(
+      getRouteFeatureCalloutPresentation({ tapX: 195, tapY: 700, mapWidth: 390 })
+    ).toEqual({ anchorX: 0.5, placement: 'above' });
   });
 
   it('requires route scope and usable geometry', () => {

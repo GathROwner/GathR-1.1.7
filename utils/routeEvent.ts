@@ -37,6 +37,43 @@ export type RouteLineDisplayKind =
   | 'street_estimate'
   | 'suggested_connection';
 
+export type RouteFeatureCalloutData = {
+  featureType: 'stop' | 'segment';
+  id: string;
+  title: string;
+  statusLabel: string;
+  coordinate: RouteCoordinate;
+  locationText?: string;
+  timeLabel?: string;
+  description?: string;
+  sourceLabel?: string;
+};
+
+export type RouteFeatureCalloutPresentation = {
+  anchorX: number;
+  placement: 'above' | 'below';
+};
+
+export const getRouteFeatureCalloutPresentation = ({
+  tapX,
+  tapY,
+  mapWidth,
+}: {
+  tapX: number;
+  tapY: number;
+  mapWidth: number;
+}): RouteFeatureCalloutPresentation => ({
+  anchorX:
+    Number.isFinite(tapX) && Number.isFinite(mapWidth)
+      ? tapX < 160
+        ? 0.08
+        : tapX > mapWidth - 160
+          ? 0.92
+          : 0.5
+      : 0.5,
+  placement: Number.isFinite(tapY) && tapY < 360 ? 'below' : 'above',
+});
+
 const isValidCoordinate = (coordinate: unknown): coordinate is RouteCoordinate =>
   Boolean(
     coordinate &&
@@ -52,6 +89,16 @@ const isValidCoordinate = (coordinate: unknown): coordinate is RouteCoordinate =
 const toGeoJsonCoordinate = (
   coordinate: RouteCoordinate
 ): [number, number] => [coordinate.longitude, coordinate.latitude];
+
+const cleanOptionalText = (value: unknown): string | undefined => {
+  const text = String(value || '').trim();
+  return text || undefined;
+};
+
+const getSegmentMidpoint = (segment: EventRouteSegment): RouteCoordinate => {
+  const middleIndex = Math.floor(segment.coordinates.length / 2);
+  return segment.coordinates[middleIndex] || segment.coordinates[0];
+};
 
 export const getRouteSegments = (event: Event): EventRouteSegment[] =>
   (event.routeData?.segments || []).filter(
@@ -156,6 +203,100 @@ export const buildRouteStopFeatureCollection = (event: Event) => ({
     geometry: { type: 'Point', coordinates: toGeoJsonCoordinate(stop.coordinates) },
   })),
 });
+
+const getStopStatusLabel = (stop: EventRouteStop): string => {
+  if (/\bstart\b.*\bfinish\b|\bfinish\b.*\bstart\b/i.test(stop.label)) {
+    return stop.certainty === 'confirmed'
+      ? 'Confirmed start and finish'
+      : 'Possible start and finish';
+  }
+  const kind = stop.kind === 'stop' ? 'stop' : stop.kind;
+  return stop.certainty === 'confirmed'
+    ? `Confirmed ${kind}`
+    : `Possible ${kind}`;
+};
+
+const canUseEventAddressForStop = (event: Event, stop: EventRouteStop): boolean => {
+  if (stop.kind === 'stop') return false;
+  return /\b(start|finish)\b/i.test(String(event.address || ''));
+};
+
+/**
+ * Builds the user-facing evidence card for a route stop. Event-level addresses
+ * are used only when they explicitly describe a start or finish; a generic
+ * route/city address must not be presented as the address of an intermediate
+ * or uncertain stop.
+ */
+export const getRouteStopCallout = (
+  event: Event,
+  stopId: string
+): RouteFeatureCalloutData | null => {
+  const stop = getRouteStops(event).find(({ id }) => id === stopId);
+  if (!stop) return null;
+
+  return {
+    featureType: 'stop',
+    id: stop.id,
+    title: cleanOptionalText(stop.label) || 'Route stop',
+    statusLabel: getStopStatusLabel(stop),
+    coordinate: stop.coordinates,
+    locationText:
+      cleanOptionalText(stop.address) ||
+      (canUseEventAddressForStop(event, stop)
+        ? cleanOptionalText(event.address)
+        : undefined),
+    timeLabel: cleanOptionalText(stop.timeLabel),
+    description: cleanOptionalText(stop.description),
+    sourceLabel:
+      cleanOptionalText(stop.sourceLabel) ||
+      cleanOptionalText(event.routeData?.sourceLabel),
+  };
+};
+
+const getSegmentStatusLabel = (
+  displayKind: RouteLineDisplayKind
+): string => {
+  if (displayKind === 'confirmed') return 'Confirmed route section';
+  if (displayKind === 'street_estimate') {
+    return 'Estimated on organizer-listed streets';
+  }
+  return 'Suggested street connection';
+};
+
+/** Builds the evidence card for a rendered route line at the tapped point. */
+export const getRouteSegmentCallout = (
+  event: Event,
+  segmentId: string,
+  pressedCoordinate?: RouteCoordinate
+): RouteFeatureCalloutData | null => {
+  const segment = getRenderableRouteSegments(event).find(
+    ({ id }) => id === segmentId
+  );
+  if (!segment) return null;
+
+  const displayKind = getRouteSegmentDisplayKind(segment, event.routeData);
+  if (!displayKind) return null;
+
+  const streetName = cleanOptionalText(segment.streetName);
+  return {
+    featureType: 'segment',
+    id: segment.id,
+    title:
+      cleanOptionalText(segment.label) ||
+      (streetName ? `${streetName} route section` : 'Route section'),
+    statusLabel: getSegmentStatusLabel(displayKind),
+    coordinate: isValidCoordinate(pressedCoordinate)
+      ? pressedCoordinate
+      : getSegmentMidpoint(segment),
+    locationText: streetName ? `Along ${streetName}` : undefined,
+    description:
+      cleanOptionalText(segment.description) ||
+      cleanOptionalText(event.routeData?.geometrySource),
+    sourceLabel:
+      cleanOptionalText(segment.sourceLabel) ||
+      cleanOptionalText(event.routeData?.sourceLabel),
+  };
+};
 
 export const getRouteBounds = (
   event: Event

@@ -58,6 +58,7 @@ import EventImageLightbox from '../../components/map/EventImageLightbox';
 import HotspotHighlight from '../../components/map/HotspotHighlight';
 import MapTracePanel from '../../components/debug/MapTracePanel';
 import StaticDebugCallout from '../../components/map/StaticDebugCallout';
+import RouteFeatureCallout from '../../components/map/RouteFeatureCallout';
 
 // Import centralized date utilities
 import { 
@@ -123,11 +124,15 @@ import {
   buildRouteStopFeatureCollection,
   getRouteBounds,
   getRouteCertaintyLabel,
+  getRouteFeatureCalloutPresentation,
   getRenderableRouteSegments,
   getRouteSegmentDisplayKind,
+  getRouteSegmentCallout,
+  getRouteStopCallout,
   getRouteStops,
   hasDrawableRoute,
   shouldSuppressOrdinaryMapMarkers,
+  type RouteFeatureCalloutData,
 } from '../../utils/routeEvent';
 import {
   doesEventMatchAnyInterest,
@@ -3096,6 +3101,11 @@ useEffect(() => {
   const [mapFirstFrameRendered, setMapFirstFrameRendered] = useState<boolean>(false);
   const [mapTabOverlaysReady, setMapTabOverlaysReady] = useState<boolean>(Platform.OS !== 'android');
   const [activeRouteEvent, setActiveRouteEvent] = useState<Event | null>(null);
+  const [routeFeatureCallout, setRouteFeatureCallout] = useState<{
+    data: RouteFeatureCalloutData;
+    anchorX: number;
+    placement: 'above' | 'below';
+  } | null>(null);
   const activeRouteSegments = activeRouteEvent
     ? getRenderableRouteSegments(activeRouteEvent)
     : [];
@@ -3152,6 +3162,7 @@ useEffect(() => {
 
     const bounds = getRouteBounds(event);
     useMapStore.getState().setSelectedImageData(null);
+    setRouteFeatureCallout(null);
     setActiveRouteEvent(event);
 
     if (bounds) {
@@ -3184,12 +3195,14 @@ useEffect(() => {
         event_id: String(activeRouteEvent.id),
       });
     }
+    setRouteFeatureCallout(null);
     setActiveRouteEvent(null);
   }, [activeRouteEvent]);
   const locationSubscription = useRef<Location.LocationSubscription | null>(null);
   const calloutAnimationRequestRef = useRef(0);
   const calloutOpenTouchGuardUntilRef = useRef(0);
   const calloutOverlayDismissGuardUntilRef = useRef(0);
+  const routeFeaturePressGuardUntilRef = useRef(0);
   const presentedCalloutGuardKeyRef = useRef<string | null>(null);
   const filterPanelTouchGuardUntilRef = useRef(0);
   const sharedEventReturnGuardUntilRef = useRef(0);
@@ -6913,9 +6926,52 @@ lastOpenedClusterIdRef.current = cluster.id;
     zoomLevel,
   ]);
 
+  const handleRouteFeaturePress = (
+    featureType: 'stop' | 'segment',
+    pressEvent: any
+  ) => {
+    if (!activeRouteEvent) return;
+
+    const featureId = String(pressEvent?.features?.[0]?.properties?.id || '').trim();
+    if (!featureId) return;
+
+    const pressedCoordinate = {
+      longitude: Number(pressEvent?.coordinates?.longitude),
+      latitude: Number(pressEvent?.coordinates?.latitude),
+    };
+    const data = featureType === 'stop'
+      ? getRouteStopCallout(activeRouteEvent, featureId)
+      : getRouteSegmentCallout(activeRouteEvent, featureId, pressedCoordinate);
+    if (!data) return;
+
+    const mapWidth = mapDimensions?.width ?? Dimensions.get('window').width;
+    const tapX = Number(pressEvent?.point?.x);
+    const tapY = Number(pressEvent?.point?.y);
+    const { anchorX, placement } = getRouteFeatureCalloutPresentation({
+      tapX,
+      tapY,
+      mapWidth,
+    });
+
+    // ShapeSource presses can also bubble to MapView.onPress. Keep the blank-
+    // map dismiss handler from immediately closing the detail we just opened.
+    routeFeaturePressGuardUntilRef.current = Date.now() + 350;
+    setRouteFeatureCallout({ data, anchorX, placement });
+    amplitudeTrack('route_map_feature_opened', {
+      event_id: String(activeRouteEvent.id),
+      feature_id: featureId,
+      feature_type: featureType,
+      certainty_label: data.statusLabel,
+    });
+  };
+
   // Handle map press to close callout
   const handleMapPress = () => {
     const guardRemainingMs = Math.max(0, calloutOpenTouchGuardUntilRef.current - Date.now());
+    const routeFeatureGuardRemainingMs = Math.max(
+      0,
+      routeFeaturePressGuardUntilRef.current - Date.now()
+    );
     const filterGuardRemainingMs = Math.max(0, filterPanelTouchGuardUntilRef.current - Date.now());
     const sharedEventReturnGuardUntil = Math.max(
       sharedEventReturnGuardUntilRef.current,
@@ -6946,6 +7002,10 @@ lastOpenedClusterIdRef.current = cluster.id;
       logCalloutProbe('[CalloutProbe] handleMapPress ignored by post-open guard', {
         guardRemainingMs,
       });
+      return;
+    }
+
+    if (routeFeatureGuardRemainingMs > 0) {
       return;
     }
 
@@ -6996,6 +7056,10 @@ lastOpenedClusterIdRef.current = cluster.id;
     }
 
     dismissInterestCarousel('map-press');
+
+    if (routeFeatureCallout) {
+      setRouteFeatureCallout(null);
+    }
 
     // Only close if there's a callout currently open
     if (selectedVenues && selectedVenues.length > 0) {
@@ -9446,6 +9510,8 @@ onDidFinishLoadingMap={() => {
             <MapboxGL.ShapeSource
               id="active-route-confirmed-source"
               shape={buildRouteLineFeatureCollection(activeRouteEvent, 'confirmed') as any}
+              hitbox={{ width: 36, height: 36 }}
+              onPress={(event: any) => handleRouteFeaturePress('segment', event)}
             >
               <MapboxGL.LineLayer
                 id="active-route-confirmed-casing"
@@ -9472,6 +9538,8 @@ onDidFinishLoadingMap={() => {
             <MapboxGL.ShapeSource
               id="active-route-street-estimate-source"
               shape={buildRouteLineFeatureCollection(activeRouteEvent, 'street_estimate') as any}
+              hitbox={{ width: 36, height: 36 }}
+              onPress={(event: any) => handleRouteFeaturePress('segment', event)}
             >
               <MapboxGL.LineLayer
                 id="active-route-street-estimate-casing"
@@ -9500,6 +9568,8 @@ onDidFinishLoadingMap={() => {
             <MapboxGL.ShapeSource
               id="active-route-suggested-connection-source"
               shape={buildRouteLineFeatureCollection(activeRouteEvent, 'suggested_connection') as any}
+              hitbox={{ width: 36, height: 36 }}
+              onPress={(event: any) => handleRouteFeaturePress('segment', event)}
             >
               <MapboxGL.LineLayer
                 id="active-route-suggested-connection-casing"
@@ -9528,6 +9598,8 @@ onDidFinishLoadingMap={() => {
             <MapboxGL.ShapeSource
               id="active-route-stops-source"
               shape={buildRouteStopFeatureCollection(activeRouteEvent) as any}
+              hitbox={{ width: 52, height: 52 }}
+              onPress={(event: any) => handleRouteFeaturePress('stop', event)}
             >
               <MapboxGL.CircleLayer
                 id="active-route-stop-halos"
@@ -9584,6 +9656,30 @@ onDidFinishLoadingMap={() => {
                 }}
               />
             </MapboxGL.ShapeSource>
+
+            {routeFeatureCallout && (
+              <MapboxGL.MarkerView
+                key={`${routeFeatureCallout.data.featureType}-${routeFeatureCallout.data.id}`}
+                id="active-route-feature-callout"
+                coordinate={[
+                  routeFeatureCallout.data.coordinate.longitude,
+                  routeFeatureCallout.data.coordinate.latitude,
+                ]}
+                anchor={{
+                  x: routeFeatureCallout.anchorX,
+                  y: routeFeatureCallout.placement === 'above' ? 1.08 : -0.08,
+                }}
+                allowOverlap
+                allowOverlapWithPuck
+                isSelected
+              >
+                <RouteFeatureCallout
+                  data={routeFeatureCallout.data}
+                  placement={routeFeatureCallout.placement}
+                  onClose={() => setRouteFeatureCallout(null)}
+                />
+              </MapboxGL.MarkerView>
+            )}
           </>
         )}
 

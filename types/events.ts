@@ -41,13 +41,20 @@ export interface EventRouteStop {
   coordinates: RouteCoordinate;
   kind: 'start' | 'stop' | 'finish';
   certainty: 'confirmed' | 'approximate';
+  address?: string;
+  description?: string;
+  timeLabel?: string;
+  sourceLabel?: string;
 }
 
 export interface EventRouteSegment {
   id: string;
+  label?: string;
   streetName?: string;
   coordinates: RouteCoordinate[];
   certainty: 'confirmed' | 'approximate';
+  description?: string;
+  sourceLabel?: string;
   source?:
     | 'official_map'
     | 'official_streets'
