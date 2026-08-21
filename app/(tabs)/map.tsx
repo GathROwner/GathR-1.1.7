@@ -9742,8 +9742,11 @@ onDidFinishLoadingMap={() => {
 
       {activeRouteEvent && (
         <Pressable
+          collapsable={false}
+          accessible
           accessibilityRole="button"
           accessibilityLabel={`Open ${activeRouteEvent.title} details`}
+          accessibilityHint="Opens the event details"
           onPress={reopenActiveRouteLightbox}
           style={({ pressed }) => [
             styles.routeOverlayCard,
