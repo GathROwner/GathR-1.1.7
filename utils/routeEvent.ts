@@ -54,6 +54,9 @@ export type RouteFeatureCalloutPresentation = {
   placement: 'above' | 'below';
 };
 
+export const ROUTE_FEATURE_CALLOUT_WIDTH = 284;
+const ROUTE_FEATURE_CALLOUT_EDGE_GUTTER = 12;
+
 export const getRouteFeatureCalloutPresentation = ({
   tapX,
   tapY,
@@ -62,17 +65,29 @@ export const getRouteFeatureCalloutPresentation = ({
   tapX: number;
   tapY: number;
   mapWidth: number;
-}): RouteFeatureCalloutPresentation => ({
-  anchorX:
-    Number.isFinite(tapX) && Number.isFinite(mapWidth)
-      ? tapX < 160
-        ? 0.08
-        : tapX > mapWidth - 160
-          ? 0.92
-          : 0.5
-      : 0.5,
-  placement: Number.isFinite(tapY) && tapY < 360 ? 'below' : 'above',
-});
+}): RouteFeatureCalloutPresentation => {
+  let anchorX = 0.5;
+  if (Number.isFinite(tapX) && Number.isFinite(mapWidth) && mapWidth > 0) {
+    const maximumLeft = Math.max(
+      ROUTE_FEATURE_CALLOUT_EDGE_GUTTER,
+      mapWidth - ROUTE_FEATURE_CALLOUT_WIDTH - ROUTE_FEATURE_CALLOUT_EDGE_GUTTER
+    );
+    const preferredLeft = tapX - ROUTE_FEATURE_CALLOUT_WIDTH / 2;
+    const clampedLeft = Math.min(
+      maximumLeft,
+      Math.max(ROUTE_FEATURE_CALLOUT_EDGE_GUTTER, preferredLeft)
+    );
+    anchorX = Math.min(
+      1,
+      Math.max(0, (tapX - clampedLeft) / ROUTE_FEATURE_CALLOUT_WIDTH)
+    );
+  }
+
+  return {
+    anchorX,
+    placement: Number.isFinite(tapY) && tapY < 360 ? 'below' : 'above',
+  };
+};
 
 const isValidCoordinate = (coordinate: unknown): coordinate is RouteCoordinate =>
   Boolean(

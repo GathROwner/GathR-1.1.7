@@ -2,7 +2,10 @@ import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 
-import type { RouteFeatureCalloutData } from '../../utils/routeEvent';
+import {
+  ROUTE_FEATURE_CALLOUT_WIDTH,
+  type RouteFeatureCalloutData,
+} from '../../utils/routeEvent';
 
 type Props = {
   data: RouteFeatureCalloutData;
@@ -102,11 +105,11 @@ export default function RouteFeatureCallout({ data, placement, onClose }: Props)
 
 const styles = StyleSheet.create({
   annotationFrame: {
-    width: 284,
+    width: ROUTE_FEATURE_CALLOUT_WIDTH,
     alignItems: 'center',
   },
   card: {
-    width: 284,
+    width: ROUTE_FEATURE_CALLOUT_WIDTH,
     borderRadius: 14,
     backgroundColor: 'rgba(17, 32, 48, 0.98)',
     borderWidth: 1,

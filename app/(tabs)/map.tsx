@@ -3439,6 +3439,8 @@ useEffect(() => {
       (Platform.OS === 'android' && androidAncillaryOverlaysReleasedForClose) ||
       (!isCalloutOpen && (!hasPresentedCallout || isCalloutClosingVisually))
     );
+  const shouldRenderMapSideControls =
+    shouldRenderAncillaryOverlays && !routeFeatureCallout;
   const [pauseClusterMarkerAnimations, setPauseClusterMarkerAnimations] = useState(false);
   const clusterMarkerAnimationResumeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -9786,11 +9788,11 @@ onDidFinishLoadingMap={() => {
       {shouldMountAncillaryOverlays && (
         <View
           ref={ancillaryOverlayContainerRef}
-          pointerEvents={shouldRenderAncillaryOverlays ? 'box-none' : 'none'}
+          pointerEvents={shouldRenderMapSideControls ? 'box-none' : 'none'}
           style={[
             StyleSheet.absoluteFillObject,
             {
-              opacity: shouldRenderAncillaryOverlays ? 1 : 0,
+              opacity: shouldRenderMapSideControls ? 1 : 0,
               zIndex: 12,
               elevation: 12,
             },

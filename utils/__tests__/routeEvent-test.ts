@@ -208,15 +208,32 @@ describe('route event map contract', () => {
   });
 
   it('keeps callouts inside map edges and below top controls', () => {
-    expect(
-      getRouteFeatureCalloutPresentation({ tapX: 20, tapY: 200, mapWidth: 390 })
-    ).toEqual({ anchorX: 0.08, placement: 'below' });
-    expect(
-      getRouteFeatureCalloutPresentation({ tapX: 370, tapY: 700, mapWidth: 390 })
-    ).toEqual({ anchorX: 0.92, placement: 'above' });
+    const leftEdge = getRouteFeatureCalloutPresentation({
+      tapX: 20,
+      tapY: 200,
+      mapWidth: 390,
+    });
+    expect(leftEdge.placement).toBe('below');
+    expect(leftEdge.anchorX).toBeCloseTo(8 / 284);
+
+    const rightEdge = getRouteFeatureCalloutPresentation({
+      tapX: 370,
+      tapY: 700,
+      mapWidth: 390,
+    });
+    expect(rightEdge.placement).toBe('above');
+    expect(rightEdge.anchorX).toBeCloseTo(276 / 284);
+
     expect(
       getRouteFeatureCalloutPresentation({ tapX: 195, tapY: 700, mapWidth: 390 })
     ).toEqual({ anchorX: 0.5, placement: 'above' });
+
+    const formerlyClippedStop = getRouteFeatureCalloutPresentation({
+      tapX: 150,
+      tapY: 250,
+      mapWidth: 390,
+    });
+    expect(formerlyClippedStop.anchorX).toBeCloseTo(138 / 284);
   });
 
   it('requires route scope and usable geometry', () => {
