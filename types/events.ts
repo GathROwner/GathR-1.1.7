@@ -48,13 +48,19 @@ export interface EventRouteSegment {
   streetName?: string;
   coordinates: RouteCoordinate[];
   certainty: 'confirmed' | 'approximate';
-  source?: 'official_map' | 'official_streets' | 'connected_stops' | 'manual_review';
+  source?:
+    | 'official_map'
+    | 'official_streets'
+    | 'routed_streets'
+    | 'connected_stops'
+    | 'manual_review';
 }
 
 /**
  * Route display data is deliberately explicit about certainty. Confirmed
- * geometry may render as a solid line; approximate geometry must render as a
- * dashed line and must never be described as an official street-by-street path.
+ * geometry may render as a solid line. Non-official geometry may render only
+ * when it follows organizer-listed streets or a street-routing result. A raw
+ * straight-line connection between stops is not a route and must not render.
  */
 export interface EventRouteData {
   version: 1;

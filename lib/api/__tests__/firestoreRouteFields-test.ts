@@ -38,7 +38,9 @@ describe('Firestore route field mapping', () => {
           segments: [
             {
               id: 'approx-line',
+              streetName: 'North River Road',
               certainty: 'approximate',
+              source: 'manual_review',
               coordinates: [
                 { longitude: -63.14257, latitude: 46.2387131 },
                 { longitude: -63.13858, latitude: 46.2328 },

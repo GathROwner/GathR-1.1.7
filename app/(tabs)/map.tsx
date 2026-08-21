@@ -123,7 +123,8 @@ import {
   buildRouteStopFeatureCollection,
   getRouteBounds,
   getRouteCertaintyLabel,
-  getRouteSegments,
+  getRenderableRouteSegments,
+  getRouteSegmentDisplayKind,
   getRouteStops,
   hasDrawableRoute,
   shouldSuppressOrdinaryMapMarkers,
@@ -3095,13 +3096,22 @@ useEffect(() => {
   const [mapFirstFrameRendered, setMapFirstFrameRendered] = useState<boolean>(false);
   const [mapTabOverlaysReady, setMapTabOverlaysReady] = useState<boolean>(Platform.OS !== 'android');
   const [activeRouteEvent, setActiveRouteEvent] = useState<Event | null>(null);
-  const activeRouteSegments = activeRouteEvent ? getRouteSegments(activeRouteEvent) : [];
+  const activeRouteSegments = activeRouteEvent
+    ? getRenderableRouteSegments(activeRouteEvent)
+    : [];
   const activeRouteStops = activeRouteEvent ? getRouteStops(activeRouteEvent) : [];
   const hasConfirmedRouteSegments = activeRouteSegments.some(
     (segment) => segment.certainty === 'confirmed'
   );
-  const hasApproximateRouteSegments = activeRouteSegments.some(
-    (segment) => segment.certainty === 'approximate'
+  const hasStreetEstimateRouteSegments = activeRouteSegments.some(
+    (segment) =>
+      getRouteSegmentDisplayKind(segment, activeRouteEvent?.routeData) ===
+      'street_estimate'
+  );
+  const hasSuggestedConnectionRouteSegments = activeRouteSegments.some(
+    (segment) =>
+      getRouteSegmentDisplayKind(segment, activeRouteEvent?.routeData) ===
+      'suggested_connection'
   );
   const hasConfirmedRouteStops = activeRouteStops.some(
     (stop) => stop.certainty === 'confirmed'
@@ -9460,11 +9470,11 @@ onDidFinishLoadingMap={() => {
             </MapboxGL.ShapeSource>
 
             <MapboxGL.ShapeSource
-              id="active-route-approximate-source"
-              shape={buildRouteLineFeatureCollection(activeRouteEvent, 'approximate') as any}
+              id="active-route-street-estimate-source"
+              shape={buildRouteLineFeatureCollection(activeRouteEvent, 'street_estimate') as any}
             >
               <MapboxGL.LineLayer
-                id="active-route-approximate-casing"
+                id="active-route-street-estimate-casing"
                 style={{
                   lineColor: '#FFFFFF',
                   lineWidth: 8,
@@ -9475,12 +9485,40 @@ onDidFinishLoadingMap={() => {
                 }}
               />
               <MapboxGL.LineLayer
-                id="active-route-approximate-line"
+                id="active-route-street-estimate-line"
                 style={{
                   lineColor: '#1565C0',
                   lineWidth: 5,
                   lineOpacity: 0.82,
                   lineDasharray: [1.2, 1.2],
+                  lineCap: 'round',
+                  lineJoin: 'round',
+                }}
+              />
+            </MapboxGL.ShapeSource>
+
+            <MapboxGL.ShapeSource
+              id="active-route-suggested-connection-source"
+              shape={buildRouteLineFeatureCollection(activeRouteEvent, 'suggested_connection') as any}
+            >
+              <MapboxGL.LineLayer
+                id="active-route-suggested-connection-casing"
+                style={{
+                  lineColor: '#FFFFFF',
+                  lineWidth: 8,
+                  lineOpacity: 0.9,
+                  lineDasharray: [0.25, 1.75],
+                  lineCap: 'round',
+                  lineJoin: 'round',
+                }}
+              />
+              <MapboxGL.LineLayer
+                id="active-route-suggested-connection-line"
+                style={{
+                  lineColor: '#D98700',
+                  lineWidth: 5,
+                  lineOpacity: 0.9,
+                  lineDasharray: [0.25, 1.75],
                   lineCap: 'round',
                   lineJoin: 'round',
                 }}
@@ -9593,10 +9631,16 @@ onDidFinishLoadingMap={() => {
                 <Text style={styles.routeLegendText}>Confirmed</Text>
               </View>
             )}
-            {hasApproximateRouteSegments && (
+            {hasStreetEstimateRouteSegments && (
               <View style={styles.routeLegendItem}>
                 <Text style={styles.routeLegendDash}>— —</Text>
-                <Text style={styles.routeLegendText}>Approximate</Text>
+                <Text style={styles.routeLegendText}>Estimated streets</Text>
+              </View>
+            )}
+            {hasSuggestedConnectionRouteSegments && (
+              <View style={styles.routeLegendItem}>
+                <Text style={styles.routeLegendSuggestedDots}>•••</Text>
+                <Text style={styles.routeLegendText}>Suggested connection</Text>
               </View>
             )}
             {hasConfirmedRouteStops && (
@@ -9608,7 +9652,7 @@ onDidFinishLoadingMap={() => {
             {hasApproximateRouteStops && (
               <View style={styles.routeLegendItem}>
                 <View style={styles.routeLegendApproximateStop} />
-                <Text style={styles.routeLegendText}>Approximate stop</Text>
+                <Text style={styles.routeLegendText}>Possible stop</Text>
               </View>
             )}
           </View>
@@ -10036,6 +10080,14 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     marginRight: 5,
     marginTop: -2,
+  },
+  routeLegendSuggestedDots: {
+    color: '#F5A623',
+    fontSize: 16,
+    fontWeight: '900',
+    letterSpacing: 1,
+    marginRight: 5,
+    marginTop: -3,
   },
   routeLegendConfirmedStop: {
     width: 10,

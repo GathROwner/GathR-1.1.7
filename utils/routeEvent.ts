@@ -32,6 +32,11 @@ type StopFeature = {
   };
 };
 
+export type RouteLineDisplayKind =
+  | 'confirmed'
+  | 'street_estimate'
+  | 'suggested_connection';
+
 const isValidCoordinate = (coordinate: unknown): coordinate is RouteCoordinate =>
   Boolean(
     coordinate &&
@@ -58,6 +63,44 @@ export const getRouteSegments = (event: Event): EventRouteSegment[] =>
       segment.coordinates.every(isValidCoordinate)
   );
 
+const normalizeStreetName = (value: unknown): string =>
+  String(value || '')
+    .trim()
+    .toLocaleLowerCase('en-CA')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+
+/**
+ * Converts stored evidence into honest display semantics. In particular,
+ * connected_stops and unqualified manual-review chords return null: endpoints
+ * alone are not evidence that the event travels through the space between them.
+ */
+export const getRouteSegmentDisplayKind = (
+  segment: EventRouteSegment,
+  routeData?: EventRouteData | null
+): RouteLineDisplayKind | null => {
+  if (segment.certainty === 'confirmed') return 'confirmed';
+  if (segment.source === 'routed_streets') return 'suggested_connection';
+  if (segment.source === 'official_streets') return 'street_estimate';
+
+  const listedStreets = new Set(
+    (routeData?.confirmedStreets || []).map(normalizeStreetName).filter(Boolean)
+  );
+  if (
+    segment.streetName &&
+    listedStreets.has(normalizeStreetName(segment.streetName))
+  ) {
+    return 'street_estimate';
+  }
+
+  return null;
+};
+
+export const getRenderableRouteSegments = (event: Event): EventRouteSegment[] =>
+  getRouteSegments(event).filter(
+    (segment) => getRouteSegmentDisplayKind(segment, event.routeData) !== null
+  );
+
 export const getRouteStops = (event: Event): EventRouteStop[] =>
   (event.routeData?.stops || []).filter(
     (stop) =>
@@ -69,7 +112,7 @@ export const getRouteStops = (event: Event): EventRouteStop[] =>
 
 export const hasDrawableRoute = (event: Event): boolean =>
   event.locationScope === 'route' &&
-  (getRouteSegments(event).length > 0 || getRouteStops(event).length > 0);
+  (getRenderableRouteSegments(event).length > 0 || getRouteStops(event).length > 0);
 
 /**
  * Route focus is a temporary map presentation mode. Ordinary event and
@@ -82,11 +125,14 @@ export const shouldSuppressOrdinaryMapMarkers = (
 
 export const buildRouteLineFeatureCollection = (
   event: Event,
-  certainty: EventRouteSegment['certainty']
+  displayKind: RouteLineDisplayKind
 ) => ({
   type: 'FeatureCollection' as const,
-  features: getRouteSegments(event)
-    .filter((segment) => segment.certainty === certainty)
+  features: getRenderableRouteSegments(event)
+    .filter(
+      (segment) =>
+        getRouteSegmentDisplayKind(segment, event.routeData) === displayKind
+    )
     .map<LineFeature>((segment) => ({
       type: 'Feature',
       properties: { id: segment.id, certainty: segment.certainty },
@@ -115,7 +161,7 @@ export const getRouteBounds = (
   event: Event
 ): { northEast: [number, number]; southWest: [number, number] } | null => {
   const coordinates = [
-    ...getRouteSegments(event).flatMap((segment) => segment.coordinates),
+    ...getRenderableRouteSegments(event).flatMap((segment) => segment.coordinates),
     ...getRouteStops(event).map((stop) => stop.coordinates),
   ];
 
@@ -133,7 +179,28 @@ export const getRouteSourceUrl = (event: Event): string =>
   String(event.routeData?.sourceUrl || event.facebookUrl || event.ticketLinkEvents || '').trim();
 
 export const getRouteCertaintyLabel = (routeData?: EventRouteData | null): string => {
-  if (routeData?.status === 'verified') return 'Official route';
-  if (routeData?.status === 'partial') return 'Confirmed details + approximate line';
-  return 'Approximate route';
+  const event = { locationScope: 'route', routeData } as Event;
+  const displayKinds = new Set(
+    getRenderableRouteSegments(event).map((segment) =>
+      getRouteSegmentDisplayKind(segment, routeData)
+    )
+  );
+
+  if (routeData?.status === 'verified' && displayKinds.has('confirmed')) {
+    return 'Official route';
+  }
+  if (displayKinds.has('confirmed') && displayKinds.has('street_estimate')) {
+    return 'Confirmed streets + estimated connections';
+  }
+  if (displayKinds.has('street_estimate')) {
+    return 'Estimated along organizer-listed streets';
+  }
+  if (displayKinds.has('suggested_connection')) {
+    return 'Suggested street connection • route unconfirmed';
+  }
+  if (displayKinds.has('confirmed')) return 'Confirmed route section';
+  if (getRouteStops(event).length > 0) {
+    return 'Route unknown • showing possible stops';
+  }
+  return 'Route details unavailable';
 };
