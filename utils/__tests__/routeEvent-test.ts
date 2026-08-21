@@ -5,6 +5,7 @@ import {
   getRouteBounds,
   getRouteCertaintyLabel,
   hasDrawableRoute,
+  shouldSuppressOrdinaryMapMarkers,
 } from '../routeEvent';
 
 const routeEvent = {
@@ -75,5 +76,13 @@ describe('route event map contract', () => {
     expect(getRouteCertaintyLabel(routeEvent.routeData)).toBe(
       'Confirmed details + approximate line'
     );
+  });
+
+  it('suppresses unrelated markers only while a drawable route is focused', () => {
+    expect(shouldSuppressOrdinaryMapMarkers(routeEvent)).toBe(true);
+    expect(shouldSuppressOrdinaryMapMarkers(null)).toBe(false);
+    expect(
+      shouldSuppressOrdinaryMapMarkers({ ...routeEvent, routeData: undefined })
+    ).toBe(false);
   });
 });

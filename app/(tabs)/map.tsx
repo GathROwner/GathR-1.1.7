@@ -124,6 +124,7 @@ import {
   getRouteBounds,
   getRouteCertaintyLabel,
   hasDrawableRoute,
+  shouldSuppressOrdinaryMapMarkers,
 } from '../../utils/routeEvent';
 import {
   doesEventMatchAnyInterest,
@@ -8241,6 +8242,10 @@ Clustering refresh: keep zoom → store → recluster in sync
   // Keep MarkerViews mounted across tab switches; remounting all custom
   // clusters is the expensive part of returning to the Map tab on Android.
   const renderClusterMarkers = () => {
+    if (shouldSuppressOrdinaryMapMarkers(activeRouteEvent)) {
+      return null;
+    }
+
     const markerRenderStartedAt =
       __DEV__ && typeof performance !== 'undefined' && typeof performance.now === 'function'
         ? performance.now()

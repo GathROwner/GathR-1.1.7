@@ -71,6 +71,15 @@ export const hasDrawableRoute = (event: Event): boolean =>
   event.locationScope === 'route' &&
   (getRouteSegments(event).length > 0 || getRouteStops(event).length > 0);
 
+/**
+ * Route focus is a temporary map presentation mode. Ordinary event and
+ * special markers must leave the map so they cannot cover route lines or stop
+ * labels; the user-location puck remains a separate layer.
+ */
+export const shouldSuppressOrdinaryMapMarkers = (
+  activeRouteEvent?: Event | null
+): boolean => Boolean(activeRouteEvent && hasDrawableRoute(activeRouteEvent));
+
 export const buildRouteLineFeatureCollection = (
   event: Event,
   certainty: EventRouteSegment['certainty']

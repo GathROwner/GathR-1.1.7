@@ -27,6 +27,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 
 import ImageView from "react-native-image-viewing";
 import FallbackImage from '../common/FallbackImage';
+import GathRShimmerPill from '../common/GathRShimmerPill';
 import TicketCtaPill from '../common/TicketCtaPill';
 import EventActionLinkPill from '../common/EventActionLinkPill';
 import FamilyFriendlyBadge from '../common/FamilyFriendlyBadge';
@@ -1642,42 +1643,51 @@ const handleNonTicketAction = () => {
             </Text>
           </TouchableOpacity>
           
-          <TouchableOpacity 
-            style={[
-              styles.actionButton,
-              !routeEvent && isGuest && styles.disabledActionButton
-            ]} 
-            onPress={routeEvent ? handleRouteAction : handleDirections}
-            activeOpacity={!routeEvent && isGuest ? 1 : 0.7}
-            disabled={!routeEvent && isGuest}
-          >
-            <View style={styles.actionButtonContent}>
-              <MaterialIcons 
-                name={routeEvent ? 'alt-route' : 'directions'}
-                size={22} 
-                color={!routeEvent && isGuest ? "#666666" : "#FFFFFF"}
+          {routeEvent ? (
+            <View style={styles.routeActionSlot}>
+              <GathRShimmerPill
+                iconName="alt-route"
+                iconSize={20}
+                label={drawableRoute ? 'Show Route' : 'Route Info'}
+                onPress={handleRouteAction}
+                style={styles.routeActionPill}
+                testID="show-route-shimmer-button"
               />
-              {!routeEvent && isGuest && (
-                <View style={styles.lockIconOverlay}>
-                  <LockIcon 
-                    variant="inline" 
-                    size={10} 
-                    showText={false}
-                  />
-                </View>
-              )}
             </View>
-            <Text style={[
-              styles.actionText,
-              !routeEvent && isGuest && styles.disabledActionText
-            ]}>
-              {routeEvent
-                ? drawableRoute
-                  ? 'Show Route'
-                  : 'Route Info'
-                : 'Directions'}
-            </Text>
-          </TouchableOpacity>
+          ) : (
+            <TouchableOpacity
+              style={[
+                styles.actionButton,
+                isGuest && styles.disabledActionButton
+              ]}
+              onPress={handleDirections}
+              activeOpacity={isGuest ? 1 : 0.7}
+              disabled={isGuest}
+            >
+              <View style={styles.actionButtonContent}>
+                <MaterialIcons
+                  name="directions"
+                  size={22}
+                  color={isGuest ? "#666666" : "#FFFFFF"}
+                />
+                {isGuest && (
+                  <View style={styles.lockIconOverlay}>
+                    <LockIcon
+                      variant="inline"
+                      size={10}
+                      showText={false}
+                    />
+                  </View>
+                )}
+              </View>
+              <Text style={[
+                styles.actionText,
+                isGuest && styles.disabledActionText
+              ]}>
+                Directions
+              </Text>
+            </TouchableOpacity>
+          )}
           
           {/* Only add the tickets button to action container if not displayed next to price already */}
           {hasTicketLink && !hasDisplayableTicketPrice(updatedEvent.ticketPrice) && (
@@ -2158,6 +2168,17 @@ description: {
   padding: 8, // was 10
   position: 'relative',
 },
+
+  routeActionSlot: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 8,
+  },
+  routeActionPill: {
+    minHeight: 44,
+    paddingHorizontal: 16,
+    paddingVertical: 9,
+  },
 
   actionButtonContent: {
     position: 'relative',
