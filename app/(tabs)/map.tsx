@@ -3105,6 +3105,7 @@ useEffect(() => {
     data: RouteFeatureCalloutData;
     anchorX: number;
     placement: 'above' | 'below';
+    renderKey: number;
   } | null>(null);
   const activeRouteSegments = activeRouteEvent
     ? getRenderableRouteSegments(activeRouteEvent)
@@ -3145,6 +3146,7 @@ useEffect(() => {
   const ancillaryOverlayContainerRef = useRef<View>(null);
   const androidRetapOverlayRef = useRef<View>(null);
   const mapRef = useRef<MapboxGL.MapView>(null);
+  const routeFeatureCalloutRequestRef = useRef(0);
   const mapStyleSwitchInFlightRef = useRef(false);
   const pendingMapStyleCameraRef = useRef<{
     center: [number, number] | null;
@@ -3162,6 +3164,7 @@ useEffect(() => {
 
     const bounds = getRouteBounds(event);
     useMapStore.getState().setSelectedImageData(null);
+    routeFeatureCalloutRequestRef.current += 1;
     setRouteFeatureCallout(null);
     setActiveRouteEvent(event);
 
@@ -3195,6 +3198,7 @@ useEffect(() => {
         event_id: String(activeRouteEvent.id),
       });
     }
+    routeFeatureCalloutRequestRef.current += 1;
     setRouteFeatureCallout(null);
     setActiveRouteEvent(null);
   }, [activeRouteEvent]);
@@ -6928,7 +6932,7 @@ lastOpenedClusterIdRef.current = cluster.id;
     zoomLevel,
   ]);
 
-  const handleRouteFeaturePress = (
+  const handleRouteFeaturePress = async (
     featureType: 'stop' | 'segment',
     pressEvent: any
   ) => {
@@ -6946,6 +6950,28 @@ lastOpenedClusterIdRef.current = cluster.id;
       : getRouteSegmentCallout(activeRouteEvent, featureId, pressedCoordinate);
     if (!data) return;
 
+    const requestId = routeFeatureCalloutRequestRef.current + 1;
+    routeFeatureCalloutRequestRef.current = requestId;
+    // ShapeSource presses can also bubble to MapView.onPress. Set the guard
+    // before awaiting native projection so a fast bubble cannot dismiss the
+    // detail that is about to open.
+    routeFeaturePressGuardUntilRef.current = Date.now() + 500;
+
+    let projectedPoint: readonly number[] | null = null;
+    try {
+      projectedPoint = await mapRef.current?.getPointInView([
+        data.coordinate.longitude,
+        data.coordinate.latitude,
+      ]) ?? null;
+    } catch {
+      // The press-event point remains a safe fallback while the map is
+      // changing style or camera and native projection is briefly unavailable.
+    }
+
+    // A second tap or close action may occur before native projection returns.
+    // Never let the older asynchronous result replace the user's latest choice.
+    if (requestId !== routeFeatureCalloutRequestRef.current) return;
+
     const mapWidth = mapDimensions?.width ?? Dimensions.get('window').width;
     const tapX = Number(pressEvent?.point?.x);
     const tapY = Number(pressEvent?.point?.y);
@@ -6953,12 +6979,10 @@ lastOpenedClusterIdRef.current = cluster.id;
       tapX,
       tapY,
       mapWidth,
+      projectedPoint,
     });
 
-    // ShapeSource presses can also bubble to MapView.onPress. Keep the blank-
-    // map dismiss handler from immediately closing the detail we just opened.
-    routeFeaturePressGuardUntilRef.current = Date.now() + 350;
-    setRouteFeatureCallout({ data, anchorX, placement });
+    setRouteFeatureCallout({ data, anchorX, placement, renderKey: requestId });
     amplitudeTrack('route_map_feature_opened', {
       event_id: String(activeRouteEvent.id),
       feature_id: featureId,
@@ -7060,6 +7084,7 @@ lastOpenedClusterIdRef.current = cluster.id;
     dismissInterestCarousel('map-press');
 
     if (routeFeatureCallout) {
+      routeFeatureCalloutRequestRef.current += 1;
       setRouteFeatureCallout(null);
     }
 
@@ -9513,7 +9538,7 @@ onDidFinishLoadingMap={() => {
               id="active-route-confirmed-source"
               shape={buildRouteLineFeatureCollection(activeRouteEvent, 'confirmed') as any}
               hitbox={{ width: 36, height: 36 }}
-              onPress={(event: any) => handleRouteFeaturePress('segment', event)}
+              onPress={(event: any) => void handleRouteFeaturePress('segment', event)}
             >
               <MapboxGL.LineLayer
                 id="active-route-confirmed-casing"
@@ -9541,7 +9566,7 @@ onDidFinishLoadingMap={() => {
               id="active-route-street-estimate-source"
               shape={buildRouteLineFeatureCollection(activeRouteEvent, 'street_estimate') as any}
               hitbox={{ width: 36, height: 36 }}
-              onPress={(event: any) => handleRouteFeaturePress('segment', event)}
+              onPress={(event: any) => void handleRouteFeaturePress('segment', event)}
             >
               <MapboxGL.LineLayer
                 id="active-route-street-estimate-casing"
@@ -9571,7 +9596,7 @@ onDidFinishLoadingMap={() => {
               id="active-route-suggested-connection-source"
               shape={buildRouteLineFeatureCollection(activeRouteEvent, 'suggested_connection') as any}
               hitbox={{ width: 36, height: 36 }}
-              onPress={(event: any) => handleRouteFeaturePress('segment', event)}
+              onPress={(event: any) => void handleRouteFeaturePress('segment', event)}
             >
               <MapboxGL.LineLayer
                 id="active-route-suggested-connection-casing"
@@ -9601,7 +9626,7 @@ onDidFinishLoadingMap={() => {
               id="active-route-stops-source"
               shape={buildRouteStopFeatureCollection(activeRouteEvent) as any}
               hitbox={{ width: 52, height: 52 }}
-              onPress={(event: any) => handleRouteFeaturePress('stop', event)}
+              onPress={(event: any) => void handleRouteFeaturePress('stop', event)}
             >
               <MapboxGL.CircleLayer
                 id="active-route-stop-halos"
@@ -9661,7 +9686,7 @@ onDidFinishLoadingMap={() => {
 
             {routeFeatureCallout && (
               <MapboxGL.MarkerView
-                key={`${routeFeatureCallout.data.featureType}-${routeFeatureCallout.data.id}`}
+                key={`${routeFeatureCallout.data.featureType}-${routeFeatureCallout.data.id}-${routeFeatureCallout.renderKey}`}
                 id="active-route-feature-callout"
                 coordinate={[
                   routeFeatureCallout.data.coordinate.longitude,
@@ -9678,7 +9703,10 @@ onDidFinishLoadingMap={() => {
                 <RouteFeatureCallout
                   data={routeFeatureCallout.data}
                   placement={routeFeatureCallout.placement}
-                  onClose={() => setRouteFeatureCallout(null)}
+                  onClose={() => {
+                    routeFeatureCalloutRequestRef.current += 1;
+                    setRouteFeatureCallout(null);
+                  }}
                 />
               </MapboxGL.MarkerView>
             )}

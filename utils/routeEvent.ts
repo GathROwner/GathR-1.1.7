@@ -61,31 +61,38 @@ export const getRouteFeatureCalloutPresentation = ({
   tapX,
   tapY,
   mapWidth,
+  projectedPoint,
 }: {
   tapX: number;
   tapY: number;
   mapWidth: number;
+  projectedPoint?: readonly number[] | null;
 }): RouteFeatureCalloutPresentation => {
+  const projectedX = Number(projectedPoint?.[0]);
+  const projectedY = Number(projectedPoint?.[1]);
+  const resolvedTapX = Number.isFinite(projectedX) ? projectedX : tapX;
+  const resolvedTapY = Number.isFinite(projectedY) ? projectedY : tapY;
   let anchorX = 0.5;
-  if (Number.isFinite(tapX) && Number.isFinite(mapWidth) && mapWidth > 0) {
+  if (Number.isFinite(resolvedTapX) && Number.isFinite(mapWidth) && mapWidth > 0) {
     const maximumLeft = Math.max(
       ROUTE_FEATURE_CALLOUT_EDGE_GUTTER,
       mapWidth - ROUTE_FEATURE_CALLOUT_WIDTH - ROUTE_FEATURE_CALLOUT_EDGE_GUTTER
     );
-    const preferredLeft = tapX - ROUTE_FEATURE_CALLOUT_WIDTH / 2;
+    const preferredLeft = resolvedTapX - ROUTE_FEATURE_CALLOUT_WIDTH / 2;
     const clampedLeft = Math.min(
       maximumLeft,
       Math.max(ROUTE_FEATURE_CALLOUT_EDGE_GUTTER, preferredLeft)
     );
     anchorX = Math.min(
       1,
-      Math.max(0, (tapX - clampedLeft) / ROUTE_FEATURE_CALLOUT_WIDTH)
+      Math.max(0, (resolvedTapX - clampedLeft) / ROUTE_FEATURE_CALLOUT_WIDTH)
     );
   }
 
   return {
     anchorX,
-    placement: Number.isFinite(tapY) && tapY < 360 ? 'below' : 'above',
+    placement:
+      Number.isFinite(resolvedTapY) && resolvedTapY < 360 ? 'below' : 'above',
   };
 };
 

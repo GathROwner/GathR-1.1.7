@@ -236,6 +236,30 @@ describe('route event map contract', () => {
     expect(formerlyClippedStop.anchorX).toBeCloseTo(138 / 284);
   });
 
+  it('uses the currently projected map position instead of a stale press point', () => {
+    const presentation = getRouteFeatureCalloutPresentation({
+      tapX: 370,
+      tapY: 250,
+      mapWidth: 390,
+      projectedPoint: [150, 700],
+    });
+
+    expect(presentation.anchorX).toBeCloseTo(138 / 284);
+    expect(presentation.placement).toBe('above');
+  });
+
+  it('falls back to the press point when native map projection is unavailable', () => {
+    const presentation = getRouteFeatureCalloutPresentation({
+      tapX: 370,
+      tapY: 250,
+      mapWidth: 390,
+      projectedPoint: [Number.NaN, Number.NaN],
+    });
+
+    expect(presentation.anchorX).toBeCloseTo(276 / 284);
+    expect(presentation.placement).toBe('below');
+  });
+
   it('requires route scope and usable geometry', () => {
     expect(hasDrawableRoute(routeEvent)).toBe(true);
     expect(hasDrawableRoute({ ...routeEvent, locationScope: 'area' })).toBe(false);
