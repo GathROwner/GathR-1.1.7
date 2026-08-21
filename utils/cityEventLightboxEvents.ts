@@ -1,7 +1,7 @@
 import type { Event } from '../types/events';
 import type { FilterCriteria } from '../types/filter';
 import { doesEventMatchInterestCarouselBaseFilters } from './interestCarouselFilterUtils';
-import { isCityLevelEvent } from './locationScope';
+import { isAreaExperienceEvent } from './locationScope';
 
 type BuildCityEventLightboxEventsParams = {
   onScreenEvents: Event[];
@@ -14,7 +14,7 @@ export const buildCityEventLightboxEvents = ({
 }: BuildCityEventLightboxEventsParams): Event[] => {
   const seenIds = new Set<string>();
   return onScreenEvents.filter((event) => {
-    if (!isCityLevelEvent(event)) {
+    if (!isAreaExperienceEvent(event)) {
       return false;
     }
 

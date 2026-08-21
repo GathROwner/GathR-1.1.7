@@ -27,7 +27,7 @@ import {
   markInterestFilterPerfAction,
   traceInterestFilterPerf,
 } from '../../utils/interestFilterPerfTrace';
-import { isCityLevelEvent } from '../../utils/locationScope';
+import { isAreaExperienceEvent } from '../../utils/locationScope';
 
 const readAnimatedValue = (value: Animated.Value): number | string =>
   typeof (value as any).__getValue === 'function' ? (value as any).__getValue() : 'unknown';
@@ -924,7 +924,7 @@ const InterestsCarousel: React.FC = () => {
             currentIndex={selectedImageData.currentIndex}
             onNavigate={handleNavigate}
             onViewVenue={handleViewVenueFromLightbox}
-            isCityEvent={isCityLevelEvent(selectedImageData.event)}
+            isCityEvent={isAreaExperienceEvent(selectedImageData.event)}
           />
         </Modal>
       )}

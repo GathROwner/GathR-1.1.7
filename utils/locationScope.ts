@@ -27,6 +27,17 @@ export const isCityLevelEvent = (event: Event): boolean =>
   event.locationScope === 'city' || event.locationScope === 'area';
 
 /**
+ * Events represented by the gold Area treatment: citywide, area-wide, and
+ * route experiences. Route remains a distinct scope so map geometry and
+ * certainty can be handled without pretending it is a venue.
+ */
+export const isAreaExperienceEvent = (event: Event): boolean =>
+  isScopedLocationEvent(event);
+
+export const isRouteEvent = (event: Event): boolean =>
+  event.locationScope === 'route';
+
+/**
  * Sentinel category for the city-events filter pill. Not a real event
  * category — matchers special-case it to isCityLevelEvent (same pattern as
  * __FILTER_PILLS_HIDE__).

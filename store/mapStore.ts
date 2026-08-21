@@ -72,7 +72,11 @@ import { DEFAULT_FILTER_CRITERIA } from '../types/filter';
 import { getHasNewContent } from './clusterInteractionStore';
 
 // Shared scoped-location (city-level) predicates
-import { isCityLevelEvent, isScopedLocationEvent } from '../utils/locationScope';
+import {
+  isAreaExperienceEvent,
+  isRouteEvent,
+  isScopedLocationEvent,
+} from '../utils/locationScope';
 import {
   doesEventMatchCategoryOrFacet,
   getEventFacetKeys,
@@ -973,7 +977,8 @@ const clusterVenues = (venues: Venue[], zoom: number = 12): Cluster[] => {
       const timeStatus = determineClusterTimeStatus(venuesInCluster, timeContext);
       const interestLevel = calculateInterestLevel(venuesInCluster);
       const isBroadcasting = timeStatus === 'now';
-      const containsCityLevelEvent = allEvents.some(isCityLevelEvent);
+      const containsCityLevelEvent = allEvents.some(isAreaExperienceEvent);
+      const containsRouteEvent = allEvents.some(isRouteEvent);
 
       const clusterId = generateClusterId(venuesInCluster);
 
@@ -1000,7 +1005,8 @@ const clusterVenues = (venues: Venue[], zoom: number = 12): Cluster[] => {
         specialCount,
         categories,
         hasNewContent,
-        containsCityLevelEvent
+        containsCityLevelEvent,
+        containsRouteEvent
       });
     } else {
       // Single point feature
@@ -1018,7 +1024,8 @@ const clusterVenues = (venues: Venue[], zoom: number = 12): Cluster[] => {
       // Use ONLY venue.locationKey for stable tracking across zoom levels
       const stableVenueId = v.locationKey;
       const hasNewContent = getHasNewContent(stableVenueId, allEventIds);
-      const containsCityLevelEvent = allEvents.some(isCityLevelEvent);
+      const containsCityLevelEvent = allEvents.some(isAreaExperienceEvent);
+      const containsRouteEvent = allEvents.some(isRouteEvent);
 
       // console.log(`[NewContent][Single] Venue: ${v.venue}, StableVenueID: ${stableVenueId}, EventIDs: [${allEventIds.join(',')}], HasNew: ${hasNewContent}`);
 
@@ -1033,7 +1040,8 @@ const clusterVenues = (venues: Venue[], zoom: number = 12): Cluster[] => {
         specialCount,
         categories,
         hasNewContent,
-        containsCityLevelEvent
+        containsCityLevelEvent,
+        containsRouteEvent
       });
     }
   }
@@ -1100,6 +1108,10 @@ export const useMapStore = create<MapState>((set, get) => ({
   // Lightbox state for event image viewing
   selectedImageData: null,
 
+  // Cross-tab handoff for route events. The Map tab consumes and clears this
+  // value as soon as it becomes focused.
+  pendingRouteEvent: null,
+
   // Add the cluster visibility check utility
   shouldClusterBeVisible: shouldClusterBeVisible,
   
@@ -1131,6 +1143,10 @@ export const useMapStore = create<MapState>((set, get) => ({
    */
   setSelectedImageData: (data) => {
     set({ selectedImageData: data });
+  },
+
+  setPendingRouteEvent: (event) => {
+    set({ pendingRouteEvent: event });
   },
 
   /**
@@ -1233,7 +1249,8 @@ export const useMapStore = create<MapState>((set, get) => ({
         specialCount,
         categories,
         timeStatus: determineClusterTimeStatus(venues, timeContext),
-        containsCityLevelEvent: venueEvents.some(isCityLevelEvent),
+        containsCityLevelEvent: venueEvents.some(isAreaExperienceEvent),
+        containsRouteEvent: venueEvents.some(isRouteEvent),
       };
     };
 

@@ -286,6 +286,28 @@ describe('pruneExpiredEvents ticker action', () => {
   });
 });
 
+describe('route event cross-tab handoff', () => {
+  it('queues the named route event and clears it after the Map consumes it', () => {
+    const routeEvent = makeEvent({
+      id: 'cityevt_gold_cup_route',
+      title: '2026 Gold Cup Parade',
+      venue: 'Gold Cup Parade Route',
+      locationScope: 'route',
+      mapMode: 'route',
+    });
+
+    useMapStore.getState().setPendingRouteEvent(routeEvent);
+    expect(useMapStore.getState().pendingRouteEvent).toMatchObject({
+      id: 'cityevt_gold_cup_route',
+      title: '2026 Gold Cup Parade',
+      venue: 'Gold Cup Parade Route',
+    });
+
+    useMapStore.getState().setPendingRouteEvent(null);
+    expect(useMapStore.getState().pendingRouteEvent).toBeNull();
+  });
+});
+
 describe('engine parity: getEventTimeStatus (dateUtils) vs getEventTimeStatusFast (mapStore)', () => {
   const fixtures: Array<[string, Event]> = [
     ['ended yesterday', endedYesterday()],

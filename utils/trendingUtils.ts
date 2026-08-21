@@ -4,7 +4,7 @@ import { doesEventMatchInterestCarouselBaseFilters } from './interestCarouselFil
 import { getEventHotEngagementScore, getHotInterestShortLabel } from './hotInterestCarouselUtils';
 import { combineDateAndTime, getEventTimeStatus } from './dateUtils';
 import { isEventPast } from './eventExpiry';
-import { CITY_EVENTS_CATEGORY, isCityLevelEvent } from './locationScope';
+import { CITY_EVENTS_CATEGORY, isAreaExperienceEvent } from './locationScope';
 import { doesEventMatchCategoryOrFacet } from './familyFriendly';
 
 // Target list size, not a cap: every user interest is guaranteed one slot, so
@@ -54,7 +54,7 @@ const doesEventMatchActiveTrendingFilters = (
 
   // City-events sentinel: the active city filter matches by location scope.
   if (category === CITY_EVENTS_CATEGORY) {
-    return isCityLevelEvent(event);
+    return isAreaExperienceEvent(event);
   }
 
   return doesEventMatchCategoryOrFacet(event, category);
@@ -182,11 +182,11 @@ export const buildTrendingEvents = ({
 
   // City-level (festival) events get one guaranteed slot, mirroring the
   // per-interest guarantee: inclusion, not position.
-  const hasCityCandidate = selected.some((candidate) => isCityLevelEvent(candidate.event));
+  const hasCityCandidate = selected.some((candidate) => isAreaExperienceEvent(candidate.event));
   if (!hasCityCandidate) {
     const topCityCandidate = sorted.find(
       (candidate) =>
-        isCityLevelEvent(candidate.event) && !selectedIds.has(String(candidate.event.id))
+        isAreaExperienceEvent(candidate.event) && !selectedIds.has(String(candidate.event.id))
     );
     if (topCityCandidate) {
       selected.push(topCityCandidate);

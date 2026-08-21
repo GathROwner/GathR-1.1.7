@@ -91,6 +91,11 @@ export interface MapState {
     source?: 'deep_link' | 'trending_manual' | 'trending_auto' | 'city_event_marker';
   } | null;
 
+  // Route selected from any tab and waiting for the Map tab to display it.
+  // This keeps "Show Route" inside GathR instead of falling back to a browser
+  // when the lightbox was opened from Events, Specials, or a carousel.
+  pendingRouteEvent: Event | null;
+
   // Cluster visibility utility
   shouldClusterBeVisible: (cluster: Cluster, criteria: FilterCriteria) => boolean;
   
@@ -130,6 +135,7 @@ export interface MapState {
     currentIndex?: number;
     source?: 'deep_link' | 'trending_manual' | 'trending_auto' | 'city_event_marker';
   } | null) => void;
+  setPendingRouteEvent: (event: Event | null) => void;
   fetchEvents: () => Promise<void>;
   prefetchIfStale: (maxAgeMs?: number) => Promise<void>;
   pruneExpiredEvents: () => void;

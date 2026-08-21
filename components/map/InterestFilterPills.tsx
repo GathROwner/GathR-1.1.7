@@ -293,7 +293,7 @@ const InterestFilterPills: React.FC = () => {
     });
   }, [userInterests, eventCountByKey, specialCountByKey, newContentCountByInterestKey, filterCriteria]);
 
-  // City-level (festival) events on screen that pass the base filters; the
+  // Area experiences (city/area/route) on screen that pass the base filters; the
   // pinned gold pill only shows when this is non-zero.
   const cityEventsForLightbox = useMemo(
     () => buildCityEventLightboxEvents({ onScreenEvents, filterCriteria }),
@@ -499,6 +499,7 @@ const InterestFilterPills: React.FC = () => {
       active: true,
       on_screen_city_events: cityEventCount,
       opens_lightbox: true,
+      area_experience_count: cityEventCount,
     });
 
     if (interestCarouselFilter?.status === 'active') {
@@ -750,7 +751,7 @@ const InterestFilterPills: React.FC = () => {
       style={[styles.stack, { opacity: visibilityAnim }]}
       pointerEvents={activeFilterPanel ? 'none' : 'box-none'}
     >
-      {/* Pinned city-events pill - outside the looping list so it never
+      {/* Pinned Area pill - outside the looping list so it never
           participates in the loop/snap math */}
       {showCityPill && (
         <View style={styles.cityPillWrapper}>
@@ -764,7 +765,7 @@ const InterestFilterPills: React.FC = () => {
           >
             <Animated.View style={{ marginRight: iconMargin }}>
               <MaterialIcons
-                name="festival"
+                name="map"
                 size={18}
                 color={cityFilterActive ? '#FFFFFF' : '#6B4E16'}
               />
@@ -780,7 +781,7 @@ const InterestFilterPills: React.FC = () => {
                 },
               ]}
             >
-              City
+              Area
             </Animated.Text>
             <Animated.View
               style={[

@@ -89,7 +89,8 @@ export interface FirestoreEventMetadata {
   locationProvince?: string | null;
   locationPrecision?: 'exact' | 'approximate' | 'city_centroid' | 'none' | null;
   locationReviewStatus?: 'not_needed' | 'needs_review' | 'approved' | 'rejected' | null;
-  mapMode?: 'venue' | 'area' | 'none' | null;
+  mapMode?: 'venue' | 'area' | 'route' | 'none' | null;
+  routeData?: import('./events').EventRouteData | null;
 }
 
 /**
@@ -146,7 +147,8 @@ export interface FirestoreEvent {
   locationProvince?: string | null;
   locationPrecision?: 'exact' | 'approximate' | 'city_centroid' | 'none' | null;
   locationReviewStatus?: 'not_needed' | 'needs_review' | 'approved' | 'rejected' | null;
-  mapMode?: 'venue' | 'area' | 'none' | null;
+  mapMode?: 'venue' | 'area' | 'route' | 'none' | null;
+  routeData?: import('./events').EventRouteData | null;
   category: string | null;  // Can be null
   familyFriendlyScore?: number | null;
   familyFriendlyLevel?: 'unlikely' | 'possible' | 'likely' | 'high' | null;

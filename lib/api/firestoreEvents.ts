@@ -274,6 +274,7 @@ export function normalizeFirestoreEvent(fsEvent: FirestoreEvent): Event {
     locationReviewStatus:
       fsEvent.locationReviewStatus ?? fsEvent.metadata?.locationReviewStatus ?? null,
     mapMode: fsEvent.mapMode ?? fsEvent.metadata?.mapMode ?? null,
+    routeData: fsEvent.routeData ?? fsEvent.metadata?.routeData ?? null,
 
     // Date/time
     startDate: fsEvent.startDate || '',

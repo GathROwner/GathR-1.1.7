@@ -117,7 +117,14 @@ import {
   markTabTracePhase,
 } from '../../utils/tabSwitchTrace';
 import { useReduceMotion } from '../../hooks/useReduceMotion';
-import { isCityLevelEvent } from '../../utils/locationScope';
+import { isAreaExperienceEvent } from '../../utils/locationScope';
+import {
+  buildRouteLineFeatureCollection,
+  buildRouteStopFeatureCollection,
+  getRouteBounds,
+  getRouteCertaintyLabel,
+  hasDrawableRoute,
+} from '../../utils/routeEvent';
 import {
   doesEventMatchAnyInterest,
 } from '../../utils/familyFriendly';
@@ -398,7 +405,7 @@ const prepareClusterCallout = (
         const interestScore = matchesInterest ? 100 : 0;
         // City-level (festival) events lead the callout beneath their
         // lightbox: above interest matches, below saved events/favorites.
-        const cityEventScore = CITY_EVENT_UI_ENABLED && isCityLevelEvent(event) ? 250 : 0;
+        const cityEventScore = CITY_EVENT_UI_ENABLED && isAreaExperienceEvent(event) ? 250 : 0;
 
         const timeScore = isEventNow(event.startDate, event.startTime, event.endDate, event.endTime)
           ? 10
@@ -557,6 +564,7 @@ type AndroidClusterMarkerFeatureProperties = {
   cityGlowRadius1: number;
   cityGlowRadius2: number;
   containsCityLevelEvent: boolean;
+  containsRouteEvent: boolean;
   categoryCountLabel: string;
   categoryIconImage: string;
   categoryTextColor: string;
@@ -1018,6 +1026,8 @@ const buildAndroidClusterMarkerShape = (
       const pulseRing3 = getPulseRing(8);
       const containsCityLevelEvent =
         CITY_EVENT_UI_ENABLED && !!cluster.containsCityLevelEvent;
+      const containsRouteEvent =
+        CITY_EVENT_UI_ENABLED && !!cluster.containsRouteEvent;
       // Gold glow rings for city-level events: same pulse math as broadcast
       // rings; constant ring under reduce-motion.
       const getCityGlowRing = (offset: number) => {
@@ -1068,6 +1078,7 @@ const buildAndroidClusterMarkerShape = (
           cityGlowRadius1: cityGlowRing1.radius,
           cityGlowRadius2: cityGlowRing2.radius,
           containsCityLevelEvent,
+          containsRouteEvent,
           categoryCountLabel: categoryItem ? String(categoryItem.count) : '',
           categoryIconImage: categoryItem
             ? categoryItem.iconImage
@@ -2597,7 +2608,7 @@ const TreeMarker: React.FC<TreeMarkerProps> = React.memo(({ cluster, isSelected,
             ]}
           >
             <MaterialIcons
-              name="festival"
+              name={cluster.containsRouteEvent ? 'alt-route' : 'festival'}
               size={Math.max(adjustedSize * 0.38, 8)}
               color="#4E342E"
             />
@@ -2696,6 +2707,7 @@ const TreeMarker: React.FC<TreeMarkerProps> = React.memo(({ cluster, isSelected,
     prevProps.cluster.eventCount === nextProps.cluster.eventCount &&
     prevProps.cluster.specialCount === nextProps.cluster.specialCount &&
     prevProps.cluster.containsCityLevelEvent === nextProps.cluster.containsCityLevelEvent &&
+    prevProps.cluster.containsRouteEvent === nextProps.cluster.containsRouteEvent &&
     prevProps.isSelected === nextProps.isSelected &&
     prevProps.isProcessing === nextProps.isProcessing &&
     prevProps.isReady === nextProps.isReady &&
@@ -2737,7 +2749,11 @@ const RecenterButton: React.FC<{
  * navigation plus the "X / N" indicator via the events/currentIndex props).
  * This is separate from the EventCallout lightbox (which only renders when a cluster is open)
  */
-const GlobalEventLightbox = () => {
+const GlobalEventLightbox = ({
+  onShowRoute,
+}: {
+  onShowRoute: (event: Event) => void;
+}) => {
   const globalSelectedImageData = useMapStore((state) => state.selectedImageData);
   const selectedVenues = useMapStore((state) => state.selectedVenues);
   const selectedCluster = useMapStore((state) => state.selectedCluster);
@@ -2834,6 +2850,7 @@ const GlobalEventLightbox = () => {
           globalSelectedImageData.source === 'trending_auto'
         }
         isCityEvent={isCityEventLightbox}
+        onShowRoute={onShowRoute}
       />
     </Modal>
   );
@@ -3074,6 +3091,7 @@ useEffect(() => {
   const [isCalloutClosingVisually, setIsCalloutClosingVisually] = useState(false);
   const [mapFirstFrameRendered, setMapFirstFrameRendered] = useState<boolean>(false);
   const [mapTabOverlaysReady, setMapTabOverlaysReady] = useState<boolean>(Platform.OS !== 'android');
+  const [activeRouteEvent, setActiveRouteEvent] = useState<Event | null>(null);
   const [mapStyleChoice, setMapStyleChoice] = useState<MapStyleChoice>('current');
   const [mapStyleChanging, setMapStyleChanging] = useState(false);
   const [mapLightPreset, setMapLightPreset] = useState<MapLightPreset>('day');
@@ -3101,6 +3119,46 @@ useEffect(() => {
   const mapStyleRestoreTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mapStyleMarkerRemountTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mapPerspectiveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const showRouteOnMap = useCallback((event: Event) => {
+    if (!hasDrawableRoute(event)) return;
+
+    const bounds = getRouteBounds(event);
+    useMapStore.getState().setSelectedImageData(null);
+    setActiveRouteEvent(event);
+
+    if (bounds) {
+      requestAnimationFrame(() => {
+        setTimeout(() => {
+          cameraRef.current?.fitBounds(
+            bounds.northEast,
+            bounds.southWest,
+            [72, 48, 190, 48],
+            700
+          );
+        }, 120);
+      });
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!isFocused) return;
+
+    const pendingRouteEvent = useMapStore.getState().pendingRouteEvent;
+    if (!pendingRouteEvent) return;
+
+    useMapStore.getState().setPendingRouteEvent(null);
+    showRouteOnMap(pendingRouteEvent);
+  }, [isFocused, showRouteOnMap]);
+
+  const hideRouteOnMap = useCallback(() => {
+    if (activeRouteEvent) {
+      amplitudeTrack('route_map_closed', {
+        event_id: String(activeRouteEvent.id),
+      });
+    }
+    setActiveRouteEvent(null);
+  }, [activeRouteEvent]);
   const locationSubscription = useRef<Location.LocationSubscription | null>(null);
   const calloutAnimationRequestRef = useRef(0);
   const calloutOpenTouchGuardUntilRef = useRef(0);
@@ -6475,7 +6533,7 @@ lastOpenedClusterIdRef.current = cluster.id;
       const cityEvents =
         CITY_EVENT_UI_ENABLED && cluster.containsCityLevelEvent
           ? sortedVenues
-              .flatMap((venue) => venue.events.filter(isCityLevelEvent))
+              .flatMap((venue) => venue.events.filter(isAreaExperienceEvent))
               .filter((event, index, events) =>
                 events.findIndex((candidate) => String(candidate.id) === String(event.id)) === index
               )
@@ -8616,7 +8674,7 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
           />
           <MapboxGL.SymbolLayer
             id="android-cluster-layer-city-badges"
-            filter={['==', ['get', 'containsCityLevelEvent'], true] as any}
+            filter={['all', ['==', ['get', 'containsCityLevelEvent'], true], ['==', ['get', 'containsRouteEvent'], false]] as any}
             style={{
               iconAllowOverlap: true,
               iconAnchor: 'center',
@@ -8626,6 +8684,38 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
               symbolSortKey: ['get', 'markerSortKey'] as any,
               iconTranslate: [-9, 9],
               iconTranslateAnchor: 'viewport',
+            }}
+          />
+          <MapboxGL.SymbolLayer
+            id="android-cluster-layer-route-badges"
+            filter={['==', ['get', 'containsRouteEvent'], true] as any}
+            style={{
+              textAllowOverlap: true,
+              textAnchor: 'center',
+              textColor: '#6B4E16',
+              textField: '↝',
+              textHaloColor: '#FFD54F',
+              textHaloWidth: 6,
+              textIgnorePlacement: true,
+              textSize: 16,
+              symbolSortKey: ['get', 'markerSortKey'] as any,
+              textTranslate: [-9, 9],
+              textTranslateAnchor: 'viewport',
+            }}
+          />
+          <MapboxGL.SymbolLayer
+            id="android-cluster-layer-route-badge-glyphs"
+            filter={['==', ['get', 'containsRouteEvent'], true] as any}
+            style={{
+              textAllowOverlap: true,
+              textAnchor: 'center',
+              textColor: '#6B4E16',
+              textField: '↝',
+              textIgnorePlacement: true,
+              textSize: 16,
+              symbolSortKey: ['get', 'markerSortKey'] as any,
+              textTranslate: [-9, 9],
+              textTranslateAnchor: 'viewport',
             }}
           />
           <MapboxGL.SymbolLayer
@@ -9320,6 +9410,107 @@ onDidFinishLoadingMap={() => {
   followUserLocation={false}
 />
 
+        {activeRouteEvent && (
+          <>
+            <MapboxGL.ShapeSource
+              id="active-route-confirmed-source"
+              shape={buildRouteLineFeatureCollection(activeRouteEvent, 'confirmed') as any}
+            >
+              <MapboxGL.LineLayer
+                id="active-route-confirmed-casing"
+                style={{
+                  lineColor: '#FFFFFF',
+                  lineWidth: 8,
+                  lineOpacity: 0.94,
+                  lineCap: 'round',
+                  lineJoin: 'round',
+                }}
+              />
+              <MapboxGL.LineLayer
+                id="active-route-confirmed-line"
+                style={{
+                  lineColor: '#1565C0',
+                  lineWidth: 5,
+                  lineOpacity: 1,
+                  lineCap: 'round',
+                  lineJoin: 'round',
+                }}
+              />
+            </MapboxGL.ShapeSource>
+
+            <MapboxGL.ShapeSource
+              id="active-route-approximate-source"
+              shape={buildRouteLineFeatureCollection(activeRouteEvent, 'approximate') as any}
+            >
+              <MapboxGL.LineLayer
+                id="active-route-approximate-casing"
+                style={{
+                  lineColor: '#FFFFFF',
+                  lineWidth: 8,
+                  lineOpacity: 0.9,
+                  lineDasharray: [1.2, 1.2],
+                  lineCap: 'round',
+                  lineJoin: 'round',
+                }}
+              />
+              <MapboxGL.LineLayer
+                id="active-route-approximate-line"
+                style={{
+                  lineColor: '#1565C0',
+                  lineWidth: 5,
+                  lineOpacity: 0.82,
+                  lineDasharray: [1.2, 1.2],
+                  lineCap: 'round',
+                  lineJoin: 'round',
+                }}
+              />
+            </MapboxGL.ShapeSource>
+
+            <MapboxGL.ShapeSource
+              id="active-route-stops-source"
+              shape={buildRouteStopFeatureCollection(activeRouteEvent) as any}
+            >
+              <MapboxGL.CircleLayer
+                id="active-route-stop-halos"
+                style={{
+                  circleColor: '#FFFFFF',
+                  circleRadius: 8,
+                  circleOpacity: 0.98,
+                }}
+              />
+              <MapboxGL.CircleLayer
+                id="active-route-stops"
+                style={{
+                  circleColor: [
+                    'match',
+                    ['get', 'kind'],
+                    'start', '#2E7D32',
+                    'finish', '#D32F2F',
+                    '#1565C0',
+                  ] as any,
+                  circleRadius: 5,
+                  circleStrokeColor: '#FFFFFF',
+                  circleStrokeWidth: 1.5,
+                }}
+              />
+              <MapboxGL.SymbolLayer
+                id="active-route-stop-labels"
+                filter={['any', ['==', ['get', 'kind'], 'start'], ['==', ['get', 'kind'], 'finish']] as any}
+                style={{
+                  textField: ['get', 'label'] as any,
+                  textSize: 12,
+                  textColor: '#17324D',
+                  textHaloColor: '#FFFFFF',
+                  textHaloWidth: 2,
+                  textOffset: [0, 1.4],
+                  textAnchor: 'top',
+                  textAllowOverlap: true,
+                }}
+              />
+            </MapboxGL.ShapeSource>
+          </>
+        )}
+
         {USE_ANDROID_NATIVE_CLUSTER_MARKER_LAYERS && (
           <MapboxGL.Images images={ANDROID_CLUSTER_MARKER_IMAGES} />
         )}
@@ -9332,6 +9523,46 @@ onDidFinishLoadingMap={() => {
         {/* Render event markers */}
         {!isLoading && !ANDROID_CLUSTER_MARKERVIEW_ISOLATION_DEBUG && renderClusterMarkers()}
       </MapboxGL.MapView>
+      )}
+
+      {activeRouteEvent && (
+        <View style={styles.routeOverlayCard}>
+          <View style={styles.routeOverlayHeadingRow}>
+            <View style={styles.routeOverlayGoldIcon}>
+              <MaterialIcons name="alt-route" size={20} color="#6B4E16" />
+            </View>
+            <View style={styles.routeOverlayHeadingText}>
+              <Text style={styles.routeOverlayTitle} numberOfLines={1}>
+                {activeRouteEvent.title}
+              </Text>
+              <Text style={styles.routeOverlayStatus} numberOfLines={1}>
+                {getRouteCertaintyLabel(activeRouteEvent.routeData)}
+              </Text>
+            </View>
+            <TouchableOpacity
+              accessibilityRole="button"
+              accessibilityLabel="Hide route"
+              onPress={hideRouteOnMap}
+              style={styles.routeOverlayCloseButton}
+            >
+              <MaterialIcons name="close" size={20} color="#FFFFFF" />
+            </TouchableOpacity>
+          </View>
+          <View style={styles.routeLegendRow}>
+            <View style={styles.routeLegendItem}>
+              <View style={styles.routeLegendSolidLine} />
+              <Text style={styles.routeLegendText}>Confirmed</Text>
+            </View>
+            <View style={styles.routeLegendItem}>
+              <Text style={styles.routeLegendDash}>— —</Text>
+              <Text style={styles.routeLegendText}>Approximate</Text>
+            </View>
+            <View style={styles.routeLegendItem}>
+              <View style={styles.routeLegendStop} />
+              <Text style={styles.routeLegendText}>Confirmed stop</Text>
+            </View>
+          </View>
+        </View>
       )}
 
       {MAP_TRACE_UI_ENABLED && (
@@ -9658,7 +9889,7 @@ Owner: Map UX stability on Android • Last validated: 2025-09-04
       {isGuest && <RegistrationPrompt />}
 
       {/* Deep link lightbox - renders when globalSelectedImageData is set from deep link */}
-      <GlobalEventLightbox />
+      <GlobalEventLightbox onShowRoute={showRouteOnMap} />
 
       {MAP_TRACE_UI_ENABLED && (
         <MapTracePanel
@@ -9677,6 +9908,96 @@ const styles = StyleSheet.create({
   },
   map: {
     flex: 1,
+  },
+  routeOverlayCard: {
+    position: 'absolute',
+    left: 14,
+    right: 14,
+    bottom: 104,
+    borderRadius: 16,
+    backgroundColor: 'rgba(17, 32, 48, 0.96)',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    shadowColor: '#000000',
+    shadowOpacity: 0.28,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 12,
+  },
+  routeOverlayHeadingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  routeOverlayGoldIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFD54F',
+    borderWidth: 2,
+    borderColor: '#FFF8D6',
+  },
+  routeOverlayHeadingText: {
+    flex: 1,
+    marginLeft: 10,
+    marginRight: 8,
+  },
+  routeOverlayTitle: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  routeOverlayStatus: {
+    color: '#D6E8FA',
+    fontSize: 11,
+    marginTop: 2,
+  },
+  routeOverlayCloseButton: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  routeLegendRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    marginTop: 9,
+    gap: 12,
+  },
+  routeLegendItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  routeLegendSolidLine: {
+    width: 23,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: '#4C9CFF',
+    marginRight: 5,
+  },
+  routeLegendDash: {
+    color: '#4C9CFF',
+    fontSize: 13,
+    fontWeight: '900',
+    marginRight: 5,
+    marginTop: -2,
+  },
+  routeLegendStop: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#1565C0',
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+    marginRight: 5,
+  },
+  routeLegendText: {
+    color: '#FFFFFF',
+    fontSize: 10,
   },
   androidMapIsolationCard: {
     alignItems: 'center',

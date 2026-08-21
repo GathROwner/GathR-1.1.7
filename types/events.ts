@@ -28,6 +28,46 @@ export interface EventActionLink {
   evidence?: string;
 }
 
+// Firestore does not allow arrays nested directly in arrays, so persisted
+// coordinates use named fields and are converted to GeoJSON tuples in the app.
+export interface RouteCoordinate {
+  longitude: number;
+  latitude: number;
+}
+
+export interface EventRouteStop {
+  id: string;
+  label: string;
+  coordinates: RouteCoordinate;
+  kind: 'start' | 'stop' | 'finish';
+  certainty: 'confirmed' | 'approximate';
+}
+
+export interface EventRouteSegment {
+  id: string;
+  streetName?: string;
+  coordinates: RouteCoordinate[];
+  certainty: 'confirmed' | 'approximate';
+  source?: 'official_map' | 'official_streets' | 'connected_stops' | 'manual_review';
+}
+
+/**
+ * Route display data is deliberately explicit about certainty. Confirmed
+ * geometry may render as a solid line; approximate geometry must render as a
+ * dashed line and must never be described as an official street-by-street path.
+ */
+export interface EventRouteData {
+  version: 1;
+  status: 'verified' | 'partial' | 'approximate';
+  sourceUrl?: string;
+  sourceLabel?: string;
+  verifiedAt?: string;
+  confirmedStreets?: string[];
+  geometrySource?: string;
+  stops?: EventRouteStop[];
+  segments?: EventRouteSegment[];
+}
+
 /**
  * Main Event interface representing event data from the API
  */
@@ -111,7 +151,8 @@ export interface Event {
   locationProvince?: string | null;
   locationPrecision?: 'exact' | 'approximate' | 'city_centroid' | 'none' | null;
   locationReviewStatus?: 'not_needed' | 'needs_review' | 'approved' | 'rejected' | null;
-  mapMode?: 'venue' | 'area' | 'none' | null;
+  mapMode?: 'venue' | 'area' | 'route' | 'none' | null;
+  routeData?: EventRouteData | null;
 
   // Venue details (from Firestore venue object)
   venueRating?: number;
@@ -162,5 +203,6 @@ export interface Cluster {
   specialCount: number;              // Number of specials
   categories: string[];              // Unique categories in this cluster
   hasNewContent?: boolean;           // Whether cluster has new events/specials since last interaction
-  containsCityLevelEvent?: boolean;  // Whether cluster contains a city/area-scoped (city-level) event
+  containsCityLevelEvent?: boolean;  // Whether cluster contains a city/area/route experience
+  containsRouteEvent?: boolean;      // Whether cluster contains a route-scoped event
 }

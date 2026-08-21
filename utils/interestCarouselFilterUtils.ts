@@ -4,7 +4,7 @@ import type { InterestCarouselFilter } from '../types/store';
 import { TimeFilterType } from '../types/filter';
 import { isEventNow, getEventTimeStatus, isEventHappeningToday } from './dateUtils';
 import { isEventPast } from './eventExpiry';
-import { CITY_EVENTS_CATEGORY, isCityLevelEvent } from './locationScope';
+import { CITY_EVENTS_CATEGORY, isAreaExperienceEvent, isRouteEvent } from './locationScope';
 import {
   doesEventMatchCategoryOrFacet,
   isFamilyFriendlyInterest,
@@ -91,7 +91,7 @@ export const doesEventMatchInterestCarouselActiveCategory = (
 
   // City-events sentinel matches by location scope, not category.
   if (typeFilters.category === CITY_EVENTS_CATEGORY) {
-    return isCityLevelEvent(event);
+    return isAreaExperienceEvent(event);
   }
 
   return doesEventMatchCategoryOrFacet(event, typeFilters.category);
@@ -106,7 +106,7 @@ export const doesEventMatchInterestCarouselFilter = (
   event: Event,
   filter: ActiveInterestCarouselFilter
 ): boolean => {
-  if (filter.kind === 'city') return isCityLevelEvent(event);
+  if (filter.kind === 'city') return isAreaExperienceEvent(event);
   if (isFamilyFriendlyInterest(filter.category)) {
     return doesEventMatchCategoryOrFacet(event, filter.category);
   }
@@ -151,7 +151,8 @@ export const filterClusterForInterestCarouselFilter = (
     eventCount: events.filter((event) => event.type === 'event').length,
     specialCount: events.filter((event) => event.type === 'special').length,
     categories: Array.from(new Set(events.map((event) => event.category))),
-    containsCityLevelEvent: events.some(isCityLevelEvent),
+    containsCityLevelEvent: events.some(isAreaExperienceEvent),
+    containsRouteEvent: events.some(isRouteEvent),
   };
 };
 

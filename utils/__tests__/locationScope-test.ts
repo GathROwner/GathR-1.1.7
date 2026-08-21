@@ -1,6 +1,8 @@
 import {
   CITY_EVENTS_CATEGORY,
+  isAreaExperienceEvent,
   isCityLevelEvent,
+  isRouteEvent,
   isScopedLocationEvent,
   isScopedLocationScope,
 } from '../locationScope';
@@ -32,6 +34,15 @@ describe('locationScope predicates', () => {
     expect(isCityLevelEvent(eventWithScope('area'))).toBe(true);
     expect(isCityLevelEvent(eventWithScope('route'))).toBe(false);
     expect(isCityLevelEvent(eventWithScope('venue'))).toBe(false);
+  });
+
+  it('uses the Area treatment for city, area, and route events', () => {
+    expect(isAreaExperienceEvent(eventWithScope('city'))).toBe(true);
+    expect(isAreaExperienceEvent(eventWithScope('area'))).toBe(true);
+    expect(isAreaExperienceEvent(eventWithScope('route'))).toBe(true);
+    expect(isAreaExperienceEvent(eventWithScope('venue'))).toBe(false);
+    expect(isRouteEvent(eventWithScope('route'))).toBe(true);
+    expect(isRouteEvent(eventWithScope('area'))).toBe(false);
   });
 
   it('exposes the city-events sentinel category', () => {

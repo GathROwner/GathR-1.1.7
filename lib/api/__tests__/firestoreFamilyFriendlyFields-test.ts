@@ -11,7 +11,7 @@ describe('Firestore family-friendly field mapping', () => {
   it('uses a new persisted cache key so pre-score events are not restored', () => {
     expect(EVENTS_MINIMAL).toEqual([
       'events-minimal',
-      'city-level-v5-family-friendly-score',
+      'area-route-v6',
     ]);
   });
 

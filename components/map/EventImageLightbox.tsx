@@ -17,7 +17,7 @@ import { useReduceMotion } from '../../hooks/useReduceMotion';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 
-import { usePathname } from 'expo-router';
+import { usePathname, useRouter } from 'expo-router';
 import { amplitudeTrack } from '../../lib/amplitudeAnalytics';
 import { GestureHandlerRootView, PanGestureHandler, ScrollView as GestureScrollView, State } from 'react-native-gesture-handler';
 
@@ -48,6 +48,11 @@ import { buildGathrSharePayload } from '../../utils/shareUtils';
 import { getTicketUrl, normalizeTicketUrl } from '../../utils/ticketUrls';
 import { getPrimaryNonTicketAction } from '../../utils/eventActionLinks';
 import { areEventIdsEquivalent } from '../../lib/api/firestoreEvents';
+import {
+  getRouteCertaintyLabel,
+  getRouteSourceUrl,
+  hasDrawableRoute,
+} from '../../utils/routeEvent';
 
 // Store imports for like/share functionality
 import * as userService from '../../services/userService';
@@ -203,6 +208,8 @@ interface EventImageLightboxProps {
   isTrending?: boolean;
   // City-level (festival) event opened from its map marker
   isCityEvent?: boolean;
+  // Route events use the existing secondary action slot to reveal the route.
+  onShowRoute?: (event: Event) => void;
   // Optional callback when "View Venue" button is clicked
   onViewVenue?: () => void;
 }
@@ -218,8 +225,10 @@ const EventImageLightbox: React.FC<EventImageLightboxProps> = ({
   onNavigate,
   isTrending = false,
   isCityEvent = false,
+  onShowRoute,
   onViewVenue,
 }) => {
+  const router = useRouter();
   const safeAreaInsets = useSafeAreaInsets();
   const tabBarHeight = useBottomTabBarHeight();
   const { height: windowHeight } = useWindowDimensions();
@@ -229,7 +238,6 @@ const EventImageLightbox: React.FC<EventImageLightboxProps> = ({
   );
   const lightboxHeight = Math.max(0, windowHeight - lightboxTop - tabBarHeight);
   const imageHeight = Math.min(windowHeight * 0.35, lightboxHeight * 0.45);
-
   // Add store subscription to get fresh event data
   const storeEvents = useMapStore((state) => state.events);
   
@@ -251,6 +259,7 @@ const EventImageLightbox: React.FC<EventImageLightboxProps> = ({
   const selectCluster = useMapStore(s => s.selectCluster);
   const selectVenue = useMapStore(s => s.selectVenue);
   const setSelectedImageData = useMapStore(s => s.setSelectedImageData);
+  const setPendingRouteEvent = useMapStore(s => s.setPendingRouteEvent);
 
   useEffect(() => {
     if (!updatedEvent?.address) {
@@ -944,6 +953,46 @@ const handleDirections = () => {
   }
 };
 
+  const routeEvent = updatedEvent.locationScope === 'route';
+  const drawableRoute = hasDrawableRoute(updatedEvent);
+  const routeSourceUrl = getRouteSourceUrl(updatedEvent);
+  const handleRouteAction = () => {
+    if (drawableRoute) {
+      amplitudeTrack('route_map_opened', {
+        event_id: String(updatedEvent.id),
+        route_status: updatedEvent.routeData?.status || 'unknown',
+        confirmed_segments: updatedEvent.routeData?.segments?.filter(
+          (segment) => segment.certainty === 'confirmed'
+        ).length || 0,
+        approximate_segments: updatedEvent.routeData?.segments?.filter(
+          (segment) => segment.certainty === 'approximate'
+        ).length || 0,
+        stop_count: updatedEvent.routeData?.stops?.length || 0,
+        navigation_mode: onShowRoute ? 'same_screen' : 'cross_tab',
+      });
+
+      if (onShowRoute) {
+        onShowRoute(updatedEvent);
+        return;
+      }
+
+      // Lightboxes also live on Events, Specials, and carousel surfaces. Queue
+      // the route before switching tabs so the Map can draw it immediately.
+      setPendingRouteEvent(updatedEvent);
+      onClose();
+      router.push('/(tabs)/map');
+      return;
+    }
+
+    if (routeSourceUrl) {
+      amplitudeTrack('route_information_opened', {
+        event_id: String(updatedEvent.id),
+        route_status: updatedEvent.routeData?.status || 'unknown',
+      });
+      Linking.openURL(routeSourceUrl);
+    }
+  };
+
   /**
    * Handle view venue - Opens EventCallout with all events at this venue
    */
@@ -1288,9 +1337,15 @@ const handleNonTicketAction = () => {
           {isCityEvent && !showTrendingOverlay && (
             <View style={styles.trendingOverlay} pointerEvents="none">
               <View style={styles.cityEventStatusPill}>
-                <MaterialIcons name="festival" size={15} color="#4E342E" />
+                <MaterialIcons
+                  name={routeEvent ? 'alt-route' : 'festival'}
+                  size={15}
+                  color="#4E342E"
+                />
                 <Text style={styles.cityEventStatusText} numberOfLines={1}>
-                  City-wide
+                  {routeEvent
+                    ? getRouteCertaintyLabel(updatedEvent.routeData)
+                    : 'Area-wide'}
                 </Text>
               </View>
               {events && currentIndex !== undefined && (
@@ -1590,19 +1645,19 @@ const handleNonTicketAction = () => {
           <TouchableOpacity 
             style={[
               styles.actionButton,
-              isGuest && styles.disabledActionButton
+              !routeEvent && isGuest && styles.disabledActionButton
             ]} 
-            onPress={handleDirections}
-            activeOpacity={isGuest ? 1 : 0.7}
-            disabled={isGuest}
+            onPress={routeEvent ? handleRouteAction : handleDirections}
+            activeOpacity={!routeEvent && isGuest ? 1 : 0.7}
+            disabled={!routeEvent && isGuest}
           >
             <View style={styles.actionButtonContent}>
               <MaterialIcons 
-                name="directions" 
+                name={routeEvent ? 'alt-route' : 'directions'}
                 size={22} 
-                color={isGuest ? "#666666" : "#FFFFFF"} 
+                color={!routeEvent && isGuest ? "#666666" : "#FFFFFF"}
               />
-              {isGuest && (
+              {!routeEvent && isGuest && (
                 <View style={styles.lockIconOverlay}>
                   <LockIcon 
                     variant="inline" 
@@ -1614,9 +1669,13 @@ const handleNonTicketAction = () => {
             </View>
             <Text style={[
               styles.actionText,
-              isGuest && styles.disabledActionText
+              !routeEvent && isGuest && styles.disabledActionText
             ]}>
-              Directions
+              {routeEvent
+                ? drawableRoute
+                  ? 'Show Route'
+                  : 'Route Info'
+                : 'Directions'}
             </Text>
           </TouchableOpacity>
           
