@@ -134,6 +134,7 @@ import {
   shouldSuppressOrdinaryMapMarkers,
   type RouteFeatureCalloutData,
 } from '../../utils/routeEvent';
+import { buildRouteSummaryLightboxSelection } from '../../utils/routeEventLightbox';
 import {
   doesEventMatchAnyInterest,
 } from '../../utils/familyFriendly';
@@ -3201,6 +3202,18 @@ useEffect(() => {
     routeFeatureCalloutRequestRef.current += 1;
     setRouteFeatureCallout(null);
     setActiveRouteEvent(null);
+  }, [activeRouteEvent]);
+
+  const reopenActiveRouteLightbox = useCallback(() => {
+    const selection = buildRouteSummaryLightboxSelection(activeRouteEvent);
+    if (!selection) return;
+
+    routeFeatureCalloutRequestRef.current += 1;
+    setRouteFeatureCallout(null);
+    useMapStore.getState().setSelectedImageData(selection);
+    amplitudeTrack('route_summary_lightbox_reopened', {
+      event_id: String(activeRouteEvent?.id || ''),
+    });
   }, [activeRouteEvent]);
   const locationSubscription = useRef<Location.LocationSubscription | null>(null);
   const calloutAnimationRequestRef = useRef(0);
@@ -9728,7 +9741,15 @@ onDidFinishLoadingMap={() => {
       )}
 
       {activeRouteEvent && (
-        <View style={styles.routeOverlayCard}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`Open ${activeRouteEvent.title} details`}
+          onPress={reopenActiveRouteLightbox}
+          style={({ pressed }) => [
+            styles.routeOverlayCard,
+            pressed && styles.routeOverlayCardPressed,
+          ]}
+        >
           <View style={styles.routeOverlayHeadingRow}>
             <View style={styles.routeOverlayGoldIcon}>
               <MaterialIcons name="alt-route" size={20} color="#6B4E16" />
@@ -9744,7 +9765,10 @@ onDidFinishLoadingMap={() => {
             <TouchableOpacity
               accessibilityRole="button"
               accessibilityLabel="Hide route"
-              onPress={hideRouteOnMap}
+              onPress={(event) => {
+                event.stopPropagation();
+                hideRouteOnMap();
+              }}
               style={styles.routeOverlayCloseButton}
             >
               <MaterialIcons name="close" size={20} color="#FFFFFF" />
@@ -9782,7 +9806,7 @@ onDidFinishLoadingMap={() => {
               </View>
             )}
           </View>
-        </View>
+        </Pressable>
       )}
 
       {MAP_TRACE_UI_ENABLED && (
@@ -10144,6 +10168,9 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 4 },
     zIndex: 30,
     elevation: 30,
+  },
+  routeOverlayCardPressed: {
+    opacity: 0.88,
   },
   routeOverlayHeadingRow: {
     flexDirection: 'row',
