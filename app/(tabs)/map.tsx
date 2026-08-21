@@ -123,6 +123,8 @@ import {
   buildRouteStopFeatureCollection,
   getRouteBounds,
   getRouteCertaintyLabel,
+  getRouteSegments,
+  getRouteStops,
   hasDrawableRoute,
   shouldSuppressOrdinaryMapMarkers,
 } from '../../utils/routeEvent';
@@ -3093,6 +3095,20 @@ useEffect(() => {
   const [mapFirstFrameRendered, setMapFirstFrameRendered] = useState<boolean>(false);
   const [mapTabOverlaysReady, setMapTabOverlaysReady] = useState<boolean>(Platform.OS !== 'android');
   const [activeRouteEvent, setActiveRouteEvent] = useState<Event | null>(null);
+  const activeRouteSegments = activeRouteEvent ? getRouteSegments(activeRouteEvent) : [];
+  const activeRouteStops = activeRouteEvent ? getRouteStops(activeRouteEvent) : [];
+  const hasConfirmedRouteSegments = activeRouteSegments.some(
+    (segment) => segment.certainty === 'confirmed'
+  );
+  const hasApproximateRouteSegments = activeRouteSegments.some(
+    (segment) => segment.certainty === 'approximate'
+  );
+  const hasConfirmedRouteStops = activeRouteStops.some(
+    (stop) => stop.certainty === 'confirmed'
+  );
+  const hasApproximateRouteStops = activeRouteStops.some(
+    (stop) => stop.certainty === 'approximate'
+  );
   const [mapStyleChoice, setMapStyleChoice] = useState<MapStyleChoice>('current');
   const [mapStyleChanging, setMapStyleChanging] = useState(false);
   const [mapLightPreset, setMapLightPreset] = useState<MapLightPreset>('day');
@@ -9484,7 +9500,8 @@ onDidFinishLoadingMap={() => {
                 }}
               />
               <MapboxGL.CircleLayer
-                id="active-route-stops"
+                id="active-route-confirmed-stops"
+                filter={['==', ['get', 'certainty'], 'confirmed'] as any}
                 style={{
                   circleColor: [
                     'match',
@@ -9496,6 +9513,22 @@ onDidFinishLoadingMap={() => {
                   circleRadius: 5,
                   circleStrokeColor: '#FFFFFF',
                   circleStrokeWidth: 1.5,
+                }}
+              />
+              <MapboxGL.CircleLayer
+                id="active-route-approximate-stops"
+                filter={['==', ['get', 'certainty'], 'approximate'] as any}
+                style={{
+                  circleColor: '#FFFFFF',
+                  circleRadius: 5,
+                  circleStrokeColor: [
+                    'match',
+                    ['get', 'kind'],
+                    'start', '#2E7D32',
+                    'finish', '#D32F2F',
+                    '#1565C0',
+                  ] as any,
+                  circleStrokeWidth: 3,
                 }}
               />
               <MapboxGL.SymbolLayer
@@ -9554,18 +9587,30 @@ onDidFinishLoadingMap={() => {
             </TouchableOpacity>
           </View>
           <View style={styles.routeLegendRow}>
-            <View style={styles.routeLegendItem}>
-              <View style={styles.routeLegendSolidLine} />
-              <Text style={styles.routeLegendText}>Confirmed</Text>
-            </View>
-            <View style={styles.routeLegendItem}>
-              <Text style={styles.routeLegendDash}>— —</Text>
-              <Text style={styles.routeLegendText}>Approximate</Text>
-            </View>
-            <View style={styles.routeLegendItem}>
-              <View style={styles.routeLegendStop} />
-              <Text style={styles.routeLegendText}>Confirmed stop</Text>
-            </View>
+            {hasConfirmedRouteSegments && (
+              <View style={styles.routeLegendItem}>
+                <View style={styles.routeLegendSolidLine} />
+                <Text style={styles.routeLegendText}>Confirmed</Text>
+              </View>
+            )}
+            {hasApproximateRouteSegments && (
+              <View style={styles.routeLegendItem}>
+                <Text style={styles.routeLegendDash}>— —</Text>
+                <Text style={styles.routeLegendText}>Approximate</Text>
+              </View>
+            )}
+            {hasConfirmedRouteStops && (
+              <View style={styles.routeLegendItem}>
+                <View style={styles.routeLegendConfirmedStop} />
+                <Text style={styles.routeLegendText}>Confirmed stop</Text>
+              </View>
+            )}
+            {hasApproximateRouteStops && (
+              <View style={styles.routeLegendItem}>
+                <View style={styles.routeLegendApproximateStop} />
+                <Text style={styles.routeLegendText}>Approximate stop</Text>
+              </View>
+            )}
           </View>
         </View>
       )}
@@ -9927,7 +9972,8 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.28,
     shadowRadius: 10,
     shadowOffset: { width: 0, height: 4 },
-    elevation: 12,
+    zIndex: 30,
+    elevation: 30,
   },
   routeOverlayHeadingRow: {
     flexDirection: 'row',
@@ -9991,13 +10037,22 @@ const styles = StyleSheet.create({
     marginRight: 5,
     marginTop: -2,
   },
-  routeLegendStop: {
+  routeLegendConfirmedStop: {
     width: 10,
     height: 10,
     borderRadius: 5,
     backgroundColor: '#1565C0',
-    borderWidth: 2,
+    borderWidth: 1.5,
     borderColor: '#FFFFFF',
+    marginRight: 5,
+  },
+  routeLegendApproximateStop: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 2.5,
+    borderColor: '#4C9CFF',
     marginRight: 5,
   },
   routeLegendText: {
