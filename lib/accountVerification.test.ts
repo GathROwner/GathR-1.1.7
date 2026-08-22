@@ -48,7 +48,10 @@ describe('account verification email', () => {
     };
 
     await expect(requestCurrentUserVerificationEmail(10_000)).resolves.toEqual({ status: 'sent' });
-    expect(mockedSendEmailVerification).toHaveBeenCalledWith(mutableAuth.currentUser);
+    expect(mockedSendEmailVerification).toHaveBeenCalledWith(mutableAuth.currentUser, {
+      url: 'https://www.gathrapp.ca/app?source=email-verification',
+      handleCodeInApp: false,
+    });
     expect(mockedStorage.setItem).toHaveBeenCalledWith(
       '@gathr/verification-email-sent-at/legacy-user',
       '10000'

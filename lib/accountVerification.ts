@@ -4,6 +4,7 @@ import { auth } from '../config/firebaseConfig';
 
 const VERIFICATION_EMAIL_COOLDOWN_MS = 15 * 60 * 1000;
 const VERIFICATION_EMAIL_SENT_AT_PREFIX = '@gathr/verification-email-sent-at/';
+const VERIFICATION_CONTINUE_URL = 'https://www.gathrapp.ca/app?source=email-verification';
 
 export type VerificationEmailResult =
   | { status: 'sent' }
@@ -60,7 +61,10 @@ export async function requestCurrentUserVerificationEmail(
   }
 
   try {
-    await sendEmailVerification(user);
+    await sendEmailVerification(user, {
+      url: VERIFICATION_CONTINUE_URL,
+      handleCodeInApp: false,
+    });
     await AsyncStorage.setItem(cooldownKey, String(now));
     return { status: 'sent' };
   } catch (error) {
