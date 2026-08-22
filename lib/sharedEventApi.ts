@@ -85,6 +85,34 @@ export type SharedEventPublicProcessingSummary = {
   message?: string;
 };
 
+export type SharedEventCrowdPromotionStatus =
+  | 'ineligible'
+  | 'collecting'
+  | 'candidate_pending'
+  | 'promoted'
+  | 'duplicate_existing'
+  | 'needs_review'
+  | 'failed';
+
+export type SharedEventCrowdPromotionSummary = {
+  eligibleEventCount: number;
+  collectingEventCount: number;
+  candidateEventCount: number;
+  reviewEventCount: number;
+  promotedEventCount: number;
+  threshold: number;
+  maxContributorCount: number;
+  events: Array<{
+    privateEventId: string;
+    aggregateId?: string;
+    publicCandidateId?: string;
+    contributorCount: number;
+    threshold: number;
+    status: SharedEventCrowdPromotionStatus;
+    reason?: string;
+  }>;
+};
+
 export type SharedEventSubmitResult = {
   success: boolean;
   ingestId?: string;
@@ -108,6 +136,7 @@ export type SharedEventSubmitResult = {
     error?: string;
   };
   publicProcessing?: SharedEventPublicProcessingSummary;
+  crowdPromotion?: SharedEventCrowdPromotionSummary;
   extractedEventCount?: number;
   needsUserReview?: boolean;
   reviewReasons?: string[];
@@ -212,6 +241,20 @@ function resultFromIngestDoc(ingestId: string, data: Record<string, any>): Share
         skippedCount: typeof data.publicProcessing.skippedCount === 'number' ? data.publicProcessing.skippedCount : undefined,
         errorCount: typeof data.publicProcessing.errorCount === 'number' ? data.publicProcessing.errorCount : undefined,
         message: typeof data.publicProcessing.message === 'string' ? data.publicProcessing.message : undefined,
+      }
+      : undefined,
+    crowdPromotion: data.crowdPromotion && typeof data.crowdPromotion === 'object'
+      ? {
+        eligibleEventCount: Math.max(0, Number(data.crowdPromotion.eligibleEventCount || 0)),
+        collectingEventCount: Math.max(0, Number(data.crowdPromotion.collectingEventCount || 0)),
+        candidateEventCount: Math.max(0, Number(data.crowdPromotion.candidateEventCount || 0)),
+        reviewEventCount: Math.max(0, Number(data.crowdPromotion.reviewEventCount || 0)),
+        promotedEventCount: Math.max(0, Number(data.crowdPromotion.promotedEventCount || 0)),
+        threshold: Math.max(1, Number(data.crowdPromotion.threshold || 3)),
+        maxContributorCount: Math.max(0, Number(data.crowdPromotion.maxContributorCount || 0)),
+        events: Array.isArray(data.crowdPromotion.events)
+          ? data.crowdPromotion.events.filter((entry: unknown) => entry && typeof entry === 'object')
+          : [],
       }
       : undefined,
     extractedEventCount: typeof data.extractedEventCount === 'number' ? data.extractedEventCount : events.length,

@@ -63,12 +63,18 @@ export default function SharedEventProcessingBanner() {
           clearSubscription(entry.ingestId);
           await removePendingSharedEventIngest(entry.ingestId);
           const count = Math.max(result.extractedEventCount || 0, result.events?.length || 0);
+          const crowd = result.crowdPromotion;
+          const crowdDetail = crowd?.candidateEventCount
+            ? `${crowd.candidateEventCount} ${crowd.candidateEventCount === 1 ? 'event has' : 'events have'} enough independent confirmations for GathR's safety checks.`
+            : crowd?.collectingEventCount
+              ? `Community confirmation: ${Math.min(crowd.maxContributorCount, crowd.threshold)} of ${crowd.threshold}.`
+              : '';
           showBanner({
             id: `${entry.ingestId}-completed`,
             title: 'Share scan complete',
-            detail: count > 1
+            detail: crowdDetail || (count > 1
               ? `GathR found ${count} possible events from your share.`
-              : 'GathR finished scanning your share.',
+              : 'GathR finished scanning your share.'),
             tone: 'success',
           });
         },

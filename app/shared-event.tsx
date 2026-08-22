@@ -437,6 +437,9 @@ function resultHasPendingAsyncWork(result: SharedEventSubmitResult | null): bool
 function shouldWatchIngest(result: SharedEventSubmitResult | null): boolean {
   if (!result?.ingestId) return false;
   if (resultHasPendingAsyncWork(result)) return true;
+  if (result.crowdPromotion?.events.some((event) => (
+    event.status === 'collecting' || event.status === 'candidate_pending'
+  ))) return true;
   const publicStatus = result.publicProcessing?.status;
   const scrapeStatus = result.scrapeEnrichment?.status;
   const terminalPublicStatus = publicStatus === 'completed' || publicStatus === 'failed' || publicStatus === 'skipped';
@@ -538,6 +541,47 @@ function statusCopy(
       title: 'Already happened',
       detail: 'GathR saved this share, but it looks like the event has already passed.',
       color: BRAND.warning,
+    };
+  }
+
+  const crowd = result?.crowdPromotion;
+  if (crowd && crowd.promotedEventCount > 0) {
+    return {
+      icon: 'people-circle-outline',
+      title: 'Confirmed by the community',
+      detail: crowd.promotedEventCount === 1
+        ? 'Independent submissions confirmed this event, so it is now available to everyone in GathR.'
+        : `${crowd.promotedEventCount} events were independently confirmed and are now available to everyone in GathR.`,
+      color: BRAND.success,
+    };
+  }
+  if (crowd && crowd.candidateEventCount > 0) {
+    return {
+      icon: 'shield-checkmark-outline',
+      title: 'Community threshold reached',
+      detail: crowd.candidateEventCount === 1
+        ? 'Three independent submissions agree. GathR is checking the venue and duplicate safeguards before making it global.'
+        : `${crowd.candidateEventCount} events reached independent confirmation and are completing GathR's safety checks.`,
+      color: BRAND.success,
+    };
+  }
+  if (crowd && crowd.reviewEventCount > 0) {
+    return {
+      icon: 'shield-outline',
+      title: 'Community confirmed; under review',
+      detail: crowd.reviewEventCount === 1
+        ? 'Independent submissions agree, but GathR could not safely resolve every public detail. Your saved copy is unaffected while the event is reviewed.'
+        : `${crowd.reviewEventCount} independently confirmed events need a venue or safety review before they can become global.`,
+      color: BRAND.warning,
+    };
+  }
+  if (crowd && crowd.collectingEventCount > 0) {
+    const count = Math.min(crowd.maxContributorCount, crowd.threshold);
+    return {
+      icon: 'people-outline',
+      title: 'Saved and helping the community',
+      detail: `${count} of ${crowd.threshold} independent confirmations. It stays private to you until matching submissions and GathR's safety checks agree.`,
+      color: BRAND.primary,
     };
   }
 
@@ -755,6 +799,14 @@ export default function SharedEventScreen() {
         ? 'Venue review'
       : isExpiredResult
         ? 'Expired'
+      : result?.crowdPromotion?.promotedEventCount
+        ? 'Community confirmed'
+      : result?.crowdPromotion?.candidateEventCount
+        ? 'Safety check'
+      : result?.crowdPromotion?.reviewEventCount
+        ? 'Venue review'
+      : result?.crowdPromotion?.collectingEventCount
+        ? `${Math.min(result.crowdPromotion.maxContributorCount, result.crowdPromotion.threshold)}/${result.crowdPromotion.threshold} confirmed`
       : result?.routing === 'public_candidate'
         ? 'Public review'
         : 'Private';
@@ -770,6 +822,14 @@ export default function SharedEventScreen() {
         ? 'location-outline'
       : isExpiredResult
         ? 'time-outline'
+      : result?.crowdPromotion?.promotedEventCount
+        ? 'people-circle-outline'
+      : result?.crowdPromotion?.candidateEventCount
+        ? 'shield-checkmark-outline'
+      : result?.crowdPromotion?.reviewEventCount
+        ? 'shield-outline'
+      : result?.crowdPromotion?.collectingEventCount
+        ? 'people-outline'
       : result?.routing === 'public_candidate'
         ? 'earth-outline'
         : 'lock-closed-outline';
