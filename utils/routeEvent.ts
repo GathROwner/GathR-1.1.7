@@ -350,7 +350,9 @@ export const getRouteCertaintyLabel = (routeData?: EventRouteData | null): strin
   );
 
   if (routeData?.status === 'verified' && displayKinds.has('confirmed')) {
-    return 'Official route';
+    return routeData.geometryMethod === 'map_aligned_street_trace'
+      ? 'Confirmed street route • map-aligned trace'
+      : 'Official route';
   }
   if (displayKinds.has('confirmed') && displayKinds.has('street_estimate')) {
     return 'Confirmed streets + estimated connections';

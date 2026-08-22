@@ -9781,7 +9781,7 @@ onDidFinishLoadingMap={() => {
             {hasConfirmedRouteSegments && (
               <View style={styles.routeLegendItem}>
                 <View style={styles.routeLegendSolidLine} />
-                <Text style={styles.routeLegendText}>Confirmed</Text>
+                <Text style={styles.routeLegendText}>Confirmed route</Text>
               </View>
             )}
             {hasStreetEstimateRouteSegments && (

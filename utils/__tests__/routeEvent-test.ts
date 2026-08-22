@@ -271,6 +271,39 @@ describe('route event map contract', () => {
     );
   });
 
+  it('separates an organizer-confirmed route from its map-aligned geometry method', () => {
+    const confirmedStreetTrace = {
+      ...routeEvent,
+      routeData: {
+        ...routeEvent.routeData,
+        status: 'verified' as const,
+        evidenceLevel: 'official_full_route' as const,
+        geometryMethod: 'map_aligned_street_trace' as const,
+        confirmedStreets: ['North River Road'],
+        segments: [{
+          id: 'confirmed-north-river-road',
+          streetName: 'North River Road',
+          certainty: 'confirmed' as const,
+          source: 'routed_streets' as const,
+          coordinates: [
+            { longitude: -63.142, latitude: 46.248 },
+            { longitude: -63.137, latitude: 46.245 },
+          ],
+        }],
+      },
+    } as Event;
+
+    expect(getRouteCertaintyLabel(confirmedStreetTrace.routeData)).toBe(
+      'Confirmed street route • map-aligned trace'
+    );
+    expect(
+      buildRouteLineFeatureCollection(confirmedStreetTrace, 'confirmed').features
+    ).toHaveLength(1);
+    expect(
+      buildRouteLineFeatureCollection(confirmedStreetTrace, 'suggested_connection').features
+    ).toHaveLength(0);
+  });
+
   it('uses stops-only language when no defensible line exists', () => {
     const stopsOnlyEvent = {
       ...routeEvent,

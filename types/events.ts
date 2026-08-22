@@ -72,6 +72,12 @@ export interface EventRouteSegment {
 export interface EventRouteData {
   version: 1;
   status: 'verified' | 'partial' | 'approximate';
+  evidenceLevel?: 'official_full_route' | 'official_partial_route' | 'inferred';
+  geometryMethod?:
+    | 'organizer_geometry'
+    | 'map_aligned_street_trace'
+    | 'street_routing_estimate'
+    | 'stops_only';
   sourceUrl?: string;
   sourceLabel?: string;
   verifiedAt?: string;
