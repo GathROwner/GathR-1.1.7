@@ -21,6 +21,7 @@ import {
   searchSharedEventVenueCandidates,
   submitSharedEvent,
   SharedEventPayload,
+  SharedEventCrowdPromotionSummary,
   SharedEventResultEvent,
   SharedEventSubmitResult,
   SharedEventVenueCandidate,
@@ -779,6 +780,10 @@ export default function SharedEventScreen() {
   const requestedIngestId = firstParam(params.ingestId);
   const submittedSignatureRef = useRef('');
   const ingestUnsubscribeRef = useRef<null | (() => void)>(null);
+  const venueCrowdOverrideRef = useRef<{
+    ingestId: string;
+    crowdPromotion: SharedEventCrowdPromotionSummary;
+  } | null>(null);
 
   const [snapshot, setSnapshot] = useState<SharedEventSnapshot>(initial);
   const [eventSnapshots, setEventSnapshots] = useState<SharedEventSnapshot[]>([initial]);
@@ -819,22 +824,32 @@ export default function SharedEventScreen() {
     ingestUnsubscribeRef.current = watchSharedEventIngest(
       ingestId,
       (nextResult) => {
-        setResult(nextResult);
-        if (nextResult.processingStatus === 'failed') {
+        const venueCrowdOverride = venueCrowdOverrideRef.current;
+        const incomingCrowdHasCaughtUp = nextResult.crowdPromotion?.events.some((event) => (
+          event.status !== 'ineligible'
+        )) === true;
+        const effectiveResult = venueCrowdOverride?.ingestId === ingestId && !incomingCrowdHasCaughtUp
+          ? { ...nextResult, crowdPromotion: venueCrowdOverride.crowdPromotion }
+          : nextResult;
+        if (venueCrowdOverride?.ingestId === ingestId && incomingCrowdHasCaughtUp) {
+          venueCrowdOverrideRef.current = null;
+        }
+        setResult(effectiveResult);
+        if (effectiveResult.processingStatus === 'failed') {
           stopIngestWatcher();
           setPhase('error');
-          setErrorMessage(nextResult.processingError || 'GathR could not process this share.');
+          setErrorMessage(effectiveResult.processingError || 'GathR could not process this share.');
           return;
         }
-        if (nextResult.processingStatus === 'completed' || resultEvents(nextResult).length > 0) {
-          const shouldContinueWatching = shouldWatchIngest(nextResult);
+        if (effectiveResult.processingStatus === 'completed' || resultEvents(effectiveResult).length > 0) {
+          const shouldContinueWatching = shouldWatchIngest(effectiveResult);
           if (!shouldContinueWatching) {
             stopIngestWatcher();
           }
-          applySubmitResult(baseSnapshot, nextResult);
+          applySubmitResult(baseSnapshot, effectiveResult);
           return;
         }
-        if (!shouldWatchIngest(nextResult)) {
+        if (!shouldWatchIngest(effectiveResult)) {
           stopIngestWatcher();
         }
       },
@@ -855,6 +870,7 @@ export default function SharedEventScreen() {
 
     setPhase('processing');
     setErrorMessage('');
+    venueCrowdOverrideRef.current = null;
     stopIngestWatcher();
 
     try {
@@ -885,6 +901,7 @@ export default function SharedEventScreen() {
     setShowDetails(false);
     setResult(null);
     setErrorMessage('');
+    venueCrowdOverrideRef.current = null;
     stopIngestWatcher();
     if (requestedIngestId) {
       setPhase('processing');
@@ -954,6 +971,10 @@ export default function SharedEventScreen() {
       // crowd status, so use the endpoint's final summary as the authoritative
       // result and resume the watcher when community confirmation is ongoing.
       if (confirmation.crowdPromotion) {
+        venueCrowdOverrideRef.current = {
+          ingestId: confirmation.ingestId,
+          crowdPromotion: confirmation.crowdPromotion,
+        };
         setResult((current) => current
           ? { ...current, crowdPromotion: confirmation.crowdPromotion }
           : current);
