@@ -182,6 +182,15 @@ export type SharedEventVenueSearchResult = {
   error?: string;
 };
 
+export type SharedEventVenueConfirmationResult = {
+  success: boolean;
+  ingestId: string;
+  privateEventIds?: string[];
+  venueResolutionStatus: 'confirmed' | 'no_match';
+  venue?: SharedEventVenueCandidate;
+  crowdPromotion?: SharedEventCrowdPromotionSummary;
+};
+
 function uniqueStrings(values: Array<string | undefined>): string[] {
   return Array.from(new Set(values.map((value) => String(value || '').trim()).filter(Boolean)));
 }
@@ -372,7 +381,7 @@ export async function confirmSharedEventVenue(params: {
   privateEventId: string;
   placeId?: string;
   noMatch?: boolean;
-}): Promise<{ success: boolean; ingestId: string; venueResolutionStatus: 'confirmed' | 'no_match' }> {
+}): Promise<SharedEventVenueConfirmationResult> {
   return postSharedEventAction('confirmSharedEventVenue', params);
 }
 

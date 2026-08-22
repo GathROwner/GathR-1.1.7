@@ -945,17 +945,32 @@ export default function SharedEventScreen() {
     setVenueConfirmingId(placeId || 'none');
     setVenueSearchError('');
     try {
-      await confirmSharedEventVenue({
+      const confirmation = await confirmSharedEventVenue({
         privateEventId,
         ...(placeId ? { placeId } : { noMatch: true }),
       });
+      // Venue resolution and crowd contribution are two server writes. The ingest
+      // listener can briefly observe the resolved venue with its old ineligible
+      // crowd status, so use the endpoint's final summary as the authoritative
+      // result and resume the watcher when community confirmation is ongoing.
+      if (confirmation.crowdPromotion) {
+        setResult((current) => current
+          ? { ...current, crowdPromotion: confirmation.crowdPromotion }
+          : current);
+        const crowdStillActive = confirmation.crowdPromotion.events.some((event) => (
+          event.status === 'collecting' || event.status === 'candidate_pending'
+        ));
+        if (crowdStillActive) {
+          startIngestWatcher(confirmation.ingestId, snapshot);
+        }
+      }
       setVenueMenuOpen(false);
     } catch (error) {
       setVenueSearchError(error instanceof Error ? error.message : 'Could not confirm that venue.');
     } finally {
       setVenueConfirmingId('');
     }
-  }, [unresolvedVenueEvent?.privateEventId, venueConfirmingId]);
+  }, [snapshot, startIngestWatcher, unresolvedVenueEvent?.privateEventId, venueConfirmingId]);
   const cardWidth = Math.max(280, width - 32);
   const sourceContext = sharedEventSourceContext(snapshot);
   const requiresRouteReview = eventSnapshots.some((eventSnapshot) => (
