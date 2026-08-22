@@ -27,6 +27,7 @@ npm-debug.*
 yarn-debug.*
 yarn-error.*
 artifacts/
+qa-artifacts/
 metro-android-debug.out.log
 
 # macOS

@@ -28,6 +28,10 @@ import {
   SharedIntentMediaFile,
 } from '../lib/sharedEventMediaUpload';
 import { trackPendingSharedEventIngest } from '../lib/sharedEventProcessingTracker';
+import {
+  crowdIneligibilityMessage,
+  crowdIneligibilityReason,
+} from '../lib/sharedEventPresentation';
 
 const BRAND = {
   primary: '#1E90FF',
@@ -613,6 +617,16 @@ function statusCopy(
     };
   }
 
+  const ineligibilityReason = crowdIneligibilityReason(crowd);
+  if (crowd && crowd.eligibleEventCount === 0 && ineligibilityReason) {
+    return {
+      icon: 'lock-closed-outline',
+      title: 'Saved privately',
+      detail: crowdIneligibilityMessage(ineligibilityReason),
+      color: BRAND.warning,
+    };
+  }
+
   if (result?.routing === 'public_candidate') {
     return {
       icon: 'earth-outline',
@@ -925,6 +939,8 @@ export default function SharedEventScreen() {
           ? 'Private to you while community safety checks finish'
           : crowdEvent?.status === 'needs_review'
             ? 'Private to you while GathR reviews it'
+            : crowdEvent?.status === 'ineligible'
+              ? `Private to your account - ${crowdIneligibilityMessage(crowdEvent.reason)}`
             : 'Private to your account';
     const detailRows: { icon: keyof typeof Ionicons.glyphMap; text: string }[] = [
       ...(dateTime ? [{ icon: 'calendar-outline' as const, text: dateTime }] : []),
