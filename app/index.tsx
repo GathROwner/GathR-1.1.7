@@ -17,6 +17,7 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { signInWithEmailAndPassword, createUserWithEmailAndPassword, sendPasswordResetEmail } from 'firebase/auth';
+import { requestCurrentUserVerificationEmail } from '../lib/accountVerification';
 import { auth, firestore, storage } from '../config/firebaseConfig';
 import { setDoc, doc } from 'firebase/firestore';
 import * as ImagePicker from 'expo-image-picker';
@@ -268,6 +269,10 @@ export default function Index() {
           savedEvents: [],
           likedEvents: [],
         });
+
+        // Email/password accounts begin unverified. Request the verification message
+        // automatically so new users are eligible to help confirm community events.
+        void requestCurrentUserVerificationEmail();
 
         
         // Track successful registration

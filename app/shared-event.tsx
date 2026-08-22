@@ -32,6 +32,10 @@ import {
   crowdIneligibilityMessage,
   crowdIneligibilityReason,
 } from '../lib/sharedEventPresentation';
+import {
+  requestCurrentUserVerificationEmail,
+  VerificationEmailResult,
+} from '../lib/accountVerification';
 
 const BRAND = {
   primary: '#1E90FF',
@@ -731,6 +735,10 @@ export default function SharedEventScreen() {
   const [result, setResult] = useState<SharedEventSubmitResult | null>(null);
   const [errorMessage, setErrorMessage] = useState('');
   const [showDetails, setShowDetails] = useState(false);
+  const [verificationEmail, setVerificationEmail] = useState<
+    VerificationEmailResult | { status: 'sending' } | null
+  >(null);
+  const verificationAttemptedRef = useRef(false);
 
   const stopIngestWatcher = useCallback(() => {
     ingestUnsubscribeRef.current?.();
@@ -821,6 +829,15 @@ export default function SharedEventScreen() {
   }, [initial, initialSignature, stopIngestWatcher, submitSnapshot]);
 
   useEffect(() => () => stopIngestWatcher(), [stopIngestWatcher]);
+
+  const accountNeedsVerification = crowdIneligibilityReason(result?.crowdPromotion) === 'account_not_eligible';
+
+  useEffect(() => {
+    if (!accountNeedsVerification || verificationAttemptedRef.current) return;
+    verificationAttemptedRef.current = true;
+    setVerificationEmail({ status: 'sending' });
+    void requestCurrentUserVerificationEmail().then(setVerificationEmail);
+  }, [accountNeedsVerification]);
 
   const eventCount = eventSnapshots.length;
   const cardWidth = Math.max(280, width - 32);
@@ -1155,6 +1172,48 @@ export default function SharedEventScreen() {
             </View>
           ) : null}
 
+          {accountNeedsVerification && verificationEmail ? (
+            <View style={styles.verificationCard}>
+              <View style={styles.verificationIcon}>
+                <Ionicons
+                  name={verificationEmail.status === 'failed' || verificationEmail.status === 'unavailable'
+                    ? 'alert-circle-outline'
+                    : verificationEmail.status === 'sending'
+                      ? 'mail-unread-outline'
+                      : 'mail-outline'}
+                  size={20}
+                  color={verificationEmail.status === 'failed' || verificationEmail.status === 'unavailable'
+                    ? BRAND.warning
+                    : BRAND.primaryDark}
+                />
+              </View>
+              <View style={styles.verificationCopy}>
+                <Text style={styles.verificationTitle}>
+                  {verificationEmail.status === 'sending'
+                    ? 'Sending verification email'
+                    : verificationEmail.status === 'sent'
+                      ? 'Verification email sent'
+                      : verificationEmail.status === 'recently_sent'
+                        ? 'Check your inbox'
+                        : verificationEmail.status === 'already_verified'
+                          ? 'Email verified'
+                          : 'Verification email unavailable'}
+                </Text>
+                <Text style={styles.verificationDetail}>
+                  {verificationEmail.status === 'sending'
+                    ? 'GathR is requesting a secure verification link from Firebase.'
+                    : verificationEmail.status === 'sent'
+                      ? 'Open the link in the email, then share the photo again so it can count toward community confirmation.'
+                      : verificationEmail.status === 'recently_sent'
+                        ? 'A verification link was sent recently. Open it, then share the photo again.'
+                        : verificationEmail.status === 'already_verified'
+                          ? 'Share the photo again so Firebase can apply the verified account status.'
+                          : verificationEmail.message}
+                </Text>
+              </View>
+            </View>
+          ) : null}
+
           {phase !== 'processing' && phase !== 'error' && result && detailsAvailable ? (
             <>
               <View style={styles.receiptDivider} />
@@ -1440,6 +1499,41 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#E2E8F0',
+  },
+  verificationCard: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+    marginTop: 12,
+    padding: 14,
+    borderRadius: 16,
+    backgroundColor: '#F0F7FF',
+    borderWidth: 1,
+    borderColor: '#C9E2FA',
+  },
+  verificationIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFFFFF',
+  },
+  verificationCopy: {
+    flex: 1,
+  },
+  verificationTitle: {
+    color: BRAND.ink,
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: '900',
+  },
+  verificationDetail: {
+    color: BRAND.muted,
+    fontSize: 12,
+    lineHeight: 17,
+    fontWeight: '600',
+    marginTop: 2,
   },
   communityDotActive: {
     backgroundColor: BRAND.primaryDark,
