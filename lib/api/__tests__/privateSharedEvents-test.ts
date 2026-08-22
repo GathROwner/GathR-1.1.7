@@ -9,7 +9,10 @@ jest.mock('../../../config/firebaseConfig', () => ({
   firestore: {},
 }));
 
-import { normalizePrivateSharedEventForRegression } from '../privateSharedEvents';
+import {
+  expandPrivateSharedEventRecurrenceForRegression,
+  normalizePrivateSharedEventForRegression,
+} from '../privateSharedEvents';
 
 describe('private shared event normalization', () => {
   const unknownVenueEvent = {
@@ -54,5 +57,51 @@ describe('private shared event normalization', () => {
       longitude: undefined,
     }, null);
     expect(normalized).toBeNull();
+  });
+
+  it('materializes a finite multi-day weekly share into the normal recurrence shape', () => {
+    const source = {
+      ...unknownVenueEvent,
+      startDate: '2026-09-01',
+      endDate: '2026-09-01',
+      recurringPattern: 'weekly_custom',
+      recurringDaysOfWeek: ['tuesday', 'thursday'],
+      recurrenceUntilDate: '2026-09-10',
+    };
+    const normalized = normalizePrivateSharedEventForRegression('private-recurring', source, null)!;
+    const instances = expandPrivateSharedEventRecurrenceForRegression(normalized, source, {
+      todayKey: '2026-08-22',
+    });
+    expect(instances.map((event) => event.startDate)).toEqual([
+      '2026-09-01',
+      '2026-09-03',
+      '2026-09-08',
+      '2026-09-10',
+    ]);
+    expect(instances.every((event) => event.isRecurringInstance)).toBe(true);
+    expect(instances.every((event) => event.originalEventId === 'shared_private-recurring')).toBe(true);
+  });
+
+  it('bounds an open-ended recurring share instead of creating an unlimited series', () => {
+    const source = {
+      ...unknownVenueEvent,
+      startDate: '2026-08-22',
+      endDate: '2026-08-22',
+      recurringPattern: 'daily',
+      recurrenceUntilDate: undefined,
+    };
+    const normalized = normalizePrivateSharedEventForRegression('private-daily', source, null)!;
+    const instances = expandPrivateSharedEventRecurrenceForRegression(normalized, source, {
+      todayKey: '2026-08-22',
+      horizonDays: 14,
+    });
+    expect(instances).toHaveLength(15);
+    expect(instances[0].startDate).toBe('2026-08-22');
+    expect(instances.at(-1)?.startDate).toBe('2026-09-05');
+  });
+
+  it('leaves a non-recurring private share as one event', () => {
+    const normalized = normalizePrivateSharedEventForRegression('private-once', unknownVenueEvent, null)!;
+    expect(expandPrivateSharedEventRecurrenceForRegression(normalized, unknownVenueEvent)).toEqual([normalized]);
   });
 });

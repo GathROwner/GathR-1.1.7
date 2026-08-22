@@ -17,10 +17,13 @@ import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useShareIntentContext } from 'expo-share-intent';
 import {
+  confirmSharedEventVenue,
+  searchSharedEventVenueCandidates,
   submitSharedEvent,
   SharedEventPayload,
   SharedEventResultEvent,
   SharedEventSubmitResult,
+  SharedEventVenueCandidate,
   watchSharedEventIngest,
 } from '../lib/sharedEventApi';
 import {
@@ -67,6 +70,11 @@ type SharedEventSnapshot = {
   endTime: string;
   locationName: string;
   address: string;
+  latitude?: number;
+  longitude?: number;
+  resolvedVenueId?: string;
+  googlePlaceId?: string;
+  venueResolutionStatus?: 'not_needed' | 'selection_required' | 'confirmed' | 'no_match';
   locationScope?: 'venue' | 'route' | 'unknown';
   mapMode?: 'venue' | 'route' | 'none';
   contentKind?: 'event' | 'special';
@@ -332,6 +340,11 @@ function mergeEventIntoSnapshot(
     endTime: event.endTime || snapshot.endTime,
     locationName: event.locationName || snapshot.locationName,
     address: event.address || snapshot.address,
+    latitude: event.latitude ?? snapshot.latitude,
+    longitude: event.longitude ?? snapshot.longitude,
+    resolvedVenueId: event.resolvedVenueId || snapshot.resolvedVenueId,
+    googlePlaceId: event.googlePlaceId || snapshot.googlePlaceId,
+    venueResolutionStatus: event.venueResolutionStatus || snapshot.venueResolutionStatus,
     locationScope: event.locationScope || snapshot.locationScope,
     mapMode: event.mapMode || snapshot.mapMode,
     contentKind: event.contentKind || snapshot.contentKind,
@@ -469,6 +482,9 @@ function resultHasPendingAsyncWork(result: SharedEventSubmitResult | null): bool
 function shouldWatchIngest(result: SharedEventSubmitResult | null): boolean {
   if (!result?.ingestId) return false;
   if (resultHasPendingAsyncWork(result)) return true;
+  if (resultEvents(result).some((event) => event.venueResolutionStatus === 'selection_required')) {
+    return true;
+  }
   if (result.crowdPromotion?.events.some((event) => (
     event.status === 'collecting' || event.status === 'candidate_pending'
   ))) return true;
@@ -576,6 +592,18 @@ function statusCopy(
       icon: 'time-outline',
       title: 'Already happened',
       detail: 'GathR saved this share, but it looks like the event has already passed.',
+      color: BRAND.warning,
+    };
+  }
+
+  const unresolvedVenue = resultEvents(result).find((event) => (
+    event.venueResolutionStatus === 'selection_required'
+  ));
+  if (unresolvedVenue) {
+    return {
+      icon: 'location-outline',
+      title: 'Choose the venue',
+      detail: `GathR read the event details, but needs you to confirm where ${unresolvedVenue.locationName || 'it'} takes place.`,
       color: BRAND.warning,
     };
   }
@@ -727,6 +755,10 @@ function reviewReasonLabel(value: string): string {
       return 'Needs date';
     case 'missing_location':
       return 'Needs place';
+    case 'venue_selection_required':
+      return 'Confirm venue';
+    case 'venue_not_confirmed':
+      return 'Venue not confirmed';
     case 'event_expired':
       return 'Already happened';
     default:
@@ -744,6 +776,7 @@ export default function SharedEventScreen() {
     [params]
   );
   const initialSignature = useMemo(() => signatureForSnapshot(initial), [initial]);
+  const requestedIngestId = firstParam(params.ingestId);
   const submittedSignatureRef = useRef('');
   const ingestUnsubscribeRef = useRef<null | (() => void)>(null);
 
@@ -760,6 +793,11 @@ export default function SharedEventScreen() {
   const [verificationEmail, setVerificationEmail] = useState<
     VerificationEmailResult | { status: 'sending' } | null
   >(null);
+  const [venueCandidates, setVenueCandidates] = useState<SharedEventVenueCandidate[]>([]);
+  const [venueSearchLoading, setVenueSearchLoading] = useState(false);
+  const [venueSearchError, setVenueSearchError] = useState('');
+  const [venueMenuOpen, setVenueMenuOpen] = useState(false);
+  const [venueConfirmingId, setVenueConfirmingId] = useState('');
   const verificationAttemptedRef = useRef(false);
 
   const stopIngestWatcher = useCallback(() => {
@@ -836,8 +874,9 @@ export default function SharedEventScreen() {
   }, [applySubmitResult, startIngestWatcher, stopIngestWatcher]);
 
   useEffect(() => {
-    if (submittedSignatureRef.current === initialSignature) return;
-    submittedSignatureRef.current = initialSignature;
+    const submissionKey = requestedIngestId ? `ingest:${requestedIngestId}` : initialSignature;
+    if (submittedSignatureRef.current === submissionKey) return;
+    submittedSignatureRef.current = submissionKey;
     setSnapshot(initial);
     setEventSnapshots([initial]);
     const nextPreviewUri = initial.mediaFiles[0]?.path || initial.mediaUrls[0] || '';
@@ -847,8 +886,13 @@ export default function SharedEventScreen() {
     setResult(null);
     setErrorMessage('');
     stopIngestWatcher();
-    void submitSnapshot(initial);
-  }, [initial, initialSignature, stopIngestWatcher, submitSnapshot]);
+    if (requestedIngestId) {
+      setPhase('processing');
+      startIngestWatcher(requestedIngestId, initial);
+    } else {
+      void submitSnapshot(initial);
+    }
+  }, [initial, initialSignature, requestedIngestId, startIngestWatcher, stopIngestWatcher, submitSnapshot]);
 
   useEffect(() => () => stopIngestWatcher(), [stopIngestWatcher]);
 
@@ -862,6 +906,56 @@ export default function SharedEventScreen() {
   }, [accountNeedsVerification]);
 
   const eventCount = eventSnapshots.length;
+  const unresolvedVenueEvent = useMemo(() => resultEvents(result).find((event) => (
+    event.venueResolutionStatus === 'selection_required' && Boolean(event.privateEventId)
+  )), [result]);
+
+  useEffect(() => {
+    const privateEventId = unresolvedVenueEvent?.privateEventId;
+    if (!privateEventId) {
+      setVenueCandidates([]);
+      setVenueSearchError('');
+      setVenueMenuOpen(false);
+      return;
+    }
+    let active = true;
+    setVenueSearchLoading(true);
+    setVenueSearchError('');
+    void searchSharedEventVenueCandidates(privateEventId)
+      .then((searchResult) => {
+        if (!active) return;
+        setVenueCandidates(searchResult.candidates || []);
+        setVenueMenuOpen(true);
+      })
+      .catch((error) => {
+        if (!active) return;
+        setVenueSearchError(error instanceof Error ? error.message : 'Could not search for venues.');
+      })
+      .finally(() => {
+        if (active) setVenueSearchLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [unresolvedVenueEvent?.privateEventId]);
+
+  const chooseVenue = useCallback(async (placeId?: string) => {
+    const privateEventId = unresolvedVenueEvent?.privateEventId;
+    if (!privateEventId || venueConfirmingId) return;
+    setVenueConfirmingId(placeId || 'none');
+    setVenueSearchError('');
+    try {
+      await confirmSharedEventVenue({
+        privateEventId,
+        ...(placeId ? { placeId } : { noMatch: true }),
+      });
+      setVenueMenuOpen(false);
+    } catch (error) {
+      setVenueSearchError(error instanceof Error ? error.message : 'Could not confirm that venue.');
+    } finally {
+      setVenueConfirmingId('');
+    }
+  }, [unresolvedVenueEvent?.privateEventId, venueConfirmingId]);
   const cardWidth = Math.max(280, width - 32);
   const sourceContext = sharedEventSourceContext(snapshot);
   const requiresRouteReview = eventSnapshots.some((eventSnapshot) => (
@@ -1053,7 +1147,10 @@ export default function SharedEventScreen() {
 
   const handleFinish = useCallback(() => {
     if (isUploading) return;
-    if (result?.ingestId && resultIsStillProcessing(result)) {
+    const venueStillNeeded = resultEvents(result).some((event) => (
+      event.venueResolutionStatus === 'selection_required'
+    ));
+    if (result?.ingestId && (resultIsStillProcessing(result) || venueStillNeeded)) {
       void trackPendingSharedEventIngest({
         ingestId: result.ingestId,
         sourceLabel: sourceContext.badgeLabel,
@@ -1191,6 +1288,91 @@ export default function SharedEventScreen() {
                   </View>
                 ))}
               </View>
+            </View>
+          ) : null}
+
+          {unresolvedVenueEvent ? (
+            <View style={styles.venueResolutionCard}>
+              <View style={styles.venueResolutionHeader}>
+                <View style={styles.venueResolutionIcon}>
+                  <Ionicons name="location-outline" size={20} color={BRAND.warning} />
+                </View>
+                <View style={styles.venueResolutionCopy}>
+                  <Text style={styles.venueResolutionTitle}>Confirm the venue</Text>
+                  <Text style={styles.venueResolutionDetail}>
+                    {`Select the correct Places match for ${unresolvedVenueEvent.locationName || 'this event'} before submitting it to the community.`}
+                  </Text>
+                </View>
+              </View>
+
+              <Pressable
+                style={styles.venueDropdownButton}
+                onPress={() => setVenueMenuOpen((open) => !open)}
+                disabled={venueSearchLoading || Boolean(venueConfirmingId)}
+              >
+                <View style={styles.venueDropdownText}>
+                  <Text style={styles.venueDropdownLabel}>
+                    {venueSearchLoading ? 'Searching nearby places...' : 'Choose a venue'}
+                  </Text>
+                  {!venueSearchLoading ? (
+                    <Text style={styles.venueDropdownHint}>
+                      {venueCandidates.length > 0
+                        ? `${venueCandidates.length} possible ${venueCandidates.length === 1 ? 'match' : 'matches'}`
+                        : 'No confident matches found'}
+                    </Text>
+                  ) : null}
+                </View>
+                <Ionicons
+                  name={venueMenuOpen ? 'chevron-up' : 'chevron-down'}
+                  size={20}
+                  color={BRAND.primaryDark}
+                />
+              </Pressable>
+
+              {venueMenuOpen && !venueSearchLoading ? (
+                <View style={styles.venueOptions}>
+                  {venueCandidates.map((candidate, index) => (
+                    <Pressable
+                      key={candidate.placeId}
+                      style={styles.venueOption}
+                      onPress={() => void chooseVenue(candidate.placeId)}
+                      disabled={Boolean(venueConfirmingId)}
+                    >
+                      <View style={styles.venueOptionRank}>
+                        <Text style={styles.venueOptionRankText}>{index + 1}</Text>
+                      </View>
+                      <View style={styles.venueOptionCopy}>
+                        <Text style={styles.venueOptionName}>{candidate.name}</Text>
+                        <Text style={styles.venueOptionAddress} numberOfLines={2}>
+                          {candidate.formattedAddress}
+                        </Text>
+                      </View>
+                      {venueConfirmingId === candidate.placeId ? (
+                        <Ionicons name="sync-outline" size={19} color={BRAND.primaryDark} />
+                      ) : (
+                        <Ionicons name="chevron-forward" size={19} color="#8BA0B5" />
+                      )}
+                    </Pressable>
+                  ))}
+                  <Pressable
+                    style={[styles.venueOption, styles.venueNoneOption]}
+                    onPress={() => void chooseVenue()}
+                    disabled={Boolean(venueConfirmingId)}
+                  >
+                    <View style={[styles.venueOptionRank, styles.venueNoneIcon]}>
+                      <Ionicons name="help-outline" size={16} color={BRAND.muted} />
+                    </View>
+                    <View style={styles.venueOptionCopy}>
+                      <Text style={styles.venueOptionName}>None of these</Text>
+                      <Text style={styles.venueOptionAddress}>Keep it private for manual review.</Text>
+                    </View>
+                  </Pressable>
+                </View>
+              ) : null}
+
+              {venueSearchError ? (
+                <Text style={styles.venueSearchError}>{venueSearchError}</Text>
+              ) : null}
             </View>
           ) : null}
 
@@ -1559,6 +1741,130 @@ const styles = StyleSheet.create({
   },
   communityDotActive: {
     backgroundColor: BRAND.primaryDark,
+  },
+  venueResolutionCard: {
+    marginTop: 12,
+    padding: 14,
+    borderRadius: 18,
+    backgroundColor: '#FFF9ED',
+    borderWidth: 1,
+    borderColor: '#F0D39A',
+  },
+  venueResolutionHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 11,
+  },
+  venueResolutionIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFFFFF',
+  },
+  venueResolutionCopy: {
+    flex: 1,
+  },
+  venueResolutionTitle: {
+    color: BRAND.ink,
+    fontSize: 15,
+    lineHeight: 19,
+    fontWeight: '900',
+  },
+  venueResolutionDetail: {
+    color: BRAND.muted,
+    fontSize: 12,
+    lineHeight: 17,
+    fontWeight: '600',
+    marginTop: 2,
+  },
+  venueDropdownButton: {
+    minHeight: 56,
+    marginTop: 13,
+    paddingHorizontal: 14,
+    borderRadius: 14,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#DFC188',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  venueDropdownText: {
+    flex: 1,
+  },
+  venueDropdownLabel: {
+    color: BRAND.ink,
+    fontSize: 14,
+    lineHeight: 18,
+    fontWeight: '800',
+  },
+  venueDropdownHint: {
+    color: BRAND.muted,
+    fontSize: 11,
+    lineHeight: 15,
+    marginTop: 1,
+  },
+  venueOptions: {
+    marginTop: 8,
+    borderRadius: 14,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: '#E6D2AA',
+    backgroundColor: '#FFFFFF',
+  },
+  venueOption: {
+    minHeight: 64,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#E6EDF5',
+  },
+  venueNoneOption: {
+    borderBottomWidth: 0,
+    backgroundColor: '#F8FAFC',
+  },
+  venueOptionRank: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#EAF4FF',
+  },
+  venueOptionRankText: {
+    color: BRAND.primaryDark,
+    fontSize: 12,
+    fontWeight: '900',
+  },
+  venueNoneIcon: {
+    backgroundColor: '#EEF2F6',
+  },
+  venueOptionCopy: {
+    flex: 1,
+  },
+  venueOptionName: {
+    color: BRAND.ink,
+    fontSize: 14,
+    lineHeight: 18,
+    fontWeight: '800',
+  },
+  venueOptionAddress: {
+    color: BRAND.muted,
+    fontSize: 11,
+    lineHeight: 15,
+    marginTop: 2,
+  },
+  venueSearchError: {
+    color: BRAND.danger,
+    fontSize: 12,
+    lineHeight: 17,
+    fontWeight: '600',
+    marginTop: 9,
   },
   receiptHeaderRow: {
     flexDirection: 'row',

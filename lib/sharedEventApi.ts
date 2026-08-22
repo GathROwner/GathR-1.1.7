@@ -37,6 +37,11 @@ export type SharedEventResultEvent = {
   endTime?: string;
   locationName?: string;
   address?: string;
+  latitude?: number;
+  longitude?: number;
+  resolvedVenueId?: string;
+  googlePlaceId?: string;
+  venueResolutionStatus?: 'not_needed' | 'selection_required' | 'confirmed' | 'no_match';
   locationScope?: 'venue' | 'route' | 'unknown';
   mapMode?: 'venue' | 'route' | 'none';
   contentKind?: 'event' | 'special';
@@ -159,6 +164,24 @@ export type SharedEventSubmitResult = {
   error?: string;
 };
 
+export type SharedEventVenueCandidate = {
+  placeId: string;
+  name: string;
+  formattedAddress: string;
+  latitude: number;
+  longitude: number;
+  confidence: number;
+};
+
+export type SharedEventVenueSearchResult = {
+  success: boolean;
+  privateEventId: string;
+  venueName?: string;
+  venueResolutionStatus?: SharedEventResultEvent['venueResolutionStatus'];
+  candidates: SharedEventVenueCandidate[];
+  error?: string;
+};
+
 function uniqueStrings(values: Array<string | undefined>): string[] {
   return Array.from(new Set(values.map((value) => String(value || '').trim()).filter(Boolean)));
 }
@@ -178,6 +201,11 @@ function eventsFromIngestPreview(value: unknown): SharedEventResultEvent[] {
         endTime: typeof raw.endTime === 'string' ? raw.endTime : undefined,
         locationName: typeof raw.locationName === 'string' ? raw.locationName : undefined,
         address: typeof raw.address === 'string' ? raw.address : undefined,
+        latitude: typeof raw.latitude === 'number' ? raw.latitude : undefined,
+        longitude: typeof raw.longitude === 'number' ? raw.longitude : undefined,
+        resolvedVenueId: typeof raw.resolvedVenueId === 'string' ? raw.resolvedVenueId : undefined,
+        googlePlaceId: typeof raw.googlePlaceId === 'string' ? raw.googlePlaceId : undefined,
+        venueResolutionStatus: raw.venueResolutionStatus,
         locationScope: raw.locationScope,
         mapMode: raw.mapMode,
         contentKind: raw.contentKind,
@@ -206,7 +234,7 @@ function eventsFromIngestPreview(value: unknown): SharedEventResultEvent[] {
 }
 
 function resultFromIngestDoc(ingestId: string, data: Record<string, any>): SharedEventSubmitResult {
-  const events = eventsFromIngestPreview(data.eventsPreview);
+  let events = eventsFromIngestPreview(data.eventsPreview);
   const eventLinks = Array.isArray(data.eventLinks) ? data.eventLinks : [];
   const privateEventIds = Array.isArray(data.privateEventIds)
     ? data.privateEventIds.filter((id: unknown) => typeof id === 'string')
@@ -214,6 +242,11 @@ function resultFromIngestDoc(ingestId: string, data: Record<string, any>): Share
   const publicCandidateIds = Array.isArray(data.publicCandidateIds)
     ? data.publicCandidateIds.filter((id: unknown) => typeof id === 'string')
     : eventLinks.map((link: any) => link?.publicCandidateId).filter((id: unknown) => typeof id === 'string');
+  events = events.map((event, index) => ({
+    ...event,
+    privateEventId: privateEventIds[index],
+    publicCandidateId: publicCandidateIds[index],
+  }));
   const reviewReasons = uniqueStrings(events.flatMap((event) => event.reviewReasons || []));
   const confidenceValues = events
     .map((event) => event.confidence)
@@ -305,6 +338,42 @@ export async function submitSharedEvent(payload: SharedEventPayload): Promise<Sh
   }
 
   return result;
+}
+
+async function postSharedEventAction<T>(path: string, body: Record<string, unknown>): Promise<T> {
+  const user = auth.currentUser;
+  if (!user) throw new Error('Log in to update this shared event.');
+  const token = await user.getIdToken();
+  const response = await fetch(`${FUNCTIONS_BASE_URL}/${path}`, {
+    method: 'POST',
+    headers: {
+      authorization: `Bearer ${token}`,
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify(body),
+  });
+  const result = await response.json().catch(() => ({})) as T & { success?: boolean; error?: string };
+  if (!response.ok || result.success === false) {
+    throw new Error(result.error || `Shared event update failed (${response.status})`);
+  }
+  return result;
+}
+
+export async function searchSharedEventVenueCandidates(
+  privateEventId: string
+): Promise<SharedEventVenueSearchResult> {
+  return postSharedEventAction<SharedEventVenueSearchResult>(
+    'searchSharedEventVenueCandidates',
+    { privateEventId }
+  );
+}
+
+export async function confirmSharedEventVenue(params: {
+  privateEventId: string;
+  placeId?: string;
+  noMatch?: boolean;
+}): Promise<{ success: boolean; ingestId: string; venueResolutionStatus: 'confirmed' | 'no_match' }> {
+  return postSharedEventAction('confirmSharedEventVenue', params);
 }
 
 export function watchSharedEventIngest(

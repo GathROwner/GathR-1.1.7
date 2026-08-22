@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Image, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
 import { useAuth } from '../../contexts/AuthContext';
 import { watchSharedEventIngest } from '../../lib/sharedEventApi';
 import {
@@ -14,18 +15,24 @@ type BannerState = {
   id: string;
   title: string;
   detail: string;
-  tone: 'success' | 'error';
+  tone: 'success' | 'warning' | 'error';
+  ingestId?: string;
+  persistent?: boolean;
 };
 
 export default function SharedEventProcessingBanner() {
+  const router = useRouter();
   const { user } = useAuth();
   const [banner, setBanner] = useState<BannerState | null>(null);
+  const [collapsed, setCollapsed] = useState(false);
   const subscriptionsRef = useRef(new Map<string, () => void>());
   const mountedRef = useRef(true);
 
   const showBanner = useCallback((nextBanner: BannerState) => {
     if (!mountedRef.current) return;
     setBanner(nextBanner);
+    setCollapsed(false);
+    if (nextBanner.persistent) return;
     setTimeout(() => {
       if (mountedRef.current) {
         setBanner((current) => current?.id === nextBanner.id ? null : current);
@@ -60,6 +67,20 @@ export default function SharedEventProcessingBanner() {
           }
 
           if (result.processingStatus !== 'completed') return;
+          const unresolvedVenue = result.events?.find((event) => (
+            event.venueResolutionStatus === 'selection_required'
+          ));
+          if (unresolvedVenue) {
+            showBanner({
+              id: `${entry.ingestId}-venue-needed`,
+              title: 'Venue needed',
+              detail: `Tap to choose the location for ${unresolvedVenue.locationName || 'your shared event'}.`,
+              tone: 'warning',
+              ingestId: entry.ingestId,
+              persistent: true,
+            });
+            return;
+          }
           clearSubscription(entry.ingestId);
           await removePendingSharedEventIngest(entry.ingestId);
           const count = Math.max(result.extractedEventCount || 0, result.events?.length || 0);
@@ -76,6 +97,7 @@ export default function SharedEventProcessingBanner() {
               ? `GathR found ${count} possible events from your share.`
               : 'GathR finished scanning your share.'),
             tone: 'success',
+            ingestId: entry.ingestId,
           });
         },
         async () => {
@@ -104,23 +126,44 @@ export default function SharedEventProcessingBanner() {
 
   if (!banner) return null;
 
-  const color = banner.tone === 'error' ? '#B42318' : '#12805C';
+  const color = banner.tone === 'error'
+    ? '#B42318'
+    : banner.tone === 'warning' ? '#B76E00' : '#12805C';
   return (
     <Pressable
-      style={styles.overlay}
-      onPress={() => setBanner(null)}
+      style={[styles.overlay, collapsed && styles.overlayCollapsed]}
+      onPress={() => {
+        if (banner.ingestId) {
+          router.push({ pathname: '/shared-event', params: { ingestId: banner.ingestId } });
+        } else {
+          setBanner(null);
+        }
+      }}
     >
-      <View style={[styles.card, { borderColor: `${color}44` }]}>
+      <View style={[styles.card, collapsed && styles.cardCollapsed, { borderColor: `${color}44` }]}>
         <Image source={GATHR_LOGO} style={styles.logo} resizeMode="contain" />
         <View style={styles.textBlock}>
           <Text style={styles.title}>{banner.title}</Text>
-          <Text style={styles.detail} numberOfLines={2}>{banner.detail}</Text>
+          {!collapsed ? <Text style={styles.detail} numberOfLines={2}>{banner.detail}</Text> : null}
         </View>
         <Ionicons
-          name={banner.tone === 'error' ? 'alert-circle-outline' : 'checkmark-circle-outline'}
+          name={banner.ingestId
+            ? 'chevron-forward'
+            : banner.tone === 'error' ? 'alert-circle-outline' : 'checkmark-circle-outline'}
           size={22}
           color={color}
         />
+        <Pressable
+          style={styles.closeButton}
+          hitSlop={8}
+          onPress={(event) => {
+            event.stopPropagation();
+            if (banner.persistent) setCollapsed(true);
+            else setBanner(null);
+          }}
+        >
+          <Ionicons name="close" size={18} color="#667085" />
+        </Pressable>
       </View>
     </Pressable>
   );
@@ -151,6 +194,13 @@ const styles = StyleSheet.create({
     shadowRadius: 18,
     elevation: 6,
   },
+  overlayCollapsed: {
+    left: 80,
+  },
+  cardCollapsed: {
+    minHeight: 54,
+    paddingVertical: 7,
+  },
   logo: {
     width: 38,
     height: 38,
@@ -171,5 +221,13 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     marginTop: 2,
     fontWeight: '600',
+  },
+  closeButton: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F2F4F7',
   },
 });

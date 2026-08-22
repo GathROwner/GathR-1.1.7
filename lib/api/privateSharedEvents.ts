@@ -43,6 +43,7 @@ type PrivateSharedEventDoc = {
   contentKind?: 'event' | 'special';
   price?: string;
   recurringPattern?: string;
+  recurringDaysOfWeek?: string[];
   recurrenceUntilDate?: string;
   mediaUrls?: string[];
   timezone?: string;
@@ -359,6 +360,91 @@ export const normalizePrivateSharedEventForRegression = (
   };
 };
 
+const WEEKDAY_INDEX: Record<string, number> = {
+  sunday: 0,
+  monday: 1,
+  tuesday: 2,
+  wednesday: 3,
+  thursday: 4,
+  friday: 5,
+  saturday: 6,
+};
+const PRIVATE_RECURRENCE_HORIZON_DAYS = 180;
+const PRIVATE_RECURRENCE_MAX_OCCURRENCES = 400;
+
+const parseDateKeyUtc = (value: string): Date | null => {
+  const match = String(value || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return null;
+  const date = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])));
+  return Number.isNaN(date.getTime()) ? null : date;
+};
+
+const dateKeyUtc = (date: Date): string => date.toISOString().slice(0, 10);
+
+const addUtcDays = (date: Date, days: number): Date => {
+  const next = new Date(date.getTime());
+  next.setUTCDate(next.getUTCDate() + days);
+  return next;
+};
+
+const recurrenceWeekdays = (event: PrivateSharedEventDoc): Set<number> => {
+  const explicit = Array.isArray(event.recurringDaysOfWeek)
+    ? event.recurringDaysOfWeek
+      .map((day) => WEEKDAY_INDEX[normalizeText(day)])
+      .filter((day): day is number => Number.isInteger(day))
+    : [];
+  if (explicit.length > 0) return new Set(explicit);
+  const match = String(event.recurringPattern || '').toLowerCase().match(/^weekly_([a-z]+)$/);
+  const single = match ? WEEKDAY_INDEX[match[1]] : undefined;
+  return Number.isInteger(single) ? new Set([single!]) : new Set();
+};
+
+export const expandPrivateSharedEventRecurrenceForRegression = (
+  base: Event,
+  event: PrivateSharedEventDoc,
+  options?: { todayKey?: string; horizonDays?: number }
+): Event[] => {
+  const pattern = String(event.recurringPattern || '').trim().toLowerCase();
+  if (!pattern || pattern === 'none') return [base];
+  const start = parseDateKeyUtc(base.startDate);
+  if (!start) return [base];
+
+  const explicitEnd = parseDateKeyUtc(String(event.recurrenceUntilDate || ''));
+  const today = parseDateKeyUtc(String(options?.todayKey || '')) || new Date();
+  const horizonDays = Math.max(1, Math.min(366, options?.horizonDays || PRIVATE_RECURRENCE_HORIZON_DAYS));
+  const horizon = addUtcDays(today, horizonDays);
+  const end = explicitEnd || horizon;
+  if (end < start) return [];
+
+  const baseEnd = parseDateKeyUtc(base.endDate) || start;
+  const durationDays = Math.max(0, Math.round((baseEnd.getTime() - start.getTime()) / 86400000));
+  const weekdays = recurrenceWeekdays(event);
+  const occursOn = (date: Date): boolean => {
+    if (pattern === 'daily') return true;
+    if (pattern === 'weekly_custom' || pattern.startsWith('weekly_')) {
+      return weekdays.has(date.getUTCDay());
+    }
+    return dateKeyUtc(date) === base.startDate;
+  };
+
+  const originalEventId = String(base.id);
+  const occurrences: Event[] = [];
+  for (let cursor = start; cursor <= end && occurrences.length < PRIVATE_RECURRENCE_MAX_OCCURRENCES; cursor = addUtcDays(cursor, 1)) {
+    if (!occursOn(cursor)) continue;
+    const startDate = dateKeyUtc(cursor);
+    occurrences.push({
+      ...base,
+      id: `${originalEventId}_${startDate}`,
+      startDate,
+      endDate: dateKeyUtc(addUtcDays(cursor, durationDays)),
+      isRecurring: true,
+      isRecurringInstance: true,
+      originalEventId,
+    });
+  }
+  return occurrences.length > 0 ? occurrences : [base];
+};
+
 export const isSharedEventFromCurrentUser = (event: Pick<Event, 'sharedEventProvenance'>): boolean =>
   event.sharedEventProvenance?.sharedByCurrentUser === true;
 
@@ -386,7 +472,9 @@ export async function fetchPrivateSharedEventsForCurrentUser(): Promise<Event[]>
     candidates.forEach(({ id, data }) => {
       const venue = matchVenue(data, venues);
       const normalized = normalizePrivateSharedEventForRegression(id, data, venue);
-      if (normalized) events.push(normalized);
+      if (normalized) {
+        events.push(...expandPrivateSharedEventRecurrenceForRegression(normalized, data));
+      }
     });
 
     return events;
