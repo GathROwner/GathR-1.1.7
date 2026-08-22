@@ -406,7 +406,7 @@ export const getRouteCompactCertaintyLabel = (
     case 'Confirmed streets + estimated connections':
       return 'Partly confirmed';
     case 'Estimated along organizer-listed streets':
-      return 'Estimated route';
+      return 'Estimated Route';
     case 'Suggested street connection • route unconfirmed':
       return 'Suggested route';
     case 'Confirmed route section':

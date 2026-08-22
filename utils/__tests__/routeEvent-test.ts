@@ -299,7 +299,7 @@ describe('route event map contract', () => {
       })),
     };
     expect(getRouteCompactCertaintyLabel(estimatedRouteData)).toBe(
-      'Estimated route'
+      'Estimated Route'
     );
   });
 
