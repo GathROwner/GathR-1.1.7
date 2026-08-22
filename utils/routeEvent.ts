@@ -56,16 +56,20 @@ export type RouteFeatureCalloutPresentation = {
 
 export const ROUTE_FEATURE_CALLOUT_WIDTH = 284;
 const ROUTE_FEATURE_CALLOUT_EDGE_GUTTER = 12;
+const ROUTE_FEATURE_CALLOUT_ESTIMATED_HEIGHT = 190;
+const ROUTE_FEATURE_CALLOUT_TOP_CONTROL_BOUNDARY = 120;
 
 export const getRouteFeatureCalloutPresentation = ({
   tapX,
   tapY,
   mapWidth,
+  bottomObstructionTop,
   projectedPoint,
 }: {
   tapX: number;
   tapY: number;
   mapWidth: number;
+  bottomObstructionTop?: number;
   projectedPoint?: readonly number[] | null;
 }): RouteFeatureCalloutPresentation => {
   const projectedX = Number(projectedPoint?.[0]);
@@ -89,11 +93,28 @@ export const getRouteFeatureCalloutPresentation = ({
     );
   }
 
-  return {
-    anchorX,
-    placement:
-      Number.isFinite(resolvedTapY) && resolvedTapY < 360 ? 'below' : 'above',
-  };
+  let placement: RouteFeatureCalloutPresentation['placement'] =
+    Number.isFinite(resolvedTapY) && resolvedTapY < 360 ? 'below' : 'above';
+
+  // A route summary card is fixed above the bottom navigation while a route is
+  // focused. Prefer the side of the selected feature that can contain the
+  // detail card without crossing into that measured obstruction.
+  if (Number.isFinite(resolvedTapY) && Number.isFinite(bottomObstructionTop)) {
+    const spaceAbove = resolvedTapY - ROUTE_FEATURE_CALLOUT_TOP_CONTROL_BOUNDARY;
+    const spaceBelow = Number(bottomObstructionTop) - resolvedTapY;
+    const fitsAbove = spaceAbove >= ROUTE_FEATURE_CALLOUT_ESTIMATED_HEIGHT;
+    const fitsBelow = spaceBelow >= ROUTE_FEATURE_CALLOUT_ESTIMATED_HEIGHT;
+
+    if (fitsAbove && !fitsBelow) {
+      placement = 'above';
+    } else if (fitsBelow && !fitsAbove) {
+      placement = 'below';
+    } else if (!fitsAbove && !fitsBelow) {
+      placement = spaceAbove >= spaceBelow ? 'above' : 'below';
+    }
+  }
+
+  return { anchorX, placement };
 };
 
 const isValidCoordinate = (coordinate: unknown): coordinate is RouteCoordinate =>
@@ -368,4 +389,31 @@ export const getRouteCertaintyLabel = (routeData?: EventRouteData | null): strin
     return 'Route unknown • showing possible stops';
   }
   return 'Route details unavailable';
+};
+
+/**
+ * Compact certainty copy for the image-overlay badge. The route summary card
+ * retains the longer explanatory label; the badge must stay fully readable on
+ * narrow phones beside the lightbox controls.
+ */
+export const getRouteCompactCertaintyLabel = (
+  routeData?: EventRouteData | null
+): string => {
+  switch (getRouteCertaintyLabel(routeData)) {
+    case 'Confirmed street route • map-aligned trace':
+    case 'Official route':
+      return 'Confirmed route';
+    case 'Confirmed streets + estimated connections':
+      return 'Partly confirmed';
+    case 'Estimated along organizer-listed streets':
+      return 'Estimated route';
+    case 'Suggested street connection • route unconfirmed':
+      return 'Suggested route';
+    case 'Confirmed route section':
+      return 'Confirmed section';
+    case 'Route unknown • showing possible stops':
+      return 'Stops only';
+    default:
+      return 'Route details';
+  }
 };

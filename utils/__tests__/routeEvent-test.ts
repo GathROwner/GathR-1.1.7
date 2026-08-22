@@ -1,9 +1,10 @@
-import type { Event } from '../../types/events';
+import type { Event, EventRouteData } from '../../types/events';
 import {
   buildRouteLineFeatureCollection,
   buildRouteStopFeatureCollection,
   getRouteBounds,
   getRouteCertaintyLabel,
+  getRouteCompactCertaintyLabel,
   getRouteFeatureCalloutPresentation,
   getRouteSegmentCallout,
   getRouteStopCallout,
@@ -236,6 +237,17 @@ describe('route event map contract', () => {
     expect(formerlyClippedStop.anchorX).toBeCloseTo(138 / 284);
   });
 
+  it('keeps route details above the measured lower route summary', () => {
+    const presentation = getRouteFeatureCalloutPresentation({
+      tapX: 195,
+      tapY: 330,
+      mapWidth: 390,
+      bottomObstructionTop: 465,
+    });
+
+    expect(presentation).toEqual({ anchorX: 0.5, placement: 'above' });
+  });
+
   it('uses the currently projected map position instead of a stale press point', () => {
     const presentation = getRouteFeatureCalloutPresentation({
       tapX: 370,
@@ -268,6 +280,26 @@ describe('route event map contract', () => {
   it('uses honest user-facing certainty language', () => {
     expect(getRouteCertaintyLabel(routeEvent.routeData)).toBe(
       'Confirmed streets + estimated connections'
+    );
+  });
+
+  it('uses compact route certainty copy in narrow lightbox badges', () => {
+    expect(getRouteCompactCertaintyLabel(routeEvent.routeData)).toBe(
+      'Partly confirmed'
+    );
+
+    const estimatedRouteData: EventRouteData = {
+      ...routeEvent.routeData,
+      version: 1,
+      status: 'approximate' as const,
+      segments: routeEvent.routeData!.segments!.map((segment) => ({
+        ...segment,
+        certainty: 'approximate' as const,
+        source: 'official_streets' as const,
+      })),
+    };
+    expect(getRouteCompactCertaintyLabel(estimatedRouteData)).toBe(
+      'Estimated route'
     );
   });
 

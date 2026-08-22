@@ -50,7 +50,7 @@ import { getTicketUrl, normalizeTicketUrl } from '../../utils/ticketUrls';
 import { getPrimaryNonTicketAction } from '../../utils/eventActionLinks';
 import { areEventIdsEquivalent } from '../../lib/api/firestoreEvents';
 import {
-  getRouteCertaintyLabel,
+  getRouteCompactCertaintyLabel,
   getRouteSourceUrl,
   hasDrawableRoute,
 } from '../../utils/routeEvent';
@@ -1345,7 +1345,7 @@ const handleNonTicketAction = () => {
                 />
                 <Text style={styles.cityEventStatusText} numberOfLines={1}>
                   {routeEvent
-                    ? getRouteCertaintyLabel(updatedEvent.routeData)
+                    ? getRouteCompactCertaintyLabel(updatedEvent.routeData)
                     : 'Area-wide'}
                 </Text>
               </View>
@@ -1965,7 +1965,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255, 196, 0, 0.92)',
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.55)',
-    maxWidth: 128,
+    maxWidth: 168,
   },
   cityEventStatusText: {
     color: '#4E342E',

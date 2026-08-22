@@ -210,6 +210,9 @@ const ANDROID_CLUSTER_TOUCH_OVERLAY_DURATION_MS = 4500;
 const ANDROID_CLUSTER_TOUCH_OVERLAY_LIMIT = 80;
 const SHARED_EVENT_RETURN_INTERACTION_GUARD_MS = 10000;
 const CALLOUT_OVERLAY_DISMISS_GUARD_MS = 1200;
+const ROUTE_OVERLAY_BOTTOM_OFFSET = 104;
+const ROUTE_OVERLAY_DEFAULT_HEIGHT = 96;
+const ROUTE_FEATURE_CALLOUT_SUMMARY_GAP = 12;
 const STAGE_CLUSTER_MARKERS_ON_STARTUP = Platform.OS === 'android';
 const STARTUP_CLUSTER_MARKER_LIMIT = 12;
 const FULL_CLUSTER_MARKER_DELAY_MS = 1000;
@@ -3102,6 +3105,7 @@ useEffect(() => {
   const [mapFirstFrameRendered, setMapFirstFrameRendered] = useState<boolean>(false);
   const [mapTabOverlaysReady, setMapTabOverlaysReady] = useState<boolean>(Platform.OS !== 'android');
   const [activeRouteEvent, setActiveRouteEvent] = useState<Event | null>(null);
+  const [routeOverlayHeight, setRouteOverlayHeight] = useState(0);
   const [routeFeatureCallout, setRouteFeatureCallout] = useState<{
     data: RouteFeatureCalloutData;
     anchorX: number;
@@ -6986,12 +6990,19 @@ lastOpenedClusterIdRef.current = cluster.id;
     if (requestId !== routeFeatureCalloutRequestRef.current) return;
 
     const mapWidth = mapDimensions?.width ?? Dimensions.get('window').width;
+    const mapHeight = mapDimensions?.height ?? Dimensions.get('window').height;
+    const bottomObstructionTop =
+      mapHeight -
+      ROUTE_OVERLAY_BOTTOM_OFFSET -
+      Math.max(routeOverlayHeight, ROUTE_OVERLAY_DEFAULT_HEIGHT) -
+      ROUTE_FEATURE_CALLOUT_SUMMARY_GAP;
     const tapX = Number(pressEvent?.point?.x);
     const tapY = Number(pressEvent?.point?.y);
     const { anchorX, placement } = getRouteFeatureCalloutPresentation({
       tapX,
       tapY,
       mapWidth,
+      bottomObstructionTop,
       projectedPoint,
     });
 
@@ -9748,6 +9759,12 @@ onDidFinishLoadingMap={() => {
           accessibilityLabel={`Open ${activeRouteEvent.title} details`}
           accessibilityHint="Opens the event details"
           onPress={reopenActiveRouteLightbox}
+          onLayout={({ nativeEvent }) => {
+            const measuredHeight = Math.round(nativeEvent.layout.height);
+            setRouteOverlayHeight((currentHeight) =>
+              currentHeight === measuredHeight ? currentHeight : measuredHeight
+            );
+          }}
           style={({ pressed }) => [
             styles.routeOverlayCard,
             pressed && styles.routeOverlayCardPressed,
@@ -10160,7 +10177,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 14,
     right: 14,
-    bottom: 104,
+    bottom: ROUTE_OVERLAY_BOTTOM_OFFSET,
     borderRadius: 16,
     backgroundColor: 'rgba(17, 32, 48, 0.96)',
     paddingHorizontal: 12,
