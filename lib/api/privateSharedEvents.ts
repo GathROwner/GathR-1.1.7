@@ -35,6 +35,15 @@ type PrivateSharedEventDoc = {
   endTime?: string;
   locationName?: string;
   address?: string;
+  latitude?: number;
+  longitude?: number;
+  locationPrecision?: 'exact' | 'approximate' | 'none';
+  locationScope?: 'venue' | 'route' | 'unknown';
+  mapMode?: 'venue' | 'route' | 'none';
+  contentKind?: 'event' | 'special';
+  price?: string;
+  recurringPattern?: string;
+  recurrenceUntilDate?: string;
   mediaUrls?: string[];
   timezone?: string;
   reviewReasons?: string[];
@@ -112,6 +121,7 @@ const firstText = (...values: unknown[]): string => {
 
 const firstFiniteNumber = (...values: unknown[]): number => {
   for (const value of values) {
+    if (value === null || value === undefined || value === '') continue;
     const numberValue = Number(value);
     if (Number.isFinite(numberValue)) return numberValue;
   }
@@ -157,7 +167,7 @@ const hasUsableDate = (event: PrivateSharedEventDoc): boolean =>
 
 const isExpiredForDisplay = (event: PrivateSharedEventDoc): boolean => {
   if (event.status === 'expired' || event.isExpired) return true;
-  const endDate = String(event.endDate || event.startDate || '').trim();
+  const endDate = String(event.recurrenceUntilDate || event.endDate || event.startDate || '').trim();
   if (!endDate) return false;
 
   const today = new Date();
@@ -171,6 +181,7 @@ const isExpiredForDisplay = (event: PrivateSharedEventDoc): boolean => {
 };
 
 const inferType = (event: PrivateSharedEventDoc): Event['type'] => {
+  if (event.contentKind === 'event' || event.contentKind === 'special') return event.contentKind;
   const text = normalizeText(`${event.title || ''} ${event.description || ''}`);
   if (/\b(happy hour|specials?|deal|discount|menu|brunch|patio|food|burger|bbq|wing night)\b/.test(text)) {
     return 'special';
@@ -262,23 +273,36 @@ const matchVenue = (
   }) ?? null;
 };
 
-const normalizePrivateSharedEvent = (
+export const normalizePrivateSharedEventForRegression = (
   id: string,
   event: PrivateSharedEventDoc,
-  venue: VenueDirectoryEntry
+  venue: VenueDirectoryEntry | null
 ): Event | null => {
   if (!hasUsableDate(event) || isExpiredForDisplay(event)) return null;
 
-  const latitude = firstFiniteNumber(venue.latitude, venue.lat, venue.coordinates?.latitude, venue.coordinates?.lat);
-  const longitude = firstFiniteNumber(venue.longitude, venue.lng, venue.coordinates?.longitude, venue.coordinates?.lng);
+  const resolvedVenue = venue || {};
+  const latitude = firstFiniteNumber(
+    event.latitude,
+    resolvedVenue.latitude,
+    resolvedVenue.lat,
+    resolvedVenue.coordinates?.latitude,
+    resolvedVenue.coordinates?.lat
+  );
+  const longitude = firstFiniteNumber(
+    event.longitude,
+    resolvedVenue.longitude,
+    resolvedVenue.lng,
+    resolvedVenue.coordinates?.longitude,
+    resolvedVenue.coordinates?.lng
+  );
   if (!Number.isFinite(latitude) || !Number.isFinite(longitude) || (latitude === 0 && longitude === 0)) {
     return null;
   }
 
-  const canonicalVenueName = firstText(venue.pagename, venue.name, venue.title, event.locationName, event.visibilityEvidence?.locationName);
+  const canonicalVenueName = firstText(resolvedVenue.pagename, resolvedVenue.name, resolvedVenue.title, event.locationName, event.visibilityEvidence?.locationName, 'Shared location');
   const parsedLocationName = firstText(event.locationName, event.visibilityEvidence?.locationName);
   const locationDetail = extractLocationDetail(parsedLocationName, canonicalVenueName);
-  const address = firstText(event.address, event.visibilityEvidence?.address, venue.address, venue.placeDetailsParsed?.formatted_address);
+  const address = firstText(event.address, event.visibilityEvidence?.address, resolvedVenue.address, resolvedVenue.placeDetailsParsed?.formatted_address);
   const mediaUrls = Array.isArray(event.mediaUrls) ? event.mediaUrls.filter(Boolean) : [];
   const imageUrl = firstText(mediaUrls[0], event.visibilityEvidence?.imageUrl);
   const description = withLocationDetail(firstText(event.description), locationDetail);
@@ -292,7 +316,7 @@ const normalizePrivateSharedEvent = (
     category: inferCategory(event),
     title: firstText(event.title, 'Shared event'),
     description,
-    venueId: venue.id ?? null,
+    venueId: resolvedVenue.id ?? null,
     venue: canonicalVenueName,
     address,
     latitude,
@@ -301,21 +325,26 @@ const normalizePrivateSharedEvent = (
     endDate: String(event.endDate || event.startDate || ''),
     startTime,
     endTime,
-    ticketPrice: '',
-    profileUrl: firstText(venue.profileImage),
+    ticketPrice: firstText(event.price),
+    profileUrl: firstText(resolvedVenue.profileImage),
     imageUrl,
     SharedPostThumbnail: '',
     ticketLinkPosts: '',
     ticketLinkEvents: '',
     mediaUrls,
     locationLabel: locationDetail || null,
+    locationScope: event.locationScope || (resolvedVenue.id ? 'venue' : 'unknown'),
+    locationPrecision: event.locationPrecision || (resolvedVenue.id ? 'exact' : null),
+    mapMode: event.mapMode || 'venue',
+    isRecurring: Boolean(event.recurringPattern && event.recurringPattern !== 'none'),
+    recurringPattern: event.recurringPattern,
     facebookUrl: firstText(event.sourceUrl),
-    venueWebsite: firstText(venue.website, venue.placeDetailsParsed?.website),
-    venuePhone: firstText(venue.phone, venue.placeDetailsParsed?.international_phone_number),
-    venueFacebookUrl: firstText(venue.facebookUrl),
-    venueInstagramUrl: firstText(venue.instagramUrl),
-    venueCategories: venue.categories || (venue.category1 ? [venue.category1] : []),
-    venueRating: venue.placeDetailsParsed?.rating ?? venue.rating ?? venue.ratingOverall,
+    venueWebsite: firstText(resolvedVenue.website, resolvedVenue.placeDetailsParsed?.website),
+    venuePhone: firstText(resolvedVenue.phone, resolvedVenue.placeDetailsParsed?.international_phone_number),
+    venueFacebookUrl: firstText(resolvedVenue.facebookUrl),
+    venueInstagramUrl: firstText(resolvedVenue.instagramUrl),
+    venueCategories: resolvedVenue.categories || (resolvedVenue.category1 ? [resolvedVenue.category1] : []),
+    venueRating: resolvedVenue.placeDetailsParsed?.rating ?? resolvedVenue.rating ?? resolvedVenue.ratingOverall,
     sharedEventProvenance: {
       sharedByCurrentUser: true,
       privateEventId: id,
@@ -356,9 +385,7 @@ export async function fetchPrivateSharedEventsForCurrentUser(): Promise<Event[]>
     const events: Event[] = [];
     candidates.forEach(({ id, data }) => {
       const venue = matchVenue(data, venues);
-      if (!venue) return;
-
-      const normalized = normalizePrivateSharedEvent(id, data, venue);
+      const normalized = normalizePrivateSharedEventForRegression(id, data, venue);
       if (normalized) events.push(normalized);
     });
 
