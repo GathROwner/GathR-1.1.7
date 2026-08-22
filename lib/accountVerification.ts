@@ -1,10 +1,14 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { reload, sendEmailVerification } from 'firebase/auth';
+import { reload } from 'firebase/auth';
 import { auth } from '../config/firebaseConfig';
 
 const VERIFICATION_EMAIL_COOLDOWN_MS = 15 * 60 * 1000;
 const VERIFICATION_EMAIL_SENT_AT_PREFIX = '@gathr/verification-email-sent-at/';
-const VERIFICATION_CONTINUE_URL = 'https://www.gathrapp.ca/app?source=email-verification';
+const DEFAULT_FUNCTIONS_BASE_URL = 'https://northamerica-northeast2-gathr-m1.cloudfunctions.net';
+const FUNCTIONS_BASE_URL = (
+  (typeof process !== 'undefined' && process?.env?.EXPO_PUBLIC_GATHR_FUNCTIONS_BASE_URL) ||
+  DEFAULT_FUNCTIONS_BASE_URL
+).replace(/\/+$/, '');
 
 export type VerificationEmailResult =
   | { status: 'sent' }
@@ -25,6 +29,33 @@ function verificationEmailErrorMessage(error: unknown): string {
     return 'The verification email could not be sent while the device was offline.';
   }
   return 'The verification email could not be sent right now.';
+}
+
+async function sendBrandedVerificationEmail(idToken: string): Promise<'sent' | 'already_verified' | 'recently_sent'> {
+  const response = await fetch(`${FUNCTIONS_BASE_URL}/sendBrandedEmailVerification`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${idToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: '{}',
+  });
+  const payload = await response.json().catch(() => ({})) as {
+    status?: string;
+    error?: string;
+  };
+
+  if (response.status === 429 || payload.error === 'too_many_requests') {
+    return 'recently_sent';
+  }
+  if (!response.ok) {
+    const error = new Error(payload.error || `Verification email request failed (${response.status}).`);
+    (error as Error & { code?: string }).code = payload.error || 'delivery_failed';
+    throw error;
+  }
+  if (payload.status === 'already_verified') return 'already_verified';
+  if (payload.status !== 'sent') throw new Error('Verification email response was incomplete.');
+  return 'sent';
 }
 
 export async function requestCurrentUserVerificationEmail(
@@ -61,10 +92,9 @@ export async function requestCurrentUserVerificationEmail(
   }
 
   try {
-    await sendEmailVerification(user, {
-      url: VERIFICATION_CONTINUE_URL,
-      handleCodeInApp: false,
-    });
+    const serverStatus = await sendBrandedVerificationEmail(await user.getIdToken());
+    if (serverStatus === 'already_verified') return { status: 'already_verified' };
+    if (serverStatus === 'recently_sent') return { status: 'recently_sent' };
     await AsyncStorage.setItem(cooldownKey, String(now));
     return { status: 'sent' };
   } catch (error) {
