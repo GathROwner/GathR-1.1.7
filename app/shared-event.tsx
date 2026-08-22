@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  BackHandler,
   Image,
   KeyboardAvoidingView,
   NativeScrollEvent,
@@ -47,6 +48,7 @@ const GATHR_LOGO = require('../assets/icon.png');
 type Phase = 'processing' | 'saved' | 'needs_review' | 'error';
 
 type SharedEventSnapshot = {
+  privateEventId?: string;
   sourceUrl: string;
   sharedText: string;
   title: string;
@@ -57,6 +59,13 @@ type SharedEventSnapshot = {
   endTime: string;
   locationName: string;
   address: string;
+  locationScope?: 'venue' | 'route' | 'unknown';
+  mapMode?: 'venue' | 'route' | 'none';
+  contentKind?: 'event' | 'special';
+  price?: string;
+  recurringPattern?: string;
+  recurringDaysOfWeek?: string[];
+  recurrenceUntilDate?: string;
   mediaUrls: string[];
   mediaFiles: SharedIntentMediaFile[];
   visibilityHint: string;
@@ -305,6 +314,7 @@ function mergeEventIntoSnapshot(
 
   return {
     ...snapshot,
+    privateEventId: event.privateEventId || snapshot.privateEventId,
     sourceUrl: event.sourceUrl || snapshot.sourceUrl,
     title: event.title || snapshot.title,
     description: event.description || snapshot.description,
@@ -314,6 +324,15 @@ function mergeEventIntoSnapshot(
     endTime: event.endTime || snapshot.endTime,
     locationName: event.locationName || snapshot.locationName,
     address: event.address || snapshot.address,
+    locationScope: event.locationScope || snapshot.locationScope,
+    mapMode: event.mapMode || snapshot.mapMode,
+    contentKind: event.contentKind || snapshot.contentKind,
+    price: event.price || snapshot.price,
+    recurringPattern: event.recurringPattern || snapshot.recurringPattern,
+    recurringDaysOfWeek: event.recurringDaysOfWeek?.length
+      ? event.recurringDaysOfWeek
+      : snapshot.recurringDaysOfWeek,
+    recurrenceUntilDate: event.recurrenceUntilDate || snapshot.recurrenceUntilDate,
     mediaUrls,
     reviewReasons: event.reviewReasons || snapshot.reviewReasons,
     confidence: event.confidence ?? snapshot.confidence,
@@ -368,14 +387,23 @@ function formatDateTime(snapshot: SharedEventSnapshot): string {
   return 'Date to be confirmed';
 }
 
-function sourceLabel(snapshot: SharedEventSnapshot): string {
-  if (!snapshot.sourceUrl) return 'Facebook';
-  try {
-    const url = new URL(snapshot.sourceUrl);
-    return url.hostname.replace(/^www\./, '');
-  } catch {
-    return 'Facebook';
-  }
+function formatRecurrence(snapshot: SharedEventSnapshot): string {
+  const pattern = String(snapshot.recurringPattern || '').trim();
+  if (!pattern || pattern === 'none') return '';
+
+  const days = (snapshot.recurringDaysOfWeek || [])
+    .map((day) => day.trim())
+    .filter(Boolean)
+    .map((day) => day.charAt(0).toUpperCase() + day.slice(1).toLowerCase());
+  const schedule = days.length > 0
+    ? days.join(', ')
+    : pattern === 'daily'
+      ? 'Every day'
+      : pattern.replace(/^weekly_/, 'Every ').replace(/_/g, ' ');
+  const until = snapshot.recurrenceUntilDate
+    ? ` through ${formatDate(snapshot.recurrenceUntilDate)}`
+    : '';
+  return `${schedule}${until}`;
 }
 
 function resultEvents(result: SharedEventSubmitResult | null): SharedEventResultEvent[] {
@@ -395,10 +423,6 @@ function resultIsFullyExpired(result: SharedEventSubmitResult | null): boolean {
   const events = resultEvents(result);
   if (events.length > 0) return events.every(resultEventIsExpired);
   return result.status === 'expired' || result.reviewReasons?.includes('event_expired') === true;
-}
-
-function resultUsesInitialScanLanguage(result: SharedEventSubmitResult | null): boolean {
-  return result?.routing === 'public_candidate';
 }
 
 function resultIsStillProcessing(result: SharedEventSubmitResult | null): boolean {
@@ -457,7 +481,8 @@ function statusCopy(
   result: SharedEventSubmitResult | null,
   errorMessage: string,
   eventCount: number,
-  sourceContext: SharedEventSourceContext
+  sourceContext: SharedEventSourceContext,
+  requiresRouteReview: boolean
 ): {
   icon: keyof typeof Ionicons.glyphMap;
   title: string;
@@ -465,10 +490,13 @@ function statusCopy(
   color: string;
 } {
   if (phase === 'processing') {
+    const uploadAccepted = Boolean(result?.ingestId);
     return {
-      icon: 'checkmark-circle-outline',
-      title: 'Thanks for submitting',
-      detail: `GathR is scanning this ${sourceContext.shareSubject}. You can leave this screen while it finishes.`,
+      icon: uploadAccepted ? 'scan-outline' : 'cloud-upload-outline',
+      title: uploadAccepted ? 'Reading your share' : 'Uploading your photo',
+      detail: uploadAccepted
+        ? `The upload is safe. You can return to GathR while the ${sourceContext.shareSubject} is checked.`
+        : 'Keep this screen open for a moment so the photo finishes uploading.',
       color: BRAND.primary,
     };
   }
@@ -476,7 +504,7 @@ function statusCopy(
   if (result?.publicProcessing?.status === 'processing' || result?.publicProcessing?.status === 'queued') {
     return {
       icon: 'sync-outline',
-      title: 'Thanks for submitting',
+      title: 'Finishing the public scan',
       detail: result.publicProcessing.message ||
         `GathR is scanning the ${sourceContext.publicReviewSource}. You can leave this screen while it finishes.`,
       color: BRAND.primary,
@@ -588,9 +616,9 @@ function statusCopy(
   if (result?.routing === 'public_candidate') {
     return {
       icon: 'earth-outline',
-      title: 'Thanks for submitting',
+      title: 'Saved and queued for review',
       detail: eventCount > 1
-        ? `GathR found ${eventCount} initial matches. The ${sourceContext.publicReviewSource} may add or update more events after review.`
+        ? `GathR saved ${eventCount} events. The ${sourceContext.publicReviewSource} may add or update public listings after review.`
         : 'GathR saved this share and will add or update the event after review if it is valid.',
       color: BRAND.success,
     };
@@ -598,9 +626,11 @@ function statusCopy(
 
   if (phase === 'needs_review' || result?.needsUserReview) {
     return {
-      icon: 'lock-closed-outline',
-      title: 'Saved privately',
-      detail: 'Only your account can see this share unless it is promoted later.',
+      icon: requiresRouteReview ? 'map-outline' : 'shield-outline',
+      title: requiresRouteReview ? 'Saved for route review' : 'Saved for review',
+      detail: requiresRouteReview
+        ? 'The event is in your GathR. Its route stays private until the path can be checked safely.'
+        : 'The event is in your GathR while its venue and details are checked.',
       color: BRAND.warning,
     };
   }
@@ -640,12 +670,12 @@ function summaryTitleForResult(result: SharedEventSubmitResult | null, parsedDet
     if (counts.unknownVenue > 0) return `${counts.unknownVenue} need venue review`;
   }
   if (resultIsFullyExpired(result)) return parsedDetailsCount > 1 ? 'Expired events found' : 'Expired event found';
-  if (resultUsesInitialScanLanguage(result)) {
-    if (parsedDetailsCount > 1) return `${parsedDetailsCount} initial matches`;
-    if (parsedDetailsCount === 1) return 'Initial match found';
+  if (result.needsUserReview) {
+    if (parsedDetailsCount > 1) return `${parsedDetailsCount} events saved for review`;
+    if (parsedDetailsCount === 1) return 'Event saved for review';
   }
-  if (parsedDetailsCount > 1) return `${parsedDetailsCount} possible events found`;
-  if (parsedDetailsCount === 1) return 'Possible event found';
+  if (parsedDetailsCount > 1) return `${parsedDetailsCount} events saved`;
+  if (parsedDetailsCount === 1) return 'Event saved';
   return 'Share received';
 }
 
@@ -776,21 +806,53 @@ export default function SharedEventScreen() {
   const eventCount = eventSnapshots.length;
   const cardWidth = Math.max(280, width - 32);
   const sourceContext = sharedEventSourceContext(snapshot);
-  const status = statusCopy(phase, result, errorMessage, eventCount, sourceContext);
+  const requiresRouteReview = eventSnapshots.some((eventSnapshot) => (
+    eventSnapshot.reviewReasons.includes('route_event_requires_review')
+  ));
+  const status = statusCopy(
+    phase,
+    result,
+    errorMessage,
+    eventCount,
+    sourceContext,
+    requiresRouteReview
+  );
   const parsedDetailsCount = phase === 'processing' || phase === 'error'
     ? 0
     : usefulParsedDetailsCount(result, eventSnapshots);
   const detailsAvailable = parsedDetailsCount > 0;
   const shouldShowDetails = showDetails && detailsAvailable;
   const summaryTitle = summaryTitleForResult(result, parsedDetailsCount);
-  const usesInitialScanLanguage = resultUsesInitialScanLanguage(result);
   const hasFinalPublicProcessing = result?.publicProcessing?.status === 'completed';
   const isExpiredResult = resultIsFullyExpired(result);
+  const isUploading = phase === 'processing' && !result?.ingestId;
   const publicCounts = publicProcessingCounts(result);
+  const previewUri = snapshot.mediaFiles[0]?.path || snapshot.mediaUrls[0] || '';
+  const progressStage = phase === 'processing' ? 1 : phase === 'error' ? 1 : 2;
+  const finalStepLabel = phase === 'error'
+    ? 'Retry'
+    : result?.crowdPromotion?.promotedEventCount
+      ? 'Global'
+      : result?.needsUserReview
+        ? 'Review'
+        : 'Ready';
+  const crowdCount = Math.min(
+    result?.crowdPromotion?.maxContributorCount || 0,
+    result?.crowdPromotion?.threshold || 3
+  );
+  const crowdThreshold = result?.crowdPromotion?.threshold || 3;
+  const showCrowdProgress = Boolean(result?.crowdPromotion && (
+    result.crowdPromotion.collectingEventCount > 0 ||
+    result.crowdPromotion.candidateEventCount > 0 ||
+    result.crowdPromotion.reviewEventCount > 0 ||
+    result.crowdPromotion.promotedEventCount > 0
+  ));
   const routingLabel = phase === 'processing'
-    ? 'Sending'
+    ? isUploading ? 'Uploading' : 'Reading'
     : phase === 'error'
       ? 'Retry needed'
+      : phase === 'needs_review' || result?.needsUserReview
+        ? 'Needs review'
       : result?.publicProcessing?.status === 'processing' || result?.publicProcessing?.status === 'queued'
         ? 'Scanning'
       : result?.publicProcessing?.status === 'completed' && publicCounts.created + publicCounts.updated > 0
@@ -814,6 +876,8 @@ export default function SharedEventScreen() {
     ? 'sync-outline'
     : phase === 'error'
       ? 'alert-circle-outline'
+      : phase === 'needs_review' || result?.needsUserReview
+        ? requiresRouteReview ? 'map-outline' : 'shield-outline'
       : result?.publicProcessing?.status === 'processing' || result?.publicProcessing?.status === 'queued'
         ? 'sync-outline'
       : result?.publicProcessing?.status === 'completed' && publicCounts.created + publicCounts.updated > 0
@@ -840,14 +904,39 @@ export default function SharedEventScreen() {
   }, [cardWidth, eventCount]);
 
   const renderEventDetailsPanel = (eventSnapshot: SharedEventSnapshot, index: number) => {
-    const title = eventSnapshot.title || (eventCount > 1 ? `Possible event ${index + 1}` : summaryTitle);
+    const title = eventSnapshot.title || (eventCount > 1 ? `Saved event ${index + 1}` : summaryTitle);
     const dateTime = eventSnapshot.startDate || eventSnapshot.startTime ? formatDateTime(eventSnapshot) : '';
-    const location = eventSnapshot.address || eventSnapshot.locationName;
+    const recurrence = formatRecurrence(eventSnapshot);
     const description = eventSnapshot.description;
+    const crowdEvent = result?.crowdPromotion?.events.find((entry) => (
+      entry.privateEventId === eventSnapshot.privateEventId
+    ));
+    const isPubliclyAvailable = publicCounts.created + publicCounts.updated > 0 ||
+      crowdEvent?.status === 'promoted' || crowdEvent?.status === 'duplicate_existing';
+    const visibilityDetail = isPubliclyAvailable
+      ? 'Available to everyone in GathR'
+      : crowdEvent?.status === 'collecting'
+        ? `Private to you - ${Math.min(crowdEvent.contributorCount, crowdEvent.threshold)} of ${crowdEvent.threshold} community confirmations`
+        : crowdEvent?.status === 'candidate_pending'
+          ? 'Private to you while community safety checks finish'
+          : crowdEvent?.status === 'needs_review'
+            ? 'Private to you while GathR reviews it'
+            : 'Private to your account';
     const detailRows: { icon: keyof typeof Ionicons.glyphMap; text: string }[] = [
       ...(dateTime ? [{ icon: 'calendar-outline' as const, text: dateTime }] : []),
-      ...(location ? [{ icon: 'location-outline' as const, text: location }] : []),
-      ...(eventSnapshot.sourceUrl ? [{ icon: 'link-outline' as const, text: sourceLabel(eventSnapshot) }] : []),
+      ...(eventSnapshot.locationName ? [{ icon: 'business-outline' as const, text: eventSnapshot.locationName }] : []),
+      ...(eventSnapshot.address ? [{ icon: 'location-outline' as const, text: eventSnapshot.address }] : []),
+      ...(eventSnapshot.price ? [{ icon: 'pricetag-outline' as const, text: eventSnapshot.price }] : []),
+      ...(recurrence ? [{ icon: 'repeat-outline' as const, text: recurrence }] : []),
+      ...(eventSnapshot.mapMode === 'route'
+        ? [{ icon: 'map-outline' as const, text: 'Route event - path pending review' }]
+        : []),
+      ...(!eventSnapshot.locationName && !eventSnapshot.address && eventSnapshot.locationScope === 'unknown'
+        ? [{ icon: 'location-outline' as const, text: 'Location still needs confirmation' }]
+        : []),
+      { icon: isPubliclyAvailable
+        ? 'earth-outline' as const
+        : 'lock-closed-outline' as const, text: visibilityDetail },
     ];
     const reviewReasons = eventSnapshot.reviewReasons.length > 0
       ? eventSnapshot.reviewReasons
@@ -862,8 +951,10 @@ export default function SharedEventScreen() {
       >
         <View style={styles.detailBody}>
           <View style={styles.detailHeadingRow}>
-            <Text style={styles.detailKicker}>{eventCount > 1 ? `${index + 1} of ${eventCount}` : 'Details'}</Text>
-            <Text style={styles.detailSource}>{sourceContext.badgeLabel}</Text>
+            <Text style={styles.detailKicker}>{eventCount > 1 ? `${index + 1} of ${eventCount}` : 'Saved details'}</Text>
+            <Text style={styles.detailSource}>
+              {eventSnapshot.contentKind === 'special' ? 'Special' : eventSnapshot.mapMode === 'route' ? 'Route' : 'Event'}
+            </Text>
           </View>
 
           <Text style={styles.detailTitle} numberOfLines={3}>{title}</Text>
@@ -879,7 +970,7 @@ export default function SharedEventScreen() {
             </View>
           ) : (
             <Text style={styles.detailEmptyText}>
-              GathR saved the share and will attach more event details if they become available.
+              GathR saved the share, but no reliable event fields were available to show.
             </Text>
           )}
 
@@ -902,6 +993,7 @@ export default function SharedEventScreen() {
   };
 
   const handleFinish = useCallback(() => {
+    if (isUploading) return;
     if (result?.ingestId && resultIsStillProcessing(result)) {
       void trackPendingSharedEventIngest({
         ingestId: result.ingestId,
@@ -917,7 +1009,13 @@ export default function SharedEventScreen() {
     globalAny.__gathrDismissedShareLaunchUrl = globalAny.__gathrCurrentShareLaunchUrl || '';
     resetShareIntent();
     router.replace('/(tabs)/map');
-  }, [resetShareIntent, result, router, sourceContext.badgeLabel]);
+  }, [isUploading, resetShareIntent, result, router, sourceContext.badgeLabel]);
+
+  useEffect(() => {
+    if (!isUploading || Platform.OS !== 'android') return undefined;
+    const subscription = BackHandler.addEventListener('hardwareBackPress', () => true);
+    return () => subscription.remove();
+  }, [isUploading]);
 
   return (
     <KeyboardAvoidingView
@@ -925,25 +1023,26 @@ export default function SharedEventScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
       <View style={styles.header}>
-        <Pressable style={styles.iconButton} onPress={() => router.back()}>
-          <Ionicons name="chevron-back" size={24} color={BRAND.ink} />
+        <Pressable style={styles.iconButton} onPress={() => router.back()} disabled={isUploading}>
+          <Ionicons name="chevron-back" size={24} color={isUploading ? '#A7B4C3' : BRAND.ink} />
         </Pressable>
         <View style={styles.headerBrand}>
           <Image source={GATHR_LOGO} style={styles.headerLogo} resizeMode="contain" />
-          <Text style={styles.headerTitle}>Sent to GathR</Text>
+          <Text style={styles.headerTitle}>Share to GathR</Text>
         </View>
-        <Pressable style={styles.iconButton} onPress={handleFinish}>
-          <Ionicons name="map-outline" size={22} color={BRAND.ink} />
+        <Pressable style={styles.iconButton} onPress={handleFinish} disabled={isUploading}>
+          <Ionicons name="map-outline" size={22} color={isUploading ? '#A7B4C3' : BRAND.ink} />
         </Pressable>
       </View>
 
       <ScrollView style={styles.scroller} contentContainerStyle={styles.content}>
         <View style={[styles.receiptCard, { borderColor: `${status.color}44` }]}>
-          <View style={styles.receiptHeaderRow}>
-            <Image source={GATHR_LOGO} style={styles.receiptLogo} resizeMode="contain" />
-            <View style={styles.receiptBrandText}>
-              <Text style={styles.receiptBrandTitle}>GathR</Text>
-              <Text style={styles.receiptBrandDetail}>{sourceContext.receiptDetail}</Text>
+          <View style={[styles.receiptAccent, { backgroundColor: status.color }]} />
+
+          <View style={styles.receiptTopRow}>
+            <View style={styles.sourceBadge}>
+              <Ionicons name={sourceContext.iconName} size={15} color={sourceContext.iconColor} />
+              <Text style={styles.sourceBadgeText}>{sourceContext.badgeLabel}</Text>
             </View>
             <View style={[styles.receiptRouteBadge, {
               backgroundColor: `${status.color}12`,
@@ -954,20 +1053,87 @@ export default function SharedEventScreen() {
             </View>
           </View>
 
-          <View style={styles.receiptSourceRow}>
-            <View style={styles.sourceBadge}>
-              <Ionicons name={sourceContext.iconName} size={16} color={sourceContext.iconColor} />
-              <Text style={styles.sourceBadgeText}>{sourceContext.badgeLabel}</Text>
+          <View style={styles.receiptHero}>
+            <View style={styles.receiptHeroCopy}>
+              <View style={styles.receiptEyebrowRow}>
+                <View style={[styles.receiptEyebrowIcon, { backgroundColor: `${status.color}16` }]}>
+                  <Ionicons name={status.icon} size={15} color={status.color} />
+                </View>
+                <Text style={[styles.receiptEyebrowText, { color: status.color }]}>
+                  {phase === 'processing' ? 'In progress' : phase === 'error' ? 'Action needed' : 'Share complete'}
+                </Text>
+              </View>
+              <Text style={styles.receiptTitle}>{status.title}</Text>
+              <Text style={styles.receiptDetail}>{status.detail}</Text>
             </View>
+            {previewUri ? (
+              <View style={styles.receiptPreviewFrame}>
+                <Image source={{ uri: previewUri }} style={styles.receiptPreview} resizeMode="cover" />
+                <View style={styles.receiptPreviewBadge}>
+                  <Ionicons name="image-outline" size={12} color="#FFFFFF" />
+                </View>
+              </View>
+            ) : (
+              <View style={[styles.receiptFallbackIcon, { backgroundColor: `${status.color}14` }]}>
+                <Ionicons name={status.icon} size={30} color={status.color} />
+              </View>
+            )}
           </View>
 
-          <View style={styles.receiptMain}>
-            <View style={[styles.receiptStatusIcon, { backgroundColor: `${status.color}16` }]}>
-              <Ionicons name={status.icon} size={25} color={status.color} />
-            </View>
-            <Text style={styles.receiptTitle}>{status.title}</Text>
-            <Text style={styles.receiptDetail}>{status.detail}</Text>
+          <View style={styles.progressCard}>
+            {['Received', 'Reading', finalStepLabel].map((label, index) => {
+              const isDone = index < progressStage || (progressStage === 2 && index === 2);
+              const isActive = index === progressStage && progressStage < 2;
+              const stepColor = phase === 'error' && isActive ? BRAND.danger : isDone ? BRAND.success : status.color;
+              return (
+                <React.Fragment key={label}>
+                  <View style={styles.progressStep}>
+                    <View style={[
+                      styles.progressDot,
+                      isDone && { backgroundColor: stepColor, borderColor: stepColor },
+                      isActive && { borderColor: stepColor, backgroundColor: `${stepColor}16` },
+                    ]}>
+                      {isDone ? <Ionicons name="checkmark" size={11} color="#FFFFFF" /> : null}
+                    </View>
+                    <Text style={[
+                      styles.progressLabel,
+                      (isDone || isActive) && { color: stepColor },
+                    ]}>{label}</Text>
+                  </View>
+                  {index < 2 ? (
+                    <View style={[
+                      styles.progressConnector,
+                      index < progressStage && { backgroundColor: BRAND.success },
+                    ]} />
+                  ) : null}
+                </React.Fragment>
+              );
+            })}
           </View>
+
+          {showCrowdProgress ? (
+            <View style={styles.communityProgressCard}>
+              <View style={styles.communityProgressCopy}>
+                <Text style={styles.communityProgressLabel}>Community confirmations</Text>
+                <Text style={styles.communityProgressDetail}>
+                  {crowdCount} of {crowdThreshold} independent shares
+                </Text>
+              </View>
+              <View style={styles.communityDots}>
+                {Array.from({ length: crowdThreshold }).map((_, index) => (
+                  <View
+                    key={`community-${index}`}
+                    style={[
+                      styles.communityDot,
+                      index < crowdCount && styles.communityDotActive,
+                    ]}
+                  >
+                    <Ionicons name="person" size={12} color={index < crowdCount ? '#FFFFFF' : '#94A3B8'} />
+                  </View>
+                ))}
+              </View>
+            </View>
+          ) : null}
 
           {phase !== 'processing' && phase !== 'error' && result && detailsAvailable ? (
             <>
@@ -975,7 +1141,7 @@ export default function SharedEventScreen() {
               <View style={styles.receiptFoundRow}>
                 <View style={styles.receiptFoundText}>
                   <Text style={styles.receiptFoundLabel}>
-                    {hasFinalPublicProcessing ? 'Final scan' : usesInitialScanLanguage ? 'Initial scan' : 'Detected'}
+                    {hasFinalPublicProcessing ? 'Final result' : 'Saved to your GathR'}
                   </Text>
                   <Text style={styles.receiptFoundTitle}>{summaryTitle}</Text>
                 </View>
@@ -984,7 +1150,7 @@ export default function SharedEventScreen() {
                   onPress={() => setShowDetails((current) => !current)}
                 >
                   <Ionicons name={showDetails ? 'chevron-up-outline' : 'list-outline'} size={18} color={BRAND.primaryDark} />
-                  <Text style={styles.detailsButtonText}>{showDetails ? 'Hide details' : 'View details'}</Text>
+                  <Text style={styles.detailsButtonText}>{showDetails ? 'Hide' : 'Details'}</Text>
                 </Pressable>
               </View>
             </>
@@ -995,7 +1161,7 @@ export default function SharedEventScreen() {
           <View style={styles.carouselSection}>
             <View style={styles.carouselHeader}>
               <Text style={styles.carouselTitle}>
-                {usesInitialScanLanguage ? `${eventCount} initial matches` : `${eventCount} events found`}
+                {`${eventCount} saved ${eventCount === 1 ? 'item' : 'items'}`}
               </Text>
               <Text style={styles.carouselCounter}>{selectedEventIndex + 1}/{eventCount}</Text>
             </View>
@@ -1033,11 +1199,12 @@ export default function SharedEventScreen() {
           </Pressable>
         ) : (
           <Pressable
-            style={styles.saveButton}
+            style={[styles.saveButton, isUploading && styles.saveButtonDisabled]}
             onPress={handleFinish}
+            disabled={isUploading}
           >
-            <Ionicons name="checkmark-circle-outline" size={21} color="#FFFFFF" />
-            <Text style={styles.saveButtonText}>Done</Text>
+            <Ionicons name={isUploading ? 'cloud-upload-outline' : 'map-outline'} size={21} color="#FFFFFF" />
+            <Text style={styles.saveButtonText}>{isUploading ? 'Uploading...' : 'Back to GathR'}</Text>
           </Pressable>
         )}
       </View>
@@ -1086,20 +1253,176 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   content: {
-    padding: 16,
+    padding: 14,
     paddingBottom: 24,
   },
   receiptCard: {
     backgroundColor: BRAND.surface,
-    borderRadius: 18,
+    borderRadius: 24,
     borderWidth: 1,
-    padding: 18,
+    padding: 20,
+    paddingTop: 22,
     marginBottom: 14,
+    overflow: 'hidden',
     shadowColor: '#0F172A',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.08,
-    shadowRadius: 18,
-    elevation: 3,
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.1,
+    shadowRadius: 24,
+    elevation: 5,
+  },
+  receiptAccent: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 5,
+  },
+  receiptTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+  },
+  receiptHero: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 16,
+    marginTop: 22,
+  },
+  receiptHeroCopy: {
+    flex: 1,
+    minWidth: 0,
+  },
+  receiptEyebrowRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+  },
+  receiptEyebrowIcon: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  receiptEyebrowText: {
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: '900',
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
+  },
+  receiptPreviewFrame: {
+    width: 94,
+    height: 118,
+    borderRadius: 16,
+    overflow: 'hidden',
+    backgroundColor: '#EAF1F8',
+    borderWidth: 1,
+    borderColor: '#D6E2EF',
+  },
+  receiptPreview: {
+    width: '100%',
+    height: '100%',
+  },
+  receiptPreviewBadge: {
+    position: 'absolute',
+    right: 7,
+    bottom: 7,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(15, 23, 42, 0.72)',
+  },
+  receiptFallbackIcon: {
+    width: 82,
+    height: 82,
+    borderRadius: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  progressCard: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginTop: 22,
+    padding: 14,
+    borderRadius: 16,
+    backgroundColor: '#F7FAFD',
+    borderWidth: 1,
+    borderColor: '#E3ECF5',
+  },
+  progressStep: {
+    width: 62,
+    alignItems: 'center',
+    gap: 6,
+  },
+  progressDot: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: '#CBD5E1',
+    backgroundColor: '#FFFFFF',
+  },
+  progressConnector: {
+    flex: 1,
+    height: 2,
+    marginTop: 10,
+    marginHorizontal: -7,
+    backgroundColor: '#DCE5EF',
+  },
+  progressLabel: {
+    color: '#94A3B8',
+    fontSize: 11,
+    lineHeight: 14,
+    fontWeight: '800',
+    textAlign: 'center',
+  },
+  communityProgressCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginTop: 12,
+    padding: 14,
+    borderRadius: 16,
+    backgroundColor: '#EEF7FF',
+    borderWidth: 1,
+    borderColor: '#CCE4FA',
+  },
+  communityProgressCopy: {
+    flex: 1,
+  },
+  communityProgressLabel: {
+    color: BRAND.ink,
+    fontSize: 13,
+    lineHeight: 17,
+    fontWeight: '900',
+  },
+  communityProgressDetail: {
+    color: BRAND.muted,
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: '600',
+    marginTop: 2,
+  },
+  communityDots: {
+    flexDirection: 'row',
+    gap: 5,
+  },
+  communityDot: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#E2E8F0',
+  },
+  communityDotActive: {
+    backgroundColor: BRAND.primaryDark,
   },
   receiptHeaderRow: {
     flexDirection: 'row',
@@ -1159,18 +1482,16 @@ const styles = StyleSheet.create({
   },
   receiptTitle: {
     color: BRAND.ink,
-    fontSize: 26,
-    lineHeight: 31,
+    fontSize: 27,
+    lineHeight: 32,
     fontWeight: '900',
-    textAlign: 'center',
-    marginTop: 14,
+    marginTop: 10,
   },
   receiptDetail: {
     color: BRAND.muted,
-    fontSize: 15,
-    lineHeight: 22,
-    textAlign: 'center',
-    marginTop: 7,
+    fontSize: 14,
+    lineHeight: 20,
+    marginTop: 8,
   },
   receiptDivider: {
     height: 1,

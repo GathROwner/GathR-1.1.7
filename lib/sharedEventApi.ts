@@ -37,6 +37,13 @@ export type SharedEventResultEvent = {
   endTime?: string;
   locationName?: string;
   address?: string;
+  locationScope?: 'venue' | 'route' | 'unknown';
+  mapMode?: 'venue' | 'route' | 'none';
+  contentKind?: 'event' | 'special';
+  price?: string;
+  recurringPattern?: string;
+  recurringDaysOfWeek?: string[];
+  recurrenceUntilDate?: string;
   mediaUrls?: string[];
   imageUrl?: string;
   sourceUrl?: string;
@@ -171,6 +178,15 @@ function eventsFromIngestPreview(value: unknown): SharedEventResultEvent[] {
         endTime: typeof raw.endTime === 'string' ? raw.endTime : undefined,
         locationName: typeof raw.locationName === 'string' ? raw.locationName : undefined,
         address: typeof raw.address === 'string' ? raw.address : undefined,
+        locationScope: raw.locationScope,
+        mapMode: raw.mapMode,
+        contentKind: raw.contentKind,
+        price: typeof raw.price === 'string' ? raw.price : undefined,
+        recurringPattern: typeof raw.recurringPattern === 'string' ? raw.recurringPattern : undefined,
+        recurringDaysOfWeek: Array.isArray(raw.recurringDaysOfWeek)
+          ? raw.recurringDaysOfWeek.filter((day: unknown) => typeof day === 'string')
+          : undefined,
+        recurrenceUntilDate: typeof raw.recurrenceUntilDate === 'string' ? raw.recurrenceUntilDate : undefined,
         mediaUrls: Array.isArray(raw.mediaUrls) ? raw.mediaUrls.filter((url: unknown) => typeof url === 'string') : undefined,
         imageUrl: Array.isArray(raw.mediaUrls) && typeof raw.mediaUrls[0] === 'string' ? raw.mediaUrls[0] : undefined,
         sourceUrl: typeof raw.sourceUrl === 'string' ? raw.sourceUrl : undefined,
