@@ -678,8 +678,26 @@ function usefulParsedDetailsCount(result: SharedEventSubmitResult | null, eventS
   )).length;
 }
 
-function summaryTitleForResult(result: SharedEventSubmitResult | null, parsedDetailsCount: number): string {
+function summaryTitleForResult(
+  result: SharedEventSubmitResult | null,
+  parsedDetailsCount: number,
+  eventSnapshots: SharedEventSnapshot[]
+): string {
   if (!result) return 'Share received';
+  const parsedKinds = eventSnapshots
+    .filter((eventSnapshot) => (
+      eventSnapshot.title ||
+      eventSnapshot.startDate ||
+      eventSnapshot.startTime ||
+      eventSnapshot.locationName ||
+      eventSnapshot.address ||
+      eventSnapshot.description
+    ))
+    .map((eventSnapshot) => eventSnapshot.contentKind);
+  const allSpecials = parsedKinds.length > 0 && parsedKinds.every((kind) => kind === 'special');
+  const allEvents = parsedKinds.length > 0 && parsedKinds.every((kind) => kind !== 'special');
+  const singularLabel = allSpecials ? 'Special' : 'Event';
+  const pluralLabel = allSpecials ? 'specials' : allEvents ? 'events' : 'items';
   if (result.publicProcessing?.status === 'completed') {
     const counts = publicProcessingCounts(result);
     const changed = counts.created + counts.updated;
@@ -687,13 +705,17 @@ function summaryTitleForResult(result: SharedEventSubmitResult | null, parsedDet
     if (changed > 0) return `${changed} added or updated`;
     if (counts.unknownVenue > 0) return `${counts.unknownVenue} need venue review`;
   }
-  if (resultIsFullyExpired(result)) return parsedDetailsCount > 1 ? 'Expired events found' : 'Expired event found';
-  if (result.needsUserReview) {
-    if (parsedDetailsCount > 1) return `${parsedDetailsCount} events saved for review`;
-    if (parsedDetailsCount === 1) return 'Event saved for review';
+  if (resultIsFullyExpired(result)) {
+    return parsedDetailsCount > 1
+      ? `Expired ${pluralLabel} found`
+      : `Expired ${singularLabel.toLowerCase()} found`;
   }
-  if (parsedDetailsCount > 1) return `${parsedDetailsCount} events saved`;
-  if (parsedDetailsCount === 1) return 'Event saved';
+  if (result.needsUserReview) {
+    if (parsedDetailsCount > 1) return `${parsedDetailsCount} ${pluralLabel} saved for review`;
+    if (parsedDetailsCount === 1) return `${singularLabel} saved for review`;
+  }
+  if (parsedDetailsCount > 1) return `${parsedDetailsCount} ${pluralLabel} saved`;
+  if (parsedDetailsCount === 1) return `${singularLabel} saved`;
   return 'Share received';
 }
 
@@ -858,7 +880,7 @@ export default function SharedEventScreen() {
     : usefulParsedDetailsCount(result, eventSnapshots);
   const detailsAvailable = parsedDetailsCount > 0;
   const shouldShowDetails = showDetails && detailsAvailable;
-  const summaryTitle = summaryTitleForResult(result, parsedDetailsCount);
+  const summaryTitle = summaryTitleForResult(result, parsedDetailsCount, eventSnapshots);
   const hasFinalPublicProcessing = result?.publicProcessing?.status === 'completed';
   const isExpiredResult = resultIsFullyExpired(result);
   const isUploading = phase === 'processing' && !result?.ingestId;
