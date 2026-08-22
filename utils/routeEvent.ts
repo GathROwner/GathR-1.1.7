@@ -402,18 +402,18 @@ export const getRouteCompactCertaintyLabel = (
   switch (getRouteCertaintyLabel(routeData)) {
     case 'Confirmed street route • map-aligned trace':
     case 'Official route':
-      return 'Confirmed route';
+      return 'Confirmed Route';
     case 'Confirmed streets + estimated connections':
-      return 'Partly confirmed';
+      return 'Partly Confirmed';
     case 'Estimated along organizer-listed streets':
       return 'Estimated Route';
     case 'Suggested street connection • route unconfirmed':
-      return 'Suggested route';
+      return 'Suggested Route';
     case 'Confirmed route section':
-      return 'Confirmed section';
+      return 'Confirmed Section';
     case 'Route unknown • showing possible stops':
-      return 'Stops only';
+      return 'Stops Only';
     default:
-      return 'Route details';
+      return 'Route Details';
   }
 };

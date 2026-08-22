@@ -285,7 +285,7 @@ describe('route event map contract', () => {
 
   it('uses compact route certainty copy in narrow lightbox badges', () => {
     expect(getRouteCompactCertaintyLabel(routeEvent.routeData)).toBe(
-      'Partly confirmed'
+      'Partly Confirmed'
     );
 
     const estimatedRouteData: EventRouteData = {
@@ -301,6 +301,62 @@ describe('route event map contract', () => {
     expect(getRouteCompactCertaintyLabel(estimatedRouteData)).toBe(
       'Estimated Route'
     );
+
+    const confirmedRouteData: EventRouteData = {
+      ...routeEvent.routeData,
+      version: 1,
+      status: 'verified',
+      geometryMethod: 'map_aligned_street_trace',
+      segments: routeEvent.routeData!.segments!.filter(
+        (segment) => segment.certainty === 'confirmed'
+      ),
+    };
+    expect(getRouteCompactCertaintyLabel(confirmedRouteData)).toBe(
+      'Confirmed Route'
+    );
+
+    const suggestedRouteData: EventRouteData = {
+      ...routeEvent.routeData,
+      version: 1,
+      status: 'approximate',
+      confirmedStreets: [],
+      segments: [{
+        id: 'road-routed-guess',
+        certainty: 'approximate',
+        source: 'routed_streets',
+        coordinates: [
+          { longitude: -63.142, latitude: 46.248 },
+          { longitude: -63.126, latitude: 46.238 },
+        ],
+      }],
+    };
+    expect(getRouteCompactCertaintyLabel(suggestedRouteData)).toBe(
+      'Suggested Route'
+    );
+
+    const confirmedSectionData: EventRouteData = {
+      ...routeEvent.routeData,
+      version: 1,
+      status: 'partial',
+      segments: routeEvent.routeData!.segments!.filter(
+        (segment) => segment.certainty === 'confirmed'
+      ),
+    };
+    expect(getRouteCompactCertaintyLabel(confirmedSectionData)).toBe(
+      'Confirmed Section'
+    );
+
+    const stopsOnlyRouteData: EventRouteData = {
+      ...routeEvent.routeData,
+      version: 1,
+      status: 'approximate',
+      confirmedStreets: [],
+      segments: routeEvent.routeData!.segments!.filter(
+        (segment) => segment.source === 'connected_stops'
+      ),
+    };
+    expect(getRouteCompactCertaintyLabel(stopsOnlyRouteData)).toBe('Stops Only');
+    expect(getRouteCompactCertaintyLabel(undefined)).toBe('Route Details');
   });
 
   it('separates an organizer-confirmed route from its map-aligned geometry method', () => {
