@@ -232,7 +232,7 @@ function sharedEventSourceContext(snapshot: SharedEventSnapshot): SharedEventSou
   }
 
   if (hasMedia && !snapshot.sourceUrl) {
-    const imageCount = snapshot.mediaUrls.length + snapshot.mediaFiles.length;
+    const imageCount = Math.max(snapshot.mediaUrls.length, snapshot.mediaFiles.length);
     return {
       badgeLabel: imageCount > 1 ? 'Event Photos' : 'Event Photo',
       receiptDetail: 'Photo share',
@@ -709,6 +709,9 @@ export default function SharedEventScreen() {
 
   const [snapshot, setSnapshot] = useState<SharedEventSnapshot>(initial);
   const [eventSnapshots, setEventSnapshots] = useState<SharedEventSnapshot[]>([initial]);
+  const [previewUri, setPreviewUri] = useState(
+    initial.mediaFiles[0]?.path || initial.mediaUrls[0] || ''
+  );
   const [selectedEventIndex, setSelectedEventIndex] = useState(0);
   const [phase, setPhase] = useState<Phase>('processing');
   const [result, setResult] = useState<SharedEventSubmitResult | null>(null);
@@ -793,6 +796,8 @@ export default function SharedEventScreen() {
     submittedSignatureRef.current = initialSignature;
     setSnapshot(initial);
     setEventSnapshots([initial]);
+    const nextPreviewUri = initial.mediaFiles[0]?.path || initial.mediaUrls[0] || '';
+    if (nextPreviewUri) setPreviewUri(nextPreviewUri);
     setSelectedEventIndex(0);
     setShowDetails(false);
     setResult(null);
@@ -827,7 +832,6 @@ export default function SharedEventScreen() {
   const isExpiredResult = resultIsFullyExpired(result);
   const isUploading = phase === 'processing' && !result?.ingestId;
   const publicCounts = publicProcessingCounts(result);
-  const previewUri = snapshot.mediaFiles[0]?.path || snapshot.mediaUrls[0] || '';
   const progressStage = phase === 'processing' ? 1 : phase === 'error' ? 1 : 2;
   const finalStepLabel = phase === 'error'
     ? 'Retry'
