@@ -62,7 +62,7 @@ import StaticDebugCallout from '../../components/map/StaticDebugCallout';
 import RouteFeatureCallout from '../../components/map/RouteFeatureCallout';
 
 // Import centralized date utilities
-import { 
+import {
   isEventNow, 
   isEventHappeningToday, 
   getEventTimeStatus 
@@ -135,6 +135,14 @@ import {
   shouldSuppressOrdinaryMapMarkers,
   type RouteFeatureCalloutData,
 } from '../../utils/routeEvent';
+import {
+  buildAreaLocationFeatureCollection,
+  getAreaLocationBounds,
+  getAreaLocationCallout,
+  getAreaLocations,
+  getAreaLocationsLabel,
+  hasDrawableAreaLocations,
+} from '../../utils/areaEvent';
 import { buildRouteSummaryLightboxSelection } from '../../utils/routeEventLightbox';
 import {
   doesEventMatchAnyInterest,
@@ -3106,6 +3114,8 @@ useEffect(() => {
   const [mapFirstFrameRendered, setMapFirstFrameRendered] = useState<boolean>(false);
   const [mapTabOverlaysReady, setMapTabOverlaysReady] = useState<boolean>(Platform.OS !== 'android');
   const [activeRouteEvent, setActiveRouteEvent] = useState<Event | null>(null);
+  const [activeAreaEvent, setActiveAreaEvent] = useState<Event | null>(null);
+  const activeMapExperienceEvent = activeRouteEvent || activeAreaEvent;
   const [routeOverlayHeight, setRouteOverlayHeight] = useState(0);
   const [routeFeatureCallout, setRouteFeatureCallout] = useState<{
     data: RouteFeatureCalloutData;
@@ -3135,6 +3145,13 @@ useEffect(() => {
   );
   const hasApproximateRouteStops = activeRouteStops.some(
     (stop) => stop.certainty === 'approximate'
+  );
+  const activeAreaLocations = activeAreaEvent ? getAreaLocations(activeAreaEvent) : [];
+  const hasConfirmedAreaLocations = activeAreaLocations.some(
+    (location) => location.certainty === 'confirmed'
+  );
+  const hasApproximateAreaLocations = activeAreaLocations.some(
+    (location) => location.certainty === 'approximate'
   );
   const [mapStyleChoice, setMapStyleChoice] = useState<MapStyleChoice>('current');
   const [mapStyleChanging, setMapStyleChanging] = useState(false);
@@ -3166,13 +3183,18 @@ useEffect(() => {
   const mapPerspectiveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const showRouteOnMap = useCallback((event: Event) => {
-    if (!hasDrawableRoute(event)) return;
+    const routeExperience = hasDrawableRoute(event);
+    const areaExperience = hasDrawableAreaLocations(event);
+    if (!routeExperience && !areaExperience) return;
 
-    const bounds = getRouteBounds(event);
+    const bounds = routeExperience
+      ? getRouteBounds(event)
+      : getAreaLocationBounds(event);
     useMapStore.getState().setSelectedImageData(null);
     routeFeatureCalloutRequestRef.current += 1;
     setRouteFeatureCallout(null);
-    setActiveRouteEvent(event);
+    setActiveRouteEvent(routeExperience ? event : null);
+    setActiveAreaEvent(areaExperience ? event : null);
 
     if (bounds) {
       requestAnimationFrame(() => {
@@ -3199,27 +3221,28 @@ useEffect(() => {
   }, [isFocused, showRouteOnMap]);
 
   const hideRouteOnMap = useCallback(() => {
-    if (activeRouteEvent) {
-      amplitudeTrack('route_map_closed', {
-        event_id: String(activeRouteEvent.id),
+    if (activeMapExperienceEvent) {
+      amplitudeTrack(activeRouteEvent ? 'route_map_closed' : 'area_locations_map_closed', {
+        event_id: String(activeMapExperienceEvent.id),
       });
     }
     routeFeatureCalloutRequestRef.current += 1;
     setRouteFeatureCallout(null);
     setActiveRouteEvent(null);
-  }, [activeRouteEvent]);
+    setActiveAreaEvent(null);
+  }, [activeMapExperienceEvent, activeRouteEvent]);
 
   const reopenActiveRouteLightbox = useCallback(() => {
-    const selection = buildRouteSummaryLightboxSelection(activeRouteEvent);
+    const selection = buildRouteSummaryLightboxSelection(activeMapExperienceEvent);
     if (!selection) return;
 
     routeFeatureCalloutRequestRef.current += 1;
     setRouteFeatureCallout(null);
     useMapStore.getState().setSelectedImageData(selection);
     amplitudeTrack('route_summary_lightbox_reopened', {
-      event_id: String(activeRouteEvent?.id || ''),
+      event_id: String(activeMapExperienceEvent?.id || ''),
     });
-  }, [activeRouteEvent]);
+  }, [activeMapExperienceEvent]);
   const locationSubscription = useRef<Location.LocationSubscription | null>(null);
   const calloutAnimationRequestRef = useRef(0);
   const calloutOpenTouchGuardUntilRef = useRef(0);
@@ -7016,6 +7039,54 @@ lastOpenedClusterIdRef.current = cluster.id;
     });
   };
 
+  const handleAreaLocationPress = async (pressEvent: any) => {
+    if (!activeAreaEvent) return;
+
+    const featureId = String(pressEvent?.features?.[0]?.properties?.id || '').trim();
+    if (!featureId) return;
+
+    const data = getAreaLocationCallout(activeAreaEvent, featureId);
+    if (!data) return;
+
+    const requestId = routeFeatureCalloutRequestRef.current + 1;
+    routeFeatureCalloutRequestRef.current = requestId;
+    routeFeaturePressGuardUntilRef.current = Date.now() + 500;
+
+    let projectedPoint: readonly number[] | null = null;
+    try {
+      projectedPoint = await mapRef.current?.getPointInView([
+        data.coordinate.longitude,
+        data.coordinate.latitude,
+      ]) ?? null;
+    } catch {
+      // Keep the press-event point as a safe fallback during camera changes.
+    }
+
+    if (requestId !== routeFeatureCalloutRequestRef.current) return;
+
+    const mapWidth = mapDimensions?.width ?? Dimensions.get('window').width;
+    const mapHeight = mapDimensions?.height ?? Dimensions.get('window').height;
+    const bottomObstructionTop =
+      mapHeight -
+      ROUTE_OVERLAY_BOTTOM_OFFSET -
+      Math.max(routeOverlayHeight, ROUTE_OVERLAY_DEFAULT_HEIGHT) -
+      ROUTE_FEATURE_CALLOUT_SUMMARY_GAP;
+    const { anchorX, placement } = getRouteFeatureCalloutPresentation({
+      tapX: Number(pressEvent?.point?.x),
+      tapY: Number(pressEvent?.point?.y),
+      mapWidth,
+      bottomObstructionTop,
+      projectedPoint,
+    });
+
+    setRouteFeatureCallout({ data, anchorX, placement, renderKey: requestId });
+    amplitudeTrack('area_location_opened', {
+      event_id: String(activeAreaEvent.id),
+      location_id: featureId,
+      certainty_label: data.statusLabel,
+    });
+  };
+
   // Handle map press to close callout
   const handleMapPress = () => {
     const guardRemainingMs = Math.max(0, calloutOpenTouchGuardUntilRef.current - Date.now());
@@ -8384,7 +8455,7 @@ Clustering refresh: keep zoom → store → recluster in sync
   // Keep MarkerViews mounted across tab switches; remounting all custom
   // clusters is the expensive part of returning to the Map tab on Android.
   const renderClusterMarkers = () => {
-    if (shouldSuppressOrdinaryMapMarkers(activeRouteEvent)) {
+    if (activeAreaEvent || shouldSuppressOrdinaryMapMarkers(activeRouteEvent)) {
       return null;
     }
 
@@ -9738,6 +9809,86 @@ onDidFinishLoadingMap={() => {
           </>
         )}
 
+        {activeAreaEvent && (
+          <>
+            <MapboxGL.ShapeSource
+              id="active-area-locations-source"
+              shape={buildAreaLocationFeatureCollection(activeAreaEvent) as any}
+              hitbox={{ width: 52, height: 52 }}
+              onPress={(event: any) => void handleAreaLocationPress(event)}
+            >
+              <MapboxGL.CircleLayer
+                id="active-area-location-halos"
+                style={{
+                  circleColor: '#FFFFFF',
+                  circleRadius: 10,
+                  circleOpacity: 0.98,
+                }}
+              />
+              <MapboxGL.CircleLayer
+                id="active-area-confirmed-locations"
+                filter={['==', ['get', 'certainty'], 'confirmed'] as any}
+                style={{
+                  circleColor: '#F6C84C',
+                  circleRadius: 7,
+                  circleStrokeColor: '#6B4E16',
+                  circleStrokeWidth: 2,
+                }}
+              />
+              <MapboxGL.CircleLayer
+                id="active-area-possible-locations"
+                filter={['==', ['get', 'certainty'], 'approximate'] as any}
+                style={{
+                  circleColor: '#FFFFFF',
+                  circleRadius: 7,
+                  circleStrokeColor: '#D98700',
+                  circleStrokeWidth: 3,
+                }}
+              />
+              <MapboxGL.SymbolLayer
+                id="active-area-location-labels"
+                style={{
+                  textField: ['get', 'label'] as any,
+                  textSize: 12,
+                  textColor: '#4E342E',
+                  textHaloColor: '#FFFFFF',
+                  textHaloWidth: 2,
+                  textOffset: [0, 1.65],
+                  textAnchor: 'top',
+                  textAllowOverlap: true,
+                }}
+              />
+            </MapboxGL.ShapeSource>
+
+            {routeFeatureCallout && (
+              <MapboxGL.MarkerView
+                key={`area-${routeFeatureCallout.data.id}-${routeFeatureCallout.renderKey}`}
+                id="active-area-location-callout"
+                coordinate={[
+                  routeFeatureCallout.data.coordinate.longitude,
+                  routeFeatureCallout.data.coordinate.latitude,
+                ]}
+                anchor={{
+                  x: routeFeatureCallout.anchorX,
+                  y: routeFeatureCallout.placement === 'above' ? 1.08 : -0.08,
+                }}
+                allowOverlap
+                allowOverlapWithPuck
+                isSelected
+              >
+                <RouteFeatureCallout
+                  data={routeFeatureCallout.data}
+                  placement={routeFeatureCallout.placement}
+                  onClose={() => {
+                    routeFeatureCalloutRequestRef.current += 1;
+                    setRouteFeatureCallout(null);
+                  }}
+                />
+              </MapboxGL.MarkerView>
+            )}
+          </>
+        )}
+
         {USE_ANDROID_NATIVE_CLUSTER_MARKER_LAYERS && (
           <MapboxGL.Images images={ANDROID_CLUSTER_MARKER_IMAGES} />
         )}
@@ -9752,12 +9903,12 @@ onDidFinishLoadingMap={() => {
       </MapboxGL.MapView>
       )}
 
-      {activeRouteEvent && (
+      {activeMapExperienceEvent && (
         <Pressable
           collapsable={false}
           accessible
           accessibilityRole="button"
-          accessibilityLabel={`Open ${activeRouteEvent.title} details`}
+          accessibilityLabel={`Open ${activeMapExperienceEvent.title} details`}
           accessibilityHint="Opens the event details"
           onPress={reopenActiveRouteLightbox}
           onLayout={({ nativeEvent }) => {
@@ -9773,19 +9924,25 @@ onDidFinishLoadingMap={() => {
         >
           <View style={styles.routeOverlayHeadingRow}>
             <View style={styles.routeOverlayGoldIcon}>
-              <MaterialIcons name="alt-route" size={20} color="#6B4E16" />
+              <MaterialIcons
+                name={activeRouteEvent ? 'alt-route' : 'festival'}
+                size={20}
+                color="#6B4E16"
+              />
             </View>
             <View style={styles.routeOverlayHeadingText}>
               <Text style={styles.routeOverlayTitle} numberOfLines={1}>
-                {activeRouteEvent.title}
+                {activeMapExperienceEvent.title}
               </Text>
               <Text style={styles.routeOverlayStatus} numberOfLines={1}>
-                {getRouteCertaintyLabel(activeRouteEvent.routeData)}
+                {activeRouteEvent
+                  ? getRouteCertaintyLabel(activeRouteEvent.routeData)
+                  : getAreaLocationsLabel(activeMapExperienceEvent)}
               </Text>
             </View>
             <TouchableOpacity
               accessibilityRole="button"
-              accessibilityLabel="Hide route"
+              accessibilityLabel={activeRouteEvent ? 'Hide route' : 'Hide locations'}
               onPress={(event) => {
                 event.stopPropagation();
                 hideRouteOnMap();
@@ -9796,34 +9953,46 @@ onDidFinishLoadingMap={() => {
             </TouchableOpacity>
           </View>
           <View style={styles.routeLegendRow}>
-            {hasConfirmedRouteSegments && (
+            {activeRouteEvent && hasConfirmedRouteSegments && (
               <View style={styles.routeLegendItem}>
                 <View style={styles.routeLegendSolidLine} />
                 <Text style={styles.routeLegendText}>Confirmed route</Text>
               </View>
             )}
-            {hasStreetEstimateRouteSegments && (
+            {activeRouteEvent && hasStreetEstimateRouteSegments && (
               <View style={styles.routeLegendItem}>
                 <Text style={styles.routeLegendDash}>— —</Text>
                 <Text style={styles.routeLegendText}>Estimated streets</Text>
               </View>
             )}
-            {hasSuggestedConnectionRouteSegments && (
+            {activeRouteEvent && hasSuggestedConnectionRouteSegments && (
               <View style={styles.routeLegendItem}>
                 <Text style={styles.routeLegendSuggestedDots}>•••</Text>
                 <Text style={styles.routeLegendText}>Suggested connection</Text>
               </View>
             )}
-            {hasConfirmedRouteStops && (
+            {activeRouteEvent && hasConfirmedRouteStops && (
               <View style={styles.routeLegendItem}>
                 <View style={styles.routeLegendConfirmedStop} />
                 <Text style={styles.routeLegendText}>Confirmed stop</Text>
               </View>
             )}
-            {hasApproximateRouteStops && (
+            {activeRouteEvent && hasApproximateRouteStops && (
               <View style={styles.routeLegendItem}>
                 <View style={styles.routeLegendApproximateStop} />
                 <Text style={styles.routeLegendText}>Possible stop</Text>
+              </View>
+            )}
+            {activeAreaEvent && hasConfirmedAreaLocations && (
+              <View style={styles.routeLegendItem}>
+                <View style={styles.areaLegendConfirmedLocation} />
+                <Text style={styles.routeLegendText}>Confirmed location</Text>
+              </View>
+            )}
+            {activeAreaEvent && hasApproximateAreaLocations && (
+              <View style={styles.routeLegendItem}>
+                <View style={styles.areaLegendApproximateLocation} />
+                <Text style={styles.routeLegendText}>Possible location</Text>
               </View>
             )}
           </View>
@@ -10279,6 +10448,24 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     borderWidth: 2.5,
     borderColor: '#4C9CFF',
+    marginRight: 5,
+  },
+  areaLegendConfirmedLocation: {
+    width: 11,
+    height: 11,
+    borderRadius: 6,
+    backgroundColor: '#F6C84C',
+    borderWidth: 1.5,
+    borderColor: '#6B4E16',
+    marginRight: 5,
+  },
+  areaLegendApproximateLocation: {
+    width: 11,
+    height: 11,
+    borderRadius: 6,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 2.5,
+    borderColor: '#D98700',
     marginRight: 5,
   },
   routeLegendText: {

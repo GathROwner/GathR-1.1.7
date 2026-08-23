@@ -55,6 +55,12 @@ import {
   getRouteSourceUrl,
   hasDrawableRoute,
 } from '../../utils/routeEvent';
+import {
+  getAreaLocations,
+  getAreaLocationsLabel,
+  getAreaSourceUrl,
+  hasDrawableAreaLocations,
+} from '../../utils/areaEvent';
 
 // Store imports for like/share functionality
 import * as userService from '../../services/userService';
@@ -957,19 +963,28 @@ const handleDirections = () => {
 
   const routeEvent = updatedEvent.locationScope === 'route';
   const drawableRoute = hasDrawableRoute(updatedEvent);
+  const areaLocationsEvent = hasDrawableAreaLocations(updatedEvent);
+  const drawableMapExperience = drawableRoute || areaLocationsEvent;
   const routeSourceUrl = getRouteSourceUrl(updatedEvent);
+  const mapExperienceSourceUrl = routeEvent
+    ? routeSourceUrl
+    : getAreaSourceUrl(updatedEvent);
   const handleRouteAction = () => {
-    if (drawableRoute) {
-      amplitudeTrack('route_map_opened', {
+    if (drawableMapExperience) {
+      amplitudeTrack(routeEvent ? 'route_map_opened' : 'area_locations_map_opened', {
         event_id: String(updatedEvent.id),
-        route_status: updatedEvent.routeData?.status || 'unknown',
+        route_status: routeEvent
+          ? updatedEvent.routeData?.status || 'unknown'
+          : updatedEvent.areaData?.status || 'unknown',
         confirmed_segments: updatedEvent.routeData?.segments?.filter(
           (segment) => segment.certainty === 'confirmed'
         ).length || 0,
         approximate_segments: updatedEvent.routeData?.segments?.filter(
           (segment) => segment.certainty === 'approximate'
         ).length || 0,
-        stop_count: updatedEvent.routeData?.stops?.length || 0,
+        stop_count: routeEvent
+          ? updatedEvent.routeData?.stops?.length || 0
+          : getAreaLocations(updatedEvent).length,
         navigation_mode: onShowRoute ? 'same_screen' : 'cross_tab',
       });
 
@@ -986,12 +1001,14 @@ const handleDirections = () => {
       return;
     }
 
-    if (routeSourceUrl) {
-      amplitudeTrack('route_information_opened', {
+    if (mapExperienceSourceUrl) {
+      amplitudeTrack(routeEvent ? 'route_information_opened' : 'area_locations_information_opened', {
         event_id: String(updatedEvent.id),
-        route_status: updatedEvent.routeData?.status || 'unknown',
+        route_status: routeEvent
+          ? updatedEvent.routeData?.status || 'unknown'
+          : updatedEvent.areaData?.status || 'unknown',
       });
-      Linking.openURL(routeSourceUrl);
+      Linking.openURL(mapExperienceSourceUrl);
     }
   };
 
@@ -1348,7 +1365,9 @@ const handleNonTicketAction = () => {
                 <Text style={styles.cityEventStatusText} numberOfLines={1}>
                   {routeEvent
                     ? getRouteCompactCertaintyLabel(updatedEvent.routeData)
-                    : 'Area-wide'}
+                    : areaLocationsEvent
+                      ? getAreaLocationsLabel(updatedEvent)
+                      : 'Area-wide'}
                 </Text>
               </View>
               {events && currentIndex !== undefined && (
@@ -1645,12 +1664,14 @@ const handleNonTicketAction = () => {
             </Text>
           </TouchableOpacity>
           
-          {routeEvent ? (
+          {routeEvent || areaLocationsEvent ? (
             <View style={styles.routeActionSlot}>
               <GathRShimmerPill
-                iconName="alt-route"
+                iconName={routeEvent ? 'alt-route' : 'festival'}
                 iconSize={20}
-                label={drawableRoute ? 'Show Route' : 'Route Info'}
+                label={routeEvent
+                  ? (drawableRoute ? 'Show Route' : 'Route Info')
+                  : (areaLocationsEvent ? 'Show Locations' : 'Location Info')}
                 onPress={handleRouteAction}
                 style={styles.routeActionPill}
                 testID="show-route-shimmer-button"

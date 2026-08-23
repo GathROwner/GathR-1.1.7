@@ -62,4 +62,31 @@ describe('buildRouteSummaryLightboxSelection', () => {
 
     expect(buildRouteSummaryLightboxSelection(event)).toBeNull();
   });
+
+  it('reopens a multi-location area event without pretending it is a route', () => {
+    const event = makeEvent({
+      title: 'Charlottetown Busker Festival',
+      locationScope: 'area',
+      mapMode: 'area',
+      routeData: null,
+      areaData: {
+        version: 1,
+        status: 'verified',
+        locations: [
+          {
+            id: 'victoria-row',
+            label: 'Victoria Row',
+            certainty: 'confirmed',
+            coordinates: { longitude: -63.125907, latitude: 46.234294 },
+          },
+        ],
+      },
+    });
+
+    expect(buildRouteSummaryLightboxSelection(event)).toEqual({
+      imageUrl: 'https://example.com/gold-cup.webp',
+      event,
+      source: 'route_summary',
+    });
+  });
 });

@@ -92,6 +92,7 @@ export interface FirestoreEventMetadata {
   locationReviewStatus?: 'not_needed' | 'needs_review' | 'approved' | 'rejected' | null;
   mapMode?: 'venue' | 'area' | 'route' | 'none' | null;
   routeData?: import('./events').EventRouteData | null;
+  areaData?: import('./events').EventAreaData | null;
 }
 
 /**
@@ -150,6 +151,7 @@ export interface FirestoreEvent {
   locationReviewStatus?: 'not_needed' | 'needs_review' | 'approved' | 'rejected' | null;
   mapMode?: 'venue' | 'area' | 'route' | 'none' | null;
   routeData?: import('./events').EventRouteData | null;
+  areaData?: import('./events').EventAreaData | null;
   category: string | null;  // Can be null
   familyFriendlyScore?: number | null;
   familyFriendlyLevel?: 'unlikely' | 'possible' | 'likely' | 'high' | null;

@@ -87,6 +87,32 @@ export interface EventRouteData {
   segments?: EventRouteSegment[];
 }
 
+export interface EventAreaLocation {
+  id: string;
+  label: string;
+  coordinates: RouteCoordinate;
+  certainty: 'confirmed' | 'approximate';
+  address?: string;
+  description?: string;
+  timeLabel?: string;
+  sourceLabel?: string;
+}
+
+/**
+ * Multiple named places inside one area-scoped event. These locations are
+ * unordered: unlike route stops, their order must never imply a path or visit
+ * sequence between them.
+ */
+export interface EventAreaData {
+  version: 1;
+  status: 'verified' | 'partial' | 'approximate';
+  sourceUrl?: string;
+  sourceLabel?: string;
+  verifiedAt?: string;
+  description?: string;
+  locations: EventAreaLocation[];
+}
+
 /**
  * Main Event interface representing event data from the API
  */
@@ -173,6 +199,7 @@ export interface Event {
   locationReviewStatus?: 'not_needed' | 'needs_review' | 'approved' | 'rejected' | null;
   mapMode?: 'venue' | 'area' | 'route' | 'none' | null;
   routeData?: EventRouteData | null;
+  areaData?: EventAreaData | null;
 
   // Venue details (from Firestore venue object)
   venueRating?: number;
