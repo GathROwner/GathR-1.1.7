@@ -1701,6 +1701,18 @@ refreshPrivateSharedEventsFromServer: async () => {
   qc?.setQueryData?.(EVENTS_MINIMAL, { combinedData, fetchedAt });
   filtersChanged = true;
   get().setAllEvents(combinedData);
+
+  // setAllEvents intentionally updates only the global cache. A completed
+  // background share must also flow through the current viewport partition so
+  // the Events list, filtered event set, and map clusters see it immediately.
+  // Otherwise the private event exists in Firestore/allEvents but remains
+  // invisible until a later camera movement happens to trigger another fetch.
+  const currentViewport = get().viewportBbox;
+  if (currentViewport) {
+    await get().fetchViewportEvents(currentViewport);
+    return;
+  }
+
   set({ isLoading: false, error: null, lastFetchedAt: fetchedAt });
 },
 
