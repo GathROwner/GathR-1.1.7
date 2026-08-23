@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
   BackHandler,
   Image,
   KeyboardAvoidingView,
@@ -521,8 +522,8 @@ function statusCopy(
       icon: uploadAccepted ? 'scan-outline' : 'cloud-upload-outline',
       title: uploadAccepted ? 'Reading your share' : 'Uploading your photo',
       detail: uploadAccepted
-        ? `The upload is safe. You can return to GathR while the ${sourceContext.shareSubject} is checked.`
-        : 'Keep this screen open for a moment so the photo finishes uploading.',
+        ? `The upload is safe. Return to GathR now while the ${sourceContext.shareSubject} is checked.`
+        : 'This is the only step that needs this screen. Return to GathR unlocks as soon as the upload is safe.',
       color: BRAND.primary,
     };
   }
@@ -878,6 +879,12 @@ export default function SharedEventScreen() {
     try {
       const submitResult = await submitSharedEvent(await payloadFromSnapshot(nextSnapshot));
       setResult(submitResult);
+      if (submitResult.ingestId && resultIsStillProcessing(submitResult)) {
+        void trackPendingSharedEventIngest({
+          ingestId: submitResult.ingestId,
+          sourceLabel: sharedEventSourceContext(nextSnapshot).badgeLabel,
+        });
+      }
       if (submitResult.ingestId && shouldWatchIngest(submitResult)) {
         startIngestWatcher(submitResult.ingestId, nextSnapshot);
         if (resultIsStillProcessing(submitResult) && resultEvents(submitResult).length === 0) {
@@ -1316,6 +1323,27 @@ export default function SharedEventScreen() {
             })}
           </View>
 
+          {phase === 'processing' ? (
+            <View style={[
+              styles.processingNotice,
+              isUploading ? styles.processingNoticeUploading : styles.processingNoticeReady,
+            ]}>
+              <View style={styles.processingNoticeIcon}>
+                <ActivityIndicator size="small" color={BRAND.primaryDark} />
+              </View>
+              <View style={styles.processingNoticeCopy}>
+                <Text style={styles.processingNoticeTitle}>
+                  {isUploading ? 'Finishing the secure upload' : 'Stay tuned - we will let you know'}
+                </Text>
+                <Text style={styles.processingNoticeDetail}>
+                  {isUploading
+                    ? 'Return becomes available as soon as GathR has the photo safely.'
+                    : 'You can return now. GathR will show an in-app alert when this is ready, or a notification if you are using another app.'}
+                </Text>
+              </View>
+            </View>
+          ) : null}
+
           {showCrowdProgress ? (
             <View style={styles.communityProgressCard}>
               <View style={styles.communityProgressCopy}>
@@ -1541,7 +1569,7 @@ export default function SharedEventScreen() {
               color="#FFFFFF"
             />
             <Text style={styles.saveButtonText}>
-              {isUploading ? 'Uploading...' : isReturningToMap ? 'Updating GathR...' : 'Back to GathR'}
+              {isUploading ? 'Uploading safely...' : isReturningToMap ? 'Updating GathR...' : 'Return to GathR'}
             </Text>
           </Pressable>
         )}
@@ -1719,6 +1747,48 @@ const styles = StyleSheet.create({
     lineHeight: 14,
     fontWeight: '800',
     textAlign: 'center',
+  },
+  processingNotice: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 11,
+    marginTop: 12,
+    padding: 14,
+    borderRadius: 16,
+    borderWidth: 1,
+  },
+  processingNoticeUploading: {
+    backgroundColor: '#F7FAFD',
+    borderColor: '#DDE7F1',
+  },
+  processingNoticeReady: {
+    backgroundColor: '#EEF7FF',
+    borderColor: '#C6E2FA',
+  },
+  processingNoticeIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFFFFF',
+  },
+  processingNoticeCopy: {
+    flex: 1,
+    minWidth: 0,
+  },
+  processingNoticeTitle: {
+    color: BRAND.ink,
+    fontSize: 14,
+    lineHeight: 18,
+    fontWeight: '900',
+  },
+  processingNoticeDetail: {
+    color: BRAND.muted,
+    fontSize: 12,
+    lineHeight: 17,
+    fontWeight: '600',
+    marginTop: 2,
   },
   communityProgressCard: {
     flexDirection: 'row',

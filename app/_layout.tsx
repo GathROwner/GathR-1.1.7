@@ -219,6 +219,13 @@ Notifications.setNotificationHandler({
       sound: 'default',
       lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
     });
+    Notifications.setNotificationChannelAsync('gathr-share-updates', {
+      name: 'Shared event updates',
+      importance: Notifications.AndroidImportance.HIGH,
+      vibrationPattern: [0, 180, 120, 180],
+      sound: 'default',
+      lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+    });
   }
 
   // 🔧 Install debug/guard listeners (once)
@@ -237,7 +244,21 @@ React.useEffect(() => {
       const data: any = response?.notification?.request?.content?.data;
       const kind = data?.kind;
       const eventId = data?.eventId;
+      const ingestId = data?.ingestId;
       const actionIdentifier = response?.actionIdentifier;
+
+      if (
+        (kind === 'shared_event_complete' ||
+          kind === 'shared_event_venue_needed' ||
+          kind === 'shared_event_failed') &&
+        ingestId
+      ) {
+        const globalRouter = (global as any).router;
+        globalRouter?.push({
+          pathname: '/shared-event',
+          params: { ingestId: String(ingestId) },
+        });
+      }
 
       // Handle post-event attendance responses
       if (kind === 'post_event_survey' && eventId) {

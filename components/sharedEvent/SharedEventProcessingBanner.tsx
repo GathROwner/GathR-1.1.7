@@ -1,13 +1,19 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Image, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { AppState, Image, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { usePathname, useRouter } from 'expo-router';
+import * as Notifications from 'expo-notifications';
 import { useAuth } from '../../contexts/AuthContext';
 import { watchSharedEventIngest } from '../../lib/sharedEventApi';
 import {
   listPendingSharedEventIngests,
   removePendingSharedEventIngest,
 } from '../../lib/sharedEventProcessingTracker';
+import {
+  sharedEventFeedbackKind,
+  shouldSendSharedEventSystemNotification,
+  shouldShowSharedEventInAppBanner,
+} from '../../lib/sharedEventCompletionFeedback';
 
 const GATHR_LOGO = require('../../assets/icon.png');
 
@@ -22,11 +28,18 @@ type BannerState = {
 
 export default function SharedEventProcessingBanner() {
   const router = useRouter();
+  const pathname = usePathname();
   const { user } = useAuth();
   const [banner, setBanner] = useState<BannerState | null>(null);
   const [collapsed, setCollapsed] = useState(false);
   const subscriptionsRef = useRef(new Map<string, () => void>());
   const mountedRef = useRef(true);
+  const pathnameRef = useRef(pathname);
+  const deliveredFeedbackRef = useRef(new Set<string>());
+
+  useEffect(() => {
+    pathnameRef.current = pathname;
+  }, [pathname]);
 
   const showBanner = useCallback((nextBanner: BannerState) => {
     if (!mountedRef.current) return;
@@ -46,6 +59,41 @@ export default function SharedEventProcessingBanner() {
     subscriptionsRef.current.delete(ingestId);
   }, []);
 
+  const deliverCompletionFeedback = useCallback(async (nextBanner: BannerState) => {
+    if (deliveredFeedbackRef.current.has(nextBanner.id)) return;
+    deliveredFeedbackRef.current.add(nextBanner.id);
+
+    if (shouldSendSharedEventSystemNotification(AppState.currentState) && nextBanner.ingestId) {
+      try {
+        const permissions = await Notifications.getPermissionsAsync();
+        if (permissions.status === 'granted') {
+          await Notifications.scheduleNotificationAsync({
+            content: {
+              title: `GathR - ${nextBanner.title}`,
+              body: nextBanner.detail,
+              sound: 'default',
+              data: {
+                kind: sharedEventFeedbackKind(nextBanner),
+                ingestId: nextBanner.ingestId,
+              },
+            },
+            trigger: Platform.OS === 'android'
+              ? { channelId: 'gathr-share-updates' }
+              : null,
+          });
+        }
+      } catch (error) {
+        console.warn('[SharedEvent] Could not show completion notification:', error);
+      }
+    }
+
+    // The result screen already updates itself. Everywhere else gets the
+    // tappable in-app banner when GathR is in the foreground.
+    if (shouldShowSharedEventInAppBanner(pathnameRef.current)) {
+      showBanner(nextBanner);
+    }
+  }, [showBanner]);
+
   const refreshPending = useCallback(async () => {
     if (!user) return;
     const pending = await listPendingSharedEventIngests();
@@ -57,7 +105,7 @@ export default function SharedEventProcessingBanner() {
           if (result.processingStatus === 'failed') {
             clearSubscription(entry.ingestId);
             await removePendingSharedEventIngest(entry.ingestId);
-            showBanner({
+            await deliverCompletionFeedback({
               id: `${entry.ingestId}-failed`,
               title: 'Share needs a retry',
               detail: result.processingError || 'GathR could not finish scanning that share.',
@@ -71,7 +119,7 @@ export default function SharedEventProcessingBanner() {
             event.venueResolutionStatus === 'selection_required'
           ));
           if (unresolvedVenue) {
-            showBanner({
+            await deliverCompletionFeedback({
               id: `${entry.ingestId}-venue-needed`,
               title: 'Venue needed',
               detail: `Tap to choose the location for ${unresolvedVenue.locationName || 'your shared event'}.`,
@@ -90,7 +138,7 @@ export default function SharedEventProcessingBanner() {
             : crowd?.collectingEventCount
               ? `Community confirmation: ${Math.min(crowd.maxContributorCount, crowd.threshold)} of ${crowd.threshold}.`
               : '';
-          showBanner({
+          await deliverCompletionFeedback({
             id: `${entry.ingestId}-completed`,
             title: 'Share scan complete',
             detail: crowdDetail || (count > 1
@@ -107,7 +155,7 @@ export default function SharedEventProcessingBanner() {
       );
       subscriptionsRef.current.set(entry.ingestId, unsubscribe);
     }
-  }, [clearSubscription, showBanner, user]);
+  }, [clearSubscription, deliverCompletionFeedback, user]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -115,12 +163,13 @@ export default function SharedEventProcessingBanner() {
     const interval = setInterval(() => {
       void refreshPending();
     }, 8000);
+    const subscriptions = subscriptionsRef.current;
 
     return () => {
       mountedRef.current = false;
       clearInterval(interval);
-      subscriptionsRef.current.forEach((unsubscribe) => unsubscribe());
-      subscriptionsRef.current.clear();
+      subscriptions.forEach((unsubscribe) => unsubscribe());
+      subscriptions.clear();
     };
   }, [refreshPending]);
 
