@@ -15,6 +15,10 @@ import {
 } from '../privateSharedEvents';
 
 describe('private shared event normalization', () => {
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
   const unknownVenueEvent = {
     ownerUid: 'qa-user',
     ingestId: 'qa-ingest',
@@ -83,6 +87,7 @@ describe('private shared event normalization', () => {
   });
 
   it('bounds an open-ended recurring share instead of creating an unlimited series', () => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-08-22T12:00:00Z'));
     const source = {
       ...unknownVenueEvent,
       startDate: '2026-08-22',

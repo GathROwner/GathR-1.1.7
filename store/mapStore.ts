@@ -86,6 +86,7 @@ import {
 import {
   dedupeEvents,
   fetchMinimalEvents,
+  mergePrivateSharedEvents,
   type FetchMinimalEventsOptions,
 } from '../lib/api/events';
 import {
@@ -93,7 +94,10 @@ import {
   fetchFirestoreEventDetailsBatch,
   toAppEventId,
 } from '../lib/api/firestoreEvents';
-import { isPrivateSharedEventId } from '../lib/api/privateSharedEvents';
+import {
+  fetchPrivateSharedEventsForCurrentUser,
+  isPrivateSharedEventId,
+} from '../lib/api/privateSharedEvents';
 import {
   ENABLE_LEGACY_DETAILS_FALLBACK,
   LEGACY_EVENTS_API_BASE,
@@ -1573,7 +1577,7 @@ export const useMapStore = create<MapState>((set, get) => ({
   /**
    * Fetch events from API
    */
-fetchEvents: async (options = {}) => {
+fetchEvents: async () => {
   const fetchEventsStartedAt = Date.now();
   logStartupDataTiming('fetch_events_called');
   const qc: any = (global as any)?.__RQ_CLIENT ?? null;
@@ -1587,7 +1591,7 @@ fetchEvents: async (options = {}) => {
     __ML_fetchCount += 1;
 
     // Use unified fetch that handles both data sources in parallel
-    const result = await fetchMinimalEventsShared(options);
+    const result = await fetchMinimalEventsShared();
 
     __ML_lastFetchMs = Date.now() - __tFetchStart;
     __ML_lastEventsCount = result.combinedData.filter((e: Event) => e.type === 'event').length;
@@ -1680,6 +1684,24 @@ fetchEvents: async (options = {}) => {
     });
     if (DEBUG_MAP_LOAD) console.log('[MapLoad][fetch] error', error);
   }
+},
+
+refreshPrivateSharedEventsFromServer: async () => {
+  if (get().allEvents.length === 0) {
+    await get().fetchEvents();
+  }
+
+  const privateSharedEvents = await fetchPrivateSharedEventsForCurrentUser({ forceServer: true });
+  const combinedData = mergePrivateSharedEvents(get().allEvents, privateSharedEvents);
+  const fetchedAt = Date.now();
+  const qc: any = (global as any)?.__RQ_CLIENT ?? null;
+
+  // Keep the map and its persisted React Query cache on the same post-save
+  // snapshot so a normal cache-first fetch cannot undo this server refresh.
+  qc?.setQueryData?.(EVENTS_MINIMAL, { combinedData, fetchedAt });
+  filtersChanged = true;
+  get().setAllEvents(combinedData);
+  set({ isLoading: false, error: null, lastFetchedAt: fetchedAt });
 },
 
   /**
