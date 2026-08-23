@@ -207,7 +207,6 @@ const inferEventCategoryFromText = (text: string): EventCategory | null => {
   if (/\b(workshops?|classes?|lessons?|courses?|seminars?)\b/.test(text)) return 'Workshops & Classes';
   if (/\b(church|religious|worship|faith|service)\b/.test(text)) return 'Religious';
   if (/\b(run|race|soccer|football|hockey|baseball|basketball|sports?|game|match|wellness|yoga)\b/.test(text)) return 'Sports';
-  if (/\b(family|families|kids?|children|all ages)\b/.test(text)) return 'Family Friendly';
   if (/\b(cinema|movie|movies|film|screening)\b/.test(text)) return 'Cinema';
   if (/\b(live entertainment|music|musical|band|dj|concert|jazz|acoustic|singer|songwriter|performer)\b/.test(text)) return 'Live Music';
   if (/\b(gathering|party|dance|festival|market|vendors?|fair|social)\b/.test(text)) return 'Gatherings & Parties';

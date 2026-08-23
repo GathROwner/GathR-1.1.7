@@ -168,4 +168,18 @@ describe('private shared event normalization', () => {
       startTime: '22:00',
     }).familyFriendlyScore).toBe(0);
   });
+
+  it('keeps Family Friendly secondary when the share has a real event category', () => {
+    const source = {
+      ...unknownVenueEvent,
+      title: 'All Ages Family Concert',
+      description: 'Families welcome for live music in the park.',
+      contentKind: 'event' as const,
+      startTime: '14:00',
+    };
+    const normalized = normalizePrivateSharedEventForRegression('private-family-concert', source, null)!;
+
+    expect(normalized.category).toBe('Live Music');
+    expect(isFamilyFriendlyEvent(normalized)).toBe(true);
+  });
 });
