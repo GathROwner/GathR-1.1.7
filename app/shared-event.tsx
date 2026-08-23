@@ -20,6 +20,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useShareIntentContext } from 'expo-share-intent';
 import {
   confirmSharedEventVenue,
+  getSharedEventIngestResult,
   searchSharedEventVenueCandidates,
   submitSharedEvent,
   SharedEventPayload,
@@ -921,8 +922,9 @@ export default function SharedEventScreen() {
     }
   }, [handleAcceptedSubmit, stopIngestWatcher, user]);
 
+  const uploadJobId = uploadJob?.id;
   useEffect(() => subscribeSharedEventUploadJobs((jobs) => {
-    const current = uploadJob ? jobs.find((job) => job.id === uploadJob.id) : undefined;
+    const current = uploadJobId ? jobs.find((job) => job.id === uploadJobId) : undefined;
     if (!current) return;
     setUploadJob(current);
     if (current.status === 'retry_waiting') {
@@ -938,7 +940,42 @@ export default function SharedEventScreen() {
     if (handledUploadJobRef.current === current.id) return;
     handledUploadJobRef.current = current.id;
     handleAcceptedSubmit(snapshot, current.submitResult);
-  }), [handleAcceptedSubmit, snapshot, uploadJob?.id]);
+  }), [handleAcceptedSubmit, snapshot, uploadJobId]);
+
+  const recoveryIngestId = result?.ingestId || uploadJob?.ingestId || requestedIngestId;
+  useEffect(() => {
+    if (phase !== 'processing' || !recoveryIngestId) return undefined;
+    let active = true;
+    let polling = false;
+    const recoverTerminalResult = async () => {
+      if (polling) return;
+      polling = true;
+      try {
+        const serverResult = await getSharedEventIngestResult(recoveryIngestId);
+        if (!active || !serverResult) return;
+        if (serverResult.processingStatus === 'failed') {
+          setResult(serverResult);
+          setPhase('error');
+          setErrorMessage(serverResult.processingError || 'GathR could not process this share.');
+          return;
+        }
+        if (serverResult.processingStatus === 'completed') {
+          handleAcceptedSubmit(snapshot, serverResult);
+        }
+      } catch {
+        // The live Firestore watcher remains primary; this is only a recovery
+        // path for a suspended native upload callback or missed snapshot.
+      } finally {
+        polling = false;
+      }
+    };
+    void recoverTerminalResult();
+    const interval = setInterval(() => void recoverTerminalResult(), 5000);
+    return () => {
+      active = false;
+      clearInterval(interval);
+    };
+  }, [handleAcceptedSubmit, phase, recoveryIngestId, snapshot]);
 
   useEffect(() => {
     const submissionKey = requestedIngestId ? `ingest:${requestedIngestId}` : initialSignature;
