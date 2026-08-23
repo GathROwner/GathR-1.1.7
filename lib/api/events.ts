@@ -146,9 +146,17 @@ function timesCompatible(a: Event, b: Event): boolean {
 }
 
 function isLikelySameSharedOccurrence(publicEvent: Event, privateEvent: Event): boolean {
+  const normalizedPublicTitle = normalizeMergeText(publicEvent.title);
+  const normalizedPrivateTitle = normalizeMergeText(privateEvent.title);
+  // A user-confirmed photo can correct a bad time on an existing public event.
+  // Exact title + venue + date is strong enough to reconcile the personal copy
+  // without publishing that correction globally before crowd consensus.
+  const titlesMatchExactly = Boolean(
+    normalizedPublicTitle && normalizedPublicTitle === normalizedPrivateTitle
+  );
   return (
     publicEvent.startDate === privateEvent.startDate &&
-    timesCompatible(publicEvent, privateEvent) &&
+    (timesCompatible(publicEvent, privateEvent) || titlesMatchExactly) &&
     venuesLooselyMatch(publicEvent, privateEvent) &&
     titlesLooselyMatch(publicEvent.title, privateEvent.title)
   );
@@ -187,7 +195,10 @@ export function dedupeEvents(events: Event[]): Event[] {
   });
 }
 
-function mergePrivateSharedEvents(publicEvents: Event[], privateSharedEvents: Event[]): Event[] {
+export function mergePrivateSharedEvents(
+  publicEvents: Event[],
+  privateSharedEvents: Event[]
+): Event[] {
   if (privateSharedEvents.length === 0) return publicEvents;
 
   const merged = dedupeEvents(publicEvents);
@@ -221,13 +232,31 @@ function mergePrivateSharedEvents(publicEvents: Event[], privateSharedEvents: Ev
     }
 
     const existing = merged[existingIndex];
+    // For the contributor only, the confirmed private extraction is the best
+    // evidence for occurrence fields and media. Keep the public identity and
+    // engagement/link metadata so this remains one event rather than a duplicate.
     merged[existingIndex] = {
       ...existing,
+      ...privateEvent,
+      id: existing.id,
+      source: existing.source,
+      venueId: existing.venueId ?? privateEvent.venueId,
       sharedEventProvenance: privateEvent.sharedEventProvenance,
-      imageUrl: existing.imageUrl || privateEvent.imageUrl,
+      imageUrl: privateEvent.imageUrl || existing.imageUrl,
       profileUrl: existing.profileUrl || privateEvent.profileUrl,
-      mediaUrls: existing.mediaUrls?.length ? existing.mediaUrls : privateEvent.mediaUrls,
+      mediaUrls: privateEvent.mediaUrls?.length ? privateEvent.mediaUrls : existing.mediaUrls,
       facebookUrl: existing.facebookUrl || privateEvent.facebookUrl,
+      ticketLinkPosts: existing.ticketLinkPosts || privateEvent.ticketLinkPosts,
+      ticketLinkEvents: existing.ticketLinkEvents || privateEvent.ticketLinkEvents,
+      ticketsBuyUrl: existing.ticketsBuyUrl || privateEvent.ticketsBuyUrl,
+      ticketLink: existing.ticketLink || privateEvent.ticketLink,
+      actionLinks: existing.actionLinks?.length ? existing.actionLinks : privateEvent.actionLinks,
+      likes: existing.likes,
+      shares: existing.shares,
+      interested: existing.interested,
+      comments: existing.comments,
+      topReactionsCount: existing.topReactionsCount,
+      usersResponded: existing.usersResponded,
     };
   }
 

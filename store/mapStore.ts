@@ -1888,10 +1888,17 @@ fetchEventDetails: async (eventIds: (string | number)[]) => {
   if (!eventIds || eventIds.length === 0) return;
 
   const qc: any = (global as any)?.__RQ_CLIENT ?? null;
+  const locallyConfirmedEventIds = new Set(
+    get().events
+      .filter((event) => event.sharedEventProvenance?.sharedByCurrentUser === true)
+      .map((event) => String(event.id))
+  );
   const normalizedIds = Array.from(
     new Set(
       eventIds
-        .filter((id) => !isPrivateSharedEventId(id))
+        .filter((id) => (
+          !isPrivateSharedEventId(id) && !locallyConfirmedEventIds.has(String(id))
+        ))
         .map((id) => toAppEventId(id))
         .filter(Boolean)
     )

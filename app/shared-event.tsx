@@ -40,6 +40,7 @@ import {
   requestCurrentUserVerificationEmail,
   VerificationEmailResult,
 } from '../lib/accountVerification';
+import { refreshMapAfterSharedEventSave } from '../lib/sharedEventMapRefresh';
 
 const BRAND = {
   primary: '#1E90FF',
@@ -1200,6 +1201,11 @@ export default function SharedEventScreen() {
     globalAny.__gathrDismissedShareIntentSignature = globalAny.__gathrCurrentShareIntentSignature || '';
     globalAny.__gathrDismissedShareLaunchUrl = globalAny.__gathrCurrentShareLaunchUrl || '';
     resetShareIntent();
+    if (resultEvents(result).some((event) => Boolean(event.privateEventId))) {
+      void refreshMapAfterSharedEventSave().catch((error) => {
+        console.warn('[SharedEvent] Failed to refresh saved event on map:', error);
+      });
+    }
     router.replace('/(tabs)/map');
   }, [isUploading, resetShareIntent, result, router, sourceContext.badgeLabel]);
 
