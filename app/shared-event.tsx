@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   BackHandler,
   Image,
+  InteractionManager,
   KeyboardAvoidingView,
   NativeScrollEvent,
   NativeSyntheticEvent,
@@ -1191,7 +1192,7 @@ export default function SharedEventScreen() {
     );
   };
 
-  const handleFinish = useCallback(async () => {
+  const handleFinish = useCallback(() => {
     if (isUploading || isReturningToMap) return;
     const venueStillNeeded = resultEvents(result).some((event) => (
       event.venueResolutionStatus === 'selection_required'
@@ -1210,13 +1211,19 @@ export default function SharedEventScreen() {
     globalAny.__gathrDismissedShareIntentSignature = globalAny.__gathrCurrentShareIntentSignature || '';
     globalAny.__gathrDismissedShareLaunchUrl = globalAny.__gathrCurrentShareLaunchUrl || '';
     resetShareIntent();
-    if (resultEvents(result).some((event) => Boolean(event.privateEventId))) {
+    const shouldRefreshMap = resultEvents(result).some((event) => Boolean(event.privateEventId));
+    if (shouldRefreshMap) {
       setIsReturningToMap(true);
-      await refreshMapAfterSharedEventSave().catch((error) => {
-        console.warn('[SharedEvent] Failed to refresh saved event on map:', error);
-      });
     }
     router.replace('/(tabs)/map');
+
+    if (shouldRefreshMap) {
+      InteractionManager.runAfterInteractions(() => {
+        void refreshMapAfterSharedEventSave().catch((error) => {
+          console.warn('[SharedEvent] Failed to refresh saved event on map:', error);
+        });
+      });
+    }
   }, [isReturningToMap, isUploading, resetShareIntent, result, router, sourceContext.badgeLabel]);
 
   useEffect(() => {
