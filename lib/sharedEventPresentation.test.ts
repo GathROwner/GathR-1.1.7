@@ -1,7 +1,28 @@
 import {
   crowdIneligibilityMessage,
   crowdIneligibilityReason,
+  sharedEventProgressStage,
 } from './sharedEventPresentation';
+
+describe('shared event progress presentation', () => {
+  test('keeps Uploading active until the server accepts the photo', () => {
+    expect(sharedEventProgressStage('processing', false)).toBe(1);
+  });
+
+  test('moves to Reading as soon as the upload is accepted', () => {
+    expect(sharedEventProgressStage('processing', true)).toBe(2);
+  });
+
+  test('marks Ready complete only after processing finishes', () => {
+    expect(sharedEventProgressStage('saved', true)).toBe(3);
+    expect(sharedEventProgressStage('needs_review', true)).toBe(3);
+  });
+
+  test('shows an error at the stage where it occurred', () => {
+    expect(sharedEventProgressStage('error', false)).toBe(1);
+    expect(sharedEventProgressStage('error', true)).toBe(2);
+  });
+});
 
 describe('shared event crowd presentation', () => {
   test('explains when an account cannot contribute to community confirmation', () => {

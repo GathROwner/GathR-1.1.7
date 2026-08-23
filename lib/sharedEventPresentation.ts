@@ -1,5 +1,18 @@
 import type { SharedEventCrowdPromotionSummary } from './sharedEventApi';
 
+export type SharedEventProgressPhase = 'processing' | 'saved' | 'needs_review' | 'error';
+
+export function sharedEventProgressStage(
+  phase: SharedEventProgressPhase,
+  uploadAccepted: boolean
+): 1 | 2 | 3 {
+  if (phase === 'processing' || phase === 'error') {
+    return uploadAccepted ? 2 : 1;
+  }
+
+  return 3;
+}
+
 const CROWD_INELIGIBILITY_MESSAGES: Record<string, string> = {
   account_not_eligible:
     'This account needs a verified email or linked phone number before its photos can count toward community confirmation.',

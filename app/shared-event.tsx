@@ -36,6 +36,7 @@ import { trackPendingSharedEventIngest } from '../lib/sharedEventProcessingTrack
 import {
   crowdIneligibilityMessage,
   crowdIneligibilityReason,
+  sharedEventProgressStage,
 } from '../lib/sharedEventPresentation';
 import {
   requestCurrentUserVerificationEmail,
@@ -1024,7 +1025,7 @@ export default function SharedEventScreen() {
   const isExpiredResult = resultIsFullyExpired(result);
   const isUploading = phase === 'processing' && !result?.ingestId;
   const publicCounts = publicProcessingCounts(result);
-  const progressStage = phase === 'processing' ? 1 : phase === 'error' ? 1 : 2;
+  const progressStage = sharedEventProgressStage(phase, Boolean(result?.ingestId));
   const finalStepLabel = phase === 'error'
     ? 'Retry'
     : result?.crowdPromotion?.promotedEventCount
@@ -1293,9 +1294,9 @@ export default function SharedEventScreen() {
           </View>
 
           <View style={styles.progressCard}>
-            {['Received', 'Reading', finalStepLabel].map((label, index) => {
-              const isDone = index < progressStage || (progressStage === 2 && index === 2);
-              const isActive = index === progressStage && progressStage < 2;
+            {['Received', 'Uploading', 'Reading', finalStepLabel].map((label, index) => {
+              const isDone = index < progressStage || (progressStage === 3 && index === 3);
+              const isActive = index === progressStage && progressStage < 3;
               const stepColor = phase === 'error' && isActive ? BRAND.danger : isDone ? BRAND.success : status.color;
               return (
                 <React.Fragment key={label}>
@@ -1312,7 +1313,7 @@ export default function SharedEventScreen() {
                       (isDone || isActive) && { color: stepColor },
                     ]}>{label}</Text>
                   </View>
-                  {index < 2 ? (
+                  {index < 3 ? (
                     <View style={[
                       styles.progressConnector,
                       index < progressStage && { backgroundColor: BRAND.success },
