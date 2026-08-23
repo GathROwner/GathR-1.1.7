@@ -31,6 +31,32 @@ export const TEMPORAL_DISTANCE_BANDS = [
   { maxDays: Infinity, multiplier: 0.5 } // >1 month: 50% penalty
 ];
 
+export interface EventDisplayDateRange {
+  startDate?: string | null;
+  endDate?: string | null;
+  isRecurring?: boolean | null;
+  recurrenceUntilDate?: string | null;
+}
+
+/**
+ * Returns the date that should appear in an "Until" label.
+ * A recurring series uses its explicit recurrence boundary. A non-recurring
+ * event only gets an "Until" label when it actually spans multiple dates.
+ */
+export const getEventDisplayUntilDate = (
+  event: EventDisplayDateRange
+): string | undefined => {
+  const startDate = String(event.startDate || '').trim();
+  const recurrenceUntilDate = String(event.recurrenceUntilDate || '').trim();
+  if (event.isRecurring && recurrenceUntilDate && recurrenceUntilDate !== startDate) {
+    return recurrenceUntilDate;
+  }
+
+  const endDate = String(event.endDate || '').trim();
+  if (endDate && endDate !== startDate) return endDate;
+  return undefined;
+};
+
 /**
  * Get user's timezone for consistent timezone handling
  * @returns {string} User's timezone identifier

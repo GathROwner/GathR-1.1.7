@@ -42,6 +42,7 @@ import {
   formatEventDateTime,
   combineDateAndTime,
   getEventTimeStatus,
+  getEventDisplayUntilDate,
   formatTime
 } from '../../utils/dateUtils';
 import { createLocationKeyFromEvent } from '../../utils/priorityUtils';
@@ -1117,8 +1118,9 @@ const handleNonTicketAction = () => {
   const rangeOrUndefined = range && range.trim() ? range : undefined;
   const { label, start: s, end: e, labelWithTime } = partsFrom(baseDateText, rangeOrUndefined);
   const showRange = (timeStatus === 'now' || timeStatus === 'today' || timeStatus === 'future') && !!rangeOrUndefined;
+  const displayUntilDate = getEventDisplayUntilDate(updatedEvent);
   const endDateSuffix =
-    showRange && isFutureDate(updatedEvent.endDate) ? ` • (Until ${formatEndDateLabel(updatedEvent.endDate!)})` : '';
+    showRange && isFutureDate(displayUntilDate) ? ` • (Until ${formatEndDateLabel(displayUntilDate!)})` : '';
   const dateTimeDisplay = isHappeningNow
     ? `Now${showRange ? ` • ${s}${e ? ` – ${e}` : ''}${endDateSuffix}` : ''}`
     : showRange

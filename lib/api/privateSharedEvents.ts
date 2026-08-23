@@ -474,6 +474,7 @@ export const normalizePrivateSharedEventForRegression = (
     mapMode: event.mapMode || 'venue',
     isRecurring: Boolean(event.recurringPattern && event.recurringPattern !== 'none'),
     recurringPattern: event.recurringPattern,
+    recurrenceUntilDate: event.recurrenceUntilDate,
     facebookUrl: firstText(event.sourceUrl),
     venueWebsite: firstText(resolvedVenue.website, resolvedVenue.placeDetailsParsed?.website),
     venuePhone: firstText(resolvedVenue.phone, resolvedVenue.placeDetailsParsed?.international_phone_number),

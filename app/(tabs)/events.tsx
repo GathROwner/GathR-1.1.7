@@ -57,6 +57,7 @@ import {
   isEventNow,
   isEventHappeningToday,
   formatTime,
+  getEventDisplayUntilDate,
   parseISO,
   format
 } from '../../utils/dateUtils';
@@ -1292,8 +1293,9 @@ const result = await userService.toggleSavedEvent(event.id, {
             const showRange = (timeStatus === 'now' || timeStatus === 'today' || timeStatus === 'future') && !!rangeOrUndefined;
 
             const suffix = showRange ? ` • ${s}${e ? ` – ${e}` : ''}` : '';
+            const displayUntilDate = getEventDisplayUntilDate(event);
             const endDateSuffix =
-              showRange && isFutureDate(event.endDate) ? ` • (Until ${formatEndDateLabel(event.endDate!)})` : '';
+              showRange && isFutureDate(displayUntilDate) ? ` • (Until ${formatEndDateLabel(displayUntilDate!)})` : '';
 
             const display = showRange ? `${label}${suffix}${endDateSuffix}` : labelWithTime;
 

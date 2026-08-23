@@ -8,7 +8,7 @@
  * those times could never read as "happening now" from the dateUtils engine.
  */
 
-import { getEventTimeStatus, isEventNow } from '../dateUtils';
+import { getEventDisplayUntilDate, getEventTimeStatus, isEventNow } from '../dateUtils';
 
 // Freeze "now" at 2026-07-10 20:00 local - inside a 7 PM-11 PM event window.
 const NOW = new Date(2026, 6, 10, 20, 0, 0);
@@ -59,4 +59,29 @@ describe('getEventTimeStatus time-format handling', () => {
       ).toBe('now');
     }
   );
+});
+
+describe('getEventDisplayUntilDate', () => {
+  it('uses the finite recurrence boundary for a recurring series', () => {
+    expect(getEventDisplayUntilDate({
+      startDate: '2026-08-26',
+      endDate: '2026-08-26',
+      isRecurring: true,
+      recurrenceUntilDate: '2026-09-30',
+    })).toBe('2026-09-30');
+  });
+
+  it('does not label a single-day future event as ending on its own start date', () => {
+    expect(getEventDisplayUntilDate({
+      startDate: '2026-08-26',
+      endDate: '2026-08-26',
+    })).toBeUndefined();
+  });
+
+  it('retains a real multi-day end date', () => {
+    expect(getEventDisplayUntilDate({
+      startDate: '2026-08-26',
+      endDate: '2026-08-29',
+    })).toBe('2026-08-29');
+  });
 });

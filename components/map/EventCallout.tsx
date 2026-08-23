@@ -122,6 +122,7 @@ import {
   getEventTimeStatus,
   sortEventsByTimeStatus,
   getRelativeTimeDescription,
+  getEventDisplayUntilDate,
   combineDateAndTime
 } from '../../utils/dateUtils';
 import { isEventPast } from '../../utils/eventExpiry';
@@ -2326,8 +2327,9 @@ useUserPrefsStore.getState().setAll({ savedEvents: next });
             const showRange = (timeStatus === 'now' || timeStatus === 'today' || timeStatus === 'future') && !!rangeOrUndefined;
 
             const suffix = showRange ? ` • ${s}${e ? ` – ${e}` : ''}` : '';
+            const displayUntilDate = getEventDisplayUntilDate(event);
             const endDateSuffix =
-              showRange && isFutureDate(event.endDate) ? ` • (Until ${formatEndDateLabel(event.endDate!)})` : '';
+              showRange && isFutureDate(displayUntilDate) ? ` • (Until ${formatEndDateLabel(displayUntilDate!)})` : '';
 
 const display = showRange ? `${label}${suffix}${endDateSuffix}` : labelWithTime;
 

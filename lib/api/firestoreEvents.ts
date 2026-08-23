@@ -324,6 +324,8 @@ export function normalizeFirestoreEvent(fsEvent: FirestoreEvent): Event {
     // Recurrence metadata (top-level backend contract, metadata fallback for safety)
     isRecurring: fsEvent.isRecurring ?? fsEvent.metadata?.isRecurring ?? false,
     recurringPattern: fsEvent.recurringPattern ?? fsEvent.metadata?.recurringPattern,
+    recurrenceUntilDate:
+      fsEvent.recurrenceUntilDate ?? fsEvent.metadata?.recurrenceUntilDate,
     isRecurringInstance:
       fsEvent.isRecurringInstance ?? fsEvent.metadata?.isRecurringInstance ?? false,
     originalEventId: rawOriginalEventId ? toAppEventId(rawOriginalEventId) : null,

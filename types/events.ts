@@ -160,6 +160,7 @@ export interface Event {
   // Recurrence metadata (materialized instance support)
   isRecurring?: boolean;
   recurringPattern?: string;
+  recurrenceUntilDate?: string;
   isRecurringInstance?: boolean;
   originalEventId?: string | null;
 

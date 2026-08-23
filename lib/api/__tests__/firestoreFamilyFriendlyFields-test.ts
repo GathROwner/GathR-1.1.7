@@ -11,7 +11,7 @@ describe('Firestore family-friendly field mapping', () => {
   it('uses a new persisted cache key so pre-score events are not restored', () => {
     expect(EVENTS_MINIMAL).toEqual([
       'events-minimal',
-      'area-route-v6',
+      'area-route-v7-family-friendly-action-links',
     ]);
   });
 
@@ -38,5 +38,26 @@ describe('Firestore family-friendly field mapping', () => {
     expect(normalized.familyFriendlyLevel).toBe('high');
     expect(normalized.familyFriendlyReasons).toEqual(['explicit_all_ages']);
     expect(normalized.familyFriendlyScoringVersion).toBe('family-friendly-v4');
+  });
+
+  it('preserves the finite recurrence boundary used by event cards', () => {
+    const normalized = normalizeFirestoreEvent({
+      id: 'shared-recurring-1',
+      title: 'GATHR QA Sunset Sessions',
+      description: '',
+      startDate: '2026-08-26',
+      endDate: '2026-08-26',
+      startTime: '19:00',
+      venueId: 'venue-1',
+      venue: 'Peake’s Quay',
+      category: 'Live Music',
+      isEvent: true,
+      isRecurring: true,
+      recurringPattern: 'weekly_wednesday',
+      recurrenceUntilDate: '2026-09-30',
+      metadata: {},
+    } as FirestoreEvent);
+
+    expect(normalized.recurrenceUntilDate).toBe('2026-09-30');
   });
 });

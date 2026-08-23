@@ -45,6 +45,7 @@ export interface FirestoreEventMetadata {
   // Legacy location for recurrence fields (backend now returns these top-level)
   isRecurring?: boolean;
   recurringPattern?: string;
+  recurrenceUntilDate?: string;
   isRecurringInstance?: boolean;
   originalEventId?: string | null;
   isFoodSpecial?: boolean;
@@ -158,6 +159,7 @@ export interface FirestoreEvent {
   // Top-level recurrence fields (materialized recurring instances)
   isRecurring?: boolean;
   recurringPattern?: string;
+  recurrenceUntilDate?: string;
   isRecurringInstance?: boolean;
   originalEventId?: string | null;
   price?: string | null;
