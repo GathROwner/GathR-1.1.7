@@ -807,7 +807,7 @@ export default function SharedEventScreen() {
   const [venueSearchError, setVenueSearchError] = useState('');
   const [venueMenuOpen, setVenueMenuOpen] = useState(false);
   const [venueConfirmingId, setVenueConfirmingId] = useState('');
-  const [isReturningToMap, setIsReturningToMap] = useState(false);
+  const isReturningToMapRef = useRef(false);
   const verificationAttemptedRef = useRef(false);
 
   const stopIngestWatcher = useCallback(() => {
@@ -1193,7 +1193,8 @@ export default function SharedEventScreen() {
   };
 
   const handleFinish = useCallback(() => {
-    if (isUploading || isReturningToMap) return;
+    if (isUploading || isReturningToMapRef.current) return;
+    isReturningToMapRef.current = true;
     const venueStillNeeded = resultEvents(result).some((event) => (
       event.venueResolutionStatus === 'selection_required'
     ));
@@ -1212,9 +1213,6 @@ export default function SharedEventScreen() {
     globalAny.__gathrDismissedShareLaunchUrl = globalAny.__gathrCurrentShareLaunchUrl || '';
     resetShareIntent();
     const shouldRefreshMap = resultEvents(result).some((event) => Boolean(event.privateEventId));
-    if (shouldRefreshMap) {
-      setIsReturningToMap(true);
-    }
     router.replace('/(tabs)/map');
 
     if (shouldRefreshMap) {
@@ -1224,18 +1222,18 @@ export default function SharedEventScreen() {
         });
       });
     }
-  }, [isReturningToMap, isUploading, resetShareIntent, result, router, sourceContext.badgeLabel]);
+  }, [isUploading, resetShareIntent, result, router, sourceContext.badgeLabel]);
 
   useEffect(() => {
     if (Platform.OS !== 'android') return undefined;
     const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
-      if (!isUploading && !isReturningToMap) {
+      if (!isUploading) {
         void handleFinish();
       }
       return true;
     });
     return () => subscription.remove();
-  }, [handleFinish, isReturningToMap, isUploading]);
+  }, [handleFinish, isUploading]);
 
   return (
     <KeyboardAvoidingView
@@ -1243,15 +1241,15 @@ export default function SharedEventScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
       <View style={styles.header}>
-        <Pressable style={styles.iconButton} onPress={handleFinish} disabled={isUploading || isReturningToMap}>
-          <Ionicons name="chevron-back" size={24} color={isUploading || isReturningToMap ? '#A7B4C3' : BRAND.ink} />
+        <Pressable style={styles.iconButton} onPress={handleFinish} disabled={isUploading}>
+          <Ionicons name="chevron-back" size={24} color={isUploading ? '#A7B4C3' : BRAND.ink} />
         </Pressable>
         <View style={styles.headerBrand}>
           <Image source={GATHR_LOGO} style={styles.headerLogo} resizeMode="contain" />
           <Text style={styles.headerTitle}>Share to GathR</Text>
         </View>
-        <Pressable style={styles.iconButton} onPress={handleFinish} disabled={isUploading || isReturningToMap}>
-          <Ionicons name="map-outline" size={22} color={isUploading || isReturningToMap ? '#A7B4C3' : BRAND.ink} />
+        <Pressable style={styles.iconButton} onPress={handleFinish} disabled={isUploading}>
+          <Ionicons name="map-outline" size={22} color={isUploading ? '#A7B4C3' : BRAND.ink} />
         </Pressable>
       </View>
 
@@ -1567,17 +1565,17 @@ export default function SharedEventScreen() {
           </Pressable>
         ) : (
           <Pressable
-            style={[styles.saveButton, (isUploading || isReturningToMap) && styles.saveButtonDisabled]}
+            style={[styles.saveButton, isUploading && styles.saveButtonDisabled]}
             onPress={handleFinish}
-            disabled={isUploading || isReturningToMap}
+            disabled={isUploading}
           >
             <Ionicons
-              name={isUploading ? 'cloud-upload-outline' : isReturningToMap ? 'sync-outline' : 'map-outline'}
+              name={isUploading ? 'cloud-upload-outline' : 'map-outline'}
               size={21}
               color="#FFFFFF"
             />
             <Text style={styles.saveButtonText}>
-              {isUploading ? 'Uploading safely...' : isReturningToMap ? 'Updating GathR...' : 'Return to GathR'}
+              {isUploading ? 'Uploading safely...' : 'Return to GathR'}
             </Text>
           </Pressable>
         )}
