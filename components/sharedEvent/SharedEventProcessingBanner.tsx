@@ -1,19 +1,14 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { AppState, Image, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Image, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { usePathname, useRouter } from 'expo-router';
-import * as Notifications from 'expo-notifications';
 import { useAuth } from '../../contexts/AuthContext';
 import { watchSharedEventIngest } from '../../lib/sharedEventApi';
 import {
   listPendingSharedEventIngests,
   removePendingSharedEventIngest,
 } from '../../lib/sharedEventProcessingTracker';
-import {
-  sharedEventFeedbackKind,
-  shouldSendSharedEventSystemNotification,
-  shouldShowSharedEventInAppBanner,
-} from '../../lib/sharedEventCompletionFeedback';
+import { shouldShowSharedEventInAppBanner } from '../../lib/sharedEventCompletionFeedback';
 
 const GATHR_LOGO = require('../../assets/icon.png');
 
@@ -63,30 +58,6 @@ export default function SharedEventProcessingBanner() {
     if (deliveredFeedbackRef.current.has(nextBanner.id)) return;
     deliveredFeedbackRef.current.add(nextBanner.id);
 
-    if (shouldSendSharedEventSystemNotification(AppState.currentState) && nextBanner.ingestId) {
-      try {
-        const permissions = await Notifications.getPermissionsAsync();
-        if (permissions.status === 'granted') {
-          await Notifications.scheduleNotificationAsync({
-            content: {
-              title: `GathR - ${nextBanner.title}`,
-              body: nextBanner.detail,
-              sound: 'default',
-              data: {
-                kind: sharedEventFeedbackKind(nextBanner),
-                ingestId: nextBanner.ingestId,
-              },
-            },
-            trigger: Platform.OS === 'android'
-              ? { channelId: 'gathr-share-updates' }
-              : null,
-          });
-        }
-      } catch (error) {
-        console.warn('[SharedEvent] Could not show completion notification:', error);
-      }
-    }
-
     // The result screen already updates itself. Everywhere else gets the
     // tappable in-app banner when GathR is in the foreground.
     if (shouldShowSharedEventInAppBanner(pathnameRef.current)) {
@@ -110,6 +81,7 @@ export default function SharedEventProcessingBanner() {
               title: 'Share needs a retry',
               detail: result.processingError || 'GathR could not finish scanning that share.',
               tone: 'error',
+              ingestId: entry.ingestId,
             });
             return;
           }

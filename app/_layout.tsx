@@ -45,6 +45,7 @@ import { installNotificationDebugListeners } from '../services/notificationServi
 import { useDeepLinking } from '../hooks/useDeepLinking';
 import { useSharedEventIntentRouter } from '../hooks/useSharedEventIntentRouter';
 import SharedEventProcessingBanner from '../components/sharedEvent/SharedEventProcessingBanner';
+import SharedEventPushRegistration from '../components/sharedEvent/SharedEventPushRegistration';
 import { preloadStartupLocation } from '../utils/startupLocationCache';
 import { GATHR_MAPBOX_STYLE_URL, initializeMapboxAccessToken } from '../utils/mapboxAccessToken';
 
@@ -147,6 +148,22 @@ Notifications.setNotificationHandler({
       const data: any = n?.request?.content?.data ?? {};
       const scheduledFor = Number(data?.scheduledFor || 0);
       const now = Date.now();
+
+      // Shared-event terminal updates use an in-app GathR banner while the
+      // app is foregrounded. Suppress the duplicate OS banner in that state.
+      if (
+        data?.kind === 'shared_event_complete' ||
+        data?.kind === 'shared_event_venue_needed' ||
+        data?.kind === 'shared_event_failed'
+      ) {
+        return {
+          shouldShowAlert: false,
+          shouldShowBanner: false,
+          shouldShowList: false,
+          shouldPlaySound: false,
+          shouldSetBadge: false,
+        };
+      }
 
       // If OS delivers *before* intended time, suppress the banner.
       if (scheduledFor && now + 1000 < scheduledFor) {
@@ -1030,6 +1047,7 @@ useEffect(() => {
           headerShown: false
         }} />
       </Stack>
+      <SharedEventPushRegistration />
       <SharedEventProcessingBanner />
     </TutorialManager>
   );

@@ -34,6 +34,7 @@ import {
 } from 'firebase/auth';
 import { amplitudeTrack, amplitudeSetUserId } from '../lib/amplitudeAnalytics';
 import { TUTORIAL_STEPS } from '../config/tutorialSteps';
+import { unregisterSharedEventPushNotifications } from '../lib/sharedEventPushNotifications';
 import { useUserPrefsStore, updateShowDailyHotspot, updateShowTrendingOnOpen } from '../store/userPrefsStore';
 import GathrWordmarkLogo from '../components/common/GathrWordmarkLogo';
 import * as ImagePicker from 'expo-image-picker';
@@ -1117,6 +1118,9 @@ const handleLogout = async () => {
   }
 
   try {
+    // Remove this device from account-scoped scan completion pushes before
+    // Firebase clears the credential required by the registration endpoint.
+    await unregisterSharedEventPushNotifications();
     await signOut(auth);
   } finally {
     // Always drop back to device-level analytics
