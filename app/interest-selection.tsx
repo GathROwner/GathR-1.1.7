@@ -15,25 +15,26 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { auth, firestore } from '../config/firebaseConfig';
 import { doc, getDoc, updateDoc } from 'firebase/firestore';
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
+import { EVENT_CATEGORIES, SPECIAL_CATEGORIES } from '../constants/eventCategories';
 
 // Define the interest categories (matching InterestFilterPills icon mapping)
-const EVENT_INTERESTS = [
-  { name: 'Live Music', icon: 'audiotrack', iconLib: 'MaterialIcons' },
-  { name: 'Trivia Night', icon: 'psychology-alt', iconLib: 'MaterialIcons' },
-  { name: 'Comedy', icon: 'sentiment-very-satisfied', iconLib: 'MaterialIcons' },
-  { name: 'Workshops & Classes', icon: 'school', iconLib: 'Ionicons' },
-  { name: 'Religious', icon: 'church', iconLib: 'MaterialIcons' },
-  { name: 'Sports', icon: 'sports-basketball', iconLib: 'MaterialIcons' },
-  { name: 'Family Friendly', icon: 'family-restroom', iconLib: 'MaterialIcons' },
-  { name: 'Gatherings & Parties', icon: 'nightlife', iconLib: 'MaterialIcons' },
-  { name: 'Cinema', icon: 'theaters', iconLib: 'MaterialIcons' }
-];
+const CATEGORY_ICON: Record<string, { icon: string; iconLib: string }> = {
+  'Live Music': { icon: 'audiotrack', iconLib: 'MaterialIcons' },
+  'Trivia Night': { icon: 'psychology-alt', iconLib: 'MaterialIcons' },
+  Comedy: { icon: 'sentiment-very-satisfied', iconLib: 'MaterialIcons' },
+  'Workshops & Classes': { icon: 'school', iconLib: 'Ionicons' },
+  Religious: { icon: 'church', iconLib: 'MaterialIcons' },
+  Sports: { icon: 'sports-basketball', iconLib: 'MaterialIcons' },
+  'Family Friendly': { icon: 'family-restroom', iconLib: 'MaterialIcons' },
+  'Gatherings & Parties': { icon: 'nightlife', iconLib: 'MaterialIcons' },
+  Cinema: { icon: 'theaters', iconLib: 'MaterialIcons' },
+  'Happy Hour': { icon: 'local-bar', iconLib: 'MaterialIcons' },
+  'Food Special': { icon: 'restaurant', iconLib: 'MaterialIcons' },
+  'Drink Special': { icon: 'wine-bar', iconLib: 'MaterialIcons' },
+};
 
-const SPECIAL_INTERESTS = [
-  { name: 'Happy Hour', icon: 'local-bar', iconLib: 'MaterialIcons' },
-  { name: 'Food Special', icon: 'restaurant', iconLib: 'MaterialIcons' },
-  { name: 'Drink Special', icon: 'wine-bar', iconLib: 'MaterialIcons' }
-];
+const EVENT_INTERESTS = EVENT_CATEGORIES.map((name) => ({ name, ...CATEGORY_ICON[name] }));
+const SPECIAL_INTERESTS = SPECIAL_CATEGORIES.map((name) => ({ name, ...CATEGORY_ICON[name] }));
 
 // Get screen dimensions to calculate button sizes and optimize layout
 const { width, height } = Dimensions.get('window');

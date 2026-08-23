@@ -9,6 +9,11 @@ import {
 } from '../config/backend';
 import { convert24to12Hour } from './firestoreEvents';
 import { normalizeVenueIdentityText } from '../../utils/venueIdentity';
+import type {
+  EventCategory,
+  GathrCategory,
+  SpecialCategory,
+} from '../../constants/eventCategories';
 
 type SharedEventSourcePlatform = 'facebook' | 'instagram' | 'web' | 'unknown';
 type SharedEventSourceVisibility =
@@ -190,14 +195,40 @@ const inferType = (event: PrivateSharedEventDoc): Event['type'] => {
   return 'event';
 };
 
-const inferCategory = (event: PrivateSharedEventDoc): string => {
+const inferEventCategoryFromText = (text: string): EventCategory | null => {
+  if (/\btrivia\b/.test(text)) return 'Trivia Night';
+  if (/\b(comedy|comedian|stand up|improv)\b/.test(text)) return 'Comedy';
+  if (/\b(workshops?|classes?|lessons?|courses?|seminars?)\b/.test(text)) return 'Workshops & Classes';
+  if (/\b(church|religious|worship|faith|service)\b/.test(text)) return 'Religious';
+  if (/\b(run|race|soccer|football|hockey|baseball|basketball|sports?|game|match|wellness|yoga)\b/.test(text)) return 'Sports';
+  if (/\b(family|families|kids?|children|all ages)\b/.test(text)) return 'Family Friendly';
+  if (/\b(cinema|movie|movies|film|screening)\b/.test(text)) return 'Cinema';
+  if (/\b(live entertainment|music|musical|band|dj|concert|jazz|acoustic|singer|songwriter|performer)\b/.test(text)) return 'Live Music';
+  if (/\b(gathering|party|dance|festival|market|vendors?|fair|social)\b/.test(text)) return 'Gatherings & Parties';
+  return null;
+};
+
+const inferSpecialCategory = (text: string): SpecialCategory => {
+  if (/\bhappy hour\b/.test(text)) return 'Happy Hour';
+  if (/\b(drinks?|beverages?|cocktails?|beer|wine|shots?|spirits?|pints?)\b/.test(text)) return 'Drink Special';
+  return 'Food Special';
+};
+
+export const inferPrivateSharedCategoryForRegression = (
+  event: PrivateSharedEventDoc
+): GathrCategory => {
+  const type = inferType(event);
+  const title = normalizeText(event.title);
   const text = normalizeText(`${event.title || ''} ${event.description || ''}`);
-  if (/\b(comedy|trivia|karaoke)\b/.test(text)) return 'Comedy';
-  if (/\b(music|band|dj|concert|jazz|acoustic|singer|songwriter)\b/.test(text)) return 'Music';
-  if (/\b(food|bbq|burger|brunch|patio|happy hour|menu|drink|beer|wine)\b/.test(text)) return 'Food & Drink';
-  if (/\b(run|soccer|football|sport|game|match|wellness|yoga)\b/.test(text)) return 'Sports';
-  if (/\b(festival|market|vendors|fair)\b/.test(text)) return 'Festival';
-  return 'Other';
+
+  if (type === 'special') return inferSpecialCategory(text);
+
+  // Let the event's own title define a component before consulting supporting
+  // flyer copy. This keeps an Inside Market parent distinct from its nested
+  // live-music event even though each description may mention the other.
+  return inferEventCategoryFromText(title) ??
+    inferEventCategoryFromText(text) ??
+    'Gatherings & Parties';
 };
 
 const fetchVenueDirectory = async (): Promise<VenueDirectoryEntry[]> => {
@@ -314,7 +345,7 @@ export const normalizePrivateSharedEventForRegression = (
     id: `shared_${id}`,
     type: inferType(event),
     source: 'private_shared',
-    category: inferCategory(event),
+    category: inferPrivateSharedCategoryForRegression(event),
     title: firstText(event.title, 'Shared event'),
     description,
     venueId: resolvedVenue.id ?? null,

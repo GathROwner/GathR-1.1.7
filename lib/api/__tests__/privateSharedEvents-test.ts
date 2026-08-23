@@ -11,6 +11,7 @@ jest.mock('../../../config/firebaseConfig', () => ({
 
 import {
   expandPrivateSharedEventRecurrenceForRegression,
+  inferPrivateSharedCategoryForRegression,
   normalizePrivateSharedEventForRegression,
 } from '../privateSharedEvents';
 
@@ -108,5 +109,32 @@ describe('private shared event normalization', () => {
   it('leaves a non-recurring private share as one event', () => {
     const normalized = normalizePrivateSharedEventForRegression('private-once', unknownVenueEvent, null)!;
     expect(expandPrivateSharedEventRecurrenceForRegression(normalized, unknownVenueEvent)).toEqual([normalized]);
+  });
+
+  it('uses only the app category contract for a nested live-entertainment event', () => {
+    expect(inferPrivateSharedCategoryForRegression({
+      ...unknownVenueEvent,
+      title: 'Live Entertainment by Floyd Gaudet',
+      description: 'Live entertainment inside the West Prince PEI Markets Trail market.',
+      contentKind: 'event',
+    })).toBe('Live Music');
+  });
+
+  it('keeps a market parent distinct from the music component mentioned in its flyer copy', () => {
+    expect(inferPrivateSharedCategoryForRegression({
+      ...unknownVenueEvent,
+      title: 'West Prince PEI Markets Trail - Inside Market',
+      description: '25+ vendors with live music by Floyd Gaudet.',
+      contentKind: 'event',
+    })).toBe('Gatherings & Parties');
+  });
+
+  it('classifies drink offers as a supported special category', () => {
+    expect(inferPrivateSharedCategoryForRegression({
+      ...unknownVenueEvent,
+      title: '$6 Burt Reynolds shots',
+      description: 'Available during the dance party.',
+      contentKind: 'special',
+    })).toBe('Drink Special');
   });
 });

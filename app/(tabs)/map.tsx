@@ -41,6 +41,7 @@ import type { Event, Venue, Cluster, TimeStatus, InterestLevel } from '../../typ
 import { FilterCriteria, TimeFilterType } from '../../types/filter';
 import type { InterestCarouselFilter } from '../../types/store';
 import { filterClusterForInterestCarouselFilter } from '../../utils/interestCarouselFilterUtils';
+import { isMapCameraGestureActive } from '../../utils/mapCameraGestures';
 
 // Import components
 import FilterPills from '../../components/map/FilterPills';
@@ -7661,8 +7662,7 @@ const handleMapMovementEnd = useCallback(() => {
  *    floored by MIN_CENTER_METERS_TO_HIDE (so tiny drifts at low zoom don’t count).
  *  • “Meaningful” ticks start/extend movement; non-meaningful ticks do not reset
  *    the movement-end debounce (prevents long zoom tails from keeping pills hidden).
- *  • Also re-enables auto-hide after tutorial/reload on the first true user gesture
- *    (detected via e.properties.gesture / isUserInteraction).
+ *  • Also re-enables auto-hide after tutorial/reload on the first true user gesture.
  */
 React.useEffect(() => {
   if (!location) return;
@@ -7774,8 +7774,9 @@ const zoom: number | undefined =
 const heading: number | undefined = props.bearing ?? props.heading;
 const pitch: number | undefined = props.pitch ?? props.tilt;
 
-// NEW: first real user gesture gate (works on both platforms)
-const isGesture = !!(props.gesture ?? props.isUserInteraction);
+// RNMapbox v10 supplies this outside `properties` at
+// `e.gestures.isGestureActive`, including on iOS.
+const isGesture = isMapCameraGestureActive(e);
 if (isGesture && !userGestureSeenRef.current) {
   userGestureSeenRef.current = true;
   setIgnoreProgrammaticTrace(false, 'first_user_gesture');
