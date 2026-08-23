@@ -1,19 +1,26 @@
 import { useEffect } from 'react';
 import { AppState } from 'react-native';
 import { useAuth } from '../../contexts/AuthContext';
-import { processSharedEventUploadQueue } from '../../lib/sharedEventUploadQueue';
+import {
+  processSharedEventUploadQueue,
+  reconcileSharedEventUploadQueueFromServer,
+} from '../../lib/sharedEventUploadQueue';
 
 export default function SharedEventUploadManager() {
   const { user } = useAuth();
 
   useEffect(() => {
     if (!user) return undefined;
-    void processSharedEventUploadQueue();
+    const resumeUploads = async () => {
+      await reconcileSharedEventUploadQueueFromServer();
+      await processSharedEventUploadQueue();
+    };
+    void resumeUploads();
     const appStateSubscription = AppState.addEventListener('change', (state) => {
-      if (state === 'active') void processSharedEventUploadQueue();
+      if (state === 'active') void resumeUploads();
     });
     const interval = setInterval(() => {
-      if (AppState.currentState === 'active') void processSharedEventUploadQueue();
+      if (AppState.currentState === 'active') void resumeUploads();
     }, 15000);
 
     return () => {

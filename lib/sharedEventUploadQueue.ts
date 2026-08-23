@@ -3,9 +3,10 @@ import * as FileSystem from 'expo-file-system/legacy';
 import { auth } from '../config/firebaseConfig';
 import {
   FUNCTIONS_BASE_URL,
+  getSharedEventIngestResult,
+  prepareSharedEventUpload,
   SharedEventPayload,
   SharedEventSubmitResult,
-  submitSharedEvent,
 } from './sharedEventApi';
 import { SharedIntentMediaFile } from './sharedEventMediaUpload';
 import { trackPendingSharedEventIngest } from './sharedEventProcessingTracker';
@@ -18,6 +19,7 @@ const ACCEPTED_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 
 export type SharedEventUploadJobStatus =
   | 'queued'
+  | 'preparing'
   | 'uploading'
   | 'submitting'
   | 'accepted'
@@ -234,6 +236,7 @@ async function uploadFile(job: SharedEventUploadJob, file: SharedEventUploadFile
       headers: {
         authorization: `Bearer ${token}`,
         'content-type': file.mimeType,
+        'x-gathr-ingest-id': String(job.ingestId || ''),
         'x-gathr-upload-id': file.uploadId,
         'x-gathr-file-name': file.fileName,
       },
@@ -256,13 +259,78 @@ async function uploadFile(job: SharedEventUploadJob, file: SharedEventUploadFile
   return result.mediaUrl;
 }
 
+async function deleteJobFiles(job: SharedEventUploadJob): Promise<void> {
+  const directory = job.files[0]?.localUri.replace(/[^/]+$/, '');
+  if (directory) {
+    await FileSystem.deleteAsync(directory, { idempotent: true }).catch(() => undefined);
+  }
+}
+
+function serverOwnsUpload(result: SharedEventSubmitResult | undefined): boolean {
+  return Boolean(result?.processingStatus && result.processingStatus !== 'awaiting_upload');
+}
+
+async function acceptServerOwnedJob(
+  job: SharedEventUploadJob,
+  result: SharedEventSubmitResult
+): Promise<void> {
+  const acceptedJob: SharedEventUploadJob = {
+    ...job,
+    status: 'accepted',
+    ingestId: result.ingestId || job.ingestId,
+    submitResult: result,
+    updatedAt: Date.now(),
+    error: undefined,
+    nextAttemptAt: undefined,
+  };
+  await replaceJob(acceptedJob);
+  await deleteJobFiles(acceptedJob);
+}
+
 async function processJob(initialJob: SharedEventUploadJob): Promise<void> {
   let job = await currentJob(initialJob.id) || initialJob;
   try {
+    if (job.status === 'accepted') return;
+    if (job.ingestId) {
+      const existing = await getSharedEventIngestResult(job.ingestId);
+      if (serverOwnsUpload(existing)) {
+        await acceptServerOwnedJob(job, existing!);
+        return;
+      }
+    } else {
+      job = {
+        ...job,
+        status: 'preparing',
+        attemptCount: job.attemptCount + 1,
+        updatedAt: Date.now(),
+        error: undefined,
+        nextAttemptAt: undefined,
+      };
+      await replaceJob(job);
+      const prepared = await prepareSharedEventUpload({
+        payload: {
+          ...job.payload,
+          clientSubmissionId: job.id,
+        },
+        expectedUploadIds: job.files.map((file) => file.uploadId),
+      });
+      job = {
+        ...job,
+        ingestId: prepared.ingestId,
+        submitResult: prepared,
+        updatedAt: Date.now(),
+      };
+      await replaceJob(job);
+      await trackPendingSharedEventIngest({
+        ingestId: prepared.ingestId!,
+        sourceLabel: job.sourceLabel,
+      });
+    }
+
     job = {
       ...job,
       status: 'uploading',
-      attemptCount: job.attemptCount + 1,
+      attemptCount: job.attemptCount + (job.ingestId ? 0 : 1),
       updatedAt: Date.now(),
       error: undefined,
       nextAttemptAt: undefined,
@@ -272,6 +340,8 @@ async function processJob(initialJob: SharedEventUploadJob): Promise<void> {
     for (let index = 0; index < job.files.length; index += 1) {
       if (job.files[index].mediaUrl) continue;
       const mediaUrl = await uploadFile(job, job.files[index]);
+      const latest = await currentJob(job.id);
+      if (latest?.status === 'accepted') return;
       job = {
         ...job,
         files: job.files.map((file, fileIndex) => fileIndex === index ? { ...file, mediaUrl } : file),
@@ -280,39 +350,18 @@ async function processJob(initialJob: SharedEventUploadJob): Promise<void> {
       await replaceJob(job);
     }
 
-    job = { ...job, status: 'submitting', updatedAt: Date.now() };
-    await replaceJob(job);
-    const submitResult = await submitSharedEvent({
-      ...job.payload,
-      clientSubmissionId: job.id,
-      mediaUrls: Array.from(new Set([
-        ...(job.payload.mediaUrls || []),
-        ...job.files.map((file) => file.mediaUrl).filter((url): url is string => Boolean(url)),
-      ])),
-    });
-    if (submitResult.ingestId) {
-      await trackPendingSharedEventIngest({
-        ingestId: submitResult.ingestId,
-        sourceLabel: job.sourceLabel,
-      });
+    const latest = await currentJob(job.id);
+    if (latest?.status === 'accepted') return;
+    const serverResult = job.ingestId
+      ? await getSharedEventIngestResult(job.ingestId)
+      : undefined;
+    if (!serverOwnsUpload(serverResult)) {
+      throw new Error('GathR is still confirming the completed upload.');
     }
-    job = {
-      ...job,
-      status: 'accepted',
-      ingestId: submitResult.ingestId,
-      submitResult,
-      updatedAt: Date.now(),
-      error: undefined,
-      nextAttemptAt: undefined,
-    };
-    await replaceJob(job);
-
-    const directory = job.files[0]?.localUri.replace(/[^/]+$/, '');
-    if (directory) {
-      await FileSystem.deleteAsync(directory, { idempotent: true }).catch(() => undefined);
-    }
+    await acceptServerOwnedJob(latest || job, serverResult!);
   } catch (error) {
     const latest = await currentJob(job.id) || job;
+    if (latest.status === 'accepted') return;
     const retryDelay = Math.min(5 * 60 * 1000, 15000 * Math.max(1, latest.attemptCount));
     await replaceJob({
       ...latest,
@@ -321,6 +370,24 @@ async function processJob(initialJob: SharedEventUploadJob): Promise<void> {
       nextAttemptAt: Date.now() + retryDelay,
       error: error instanceof Error ? error.message : 'The upload was interrupted.',
     });
+  }
+}
+
+export async function reconcileSharedEventUploadQueueFromServer(): Promise<void> {
+  const user = auth.currentUser;
+  if (!user) return;
+  const jobs = await readJobs();
+  for (const job of jobs) {
+    if (job.ownerUid !== user.uid || job.status === 'accepted' || !job.ingestId) continue;
+    const result = await getSharedEventIngestResult(job.ingestId).catch(() => undefined);
+    if (!serverOwnsUpload(result)) continue;
+    if (result!.processingStatus !== 'completed' && result!.processingStatus !== 'failed') {
+      await trackPendingSharedEventIngest({
+        ingestId: job.ingestId,
+        sourceLabel: job.sourceLabel,
+      });
+    }
+    await acceptServerOwnedJob((await currentJob(job.id)) || job, result!);
   }
 }
 

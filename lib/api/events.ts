@@ -213,6 +213,17 @@ export function mergePrivateSharedEvents(
     const privateVenue = normalizeVenueIdentityText(privateEvent.venue);
     let existingIndex = indexByDedupeKey.get(privateKey);
     if (existingIndex === undefined) {
+      const privateRecordId = privateEvent.sharedEventProvenance?.privateEventId;
+      const samePrivateRecordIndex = privateRecordId
+        ? merged.findIndex((event) => (
+            event.sharedEventProvenance?.privateEventId === privateRecordId
+          ))
+        : -1;
+      if (samePrivateRecordIndex >= 0) {
+        existingIndex = samePrivateRecordIndex;
+      }
+    }
+    if (existingIndex === undefined) {
       const looseIndex = merged.findIndex((event) => {
         const venue = normalizeVenueIdentityText(event.venue);
         const venueMatches =

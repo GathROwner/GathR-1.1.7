@@ -96,7 +96,7 @@ export default function SharedEventProcessingBanner() {
           if (result.processingStatus !== 'completed') return;
           if (!refreshedIngestsRef.current.has(entry.ingestId)) {
             refreshedIngestsRef.current.add(entry.ingestId);
-            await refreshMapAfterSharedEventSave().catch((error) => {
+            await refreshMapAfterSharedEventSave(result.privateEventIds).catch((error) => {
               console.warn('[SharedEvent] Failed to refresh completed private events:', error);
             });
           }
@@ -164,10 +164,16 @@ export default function SharedEventProcessingBanner() {
     }
     showBanner({
       id: `${active.id}-${active.status}`,
-      title: active.status === 'submitting' ? 'Photo uploaded' : 'Uploading your event photo',
+      title: active.status === 'submitting'
+        ? 'Photo uploaded'
+        : active.status === 'preparing'
+          ? 'Securing your event photo'
+          : 'Uploading your event photo',
       detail: active.status === 'submitting'
         ? 'GathR is starting the event scan.'
-        : 'You can keep using GathR while this continues safely.',
+        : active.status === 'preparing'
+          ? 'GathR is preparing a safe background handoff.'
+          : 'You can keep using GathR while this continues safely.',
       tone: 'success',
       uploadJobId: active.id,
       persistent: true,

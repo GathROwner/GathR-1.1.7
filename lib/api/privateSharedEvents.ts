@@ -1,4 +1,12 @@
-import { collection, getDocs, getDocsFromServer, query, where } from 'firebase/firestore';
+import {
+  collection,
+  doc,
+  getDocFromServer,
+  getDocs,
+  getDocsFromServer,
+  query,
+  where,
+} from 'firebase/firestore';
 
 import { auth, firestore } from '../../config/firebaseConfig';
 import { Event } from '../../types/events';
@@ -580,21 +588,39 @@ export const isPrivateSharedEventId = (id: string | number | null | undefined): 
   String(id ?? '').startsWith('shared_');
 
 export async function fetchPrivateSharedEventsForCurrentUser(
-  options: { forceServer?: boolean } = {}
+  options: { forceServer?: boolean; ids?: string[] } = {}
 ): Promise<Event[]> {
   const user = auth.currentUser;
   if (!user?.uid) return [];
 
   try {
-    const privateEventsQuery = query(
-      collection(firestore, 'users', user.uid, 'privateSharedEvents'),
-      where('ownerUid', '==', user.uid)
-    );
-    const snapshot = options.forceServer
-      ? await getDocsFromServer(privateEventsQuery)
-      : await getDocs(privateEventsQuery);
-    const candidates = snapshot.docs
-      .map((docSnap) => ({ id: docSnap.id, data: docSnap.data() as PrivateSharedEventDoc }))
+    const requestedIds = Array.from(new Set(
+      (options.ids || []).map((id) => String(id || '').trim()).filter(Boolean)
+    )).slice(0, 100);
+    const documentRows = requestedIds.length > 0
+      ? (await Promise.all(requestedIds.map(async (id) => {
+          const snapshot = await getDocFromServer(
+            doc(firestore, 'users', user.uid, 'privateSharedEvents', id)
+          );
+          return snapshot.exists()
+            ? { id: snapshot.id, data: snapshot.data() as PrivateSharedEventDoc }
+            : null;
+        }))).filter((row): row is { id: string; data: PrivateSharedEventDoc } => Boolean(row))
+      : await (async () => {
+          const privateEventsQuery = query(
+            collection(firestore, 'users', user.uid, 'privateSharedEvents'),
+            where('ownerUid', '==', user.uid)
+          );
+          const snapshot = options.forceServer
+            ? await getDocsFromServer(privateEventsQuery)
+            : await getDocs(privateEventsQuery);
+          return snapshot.docs.map((docSnap) => ({
+            id: docSnap.id,
+            data: docSnap.data() as PrivateSharedEventDoc,
+          }));
+        })();
+    const candidates = documentRows
+      .filter(({ data }) => !data.ownerUid || data.ownerUid === user.uid)
       .filter(({ data }) => hasUsableDate(data) && !isExpiredForDisplay(data));
 
     if (candidates.length === 0) return [];

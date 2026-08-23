@@ -137,7 +137,7 @@ export interface MapState {
   } | null) => void;
   setPendingRouteEvent: (event: Event | null) => void;
   fetchEvents: () => Promise<void>;
-  refreshPrivateSharedEventsFromServer: () => Promise<void>;
+  refreshPrivateSharedEventsFromServer: (privateEventIds?: string[]) => Promise<void>;
   prefetchIfStale: (maxAgeMs?: number) => Promise<void>;
   pruneExpiredEvents: () => void;
   getFilteredEvents: () => Event[];

@@ -1,6 +1,7 @@
 const mockStorage = new Map<string, string>();
 const mockUploadAsync = jest.fn();
-const mockSubmitSharedEvent = jest.fn();
+const mockPrepareSharedEventUpload = jest.fn();
+const mockGetSharedEventIngestResult = jest.fn();
 const mockTrackPendingSharedEventIngest = jest.fn();
 
 jest.mock('@react-native-async-storage/async-storage', () => ({
@@ -32,7 +33,8 @@ jest.mock('../config/firebaseConfig', () => ({
 
 jest.mock('./sharedEventApi', () => ({
   FUNCTIONS_BASE_URL: 'https://example.test',
-  submitSharedEvent: (...args: unknown[]) => mockSubmitSharedEvent(...args),
+  prepareSharedEventUpload: (...args: unknown[]) => mockPrepareSharedEventUpload(...args),
+  getSharedEventIngestResult: (...args: unknown[]) => mockGetSharedEventIngestResult(...args),
 }));
 
 jest.mock('./sharedEventProcessingTracker', () => ({
@@ -44,6 +46,7 @@ import {
   enqueueSharedEventUpload,
   listSharedEventUploadJobs,
   processSharedEventUploadQueue,
+  reconcileSharedEventUploadQueueFromServer,
 } from './sharedEventUploadQueue';
 
 describe('durable shared event upload queue', () => {
@@ -56,7 +59,12 @@ describe('durable shared event upload queue', () => {
       headers: {},
       mimeType: 'application/json',
     });
-    mockSubmitSharedEvent.mockResolvedValue({
+    mockPrepareSharedEventUpload.mockResolvedValue({
+      success: true,
+      ingestId: 'ingest-1',
+      processingStatus: 'awaiting_upload',
+    });
+    mockGetSharedEventIngestResult.mockResolvedValue({
       success: true,
       ingestId: 'ingest-1',
       processingStatus: 'queued',
@@ -80,7 +88,7 @@ describe('durable shared event upload queue', () => {
     await processSharedEventUploadQueue();
   });
 
-  test('uploads with a background binary task and submits exactly one stable job', async () => {
+  test('prepares the server handoff before starting a background binary upload', async () => {
     const job = await enqueueSharedEventUpload({
       ownerUid: 'user-1',
       payload: { title: 'Background upload test' },
@@ -95,15 +103,16 @@ describe('durable shared event upload queue', () => {
         uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
         sessionType: FileSystem.FileSystemSessionType.BACKGROUND,
         headers: expect.objectContaining({
+          'x-gathr-ingest-id': 'ingest-1',
           'x-gathr-upload-id': expect.stringContaining(job.id),
         }),
       })
     );
-    expect(mockSubmitSharedEvent).toHaveBeenCalledTimes(1);
-    expect(mockSubmitSharedEvent).toHaveBeenCalledWith(expect.objectContaining({
-      clientSubmissionId: job.id,
-      mediaUrls: ['https://storage.test/poster.jpg'],
-    }));
+    expect(mockPrepareSharedEventUpload).toHaveBeenCalledTimes(1);
+    expect(mockPrepareSharedEventUpload).toHaveBeenCalledWith({
+      payload: expect.objectContaining({ clientSubmissionId: job.id }),
+      expectedUploadIds: [expect.stringContaining(job.id)],
+    });
     expect(mockTrackPendingSharedEventIngest).toHaveBeenCalledWith({
       ingestId: 'ingest-1',
       sourceLabel: undefined,
@@ -111,6 +120,32 @@ describe('durable shared event upload queue', () => {
     expect((await listSharedEventUploadJobs())[0]).toEqual(expect.objectContaining({
       status: 'accepted',
       ingestId: 'ingest-1',
+    }));
+  });
+
+  test('reconciles a server-owned upload without waiting for the native upload promise', async () => {
+    mockUploadAsync.mockImplementation(() => new Promise(() => undefined));
+    const job = await enqueueSharedEventUpload({
+      ownerUid: 'user-1',
+      payload: { title: 'Stalled callback recovery' },
+      files: [{ path: 'content://media/poster', mimeType: 'image/jpeg', fileName: 'poster.jpg' }],
+    });
+
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      const current = (await listSharedEventUploadJobs())[0];
+      if (current?.ingestId) break;
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    expect((await listSharedEventUploadJobs())[0]).toEqual(expect.objectContaining({
+      ingestId: 'ingest-1',
+      status: 'uploading',
+    }));
+
+    await reconcileSharedEventUploadQueueFromServer();
+    expect((await listSharedEventUploadJobs())[0]).toEqual(expect.objectContaining({
+      id: job.id,
+      ingestId: 'ingest-1',
+      status: 'accepted',
     }));
   });
 });

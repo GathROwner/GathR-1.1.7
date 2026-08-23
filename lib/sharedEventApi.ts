@@ -1,4 +1,4 @@
-import { doc, onSnapshot, Unsubscribe } from 'firebase/firestore';
+import { doc, getDocFromServer, onSnapshot, Unsubscribe } from 'firebase/firestore';
 import { auth, firestore } from '../config/firebaseConfig';
 
 const DEFAULT_FUNCTIONS_BASE_URL = 'https://northamerica-northeast2-gathr-m1.cloudfunctions.net';
@@ -64,7 +64,12 @@ export type SharedEventResultEvent = {
   extractedFromShare?: boolean;
 };
 
-export type SharedEventProcessingStatus = 'queued' | 'processing' | 'completed' | 'failed';
+export type SharedEventProcessingStatus =
+  | 'awaiting_upload'
+  | 'queued'
+  | 'processing'
+  | 'completed'
+  | 'failed';
 
 export type SharedEventScrapeEnrichmentStatus =
   | 'reserved'
@@ -348,6 +353,44 @@ export async function submitSharedEvent(payload: SharedEventPayload): Promise<Sh
   }
 
   return result;
+}
+
+export async function prepareSharedEventUpload(params: {
+  payload: SharedEventPayload;
+  expectedUploadIds: string[];
+}): Promise<SharedEventSubmitResult> {
+  const user = auth.currentUser;
+  if (!user) throw new Error('Log in to prepare shared event images.');
+  const token = await user.getIdToken();
+  const response = await fetch(`${FUNCTIONS_BASE_URL}/prepareSharedEventUpload`, {
+    method: 'POST',
+    headers: {
+      authorization: `Bearer ${token}`,
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({
+      payload: params.payload,
+      expectedUploadIds: params.expectedUploadIds,
+    }),
+  });
+  const result = await response.json().catch(() => ({})) as SharedEventSubmitResult;
+  if (!response.ok || result.success === false || !result.ingestId) {
+    throw new Error(result.error || `Shared event upload preparation failed (${response.status})`);
+  }
+  return result;
+}
+
+export async function getSharedEventIngestResult(
+  ingestId: string
+): Promise<SharedEventSubmitResult | undefined> {
+  const user = auth.currentUser;
+  if (!user) return undefined;
+  const snapshot = await getDocFromServer(
+    doc(firestore, 'users', user.uid, 'sharedEventIngests', ingestId)
+  );
+  return snapshot.exists()
+    ? resultFromIngestDoc(snapshot.id, snapshot.data() as Record<string, any>)
+    : undefined;
 }
 
 async function postSharedEventAction<T>(path: string, body: Record<string, unknown>): Promise<T> {

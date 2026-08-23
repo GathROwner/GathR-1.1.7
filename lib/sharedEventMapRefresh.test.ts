@@ -1,4 +1,4 @@
-const mockRefreshPrivateSharedEventsFromServer = jest.fn<Promise<void>, []>();
+const mockRefreshPrivateSharedEventsFromServer = jest.fn<Promise<void>, [string[]?]>();
 
 jest.mock('../store/mapStore', () => ({
   useMapStore: {
@@ -17,8 +17,11 @@ describe('refreshMapAfterSharedEventSave', () => {
   });
 
   it('uses the dedicated server-backed private-event refresh', async () => {
-    await refreshMapAfterSharedEventSave();
+    await refreshMapAfterSharedEventSave(['private-1', 'private-2']);
 
-    expect(mockRefreshPrivateSharedEventsFromServer).toHaveBeenCalledTimes(1);
+    expect(mockRefreshPrivateSharedEventsFromServer).toHaveBeenCalledWith([
+      'private-1',
+      'private-2',
+    ]);
   });
 });

@@ -86,4 +86,32 @@ describe('private shared event reconciliation', () => {
 
     expect(result).toHaveLength(2);
   });
+
+  it('refreshes the same private record even when a later scan improves its title', () => {
+    const prior = baseEvent({
+      id: 'shared_private-event',
+      source: 'private_shared',
+      title: 'West Prince PEI Markets Trail',
+      sharedEventProvenance: {
+        sharedByCurrentUser: true,
+        privateEventId: 'private-event',
+        label: 'Shared by you',
+      },
+    });
+    const refreshed = baseEvent({
+      id: 'shared_private-event',
+      source: 'private_shared',
+      title: 'West Prince PEI Markets Trail – Inside Market',
+      sharedEventProvenance: {
+        sharedByCurrentUser: true,
+        privateEventId: 'private-event',
+        label: 'Shared by you',
+      },
+    });
+
+    const result = mergePrivateSharedEvents([prior], [refreshed]);
+
+    expect(result).toHaveLength(1);
+    expect(result[0].title).toBe('West Prince PEI Markets Trail – Inside Market');
+  });
 });

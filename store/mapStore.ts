@@ -1686,13 +1686,25 @@ fetchEvents: async () => {
   }
 },
 
-refreshPrivateSharedEventsFromServer: async () => {
+refreshPrivateSharedEventsFromServer: async (privateEventIds?: string[]) => {
   if (get().allEvents.length === 0) {
     await get().fetchEvents();
   }
 
-  const privateSharedEvents = await fetchPrivateSharedEventsForCurrentUser({ forceServer: true });
-  const combinedData = mergePrivateSharedEvents(get().allEvents, privateSharedEvents);
+  const requestedIds = Array.from(new Set(
+    (privateEventIds || []).map((id) => String(id || '').trim()).filter(Boolean)
+  ));
+  const privateSharedEvents = await fetchPrivateSharedEventsForCurrentUser({
+    forceServer: true,
+    ids: requestedIds,
+  });
+  const existingEvents = requestedIds.length > 0
+    ? get().allEvents.filter((event) => !(
+        event.source === 'private_shared' &&
+        requestedIds.includes(String(event.sharedEventProvenance?.privateEventId || ''))
+      ))
+    : get().allEvents;
+  const combinedData = mergePrivateSharedEvents(existingEvents, privateSharedEvents);
   const fetchedAt = Date.now();
   const qc: any = (global as any)?.__RQ_CLIENT ?? null;
 

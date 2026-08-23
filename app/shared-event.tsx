@@ -1260,7 +1260,7 @@ export default function SharedEventScreen() {
 
     if (shouldRefreshMap) {
       InteractionManager.runAfterInteractions(() => {
-        void refreshMapAfterSharedEventSave().catch((error) => {
+        void refreshMapAfterSharedEventSave(result?.privateEventIds).catch((error) => {
           console.warn('[SharedEvent] Failed to refresh saved event on map:', error);
         });
       });
