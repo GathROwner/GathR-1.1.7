@@ -1573,7 +1573,7 @@ export const useMapStore = create<MapState>((set, get) => ({
   /**
    * Fetch events from API
    */
-fetchEvents: async () => {
+fetchEvents: async (options = {}) => {
   const fetchEventsStartedAt = Date.now();
   logStartupDataTiming('fetch_events_called');
   const qc: any = (global as any)?.__RQ_CLIENT ?? null;
@@ -1587,7 +1587,7 @@ fetchEvents: async () => {
     __ML_fetchCount += 1;
 
     // Use unified fetch that handles both data sources in parallel
-    const result = await fetchMinimalEventsShared();
+    const result = await fetchMinimalEventsShared(options);
 
     __ML_lastFetchMs = Date.now() - __tFetchStart;
     __ML_lastEventsCount = result.combinedData.filter((e: Event) => e.type === 'event').length;

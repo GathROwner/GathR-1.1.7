@@ -23,7 +23,9 @@ const DEBUG_FETCH = __DEV__ ?? true;
 const LEGACY_EVENTS_URL = `${LEGACY_EVENTS_API_BASE}/minimal?type=event`;
 const LEGACY_SPECIALS_URL = `${LEGACY_EVENTS_API_BASE}/minimal?type=special`;
 
-export type FetchMinimalEventsOptions = FirestoreFetchOptions;
+export type FetchMinimalEventsOptions = FirestoreFetchOptions & {
+  forcePrivateSharedServer?: boolean;
+};
 type FetchMinimalEventsResult = {
   combinedData: Event[];
   fetchedAt: number;
@@ -306,9 +308,10 @@ async function fetchMinimalEventsFromSource(
   const t0 = Date.now();
 
   if (USE_FIRESTORE_EVENTS) {
+    const { forcePrivateSharedServer = false, ...firestoreOptions } = options;
     const [firestoreEvents, privateSharedEvents] = await Promise.all([
-      fetchAllFirestoreEvents(options),
-      fetchPrivateSharedEventsForCurrentUser(),
+      fetchAllFirestoreEvents(firestoreOptions),
+      fetchPrivateSharedEventsForCurrentUser({ forceServer: forcePrivateSharedServer }),
     ]);
     // Firestore events resolve centroids in normalizeFirestoreEvent; this
     // pass covers private-shared city-level events the same way.

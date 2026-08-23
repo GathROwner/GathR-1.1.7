@@ -136,7 +136,7 @@ export interface MapState {
     source?: 'deep_link' | 'trending_manual' | 'trending_auto' | 'city_event_marker' | 'route_summary';
   } | null) => void;
   setPendingRouteEvent: (event: Event | null) => void;
-  fetchEvents: () => Promise<void>;
+  fetchEvents: (options?: { forcePrivateSharedServer?: boolean }) => Promise<void>;
   prefetchIfStale: (maxAgeMs?: number) => Promise<void>;
   pruneExpiredEvents: () => void;
   getFilteredEvents: () => Event[];

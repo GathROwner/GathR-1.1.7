@@ -1,4 +1,4 @@
-const mockFetchEvents = jest.fn<Promise<void>, []>();
+const mockFetchEvents = jest.fn<Promise<void>, [{ forcePrivateSharedServer?: boolean }?]>();
 
 jest.mock('../store/mapStore', () => ({
   useMapStore: {
@@ -21,6 +21,10 @@ describe('refreshMapAfterSharedEventSave', () => {
     await refreshMapAfterSharedEventSave({ removeQueries });
 
     expect(mockFetchEvents).toHaveBeenCalledTimes(2);
+    expect(mockFetchEvents).toHaveBeenNthCalledWith(1);
+    expect(mockFetchEvents).toHaveBeenNthCalledWith(2, {
+      forcePrivateSharedServer: true,
+    });
     expect(removeQueries).toHaveBeenCalledTimes(2);
     expect(removeQueries).toHaveBeenNthCalledWith(1, {
       queryKey: EVENTS_MINIMAL,

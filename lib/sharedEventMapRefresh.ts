@@ -11,8 +11,9 @@ export async function refreshMapAfterSharedEventSave(
   // A save can finish while an older event request is still in flight. The
   // first pass drains that request; the second pass is guaranteed to begin
   // after it and therefore includes the newly saved private event.
-  for (let pass = 0; pass < 2; pass += 1) {
-    queryClient?.removeQueries?.({ queryKey: EVENTS_MINIMAL, exact: true });
-    await useMapStore.getState().fetchEvents();
-  }
+  queryClient?.removeQueries?.({ queryKey: EVENTS_MINIMAL, exact: true });
+  await useMapStore.getState().fetchEvents();
+
+  queryClient?.removeQueries?.({ queryKey: EVENTS_MINIMAL, exact: true });
+  await useMapStore.getState().fetchEvents({ forcePrivateSharedServer: true });
 }

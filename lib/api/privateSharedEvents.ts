@@ -1,4 +1,4 @@
-import { collection, getDocs, query, where } from 'firebase/firestore';
+import { collection, getDocs, getDocsFromServer, query, where } from 'firebase/firestore';
 
 import { auth, firestore } from '../../config/firebaseConfig';
 import { Event } from '../../types/events';
@@ -451,7 +451,9 @@ export const isSharedEventFromCurrentUser = (event: Pick<Event, 'sharedEventProv
 export const isPrivateSharedEventId = (id: string | number | null | undefined): boolean =>
   String(id ?? '').startsWith('shared_');
 
-export async function fetchPrivateSharedEventsForCurrentUser(): Promise<Event[]> {
+export async function fetchPrivateSharedEventsForCurrentUser(
+  options: { forceServer?: boolean } = {}
+): Promise<Event[]> {
   const user = auth.currentUser;
   if (!user?.uid) return [];
 
@@ -460,7 +462,9 @@ export async function fetchPrivateSharedEventsForCurrentUser(): Promise<Event[]>
       collection(firestore, 'users', user.uid, 'privateSharedEvents'),
       where('ownerUid', '==', user.uid)
     );
-    const snapshot = await getDocs(privateEventsQuery);
+    const snapshot = options.forceServer
+      ? await getDocsFromServer(privateEventsQuery)
+      : await getDocs(privateEventsQuery);
     const candidates = snapshot.docs
       .map((docSnap) => ({ id: docSnap.id, data: docSnap.data() as PrivateSharedEventDoc }))
       .filter(({ data }) => hasUsableDate(data) && !isExpiredForDisplay(data));
