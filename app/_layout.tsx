@@ -46,6 +46,7 @@ import { useDeepLinking } from '../hooks/useDeepLinking';
 import { useSharedEventIntentRouter } from '../hooks/useSharedEventIntentRouter';
 import SharedEventProcessingBanner from '../components/sharedEvent/SharedEventProcessingBanner';
 import SharedEventPushRegistration from '../components/sharedEvent/SharedEventPushRegistration';
+import SharedEventUploadManager from '../components/sharedEvent/SharedEventUploadManager';
 import { preloadStartupLocation } from '../utils/startupLocationCache';
 import { GATHR_MAPBOX_STYLE_URL, initializeMapboxAccessToken } from '../utils/mapboxAccessToken';
 
@@ -1048,6 +1049,7 @@ useEffect(() => {
         }} />
       </Stack>
       <SharedEventPushRegistration />
+      <SharedEventUploadManager />
       <SharedEventProcessingBanner />
     </TutorialManager>
   );

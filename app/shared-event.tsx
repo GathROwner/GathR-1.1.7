@@ -30,9 +30,14 @@ import {
   watchSharedEventIngest,
 } from '../lib/sharedEventApi';
 import {
-  resolveSharedEventMediaUrls,
   SharedIntentMediaFile,
 } from '../lib/sharedEventMediaUpload';
+import {
+  enqueueSharedEventUpload,
+  retrySharedEventUpload,
+  SharedEventUploadJob,
+  subscribeSharedEventUploadJobs,
+} from '../lib/sharedEventUploadQueue';
 import { trackPendingSharedEventIngest } from '../lib/sharedEventProcessingTracker';
 import {
   crowdIneligibilityMessage,
@@ -44,6 +49,7 @@ import {
   VerificationEmailResult,
 } from '../lib/accountVerification';
 import { refreshMapAfterSharedEventSave } from '../lib/sharedEventMapRefresh';
+import { useAuth } from '../contexts/AuthContext';
 
 const BRAND = {
   primary: '#1E90FF',
@@ -285,15 +291,9 @@ function sharedEventSourceContext(snapshot: SharedEventSnapshot): SharedEventSou
   };
 }
 
-async function payloadFromSnapshot(snapshot: SharedEventSnapshot): Promise<SharedEventPayload> {
+function payloadFromSnapshot(snapshot: SharedEventSnapshot): SharedEventPayload {
   const sourcePlatform = isFacebookUrl(snapshot.sourceUrl) ? 'facebook' : undefined;
-  const uploadedMediaUrls = snapshot.mediaFiles.length > 0
-    ? await resolveSharedEventMediaUrls(snapshot.mediaFiles)
-    : [];
-  const mediaUrls = Array.from(new Set([
-    ...snapshot.mediaUrls,
-    ...uploadedMediaUrls,
-  ].filter(Boolean)));
+  const mediaUrls = Array.from(new Set(snapshot.mediaUrls.filter(Boolean)));
 
   return {
     sourceUrl: snapshot.sourceUrl.trim() || undefined,
@@ -773,6 +773,7 @@ function reviewReasonLabel(value: string): string {
 
 export default function SharedEventScreen() {
   const router = useRouter();
+  const { user } = useAuth();
   const { resetShareIntent } = useShareIntentContext();
   const { width } = useWindowDimensions();
   const params = useLocalSearchParams();
@@ -807,8 +808,10 @@ export default function SharedEventScreen() {
   const [venueSearchError, setVenueSearchError] = useState('');
   const [venueMenuOpen, setVenueMenuOpen] = useState(false);
   const [venueConfirmingId, setVenueConfirmingId] = useState('');
+  const [uploadJob, setUploadJob] = useState<SharedEventUploadJob | null>(null);
   const isReturningToMapRef = useRef(false);
   const verificationAttemptedRef = useRef(false);
+  const handledUploadJobRef = useRef('');
 
   const stopIngestWatcher = useCallback(() => {
     ingestUnsubscribeRef.current?.();
@@ -866,6 +869,26 @@ export default function SharedEventScreen() {
     );
   }, [applySubmitResult, stopIngestWatcher]);
 
+  const handleAcceptedSubmit = useCallback((
+    baseSnapshot: SharedEventSnapshot,
+    submitResult: SharedEventSubmitResult
+  ) => {
+    setResult(submitResult);
+    if (submitResult.ingestId && resultIsStillProcessing(submitResult)) {
+      void trackPendingSharedEventIngest({
+        ingestId: submitResult.ingestId,
+        sourceLabel: sharedEventSourceContext(baseSnapshot).badgeLabel,
+      });
+    }
+    if (submitResult.ingestId && shouldWatchIngest(submitResult)) {
+      startIngestWatcher(submitResult.ingestId, baseSnapshot);
+      if (resultIsStillProcessing(submitResult) && resultEvents(submitResult).length === 0) {
+        return;
+      }
+    }
+    applySubmitResult(baseSnapshot, submitResult);
+  }, [applySubmitResult, startIngestWatcher]);
+
   const submitSnapshot = useCallback(async (nextSnapshot: SharedEventSnapshot) => {
     if (!hasUsableSnapshot(nextSnapshot)) {
       setPhase('error');
@@ -879,26 +902,43 @@ export default function SharedEventScreen() {
     stopIngestWatcher();
 
     try {
-      const submitResult = await submitSharedEvent(await payloadFromSnapshot(nextSnapshot));
-      setResult(submitResult);
-      if (submitResult.ingestId && resultIsStillProcessing(submitResult)) {
-        void trackPendingSharedEventIngest({
-          ingestId: submitResult.ingestId,
+      if (nextSnapshot.mediaFiles.some((file) => !/^https?:\/\//i.test(file.path))) {
+        if (!user) throw new Error('Log in to upload shared event images.');
+        const nextJob = await enqueueSharedEventUpload({
+          ownerUid: user.uid,
+          payload: payloadFromSnapshot(nextSnapshot),
+          files: nextSnapshot.mediaFiles,
           sourceLabel: sharedEventSourceContext(nextSnapshot).badgeLabel,
         });
+        setUploadJob(nextJob);
+        return;
       }
-      if (submitResult.ingestId && shouldWatchIngest(submitResult)) {
-        startIngestWatcher(submitResult.ingestId, nextSnapshot);
-        if (resultIsStillProcessing(submitResult) && resultEvents(submitResult).length === 0) {
-          return;
-        }
-      }
-      applySubmitResult(nextSnapshot, submitResult);
+      const submitResult = await submitSharedEvent(payloadFromSnapshot(nextSnapshot));
+      handleAcceptedSubmit(nextSnapshot, submitResult);
     } catch (error) {
       setPhase('error');
       setErrorMessage(error instanceof Error ? error.message : 'Please try again.');
     }
-  }, [applySubmitResult, startIngestWatcher, stopIngestWatcher]);
+  }, [handleAcceptedSubmit, stopIngestWatcher, user]);
+
+  useEffect(() => subscribeSharedEventUploadJobs((jobs) => {
+    const current = uploadJob ? jobs.find((job) => job.id === uploadJob.id) : undefined;
+    if (!current) return;
+    setUploadJob(current);
+    if (current.status === 'retry_waiting') {
+      setPhase('error');
+      setErrorMessage(current.error || 'The upload was interrupted.');
+      return;
+    }
+    if (current.status !== 'accepted' || !current.submitResult) {
+      setPhase('processing');
+      setErrorMessage('');
+      return;
+    }
+    if (handledUploadJobRef.current === current.id) return;
+    handledUploadJobRef.current = current.id;
+    handleAcceptedSubmit(snapshot, current.submitResult);
+  }), [handleAcceptedSubmit, snapshot, uploadJob?.id]);
 
   useEffect(() => {
     const submissionKey = requestedIngestId ? `ingest:${requestedIngestId}` : initialSignature;
@@ -911,6 +951,8 @@ export default function SharedEventScreen() {
     setSelectedEventIndex(0);
     setShowDetails(false);
     setResult(null);
+    setUploadJob(null);
+    handledUploadJobRef.current = '';
     setErrorMessage('');
     venueCrowdOverrideRef.current = null;
     stopIngestWatcher();
@@ -1025,6 +1067,7 @@ export default function SharedEventScreen() {
   const hasFinalPublicProcessing = result?.publicProcessing?.status === 'completed';
   const isExpiredResult = resultIsFullyExpired(result);
   const isUploading = phase === 'processing' && !result?.ingestId;
+  const isSecuringUpload = isUploading && snapshot.mediaFiles.length > 0 && !uploadJob;
   const publicCounts = publicProcessingCounts(result);
   const progressStage = sharedEventProgressStage(phase, Boolean(result?.ingestId));
   const finalStepLabel = phase === 'error'
@@ -1193,7 +1236,7 @@ export default function SharedEventScreen() {
   };
 
   const handleFinish = useCallback(() => {
-    if (isUploading || isReturningToMapRef.current) return;
+    if (isSecuringUpload || isReturningToMapRef.current) return;
     isReturningToMapRef.current = true;
     const venueStillNeeded = resultEvents(result).some((event) => (
       event.venueResolutionStatus === 'selection_required'
@@ -1222,18 +1265,28 @@ export default function SharedEventScreen() {
         });
       });
     }
-  }, [isUploading, resetShareIntent, result, router, sourceContext.badgeLabel]);
+  }, [isSecuringUpload, resetShareIntent, result, router, sourceContext.badgeLabel]);
+
+  const handleRetry = useCallback(() => {
+    setPhase('processing');
+    setErrorMessage('');
+    if (uploadJob) {
+      void retrySharedEventUpload(uploadJob.id);
+      return;
+    }
+    void submitSnapshot(snapshot);
+  }, [snapshot, submitSnapshot, uploadJob]);
 
   useEffect(() => {
     if (Platform.OS !== 'android') return undefined;
     const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
-      if (!isUploading) {
+      if (!isSecuringUpload) {
         void handleFinish();
       }
       return true;
     });
     return () => subscription.remove();
-  }, [handleFinish, isUploading]);
+  }, [handleFinish, isSecuringUpload]);
 
   return (
     <KeyboardAvoidingView
@@ -1241,15 +1294,15 @@ export default function SharedEventScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
       <View style={styles.header}>
-        <Pressable style={styles.iconButton} onPress={handleFinish} disabled={isUploading}>
-          <Ionicons name="chevron-back" size={24} color={isUploading ? '#A7B4C3' : BRAND.ink} />
+        <Pressable style={styles.iconButton} onPress={handleFinish} disabled={isSecuringUpload}>
+          <Ionicons name="chevron-back" size={24} color={isSecuringUpload ? '#A7B4C3' : BRAND.ink} />
         </Pressable>
         <View style={styles.headerBrand}>
           <Image source={GATHR_LOGO} style={styles.headerLogo} resizeMode="contain" />
           <Text style={styles.headerTitle}>Share to GathR</Text>
         </View>
-        <Pressable style={styles.iconButton} onPress={handleFinish} disabled={isUploading}>
-          <Ionicons name="map-outline" size={22} color={isUploading ? '#A7B4C3' : BRAND.ink} />
+        <Pressable style={styles.iconButton} onPress={handleFinish} disabled={isSecuringUpload}>
+          <Ionicons name="map-outline" size={22} color={isSecuringUpload ? '#A7B4C3' : BRAND.ink} />
         </Pressable>
       </View>
 
@@ -1339,12 +1392,18 @@ export default function SharedEventScreen() {
               </View>
               <View style={styles.processingNoticeCopy}>
                 <Text style={styles.processingNoticeTitle}>
-                  {isUploading ? 'Finishing the secure upload' : 'Stay tuned - we will let you know'}
+                  {isSecuringUpload
+                    ? 'Securing your photo'
+                    : isUploading
+                      ? 'Upload continuing safely'
+                      : 'Stay tuned - we will let you know'}
                 </Text>
                 <Text style={styles.processingNoticeDetail}>
-                  {isUploading
-                    ? 'Return becomes available as soon as GathR has the photo safely.'
-                    : 'You can return now. GathR will show an in-app alert when this is ready, or a notification if you are using another app.'}
+                  {isSecuringUpload
+                    ? 'This quick device copy makes the upload safe to continue after you leave.'
+                    : isUploading
+                      ? 'You can return to GathR or switch apps. We will notify you when the scan is ready.'
+                      : 'You can return now. GathR will show an in-app alert when this is ready, or a notification if you are using another app.'}
                 </Text>
               </View>
             </View>
@@ -1559,23 +1618,23 @@ export default function SharedEventScreen() {
 
       <View style={styles.footer}>
         {phase === 'error' ? (
-          <Pressable style={styles.saveButton} onPress={() => submitSnapshot(snapshot)}>
+          <Pressable style={styles.saveButton} onPress={handleRetry}>
             <Ionicons name="refresh-outline" size={21} color="#FFFFFF" />
             <Text style={styles.saveButtonText}>Try Again</Text>
           </Pressable>
         ) : (
           <Pressable
-            style={[styles.saveButton, isUploading && styles.saveButtonDisabled]}
+            style={[styles.saveButton, isSecuringUpload && styles.saveButtonDisabled]}
             onPress={handleFinish}
-            disabled={isUploading}
+            disabled={isSecuringUpload}
           >
             <Ionicons
-              name={isUploading ? 'cloud-upload-outline' : 'map-outline'}
+              name={isSecuringUpload ? 'cloud-upload-outline' : 'map-outline'}
               size={21}
               color="#FFFFFF"
             />
             <Text style={styles.saveButtonText}>
-              {isUploading ? 'Uploading safely...' : 'Return to GathR'}
+              {isSecuringUpload ? 'Securing photo...' : 'Return to GathR'}
             </Text>
           </Pressable>
         )}

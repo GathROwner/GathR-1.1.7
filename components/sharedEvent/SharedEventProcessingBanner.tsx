@@ -9,6 +9,11 @@ import {
   removePendingSharedEventIngest,
 } from '../../lib/sharedEventProcessingTracker';
 import { shouldShowSharedEventInAppBanner } from '../../lib/sharedEventCompletionFeedback';
+import { refreshMapAfterSharedEventSave } from '../../lib/sharedEventMapRefresh';
+import {
+  retrySharedEventUpload,
+  subscribeSharedEventUploadJobs,
+} from '../../lib/sharedEventUploadQueue';
 
 const GATHR_LOGO = require('../../assets/icon.png');
 
@@ -18,6 +23,7 @@ type BannerState = {
   detail: string;
   tone: 'success' | 'warning' | 'error';
   ingestId?: string;
+  uploadJobId?: string;
   persistent?: boolean;
 };
 
@@ -31,6 +37,7 @@ export default function SharedEventProcessingBanner() {
   const mountedRef = useRef(true);
   const pathnameRef = useRef(pathname);
   const deliveredFeedbackRef = useRef(new Set<string>());
+  const refreshedIngestsRef = useRef(new Set<string>());
 
   useEffect(() => {
     pathnameRef.current = pathname;
@@ -87,6 +94,12 @@ export default function SharedEventProcessingBanner() {
           }
 
           if (result.processingStatus !== 'completed') return;
+          if (!refreshedIngestsRef.current.has(entry.ingestId)) {
+            refreshedIngestsRef.current.add(entry.ingestId);
+            await refreshMapAfterSharedEventSave().catch((error) => {
+              console.warn('[SharedEvent] Failed to refresh completed private events:', error);
+            });
+          }
           const unresolvedVenue = result.events?.find((event) => (
             event.venueResolutionStatus === 'selection_required'
           ));
@@ -129,6 +142,38 @@ export default function SharedEventProcessingBanner() {
     }
   }, [clearSubscription, deliverCompletionFeedback, user]);
 
+  useEffect(() => subscribeSharedEventUploadJobs((jobs) => {
+    if (!user || pathnameRef.current === '/shared-event') return;
+    const active = [...jobs]
+      .reverse()
+      .find((job) => job.ownerUid === user.uid && job.status !== 'accepted');
+    if (!active) {
+      setBanner((current) => current?.uploadJobId ? null : current);
+      return;
+    }
+    if (active.status === 'retry_waiting') {
+      showBanner({
+        id: `${active.id}-retry`,
+        title: 'Photo upload paused',
+        detail: active.error || 'Tap to retry when you are connected.',
+        tone: 'error',
+        uploadJobId: active.id,
+        persistent: true,
+      });
+      return;
+    }
+    showBanner({
+      id: `${active.id}-${active.status}`,
+      title: active.status === 'submitting' ? 'Photo uploaded' : 'Uploading your event photo',
+      detail: active.status === 'submitting'
+        ? 'GathR is starting the event scan.'
+        : 'You can keep using GathR while this continues safely.',
+      tone: 'success',
+      uploadJobId: active.id,
+      persistent: true,
+    });
+  }), [showBanner, user]);
+
   useEffect(() => {
     mountedRef.current = true;
     void refreshPending();
@@ -156,6 +201,8 @@ export default function SharedEventProcessingBanner() {
       onPress={() => {
         if (banner.ingestId) {
           router.push({ pathname: '/shared-event', params: { ingestId: banner.ingestId } });
+        } else if (banner.uploadJobId) {
+          void retrySharedEventUpload(banner.uploadJobId);
         } else {
           setBanner(null);
         }

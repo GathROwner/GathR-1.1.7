@@ -9,6 +9,7 @@ export const FUNCTIONS_BASE_URL = (
 ).replace(/\/+$/, '');
 
 export type SharedEventPayload = {
+  clientSubmissionId?: string;
   sourceUrl?: string;
   sharedText?: string;
   title?: string;
