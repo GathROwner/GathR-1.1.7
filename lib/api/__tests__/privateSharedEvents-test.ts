@@ -12,8 +12,10 @@ jest.mock('../../../config/firebaseConfig', () => ({
 import {
   expandPrivateSharedEventRecurrenceForRegression,
   inferPrivateSharedCategoryForRegression,
+  inferPrivateSharedFamilyFriendlyForRegression,
   normalizePrivateSharedEventForRegression,
 } from '../privateSharedEvents';
+import { isFamilyFriendlyEvent } from '../../../utils/familyFriendly';
 
 describe('private shared event normalization', () => {
   afterEach(() => {
@@ -136,5 +138,34 @@ describe('private shared event normalization', () => {
       description: 'Available during the dance party.',
       contentKind: 'special',
     })).toBe('Drink Special');
+  });
+
+  it('adds the Family Friendly facet to a daytime community-market performance', () => {
+    const source = {
+      ...unknownVenueEvent,
+      title: 'Live Entertainment by Floyd Gaudet',
+      description: 'Live entertainment inside the West Prince PEI Markets Trail market.',
+      parentEventTitle: 'West Prince PEI Markets Trail - Inside Market',
+      contentKind: 'event' as const,
+      startTime: '12:00',
+    };
+    const family = inferPrivateSharedFamilyFriendlyForRegression(source);
+    const normalized = normalizePrivateSharedEventForRegression('private-family-market', source, null)!;
+
+    expect(family).toEqual(expect.objectContaining({
+      familyFriendlyScore: 70,
+      familyFriendlyLevel: 'likely',
+      familyFriendlyReasons: ['daytime_community_market'],
+    }));
+    expect(normalized.category).toBe('Live Music');
+    expect(isFamilyFriendlyEvent(normalized)).toBe(true);
+  });
+
+  it('does not infer family suitability for an adult-only shared event', () => {
+    expect(inferPrivateSharedFamilyFriendlyForRegression({
+      ...unknownVenueEvent,
+      title: 'Late Night Dance Party 19+',
+      startTime: '22:00',
+    }).familyFriendlyScore).toBe(0);
   });
 });

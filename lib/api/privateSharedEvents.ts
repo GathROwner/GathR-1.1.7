@@ -50,6 +50,12 @@ type PrivateSharedEventDoc = {
   recurringPattern?: string;
   recurringDaysOfWeek?: string[];
   recurrenceUntilDate?: string;
+  parentEventTitle?: string;
+  relationshipType?: 'component_of';
+  familyFriendlyScore?: number | null;
+  familyFriendlyLevel?: 'unlikely' | 'possible' | 'likely' | 'high' | null;
+  familyFriendlyReasons?: string[];
+  familyFriendlyScoringVersion?: string | null;
   mediaUrls?: string[];
   timezone?: string;
   reviewReasons?: string[];
@@ -231,6 +237,96 @@ export const inferPrivateSharedCategoryForRegression = (
     'Gatherings & Parties';
 };
 
+type PrivateSharedFamilyFriendlyFields = Pick<
+  Event,
+  | 'familyFriendlyScore'
+  | 'familyFriendlyLevel'
+  | 'familyFriendlyReasons'
+  | 'familyFriendlyScoringVersion'
+>;
+
+const getStartHour = (value: unknown): number | null => {
+  const match = String(value || '').trim().match(/^(\d{1,2})(?::\d{2})?\s*(am|pm)?$/i);
+  if (!match) return null;
+  let hour = Number(match[1]);
+  if (!Number.isInteger(hour) || hour < 0 || hour > 23) return null;
+  const meridiem = String(match[2] || '').toLowerCase();
+  if (meridiem === 'am') hour = hour === 12 ? 0 : hour;
+  if (meridiem === 'pm') hour = hour === 12 ? 12 : hour + 12;
+  return hour <= 23 ? hour : null;
+};
+
+export const inferPrivateSharedFamilyFriendlyForRegression = (
+  event: PrivateSharedEventDoc
+): PrivateSharedFamilyFriendlyFields => {
+  const storedScore = Number(event.familyFriendlyScore);
+  if (
+    event.familyFriendlyScore !== null &&
+    event.familyFriendlyScore !== undefined &&
+    Number.isFinite(storedScore)
+  ) {
+    return {
+      familyFriendlyScore: storedScore,
+      familyFriendlyLevel: event.familyFriendlyLevel ?? null,
+      familyFriendlyReasons: Array.isArray(event.familyFriendlyReasons)
+        ? event.familyFriendlyReasons
+        : [],
+      familyFriendlyScoringVersion: event.familyFriendlyScoringVersion ?? null,
+    };
+  }
+
+  const rawText = [
+    event.title,
+    event.description,
+    event.parentEventTitle,
+  ].filter(Boolean).join(' ');
+  const text = normalizeText(rawText);
+  const hasAdultRestriction =
+    /\b(18|19|21)\s*\+/.test(rawText) ||
+    /\b(adults? only|no minors?|mature audiences?|burlesque|striptease)\b/.test(text);
+  if (hasAdultRestriction) {
+    return {
+      familyFriendlyScore: 0,
+      familyFriendlyLevel: 'unlikely',
+      familyFriendlyReasons: ['adult_restriction'],
+      familyFriendlyScoringVersion: 'private-share-family-v1',
+    };
+  }
+
+  const hasExplicitFamilyEvidence =
+    /\b(family friendly|family fun|families welcome|whole family|all ages|kids?|children|youth|toddler)\b/.test(text);
+  if (hasExplicitFamilyEvidence) {
+    return {
+      familyFriendlyScore: 90,
+      familyFriendlyLevel: 'high',
+      familyFriendlyReasons: ['explicit_family_audience'],
+      familyFriendlyScoringVersion: 'private-share-family-v1',
+    };
+  }
+
+  const startHour = getStartHour(event.startTime);
+  const isDaytime = startHour !== null && startHour >= 6 && startHour < 19;
+  const hasCommunityMarketContext =
+    /\b(community market|farmers? market|inside market|craft market|markets trail|vendors?)\b/.test(text);
+  const hasAlcoholFocus = /\b(beer|wine|cocktail|spirits?|brewery|pub crawl)\b/.test(text);
+
+  if (isDaytime && hasCommunityMarketContext && !hasAlcoholFocus) {
+    return {
+      familyFriendlyScore: 70,
+      familyFriendlyLevel: 'likely',
+      familyFriendlyReasons: ['daytime_community_market'],
+      familyFriendlyScoringVersion: 'private-share-family-v1',
+    };
+  }
+
+  return {
+    familyFriendlyScore: 15,
+    familyFriendlyLevel: 'unlikely',
+    familyFriendlyReasons: ['insufficient_family_evidence'],
+    familyFriendlyScoringVersion: 'private-share-family-v1',
+  };
+};
+
 const fetchVenueDirectory = async (): Promise<VenueDirectoryEntry[]> => {
   if (venueDirectoryPromise) return venueDirectoryPromise;
 
@@ -340,6 +436,7 @@ export const normalizePrivateSharedEventForRegression = (
   const description = withLocationDetail(firstText(event.description), locationDetail);
   const startTime = convert24to12Hour(String(event.startTime || ''));
   const endTime = convert24to12Hour(String(event.endTime || ''));
+  const familyFriendly = inferPrivateSharedFamilyFriendlyForRegression(event);
 
   return {
     id: `shared_${id}`,
@@ -377,6 +474,7 @@ export const normalizePrivateSharedEventForRegression = (
     venueInstagramUrl: firstText(resolvedVenue.instagramUrl),
     venueCategories: resolvedVenue.categories || (resolvedVenue.category1 ? [resolvedVenue.category1] : []),
     venueRating: resolvedVenue.placeDetailsParsed?.rating ?? resolvedVenue.rating ?? resolvedVenue.ratingOverall,
+    ...familyFriendly,
     sharedEventProvenance: {
       sharedByCurrentUser: true,
       privateEventId: id,
