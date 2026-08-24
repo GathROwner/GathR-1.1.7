@@ -220,7 +220,7 @@ export default function InterestSelection() {
             <IconComponent
               name={interestItem.icon as any}
               size={18}
-              color={isSelected ? '#1479D3' : '#607A95'}
+              color={isSelected ? '#FFFFFF' : '#607A95'}
             />
           </View>
           <Text
@@ -237,7 +237,7 @@ export default function InterestSelection() {
           <Ionicons
             name="checkmark-circle"
             size={16}
-            color="#1788EB"
+            color="#FFFFFF"
             style={styles.interestCheck}
           />
         )}
@@ -291,24 +291,24 @@ export default function InterestSelection() {
         )}
 
         <View style={styles.header}>
-          <Text style={styles.title}>
-            {isFromProfile ? 'Shape your GathR' : 'Make GathR yours'}
-          </Text>
-          <Text style={styles.subtitle}>
-            Choose what you want GathR to surface more often. You can change this anytime.
-          </Text>
+          <View style={styles.heroCopy}>
+            {!isFromProfile && <Text style={styles.heroEyebrow}>PERSONALIZE YOUR DISCOVERY</Text>}
+            <Text style={styles.title}>What are you into?</Text>
+            <Text style={styles.subtitle}>
+              Pick anything. GathR will tune what you see first.
+            </Text>
+          </View>
+          <View style={styles.totalCountBlock}>
+            <Text style={styles.totalCountNumber}>{selectedInterests.length}</Text>
+            <Text style={styles.totalCountLabel}>selected</Text>
+          </View>
         </View>
 
-        <View style={styles.sectionCard}>
+        <View style={[styles.sectionCard, styles.eventsCanvas]}>
           <View style={styles.sectionHeader}>
             <View style={styles.sectionHeadingGroup}>
-              <View style={[styles.sectionIconBadge, styles.eventIconBadge]}>
-                <Ionicons name="calendar" size={19} color="#1479D3" />
-              </View>
-              <View>
-                <Text style={styles.sectionTitle}>Events</Text>
-                <Text style={styles.sectionSubtitle}>Things you’d like to do</Text>
-              </View>
+              <Ionicons name="compass" size={18} color="#1479D3" />
+              <Text style={styles.sectionTitle}>Find something to do</Text>
             </View>
             <View style={[styles.sectionCountBadge, selectedEventCount > 0 && styles.activeSectionCountBadge]}>
               <Text style={[styles.sectionCountText, selectedEventCount > 0 && styles.activeSectionCountText]}>
@@ -321,16 +321,11 @@ export default function InterestSelection() {
           </View>
         </View>
 
-        <View style={styles.sectionCard}>
+        <View style={[styles.sectionCard, styles.specialsCanvas]}>
           <View style={styles.sectionHeader}>
             <View style={styles.sectionHeadingGroup}>
-              <View style={[styles.sectionIconBadge, styles.specialIconBadge]}>
-                <Ionicons name="pricetag" size={19} color="#8C5A13" />
-              </View>
-              <View>
-                <Text style={styles.sectionTitle}>Deals &amp; specials</Text>
-                <Text style={styles.sectionSubtitle}>Offers worth knowing about</Text>
-              </View>
+              <Ionicons name="pricetag" size={18} color="#A56717" />
+              <Text style={styles.sectionTitle}>Offers for you</Text>
             </View>
             <View style={[styles.sectionCountBadge, selectedSpecialCount > 0 && styles.activeSectionCountBadge]}>
               <Text style={[styles.sectionCountText, selectedSpecialCount > 0 && styles.activeSectionCountText]}>
@@ -347,7 +342,7 @@ export default function InterestSelection() {
       <View style={styles.actionBar}>
         <View style={styles.actionSummaryRow}>
           <Text style={styles.actionSummaryLabel}>
-            {selectedInterests.length === 0 ? 'Choose at least one' : 'Your GathR mix'}
+            {selectedInterests.length === 0 ? 'Choose at least one' : 'Change these anytime'}
           </Text>
           <Text style={styles.actionSummaryCount}>
             {selectedInterests.length} selected
@@ -368,7 +363,7 @@ export default function InterestSelection() {
           ) : (
             <>
               <Text style={styles.saveButtonText}>
-                {isFromProfile ? 'Save changes' : 'Continue'}
+                {isFromProfile ? 'Save my interests' : 'Use these interests'}
               </Text>
               <Ionicons
                 name={isFromProfile ? 'checkmark' : 'arrow-forward'}
@@ -406,7 +401,7 @@ const styles = StyleSheet.create({
   scrollContent: {
     flex: 1,
     paddingHorizontal: 14,
-    paddingTop: 10,
+    paddingTop: 8,
     paddingBottom: 4,
   },
   onboardingCard: {
@@ -478,33 +473,64 @@ const styles = StyleSheet.create({
   },
   header: {
     marginBottom: 10,
-    paddingHorizontal: 2,
+    paddingHorizontal: 4,
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    justifyContent: 'space-between',
+  },
+  heroCopy: {
+    flex: 1,
+    paddingRight: 12,
+  },
+  heroEyebrow: {
+    color: '#1479D3',
+    fontSize: 9,
+    lineHeight: 12,
+    fontWeight: '800',
+    letterSpacing: 0.7,
+    marginBottom: 2,
   },
   title: {
-    fontSize: 24,
-    lineHeight: 28,
+    fontSize: 25,
+    lineHeight: 29,
     fontWeight: '800',
     color: '#172235',
     letterSpacing: -0.45,
-    marginBottom: 3,
+    marginBottom: 2,
   },
   subtitle: {
-    fontSize: 13,
+    fontSize: 12.5,
     color: '#5E6D80',
-    lineHeight: 17,
+    lineHeight: 16,
+  },
+  totalCountBlock: {
+    minWidth: 52,
+    alignItems: 'center',
+    paddingBottom: 1,
+  },
+  totalCountNumber: {
+    color: '#1479D3',
+    fontSize: 34,
+    lineHeight: 34,
+    fontWeight: '900',
+    letterSpacing: -1,
+  },
+  totalCountLabel: {
+    color: '#697A8E',
+    fontSize: 9,
+    lineHeight: 11,
+    fontWeight: '700',
   },
   sectionCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 17,
-    padding: 10,
-    marginBottom: 9,
-    borderWidth: 1,
-    borderColor: '#E4EBF3',
-    shadowColor: '#19324D',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 1,
+    borderRadius: 20,
+    padding: 11,
+    marginBottom: 10,
+  },
+  eventsCanvas: {
+    backgroundColor: '#EAF6FF',
+  },
+  specialsCanvas: {
+    backgroundColor: '#FFF3E4',
   },
   sectionHeader: {
     flexDirection: 'row',
@@ -515,43 +541,25 @@ const styles = StyleSheet.create({
   sectionHeadingGroup: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 6,
     flexShrink: 1,
   },
-  sectionIconBadge: {
-    width: 31,
-    height: 31,
-    borderRadius: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 8,
-  },
-  eventIconBadge: {
-    backgroundColor: '#E8F4FF',
-  },
-  specialIconBadge: {
-    backgroundColor: '#FFF3DD',
-  },
   sectionTitle: {
-    fontSize: 15,
-    fontWeight: '700',
+    fontSize: 16,
+    fontWeight: '800',
     color: '#172235',
-  },
-  sectionSubtitle: {
-    marginTop: 1,
-    fontSize: 10,
-    color: '#758397',
   },
   sectionCountBadge: {
     minWidth: 38,
     borderRadius: 12,
-    backgroundColor: '#F0F3F7',
+    backgroundColor: '#FFFFFFB8',
     paddingHorizontal: 7,
     paddingVertical: 5,
     alignItems: 'center',
     marginLeft: 8,
   },
   activeSectionCountBadge: {
-    backgroundColor: '#E7F4FF',
+    backgroundColor: '#FFFFFFD9',
   },
   sectionCountText: {
     color: '#7B8795',
@@ -570,12 +578,12 @@ const styles = StyleSheet.create({
   interestButton: {
     width: '32%',
     minHeight: 48,
-    backgroundColor: '#F7F9FC',
+    backgroundColor: '#FFFFFFDE',
     borderRadius: 12,
     paddingVertical: 6,
     paddingHorizontal: 6,
     borderWidth: 1,
-    borderColor: '#E4EAF1',
+    borderColor: '#FFFFFF',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -585,8 +593,13 @@ const styles = StyleSheet.create({
     width: '66%',
   },
   selectedInterestButton: {
-    backgroundColor: '#EAF5FF',
-    borderColor: '#7ABCF1',
+    backgroundColor: '#1788EB',
+    borderColor: '#1788EB',
+    shadowColor: '#0E5F9F',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.14,
+    shadowRadius: 4,
+    elevation: 2,
   },
   pressedInterestButton: {
     opacity: 0.72,
@@ -607,7 +620,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   selectedInterestIconBadge: {
-    backgroundColor: '#D8ECFD',
+    backgroundColor: '#FFFFFF2B',
   },
   interestButtonText: {
     fontSize: 10.5,
@@ -617,13 +630,13 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   selectedInterestButtonText: {
-    color: '#175E9D',
+    color: '#FFFFFF',
   },
   interestCheck: {
     position: 'absolute',
     top: 3,
     right: 3,
-    backgroundColor: '#EAF5FF',
+    backgroundColor: '#1788EB',
     borderRadius: 8,
   },
   actionBar: {
