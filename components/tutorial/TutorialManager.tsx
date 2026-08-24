@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { AppState, useWindowDimensions, View } from 'react-native';
+import { AppState, Modal, useWindowDimensions, View } from 'react-native';
 import { usePathname, useRouter } from 'expo-router';
 
 import { TUTORIAL_CONFIG, TUTORIAL_STEPS, getCompletedIdsForStep } from '../../config/tutorialSteps';
@@ -485,35 +485,49 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
   return (
     <View style={{ flex: 1 }}>
       {children}
-      {isActive && currentStep?.id === 'welcome' && (
-        <WelcomeScreen
-          onStart={handleStart}
-          onSkip={handleSkip}
-          stepNumber={1}
-          totalSteps={TUTORIAL_STEPS.length}
-        />
-      )}
-      {isActive && currentStep && currentStep.id !== 'welcome' && (
-        <TutorialSpotlight spotlight={spotlight}>
-          <TutorialBottomSheet
-            stepId={currentStep.id}
-            title={currentStep.title}
-            content={currentStep.content}
-            onNext={openingCluster ? undefined : handleNext}
-            onPrevious={handlePrevious}
-            onSkip={handleSkip}
-            showPrevious={stepIndex > 0}
-            showNext={showNext}
-            showSkip={currentStep.id !== 'completion'}
-            nextText={nextText}
-            position={{ x: screenWidth / 2, y: screenHeight / 2 }}
-            placement={currentStep.placement ?? 'bottom'}
-            sheetPosition={resolvedSheetPosition}
-            stepNumber={stepIndex + 1}
-            totalSteps={TUTORIAL_STEPS.length}
-            targetUnavailable={targetUnavailable}
-          />
-        </TutorialSpotlight>
+      {isActive && currentStep && (
+        <Modal
+          animationType="none"
+          hardwareAccelerated
+          navigationBarTranslucent
+          onRequestClose={stepIndex > 0 ? handlePrevious : handleSkip}
+          presentationStyle="overFullScreen"
+          statusBarTranslucent
+          transparent
+          visible
+        >
+          <View style={{ flex: 1 }}>
+            {currentStep.id === 'welcome' ? (
+              <WelcomeScreen
+                onStart={handleStart}
+                onSkip={handleSkip}
+                stepNumber={1}
+                totalSteps={TUTORIAL_STEPS.length}
+              />
+            ) : (
+              <TutorialSpotlight spotlight={spotlight}>
+                <TutorialBottomSheet
+                  stepId={currentStep.id}
+                  title={currentStep.title}
+                  content={currentStep.content}
+                  onNext={openingCluster ? undefined : handleNext}
+                  onPrevious={handlePrevious}
+                  onSkip={handleSkip}
+                  showPrevious={stepIndex > 0}
+                  showNext={showNext}
+                  showSkip={currentStep.id !== 'completion'}
+                  nextText={nextText}
+                  position={{ x: screenWidth / 2, y: screenHeight / 2 }}
+                  placement={currentStep.placement ?? 'bottom'}
+                  sheetPosition={resolvedSheetPosition}
+                  stepNumber={stepIndex + 1}
+                  totalSteps={TUTORIAL_STEPS.length}
+                  targetUnavailable={targetUnavailable}
+                />
+              </TutorialSpotlight>
+            )}
+          </View>
+        </Modal>
       )}
     </View>
   );
