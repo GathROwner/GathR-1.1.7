@@ -1790,21 +1790,28 @@ const handleLogout = async () => {
                     accessibilityLabel="Trending on launch"
                   />
                 </View>
-                <TouchableOpacity
-                  style={styles.tutorialRow}
-                  onPress={handleReplayTutorial}
-                  accessibilityRole="button"
-                >
-                  <Ionicons name="help-circle-outline" size={19} color={BRAND.primary} />
-                  <Text style={styles.tutorialRowText}>Replay tutorial</Text>
-                  <Ionicons name="chevron-forward" size={17} color={BRAND.textLight} />
-                </TouchableOpacity>
                 <View style={styles.featureDivider} />
                 <FacebookPageSubmission
                   ref={facebookSubmissionRef}
                   isHighlighted={facebookSubmissionHighlighted}
                   pulseAnim={facebookSubmissionPulseAnim}
                 />
+                <TouchableOpacity
+                  style={styles.tutorialRow}
+                  onPress={handleReplayTutorial}
+                  accessibilityRole="button"
+                  accessibilityLabel="Replay tutorial"
+                  accessibilityHint="Starts the GathR tutorial again"
+                >
+                  <View style={styles.tutorialIconBadge}>
+                    <Ionicons name="play" size={14} color="#52708D" />
+                  </View>
+                  <View style={styles.tutorialCopy}>
+                    <Text style={styles.tutorialRowText}>Replay tutorial</Text>
+                    <Text style={styles.tutorialRowSubtitle}>Take the quick tour again</Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={16} color="#8A9BAD" />
+                </TouchableOpacity>
               </View>
 
               <View style={styles.communityRow}>
@@ -3056,18 +3063,37 @@ const styles = StyleSheet.create({
     marginLeft: 44,
   },
   tutorialRow: {
-    minHeight: 44,
+    minHeight: 42,
     flexDirection: 'row',
     alignItems: 'center',
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: '#E3EAF2',
+    backgroundColor: '#F5F8FC',
+    borderRadius: 11,
+    marginTop: 3,
+    marginBottom: 1,
+    paddingHorizontal: 9,
+  },
+  tutorialIconBadge: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#E7EEF6',
+    marginRight: 9,
+  },
+  tutorialCopy: {
+    flex: 1,
+    minWidth: 0,
   },
   tutorialRowText: {
-    flex: 1,
-    color: BRAND.text,
-    fontSize: 12,
+    color: '#38536F',
+    fontSize: 11,
     fontWeight: '600',
-    marginLeft: 10,
+  },
+  tutorialRowSubtitle: {
+    color: '#7A8DA1',
+    fontSize: 9,
+    marginTop: 1,
   },
   communityRow: {
     flexDirection: 'row',
