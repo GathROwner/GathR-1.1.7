@@ -19,6 +19,7 @@ import {
   StatusBar,
   Clipboard,
   Share,
+  Switch,
 } from 'react-native';
 import { useRouter, useNavigation, usePathname } from 'expo-router';
 import * as Application from 'expo-application';
@@ -49,11 +50,6 @@ import {
 
 
 
-// Get screen dimensions for responsive design
-const { width, height } = Dimensions.get('window');
-
-// Admin debug features - set to false for production builds
-const SHOW_AD_SDK_LAB = false;
 const APP_SHARE_URL = 'https://www.gathrapp.ca/app/';
 
 const APP_RUNTIME_VERSION = Updates.runtimeVersion || (__DEV__ ? 'development' : Constants.expoConfig?.version) || 'unknown';
@@ -561,92 +557,93 @@ const FacebookPageSubmission = React.forwardRef<View, FacebookPageSubmissionProp
     >
       <Animated.View style={isHighlighted ? tutorialHighlightStyle : {}}>
         <View style={submissionStyles.container}>
-      {/* Compact Header - Always Visible */}
-      <TouchableOpacity 
-        style={[submissionStyles.header, submissionStyles.expandableHeader]}
-        onPress={() => setIsExpanded(!isExpanded)}
-        activeOpacity={0.7}
-      >
-        <View style={submissionStyles.headerLeft}>
-          <Ionicons
-            name="add-circle-outline"
-            size={24}
-            color={BRAND.primary}
-            style={submissionStyles.headerLeadingIcon}
-          />
-          <View style={submissionStyles.titleContainer}>
-            <Text style={submissionStyles.title}>Suggest a Facebook Page</Text>
-            <Text style={submissionStyles.subtitle}>
-              ({dailyCount} of 5 Daily Submissions)
-            </Text>
-          </View>
-        </View>
-        
-        <View style={[
-          submissionStyles.expandIcon,
-          { transform: [{ rotate: isExpanded ? '180deg' : '0deg' }] }
-        ]}>
-          <Ionicons name="chevron-down" size={20} color={BRAND.primary} />
-        </View>
-      </TouchableOpacity>
-
-      {/* Daily limit progress bar - Always visible */}
-      <View style={submissionStyles.progressContainer}>
-        <View style={submissionStyles.progressBar}>
-          <View style={[
-            submissionStyles.progressFill, 
-            { width: `${(dailyCount / 5) * 100}%` }
-          ]} />
-        </View>
-      </View>
-
-      {/* Expanded Content */}
-      {isExpanded && (
-        <View style={submissionStyles.expandedContent}>
-          <Text style={submissionStyles.description}>
-            Know a local business or venue that should be included? Submit their Facebook page!
-          </Text>
-          
-          <View style={submissionStyles.inputContainer}>
-            <Ionicons name="logo-facebook" size={20} color={BRAND.primary} style={submissionStyles.inputIcon} />
-            <TextInput
-              style={submissionStyles.input}
-              placeholder="https://www.facebook.com/pagename or just 'pagename'"
-              value={facebookUrl}
-              onChangeText={handleUrlChange}
-              autoCapitalize="none"
-              autoCorrect={false}
-              keyboardType="url"
-              placeholderTextColor={BRAND.textLight}
-            />
-            {isResolving && (
-              <ActivityIndicator size="small" color={BRAND.primary} style={submissionStyles.resolvingIcon} />
-            )}
-          </View>
-          
           <TouchableOpacity
-            style={[
-              submissionStyles.submitButton, 
-              (isSubmitting || dailyCount >= 5) && submissionStyles.submitButtonDisabled
-            ]}
-            onPress={handleSubmit}
-            disabled={isSubmitting || dailyCount >= 5}
+            style={submissionStyles.compactTrigger}
+            onPress={() => setIsExpanded(true)}
+            activeOpacity={0.72}
+            accessibilityRole="button"
+            accessibilityLabel={`Suggest a page. ${dailyCount} of 5 submissions today`}
           >
-            {isSubmitting ? (
-              <ActivityIndicator color={BRAND.white} size="small" />
-            ) : (
-              <>
-                <Ionicons name="paper-plane-outline" size={18} color={BRAND.white} style={submissionStyles.buttonIcon} />
-                <Text style={submissionStyles.submitButtonText}>
-                  {dailyCount >= 5 ? 'Daily Limit Reached' : 'Submit Page'}
-                </Text>
-              </>
-            )}
+            <View style={submissionStyles.compactIconBadge}>
+              <Ionicons name="add" size={21} color="#16A05D" />
+            </View>
+            <View style={submissionStyles.compactCopy}>
+              <Text style={submissionStyles.compactTitle}>Suggest a page</Text>
+              <Text style={submissionStyles.compactSubtitle}>{dailyCount} / 5 today</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={17} color={BRAND.textLight} />
           </TouchableOpacity>
         </View>
-       )}
-        </View>
       </Animated.View>
+
+      <Modal
+        visible={isExpanded}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setIsExpanded(false)}
+      >
+        <TouchableWithoutFeedback onPress={() => setIsExpanded(false)}>
+          <View style={submissionStyles.modalOverlay}>
+            <TouchableWithoutFeedback onPress={(event) => event.stopPropagation()}>
+              <View style={submissionStyles.modalSheet}>
+                <View style={submissionStyles.modalHandle} />
+                <View style={submissionStyles.modalHeader}>
+                  <View>
+                    <Text style={submissionStyles.modalTitle}>Suggest a Facebook page</Text>
+                    <Text style={submissionStyles.modalSubtitle}>{dailyCount} of 5 submissions today</Text>
+                  </View>
+                  <TouchableOpacity
+                    style={submissionStyles.modalClose}
+                    onPress={() => setIsExpanded(false)}
+                    accessibilityRole="button"
+                    accessibilityLabel="Close page suggestion"
+                  >
+                    <Ionicons name="close" size={21} color={BRAND.text} />
+                  </TouchableOpacity>
+                </View>
+                <Text style={submissionStyles.description}>
+                  Know a local business or venue that should be included? Send us its Facebook page.
+                </Text>
+                <View style={submissionStyles.inputContainer}>
+                  <Ionicons name="logo-facebook" size={20} color={BRAND.primary} style={submissionStyles.inputIcon} />
+                  <TextInput
+                    style={submissionStyles.input}
+                    placeholder="facebook.com/pagename"
+                    value={facebookUrl}
+                    onChangeText={handleUrlChange}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    keyboardType="url"
+                    placeholderTextColor={BRAND.textLight}
+                  />
+                  {isResolving && (
+                    <ActivityIndicator size="small" color={BRAND.primary} style={submissionStyles.resolvingIcon} />
+                  )}
+                </View>
+                <TouchableOpacity
+                  style={[
+                    submissionStyles.submitButton,
+                    (isSubmitting || dailyCount >= 5) && submissionStyles.submitButtonDisabled,
+                  ]}
+                  onPress={handleSubmit}
+                  disabled={isSubmitting || dailyCount >= 5}
+                >
+                  {isSubmitting ? (
+                    <ActivityIndicator color={BRAND.white} size="small" />
+                  ) : (
+                    <>
+                      <Ionicons name="paper-plane-outline" size={18} color={BRAND.white} style={submissionStyles.buttonIcon} />
+                      <Text style={submissionStyles.submitButtonText}>
+                        {dailyCount >= 5 ? 'Daily Limit Reached' : 'Submit Page'}
+                      </Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+              </View>
+            </TouchableWithoutFeedback>
+          </View>
+        </TouchableWithoutFeedback>
+      </Modal>
     </View>
   );
 });
@@ -669,6 +666,7 @@ export default function ProfileScreen() {
   const [passwordInput, setPasswordInput] = useState('');
   const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [deletionInProgress, setDeletionInProgress] = useState(false);
+  const [showAccountModal, setShowAccountModal] = useState(false);
 
   // Daily hotspot preference
   const showDailyHotspot = useUserPrefsStore((state) => state.showDailyHotspot);
@@ -1221,6 +1219,48 @@ const handleLogout = async () => {
     }
   };
 
+  const handleReplayTutorial = () => {
+    Alert.alert(
+      'Replay Tutorial',
+      'Would you like to replay the GathR tutorial? This will guide you through the app features again.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Start Tutorial',
+          onPress: () => {
+            try {
+              const now = Date.now();
+              if (now - lastRestartClickAtRef.current >= 350) {
+                lastRestartClickAtRef.current = now;
+                amplitudeTrack('tutorial_restart_clicked', {
+                  tutorial_id: 'main_onboarding_v1',
+                  tutorial_version: 1,
+                  total_steps: Array.isArray(TUTORIAL_STEPS) ? TUTORIAL_STEPS.length : 0,
+                  source: 'tutorial_system',
+                  from_screen: pathname || '/profile',
+                  user_initiated: true,
+                  launch_source: 'profile',
+                  is_guest: !auth.currentUser,
+                });
+              }
+            } catch (error) {
+              console.log('[analytics] tutorial_restart_clicked failed:', error);
+            }
+
+            router.back();
+            setTimeout(() => {
+              (global as any).tutorialLaunchUserInitiated = true;
+              (global as any).tutorialLaunchSource = 'profile';
+              if ((global as any).triggerGathRTutorial) {
+                (global as any).triggerGathRTutorial();
+              }
+            }, 500);
+          },
+        },
+      ]
+    );
+  };
+
   // Copy email to clipboard
   const copyEmailToClipboard = () => {
     Clipboard.setString(email);
@@ -1397,354 +1437,283 @@ const handleLogout = async () => {
         </View>
       </Animated.View>
       
-      <ScrollView 
-        contentContainerStyle={styles.scrollContent}
+      <ScrollView
+        contentContainerStyle={[styles.scrollContent, isEditing && styles.editScrollContent]}
         showsVerticalScrollIndicator={false}
+        bounces={false}
+        keyboardShouldPersistTaps="handled"
       >
-        <Animated.View 
+        <Animated.View
           style={[
             styles.profileContainer,
-            {
-              opacity: fadeAnim,
-              transform: [{ scale: scaleAnim }]
-            }
+            { opacity: fadeAnim, transform: [{ scale: scaleAnim }] },
           ]}
         >
-          {/* Profile Image Section - FIXED: adjusted position */}
-          <View style={styles.profileImageSection}>
-            <TouchableOpacity 
-              onPress={isEditing ? handleProfilePictureUpdate : () => {}}
-              disabled={!isEditing}
-              style={styles.profileImageContainer}
-            >
-              {newPhotoURI ? (
-                <Image source={{ uri: newPhotoURI }} style={styles.profileImage} />
-              ) : photoURL ? (
-                <Image source={{ uri: photoURL }} style={styles.profileImage} />
-              ) : (
-                <View style={styles.profileImagePlaceholder}>
-                  <Ionicons name="person" size={50} color={BRAND.lightGray} />
-                </View>
-              )}
-              {isEditing && (
-                <View style={styles.cameraIconContainer}>
-                  <Ionicons name="camera" size={18} color={BRAND.white} />
-                </View>
-              )}
-            </TouchableOpacity>
-          </View>
-          
-          {/* Profile Content */}
-          <View style={styles.profileContent}>
-            {isEditing ? (
-              <TextInput
-                style={styles.nameInput}
-                value={editedDisplayName}
-                onChangeText={setEditedDisplayName}
-                placeholder="Enter your name"
-                maxLength={50}
-                placeholderTextColor={BRAND.textLight}
-              />
-            ) : (
-              <Text style={styles.userName}>{displayName || 'User'}</Text>
-            )}
-            
-            {memberSince ? (
-              <View style={styles.memberSinceContainer}>
-                <Ionicons name="calendar-outline" size={14} color={BRAND.textLight} />
-                <Text style={styles.memberSinceText}>Member since {memberSince}</Text>
-              </View>
-            ) : null}
-            
-            {/* Email Card */}
-            <TouchableOpacity 
-              style={styles.emailContainer}
-              onPress={copyEmailToClipboard}
-              activeOpacity={0.7}
-            >
-              <View style={styles.emailContent}>
-                <Ionicons name="mail-outline" size={18} color={BRAND.primary} style={styles.emailIcon} />
-                <View>
-                  <Text style={styles.emailLabel}>Email</Text>
-                  <Text style={styles.emailValue}>{email}</Text>
-                </View>
-              </View>
-              <View style={styles.copyIconContainer}>
-                {isEmailCopied ? (
-                  <Ionicons name="checkmark" size={20} color={BRAND.primary} />
-                ) : (
-                  <Ionicons name="copy-outline" size={18} color={BRAND.textLight} />
-                )}
-              </View>
-            </TouchableOpacity>
-            
-            {/* Edit Mode Buttons */}
-            {isEditing ? (
-              <View style={styles.editButtonsContainer}>
-                <TouchableOpacity 
-                  style={styles.saveButton} 
-                  onPress={saveChanges}
-                  disabled={savingChanges}
-                >
-                  {savingChanges ? (
-                    <ActivityIndicator color={BRAND.white} size="small" />
-                  ) : (
-                    <>
-                      <Ionicons name="checkmark" size={20} color={BRAND.white} style={styles.buttonIcon} />
-                      <Text style={styles.saveButtonText}>Save Changes</Text>
-                    </>
-                  )}
-                </TouchableOpacity>
-                
-                <TouchableOpacity 
-                  style={styles.cancelButton} 
+          {isEditing ? (
+            <View style={styles.editProfileCard}>
+              <View style={styles.editHeaderRow}>
+                <TouchableOpacity
+                  style={styles.headerTextButton}
                   onPress={() => {
                     setIsEditing(false);
                     setEditedDisplayName(displayName);
                     setNewPhotoURI('');
                   }}
+                  accessibilityRole="button"
+                  accessibilityLabel="Cancel profile editing"
                 >
-                  <Ionicons name="close" size={20} color={BRAND.primary} style={styles.buttonIcon} />
-                  <Text style={styles.cancelButtonText}>Cancel</Text>
+                  <Text style={styles.headerTextButtonLabel}>Cancel</Text>
+                </TouchableOpacity>
+                <Text style={styles.editTitle}>Edit profile</Text>
+                <TouchableOpacity
+                  style={styles.headerTextButton}
+                  onPress={saveChanges}
+                  disabled={savingChanges}
+                  accessibilityRole="button"
+                  accessibilityLabel="Save profile"
+                >
+                  {savingChanges ? (
+                    <ActivityIndicator color={BRAND.primary} size="small" />
+                  ) : (
+                    <Text style={[styles.headerTextButtonLabel, styles.headerSaveLabel]}>Save</Text>
+                  )}
                 </TouchableOpacity>
               </View>
-            ) : (
-              <>
-                {/* Action Buttons - 2x2 Grid */}
-                <View style={styles.buttonGridContainer}>
-                <View style={styles.buttonGrid}>
-                  {/* Row 1: Edit Profile + Manage Interests */}
-                  <View style={styles.buttonGridRow}>
-                    <TouchableOpacity
-                      style={[styles.gridButton, { paddingLeft: 24 }]}
-                      onPress={() => setIsEditing(true)}
-                    >
-                      <Ionicons name="create-outline" size={18} color={BRAND.primary} />
-                      <View style={[styles.buttonTextContainer, { marginLeft: -18 }]}>
-                        <Text style={styles.gridButtonText}>Edit Profile</Text>
-                        <Text style={styles.gridButtonSubtext}>Update your info</Text>
-                      </View>
-                    </TouchableOpacity>
 
-                    <TouchableOpacity
-                      style={styles.gridButton}
-                      onPress={handleInterests}
-                    >
-                      <View style={styles.buttonIconContainer}>
-                        <Ionicons name="pricetag-outline" size={18} color={BRAND.primary} />
-                      </View>
-                      <View style={styles.buttonTextContainer}>
-                        <Text style={styles.gridButtonText}>Edit Interests</Text>
-                        <Text style={styles.gridButtonSubtext}>Manage categories</Text>
-                      </View>
-                      <View style={styles.buttonIconContainer}>
-                        <View style={styles.countBadge}>
-                          <Text style={styles.countNumber}>{userInterests.length}</Text>
-                        </View>
-                      </View>
-                    </TouchableOpacity>
-                  </View>
-
-                  {/* Row 2: Replay Tutorial + Daily Hotspot */}
-                  <View style={styles.buttonGridRow}>
-                    <TouchableOpacity
-                      style={[styles.gridButton, { paddingLeft: 24 }]}
-                      onPress={() => {
-                        Alert.alert(
-                          'Replay Tutorial',
-                          'Would you like to replay the GathR tutorial? This will guide you through the app features again.',
-                          [
-                            { text: 'Cancel', style: 'cancel' },
-                            {
-                              text: 'Start Tutorial',
-                              onPress: () => {
-  // ðŸ”” analytics: tutorial_restart_clicked (fires BEFORE overlay opens)
-  try {
-    const now = Date.now();
-    if (now - lastRestartClickAtRef.current >= 350) {
-      lastRestartClickAtRef.current = now;
-
-      amplitudeTrack('tutorial_restart_clicked', {
-        tutorial_id: 'main_onboarding_v1',
-        tutorial_version: 1,
-        total_steps: Array.isArray(TUTORIAL_STEPS) ? TUTORIAL_STEPS.length : 0,
-        source: 'tutorial_system',
-        from_screen: pathname || '/profile',
-        user_initiated: true,
-        launch_source: 'profile',
-        is_guest: !auth.currentUser,
-      });
-    }
-  } catch (e) {
-    console.log('[analytics] tutorial_restart_clicked failed:', e);
-  }
-
-  // Close profile modal and start tutorial
-  router.back();
-  setTimeout(() => {
-    // Mark this launch as user-initiated from Profile for downstream events
-    (global as any).tutorialLaunchUserInitiated = true;
-    (global as any).tutorialLaunchSource = 'profile';
-
-    if ((global as any).triggerGathRTutorial) {
-      (global as any).triggerGathRTutorial();
-    }
-  }, 500);
-}
-
-                          }
-                        ]
-                      );
-                    }}
-                  >
-                      <Ionicons name="help-circle-outline" size={18} color={BRAND.primary} />
-                      <View style={[styles.buttonTextContainer, { marginLeft: -14 }]}>
-                        <Text style={styles.gridButtonText}>Replay Tutorial</Text>
-                        <Text style={styles.gridButtonSubtext}>New user walkthrough</Text>
-                      </View>
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
-                      style={[
-                        styles.gridButton,
-                        !showDailyHotspot && { borderColor: BRAND.lightGray }
-                      ]}
-                      onPress={handleToggleHotspot}
-                    >
-                      <View style={styles.buttonIconContainer}>
-                        <HotspotCircleIcon isActive={showDailyHotspot} />
-                      </View>
-                      <View style={styles.buttonTextContainer}>
-                        <Text style={[styles.gridButtonText, !showDailyHotspot && { color: BRAND.gray }]}>
-                          Enable Hotspot
-                        </Text>
-                        <Text style={[styles.gridButtonSubtext, !showDailyHotspot && { color: BRAND.gray }]}>
-                          Daily highlights
-                        </Text>
-                      </View>
-                      <View style={styles.buttonIconContainer}>
-                        <Ionicons
-                          name={showDailyHotspot ? "checkmark-circle" : "ellipse-outline"}
-                          size={20}
-                          color={showDailyHotspot ? BRAND.primary : BRAND.gray}
-                        />
-                      </View>
-                    </TouchableOpacity>
-
-                    {SHOW_AD_SDK_LAB && (
-                      <TouchableOpacity
-                        style={styles.gridButton}
-                        onPress={() => router.push('/native-ad-lab')}
-                      >
-                        <View style={styles.buttonIconContainer}>
-                          <Ionicons name="flask-outline" size={20} color={BRAND.primary} />
-                        </View>
-                        <View style={styles.buttonTextContainer}>
-                          <Text style={styles.gridButtonText}>Ad SDK Lab</Text>
-                          <Text style={styles.gridButtonSubtext}>Isolated wrapper test</Text>
-                        </View>
-                      </TouchableOpacity>
-                    )}
-                  </View>
-
-                  {/* Row 3: Trending on open */}
-                  <View style={styles.buttonGridRow}>
-                    <TouchableOpacity
-                      style={[
-                        styles.gridButton,
-                        !showTrendingOnOpen && { borderColor: BRAND.lightGray }
-                      ]}
-                      onPress={handleToggleTrending}
-                    >
-                      <View style={styles.buttonIconContainer}>
-                        <MaterialIcons
-                          name="local-fire-department"
-                          size={20}
-                          color={showTrendingOnOpen ? BRAND.primary : BRAND.gray}
-                        />
-                      </View>
-                      <View style={styles.buttonTextContainer}>
-                        <Text style={[styles.gridButtonText, !showTrendingOnOpen && { color: BRAND.gray }]}>
-                          Show Trending on open
-                        </Text>
-                        <Text style={[styles.gridButtonSubtext, !showTrendingOnOpen && { color: BRAND.gray }]}>
-                          Top events when you launch
-                        </Text>
-                      </View>
-                      <View style={styles.buttonIconContainer}>
-                        <Ionicons
-                          name={showTrendingOnOpen ? "checkmark-circle" : "ellipse-outline"}
-                          size={20}
-                          color={showTrendingOnOpen ? BRAND.primary : BRAND.gray}
-                        />
-                      </View>
-                    </TouchableOpacity>
-                  </View>
-
-                  <TouchableOpacity
-                    style={styles.shareAppButton}
-                    onPress={handleShareApp}
-                    accessibilityRole="button"
-                    accessibilityLabel="Share GathR"
-                  >
-                    <View style={styles.shareAppIconBadge}>
-                      <Ionicons name="share-social-outline" size={22} color={BRAND.white} />
+              <TouchableOpacity
+                onPress={handleProfilePictureUpdate}
+                style={styles.editPhotoButton}
+                accessibilityRole="button"
+                accessibilityLabel="Change profile photo"
+              >
+                <View style={styles.editPhotoFrame}>
+                  {newPhotoURI ? (
+                    <Image source={{ uri: newPhotoURI }} style={styles.editPhoto} />
+                  ) : photoURL ? (
+                    <Image source={{ uri: photoURL }} style={styles.editPhoto} />
+                  ) : (
+                    <View style={styles.editPhotoPlaceholder}>
+                      <Ionicons name="person" size={38} color={BRAND.textLight} />
                     </View>
-                    <View style={styles.shareAppTextContainer}>
-                      <View style={styles.shareAppTitleRow}>
-                        <Text style={styles.shareAppTitlePrefix}>Share</Text>
-                        <View style={styles.shareAppWordmarkInline}>
-                          <GathrWordmarkLogo width={50} height={18} color={BRAND.primary} />
-                        </View>
-                      </View>
-                      <Text style={styles.shareAppSubtext}>Invite a friend to find local events and specials</Text>
-                    </View>
-                    <Ionicons name="chevron-forward" size={20} color={BRAND.primary} />
-                  </TouchableOpacity>
-                </View>
-                </View>
-
-                {/* Facebook Page Submission Component */}
-                <FacebookPageSubmission 
-                  ref={facebookSubmissionRef}
-                  isHighlighted={facebookSubmissionHighlighted}
-                  pulseAnim={facebookSubmissionPulseAnim}
-                />
-                
-                {/* Account Management Buttons */}
-                  <View style={styles.accountActionsContainer}>
-                    <TouchableOpacity 
-                      style={styles.deleteButton} 
-                      onPress={handleDeleteAccount}
-                    >
-                      <Ionicons name="trash-outline" size={20} color={BRAND.white} style={styles.buttonIcon} />
-                      <Text style={styles.deleteButtonText} numberOfLines={1}>Delete Account</Text>
-                    </TouchableOpacity>
-
-                    <TouchableOpacity 
-                      style={styles.logoutButton} 
-                      onPress={handleLogout}
-                    >
-                      <Ionicons name="log-out-outline" size={20} color={BRAND.white} style={styles.buttonIcon} />
-                      <Text style={styles.logoutButtonText} numberOfLines={1}>Log Out</Text>
-                    </TouchableOpacity>
+                  )}
+                  <View style={styles.cameraIconContainer}>
+                    <Ionicons name="camera" size={16} color={BRAND.white} />
                   </View>
+                </View>
+                <Text style={styles.changePhotoLabel}>Change photo</Text>
+              </TouchableOpacity>
 
-                  <TouchableOpacity
-                    style={styles.versionInfoContainer}
-                    onPress={handleVersionInfoPress}
-                    activeOpacity={0.7}
-                    accessibilityRole="button"
-                    accessibilityLabel={`${APP_VERSION_SUMMARY}. ${APP_UPDATE_SUMMARY}`}
-                    accessibilityHint="Shows detailed app and update information"
-                    testID="app-version-info"
-                  >
-                    <Text style={styles.versionInfoPrimary}>{APP_VERSION_SUMMARY}</Text>
-                    <Text style={styles.versionInfoSecondary}>{APP_UPDATE_SUMMARY}</Text>
+              <Text style={styles.fieldLabel}>Display name</Text>
+              <TextInput
+                style={styles.compactNameInput}
+                value={editedDisplayName}
+                onChangeText={setEditedDisplayName}
+                placeholder="Enter your name"
+                maxLength={50}
+                placeholderTextColor={BRAND.textLight}
+                returnKeyType="done"
+              />
+
+              <TouchableOpacity
+                style={styles.editInterestsCard}
+                onPress={handleInterests}
+                accessibilityRole="button"
+                accessibilityLabel={`Choose interests. ${userInterests.length} selected`}
+              >
+                <View style={styles.sectionHeadingRow}>
+                  <Text style={styles.sectionHeading}>Interests</Text>
+                  <Text style={styles.sectionAction}>Choose interests</Text>
+                </View>
+                <View style={styles.interestChipsRow}>
+                  {userInterests.slice(0, 3).map((interest) => (
+                    <View key={interest} style={styles.interestChip}>
+                      <Text style={styles.interestChipText} numberOfLines={1}>{interest}</Text>
+                    </View>
+                  ))}
+                  <View style={[styles.interestChip, styles.interestCountChip]}>
+                    <Text style={styles.interestCountChipText}>
+                      {userInterests.length > 3 ? `+${userInterests.length - 3}` : `${userInterests.length} selected`}
+                    </Text>
+                  </View>
+                </View>
+              </TouchableOpacity>
+
+              <View style={styles.editInfoRow}>
+                <Ionicons name="information-circle-outline" size={20} color={BRAND.primary} />
+                <Text style={styles.editInfoText}>Email is managed in Account & privacy</Text>
+              </View>
+            </View>
+          ) : (
+            <>
+              <View style={styles.identityCard}>
+                <View style={styles.compactAvatarFrame}>
+                  {photoURL ? (
+                    <Image source={{ uri: photoURL }} style={styles.compactAvatar} />
+                  ) : (
+                    <View style={styles.compactAvatarPlaceholder}>
+                      <Ionicons name="person" size={30} color={BRAND.textLight} />
+                    </View>
+                  )}
+                </View>
+                <View style={styles.identityText}>
+                  <Text style={styles.compactUserName} numberOfLines={1}>{displayName || 'User'}</Text>
+                  <TouchableOpacity onPress={copyEmailToClipboard} activeOpacity={0.65}>
+                    <Text style={styles.compactEmail} numberOfLines={1}>
+                      {isEmailCopied ? 'Email copied' : email}
+                    </Text>
                   </TouchableOpacity>
-              </>
-            )}
-          </View>
+                  {memberSince ? (
+                    <Text style={styles.compactMemberSince}>Member since {memberSince}</Text>
+                  ) : null}
+                </View>
+                <TouchableOpacity
+                  style={styles.editProfileButton}
+                  onPress={() => setIsEditing(true)}
+                  accessibilityRole="button"
+                  accessibilityLabel="Edit profile"
+                >
+                  <Ionicons name="create-outline" size={17} color={BRAND.primary} />
+                  <Text style={styles.editProfileButtonText}>Edit</Text>
+                </TouchableOpacity>
+              </View>
+
+              <TouchableOpacity
+                style={styles.interestsCard}
+                onPress={handleInterests}
+                activeOpacity={0.72}
+                accessibilityRole="button"
+                accessibilityLabel={`Interests. ${userInterests.length} selected`}
+              >
+                <View style={styles.sectionHeadingRow}>
+                  <Text style={styles.sectionHeading}>Interests</Text>
+                  <View style={styles.sectionActionRow}>
+                    <Text style={styles.sectionAction}>{userInterests.length} selected</Text>
+                    <Ionicons name="chevron-forward" size={16} color={BRAND.primary} />
+                  </View>
+                </View>
+                <View style={styles.interestChipsRow}>
+                  {userInterests.length > 0 ? userInterests.slice(0, 3).map((interest) => (
+                    <View key={interest} style={styles.interestChip}>
+                      <Text style={styles.interestChipText} numberOfLines={1}>{interest}</Text>
+                    </View>
+                  )) : (
+                    <Text style={styles.emptyInterestsText}>Choose the events and specials you care about.</Text>
+                  )}
+                  {userInterests.length > 3 && (
+                    <View style={[styles.interestChip, styles.interestCountChip]}>
+                      <Text style={styles.interestCountChipText}>+{userInterests.length - 3}</Text>
+                    </View>
+                  )}
+                </View>
+              </TouchableOpacity>
+
+              <View style={styles.featuresCard}>
+                <Text style={styles.sectionHeading}>Features</Text>
+                <View style={styles.featureRow}>
+                  <View style={[styles.featureIcon, styles.hotspotFeatureIcon]}>
+                    <HotspotCircleIcon isActive={showDailyHotspot} />
+                  </View>
+                  <View style={styles.featureCopy}>
+                    <Text style={styles.featureTitle}>Daily Hotspot</Text>
+                    <Text style={styles.featureSubtitle}>Highlight a top event each day</Text>
+                  </View>
+                  <Switch
+                    value={showDailyHotspot}
+                    onValueChange={handleToggleHotspot}
+                    trackColor={{ false: '#D9E1EA', true: '#9ECFFF' }}
+                    thumbColor={showDailyHotspot ? BRAND.primary : '#FFFFFF'}
+                    ios_backgroundColor="#D9E1EA"
+                    accessibilityLabel="Daily Hotspot"
+                  />
+                </View>
+                <View style={styles.featureDivider} />
+                <View style={styles.featureRow}>
+                  <View style={[styles.featureIcon, styles.trendingFeatureIcon]}>
+                    <MaterialIcons name="local-fire-department" size={20} color={BRAND.primary} />
+                  </View>
+                  <View style={styles.featureCopy}>
+                    <Text style={styles.featureTitle}>Trending on launch</Text>
+                    <Text style={styles.featureSubtitle}>Show what’s popular when GathR opens</Text>
+                  </View>
+                  <Switch
+                    value={showTrendingOnOpen}
+                    onValueChange={handleToggleTrending}
+                    trackColor={{ false: '#D9E1EA', true: '#9ECFFF' }}
+                    thumbColor={showTrendingOnOpen ? BRAND.primary : '#FFFFFF'}
+                    ios_backgroundColor="#D9E1EA"
+                    accessibilityLabel="Trending on launch"
+                  />
+                </View>
+                <TouchableOpacity
+                  style={styles.tutorialRow}
+                  onPress={handleReplayTutorial}
+                  accessibilityRole="button"
+                >
+                  <Ionicons name="help-circle-outline" size={19} color={BRAND.primary} />
+                  <Text style={styles.tutorialRowText}>Replay tutorial</Text>
+                  <Ionicons name="chevron-forward" size={17} color={BRAND.textLight} />
+                </TouchableOpacity>
+              </View>
+
+              <View style={styles.communityRow}>
+                <TouchableOpacity
+                  style={styles.shareAppButton}
+                  onPress={handleShareApp}
+                  accessibilityRole="button"
+                  accessibilityLabel="Share GathR"
+                >
+                  <View style={styles.shareAppIconBadge}>
+                    <Ionicons name="share-social-outline" size={20} color={BRAND.primary} />
+                  </View>
+                  <View style={styles.shareAppTextContainer}>
+                    <View style={styles.shareAppTitleRow}>
+                      <Text style={styles.shareAppTitlePrefix}>Share</Text>
+                      <View style={styles.shareAppWordmarkInline}>
+                        <GathrWordmarkLogo width={44} height={16} color={BRAND.primary} />
+                      </View>
+                    </View>
+                    <Text style={styles.shareAppSubtext} numberOfLines={1}>Invite a friend</Text>
+                  </View>
+                </TouchableOpacity>
+                <View style={styles.facebookActionCell}>
+                  <FacebookPageSubmission
+                    ref={facebookSubmissionRef}
+                    isHighlighted={facebookSubmissionHighlighted}
+                    pulseAnim={facebookSubmissionPulseAnim}
+                  />
+                </View>
+              </View>
+
+              <TouchableOpacity
+                style={styles.accountPrivacyRow}
+                onPress={() => setShowAccountModal(true)}
+                accessibilityRole="button"
+                accessibilityLabel="Account and privacy"
+              >
+                <View style={styles.accountPrivacyIcon}>
+                  <Ionicons name="shield-checkmark-outline" size={20} color={BRAND.primary} />
+                </View>
+                <View style={styles.accountPrivacyCopy}>
+                  <Text style={styles.accountPrivacyTitle}>Account & privacy</Text>
+                  <Text style={styles.accountPrivacySubtitle}>Email, sign out, and account controls</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={18} color={BRAND.textLight} />
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.versionInfoContainer}
+                onPress={handleVersionInfoPress}
+                activeOpacity={0.7}
+                accessibilityRole="button"
+                accessibilityLabel={`${APP_VERSION_SUMMARY}. ${APP_UPDATE_SUMMARY}`}
+                accessibilityHint="Shows detailed app and update information"
+                testID="app-version-info"
+              >
+                <Text style={styles.versionInfoPrimary}>{APP_VERSION_SUMMARY}</Text>
+                <Text style={styles.versionInfoSecondary}>{APP_UPDATE_SUMMARY}</Text>
+              </TouchableOpacity>
+            </>
+          )}
         </Animated.View>
       </ScrollView>
       
@@ -1757,6 +1726,73 @@ const handleLogout = async () => {
       >
         {(global as any).tutorialOverlayForModal && (global as any).tutorialOverlayForModal()}
       </View>
+
+      <Modal
+        visible={showAccountModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowAccountModal(false)}
+      >
+        <TouchableWithoutFeedback onPress={() => setShowAccountModal(false)}>
+          <View style={styles.accountModalOverlay}>
+            <TouchableWithoutFeedback onPress={(event) => event.stopPropagation()}>
+              <View style={styles.accountModalSheet}>
+                <View style={styles.accountModalHandle} />
+                <View style={styles.accountModalHeader}>
+                  <View>
+                    <Text style={styles.accountModalTitle}>Account & privacy</Text>
+                    <Text style={styles.accountModalSubtitle}>Manage your GathR account</Text>
+                  </View>
+                  <TouchableOpacity
+                    style={styles.accountModalClose}
+                    onPress={() => setShowAccountModal(false)}
+                    accessibilityRole="button"
+                    accessibilityLabel="Close account and privacy"
+                  >
+                    <Ionicons name="close" size={21} color={BRAND.text} />
+                  </TouchableOpacity>
+                </View>
+
+                <TouchableOpacity
+                  style={styles.accountEmailRow}
+                  onPress={copyEmailToClipboard}
+                  accessibilityRole="button"
+                  accessibilityLabel="Copy email address"
+                >
+                  <View style={styles.accountModalIcon}>
+                    <Ionicons name="mail-outline" size={20} color={BRAND.primary} />
+                  </View>
+                  <View style={styles.accountPrivacyCopy}>
+                    <Text style={styles.accountModalLabel}>Email</Text>
+                    <Text style={styles.accountModalValue} numberOfLines={1}>{email}</Text>
+                  </View>
+                  <Ionicons
+                    name={isEmailCopied ? 'checkmark' : 'copy-outline'}
+                    size={18}
+                    color={isEmailCopied ? BRAND.primary : BRAND.textLight}
+                  />
+                </TouchableOpacity>
+
+                <TouchableOpacity style={styles.accountSheetAction} onPress={handleLogout}>
+                  <Ionicons name="log-out-outline" size={20} color={BRAND.primary} />
+                  <Text style={styles.accountSheetActionText}>Log out</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.accountSheetAction, styles.destructiveSheetAction]}
+                  onPress={() => {
+                    setShowAccountModal(false);
+                    handleDeleteAccount();
+                  }}
+                >
+                  <Ionicons name="trash-outline" size={20} color={BRAND.accent} />
+                  <Text style={styles.destructiveSheetActionText}>Delete account</Text>
+                </TouchableOpacity>
+              </View>
+            </TouchableWithoutFeedback>
+          </View>
+        </TouchableWithoutFeedback>
+      </Modal>
       
       {/* Password Confirmation Modal with standard animations */}
       {showPasswordModal && (
@@ -1839,19 +1875,90 @@ const handleLogout = async () => {
 
 const submissionStyles = StyleSheet.create({
   container: {
-    backgroundColor: Platform.OS === 'android' ? ANDROID_PROFILE_BUTTON_FILL : PROFILE_BUTTON_FILL,
+    flex: 1,
+    backgroundColor: BRAND.white,
     borderRadius: 16,
-    padding: 12,
-    marginVertical: 12,
-    borderWidth: 1.5,
-    borderColor: BRAND.primary,
-    // Shadow for iOS
-    shadowColor: BRAND.primary,
+    minHeight: 66,
+    shadowColor: '#0B2748',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 5,
-    // Shadow for Android
-    elevation: 4,
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  compactTrigger: {
+    flex: 1,
+    minHeight: 66,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+  },
+  compactIconBadge: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#EAF8F0',
+    marginRight: 9,
+  },
+  compactCopy: {
+    flex: 1,
+    minWidth: 0,
+  },
+  compactTitle: {
+    color: BRAND.text,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  compactSubtitle: {
+    color: BRAND.textLight,
+    fontSize: 11,
+    marginTop: 2,
+  },
+  modalOverlay: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(7, 24, 45, 0.45)',
+  },
+  modalSheet: {
+    backgroundColor: BRAND.white,
+    borderTopLeftRadius: 26,
+    borderTopRightRadius: 26,
+    paddingHorizontal: 20,
+    paddingTop: 10,
+    paddingBottom: Platform.OS === 'ios' ? 34 : 22,
+  },
+  modalHandle: {
+    alignSelf: 'center',
+    width: 38,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: '#D6DEE8',
+    marginBottom: 16,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 16,
+  },
+  modalTitle: {
+    color: BRAND.text,
+    fontSize: 20,
+    fontWeight: '700',
+  },
+  modalSubtitle: {
+    color: BRAND.textLight,
+    fontSize: 12,
+    marginTop: 3,
+  },
+  modalClose: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: BRAND.background,
   },
   header: {
     flexDirection: 'row',
@@ -1994,7 +2101,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: BRAND.primary,
     paddingTop: Platform.OS === 'ios' ? 10 : 20,
-    paddingHorizontal: 40,
+    paddingHorizontal: 20,
   },
   headerTitle: {
     fontSize: 22,
@@ -2011,14 +2118,16 @@ const styles = StyleSheet.create({
   },
   // FIXED: Adjusted content padding
   scrollContent: {
-    paddingHorizontal: 20,
-    paddingBottom: 30,
-    paddingTop: 20, // Reduced from 60
+    flexGrow: 1,
+    paddingHorizontal: 12,
+    paddingBottom: 10,
+    paddingTop: 10,
   },
   // FIXED: Adjusted top margin
   profileContainer: {
-    marginTop: 0, // Adjusted from -80
-    borderRadius: 24,
+    flexGrow: 1,
+    marginTop: 0,
+    borderRadius: 0,
     overflow: 'visible',
   },
   // FIXED: Repositioned profile image section
@@ -2263,30 +2372,27 @@ const styles = StyleSheet.create({
     borderWidth: 3,
   },
   shareAppButton: {
-    minHeight: 64,
-    backgroundColor: '#F4FAFF',
-    borderWidth: 1.5,
-    borderColor: BRAND.primary,
-    borderRadius: 24,
+    flex: 1,
+    minHeight: 66,
+    backgroundColor: BRAND.white,
+    borderRadius: 16,
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 18,
-    paddingVertical: 12,
-    marginTop: 2,
-    shadowColor: BRAND.primary,
+    paddingHorizontal: 12,
+    shadowColor: '#0B2748',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.16,
-    shadowRadius: 5,
-    elevation: 3,
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 2,
   },
   shareAppIconBadge: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: BRAND.primary,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#E8F3FF',
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 12,
+    marginRight: 9,
   },
   shareAppTextContainer: {
     flex: 1,
@@ -2297,20 +2403,20 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   shareAppTitlePrefix: {
-    color: BRAND.primary,
-    fontSize: 16,
+    color: BRAND.text,
+    fontSize: 13,
     fontWeight: '700',
-    lineHeight: 20,
-    marginRight: 6,
+    lineHeight: 17,
+    marginRight: 4,
   },
   shareAppWordmarkInline: {
-    height: 20,
+    height: 17,
     justifyContent: 'center',
       transform: [{ translateY: 0 }],
   },
   shareAppSubtext: {
-    color: BRAND.gray,
-    fontSize: 12,
+    color: BRAND.textLight,
+    fontSize: 11,
     marginTop: 2,
   },
   accountActionsContainer: {
@@ -2336,11 +2442,10 @@ const styles = StyleSheet.create({
   },
   versionInfoContainer: {
     alignItems: 'center',
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: BRAND.lightGray,
-    marginTop: 18,
-    paddingTop: 14,
-    paddingBottom: 2,
+    justifyContent: 'center',
+    minHeight: 32,
+    marginTop: 4,
+    paddingHorizontal: 8,
   },
   versionInfoPrimary: {
     color: BRAND.gray,
@@ -2350,8 +2455,8 @@ const styles = StyleSheet.create({
   },
   versionInfoSecondary: {
     color: BRAND.textLight,
-    fontSize: 10,
-    marginTop: 3,
+    fontSize: 9,
+    marginTop: 1,
     textAlign: 'center',
   },
   saveButtonText: {
@@ -2508,5 +2613,444 @@ const styles = StyleSheet.create({
     color: BRAND.white,
     fontWeight: '600',
     fontSize: 16,
+  },
+  editScrollContent: {
+    justifyContent: 'flex-start',
+  },
+  identityCard: {
+    minHeight: 88,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: BRAND.white,
+    borderRadius: 18,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    shadowColor: '#0B2748',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 10,
+    elevation: 2,
+  },
+  compactAvatarFrame: {
+    width: 66,
+    height: 66,
+    borderRadius: 33,
+    backgroundColor: '#EAF0F7',
+    overflow: 'hidden',
+  },
+  compactAvatar: {
+    width: 66,
+    height: 66,
+    borderRadius: 33,
+  },
+  compactAvatarPlaceholder: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  identityText: {
+    flex: 1,
+    minWidth: 0,
+    marginLeft: 12,
+    marginRight: 6,
+  },
+  compactUserName: {
+    color: BRAND.text,
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  compactEmail: {
+    color: BRAND.textLight,
+    fontSize: 12,
+    marginTop: 3,
+  },
+  compactMemberSince: {
+    color: BRAND.textLight,
+    fontSize: 11,
+    marginTop: 3,
+  },
+  editProfileButton: {
+    minWidth: 58,
+    minHeight: 44,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+  },
+  editProfileButtonText: {
+    color: BRAND.primary,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  interestsCard: {
+    minHeight: 70,
+    backgroundColor: BRAND.white,
+    borderRadius: 16,
+    marginTop: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    shadowColor: '#0B2748',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.07,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  sectionHeadingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  sectionHeading: {
+    color: BRAND.text,
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  sectionActionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  sectionAction: {
+    color: BRAND.primary,
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  interestChipsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 8,
+    overflow: 'hidden',
+  },
+  interestChip: {
+    maxWidth: 100,
+    minHeight: 28,
+    justifyContent: 'center',
+    backgroundColor: '#F2F7FC',
+    borderRadius: 14,
+    paddingHorizontal: 10,
+  },
+  interestChipText: {
+    color: BRAND.text,
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  interestCountChip: {
+    backgroundColor: '#E5F2FF',
+  },
+  interestCountChipText: {
+    color: BRAND.primary,
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  emptyInterestsText: {
+    color: BRAND.textLight,
+    fontSize: 11,
+  },
+  featuresCard: {
+    backgroundColor: BRAND.white,
+    borderRadius: 16,
+    marginTop: 8,
+    paddingHorizontal: 14,
+    paddingTop: 10,
+    paddingBottom: 4,
+    shadowColor: '#0B2748',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.07,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  featureRow: {
+    minHeight: 48,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  featureIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 10,
+  },
+  hotspotFeatureIcon: {
+    backgroundColor: '#FFF0EB',
+  },
+  trendingFeatureIcon: {
+    backgroundColor: '#E8F3FF',
+  },
+  featureCopy: {
+    flex: 1,
+    minWidth: 0,
+    marginRight: 8,
+  },
+  featureTitle: {
+    color: BRAND.text,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  featureSubtitle: {
+    color: BRAND.textLight,
+    fontSize: 10,
+    marginTop: 2,
+  },
+  featureDivider: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: '#E3EAF2',
+    marginLeft: 44,
+  },
+  tutorialRow: {
+    minHeight: 44,
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: '#E3EAF2',
+  },
+  tutorialRowText: {
+    flex: 1,
+    color: BRAND.text,
+    fontSize: 12,
+    fontWeight: '600',
+    marginLeft: 10,
+  },
+  communityRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 8,
+  },
+  facebookActionCell: {
+    flex: 1,
+    minWidth: 0,
+  },
+  accountPrivacyRow: {
+    minHeight: 54,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: BRAND.white,
+    borderRadius: 16,
+    marginTop: 8,
+    paddingHorizontal: 12,
+    shadowColor: '#0B2748',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.07,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  accountPrivacyIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#E8F3FF',
+    marginRight: 10,
+  },
+  accountPrivacyCopy: {
+    flex: 1,
+    minWidth: 0,
+  },
+  accountPrivacyTitle: {
+    color: BRAND.text,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  accountPrivacySubtitle: {
+    color: BRAND.textLight,
+    fontSize: 10,
+    marginTop: 2,
+  },
+  editProfileCard: {
+    backgroundColor: BRAND.white,
+    borderRadius: 20,
+    padding: 16,
+    shadowColor: '#0B2748',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 10,
+    elevation: 2,
+  },
+  editHeaderRow: {
+    minHeight: 44,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  editTitle: {
+    color: BRAND.text,
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  headerTextButton: {
+    minWidth: 62,
+    minHeight: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerTextButtonLabel: {
+    color: BRAND.textLight,
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  headerSaveLabel: {
+    color: BRAND.primary,
+    fontWeight: '700',
+  },
+  editPhotoButton: {
+    alignSelf: 'center',
+    alignItems: 'center',
+    minHeight: 118,
+    paddingTop: 4,
+  },
+  editPhotoFrame: {
+    width: 82,
+    height: 82,
+    borderRadius: 41,
+    backgroundColor: '#EAF0F7',
+  },
+  editPhoto: {
+    width: 82,
+    height: 82,
+    borderRadius: 41,
+  },
+  editPhotoPlaceholder: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  changePhotoLabel: {
+    color: BRAND.primary,
+    fontSize: 12,
+    fontWeight: '600',
+    marginTop: 7,
+  },
+  fieldLabel: {
+    color: BRAND.textLight,
+    fontSize: 12,
+    fontWeight: '600',
+    marginBottom: 6,
+  },
+  compactNameInput: {
+    minHeight: 48,
+    color: BRAND.text,
+    fontSize: 16,
+    backgroundColor: '#F6F9FC',
+    borderWidth: 1,
+    borderColor: '#DDE5EE',
+    borderRadius: 12,
+    paddingHorizontal: 13,
+  },
+  editInterestsCard: {
+    minHeight: 78,
+    marginTop: 14,
+    paddingTop: 2,
+  },
+  editInfoRow: {
+    minHeight: 44,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#EDF6FF',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    marginTop: 12,
+  },
+  editInfoText: {
+    flex: 1,
+    color: BRAND.textLight,
+    fontSize: 11,
+    marginLeft: 8,
+  },
+  accountModalOverlay: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(7, 24, 45, 0.45)',
+  },
+  accountModalSheet: {
+    backgroundColor: BRAND.white,
+    borderTopLeftRadius: 26,
+    borderTopRightRadius: 26,
+    paddingHorizontal: 18,
+    paddingTop: 10,
+    paddingBottom: Platform.OS === 'ios' ? 34 : 22,
+  },
+  accountModalHandle: {
+    alignSelf: 'center',
+    width: 38,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: '#D6DEE8',
+    marginBottom: 16,
+  },
+  accountModalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 14,
+  },
+  accountModalTitle: {
+    color: BRAND.text,
+    fontSize: 20,
+    fontWeight: '700',
+  },
+  accountModalSubtitle: {
+    color: BRAND.textLight,
+    fontSize: 12,
+    marginTop: 3,
+  },
+  accountModalClose: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: BRAND.background,
+  },
+  accountEmailRow: {
+    minHeight: 60,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F6F9FC',
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    marginBottom: 10,
+  },
+  accountModalIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#E8F3FF',
+    marginRight: 10,
+  },
+  accountModalLabel: {
+    color: BRAND.textLight,
+    fontSize: 11,
+  },
+  accountModalValue: {
+    color: BRAND.text,
+    fontSize: 13,
+    fontWeight: '600',
+    marginTop: 2,
+  },
+  accountSheetAction: {
+    minHeight: 50,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingHorizontal: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#E3EAF2',
+  },
+  accountSheetActionText: {
+    color: BRAND.text,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  destructiveSheetAction: {
+    borderBottomWidth: 0,
+  },
+  destructiveSheetActionText: {
+    color: BRAND.accent,
+    fontSize: 14,
+    fontWeight: '600',
   },
 });
