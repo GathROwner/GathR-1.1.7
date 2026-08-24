@@ -4,14 +4,11 @@ import {
   Text,
   StyleSheet,
   Pressable,
-  ScrollView,
   ActivityIndicator,
   Alert,
-  SafeAreaView,
-  Animated,
-  Dimensions
+  SafeAreaView
 } from 'react-native';
-import { useRouter, useLocalSearchParams } from 'expo-router';
+import { Stack, useRouter, useLocalSearchParams } from 'expo-router';
 import { auth, firestore } from '../config/firebaseConfig';
 import { doc, getDoc, updateDoc } from 'firebase/firestore';
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
@@ -36,38 +33,22 @@ const CATEGORY_ICON: Record<string, { icon: string; iconLib: string }> = {
 const EVENT_INTERESTS = EVENT_CATEGORIES.map((name) => ({ name, ...CATEGORY_ICON[name] }));
 const SPECIAL_INTERESTS = SPECIAL_CATEGORIES.map((name) => ({ name, ...CATEGORY_ICON[name] }));
 
-// Get screen dimensions to calculate button sizes and optimize layout
-const { width, height } = Dimensions.get('window');
-const BUTTON_MARGIN = 4;
-const COLUMN_COUNT = 3;
-const BUTTON_WIDTH = (width - 40 - (COLUMN_COUNT * 2 * BUTTON_MARGIN)) / COLUMN_COUNT;
-
 export default function InterestSelection() {
   const [selectedInterests, setSelectedInterests] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [scaleAnim] = useState(new Animated.Value(1));
   const router = useRouter();
   const params = useLocalSearchParams();
   
   // Check if we came from profile using the URL parameter
   const isFromProfile = params.fromProfile === 'true';
 
-  // Animation when selecting interests
-  const animateSelection = () => {
-    Animated.sequence([
-      Animated.timing(scaleAnim, {
-        toValue: 1.03,
-        duration: 100,
-        useNativeDriver: true,
-      }),
-      Animated.timing(scaleAnim, {
-        toValue: 1,
-        duration: 100,
-        useNativeDriver: true,
-      })
-    ]).start();
-  };
+  const selectedEventCount = selectedInterests.filter((item) =>
+    EVENT_INTERESTS.some((event) => event.name === item)
+  ).length;
+  const selectedSpecialCount = selectedInterests.filter((item) =>
+    SPECIAL_INTERESTS.some((special) => special.name === item)
+  ).length;
 
   // 🎯 TUTORIAL INTEGRATION: Function to trigger tutorial for new users
   const triggerTutorialIfNeeded = () => {
@@ -130,7 +111,6 @@ export default function InterestSelection() {
   }, [router]);
 
   const toggleInterest = (interest: string) => {
-    animateSelection();
     setSelectedInterests(prev => 
       prev.includes(interest)
         ? prev.filter(item => item !== interest)
@@ -212,65 +192,54 @@ export default function InterestSelection() {
     }
   };
 
-  // Determine button width dynamically based on text length
-  const getButtonWidth = (name: string, index: number) => {
-    // These specific interests need wider buttons
-    const needsWideButton = [
-      'Workshops & Classes', 
-      'Gatherings & Parties',
-      'Family Friendly'
-    ].includes(name);
-    
-    // Always use double width for long text items
-    if (needsWideButton) {
-      return (BUTTON_WIDTH * 2) + (BUTTON_MARGIN * 2);
-    }
-    
-    return BUTTON_WIDTH;
-  };
-
-  const renderInterestButton = (interestItem: { name: string, icon: string, iconLib: string }, index: number) => {
+  const renderInterestButton = (interestItem: { name: string, icon: string, iconLib: string }) => {
     const isSelected = isInterestSelected(interestItem.name);
-    const buttonWidth = getButtonWidth(interestItem.name, index);
-
-    // Determine if we should reduce text size based on length or section
-    const shouldReduceTextSize =
-      interestItem.name.length > 10 ||
-      SPECIAL_INTERESTS.some(item => item.name === interestItem.name);
-
     const IconComponent = interestItem.iconLib === 'Ionicons' ? Ionicons : MaterialIcons;
+    const isWide = [
+      'Workshops & Classes',
+      'Family Friendly',
+      'Gatherings & Parties',
+    ].includes(interestItem.name);
 
     return (
       <Pressable
         key={interestItem.name}
-        style={[
+        style={({ pressed }) => [
           styles.interestButton,
+          isWide && styles.wideInterestButton,
           isSelected && styles.selectedInterestButton,
-          { width: buttonWidth }
+          pressed && styles.pressedInterestButton,
         ]}
         onPress={() => toggleInterest(interestItem.name)}
+        accessibilityRole="checkbox"
+        accessibilityState={{ checked: isSelected }}
+        accessibilityLabel={interestItem.name}
       >
-        <IconComponent
-          name={interestItem.icon as any}
-          size={14}
-          color={isSelected ? '#FFFFFF' : '#4A90E2'}
-          style={styles.interestIcon}
-        />
-        <Text
-          style={[
-            styles.interestButtonText,
-            isSelected && styles.selectedInterestButtonText,
-            shouldReduceTextSize && styles.smallerText
-          ]}
-          adjustsFontSizeToFit={shouldReduceTextSize}
-          numberOfLines={1}
-        >
-          {interestItem.name}
-        </Text>
-        {isSelected && (
-          <View style={styles.checkmarkContainer}>
-            <Ionicons name="checkmark-circle" size={14} color="#FFFFFF" />
+        <View style={styles.interestContent}>
+          <View style={[styles.interestIconBadge, isSelected && styles.selectedInterestIconBadge]}>
+            <IconComponent
+              name={interestItem.icon as any}
+              size={18}
+              color={isSelected ? '#1479D3' : '#607A95'}
+            />
           </View>
+          <Text
+            style={[
+              styles.interestButtonText,
+              isSelected && styles.selectedInterestButtonText,
+            ]}
+            numberOfLines={2}
+          >
+            {interestItem.name}
+          </Text>
+        </View>
+        {isSelected && (
+          <Ionicons
+            name="checkmark-circle"
+            size={16}
+            color="#1788EB"
+            style={styles.interestCheck}
+          />
         )}
       </Pressable>
     );
@@ -286,104 +255,139 @@ export default function InterestSelection() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <ScrollView 
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-      >
-        {/* Progress indicator */}
-        <View style={styles.progressContainer}>
-          <View style={styles.progressStep}>
-            <View style={[styles.progressDot, styles.completedDot]} />
-            <Text style={styles.progressText}>Account</Text>
+      <Stack.Screen
+        options={{
+          title: isFromProfile ? 'Edit interests' : 'Choose interests',
+          headerBackTitle: 'Back',
+          headerShadowVisible: false,
+          headerStyle: { backgroundColor: '#FFFFFF' },
+          headerTitleStyle: {
+            color: '#172235',
+            fontSize: 18,
+            fontWeight: '700',
+          },
+        }}
+      />
+      <View style={styles.scrollContent}>
+        {!isFromProfile && (
+          <View style={styles.onboardingCard}>
+            <View style={styles.onboardingTopRow}>
+              <View>
+                <Text style={styles.eyebrow}>STEP 2 OF 3</Text>
+                <Text style={styles.onboardingTitle}>Your interests</Text>
+              </View>
+              <View style={styles.stepBadge}>
+                <Text style={styles.stepBadgeText}>2/3</Text>
+              </View>
+            </View>
+            <View style={styles.progressTrack}>
+              <View style={styles.progressFill} />
+            </View>
+            <View style={styles.progressLabels}>
+              <Text style={styles.progressLabelComplete}>Account complete</Text>
+              <Text style={styles.progressLabelNext}>Explore next</Text>
+            </View>
           </View>
-          <View style={styles.progressLine} />
-          <View style={styles.progressStep}>
-            <View style={[styles.progressDot, styles.activeDot]} />
-            <Text style={[styles.progressText, styles.activeText]}>Interests</Text>
-          </View>
-          <View style={styles.progressLine} />
-          <View style={styles.progressStep}>
-            <View style={styles.progressDot} />
-            <Text style={styles.progressText}>Explore</Text>
-          </View>
-        </View>
+        )}
 
         <View style={styles.header}>
-          <Text style={styles.title}>Personalize Your Experience</Text>
+          <Text style={styles.title}>
+            {isFromProfile ? 'Shape your GathR' : 'Make GathR yours'}
+          </Text>
           <Text style={styles.subtitle}>
-            Select interests to discover events and specials that match your preferences.
+            Choose what you want GathR to surface more often. You can change this anytime.
           </Text>
         </View>
 
-        <View style={styles.section}>
+        <View style={styles.sectionCard}>
           <View style={styles.sectionHeader}>
-            <Ionicons name="calendar" size={20} color="#333333" />
-            <Text style={styles.sectionTitle}>Event Types</Text>
+            <View style={styles.sectionHeadingGroup}>
+              <View style={[styles.sectionIconBadge, styles.eventIconBadge]}>
+                <Ionicons name="calendar" size={19} color="#1479D3" />
+              </View>
+              <View>
+                <Text style={styles.sectionTitle}>Events</Text>
+                <Text style={styles.sectionSubtitle}>Things you’d like to do</Text>
+              </View>
+            </View>
+            <View style={[styles.sectionCountBadge, selectedEventCount > 0 && styles.activeSectionCountBadge]}>
+              <Text style={[styles.sectionCountText, selectedEventCount > 0 && styles.activeSectionCountText]}>
+                {selectedEventCount}/{EVENT_INTERESTS.length}
+              </Text>
+            </View>
           </View>
           <View style={styles.interestGrid}>
-            {EVENT_INTERESTS.map((interest, index) => renderInterestButton(interest, index))}
+            {EVENT_INTERESTS.map(renderInterestButton)}
           </View>
-          <Text style={styles.categoryCount}>
-            {selectedInterests.filter(item => 
-              EVENT_INTERESTS.some(event => event.name === item)
-            ).length} selected
-          </Text>
         </View>
 
-        <View style={styles.section}>
+        <View style={styles.sectionCard}>
           <View style={styles.sectionHeader}>
-            <Ionicons name="pricetag" size={20} color="#333333" />
-            <Text style={styles.sectionTitle}>Special Offers</Text>
+            <View style={styles.sectionHeadingGroup}>
+              <View style={[styles.sectionIconBadge, styles.specialIconBadge]}>
+                <Ionicons name="pricetag" size={19} color="#8C5A13" />
+              </View>
+              <View>
+                <Text style={styles.sectionTitle}>Deals &amp; specials</Text>
+                <Text style={styles.sectionSubtitle}>Offers worth knowing about</Text>
+              </View>
+            </View>
+            <View style={[styles.sectionCountBadge, selectedSpecialCount > 0 && styles.activeSectionCountBadge]}>
+              <Text style={[styles.sectionCountText, selectedSpecialCount > 0 && styles.activeSectionCountText]}>
+                {selectedSpecialCount}/{SPECIAL_INTERESTS.length}
+              </Text>
+            </View>
           </View>
           <View style={styles.interestGrid}>
-            {SPECIAL_INTERESTS.map((interest, index) => renderInterestButton(interest, index))}
+            {SPECIAL_INTERESTS.map(renderInterestButton)}
           </View>
-          <Text style={styles.categoryCount}>
-            {selectedInterests.filter(item => 
-              SPECIAL_INTERESTS.some(special => special.name === item)
-            ).length} selected
+        </View>
+      </View>
+
+      <View style={styles.actionBar}>
+        <View style={styles.actionSummaryRow}>
+          <Text style={styles.actionSummaryLabel}>
+            {selectedInterests.length === 0 ? 'Choose at least one' : 'Your GathR mix'}
+          </Text>
+          <Text style={styles.actionSummaryCount}>
+            {selectedInterests.length} selected
           </Text>
         </View>
-
-        <Animated.View style={[
-          styles.selectionCountContainer, 
-          { transform: [{ scale: scaleAnim }] }
-        ]}>
-          <Text style={[
-            styles.selectionCount,
-            selectedInterests.length > 0 && styles.activeSelectionCount
-          ]}>
-            {selectedInterests.length} interest{selectedInterests.length !== 1 ? 's' : ''} selected
+        <Pressable
+          style={({ pressed }) => [
+            styles.saveButton,
+            selectedInterests.length === 0 && styles.disabledSaveButton,
+            pressed && selectedInterests.length > 0 && styles.pressedSaveButton,
+          ]}
+          onPress={saveInterests}
+          disabled={saving || selectedInterests.length === 0}
+          accessibilityRole="button"
+        >
+          {saving ? (
+            <ActivityIndicator color="#FFFFFF" />
+          ) : (
+            <>
+              <Text style={styles.saveButtonText}>
+                {isFromProfile ? 'Save changes' : 'Continue'}
+              </Text>
+              <Ionicons
+                name={isFromProfile ? 'checkmark' : 'arrow-forward'}
+                size={21}
+                color="#FFFFFF"
+              />
+            </>
+          )}
+        </Pressable>
+        <Pressable
+          style={({ pressed }) => [styles.skipButton, pressed && styles.pressedSkipButton]}
+          onPress={skipSelection}
+          disabled={saving}
+        >
+          <Text style={styles.skipButtonText}>
+            {isFromProfile ? 'Cancel' : 'Skip for now'}
           </Text>
-        </Animated.View>
-
-        <View style={styles.buttonContainer}>
-          <Pressable
-            style={styles.saveButton}
-            onPress={saveInterests}
-            disabled={saving}
-          >
-            {saving ? (
-              <ActivityIndicator color="#FFFFFF" />
-            ) : (
-              <>
-                <Text style={styles.saveButtonText}>Save Interests</Text>
-                <Ionicons name="arrow-forward" size={20} color="#FFFFFF" />
-              </>
-            )}
-          </Pressable>
-
-          <Pressable
-            style={styles.skipButton}
-            onPress={skipSelection}
-            disabled={saving}
-          >
-            <Text style={styles.skipButtonText}>
-              {isFromProfile ? 'Cancel' : 'Skip for Now'}
-            </Text>
-          </Pressable>
-        </View>
-      </ScrollView>
+        </Pressable>
+      </View>
     </SafeAreaView>
   );
 }
@@ -391,189 +395,299 @@ export default function InterestSelection() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F5F8FF', // Slightly cooler light blue
+    backgroundColor: '#F3F7FD',
   },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#F5F8FF',
+    backgroundColor: '#F3F7FD',
   },
   scrollContent: {
-    padding: 12,
+    flex: 1,
+    paddingHorizontal: 14,
+    paddingTop: 10,
+    paddingBottom: 4,
   },
-  progressContainer: {
+  onboardingCard: {
+    backgroundColor: '#EAF4FE',
+    borderWidth: 1,
+    borderColor: '#D3E8FB',
+    borderRadius: 15,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    marginBottom: 10,
+  },
+  onboardingTopRow: {
     flexDirection: 'row',
-    justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 46,
-    paddingTop: 4,
+    justifyContent: 'space-between',
+    marginBottom: 7,
   },
-  progressStep: {
+  eyebrow: {
+    color: '#1479D3',
+    fontSize: 9,
+    fontWeight: '800',
+    letterSpacing: 0.8,
+    marginBottom: 1,
+  },
+  onboardingTitle: {
+    color: '#172235',
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  stepBadge: {
+    minWidth: 38,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderRadius: 12,
+    backgroundColor: '#FFFFFF',
     alignItems: 'center',
   },
-  progressDot: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    backgroundColor: '#E0E0E0',
-    borderWidth: 2,
-    borderColor: '#FFFFFF',
-    marginBottom: 4,
+  stepBadgeText: {
+    color: '#1479D3',
+    fontSize: 11,
+    fontWeight: '800',
   },
-  completedDot: {
-    backgroundColor: '#4CAF50',
+  progressTrack: {
+    height: 4,
+    backgroundColor: '#D4E1EF',
+    borderRadius: 2,
+    overflow: 'hidden',
   },
-  activeDot: {
-    backgroundColor: '#4A90E2',
+  progressFill: {
+    width: '66.666%',
+    height: '100%',
+    backgroundColor: '#1788EB',
+    borderRadius: 2,
   },
-  progressLine: {
-    height: 2,
-    width: 40,
-    backgroundColor: '#E0E0E0',
-    marginHorizontal: 8,
+  progressLabels: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 5,
   },
-  progressText: {
-    fontSize: 12,
-    color: '#888888',
+  progressLabelComplete: {
+    color: '#39745E',
+    fontSize: 9,
+    fontWeight: '600',
   },
-  activeText: {
-    color: '#4A90E2',
+  progressLabelNext: {
+    color: '#728399',
+    fontSize: 9,
     fontWeight: '600',
   },
   header: {
-    marginBottom: 44,
+    marginBottom: 10,
+    paddingHorizontal: 2,
   },
   title: {
     fontSize: 24,
-    fontWeight: 'bold',
-    color: '#333333',
-    marginBottom: 6,
+    lineHeight: 28,
+    fontWeight: '800',
+    color: '#172235',
+    letterSpacing: -0.45,
+    marginBottom: 3,
   },
   subtitle: {
-    fontSize: 15,
-    color: '#666666',
-    lineHeight: 20,
+    fontSize: 13,
+    color: '#5E6D80',
+    lineHeight: 17,
   },
-  section: {
-    marginBottom: 10,
+  sectionCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 17,
+    padding: 10,
+    marginBottom: 9,
+    borderWidth: 1,
+    borderColor: '#E4EBF3',
+    shadowColor: '#19324D',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 1,
   },
   sectionHeader: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
     marginBottom: 8,
   },
+  sectionHeadingGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexShrink: 1,
+  },
+  sectionIconBadge: {
+    width: 31,
+    height: 31,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 8,
+  },
+  eventIconBadge: {
+    backgroundColor: '#E8F4FF',
+  },
+  specialIconBadge: {
+    backgroundColor: '#FFF3DD',
+  },
   sectionTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#333333',
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#172235',
+  },
+  sectionSubtitle: {
+    marginTop: 1,
+    fontSize: 10,
+    color: '#758397',
+  },
+  sectionCountBadge: {
+    minWidth: 38,
+    borderRadius: 12,
+    backgroundColor: '#F0F3F7',
+    paddingHorizontal: 7,
+    paddingVertical: 5,
+    alignItems: 'center',
     marginLeft: 8,
+  },
+  activeSectionCountBadge: {
+    backgroundColor: '#E7F4FF',
+  },
+  sectionCountText: {
+    color: '#7B8795',
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  activeSectionCountText: {
+    color: '#1479D3',
   },
   interestGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    marginHorizontal: -BUTTON_MARGIN,
+    justifyContent: 'space-between',
+    rowGap: 6,
   },
   interestButton: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 8,
-    paddingVertical: 8,
-    paddingHorizontal: 10,
-    margin: BUTTON_MARGIN,
+    width: '32%',
+    minHeight: 48,
+    backgroundColor: '#F7F9FC',
+    borderRadius: 12,
+    paddingVertical: 6,
+    paddingHorizontal: 6,
     borderWidth: 1,
-    borderColor: '#E0E0E0',
+    borderColor: '#E4EAF1',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     position: 'relative',
-    height: 36,
+  },
+  wideInterestButton: {
+    width: '66%',
   },
   selectedInterestButton: {
-    backgroundColor: '#4A90E2',
-    borderColor: '#3A80D2',
+    backgroundColor: '#EAF5FF',
+    borderColor: '#7ABCF1',
   },
-  interestIcon: {
-    marginRight: 6,
+  pressedInterestButton: {
+    opacity: 0.72,
   },
-  interestButtonText: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: '#333333',
-    flexShrink: 1,
-    textAlign: 'center',
-  },
-  smallerText: {
-    fontSize: 12,
-  },
-  selectedInterestButtonText: {
-    color: '#FFFFFF',
-  },
-  checkmarkContainer: {
-    position: 'absolute',
-    top: -6,
-    right: -6,
-    backgroundColor: '#4A90E2',
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#FFFFFF',
-  },
-  categoryCount: {
-    textAlign: 'right',
-    fontSize: 12,
-    color: '#888888',
-    marginTop: 4,
-    fontStyle: 'italic',
-  },
-  selectionCountContainer: {
-    alignItems: 'center',
-    marginVertical: 10,
-    backgroundColor: '#E8F0FE',
-    paddingVertical: 8,
-    paddingHorizontal: 20,
-    borderRadius: 20,
-    alignSelf: 'center',
-  },
-  selectionCount: {
-    fontSize: 16,
-    color: '#666666',
-    fontWeight: '500',
-  },
-  activeSelectionCount: {
-    color: '#4A90E2',
-    fontWeight: '600',
-  },
-  buttonContainer: {
-    marginTop: 8,
-    marginBottom: 16,
-  },
-  saveButton: {
-    backgroundColor: '#4A90E2',
-    borderRadius: 10,
-    padding: 12,
+  interestContent: {
+    maxWidth: '91%',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 10,
-    // Fixed shadow warning by ensuring solid background
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    gap: 5,
+  },
+  interestIconBadge: {
+    width: 24,
+    height: 24,
+    borderRadius: 8,
+    backgroundColor: '#EDF1F6',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  selectedInterestIconBadge: {
+    backgroundColor: '#D8ECFD',
+  },
+  interestButtonText: {
+    fontSize: 10.5,
+    lineHeight: 12,
+    fontWeight: '600',
+    color: '#344154',
+    textAlign: 'center',
+  },
+  selectedInterestButtonText: {
+    color: '#175E9D',
+  },
+  interestCheck: {
+    position: 'absolute',
+    top: 3,
+    right: 3,
+    backgroundColor: '#EAF5FF',
+    borderRadius: 8,
+  },
+  actionBar: {
+    backgroundColor: '#FFFFFF',
+    borderTopWidth: 1,
+    borderTopColor: '#DEE6EF',
+    paddingHorizontal: 16,
+    paddingTop: 7,
+    paddingBottom: 4,
+    shadowColor: '#19324D',
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.06,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  actionSummaryRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 5,
+    paddingHorizontal: 2,
+  },
+  actionSummaryLabel: {
+    color: '#667588',
+    fontSize: 10,
+    fontWeight: '600',
+  },
+  actionSummaryCount: {
+    color: '#1479D3',
+    fontSize: 10,
+    fontWeight: '800',
+  },
+  saveButton: {
+    height: 44,
+    backgroundColor: '#1788EB',
+    borderRadius: 15,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  disabledSaveButton: {
+    backgroundColor: '#B9C8D8',
+  },
+  pressedSaveButton: {
+    opacity: 0.82,
   },
   saveButtonText: {
     color: '#FFFFFF',
-    fontSize: 18,
-    fontWeight: '600',
-    marginRight: 8,
+    fontSize: 16,
+    fontWeight: '700',
   },
   skipButton: {
-    padding: 12,
+    minHeight: 27,
     alignItems: 'center',
+    justifyContent: 'center',
+  },
+  pressedSkipButton: {
+    opacity: 0.55,
   },
   skipButtonText: {
-    color: '#666666',
-    fontSize: 15,
+    color: '#697789',
+    fontSize: 12,
+    fontWeight: '600',
   },
 });
 
