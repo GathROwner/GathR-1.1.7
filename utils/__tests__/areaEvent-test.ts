@@ -57,7 +57,7 @@ describe('multi-location area events', () => {
     expect(getAreaLocationsLabel(event)).toBe('3 confirmed locations');
     expect(getAreaLocationCallout(event, 'victoria-row')).toMatchObject({
       title: 'Victoria Row',
-      statusLabel: 'Confirmed festival location',
+      statusLabel: 'Confirmed event location',
       locationText: '126-164 Richmond Street, Charlottetown, PE',
       sourceLabel: 'Official festival locations',
     });
@@ -68,5 +68,28 @@ describe('multi-location area events', () => {
     expect(
       hasDrawableAreaLocations({ ...event, areaData: { ...event.areaData!, locations: [] } })
     ).toBe(false);
+  });
+
+  it('uses event-wide wording for non-festival and uncertain locations', () => {
+    const nonFestivalEvent = {
+      ...event,
+      title: 'Gran Fondo PEI 2026',
+      areaData: {
+        ...event.areaData!,
+        locations: [
+          {
+            ...event.areaData!.locations[0],
+            id: 'possible-crossing',
+            label: '',
+            certainty: 'approximate' as const,
+          },
+        ],
+      },
+    };
+
+    expect(getAreaLocationCallout(nonFestivalEvent, 'possible-crossing')).toMatchObject({
+      title: 'Event location',
+      statusLabel: 'Possible event location',
+    });
   });
 });

@@ -88,11 +88,11 @@ export const getAreaLocationCallout = (
   return {
     featureType: 'stop',
     id: location.id,
-    title: cleanOptionalText(location.label) || 'Festival location',
+    title: cleanOptionalText(location.label) || 'Event location',
     statusLabel:
       location.certainty === 'confirmed'
-        ? 'Confirmed festival location'
-        : 'Possible festival location',
+        ? 'Confirmed event location'
+        : 'Possible event location',
     coordinate: location.coordinates,
     locationText: cleanOptionalText(location.address),
     timeLabel: cleanOptionalText(location.timeLabel),
