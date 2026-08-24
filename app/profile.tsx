@@ -31,11 +31,13 @@ import {
   signOut, 
   deleteUser, 
   EmailAuthProvider, 
-  reauthenticateWithCredential 
+  reauthenticateWithCredential,
+  reload,
 } from 'firebase/auth';
 import { amplitudeTrack, amplitudeSetUserId } from '../lib/amplitudeAnalytics';
 import { TUTORIAL_STEPS } from '../config/tutorialSteps';
 import { unregisterSharedEventPushNotifications } from '../lib/sharedEventPushNotifications';
+import { requestCurrentUserEmailChange } from '../lib/accountEmailChange';
 import { useUserPrefsStore, updateShowDailyHotspot, updateShowTrendingOnOpen } from '../store/userPrefsStore';
 import GathrWordmarkLogo from '../components/common/GathrWordmarkLogo';
 import * as ImagePicker from 'expo-image-picker';
@@ -66,7 +68,7 @@ const APP_SHORT_UPDATE_ID = APP_UPDATE_ID?.slice(0, 8) || APP_UPDATE_SOURCE;
 const APP_CHANNEL_LABEL = APP_UPDATE_CHANNEL.charAt(0).toUpperCase() + APP_UPDATE_CHANNEL.slice(1);
 
 const getCompactInterestLabel = (interest: string) =>
-  interest.toLowerCase().startsWith('social gathering') ? 'Social' : interest;
+  interest.toLowerCase().startsWith('social gathering') ? 'Gatherings' : interest;
 const APP_VERSION_SUMMARY = `GathR ${APP_DISPLAY_VERSION}${APP_NATIVE_BUILD ? ` (${APP_NATIVE_BUILD})` : ''} · ${APP_CHANNEL_LABEL}`;
 const APP_UPDATE_SUMMARY = `Runtime ${APP_RUNTIME_VERSION} · ${APP_UPDATE_SOURCE}${APP_UPDATE_ID ? ` ${APP_SHORT_UPDATE_ID}` : ''}`;
 const APP_VERSION_DETAILS = [
@@ -535,6 +537,14 @@ const FacebookPageSubmission = React.forwardRef<View, FacebookPageSubmissionProp
     }
   };
 
+  const showSuggestionInfo = () => {
+    Alert.alert(
+      'Suggest a Facebook page',
+      'Paste the public Facebook page for a local business, venue, or organizer. After review, GathR can use it to discover events and specials. You can suggest up to five pages each day.',
+      [{ text: 'Got it' }]
+    );
+  };
+
   const tutorialHighlightStyle = {
     shadowColor: 'transparent',
     shadowOffset: { width: 0, height: 0 },
@@ -560,22 +570,44 @@ const FacebookPageSubmission = React.forwardRef<View, FacebookPageSubmissionProp
     >
       <Animated.View style={isHighlighted ? tutorialHighlightStyle : {}}>
         <View style={submissionStyles.container}>
-          <TouchableOpacity
-            style={submissionStyles.compactTrigger}
-            onPress={() => setIsExpanded(true)}
-            activeOpacity={0.72}
-            accessibilityRole="button"
-            accessibilityLabel={`Suggest a page. ${dailyCount} of 5 submissions today`}
-          >
-            <View style={submissionStyles.compactIconBadge}>
-              <Ionicons name="add" size={21} color="#16A05D" />
-            </View>
-            <View style={submissionStyles.compactCopy}>
-              <Text style={submissionStyles.compactTitle}>Suggest a page</Text>
-              <Text style={submissionStyles.compactSubtitle}>{dailyCount} / 5 today</Text>
-            </View>
-            <Ionicons name="chevron-forward" size={17} color={BRAND.textLight} />
-          </TouchableOpacity>
+          <View style={submissionStyles.compactTrigger}>
+            <TouchableOpacity
+              style={submissionStyles.compactMainAction}
+              onPress={() => setIsExpanded(true)}
+              activeOpacity={0.72}
+              accessibilityRole="button"
+              accessibilityLabel={`Suggest a Facebook page. ${dailyCount} of 5 submissions today`}
+              accessibilityHint="Opens a form to paste a local Facebook page"
+            >
+              <View style={submissionStyles.compactIconBadge}>
+                <Ionicons name="logo-facebook" size={19} color="#1877F2" />
+              </View>
+              <View style={submissionStyles.compactCopy}>
+                <Text style={submissionStyles.compactTitle}>Suggest a Facebook page</Text>
+                <Text style={submissionStyles.compactSubtitle} numberOfLines={2}>
+                  Help GathR discover local events · {dailyCount}/5 today
+                </Text>
+              </View>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={submissionStyles.infoButton}
+              onPress={showSuggestionInfo}
+              accessibilityRole="button"
+              accessibilityLabel="What does suggesting a Facebook page mean?"
+              hitSlop={8}
+            >
+              <Ionicons name="information-circle-outline" size={20} color={BRAND.primary} />
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={submissionStyles.chevronButton}
+              onPress={() => setIsExpanded(true)}
+              accessibilityRole="button"
+              accessibilityLabel="Open Facebook page suggestion form"
+              hitSlop={8}
+            >
+              <Ionicons name="chevron-forward" size={17} color={BRAND.textLight} />
+            </TouchableOpacity>
+          </View>
         </View>
       </Animated.View>
 
@@ -670,6 +702,10 @@ export default function ProfileScreen() {
   const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [deletionInProgress, setDeletionInProgress] = useState(false);
   const [showAccountModal, setShowAccountModal] = useState(false);
+  const [showEmailChangeModal, setShowEmailChangeModal] = useState(false);
+  const [newEmailInput, setNewEmailInput] = useState('');
+  const [emailChangePassword, setEmailChangePassword] = useState('');
+  const [emailChangeInProgress, setEmailChangeInProgress] = useState(false);
 
   // Daily hotspot preference
   const showDailyHotspot = useUserPrefsStore((state) => state.showDailyHotspot);
@@ -966,6 +1002,9 @@ const lastRestartClickAtRef = useRef(0); // dedupe double-taps (<350ms)
 
   // Cached user profile (5 min)
 const currentUser = auth.currentUser;
+const isPasswordAccount = Boolean(
+  currentUser?.providerData.some((provider) => provider.providerId === 'password')
+);
 
 const { data: cachedProfile, isFetching: profileFetching } = useQuery({
   queryKey: ['user-profile', currentUser?.uid],
@@ -1264,6 +1303,106 @@ const handleLogout = async () => {
     );
   };
 
+  const refreshAuthenticatedEmail = async () => {
+    const user = auth.currentUser;
+    if (!user) return;
+
+    try {
+      await reload(user);
+      const refreshedEmail = user.email || '';
+      if (!refreshedEmail) return;
+
+      setEmail(refreshedEmail);
+      if (cachedProfile?.email !== refreshedEmail) {
+        await updateDoc(doc(firestore, 'users', user.uid), {
+          email: refreshedEmail,
+          lastUpdated: new Date(),
+        });
+      }
+    } catch (error) {
+      console.warn('Could not refresh the authenticated email:', error);
+    }
+  };
+
+  const handleOpenAccountPrivacy = () => {
+    setShowAccountModal(true);
+    void refreshAuthenticatedEmail();
+  };
+
+  const handleOpenEmailChange = () => {
+    setShowAccountModal(false);
+    setNewEmailInput('');
+    setEmailChangePassword('');
+    setShowEmailChangeModal(true);
+  };
+
+  const handleEmailChangeRequest = async () => {
+    const user = auth.currentUser;
+    const normalizedEmail = newEmailInput.trim().toLowerCase();
+    if (!user || !user.email) {
+      Alert.alert('Sign in required', 'Sign in again before changing your email.');
+      return;
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+      Alert.alert('Check the email', 'Enter a valid email address.');
+      return;
+    }
+    if (normalizedEmail === user.email.toLowerCase()) {
+      Alert.alert('No change needed', 'That is already your GathR email address.');
+      return;
+    }
+    if (isPasswordAccount && !emailChangePassword) {
+      Alert.alert('Password required', 'Enter your current password to protect this account change.');
+      return;
+    }
+
+    setEmailChangeInProgress(true);
+    try {
+      if (isPasswordAccount) {
+        const credential = EmailAuthProvider.credential(user.email, emailChangePassword);
+        await reauthenticateWithCredential(user, credential);
+      }
+
+      const result = await requestCurrentUserEmailChange(normalizedEmail);
+      if (result.status === 'sent') {
+        setShowEmailChangeModal(false);
+        setEmailChangePassword('');
+        amplitudeTrack('account_email_change_requested', { source: 'profile' });
+        Alert.alert(
+          'Check your new inbox',
+          `We sent a confirmation link to ${result.pendingEmail}. Your current email stays active until you verify the new one.`
+        );
+        return;
+      }
+      if (result.status === 'email_already_in_use') {
+        Alert.alert('Email already in use', 'That email is already connected to another GathR account.');
+      } else if (result.status === 'email_unchanged') {
+        Alert.alert('No change needed', 'That is already your GathR email address.');
+      } else if (result.status === 'invalid_email') {
+        Alert.alert('Check the email', 'Enter a valid email address.');
+      } else if (result.status === 'rate_limited') {
+        Alert.alert('Try again shortly', 'A confirmation email was sent recently. Please wait before requesting another.');
+      } else if (result.status === 'requires_recent_login') {
+        Alert.alert('Sign in again', 'For security, log out and sign back in before changing your email.');
+      } else {
+        Alert.alert('Could not change email', result.message);
+      }
+    } catch (error) {
+      const code = typeof error === 'object' && error && 'code' in error
+        ? String((error as { code?: unknown }).code || '')
+        : '';
+      if (['auth/wrong-password', 'auth/invalid-credential'].includes(code)) {
+        Alert.alert('Incorrect password', 'Enter your current GathR password and try again.');
+      } else if (code === 'auth/too-many-requests') {
+        Alert.alert('Try again later', 'Firebase temporarily limited sign-in attempts for this account.');
+      } else {
+        Alert.alert('Could not change email', 'GathR could not verify this account right now.');
+      }
+    } finally {
+      setEmailChangeInProgress(false);
+    }
+  };
+
   // Copy email to clipboard
   const copyEmailToClipboard = () => {
     Clipboard.setString(email);
@@ -1545,7 +1684,7 @@ const handleLogout = async () => {
 
               <View style={styles.editInfoRow}>
                 <Ionicons name="information-circle-outline" size={20} color={BRAND.primary} />
-                <Text style={styles.editInfoText}>Email is managed in Account & privacy</Text>
+                <Text style={styles.editInfoText}>Change and verify your email in Account & privacy</Text>
               </View>
             </View>
           ) : (
@@ -1660,6 +1799,12 @@ const handleLogout = async () => {
                   <Text style={styles.tutorialRowText}>Replay tutorial</Text>
                   <Ionicons name="chevron-forward" size={17} color={BRAND.textLight} />
                 </TouchableOpacity>
+                <View style={styles.featureDivider} />
+                <FacebookPageSubmission
+                  ref={facebookSubmissionRef}
+                  isHighlighted={facebookSubmissionHighlighted}
+                  pulseAnim={facebookSubmissionPulseAnim}
+                />
               </View>
 
               <View style={styles.communityRow}>
@@ -1682,18 +1827,11 @@ const handleLogout = async () => {
                     <Text style={styles.shareAppSubtext} numberOfLines={1}>Invite a friend</Text>
                   </View>
                 </TouchableOpacity>
-                <View style={styles.facebookActionCell}>
-                  <FacebookPageSubmission
-                    ref={facebookSubmissionRef}
-                    isHighlighted={facebookSubmissionHighlighted}
-                    pulseAnim={facebookSubmissionPulseAnim}
-                  />
-                </View>
               </View>
 
               <TouchableOpacity
                 style={styles.accountPrivacyRow}
-                onPress={() => setShowAccountModal(true)}
+                onPress={handleOpenAccountPrivacy}
                 accessibilityRole="button"
                 accessibilityLabel="Account and privacy"
               >
@@ -1762,22 +1900,19 @@ const handleLogout = async () => {
 
                 <TouchableOpacity
                   style={styles.accountEmailRow}
-                  onPress={copyEmailToClipboard}
+                  onPress={handleOpenEmailChange}
                   accessibilityRole="button"
-                  accessibilityLabel="Copy email address"
+                  accessibilityLabel="Change email address"
                 >
                   <View style={styles.accountModalIcon}>
                     <Ionicons name="mail-outline" size={20} color={BRAND.primary} />
                   </View>
                   <View style={styles.accountPrivacyCopy}>
-                    <Text style={styles.accountModalLabel}>Email</Text>
+                    <Text style={styles.accountModalLabel}>Email address</Text>
                     <Text style={styles.accountModalValue} numberOfLines={1}>{email}</Text>
                   </View>
-                  <Ionicons
-                    name={isEmailCopied ? 'checkmark' : 'copy-outline'}
-                    size={18}
-                    color={isEmailCopied ? BRAND.primary : BRAND.textLight}
-                  />
+                  <Text style={styles.accountEmailChangeLabel}>Change</Text>
+                  <Ionicons name="chevron-forward" size={17} color={BRAND.textLight} />
                 </TouchableOpacity>
 
                 <TouchableOpacity style={styles.accountSheetAction} onPress={handleLogout}>
@@ -1796,6 +1931,110 @@ const handleLogout = async () => {
                   <Text style={styles.destructiveSheetActionText}>Delete account</Text>
                 </TouchableOpacity>
               </View>
+            </TouchableWithoutFeedback>
+          </View>
+        </TouchableWithoutFeedback>
+      </Modal>
+
+      <Modal
+        visible={showEmailChangeModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowEmailChangeModal(false)}
+      >
+        <TouchableWithoutFeedback onPress={() => setShowEmailChangeModal(false)}>
+          <View style={styles.accountModalOverlay}>
+            <TouchableWithoutFeedback onPress={(event) => event.stopPropagation()}>
+              <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+                <View style={styles.accountModalSheet}>
+                  <View style={styles.accountModalHandle} />
+                  <View style={styles.accountModalHeader}>
+                    <View style={styles.emailChangeHeaderCopy}>
+                      <Text style={styles.accountModalTitle}>Change email</Text>
+                      <Text style={styles.accountModalSubtitle}>Verification protects your GathR account</Text>
+                    </View>
+                    <TouchableOpacity
+                      style={styles.accountModalClose}
+                      onPress={() => setShowEmailChangeModal(false)}
+                      accessibilityRole="button"
+                      accessibilityLabel="Close email change"
+                    >
+                      <Ionicons name="close" size={21} color={BRAND.text} />
+                    </TouchableOpacity>
+                  </View>
+
+                  <Text style={styles.emailChangeDescription}>
+                    We’ll send a confirmation link to your new address. Your current email remains active until you verify the new one.
+                  </Text>
+
+                  <Text style={styles.emailChangeLabel}>New email address</Text>
+                  <View style={styles.emailChangeInputRow}>
+                    <Ionicons name="mail-outline" size={19} color={BRAND.primary} />
+                    <TextInput
+                      style={styles.emailChangeInput}
+                      value={newEmailInput}
+                      onChangeText={setNewEmailInput}
+                      placeholder="name@example.com"
+                      placeholderTextColor={BRAND.textLight}
+                      autoCapitalize="none"
+                      autoCorrect={false}
+                      keyboardType="email-address"
+                      returnKeyType={isPasswordAccount ? 'next' : 'send'}
+                      accessibilityLabel="New email address"
+                    />
+                  </View>
+
+                  {isPasswordAccount ? (
+                    <>
+                      <Text style={styles.emailChangeLabel}>Current password</Text>
+                      <View style={styles.emailChangeInputRow}>
+                        <Ionicons name="lock-closed-outline" size={19} color={BRAND.primary} />
+                        <TextInput
+                          style={styles.emailChangeInput}
+                          value={emailChangePassword}
+                          onChangeText={setEmailChangePassword}
+                          placeholder="Enter your password"
+                          placeholderTextColor={BRAND.textLight}
+                          autoCapitalize="none"
+                          autoCorrect={false}
+                          secureTextEntry
+                          returnKeyType="send"
+                          onSubmitEditing={handleEmailChangeRequest}
+                          accessibilityLabel="Current password"
+                        />
+                      </View>
+                    </>
+                  ) : null}
+
+                  <View style={styles.emailChangeSecurityNote}>
+                    <Ionicons name="shield-checkmark-outline" size={18} color={BRAND.primary} />
+                    <Text style={styles.emailChangeSecurityText}>
+                      The new address becomes your sign-in email only after verification.
+                    </Text>
+                  </View>
+
+                  <TouchableOpacity
+                    style={[
+                      styles.emailChangeButton,
+                      (emailChangeInProgress || !newEmailInput.trim() || (isPasswordAccount && !emailChangePassword)) &&
+                        styles.emailChangeButtonDisabled,
+                    ]}
+                    onPress={handleEmailChangeRequest}
+                    disabled={emailChangeInProgress || !newEmailInput.trim() || (isPasswordAccount && !emailChangePassword)}
+                    accessibilityRole="button"
+                    accessibilityLabel="Send email change verification"
+                  >
+                    {emailChangeInProgress ? (
+                      <ActivityIndicator color={BRAND.white} size="small" />
+                    ) : (
+                      <>
+                        <Ionicons name="paper-plane-outline" size={18} color={BRAND.white} />
+                        <Text style={styles.emailChangeButtonText}>Send verification email</Text>
+                      </>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              </KeyboardAvoidingView>
             </TouchableWithoutFeedback>
           </View>
         </TouchableWithoutFeedback>
@@ -1882,22 +2121,20 @@ const handleLogout = async () => {
 
 const submissionStyles = StyleSheet.create({
   container: {
-    flex: 1,
-    backgroundColor: BRAND.white,
-    borderRadius: 16,
-    minHeight: 66,
-    shadowColor: '#0B2748',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
-    elevation: 2,
+    backgroundColor: 'transparent',
+    minHeight: 60,
   },
   compactTrigger: {
-    flex: 1,
-    minHeight: 66,
+    minHeight: 60,
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 12,
+  },
+  compactMainAction: {
+    flex: 1,
+    minWidth: 0,
+    minHeight: 60,
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   compactIconBadge: {
     width: 36,
@@ -1906,7 +2143,7 @@ const submissionStyles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#EAF8F0',
-    marginRight: 9,
+    marginRight: 10,
   },
   compactCopy: {
     flex: 1,
@@ -1919,8 +2156,21 @@ const submissionStyles = StyleSheet.create({
   },
   compactSubtitle: {
     color: BRAND.textLight,
-    fontSize: 11,
+    fontSize: 10,
+    lineHeight: 14,
     marginTop: 2,
+  },
+  infoButton: {
+    width: 36,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  chevronButton: {
+    width: 28,
+    height: 44,
+    alignItems: 'flex-end',
+    justifyContent: 'center',
   },
   modalOverlay: {
     flex: 1,
@@ -3037,6 +3287,80 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
     marginTop: 2,
+  },
+  accountEmailChangeLabel: {
+    color: BRAND.primary,
+    fontSize: 12,
+    fontWeight: '700',
+    marginRight: 3,
+  },
+  emailChangeHeaderCopy: {
+    flex: 1,
+    minWidth: 0,
+    paddingRight: 12,
+  },
+  emailChangeDescription: {
+    color: BRAND.textLight,
+    fontSize: 13,
+    lineHeight: 19,
+    marginBottom: 16,
+  },
+  emailChangeLabel: {
+    color: BRAND.text,
+    fontSize: 12,
+    fontWeight: '700',
+    marginBottom: 6,
+  },
+  emailChangeInputRow: {
+    minHeight: 50,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 9,
+    backgroundColor: '#F6F9FC',
+    borderWidth: 1,
+    borderColor: '#DDE5EE',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    marginBottom: 14,
+  },
+  emailChangeInput: {
+    flex: 1,
+    color: BRAND.text,
+    fontSize: 15,
+    paddingVertical: 12,
+  },
+  emailChangeSecurityNote: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#EDF6FF',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 16,
+  },
+  emailChangeSecurityText: {
+    flex: 1,
+    color: BRAND.textLight,
+    fontSize: 11,
+    lineHeight: 16,
+  },
+  emailChangeButton: {
+    minHeight: 50,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: BRAND.primary,
+    borderRadius: 14,
+  },
+  emailChangeButtonDisabled: {
+    backgroundColor: '#A9BDD2',
+  },
+  emailChangeButtonText: {
+    color: BRAND.white,
+    fontSize: 15,
+    fontWeight: '700',
   },
   accountSheetAction: {
     minHeight: 50,
