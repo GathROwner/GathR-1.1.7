@@ -274,7 +274,7 @@ export const shouldAutoTriggerTutorial = (tutorialStatus: TutorialStatus | null 
   // Auto-trigger if:
   // 1. User has no tutorial status (new user)
   // 2. User has tutorial status but hasn't completed it
-  return !tutorialStatus || !tutorialStatus.completed;
+  return !tutorialStatus || (!tutorialStatus.completed && !tutorialStatus.skipped);
 };
 
 /**

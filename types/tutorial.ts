@@ -12,13 +12,16 @@
 
 export interface TutorialStatus {
   completed: boolean;
+  skipped?: boolean;
   currentStep: number;
   completedSteps: string[];
   lastTutorialDate?: Date;
+  version?: number;
 }
 
 export interface TutorialStep {
   id: string;
+  legacyStepIds?: string[];
   title: string;
   content?: string;
   target?: string; // CSS selector or component identifier for spotlight
@@ -138,6 +141,8 @@ export interface TutorialTooltipProps {
 export interface WelcomeScreenProps {
   onStart: () => void;
   onSkip: () => void;
+  stepNumber?: number;
+  totalSteps?: number;
 }
 
 /**

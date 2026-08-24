@@ -63,6 +63,7 @@ import { addToCalendar } from '../../utils/calendarUtils';
 import { buildGathrSharePayload } from '../../utils/shareUtils';
 import { getTicketUrl, normalizeTicketUrl } from '../../utils/ticketUrls';
 import { getPrimaryNonTicketAction } from '../../utils/eventActionLinks';
+import { publishTutorialMeasurement } from '../../utils/tutorialReadiness';
 
 // Import priority utilities, user service, and distance calculation
 import {
@@ -427,6 +428,7 @@ const favoriteVenues = useUserPrefsStore((s: UserPrefsState) => s.favoriteVenues
             }
             
             (global as any).specialsListExplanationLayout = currentMeasurement;
+            publishTutorialMeasurement('specialsListExplanationLayout', currentMeasurement);
           }
         });
       }
@@ -1686,7 +1688,9 @@ function SpecialsScreen() {
       }
       if (globalFlag && tutorialSpecialsListRef.current) {
         tutorialSpecialsListRef.current.measureInWindow((x: number, y: number, width: number, height: number) => {
-          (global as any).specialsListExplanationLayout = { x, y, width, height };
+          const measurement = { x, y, width, height };
+          (global as any).specialsListExplanationLayout = measurement;
+          publishTutorialMeasurement('specialsListExplanationLayout', measurement);
           console.log('Tutorial: Measured specials list:', { x, y, width, height });
         });
       }
@@ -1765,6 +1769,7 @@ function SpecialsScreen() {
             }
             
             (global as any).specialsFiltersLayout = currentMeasurement;
+            publishTutorialMeasurement('specialsFiltersLayout', currentMeasurement, measuredAt);
             (global as any).specialsFiltersLayoutMeasuredAt = measuredAt;
           }
         });
@@ -2739,7 +2744,9 @@ useEffect(() => {
               if ((global as any).tutorialHighlightSpecialsFilters && specialsFiltersRef.current) {
                 specialsFiltersRef.current.measureInWindow((x: number, y: number, width: number, height: number) => {
                   const measuredAt = Date.now();
-                  (global as any).specialsFiltersLayout = measureVisibleSpecialsFiltersLayout(x, y, width, height, measuredAt);
+                  const measurement = measureVisibleSpecialsFiltersLayout(x, y, width, height, measuredAt);
+                  (global as any).specialsFiltersLayout = measurement;
+                  publishTutorialMeasurement('specialsFiltersLayout', measurement, measuredAt);
                   (global as any).specialsFiltersLayoutMeasuredAt = measuredAt;
                 });
               }

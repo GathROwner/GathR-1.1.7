@@ -21,6 +21,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import { toggleSavedEvent as toggleSavedEventSvc } from '../../services/userService';
 import { amplitudeTrack } from '../../lib/amplitudeAnalytics';
+import { publishTutorialMeasurement as registerTutorialMeasurement } from '../../utils/tutorialReadiness';
 
 
 
@@ -1802,7 +1803,9 @@ const SpecialCard: React.FC<SpecialCardProps> = ({
         // Continuously re-measure the component to fix alignment issues
         if (globalFlag && viewRef.current) {
           viewRef.current.measure((_x: number, _y: number, width: number, height: number, pageX: number, pageY: number) => {
-            (global as any).eventDetailsLayout = { x: pageX, y: pageY, width, height };
+            const measurement = { x: pageX, y: pageY, width, height };
+            (global as any).eventDetailsLayout = measurement;
+            registerTutorialMeasurement('eventDetailsLayout', measurement);
           });
         }
       }, 200);
@@ -2636,6 +2639,11 @@ const EventCallout: React.FC<EventCalloutProps> = ({
         measuredAt
       };
       (global as any)[`${layoutName}MeasuredAt`] = measuredAt;
+      registerTutorialMeasurement(
+        layoutName,
+        { x: Math.round(x), y: Math.round(y), width: Math.round(width), height: Math.round(height) },
+        measuredAt,
+      );
     };
 
     const node = ref as any;

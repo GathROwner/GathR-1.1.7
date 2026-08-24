@@ -14,6 +14,7 @@ import {
   retrySharedEventUpload,
   subscribeSharedEventUploadJobs,
 } from '../../lib/sharedEventUploadQueue';
+import { useTutorialUiStore } from '../../store/tutorialUiStore';
 
 const GATHR_LOGO = require('../../assets/icon.png');
 
@@ -28,6 +29,7 @@ type BannerState = {
 };
 
 export default function SharedEventProcessingBanner() {
+  const tutorialVisible = useTutorialUiStore((state) => state.isVisible);
   const router = useRouter();
   const pathname = usePathname();
   const { user } = useAuth();
@@ -196,7 +198,7 @@ export default function SharedEventProcessingBanner() {
     };
   }, [refreshPending]);
 
-  if (!banner) return null;
+  if (!banner || tutorialVisible) return null;
 
   const color = banner.tone === 'error'
     ? '#B42318'

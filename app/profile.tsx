@@ -40,6 +40,7 @@ import { unregisterSharedEventPushNotifications } from '../lib/sharedEventPushNo
 import { requestCurrentUserEmailChange } from '../lib/accountEmailChange';
 import { useUserPrefsStore, updateShowDailyHotspot, updateShowTrendingOnOpen } from '../store/userPrefsStore';
 import GathrWordmarkLogo from '../components/common/GathrWordmarkLogo';
+import { publishTutorialMeasurement } from '../utils/tutorialReadiness';
 import * as ImagePicker from 'expo-image-picker';
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import { 
@@ -883,6 +884,7 @@ export default function ProfileScreen() {
           // Store constrained measurement and mark as stable immediately
           (global as any).facebookSubmissionLayout = constrainedMeasurement;
           (global as any).facebookSubmissionStable = true;
+          publishTutorialMeasurement('facebookSubmissionLayout', constrainedMeasurement);
          
           
           console.log('âœ… ONE-SHOT MEASUREMENT: Complete! Marked as stable with padded bounds');
@@ -1276,7 +1278,7 @@ const handleLogout = async () => {
                 lastRestartClickAtRef.current = now;
                 amplitudeTrack('tutorial_restart_clicked', {
                   tutorial_id: 'main_onboarding_v1',
-                  tutorial_version: 1,
+                  tutorial_version: 2,
                   total_steps: Array.isArray(TUTORIAL_STEPS) ? TUTORIAL_STEPS.length : 0,
                   source: 'tutorial_system',
                   from_screen: pathname || '/profile',
@@ -1289,16 +1291,9 @@ const handleLogout = async () => {
               console.log('[analytics] tutorial_restart_clicked failed:', error);
             }
 
-            router.back();
-            setTimeout(() => {
-              (global as any).tutorialLaunchUserInitiated = true;
-              (global as any).tutorialLaunchSource = 'profile';
-              if ((global as any).restartGathRTutorial) {
-                (global as any).tutorialLaunchUserInitiated = true;
-                (global as any).tutorialLaunchSource = 'profile';
-                (global as any).restartGathRTutorial();
-              }
-            }, 500);
+            (global as any).tutorialLaunchUserInitiated = true;
+            (global as any).tutorialLaunchSource = 'profile';
+            (global as any).restartGathRTutorial?.();
           },
         },
       ]

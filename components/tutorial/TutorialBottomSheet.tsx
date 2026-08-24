@@ -1,42 +1,29 @@
-/**
- * GathR Tutorial System - Unified Tutorial Sheet Component
- * 
- * This component creates consistent tutorial sheets that slide from different
- * directions based on context while maintaining identical visual design.
- * Smart positioning: slides from the side that doesn't block the content being explained.
- * 
- * Created: Unified sheet implementation
- * Dependencies: React Native core, tutorial types
- * Used by: TutorialManager
- */
-
-import React, { useRef, useEffect } from 'react';
+import { Ionicons } from '@expo/vector-icons';
+import React, { useEffect, useRef } from 'react';
 import {
-  View,
+  Animated,
+  Image,
+  Platform,
+  StyleSheet,
   Text,
   TouchableOpacity,
-  StyleSheet,
-  Animated,
-  Dimensions,
-  Platform
+  useWindowDimensions,
+  View,
 } from 'react-native';
-import { MaterialIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
 import { TutorialTooltipProps } from '../../types/tutorial';
-import { TUTORIAL_CONFIG } from '../../config/tutorialSteps';
-import { IconLegendDemo } from './TutorialDemoComponents';
-import { ClusterExplanationContent } from './ClusterExplanationContent';
 
+const GATHR_GLOBE = require('../../assets/icon.png');
 
-const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
-
-interface TutorialBottomSheetProps extends TutorialTooltipProps {
+interface Props extends TutorialTooltipProps {
   stepId?: string;
   stepNumber?: number;
   totalSteps?: number;
+  targetUnavailable?: boolean;
 }
 
-export const TutorialBottomSheet: React.FC<TutorialBottomSheetProps> = ({
+export const TutorialBottomSheet: React.FC<Props> = ({
   stepId,
   title,
   content,
@@ -46,361 +33,159 @@ export const TutorialBottomSheet: React.FC<TutorialBottomSheetProps> = ({
   showPrevious = false,
   showNext = true,
   showSkip = true,
-  nextText = "Next",
+  nextText = 'Next',
   sheetPosition = 'bottom',
-  stepNumber,
-  totalSteps
+  stepNumber = 1,
+  totalSteps = 1,
+  targetUnavailable = false,
 }) => {
-  const slideAnim = useRef(new Animated.Value(0)).current;
-  const scaleAnim = useRef(new Animated.Value(0.95)).current;
   const insets = useSafeAreaInsets();
+  const { height: windowHeight } = useWindowDimensions();
+  const entrance = useRef(new Animated.Value(0)).current;
+  const isCompletion = stepId === 'completion';
 
   useEffect(() => {
-    // Animate sheet entrance - same animation for all positions
-    Animated.parallel([
-      Animated.spring(slideAnim, {
-        toValue: 1,
-        useNativeDriver: true,
-        tension: 50,
-        friction: 8
-      }),
-      Animated.spring(scaleAnim, {
-        toValue: 1,
-        useNativeDriver: true,
-        tension: 50,
-        friction: 8
-      })
-    ]).start();
-  }, [slideAnim, scaleAnim]);
+    entrance.setValue(0);
+    Animated.spring(entrance, {
+      toValue: 1,
+      tension: 80,
+      friction: 11,
+      useNativeDriver: true,
+    }).start();
+  }, [entrance, stepId]);
 
-  const getSheetStyle = () => {
-    // CONSISTENT base style for all sheets
-    const baseStyle = {
-      transform: [{ scale: scaleAnim }]
-    };
+  const verticalStyle = sheetPosition === 'top'
+      ? { top: Math.max(insets.top + 12, Platform.OS === 'android' ? 34 : 16) }
+      : sheetPosition === 'center'
+      ? { top: Math.max(insets.top + 20, windowHeight * (isCompletion ? 0.18 : 0.28)) }
+      : { bottom: Math.max(insets.bottom + 76, 84) };
 
-    // Handle different POSITIONS with same VISUAL DESIGN, different SLIDE DIRECTIONS
-    if (typeof sheetPosition === 'number') {
-      // Custom Y position - slide down from above
-      return {
-        ...baseStyle,
-        position: 'absolute' as const,
-        top: sheetPosition,
-        left: 0,
-        right: 0,
-        transform: [
-          ...baseStyle.transform,
-          {
-            translateY: slideAnim.interpolate({
+  return (
+    <Animated.View
+      accessibilityViewIsModal
+      style={[
+        styles.card,
+        verticalStyle,
+        { left: Math.max(14, insets.left + 12), right: Math.max(14, insets.right + 12) },
+        isCompletion && styles.completionCard,
+        {
+          opacity: entrance,
+          transform: [{
+            translateY: entrance.interpolate({
               inputRange: [0, 1],
-              outputRange: [-100, 0] // Slide down from above
-            })
-          }
-        ]
-      };
-    }
-
-    switch (sheetPosition) {
-      case 'top':
-        // Slides DOWN from top - for bottom navigation tutorials
-        return {
-          ...baseStyle,
-          position: 'absolute' as const,
-          top: Platform.OS === 'ios' ? 100 : 80,
-          left: 0,
-          right: 0,
-          transform: [
-            ...baseStyle.transform,
-            {
-              translateY: slideAnim.interpolate({
-                inputRange: [0, 1],
-                outputRange: [-150, 0] // Slide DOWN from above
-              })
-            }
-          ]
-        };
-        
-      case 'center':
-        // Slides from center - for standalone messages
-        return {
-          ...baseStyle,
-          position: 'absolute' as const,
-          top: SCREEN_HEIGHT * 0.3,
-          left: 0,
-          right: 0,
-          transform: [
-            ...baseStyle.transform,
-            {
-              translateY: slideAnim.interpolate({
-                inputRange: [0, 1],
-                outputRange: [50, 0] // Gentle slide from center
-              })
-            }
-          ]
-        };
-      
-      case 'bottom':
-        default:
-          // Slides UP from bottom - for top content tutorials
-          // Keep the Android cluster step above the system navigation bar.
-          const isAndroidClusterStep =
-            Platform.OS === 'android' && stepId === 'cluster-click';
-          const isAndroidSpecialsTabStep =
-            Platform.OS === 'android' && stepId === 'specials-tab';
-          const androidNavSafeBottom = Math.max(72, insets.bottom + 16);
-          const androidSpecialsTabBottom = Math.max(140, insets.bottom + 84);
-          const bottomOffset = isAndroidClusterStep
-            ? androidNavSafeBottom
-            : isAndroidSpecialsTabStep
-              ? androidSpecialsTabBottom
-              : 90;
-
-          console.log('[TutorialBottomSheet] bottom placement', {
-            platform: Platform.OS,
-            stepId,
-            title,
-            bottomOffset,
-            safeAreaBottom: insets.bottom
-          });
-
-          return {
-            ...baseStyle,
-            position: 'absolute' as const,
-            bottom: bottomOffset,
-            left: 0,
-            right: 0,
-            transform: [
-              ...baseStyle.transform,
-              {
-                translateY: slideAnim.interpolate({
-                  inputRange: [0, 1],
-                  outputRange: [200, 0] // Slide UP from below
-                })
-              }
-            ]
-          };
-
-
-
-    }
-  };
-
-
-// Function to render content - special case for cluster-click step
-const renderContent = () => {
-  // Check if this is the cluster-click step by title
-  const isClusterClickStep = title === 'Event Clusters - Tap the Marker!';
-
-  if (isClusterClickStep) {
-    // Bring back the richer "old" detail: explanation + icon legend panel together
-    return (
-      <View style={styles.contentContainer}>
-        <ClusterExplanationContent />
-      </View>
-    );
-  }
-
-
-  // Regular text content for other steps
-  return (
-    <View style={styles.contentContainer}>
-      <Text style={styles.content}>{content}</Text>
-    </View>
-  );
-};
-
-
-  return (
-    <Animated.View style={[
-      styles.sheet, // SINGLE consistent style for all
-      getSheetStyle()
-    ]}>
-      
-      {/* Header with title and step indicator - CONSISTENT layout */}
-      <View style={styles.header}>
-        <Text style={styles.title}>{title}</Text>
-        {stepNumber && totalSteps && (
-          <View style={styles.stepBadge}>
-            <Text style={styles.stepText}>{stepNumber}/{totalSteps}</Text>
+              outputRange: [sheetPosition === 'top' ? -14 : 18, 0],
+            }),
+          }],
+        },
+      ]}
+    >
+      {isCompletion && (
+        <View style={styles.completionBrand}>
+          <View style={styles.completionHalo}>
+            <Image source={GATHR_GLOBE} style={styles.completionLogo} resizeMode="contain" />
           </View>
+          <View style={styles.readyBadge}>
+            <Ionicons name="checkmark" size={16} color="#087A55" />
+            <Text style={styles.readyText}>TOUR COMPLETE</Text>
+          </View>
+        </View>
+      )}
+
+      <View style={styles.progressHeader}>
+        <Text style={styles.progressText}>{stepNumber} of {totalSteps}</Text>
+        {showSkip && !isCompletion && (
+          <TouchableOpacity accessibilityRole="button" onPress={onSkip} style={styles.headerSkip}>
+            <Text style={styles.headerSkipText}>Skip</Text>
+          </TouchableOpacity>
         )}
       </View>
-      
-      {/* Content - Updated to support rich content for cluster-click step */}
-      {content && renderContent()}
-      
-      {/* Actions - CONSISTENT button layout */}
-      <View style={styles.actionContainer}>
-        <View style={styles.leftActions}>
-          {showSkip && (
-            <TouchableOpacity style={styles.skipButton} onPress={onSkip}>
-              <Text style={styles.skipText}>Skip Tutorial</Text>
-            </TouchableOpacity>
-          )}
+      <View style={styles.progressTrack}>
+        <View style={[styles.progressFill, { width: `${(stepNumber / totalSteps) * 100}%` }]} />
+      </View>
+
+      <Text style={[styles.title, isCompletion && styles.completionTitle]} maxFontSizeMultiplier={1.35}>
+        {title}
+      </Text>
+      {!!content && <Text style={styles.content} maxFontSizeMultiplier={1.45}>{content}</Text>}
+
+      {targetUnavailable && (
+        <View style={styles.fallbackNote}>
+          <Ionicons name="information-circle-outline" size={18} color="#48667E" />
+          <Text style={styles.fallbackText}>This item is still loading. You can continue and come back anytime.</Text>
         </View>
-        
-        <View style={styles.rightActions}>
-          {showPrevious && (
-            <TouchableOpacity style={styles.previousButton} onPress={onPrevious}>
-              <MaterialIcons name="chevron-left" size={18} color="#666" />
-              <Text style={styles.previousText}>Back</Text>
-            </TouchableOpacity>
-          )}
-          
-          {showNext && (
-            <TouchableOpacity style={styles.nextButton} onPress={onNext}>
-              <Text style={styles.nextText}>{nextText}</Text>
-              <MaterialIcons name="chevron-right" size={18} color="#FFF" />
-            </TouchableOpacity>
-          )}
-        </View>
+      )}
+
+      <View style={styles.actions}>
+        {showPrevious ? (
+          <TouchableOpacity
+            accessibilityRole="button"
+            accessibilityLabel="Previous tutorial step"
+            onPress={onPrevious}
+            style={styles.backButton}
+          >
+            <Ionicons name="arrow-back" size={19} color="#39566E" />
+            <Text style={styles.backText}>Back</Text>
+          </TouchableOpacity>
+        ) : <View />}
+
+        {showNext && (
+          <TouchableOpacity
+            accessibilityRole="button"
+            accessibilityLabel={nextText}
+            activeOpacity={0.86}
+            onPress={onNext}
+            style={[styles.nextButton, isCompletion && styles.finishButton]}
+          >
+            <Text style={styles.nextText}>{nextText}</Text>
+            <Ionicons name={isCompletion ? 'checkmark' : 'arrow-forward'} size={19} color="#FFFFFF" />
+          </TouchableOpacity>
+        )}
       </View>
     </Animated.View>
   );
 };
 
 const styles = StyleSheet.create({
-  // SINGLE CONSISTENT SHEET STYLE - no variations
-  sheet: {
-  backgroundColor: '#FFFFFF',
-  borderRadius: 20,
-  paddingHorizontal: 14,
-  paddingTop: 8,
-  paddingBottom: 6,
-  // Enhanced shadow for better visibility
-  shadowColor: '#000',
-  shadowOffset: { width: 0, height: 16 },
-  shadowOpacity: 0.25,
-  shadowRadius: 40,
-  elevation: 25,
-  // Subtle brand accent
-  borderWidth: 1,
-  borderColor: 'rgba(30, 144, 255, 0.2)',
-},
-  
-  // CONSISTENT header layout
-  header: {
-  flexDirection: 'row',
-  justifyContent: 'space-between',
-  alignItems: 'flex-start',
-  marginBottom: 8, // Reduced from 12 to 8
-  marginTop: 0, // No progress bar, no extra space needed
-},
-  title: {
-    fontSize: 18, // Reduced from 20 to 18
-    fontWeight: '700',
-    color: '#1A202C',
-    flex: 1,
-    lineHeight: 22, // Reduced proportionally
-  },
-  stepBadge: {
-    backgroundColor: '#E6FFFA',
-    paddingHorizontal: 10, // Reduced from 12 to 10
-    paddingVertical: 3, // Reduced from 4 to 3
-    borderRadius: 10, // Reduced from 12 to 10
-    marginLeft: 12, // Reduced from 16 to 12
-  },
-  stepText: {
-    color: '#0D9488',
-    fontSize: 9, // Reduced from 10 to 9
-    fontWeight: '600',
-  },
-  
-  // CONSISTENT content styling
-  contentContainer: {
-    marginBottom: 12, // Reduced from 16 to 12
-  },
-  content: {
-    fontSize: 14, // Reduced from 16 to 14
-    lineHeight: 18, // Increased for better readability
-    color: '#4A5568',
-  },
-  
-  // CONSISTENT action button layout
-  actionContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 0, // No extra margin below buttons
-  },
-  leftActions: {
-    flex: 1,
-  },
-  rightActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10, // Reduced from 12 to 10
-  },
-  skipButton: {
-    paddingVertical: 8, // Reduced from 10 to 8
-    paddingHorizontal: 12, // Reduced from 14 to 12
-  },
-  skipText: {
-    color: '#9CA3AF',
-    fontSize: 12, // Reduced from 14 to 12
-    fontWeight: '500',
-  },
-  previousButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#F7FAFC',
-    paddingVertical: 8, // Reduced from 10 to 8
-    paddingHorizontal: 12, // Reduced from 14 to 12
-    borderRadius: 10, // Reduced from 12 to 10
+  card: {
+    position: 'absolute',
+    left: 14,
+    right: 14,
+    maxWidth: 430,
+    alignSelf: 'center',
+    borderRadius: 24,
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 20,
+    paddingTop: 17,
+    paddingBottom: 16,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: '#DCEAF5',
+    shadowColor: '#001526',
+    shadowOffset: { width: 0, height: 14 },
+    shadowOpacity: 0.24,
+    shadowRadius: 26,
+    elevation: 22,
   },
-  previousText: {
-    color: '#4A5568',
-    fontSize: 12, // Reduced from 14 to 12
-    fontWeight: '600',
-    marginLeft: 3, // Reduced from 4 to 3
-  },
-  nextButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: TUTORIAL_CONFIG.PRIMARY_COLOR,
-    paddingVertical: 10, // Reduced from 12 to 10
-    paddingHorizontal: 16, // Reduced from 18 to 16
-    borderRadius: 10, // Reduced from 12 to 10
-    shadowColor: TUTORIAL_CONFIG.PRIMARY_COLOR,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 6,
-  },
-  nextText: {
-    color: '#FFFFFF',
-    fontSize: 14, // Reduced from 16 to 14
-    fontWeight: '600',
-    marginRight: 3, // Reduced from 4 to 3
-  },
+  completionCard: { paddingTop: 22, paddingBottom: 20 },
+  progressHeader: { minHeight: 25, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  progressText: { color: '#587085', fontSize: 13, fontWeight: '800' },
+  headerSkip: { minWidth: 48, minHeight: 44, alignItems: 'flex-end', justifyContent: 'center' },
+  headerSkipText: { color: '#587085', fontSize: 14, fontWeight: '700' },
+  progressTrack: { height: 4, overflow: 'hidden', borderRadius: 2, backgroundColor: '#E7F2FB', marginTop: 4, marginBottom: 15 },
+  progressFill: { height: '100%', borderRadius: 2, backgroundColor: '#2497F3' },
+  title: { color: '#0B2235', fontSize: 22, lineHeight: 27, fontWeight: '800', letterSpacing: -0.35 },
+  content: { color: '#50677A', fontSize: 16, lineHeight: 22, marginTop: 7 },
+  fallbackNote: { flexDirection: 'row', alignItems: 'flex-start', backgroundColor: '#EEF6FC', borderRadius: 12, padding: 10, marginTop: 12, gap: 8 },
+  fallbackText: { flex: 1, color: '#48667E', fontSize: 13, lineHeight: 18, fontWeight: '600' },
+  actions: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 17, gap: 10 },
+  backButton: { minHeight: 48, minWidth: 88, borderRadius: 14, borderWidth: 1, borderColor: '#D8E5EF', backgroundColor: '#F7FAFC', flexDirection: 'row', gap: 6, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 14 },
+  backText: { color: '#39566E', fontSize: 15, fontWeight: '800' },
+  nextButton: { minHeight: 50, minWidth: 116, borderRadius: 15, paddingHorizontal: 18, backgroundColor: '#168BE8', flexDirection: 'row', gap: 7, alignItems: 'center', justifyContent: 'center' },
+  finishButton: { flex: 1, backgroundColor: '#0B9B6D' },
+  nextText: { color: '#FFFFFF', fontSize: 16, fontWeight: '800' },
+  completionBrand: { alignItems: 'center', marginBottom: 10 },
+  completionHalo: { width: 92, height: 92, borderRadius: 46, backgroundColor: '#E8F5FE', alignItems: 'center', justifyContent: 'center', marginBottom: 12 },
+  completionLogo: { width: 72, height: 72, borderRadius: 36 },
+  readyBadge: { flexDirection: 'row', alignItems: 'center', gap: 5, borderRadius: 12, backgroundColor: '#E5F7F0', paddingHorizontal: 10, paddingVertical: 5 },
+  readyText: { color: '#087A55', fontSize: 11, fontWeight: '900', letterSpacing: 0.8 },
+  completionTitle: { textAlign: 'center', fontSize: 25, lineHeight: 31 },
 });
-
-/**
- * UNIFIED SHEET DESIGN PRINCIPLES:
- * 
- * ✅ CONSISTENT VISUAL DESIGN:
- *    - Same rounded corners (20px) for all sheets
- *    - Same padding (24px) for all sheets  
- *    - Same shadow and elevation for all sheets
- *    - Same typography and spacing throughout
- *    - Same button styling and layout
- * 
- * ✅ SMART CONTEXTUAL POSITIONING:
- *    - 'top': Slides DOWN from top (for bottom nav tutorials)
- *    - 'bottom': Slides UP from bottom (for top content tutorials)  
- *    - 'center': Gentle center animation (for standalone messages)
- *    - number: Custom position with slide down animation
- * 
- * ✅ MODERN UX PATTERNS:
- *    - Progress bar always visible for step tracking
- *    - Step badge always in same top-right position
- *    - Consistent button hierarchy and touch targets
- *    - Smooth spring animations for premium feel
- * 
- * 🎯 THE RESULT:
- *    Every tutorial sheet looks identical but slides from the optimal
- *    direction to avoid blocking the content being explained. This creates
- *    a consistent, professional, and intuitive tutorial experience.
- */

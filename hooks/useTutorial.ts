@@ -1,509 +1,241 @@
-/**
- * GathR Tutorial System - Main Tutorial Hook
- * 
- * This hook provides the core state management for the tutorial system.
- * It handles tutorial progression, Firestore integration, and coordinates
- * the entire tutorial flow across different screens and steps.
- * 
- * Created: Step 2B1 of tutorial implementation  
- * Dependencies: React, Firebase, tutorial types and config
- * Used by: TutorialManager and any components that need tutorial state
- */
-
-import { useState, useEffect, useCallback, useRef } from 'react';
-import { doc, updateDoc, getDoc } from 'firebase/firestore';
-import { auth, firestore } from '../config/firebaseConfig';
-import { 
-  TutorialStatus, 
-  TutorialStep, 
-  TutorialManager as TutorialManagerInterface 
-} from '../types/tutorial';
-import { 
-  TUTORIAL_STEPS, 
-  hasSubSteps, 
-  getTutorialStepById 
-} from '../config/tutorialSteps';
-import { 
-  getNextStepIndex, 
-  getPreviousStepIndex, 
-  tutorialLog 
-} from '../utils/tutorialUtils';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { doc, getDoc, updateDoc } from 'firebase/firestore';
 import { usePathname } from 'expo-router';
+
+import { auth, firestore } from '../config/firebaseConfig';
+import {
+  LEGACY_TUTORIAL_STEP_IDS,
+  TUTORIAL_STEPS,
+  getCompletedIdsForStep,
+} from '../config/tutorialSteps';
 import { amplitudeTrack } from '../lib/amplitudeAnalytics';
 import { useMapStore } from '../store/mapStore';
 import { Cluster, Venue } from '../types/events';
+import { TutorialManager, TutorialStatus } from '../types/tutorial';
 
-/**
- * Main tutorial hook that manages all tutorial state and operations
- */
-export const useTutorial = (): TutorialManagerInterface => {
-  const filterPillsCalloutSnapshotRef = useRef<{
+const TUTORIAL_VERSION = 2;
+const anonymousKey = 'gathr:tutorial:anonymous:v2';
+
+const defaultStatus = (): TutorialStatus => ({
+  completed: false,
+  skipped: false,
+  currentStep: 0,
+  completedSteps: [],
+  version: TUTORIAL_VERSION,
+});
+
+const clampStatus = (status: Partial<TutorialStatus> | null | undefined): TutorialStatus => ({
+  completed: Boolean(status?.completed),
+  skipped: Boolean(status?.skipped),
+  currentStep: Math.min(Math.max(0, status?.currentStep ?? 0), TUTORIAL_STEPS.length - 1),
+  completedSteps: Array.isArray(status?.completedSteps) ? status.completedSteps : [],
+  lastTutorialDate: status?.lastTutorialDate,
+  version: TUTORIAL_VERSION,
+});
+
+export const useTutorial = (): TutorialManager => {
+  const pathname = usePathname();
+  const [isActive, setIsActive] = useState(false);
+  const [currentStepIndex, setCurrentStepIndex] = useState(0);
+  const [tutorialStatus, setTutorialStatus] = useState<TutorialStatus | null>(null);
+  const writeQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const statusRef = useRef<TutorialStatus | null>(null);
+  const calloutSnapshotRef = useRef<{
     selectedVenues: Venue[];
     selectedCluster: Cluster | null;
   } | null>(null);
 
-  // Core tutorial state
-  const [isActive, setIsActive] = useState(false);
-  const [currentStepIndex, setCurrentStepIndex] = useState(0);
-  const [currentSubStep, setCurrentSubStep] = useState(-1); // Start at -1 for multi-step tutorials
-  // Route where the overlay actually appears (preferred for from_screen)
-  const pathname = usePathname();
-  const [tutorialStatus, setTutorialStatus] = useState<TutorialStatus | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
+  const currentStep = TUTORIAL_STEPS[currentStepIndex] ?? null;
 
-  // Derived state
-  const currentStep = TUTORIAL_STEPS[currentStepIndex] || null;
-
-  /**
-   * Load tutorial status from Firestore
-   * Called on hook initialization and auth state changes
-   */
-  const loadTutorialStatus = useCallback(async () => {
-    const user = auth.currentUser;
-    if (!user) {
-      tutorialLog('No authenticated user, skipping tutorial status load');
-      return;
-    }
-
-    setIsLoading(true);
-    
-    try {
-      tutorialLog('Loading tutorial status for user:', user.uid);
-      const userDoc = await getDoc(doc(firestore, 'users', user.uid));
-      
-      if (userDoc.exists()) {
-        const userData = userDoc.data();
-        const status = userData.tutorialStatus || {
-          completed: false,
-          currentStep: 0,
-          completedSteps: []
-        };
-        
-        setTutorialStatus(status);
-        tutorialLog('Tutorial status loaded:', status);
-      } else {
-        tutorialLog('User document not found, creating default tutorial status');
-        // User document doesn't exist, create default status
-        const defaultStatus: TutorialStatus = {
-          completed: false,
-          currentStep: 0,
-          completedSteps: []
-        };
-        setTutorialStatus(defaultStatus);
-      }
-    } catch (error) {
-      console.error('Error loading tutorial status:', error);
-      tutorialLog('Error loading tutorial status:', error);
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
-
-  /**
-   * Save tutorial status to Firestore
-   * Updates both local state and remote database
-   */
-  const saveTutorialStatus = useCallback(async (status: TutorialStatus) => {
-    const user = auth.currentUser;
-    if (!user) {
-      tutorialLog('No authenticated user, cannot save tutorial status');
-      return;
-    }
-
-    try {
-      tutorialLog('Saving tutorial status:', status);
-      
-      const updateData = {
-        tutorialStatus: {
-          ...status,
-          lastTutorialDate: new Date()
-        }
-      };
-
-      await updateDoc(doc(firestore, 'users', user.uid), updateData);
-      setTutorialStatus(status);
-      
-      tutorialLog('Tutorial status saved successfully');
-    } catch (error) {
-      console.error('Error saving tutorial status:', error);
-      tutorialLog('Error saving tutorial status:', error);
-    }
-  }, []);
-
-  /**
-   * Initialize tutorial status on hook mount and auth changes
-   */
   useEffect(() => {
-    const unsubscribe = auth.onAuthStateChanged((user) => {
-      if (user) {
-        loadTutorialStatus();
-      } else {
-        setTutorialStatus(null);
-        setIsActive(false);
-      }
+    statusRef.current = tutorialStatus;
+  }, [tutorialStatus]);
+
+  const storageKey = useCallback(
+    () => (auth.currentUser ? `gathr:tutorial:${auth.currentUser.uid}:v2` : anonymousKey),
+    [],
+  );
+
+  const persistStatus = useCallback((nextStatus: TutorialStatus) => {
+    const normalized = clampStatus(nextStatus);
+    statusRef.current = normalized;
+    setTutorialStatus(normalized);
+    void AsyncStorage.setItem(storageKey(), JSON.stringify(normalized)).catch((error) => {
+      console.warn('[Tutorial] Local progress could not be saved.', error);
     });
 
-    return () => unsubscribe();
-  }, [loadTutorialStatus]);
+    const user = auth.currentUser;
+    if (!user) return;
 
-  /**
-   * Start the tutorial from the beginning
-   */
+    writeQueueRef.current = writeQueueRef.current
+      .catch(() => undefined)
+      .then(() => updateDoc(doc(firestore, 'users', user.uid), {
+        tutorialStatus: { ...normalized, lastTutorialDate: new Date() },
+      }))
+      .catch((error) => {
+        console.warn('[Tutorial] Remote progress will retry on a later step.', error);
+      });
+  }, [storageKey]);
+
+  const loadStatus = useCallback(async () => {
+    const localKey = storageKey();
+    let localStatus: TutorialStatus | null = null;
+    try {
+      const stored = await AsyncStorage.getItem(localKey);
+      if (stored) localStatus = clampStatus(JSON.parse(stored));
+    } catch (error) {
+      console.warn('[Tutorial] Local progress could not be loaded.', error);
+    }
+
+    if (localStatus) setTutorialStatus(localStatus);
+
+    const user = auth.currentUser;
+    if (!user) {
+      setTutorialStatus((current) => current ?? defaultStatus());
+      return;
+    }
+
+    try {
+      const snapshot = await getDoc(doc(firestore, 'users', user.uid));
+      const remote = snapshot.exists()
+        ? clampStatus(snapshot.data().tutorialStatus as Partial<TutorialStatus> | undefined)
+        : defaultStatus();
+      const resolved = localStatus?.completed || localStatus?.skipped ? localStatus : remote;
+      setTutorialStatus(resolved);
+      statusRef.current = resolved;
+      void AsyncStorage.setItem(localKey, JSON.stringify(resolved));
+    } catch (error) {
+      console.warn('[Tutorial] Using local progress while remote status is unavailable.', error);
+      setTutorialStatus((current) => current ?? defaultStatus());
+    }
+  }, [storageKey]);
+
+  useEffect(() => auth.onAuthStateChanged(() => {
+    setIsActive(false);
+    void loadStatus();
+  }), [loadStatus]);
+
   const startTutorial = useCallback(() => {
-  tutorialLog('Starting tutorial');
-  setIsActive(true);
-  setCurrentStepIndex(0);
-  setCurrentSubStep(-1); // Start at -1 for proper multi-step flow
-  
-  // Update tutorial status to indicate start
-  if (tutorialStatus) {
-    const updatedStatus = {
-      ...tutorialStatus,
-      currentStep: 0
-    };
-    saveTutorialStatus(updatedStatus);
-  }
-  }, [tutorialStatus, saveTutorialStatus]);
+    const startingIndex = Math.min(
+      Math.max(0, statusRef.current?.currentStep ?? 0),
+      TUTORIAL_STEPS.length - 1,
+    );
+    setCurrentStepIndex(startingIndex);
+    setIsActive(true);
+    persistStatus({
+      ...(statusRef.current ?? defaultStatus()),
+      completed: false,
+      skipped: false,
+      currentStep: startingIndex,
+    });
+  }, [persistStatus]);
 
-  /**
-   * Move to the next tutorial step or sub-step
-   */
   const nextStep = useCallback(() => {
-    if (!currentStep) {
-      tutorialLog('No current step, cannot proceed to next');
-      return;
-    }
+    setCurrentStepIndex((index) => {
+      const step = TUTORIAL_STEPS[index];
+      if (!step || index >= TUTORIAL_STEPS.length - 1) return index;
 
-    tutorialLog(`Moving to next step from ${currentStep.id} (substep ${currentSubStep})`);
-
-    // Check if current step has sub-steps
-    const hasSubStepsInCurrentStep = hasSubSteps(currentStep.id);
-    const totalSubSteps = currentStep.subSteps?.length || 0;
-
-    // Calculate next position
-    const { stepIndex, subStep } = getNextStepIndex(
-      currentStepIndex,
-      currentSubStep,
-      TUTORIAL_STEPS.length,
-      hasSubStepsInCurrentStep,
-      totalSubSteps
-    );
-
-    // Check if tutorial is complete
-    if (stepIndex >= TUTORIAL_STEPS.length) {
-      tutorialLog('Tutorial completed');
-      completeTutorial();
-      return;
-    }
-
-    // 🎯 CALLOUT STATE MANAGEMENT: Handle callout collapse when transitioning TO filter-pills
-    const nextStepId = TUTORIAL_STEPS[stepIndex]?.id;
-    if (nextStepId === 'filter-pills') {
-      const { selectedVenues, selectedCluster } = useMapStore.getState();
-      filterPillsCalloutSnapshotRef.current =
-        Array.isArray(selectedVenues) && selectedVenues.length > 0
-          ? {
-              selectedVenues: [...selectedVenues],
-              selectedCluster: selectedCluster ?? null,
-            }
+      if (TUTORIAL_STEPS[index + 1]?.id === 'filter-pills') {
+        const { selectedVenues, selectedCluster } = useMapStore.getState();
+        calloutSnapshotRef.current = selectedVenues.length
+          ? { selectedVenues: [...selectedVenues], selectedCluster }
           : null;
-      tutorialLog('Transitioning to filter-pills step - closing callout to reveal filter pills');
-      const closeCallout = (global as any).closeCallout;
-      if (closeCallout) {
-        setTimeout(() => {
-          closeCallout();
-        }, 200);
-      } else {
-        tutorialLog('Warning: closeCallout function not available');
+        (global as any).closeCallout?.();
       }
-    }
 
-    // Update step position
-    setCurrentStepIndex(stepIndex);
-    setCurrentSubStep(subStep);
+      const nextIndex = index + 1;
+      const completedIds = getCompletedIdsForStep(step);
+      const status = statusRef.current ?? defaultStatus();
+      persistStatus({
+        ...status,
+        currentStep: nextIndex,
+        completedSteps: [...new Set([...status.completedSteps, ...completedIds])],
+      });
+      return nextIndex;
+    });
+  }, [persistStatus]);
 
-    // Save progress
-    if (tutorialStatus) {
-      const updatedStatus = {
-        ...tutorialStatus,
-        currentStep: stepIndex,
-        completedSteps: [...new Set([...tutorialStatus.completedSteps, currentStep.id])]
-      };
-      saveTutorialStatus(updatedStatus);
-    }
-
-    tutorialLog(`Moved to step ${stepIndex}, substep ${subStep}`);
-   }, [currentStep, currentStepIndex, currentSubStep, tutorialStatus, saveTutorialStatus]);
-
-  /**
-   * Move to the previous tutorial step or sub-step
-   */
   const previousStep = useCallback(() => {
-    if (currentStepIndex === 0 && currentSubStep === 0) {
-      tutorialLog('Already at first step, cannot go back');
-      return;
-    }
-
-    tutorialLog(`Moving to previous step from ${currentStepIndex} (substep ${currentSubStep})`);
-
-    // Get previous step info
-    const prevStepIndex = currentStepIndex - 1;
-    const prevStep = prevStepIndex >= 0 ? TUTORIAL_STEPS[prevStepIndex] : null;
-    const prevStepHasSubSteps = prevStep ? hasSubSteps(prevStep.id) : false;
-    const prevStepSubStepsCount = prevStep?.subSteps?.length || 0;
-
-     // Calculate previous position
-    const { stepIndex, subStep } = getPreviousStepIndex(
-      currentStepIndex,
-      currentSubStep,
-      prevStepHasSubSteps,
-      prevStepSubStepsCount
-    );
-
-    // 🎯 CALLOUT STATE MANAGEMENT: Handle callout expand when going back FROM filter-pills
-    // Update step position
-    if (currentStep?.id === 'filter-pills') {
-      const calloutSnapshot = filterPillsCalloutSnapshotRef.current;
-      if (calloutSnapshot?.selectedVenues?.length) {
-        tutorialLog('Going back from filter-pills step - restoring previous callout');
-        const { selectVenues, selectVenue, selectCluster } = useMapStore.getState();
-        setTimeout(() => {
-          selectVenues(calloutSnapshot.selectedVenues);
-          selectCluster(calloutSnapshot.selectedCluster);
-          selectVenue(calloutSnapshot.selectedVenues[0] ?? null);
-        }, 200);
-      } else {
-        tutorialLog('Warning: no saved callout snapshot available for filter-pills back navigation');
+    setCurrentStepIndex((index) => {
+      if (index <= 0) return 0;
+      if (TUTORIAL_STEPS[index]?.id === 'filter-pills' && calloutSnapshotRef.current) {
+        const snapshot = calloutSnapshotRef.current;
+        const store = useMapStore.getState();
+        store.selectVenues(snapshot.selectedVenues);
+        store.selectCluster(snapshot.selectedCluster);
+        store.selectVenue(snapshot.selectedVenues[0] ?? null);
       }
-    }
+      const previousIndex = index - 1;
+      persistStatus({
+        ...(statusRef.current ?? defaultStatus()),
+        currentStep: previousIndex,
+      });
+      return previousIndex;
+    });
+  }, [persistStatus]);
 
-    setCurrentStepIndex(stepIndex);
-    setCurrentSubStep(subStep);
+  const skipTutorial = useCallback(() => {
+    setIsActive(false);
+    persistStatus({
+      ...(statusRef.current ?? defaultStatus()),
+      completed: false,
+      skipped: true,
+      currentStep: 0,
+    });
+    amplitudeTrack('tutorial_dismissed', {
+      tutorial_id: 'main_onboarding_v1',
+      tutorial_version: TUTORIAL_VERSION,
+      total_steps: TUTORIAL_STEPS.length,
+      step_key: currentStep?.id ?? 'welcome',
+      from_screen: pathname || '(unknown)',
+    });
+  }, [currentStep?.id, pathname, persistStatus]);
 
-    // Save progress
-    if (tutorialStatus) {
-      const updatedStatus = {
-        ...tutorialStatus,
-        currentStep: stepIndex
-      };
-      saveTutorialStatus(updatedStatus);
-    }
-
-    tutorialLog(`Moved to step ${stepIndex}, substep ${subStep}`);
-  }, [currentStepIndex, currentSubStep, currentStep, tutorialStatus, saveTutorialStatus]);
-
-  /**
-   * Skip the tutorial without completing it
-   */
-const skipTutorial = useCallback(() => {
-  tutorialLog('Skipping tutorial');
-  setIsActive(false);
-  
-  // Clean up all tutorial highlight flags
-  tutorialLog('Cleaning up tutorial highlight flags on skip');
-  (global as any).tutorialHighlightFilterPills = false;
-  (global as any).tutorialHighlightEventDetails = false;
-  (global as any).tutorialHighlightVenueSelector = false;
-  (global as any).tutorialHighlightEventTabs = false;
-  (global as any).tutorialHighlightEventsTab = false;
-  (global as any).tutorialHighlightEventsListExplanation = false;
-  (global as any).tutorialHighlightEventsFilters = false;
-  (global as any).tutorialHighlightSpecialsTab = false;
-  (global as any).tutorialHighlightSpecialsListExplanation = false;
-  (global as any).tutorialHighlightSpecialsFilters = false;
-  (global as any).tutorialHighlightProfileFacebook = false;
-  (global as any).tutorialHighlightFacebookSubmission = false;
-  (global as any).facebookSubmissionStable = false;
-  (global as any).facebookSubmissionLayout = null;
-  
-  if (tutorialStatus) {
-    const skippedStatus = {
-      ...tutorialStatus,
-      completed: false, // Mark as skipped, not completed
-      currentStep: 0
-    };
-    saveTutorialStatus(skippedStatus);
-  }
-}, [tutorialStatus, saveTutorialStatus]);
-
-  /**
-   * Complete the tutorial and mark as finished
-   */
-const completeTutorial = useCallback(() => {
-  tutorialLog('Completing tutorial');
-
-  // 🔔 analytics: tutorial_completed (fires once on finish)
-  try {
-    const g: any = global as any;
-
-    const total = TUTORIAL_STEPS.length;
-    // Use current status to infer the last visible step (before completion bumps index)
-    const lastIndex = Math.min(
-      Math.max(0, (tutorialStatus?.currentStep ?? total - 1)),
-      total - 1
-    );
-    const lastKey = TUTORIAL_STEPS[lastIndex]?.id;
-
-    const dwellStart = g.__tutorialStepDwellStartTs;
-    const dwell = typeof dwellStart === 'number' ? Math.max(0, Date.now() - dwellStart) : 0;
-
-    const fromScreen = g.currentRouteName || '(unknown)';
-    const runInitiated = g.__tutorialRunUserInitiated === true;
-    const launchSource = g.__tutorialRunLaunchSource || 'unknown';
-    const isGuest = !auth.currentUser;
-
+  const completeTutorial = useCallback(() => {
+    setIsActive(false);
+    persistStatus({
+      completed: true,
+      skipped: false,
+      currentStep: TUTORIAL_STEPS.length - 1,
+      completedSteps: [...LEGACY_TUTORIAL_STEP_IDS],
+      version: TUTORIAL_VERSION,
+    });
     amplitudeTrack('tutorial_completed', {
       tutorial_id: 'main_onboarding_v1',
-      tutorial_version: 1,
-      total_steps: total,
-      source: 'tutorial_system',
-      from_screen: pathname || fromScreen,
-
-
-      // last step context
-      step_index: lastIndex,
-      step_key: lastKey,
-      dwell_ms_on_step: dwell,
-
-      // run context
-      user_initiated: runInitiated,
-      launch_source: launchSource,
-      is_guest: isGuest,
+      tutorial_version: TUTORIAL_VERSION,
+      total_steps: TUTORIAL_STEPS.length,
+      step_key: 'completion',
+      from_screen: pathname || '(unknown)',
     });
-  } catch (e) {
-    console.log('[analytics] tutorial_completed failed:', e);
-  }
-  
-const completedStatus: TutorialStatus = {
-  completed: true,
-  currentStep: TUTORIAL_STEPS.length,
-  completedSteps: TUTORIAL_STEPS.map(step => step.id)
-};
+  }, [pathname, persistStatus]);
 
-  // Clean up all tutorial highlight flags
-  tutorialLog('Cleaning up tutorial highlight flags on completion');
-  (global as any).tutorialHighlightFilterPills = false;
-  (global as any).tutorialHighlightEventDetails = false;
-  (global as any).tutorialHighlightVenueSelector = false;
-  (global as any).tutorialHighlightEventTabs = false;
-  (global as any).tutorialHighlightEventsTab = false;
-  (global as any).tutorialHighlightEventsListExplanation = false;
-  (global as any).tutorialHighlightEventsFilters = false;
-  (global as any).tutorialHighlightSpecialsTab = false;
-  (global as any).tutorialHighlightSpecialsListExplanation = false;
-  (global as any).tutorialHighlightSpecialsFilters = false;
-  (global as any).tutorialHighlightProfileFacebook = false;
-  (global as any).tutorialHighlightFacebookSubmission = false;
-  (global as any).facebookSubmissionStable = false;
-  (global as any).facebookSubmissionLayout = null;
-  
-  saveTutorialStatus(completedStatus);
-  
-  // Force tutorial to close immediately
-  setIsActive(false);
-  
-  tutorialLog('Tutorial marked as completed and deactivated');
-}, [saveTutorialStatus]);
-
-  /**
-   * Restart the tutorial from the beginning
-   * Used from profile page for users who want to replay
-   */
   const restartTutorial = useCallback(() => {
-    tutorialLog('Restarting tutorial');
-    
-    const resetStatus: TutorialStatus = {
-      completed: false,
-      currentStep: 0,
-      completedSteps: []
-    };
-    
-    saveTutorialStatus(resetStatus);
-    startTutorial();
-  }, [saveTutorialStatus, startTutorial]);
+    const reset = defaultStatus();
+    persistStatus(reset);
+    setCurrentStepIndex(0);
+    setIsActive(true);
+  }, [persistStatus]);
 
-  /**
-   * Mark a specific step as completed
-   * Used for tracking individual step completion
-   */
   const markStepCompleted = useCallback((stepId: string) => {
-    if (!tutorialStatus) {
-      tutorialLog('No tutorial status, cannot mark step completed');
-      return;
-    }
-
-    tutorialLog(`Marking step completed: ${stepId}`);
-
-    const updatedStatus: TutorialStatus = {
-      ...tutorialStatus,
-      completedSteps: [...new Set([...tutorialStatus.completedSteps, stepId])],
-      currentStep: currentStepIndex + 1
-    };
-    
-    saveTutorialStatus(updatedStatus);
-  }, [tutorialStatus, currentStepIndex, saveTutorialStatus]);
+    const status = statusRef.current ?? defaultStatus();
+    persistStatus({
+      ...status,
+      completedSteps: [...new Set([...status.completedSteps, stepId])],
+    });
+  }, [persistStatus]);
 
   return {
-    // State
     isActive,
     currentStep,
-    currentSubStep,
+    currentSubStep: -1,
     tutorialStatus,
-    
-    // Actions
     startTutorial,
     nextStep,
     previousStep,
     skipTutorial,
     completeTutorial,
     restartTutorial,
-    markStepCompleted
+    markStepCompleted,
   };
 };
-
-/**
- * HOOK ARCHITECTURE NOTES:
- * 
- * 1. State Management:
- *    - Uses React hooks for local state management
- *    - Integrates with Firestore for persistence
- *    - Handles both main steps and sub-steps
- * 
- * 2. Firestore Integration:
- *    - Loads tutorial status on auth state change
- *    - Saves progress after each step
- *    - Handles network errors gracefully
- * 
- * 3. Step Navigation:
- *    - Complex logic for multi-step navigation
- *    - Handles sub-steps within main steps
- *    - Tracks completion progress
- * 
- * 4. Error Handling:
- *    - Comprehensive error logging
- *    - Graceful fallbacks for network issues
- *    - Debug logging for development
- * 
- * 5. Performance:
- *    - Uses useCallback for all functions
- *    - Minimizes re-renders with proper dependencies
- *    - Efficient Firestore operations
- * 
- * INTEGRATION POINTS:
- * 
- * 1. Authentication:
- *    - Listens to auth state changes
- *    - Handles user login/logout scenarios
- * 
- * 2. Firestore Document Structure:
- *    - Adds tutorialStatus field to user documents
- *    - Maintains backward compatibility
- * 
- * 3. External Triggers:
- *    - Can be triggered from interest selection
- *    - Can be restarted from profile page
- * 
- * 4. Cross-Screen Coordination:
- *    - Maintains state across navigation
- *    - Handles app backgrounding/foregrounding
- */

@@ -20,6 +20,7 @@ import { trackTabSelect } from '../../store/guestLimitationStore';
 // ===============================================================
 import useAnalytics from '../../hooks/useAnalytics';
 import { runAfterTabPaint } from '../../utils/tabFocusEffects';
+import { publishTutorialMeasurement } from '../../utils/tutorialReadiness';
 import {
   markTabBarSelected,
   markTabButtonPressReturned,
@@ -137,7 +138,9 @@ const TutorialAwareTabBarButton = (props: InstrumentedTabBarButtonProps) => {
       }
       if (globalFlag && viewRef.current) {
         (viewRef.current as View).measure((_x, _y, width, height, pageX, pageY) => {
-          (global as any).eventsTabLayout = { x: pageX, y: pageY, width, height };
+          const measurement = { x: pageX, y: pageY, width, height };
+          (global as any).eventsTabLayout = measurement;
+          publishTutorialMeasurement('eventsTabLayout', measurement);
         });
       }
     }, 500);
@@ -230,7 +233,9 @@ const TutorialAwareSpecialsTabBarButton = (props: InstrumentedTabBarButtonProps)
       }
       if (globalFlag && viewRef.current) {
         (viewRef.current as View).measure((_x, _y, width, height, pageX, pageY) => {
-          (global as any).specialsTabLayout = { x: pageX, y: pageY, width, height };
+          const measurement = { x: pageX, y: pageY, width, height };
+          (global as any).specialsTabLayout = measurement;
+          publishTutorialMeasurement('specialsTabLayout', measurement);
         });
       }
     }, 500);
@@ -629,6 +634,7 @@ export default function TabLayout() {
             }
             
             (global as any).profileFacebookLayout = currentMeasurement;
+            publishTutorialMeasurement('profileFacebookLayout', currentMeasurement);
           }
         });
       }
@@ -778,7 +784,9 @@ export default function TabLayout() {
                 // Immediate measurement for tutorial
                 if ((global as any).tutorialHighlightProfileFacebook && profileButtonRef.current) {
                   profileButtonRef.current.measureInWindow((x: number, y: number, width: number, height: number) => {
-                    (global as any).profileFacebookLayout = { x, y, width, height };
+                    const measurement = { x, y, width, height };
+                    (global as any).profileFacebookLayout = measurement;
+                    publishTutorialMeasurement('profileFacebookLayout', measurement);
                   });
                 }
               }}

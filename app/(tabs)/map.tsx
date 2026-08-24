@@ -118,6 +118,7 @@ import {
   markTabScreenRenderStart,
   markTabTracePhase,
 } from '../../utils/tabSwitchTrace';
+import { registerTutorialAction } from '../../utils/tutorialActions';
 import { useReduceMotion } from '../../hooks/useReduceMotion';
 import { isAreaExperienceEvent } from '../../utils/locationScope';
 import {
@@ -6847,6 +6848,10 @@ lastOpenedClusterIdRef.current = cluster.id;
     flushAndroidClosingCalloutForRetap,
     trackInteraction,
   ]); // REMOVED analytics, zoomLevel dependencies
+
+  useEffect(() => registerTutorialAction('open-cluster', async (target: Cluster) => {
+    await handleMarkerPress(target);
+  }), [handleMarkerPress]);
 
   const handleAndroidRetapOverlayResponderRelease = useCallback((event: GestureResponderEvent): boolean => {
     if (

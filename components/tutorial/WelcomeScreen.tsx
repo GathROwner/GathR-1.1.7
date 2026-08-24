@@ -1,345 +1,156 @@
-/**
- * GathR Tutorial System - Modern Welcome Screen Component
- * 
- * Modernized version with improved styling, better spacing, and contemporary design
- */
-
-import React, { useRef, useEffect } from 'react';
+import { Ionicons } from '@expo/vector-icons';
+import React, { useEffect, useRef } from 'react';
 import {
-  View,
+  Animated,
+  Image,
+  StyleSheet,
   Text,
   TouchableOpacity,
-  StyleSheet,
-  Animated,
-  Dimensions
+  useWindowDimensions,
+  View,
 } from 'react-native';
-import { MaterialIcons } from '@expo/vector-icons';
-import { WelcomeScreenProps } from '../../types/tutorial';
-import { TUTORIAL_CONFIG } from '../../config/tutorialSteps';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+import { WelcomeScreenProps } from '../../types/tutorial';
+
+const GATHR_GLOBE = require('../../assets/icon.png');
+const GATHR_WORDMARK = require('../../assets/GathR Text Logo.png');
+
+const FEATURES = [
+  { icon: 'map-outline' as const, text: 'Discover what is happening nearby' },
+  { icon: 'options-outline' as const, text: 'Shape results around your plans' },
+  { icon: 'people-outline' as const, text: 'Help great local places get found' },
+];
 
 export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
   onStart,
-  onSkip
+  onSkip,
+  stepNumber = 1,
+  totalSteps = 11,
 }) => {
-  const fadeAnim = useRef(new Animated.Value(0)).current;
-  const scaleAnim = useRef(new Animated.Value(0.9)).current;
-  const slideAnim = useRef(new Animated.Value(30)).current;
+  const insets = useSafeAreaInsets();
+  const { height: windowHeight } = useWindowDimensions();
+  const entrance = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    // Animate welcome screen entrance
-    Animated.sequence([
-      Animated.delay(150),
-      Animated.parallel([
-        Animated.timing(fadeAnim, {
-          toValue: 1,
-          duration: 600,
-          useNativeDriver: true
-        }),
-        Animated.spring(scaleAnim, {
-          toValue: 1,
-          useNativeDriver: true,
-          tension: 50,
-          friction: 8
-        }),
-        Animated.spring(slideAnim, {
-          toValue: 0,
-          useNativeDriver: true,
-          tension: 50,
-          friction: 8
-        })
-      ])
-    ]).start();
-  }, [fadeAnim, scaleAnim, slideAnim]);
+    Animated.spring(entrance, {
+      toValue: 1,
+      tension: 70,
+      friction: 10,
+      useNativeDriver: true,
+    }).start();
+  }, [entrance]);
 
   return (
-    <Animated.View 
-      style={[
-        styles.container,
-        {
-          opacity: fadeAnim,
-          transform: [
-            { scale: scaleAnim },
-            { translateY: slideAnim }
-          ]
-        }
-      ]}
-    >
-      {/* Header with modern icon and title */}
-      <View style={styles.header}>
-        <View style={styles.iconContainer}>
-          <View style={styles.iconGradient}>
-            <MaterialIcons name="explore" size={36} color="#FFFFFF" />
-          </View>
+    <View style={[styles.stage, {
+      paddingTop: insets.top + 16,
+      paddingBottom: insets.bottom + 16,
+      paddingLeft: insets.left + 18,
+      paddingRight: insets.right + 18,
+    }]}>
+      <Animated.View
+        accessibilityViewIsModal
+        style={[
+          styles.card,
+          { maxHeight: windowHeight - insets.top - insets.bottom - 32 },
+          {
+            opacity: entrance,
+            transform: [{
+              translateY: entrance.interpolate({ inputRange: [0, 1], outputRange: [20, 0] }),
+            }],
+          },
+        ]}
+      >
+        <View style={styles.brandRow}>
+          <Image source={GATHR_GLOBE} style={styles.globe} resizeMode="contain" />
+          <Image source={GATHR_WORDMARK} style={styles.wordmark} resizeMode="contain" />
         </View>
-        
-        <Text style={styles.title}>Welcome to GathR!</Text>
-        <Text style={styles.subtitle}>
-          Discover amazing local events and specials with a quick guided tour.
+
+        <View style={styles.progressRow}>
+          <Text style={styles.eyebrow}>QUICK TOUR</Text>
+          <Text style={styles.progressText}>{stepNumber} of {totalSteps}</Text>
+        </View>
+        <View style={styles.progressTrack}>
+          <View style={[styles.progressFill, { width: `${(stepNumber / totalSteps) * 100}%` }]} />
+        </View>
+
+        <Text style={styles.title} maxFontSizeMultiplier={1.35}>Find your next reason to get together.</Text>
+        <Text style={styles.subtitle} maxFontSizeMultiplier={1.4}>
+          A quick, hands-on tour of the Map, Events, Specials, and Profile.
         </Text>
-      </View>
-      
-      {/* Modern feature list with enhanced styling */}
-      <View style={styles.featureList}>
-        <FeatureItem 
-          icon="location-on" 
-          text="Find events near you on the map"
-          color="#FF6B6B"
-        />
-        <FeatureItem 
-          icon="restaurant" 
-          text="Discover food & drink specials"
-          color="#4ECDC4"
-        />
-        <FeatureItem 
-          icon="tune" 
-          text="Filter by your interests"
-          color="#45B7D1"
-        />
-        <FeatureItem 
-          icon="schedule" 
-          text="See what's happening now"
-          color="#FFA726"
-        />
-        <FeatureItem 
-          icon="favorite" 
-          text="Suggest your favorite venues"
-          color="#AB47BC"
-        />
-      </View>
-      
-      {/* Modern action buttons */}
-      <View style={styles.buttonContainer}>
-        <TouchableOpacity 
-          style={styles.skipButton} 
-          onPress={onSkip}
-          activeOpacity={0.7}
-        >
-          <Text style={styles.skipButtonText}>Skip for Now</Text>
-        </TouchableOpacity>
-        
-        <TouchableOpacity 
-          style={styles.startButton} 
-          onPress={onStart}
-          activeOpacity={0.8}
-        >
-          <Text style={styles.startButtonText}>Start Tutorial</Text>
-          <MaterialIcons name="arrow-forward" size={18} color="#FFFFFF" />
-        </TouchableOpacity>
-      </View>
-      
-      {/* Improved footer with better spacing */}
-      <View style={styles.footer}>
-        <View style={styles.durationContainer}>
-          <MaterialIcons name="access-time" size={12} color="#94A3B8" />
-          <Text style={styles.durationText}>About 2 minutes</Text>
+
+        <View style={styles.featureList}>
+          {FEATURES.map((feature) => (
+            <View key={feature.text} style={styles.featureRow}>
+              <View style={styles.featureIcon}>
+                <Ionicons name={feature.icon} size={20} color="#168BE8" />
+              </View>
+              <Text style={styles.featureText} maxFontSizeMultiplier={1.35}>{feature.text}</Text>
+            </View>
+          ))}
         </View>
-      </View>
-    </Animated.View>
+
+        <TouchableOpacity
+          accessibilityRole="button"
+          accessibilityLabel="Start GathR tour"
+          activeOpacity={0.86}
+          onPress={onStart}
+          style={styles.primaryButton}
+        >
+          <Text style={styles.primaryButtonText}>Start the tour</Text>
+          <Ionicons name="arrow-forward" size={20} color="#FFFFFF" />
+        </TouchableOpacity>
+        <TouchableOpacity
+          accessibilityRole="button"
+          accessibilityLabel="Skip tutorial"
+          activeOpacity={0.7}
+          onPress={onSkip}
+          style={styles.skipButton}
+        >
+          <Text style={styles.skipText}>Skip for now</Text>
+        </TouchableOpacity>
+        <Text style={styles.duration}>About one minute</Text>
+      </Animated.View>
+    </View>
   );
 };
 
-// Separate component for feature items to improve reusability and styling
-const FeatureItem: React.FC<{
-  icon: string;
-  text: string;
-  color: string;
-}> = ({ icon, text, color }) => (
-  <View style={styles.featureItem}>
-    <View style={[styles.featureIconContainer, { backgroundColor: color }]}>
-      <MaterialIcons name={icon as any} size={15} color="#FFFFFF" />
-    </View>
-    <Text style={styles.featureText}>{text}</Text>
-  </View>
-);
-
 const styles = StyleSheet.create({
-  container: {
-    position: 'absolute',
-    top: '15%',
-    left: 20,
-    right: 20,
+  stage: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: 'center',
+    backgroundColor: 'rgba(4, 20, 35, 0.76)',
+  },
+  card: {
+    width: '100%',
+    maxWidth: 430,
+    alignSelf: 'center',
+    borderRadius: 28,
     backgroundColor: '#FFFFFF',
-    borderRadius: 24,
-    padding: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 20 },
-    shadowOpacity: 0.15,
-    shadowRadius: 25,
-    elevation: 20,
-    maxHeight: SCREEN_HEIGHT * 0.68,
+    padding: 24,
+    shadowColor: '#001526',
+    shadowOffset: { width: 0, height: 18 },
+    shadowOpacity: 0.28,
+    shadowRadius: 30,
+    elevation: 24,
   },
-  header: {
-    alignItems: 'center',
-    marginBottom: 22,
-  },
-  iconContainer: {
-    marginBottom: 16,
-  },
-  iconGradient: {
-    width: 70,
-    height: 70,
-    borderRadius: 35,
-    backgroundColor: TUTORIAL_CONFIG.PRIMARY_COLOR,
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: TUTORIAL_CONFIG.PRIMARY_COLOR,
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.3,
-    shadowRadius: 10,
-    elevation: 6,
-    // Modern gradient effect simulation
-    borderWidth: 2,
-    borderColor: 'rgba(255, 255, 255, 0.2)',
-  },
-  title: {
-    fontSize: 26,
-    fontWeight: '800',
-    color: '#1F2937',
-    marginBottom: 6,
-    textAlign: 'center',
-    letterSpacing: -0.4,
-  },
-  subtitle: {
-    fontSize: 15,
-    lineHeight: 20,
-    color: '#6B7280',
-    textAlign: 'center',
-    fontWeight: '400',
-    paddingHorizontal: 4,
-  },
-  featureList: {
-    marginBottom: 24,
-    paddingHorizontal: 2,
-  },
-  featureItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 14,
-    paddingVertical: 1,
-  },
-  featureIconContainer: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 14,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 3,
-    elevation: 2,
-  },
-  featureText: {
-    fontSize: 14,
-    color: '#374151',
-    fontWeight: '500',
-    flex: 1,
-    lineHeight: 18,
-  },
-  buttonContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 16,
-    gap: 10,
-  },
-  skipButton: {
-    paddingVertical: 12,
-    paddingHorizontal: 18,
-    borderRadius: 14,
-    backgroundColor: '#F8FAFC',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    flex: 0.4,
-  },
-  skipButtonText: {
-    color: '#64748B',
-    fontSize: 14,
-    fontWeight: '600',
-    textAlign: 'center',
-  },
-  startButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: TUTORIAL_CONFIG.PRIMARY_COLOR,
-    paddingVertical: 14,
-    paddingHorizontal: 20,
-    borderRadius: 14,
-    shadowColor: TUTORIAL_CONFIG.PRIMARY_COLOR,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 6,
-    flex: 0.58,
-  },
-  startButtonText: {
-    color: '#FFFFFF',
-    fontSize: 15,
-    fontWeight: '700',
-    marginRight: 6,
-    letterSpacing: 0.2,
-  },
-  footer: {
-    alignItems: 'center',
-    paddingTop: 12,
-    paddingBottom: 2,
-  },
-  durationContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#F1F5F9',
-    paddingVertical: 5,
-    paddingHorizontal: 10,
-    borderRadius: 10,
-  },
-  durationText: {
-    fontSize: 12,
-    color: '#64748B',
-    marginLeft: 5,
-    fontWeight: '500',
-  },
+  brandRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 22 },
+  globe: { width: 56, height: 56, borderRadius: 28 },
+  wordmark: { width: 132, height: 42, marginLeft: 10 },
+  progressRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  eyebrow: { color: '#168BE8', fontSize: 12, fontWeight: '800', letterSpacing: 1.2 },
+  progressText: { color: '#607387', fontSize: 13, fontWeight: '700' },
+  progressTrack: { height: 5, borderRadius: 3, backgroundColor: '#E7F2FB', marginTop: 9, marginBottom: 22, overflow: 'hidden' },
+  progressFill: { height: '100%', borderRadius: 3, backgroundColor: '#2497F3' },
+  title: { color: '#0B2235', fontSize: 30, lineHeight: 35, fontWeight: '800', letterSpacing: -0.7 },
+  subtitle: { color: '#5B6D7E', fontSize: 16, lineHeight: 23, marginTop: 10 },
+  featureList: { marginTop: 22, marginBottom: 20, gap: 12 },
+  featureRow: { flexDirection: 'row', alignItems: 'center' },
+  featureIcon: { width: 38, height: 38, borderRadius: 19, backgroundColor: '#EAF5FE', alignItems: 'center', justifyContent: 'center', marginRight: 12 },
+  featureText: { flex: 1, color: '#20394E', fontSize: 15, lineHeight: 20, fontWeight: '600' },
+  primaryButton: { minHeight: 52, borderRadius: 16, backgroundColor: '#168BE8', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
+  primaryButtonText: { color: '#FFFFFF', fontSize: 17, fontWeight: '800' },
+  skipButton: { minHeight: 48, alignItems: 'center', justifyContent: 'center', marginTop: 4 },
+  skipText: { color: '#526A7F', fontSize: 15, fontWeight: '700' },
+  duration: { textAlign: 'center', color: '#8797A6', fontSize: 12, fontWeight: '600' },
 });
-
-/**
- * MODERN DESIGN IMPROVEMENTS:
- * 
- * 1. Compact Layout:
- *    - Reduced overall padding and margins for better space efficiency
- *    - Smaller icon sizes while maintaining visual hierarchy
- *    - Tighter spacing between elements without compromising readability
- * 
- * 2. Visual Hierarchy:
- *    - Better typography with improved weights and spacing
- *    - More sophisticated color scheme
- *    - Enhanced visual separation between sections
- * 
- * 3. Icon & Feature Styling:
- *    - Colored circular containers for feature icons
- *    - Each feature has its own accent color
- *    - Optimized sizing for compact layout
- * 
- * 4. Button Design:
- *    - Skip button has subtle background and border
- *    - Better proportional sizing with flex
- *    - Enhanced shadows with appropriate scale
- * 
- * 5. Footer Fix:
- *    - Duration text in a compact pill-shaped container
- *    - Proper sizing to prevent cutoff
- *    - Balanced padding and spacing
- * 
- * 6. Modern Touches:
- *    - Contemporary border radius
- *    - Improved shadows with multiple levels
- *    - Better color palette with grays
- *    - Letter spacing for premium feel
- * 
- * 7. Size Optimization:
- *    - More compact overall footprint
- *    - Reduced maxHeight from 75% to 68%
- *    - Tighter spacing throughout for mobile efficiency
- */

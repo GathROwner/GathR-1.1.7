@@ -9,21 +9,21 @@ import {
   View,
   StyleSheet,
   Animated,
-  Dimensions,
   Platform,
+  useWindowDimensions,
 } from 'react-native';
 
 import MaskedView from '@react-native-masked-view/masked-view';
 import Svg, { Rect, Defs, Mask, Circle } from 'react-native-svg';
 import { TutorialSpotlightProps } from '../../types/tutorial';
 
-const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const SPOTLIGHT_PADDING = 8;
 
 export const TutorialSpotlight: React.FC<TutorialSpotlightProps> = ({
   spotlight,
   children,
 }) => {
+  const { width: screenWidth, height: screenHeight } = useWindowDimensions();
   const pulseAnim = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
@@ -31,12 +31,12 @@ export const TutorialSpotlight: React.FC<TutorialSpotlightProps> = ({
       const pulse = Animated.sequence([
         Animated.timing(pulseAnim, {
           toValue: 1.05,
-          duration: 1000, // pulse duration
+          duration: 1200,
           useNativeDriver: true,
         }),
         Animated.timing(pulseAnim, {
           toValue: 1,
-          duration: 1000,
+          duration: 1200,
           useNativeDriver: true,
         }),
       ]);
@@ -71,23 +71,23 @@ export const TutorialSpotlight: React.FC<TutorialSpotlightProps> = ({
   const paddedRadius = squareCorners ? 0 : Math.max(0, effectiveRadius + SPOTLIGHT_PADDING);
 
 // padded bounds
-const paddedX = x - SPOTLIGHT_PADDING;
-const paddedY = y - SPOTLIGHT_PADDING;
-const paddedWidth = width + SPOTLIGHT_PADDING * 2;
-const paddedHeight = height + SPOTLIGHT_PADDING * 2;
+const paddedX = Math.max(0, x - SPOTLIGHT_PADDING);
+const paddedY = Math.max(0, y - SPOTLIGHT_PADDING);
+const paddedWidth = Math.max(1, Math.min(width + SPOTLIGHT_PADDING * 2, screenWidth - paddedX));
+const paddedHeight = Math.max(1, Math.min(height + SPOTLIGHT_PADDING * 2, screenHeight - paddedY));
 
 // iOS keeps MaskedView (nice rounded rect / circle).
 const SpotlightMasked = (
   <MaskedView style={styles.maskContainer} pointerEvents="none"
     maskElement={
-      <Svg width={SCREEN_WIDTH} height={SCREEN_HEIGHT}>
+      <Svg width={screenWidth} height={screenHeight}>
         <Defs>
           <Mask
             id="spotlight-mask"
             x="0"
             y="0"
-            width={SCREEN_WIDTH}
-            height={SCREEN_HEIGHT}
+            width={screenWidth}
+            height={screenHeight}
             maskUnits="userSpaceOnUse"
             maskContentUnits="userSpaceOnUse"
           >
@@ -108,7 +108,7 @@ const SpotlightMasked = (
           y="0"
           width="100%"
           height="100%"
-          fill="rgba(0,0,0,0.85)"
+          fill="rgba(4,20,35,0.72)"
           mask="url(#spotlight-mask)"
         />
       </Svg>
@@ -122,8 +122,8 @@ const SpotlightMasked = (
 // and only block touches outside the hole.
 const AndroidCircularOverlay = (
   <Svg
-    width={SCREEN_WIDTH}
-    height={SCREEN_HEIGHT}
+  width={screenWidth}
+  height={screenHeight}
     pointerEvents="none"
     style={styles.maskContainer}
   >
@@ -132,8 +132,8 @@ const AndroidCircularOverlay = (
         id="android-spotlight-circle"
         x="0"
         y="0"
-        width={SCREEN_WIDTH}
-        height={SCREEN_HEIGHT}
+        width={screenWidth}
+        height={screenHeight}
         maskUnits="userSpaceOnUse"
         maskContentUnits="userSpaceOnUse"
       >
@@ -151,7 +151,7 @@ const AndroidCircularOverlay = (
       y="0"
       width="100%"
       height="100%"
-      fill="rgba(0,0,0,0.85)"
+      fill="rgba(4,20,35,0.72)"
       mask="url(#android-spotlight-circle)"
     />
   </Svg>
@@ -160,8 +160,8 @@ const AndroidCircularOverlay = (
 // ANDROID: rectangular overlay (default behavior)
 const AndroidRectangularOverlay = (
   <Svg
-    width={SCREEN_WIDTH}
-    height={SCREEN_HEIGHT}
+    width={screenWidth}
+    height={screenHeight}
     pointerEvents="none"
     style={styles.maskContainer}
   >
@@ -170,8 +170,8 @@ const AndroidRectangularOverlay = (
         id="android-spotlight-rect"
         x="0"
         y="0"
-        width={SCREEN_WIDTH}
-        height={SCREEN_HEIGHT}
+        width={screenWidth}
+        height={screenHeight}
         maskUnits="userSpaceOnUse"
         maskContentUnits="userSpaceOnUse"
       >
@@ -192,7 +192,7 @@ const AndroidRectangularOverlay = (
       y="0"
       width="100%"
       height="100%"
-      fill="rgba(0,0,0,0.85)"
+      fill="rgba(4,20,35,0.72)"
       mask="url(#android-spotlight-rect)"
     />
   </Svg>
@@ -283,8 +283,8 @@ return (
 const styles = StyleSheet.create({
   container: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'transparent' },
   maskContainer: { ...StyleSheet.absoluteFillObject },
-  fullOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.85)' },
+  fullOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(4,20,35,0.72)' },
   interceptor: { position: 'absolute', backgroundColor: 'transparent' },
-  borderRing: { position: 'absolute', borderWidth: 4, borderColor: '#FF5722', backgroundColor: 'transparent', shadowColor: '#FF5722', shadowOffset: { width:0, height:0 }, shadowOpacity:0.8, shadowRadius:8, elevation:0 },
-  glowRing: { position: 'absolute', borderWidth: 2, borderColor: 'transparent', backgroundColor: 'transparent', shadowColor: '#FF5722', shadowOffset: {width:0, height:0}, shadowOpacity:0.6, shadowRadius:16, elevation:0 },
+  borderRing: { position: 'absolute', borderWidth: 3, borderColor: '#FFFFFF', backgroundColor: 'transparent', shadowColor: '#2497F3', shadowOffset: { width:0, height:0 }, shadowOpacity:0.9, shadowRadius:8, elevation:0 },
+  glowRing: { position: 'absolute', borderWidth: 2, borderColor: '#2497F3', backgroundColor: 'transparent', shadowColor: '#2497F3', shadowOffset: {width:0, height:0}, shadowOpacity:0.55, shadowRadius:14, elevation:0 },
 });

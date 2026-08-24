@@ -65,6 +65,7 @@ import { addToCalendar } from '../../utils/calendarUtils';
 import { buildGathrSharePayload } from '../../utils/shareUtils';
 import { getTicketUrl, normalizeTicketUrl } from '../../utils/ticketUrls';
 import { getPrimaryNonTicketAction } from '../../utils/eventActionLinks';
+import { publishTutorialMeasurement } from '../../utils/tutorialReadiness';
 
 // Import priority utilities, user service, and distance calculation
 import {
@@ -464,6 +465,7 @@ const EventListItem: React.FC<EventListItemProps> = ({
         tutorialRef.current.measureInWindow((x: number, y: number, width: number, height: number) => {
           const cur = { x, y, width, height };
           g.eventsListExplanationLayout = cur;
+          publishTutorialMeasurement('eventsListExplanationLayout', cur);
 
           // Track first measurement
           if (!hasMeasuredRef.current) {
@@ -1801,6 +1803,7 @@ useEffect(() => {
         filtersRef.current.measureInWindow((x: number, y: number, width: number, height: number) => {
           const cur = { x, y, width, height };
           g.eventsFiltersLayout = cur;
+          publishTutorialMeasurement('eventsFiltersLayout', cur);
 
           if (!filtersHasMeasuredRef.current) {
             filtersHasMeasuredRef.current = true;
@@ -2769,7 +2772,9 @@ setSelectedImageData({ imageUrl, event });
               const g: any = global as any;
               if (g.tutorialHighlightEventsFilters && !g.eventsFiltersStable && filtersRef.current) {
                 filtersRef.current.measureInWindow((x: number, y: number, width: number, height: number) => {
-                  g.eventsFiltersLayout = { x, y, width, height };
+                  const measurement = { x, y, width, height };
+                  g.eventsFiltersLayout = measurement;
+                  publishTutorialMeasurement('eventsFiltersLayout', measurement);
                 });
               }
             }}

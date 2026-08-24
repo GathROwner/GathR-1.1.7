@@ -9,6 +9,7 @@ import TimeFilterOptions from './TimeFilterOptions';
 import CategoryFilterOptions from './CategoryFilterOptions';
 import { isEventNow, isEventHappeningToday } from '../../utils/dateUtils';
 import { registerMapTraceSampler, traceMapEvent } from '../../utils/mapTrace';
+import { publishTutorialMeasurement } from '../../utils/tutorialReadiness';
 
 type CurtainPeekState = {
   lastPeekTime: number;
@@ -1524,8 +1525,10 @@ React.useEffect(() => {
 
     node.measure((x, y, width, height, pageX, pageY) => {
       const measuredAt = Date.now();
-      (global as any).filterPillsLayout = { x: pageX, y: pageY, width, height, measuredAt };
+      const measurement = { x: pageX, y: pageY, width, height };
+      (global as any).filterPillsLayout = { ...measurement, measuredAt };
       (global as any).filterPillsLayoutMeasuredAt = measuredAt;
+      publishTutorialMeasurement('filterPillsLayout', measurement, measuredAt);
     });
   }, []);
 
