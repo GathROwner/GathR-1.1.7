@@ -1941,7 +1941,6 @@ const tutorialOverlayForCalloutModal = useCallback(() => {
             onSkip={skipTutorial}
             showPrevious={currentStep.id !== 'welcome'}
             showNext={
-              stepForTooltip.id !== 'cluster-click' &&
               stepForTooltip.id !== 'events-tab' &&
               stepForTooltip.id !== 'specials-tab' &&
               stepForTooltip.id !== 'profile-facebook'
@@ -2188,7 +2187,7 @@ const tutorialOverlayForCalloutModal = useCallback(() => {
   skipTutorial();
 }}
                 showPrevious={currentStep?.id !== 'welcome'}
-                showNext={stepForTooltip.id !== 'cluster-click' && stepForTooltip.id !== 'events-tab' && stepForTooltip.id !== 'specials-tab' && stepForTooltip.id !== 'profile-facebook'}
+                showNext={stepForTooltip.id !== 'events-tab' && stepForTooltip.id !== 'specials-tab' && stepForTooltip.id !== 'profile-facebook'}
                 showSkip={true}
                 nextText={stepForTooltip.action === 'interaction' ? 'Continue' : 'Next'}
                                 position={tooltipPosition}
