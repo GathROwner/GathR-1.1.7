@@ -1293,8 +1293,10 @@ const handleLogout = async () => {
             setTimeout(() => {
               (global as any).tutorialLaunchUserInitiated = true;
               (global as any).tutorialLaunchSource = 'profile';
-              if ((global as any).triggerGathRTutorial) {
-                (global as any).triggerGathRTutorial();
+              if ((global as any).restartGathRTutorial) {
+                (global as any).tutorialLaunchUserInitiated = true;
+                (global as any).tutorialLaunchSource = 'profile';
+                (global as any).restartGathRTutorial();
               }
             }, 500);
           },
