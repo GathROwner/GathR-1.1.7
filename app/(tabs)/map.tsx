@@ -5330,13 +5330,16 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
 
   useEffect(() => {
     const globalAny = global as any;
-    globalAny.getTutorialClusterTargets = getAndroidProjectedClusterHitTargets;
+    const getTutorialClusterTargets = () => Platform.OS === 'android'
+      ? { projected: androidClusterHitTargetsRef.current, sourceCount: clusters.length }
+      : getAndroidProjectedClusterHitTargets();
+    globalAny.getTutorialClusterTargets = getTutorialClusterTargets;
     return () => {
-      if (globalAny.getTutorialClusterTargets === getAndroidProjectedClusterHitTargets) {
+      if (globalAny.getTutorialClusterTargets === getTutorialClusterTargets) {
         delete globalAny.getTutorialClusterTargets;
       }
     };
-  }, [getAndroidProjectedClusterHitTargets]);
+  }, [clusters.length, getAndroidProjectedClusterHitTargets]);
 
   const logAndroidRetapOverlayTargets = useCallback((
     reason: string,
