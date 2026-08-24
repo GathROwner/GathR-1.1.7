@@ -78,9 +78,9 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
           <View style={[styles.progressFill, { width: `${(stepNumber / totalSteps) * 100}%` }]} />
         </View>
 
-        <Text style={styles.title} maxFontSizeMultiplier={1.35}>Discover amazing local events.</Text>
+        <Text style={styles.title} maxFontSizeMultiplier={1.35}>GathR searches for events so you don&apos;t have to.</Text>
         <Text style={styles.subtitle} maxFontSizeMultiplier={1.4}>
-          GathR brings nearby events and specials together, so you don&apos;t have to search.
+          See nearby events and specials in one place—so you can spend less time scrolling and more time getting together.
         </Text>
 
         <View style={styles.featureList}>
