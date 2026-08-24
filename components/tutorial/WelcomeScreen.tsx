@@ -3,6 +3,7 @@ import React, { useEffect, useRef } from 'react';
 import {
   Animated,
   Image,
+  ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -61,9 +62,12 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
           },
         ]}
       >
+        <ScrollView bounces={false} showsVerticalScrollIndicator={false}>
         <View style={styles.brandRow}>
           <Image source={GATHR_GLOBE} style={styles.globe} resizeMode="contain" />
-          <Image source={GATHR_WORDMARK} style={styles.wordmark} resizeMode="contain" />
+          <View style={styles.wordmarkShell}>
+            <Image source={GATHR_WORDMARK} style={styles.wordmark} resizeMode="contain" />
+          </View>
         </View>
 
         <View style={styles.progressRow}>
@@ -74,9 +78,9 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
           <View style={[styles.progressFill, { width: `${(stepNumber / totalSteps) * 100}%` }]} />
         </View>
 
-        <Text style={styles.title} maxFontSizeMultiplier={1.35}>Find your next reason to get together.</Text>
+        <Text style={styles.title} maxFontSizeMultiplier={1.35}>Discover amazing local events.</Text>
         <Text style={styles.subtitle} maxFontSizeMultiplier={1.4}>
-          A quick, hands-on tour of the Map, Events, Specials, and Profile.
+          GathR brings nearby events and specials together, so you don&apos;t have to search.
         </Text>
 
         <View style={styles.featureList}>
@@ -110,6 +114,7 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
           <Text style={styles.skipText}>Skip for now</Text>
         </TouchableOpacity>
         <Text style={styles.duration}>About one minute</Text>
+        </ScrollView>
       </Animated.View>
     </View>
   );
@@ -136,7 +141,8 @@ const styles = StyleSheet.create({
   },
   brandRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 22 },
   globe: { width: 56, height: 56, borderRadius: 28 },
-  wordmark: { width: 132, height: 42, marginLeft: 10 },
+  wordmarkShell: { marginLeft: 10, paddingHorizontal: 10, borderRadius: 12, backgroundColor: '#0B2235' },
+  wordmark: { width: 132, height: 42 },
   progressRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   eyebrow: { color: '#168BE8', fontSize: 12, fontWeight: '800', letterSpacing: 1.2 },
   progressText: { color: '#607387', fontSize: 13, fontWeight: '700' },

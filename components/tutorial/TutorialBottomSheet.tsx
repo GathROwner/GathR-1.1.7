@@ -40,9 +40,11 @@ export const TutorialBottomSheet: React.FC<Props> = ({
   targetUnavailable = false,
 }) => {
   const insets = useSafeAreaInsets();
-  const { height: windowHeight } = useWindowDimensions();
+  const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const entrance = useRef(new Animated.Value(0)).current;
   const isCompletion = stepId === 'completion';
+  const horizontalInset = Math.max(14, insets.left + 12, insets.right + 12);
+  const cardWidth = Math.min(430, windowWidth - horizontalInset * 2);
 
   useEffect(() => {
     entrance.setValue(0);
@@ -66,7 +68,7 @@ export const TutorialBottomSheet: React.FC<Props> = ({
       style={[
         styles.card,
         verticalStyle,
-        { left: Math.max(14, insets.left + 12), right: Math.max(14, insets.right + 12) },
+        { width: cardWidth, left: (windowWidth - cardWidth) / 2 },
         isCompletion && styles.completionCard,
         {
           opacity: entrance,
@@ -149,9 +151,6 @@ const styles = StyleSheet.create({
   card: {
     position: 'absolute',
     left: 14,
-    right: 14,
-    maxWidth: 430,
-    alignSelf: 'center',
     borderRadius: 24,
     backgroundColor: '#FFFFFF',
     paddingHorizontal: 20,

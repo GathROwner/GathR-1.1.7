@@ -12,7 +12,6 @@ import { ComponentMeasurement, SpotlightConfig, TutorialStep } from '../../types
 import { runTutorialAction } from '../../utils/tutorialActions';
 import {
   waitForTutorialMeasurement,
-  withTutorialTimeout,
 } from '../../utils/tutorialReadiness';
 import { TutorialBottomSheet } from './TutorialBottomSheet';
 import { TutorialSpotlight } from './TutorialSpotlight';
@@ -137,25 +136,6 @@ const waitForClusters = (signal: AbortSignal): Promise<Cluster[] | null> => {
     signal.addEventListener('abort', onAbort, { once: true });
   });
 };
-
-const waitForMapIdle = (signal: AbortSignal) => new Promise<'idle' | 'timeout' | 'aborted'>((resolve) => {
-  let settled = false;
-  const finish = (source: 'idle' | 'timeout' | 'aborted') => {
-    if (settled) return;
-    settled = true;
-    clearTimeout(timeout);
-    if ((global as any).mapTutorialCameraIdleCallback === onIdle) {
-      delete (global as any).mapTutorialCameraIdleCallback;
-    }
-    signal.removeEventListener('abort', onAbort);
-    resolve(source);
-  };
-  const onIdle = () => finish('idle');
-  const onAbort = () => finish('aborted');
-  (global as any).mapTutorialCameraIdleCallback = onIdle;
-  const timeout = setTimeout(() => finish('timeout'), TUTORIAL_CONFIG.MAP_CAMERA_TIMEOUT_MS);
-  signal.addEventListener('abort', onAbort, { once: true });
-});
 
 const waitForCallout = (signal: AbortSignal) => new Promise<boolean>((resolve) => {
   const current = useMapStore.getState().selectedVenues;
@@ -315,46 +295,42 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
         targetClusterRef.current = target;
 
         const camera = (global as any).mapCameraRef?.current;
-        const map = (global as any).mapViewRef?.current;
-        if (!camera || !map) {
+        if (!camera) {
           setTargetUnavailable(true);
           return;
         }
 
         (global as any).ignoreProgrammaticCameraRef = true;
-        const idlePromise = waitForMapIdle(controller.signal);
         camera.setCamera({
-          centerCoordinate: [coordinate[0], coordinate[1] - 0.0032],
+          centerCoordinate: coordinate,
           zoomLevel: 15,
-          animationDuration: 450,
+          animationDuration: 0,
         });
         tutorialPerf('camera_begin', { stepId: currentStep.id });
-        const idleSource = await idlePromise;
-        tutorialPerf('camera_ready', { stepId: currentStep.id, source: idleSource });
-        if (controller.signal.aborted) return;
-
-        const projected = await withTutorialTimeout<[number, number] | null>(
-          Promise.resolve(map.getPointInView(coordinate)),
-          TUTORIAL_CONFIG.MAP_PROJECTION_TIMEOUT_MS,
-          null,
-        );
-        tutorialPerf('target_measured', { stepId: currentStep.id, source: projected.timedOut ? 'timeout' : 'projection' });
-        (global as any).ignoreProgrammaticCameraRef = false;
-        if (controller.signal.aborted) return;
-        if (!projected.value || !Array.isArray(projected.value)) {
-          setTargetUnavailable(true);
-          return;
-        }
 
         const mapLayout = (global as any).mapViewLayout;
         const originX = mapLayout?.absoluteX ?? mapLayout?.x ?? 0;
         const originY = mapLayout?.absoluteY ?? mapLayout?.y ?? 0;
+        const mapWidth = Number(mapLayout?.width);
+        const mapHeight = Number(mapLayout?.height);
+        if (!Number.isFinite(mapWidth) || mapWidth <= 0 || !Number.isFinite(mapHeight) || mapHeight <= 0) {
+          (global as any).ignoreProgrammaticCameraRef = false;
+          setTargetUnavailable(true);
+          return;
+        }
+
+        // Snapping the camera puts the chosen cluster at the measured MapView
+        // centre. This avoids Mapbox's occasionally blocking getPointInView
+        // bridge call and remains correct across iOS and Android viewports.
         const measurement = cleanMeasurement({
-          x: projected.value[0] + originX - 38,
-          y: projected.value[1] + originY - 38,
+          x: originX + mapWidth / 2 - 38,
+          y: originY + mapHeight / 2 - 58,
           width: 76,
           height: 76,
         }, screenWidth, screenHeight);
+        tutorialPerf('camera_ready', { stepId: currentStep.id, source: 'snapped' });
+        tutorialPerf('target_measured', { stepId: currentStep.id, source: 'map-layout-center' });
+        (global as any).ignoreProgrammaticCameraRef = false;
         if (measurement) {
           setSpotlight({ ...measurement, borderRadius: 38, forceCircle: true, showPulse: true });
         } else {
