@@ -3575,7 +3575,6 @@ useEffect(() => {
 
   useEffect(() => {
     if (
-      Platform.OS !== 'android' ||
       !isFocused ||
       !clustersReadyForInteraction ||
       isCalloutOpen ||
@@ -5273,9 +5272,7 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
       !visibleBbox
     ) {
       logAndroidRetapLatencyProbe('retap_projection_skipped', {
-        reason: Platform.OS !== 'android'
-          ? 'not_android'
-          : !isFocused
+        reason: !isFocused
             ? 'not_focused'
             : isLoading
               ? 'loading'
@@ -5330,6 +5327,16 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
     mapScreenOffset.y,
     shouldClusterBeVisible,
   ]);
+
+  useEffect(() => {
+    const globalAny = global as any;
+    globalAny.getTutorialClusterTargets = getAndroidProjectedClusterHitTargets;
+    return () => {
+      if (globalAny.getTutorialClusterTargets === getAndroidProjectedClusterHitTargets) {
+        delete globalAny.getTutorialClusterTargets;
+      }
+    };
+  }, [getAndroidProjectedClusterHitTargets]);
 
   const logAndroidRetapOverlayTargets = useCallback((
     reason: string,

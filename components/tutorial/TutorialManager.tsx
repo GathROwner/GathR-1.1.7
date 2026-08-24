@@ -104,16 +104,6 @@ const cleanMeasurement = (
   return width > 0 && height > 0 ? { x, y, width, height } : null;
 };
 
-const clusterCoordinate = (cluster: Cluster): [number, number] | null => {
-  const venues = cluster.venues.filter((venue) =>
-    Number.isFinite(venue.longitude) && Number.isFinite(venue.latitude));
-  if (!venues.length) return null;
-  return [
-    venues.reduce((sum, venue) => sum + venue.longitude, 0) / venues.length,
-    venues.reduce((sum, venue) => sum + venue.latitude, 0) / venues.length,
-  ];
-};
-
 const waitForClusters = (signal: AbortSignal): Promise<Cluster[] | null> => {
   const current = useMapStore.getState().clusters;
   if (current.length) return Promise.resolve(current);
@@ -286,51 +276,30 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
           setTargetUnavailable(true);
           return;
         }
-        const target = clusters.find((cluster) => cluster.eventCount + cluster.specialCount > 0) ?? clusters[0];
-        const coordinate = clusterCoordinate(target);
-        if (!coordinate) {
+        const projected = (global as any).getTutorialClusterTargets?.()?.projected as {
+          cluster: Cluster;
+          x: number;
+          y: number;
+        }[] | undefined;
+        const target = projected?.find(({ cluster }) => cluster.eventCount + cluster.specialCount > 0)
+          ?? projected?.[0];
+        if (!target) {
           setTargetUnavailable(true);
           return;
         }
-        targetClusterRef.current = target;
+        targetClusterRef.current = target.cluster;
 
-        const camera = (global as any).mapCameraRef?.current;
-        if (!camera) {
-          setTargetUnavailable(true);
-          return;
-        }
-
-        (global as any).ignoreProgrammaticCameraRef = true;
-        camera.setCamera({
-          centerCoordinate: coordinate,
-          zoomLevel: 15,
-          animationDuration: 0,
-        });
-        tutorialPerf('camera_begin', { stepId: currentStep.id });
-
-        const mapLayout = (global as any).mapViewLayout;
-        const originX = mapLayout?.absoluteX ?? mapLayout?.x ?? 0;
-        const originY = mapLayout?.absoluteY ?? mapLayout?.y ?? 0;
-        const mapWidth = Number(mapLayout?.width);
-        const mapHeight = Number(mapLayout?.height);
-        if (!Number.isFinite(mapWidth) || mapWidth <= 0 || !Number.isFinite(mapHeight) || mapHeight <= 0) {
-          (global as any).ignoreProgrammaticCameraRef = false;
-          setTargetUnavailable(true);
-          return;
-        }
-
-        // Snapping the camera puts the chosen cluster at the measured MapView
-        // centre. This avoids Mapbox's occasionally blocking getPointInView
-        // bridge call and remains correct across iOS and Android viewports.
+        // The map already maintains JS-projected hit targets for its visible
+        // clusters. Reusing those coordinates avoids all synchronous Mapbox
+        // camera/projection bridge calls during the tutorial.
         const measurement = cleanMeasurement({
-          x: originX + mapWidth / 2 - 38,
-          y: originY + mapHeight / 2 - 58,
+          x: target.x - 38,
+          y: target.y - 58,
           width: 76,
           height: 76,
         }, screenWidth, screenHeight);
-        tutorialPerf('camera_ready', { stepId: currentStep.id, source: 'snapped' });
-        tutorialPerf('target_measured', { stepId: currentStep.id, source: 'map-layout-center' });
-        (global as any).ignoreProgrammaticCameraRef = false;
+        tutorialPerf('camera_ready', { stepId: currentStep.id, source: 'not-needed' });
+        tutorialPerf('target_measured', { stepId: currentStep.id, source: 'visible-cluster-projection' });
         if (measurement) {
           setSpotlight({ ...measurement, borderRadius: 38, forceCircle: true, showPulse: true });
         } else {
