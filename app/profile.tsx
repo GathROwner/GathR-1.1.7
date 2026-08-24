@@ -64,6 +64,9 @@ const APP_UPDATE_SOURCE = !Updates.isEnabled
 const APP_UPDATE_ID = Updates.updateId || null;
 const APP_SHORT_UPDATE_ID = APP_UPDATE_ID?.slice(0, 8) || APP_UPDATE_SOURCE;
 const APP_CHANNEL_LABEL = APP_UPDATE_CHANNEL.charAt(0).toUpperCase() + APP_UPDATE_CHANNEL.slice(1);
+
+const getCompactInterestLabel = (interest: string) =>
+  interest.toLowerCase().startsWith('social gathering') ? 'Social' : interest;
 const APP_VERSION_SUMMARY = `GathR ${APP_DISPLAY_VERSION}${APP_NATIVE_BUILD ? ` (${APP_NATIVE_BUILD})` : ''} · ${APP_CHANNEL_LABEL}`;
 const APP_UPDATE_SUMMARY = `Runtime ${APP_RUNTIME_VERSION} · ${APP_UPDATE_SOURCE}${APP_UPDATE_ID ? ` ${APP_SHORT_UPDATE_ID}` : ''}`;
 const APP_VERSION_DETAILS = [
@@ -1527,7 +1530,9 @@ const handleLogout = async () => {
                 <View style={styles.interestChipsRow}>
                   {userInterests.slice(0, 3).map((interest) => (
                     <View key={interest} style={styles.interestChip}>
-                      <Text style={styles.interestChipText} numberOfLines={1}>{interest}</Text>
+                      <Text style={styles.interestChipText} numberOfLines={1}>
+                        {getCompactInterestLabel(interest)}
+                      </Text>
                     </View>
                   ))}
                   <View style={[styles.interestChip, styles.interestCountChip]}>
@@ -1594,7 +1599,9 @@ const handleLogout = async () => {
                 <View style={styles.interestChipsRow}>
                   {userInterests.length > 0 ? userInterests.slice(0, 3).map((interest) => (
                     <View key={interest} style={styles.interestChip}>
-                      <Text style={styles.interestChipText} numberOfLines={1}>{interest}</Text>
+                      <Text style={styles.interestChipText} numberOfLines={1}>
+                        {getCompactInterestLabel(interest)}
+                      </Text>
                     </View>
                   )) : (
                     <Text style={styles.emptyInterestsText}>Choose the events and specials you care about.</Text>
