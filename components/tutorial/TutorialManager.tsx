@@ -168,7 +168,6 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
   const {
     isActive,
     currentStep,
-    tutorialStatus,
     startTutorial,
     nextStep,
     previousStep,
@@ -195,11 +194,6 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
     setTutorialVisible(isActive);
     return () => setTutorialVisible(false);
   }, [isActive, setTutorialVisible]);
-
-  useEffect(() => {
-    if (!tutorialStatus || tutorialStatus.completed || tutorialStatus.skipped || isActive) return;
-    startTutorial();
-  }, [isActive, startTutorial, tutorialStatus]);
 
   useEffect(() => {
     if (!currentStep) return;
