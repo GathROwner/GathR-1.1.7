@@ -212,8 +212,8 @@ const AndroidRectangularOverlay = (
       - Draw a full-screen SVG overlay (pointerEvents="none"):
           • circular hole when forceCircle=true (cluster step)
           • rounded-rect hole otherwise
-      - Keep four transparent “interceptor” Views to catch taps OUTSIDE the hole.
-        The hole area remains empty, so taps reach the underlying component.
+      - Keep the mask non-interactive so the highlighted control and tutorial
+        card remain touchable above Mapbox's native view.
 
   Result:
     • Identical visuals cross-platform; reliable tap-through inside the spotlight.
@@ -225,18 +225,11 @@ const OverlayVisual = useMask
 
 /*
   Render order matters:
-    1) Interceptor Views (transparent) — block taps outside the hole
-    2) Visual overlay (pointerEvents="none") — draws the dim background with the hole
-    This guarantees tap-through inside the hole on Android.
+    1) Visual overlay (pointerEvents="none") — draws the dim background with the hole
+    2) Tutorial card — remains the top interactive child.
 */
 return (
   <View style={styles.container} pointerEvents="box-none">
-
-    {/* intercept touches outside hole (NO background — purely touch blockers) */}
-    <View pointerEvents="auto" style={[styles.interceptor, { top: 0, left: 0, right: 0, height: paddedY }]} />
-    <View pointerEvents="auto" style={[styles.interceptor, { top: paddedY, left: 0, width: paddedX, height: paddedHeight }]} />
-    <View pointerEvents="auto" style={[styles.interceptor, { top: paddedY, left: paddedX + paddedWidth, right: 0, height: paddedHeight }]} />
-    <View pointerEvents="auto" style={[styles.interceptor, { top: paddedY + paddedHeight, left: 0, right: 0, bottom: 0 }]} />
 
     {/* visual dimming layer (pointerEvents="none"), circular on Android, masked on iOS */}
     {OverlayVisual}
@@ -284,7 +277,6 @@ const styles = StyleSheet.create({
   container: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'transparent' },
   maskContainer: { ...StyleSheet.absoluteFillObject },
   fullOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(4,20,35,0.72)' },
-  interceptor: { position: 'absolute', backgroundColor: 'transparent' },
   borderRing: { position: 'absolute', borderWidth: 3, borderColor: '#FFFFFF', backgroundColor: 'transparent', shadowColor: '#2497F3', shadowOffset: { width:0, height:0 }, shadowOpacity:0.9, shadowRadius:8, elevation:0 },
   glowRing: { position: 'absolute', borderWidth: 2, borderColor: '#2497F3', backgroundColor: 'transparent', shadowColor: '#2497F3', shadowOffset: {width:0, height:0}, shadowOpacity:0.55, shadowRadius:14, elevation:0 },
 });
