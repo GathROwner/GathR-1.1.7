@@ -47,7 +47,10 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
     target: 'closest-cluster', // Will be dynamically set to nearest cluster
     placement: 'bottom',
     sheetPosition: 'bottom',
-    action: 'interaction' // User must tap cluster to proceed
+    // Temporary baseline-continuation control. The approved interaction path is
+    // captured as broken; Continue invokes the same marker handler directly so
+    // the remaining legacy states can still be timed.
+    action: 'next'
   },
   
   {
