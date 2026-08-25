@@ -5742,7 +5742,8 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
     const sharedEventReturnGuardRemainingMs = Math.max(0, sharedEventReturnGuardUntil - Date.now());
     if (
       calloutOpenGuardRemainingMs > 0 &&
-      reason !== 'modal-request-close'
+      reason !== 'modal-request-close' &&
+      reason !== 'tutorial-navigation'
     ) {
       logCalloutProbe('[CalloutProbe] closeCallout ignored during post-open guard', {
         reason,

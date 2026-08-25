@@ -10,7 +10,11 @@ describe('tutorial modal overlay bridge', () => {
   afterEach(() => setTutorialModalOverlay(null));
 
   afterEach(() => {
-    useTutorialUiStore.setState({ isVisible: false, currentStepId: null });
+    useTutorialUiStore.setState({
+      isVisible: false,
+      currentStepId: null,
+      facebookSubmissionLayout: null,
+    });
   });
 
   it('hosts every tutorial state rendered inside a native modal', () => {
@@ -43,5 +47,13 @@ describe('tutorial modal overlay bridge', () => {
       isVisible: true,
       currentStepId: 'facebook-submission',
     });
+  });
+
+  it('reactively shares the Profile target rectangle with the overlay manager', () => {
+    const layout = { x: 12, y: 320, width: 360, height: 68 };
+
+    useTutorialUiStore.getState().setFacebookSubmissionLayout(layout);
+
+    expect(useTutorialUiStore.getState().facebookSubmissionLayout).toEqual(layout);
   });
 });

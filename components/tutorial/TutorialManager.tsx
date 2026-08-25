@@ -200,6 +200,7 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
   const viewedStepRef = useRef<string | null>(null);
   const setTutorialVisible = useTutorialUiStore((state) => state.setVisible);
   const setTutorialCurrentStep = useTutorialUiStore((state) => state.setCurrentStepId);
+  const facebookSubmissionLayout = useTutorialUiStore((state) => state.facebookSubmissionLayout);
 
   const stepIndex = currentStep
     ? Math.max(0, TUTORIAL_STEPS.findIndex((step) => step.id === currentStep.id))
@@ -326,6 +327,14 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
         }
         return;
       }
+      if (currentStep.id === 'facebook-submission' && facebookSubmissionLayout) {
+        const measurement = cleanMeasurement(facebookSubmissionLayout, screenWidth, screenHeight);
+        if (measurement) {
+          (global as any).facebookSubmissionStable = true;
+          setSpotlight({ ...measurement, borderRadius: target.radius, showPulse: true });
+          return;
+        }
+      }
       const result = await waitForTutorialMeasurement(target.layout, {
         timeoutMs: TUTORIAL_CONFIG.TARGET_TIMEOUT_MS,
         freshAfter,
@@ -354,7 +363,17 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
         (global as any).ignoreProgrammaticCameraRef = false;
       }
     };
-  }, [currentStep, insets.top, isActive, pathname, resumeEpoch, router, screenHeight, screenWidth]);
+  }, [
+    currentStep,
+    facebookSubmissionLayout,
+    insets.top,
+    isActive,
+    pathname,
+    resumeEpoch,
+    router,
+    screenHeight,
+    screenWidth,
+  ]);
 
   useEffect(() => {
     if (!isActive) return;

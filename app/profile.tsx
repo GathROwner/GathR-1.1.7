@@ -754,6 +754,9 @@ export default function ProfileScreen() {
   const facebookSubmissionPulseAnim = useRef(new Animated.Value(1)).current;
   const [facebookSubmissionHighlighted, setFacebookSubmissionHighlighted] = useState(false);
   const tutorialStepId = useTutorialUiStore((state) => state.currentStepId);
+  const setTutorialFacebookSubmissionLayout = useTutorialUiStore(
+    (state) => state.setFacebookSubmissionLayout,
+  );
   
   // Profile container ref for modal header measurement
   const profileContainerRef = useRef<KeyboardAvoidingView>(null);
@@ -792,6 +795,7 @@ export default function ProfileScreen() {
       if (!globalFlag) {
         (global as any).facebookSubmissionStable = false;
         (global as any).facebookSubmissionLayout = null;
+        setTutorialFacebookSubmissionLayout(null);
         if (hasMeasuredRef.current) {
           hasMeasuredRef.current = false; // Reset the ref
         }
@@ -913,6 +917,7 @@ export default function ProfileScreen() {
           (global as any).facebookSubmissionLayout = constrainedMeasurement;
           (global as any).facebookSubmissionStable = true;
           publishTutorialMeasurement('facebookSubmissionLayout', constrainedMeasurement);
+          setTutorialFacebookSubmissionLayout(constrainedMeasurement);
          
           
           console.log('âœ… ONE-SHOT MEASUREMENT: Complete! Marked as stable with padded bounds');
@@ -960,7 +965,7 @@ export default function ProfileScreen() {
       console.log('ðŸ“ ONE-SHOT MEASUREMENT: Cleanup - stopping interval');
       clearInterval(interval);
     };
-  }, [facebookSubmissionHighlighted, tutorialStepId]);
+  }, [facebookSubmissionHighlighted, setTutorialFacebookSubmissionLayout, tutorialStepId]);
 
   useEffect(() => {
     if (facebookSubmissionHighlighted) {
