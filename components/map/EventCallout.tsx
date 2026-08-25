@@ -111,6 +111,7 @@ import { useEventLikeCount, setEventLikeCount, startEventLikesListener, stopEven
 import { useEventShareCount, setEventShareCount, startEventSharesListener, stopEventSharesListener } from '../../store/eventSharesStore';
 import { useEventInterestedCount, setEventInterestedCount, startEventInterestedListener, stopEventInterestedListener } from '../../store/eventInterestedStore';
 import { useMapStore } from '../../store/mapStore';
+import { useTutorialUiStore } from '../../store/tutorialUiStore';
 import { auth } from '../../config/firebaseConfig';
 import { useClusterInteractionStore } from '../../store/clusterInteractionStore';
 
@@ -2531,6 +2532,7 @@ interface EventCalloutProps {
   onCloseStart?: () => void;
   onEventSelected?: (event: Event) => void;
   onLayoutReady?: () => void;
+  onPresentationReady?: () => void;
 }
 
 const EventCallout: React.FC<EventCalloutProps> = ({ 
@@ -2540,6 +2542,7 @@ const EventCallout: React.FC<EventCalloutProps> = ({
   onCloseStart,
   onEventSelected,
   onLayoutReady,
+  onPresentationReady,
 }) => {
   // Add store subscription to get fresh event data
   const storeEvents = useMapStore((state) => state.events);
@@ -2622,15 +2625,33 @@ const EventCallout: React.FC<EventCalloutProps> = ({
   const venueSelectorRef = useRef<View | null>(null);
   const eventTabsRef = useRef<View | null>(null);
 
-  const [isVenueSelectorHighlighted, setVenueSelectorHighlighted] = useState(false);
+  const tutorialVisible = useTutorialUiStore((state) => state.isVisible);
+  const tutorialStepId = useTutorialUiStore((state) => state.currentStepId);
+  const isVenueSelectorHighlighted =
+    tutorialVisible && tutorialStepId === 'callout-venue-selector';
+  const [calloutPresentationSettled, setCalloutPresentationSettled] = useState(false);
   const [isEventTabsHighlighted, setEventTabsHighlighted] = useState(false);
+  const onPresentationReadyRef = useRef(onPresentationReady);
+  onPresentationReadyRef.current = onPresentationReady;
 
-  const pulseAnimVenueSelector = useRef(new Animated.Value(1)).current;
   const pulseAnimEventTabs = useRef(new Animated.Value(1)).current;
 
   const publishTutorialLayout = useCallback((ref: View | null, layoutName: string) => {
-    const measuredAt = Date.now();
     const publish = (x: number, y: number, width: number, height: number) => {
+      const intersectsViewport =
+        Number.isFinite(x) &&
+        Number.isFinite(y) &&
+        Number.isFinite(width) &&
+        Number.isFinite(height) &&
+        width > 0 &&
+        height > 0 &&
+        x < SCREEN_WIDTH &&
+        y < SCREEN_HEIGHT &&
+        x + width > 0 &&
+        y + height > 0;
+      if (!intersectsViewport) return;
+
+      const measuredAt = Date.now();
       (global as any)[layoutName] = {
         x: Math.round(x),
         y: Math.round(y),
@@ -2661,19 +2682,43 @@ const EventCallout: React.FC<EventCalloutProps> = ({
     }
   }, []);
 
-  // Polling and Measurement for Venue Selector
+  // Measure from actual tutorial/presentation state. The previous 200 ms poll
+  // could publish while Android's entrance spring still held the selector
+  // offscreen, causing the readiness wait to settle on unusable geometry.
   useEffect(() => {
-    const interval = setInterval(() => {
-      const flag = (global as any).tutorialHighlightVenueSelector || false;
-      if (flag !== isVenueSelectorHighlighted) {
-        setVenueSelectorHighlighted(flag);
-      }
-      if (flag && venueSelectorRef.current) {
+    if (!isVenueSelectorHighlighted || !calloutPresentationSettled) return;
+
+    const frame = requestAnimationFrame(() => {
+      const tutorialState = useTutorialUiStore.getState();
+      if (
+        tutorialState.isVisible &&
+        tutorialState.currentStepId === 'callout-venue-selector' &&
+        venueSelectorRef.current
+      ) {
         publishTutorialLayout(venueSelectorRef.current, 'venueSelectorLayout');
       }
-    }, 200);
-    return () => clearInterval(interval);
-  }, [isVenueSelectorHighlighted, publishTutorialLayout]);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [
+    calloutPresentationSettled,
+    isVenueSelectorHighlighted,
+    publishTutorialLayout,
+    venues.length,
+  ]);
+
+  const handleVenueSelectorLayout = useCallback(() => {
+    if (!isVenueSelectorHighlighted || !calloutPresentationSettled) return;
+    requestAnimationFrame(() => {
+      const tutorialState = useTutorialUiStore.getState();
+      if (
+        tutorialState.isVisible &&
+        tutorialState.currentStepId === 'callout-venue-selector' &&
+        venueSelectorRef.current
+      ) {
+        publishTutorialLayout(venueSelectorRef.current, 'venueSelectorLayout');
+      }
+    });
+  }, [calloutPresentationSettled, isVenueSelectorHighlighted, publishTutorialLayout]);
 
   // Polling and Measurement for Event Tabs
   useEffect(() => {
@@ -2688,21 +2733,6 @@ const EventCallout: React.FC<EventCalloutProps> = ({
     }, 200);
     return () => clearInterval(interval);
   }, [isEventTabsHighlighted, publishTutorialLayout]);
-  
-  // Animation for Venue Selector
-  useEffect(() => {
-    if (isVenueSelectorHighlighted) {
-      Animated.loop(
-        Animated.sequence([
-          Animated.timing(pulseAnimVenueSelector, { toValue: 1.02, useNativeDriver: true, duration: 800 }),
-          Animated.timing(pulseAnimVenueSelector, { toValue: 1, useNativeDriver: true, duration: 800 }),
-        ])
-      ).start();
-    } else {
-      pulseAnimVenueSelector.stopAnimation();
-      pulseAnimVenueSelector.setValue(1);
-    }
-  }, [isVenueSelectorHighlighted]);
   
   // Animation for Event Tabs
   useEffect(() => {
@@ -4118,6 +4148,8 @@ useEffect(() => {
 
 useEffect(() => {
   console.log("Initial callout animation effect");
+  let cancelled = false;
+  setCalloutPresentationSettled(false);
   if (Platform.OS === 'android') {
     (calloutRootRef.current as any)?.setNativeProps?.({ pointerEvents: 'auto' });
   }
@@ -4155,7 +4187,11 @@ useEffect(() => {
       animatedEntrance: false,
       staticIosPresentation: true,
     });
-    return;
+    setCalloutPresentationSettled(true);
+    onPresentationReadyRef.current?.();
+    return () => {
+      cancelled = true;
+    };
   }
 
   // Start off-screen (at bottom) for entrance animation.
@@ -4177,7 +4213,12 @@ useEffect(() => {
     });
 
   if (keepInitialBackdropStable) {
-    sheetEntranceAnimation.start();
+    sheetEntranceAnimation.start(({ finished }) => {
+      if (!cancelled && finished) {
+        setCalloutPresentationSettled(true);
+        onPresentationReadyRef.current?.();
+      }
+    });
   } else {
     Animated.parallel([
       sheetEntranceAnimation,
@@ -4186,7 +4227,12 @@ useEffect(() => {
         duration: 300,
         useNativeDriver: true,
       }),
-    ]).start();
+    ]).start(({ finished }) => {
+      if (!cancelled && finished) {
+        setCalloutPresentationSettled(true);
+        onPresentationReadyRef.current?.();
+      }
+    });
   }
 
   traceMapEvent('event_callout_initial_position_applied', {
@@ -4201,6 +4247,10 @@ useEffect(() => {
     initialIndicatorRotation,
     animatedEntrance: true,
   });
+  return () => {
+    cancelled = true;
+    sheetEntranceAnimation.stop();
+  };
 }, [cluster?.id, safeTopOffset, useStaticIosCalloutPresentation, venues.length]);
 
 
@@ -4452,11 +4502,8 @@ useEffect(() => {
           ref={(node) => {
             venueSelectorRef.current = node as View | null;
           }}
+          onLayout={handleVenueSelectorLayout}
           testID="venue-selector"
-          style={[
-            isVenueSelectorHighlighted && tutorialHighlightStyle,
-            isVenueSelectorHighlighted && { transform: [{ scale: pulseAnimVenueSelector }] }
-          ]}
         >
           <VenueSelector
             venues={visibleVenueSelectorVenues}

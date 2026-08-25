@@ -41,10 +41,6 @@ const LAYOUT_TARGETS: Partial<Record<string, LayoutTarget>> = {
     flag: 'tutorialHighlightVenueSelector',
     layout: 'venueSelectorLayout',
     radius: 14,
-    // The callout publishes its measurement as soon as its native modal is
-    // laid out. By the time this step mounts that measurement is already the
-    // current, stable callout—not stale geometry from a previous route.
-    acceptExisting: true,
   },
   'filter-pills': {
     flag: 'tutorialHighlightFilterPills',
@@ -166,6 +162,21 @@ const waitForCallout = (signal: AbortSignal) => new Promise<boolean>((resolve) =
   signal.addEventListener('abort', onAbort, { once: true });
 });
 
+const waitForCalloutPresentation = async (signal: AbortSignal): Promise<boolean> => {
+  const actionReady = await waitForTutorialAction('wait-callout-ready', {
+    timeoutMs: TUTORIAL_CONFIG.ROUTE_TIMEOUT_MS,
+    signal,
+  });
+  if (!actionReady || signal.aborted) return false;
+
+  const invoked = await runTutorialAction(
+    'wait-callout-ready',
+    TUTORIAL_CONFIG.TARGET_TIMEOUT_MS,
+    signal,
+  );
+  return invoked && !signal.aborted;
+};
+
 const clearHighlightFlags = () => {
   ALL_HIGHLIGHT_FLAGS.forEach((flag) => {
     (global as any)[flag] = false;
@@ -194,10 +205,12 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
   const [spotlight, setSpotlight] = useState<SpotlightConfig>();
   const [targetUnavailable, setTargetUnavailable] = useState(false);
   const [openingCluster, setOpeningCluster] = useState(false);
+  const [closingCallout, setClosingCallout] = useState(false);
   const [resumeEpoch, setResumeEpoch] = useState(0);
   const targetClusterRef = useRef<Cluster | null>(null);
   const stepAbortRef = useRef<AbortController | null>(null);
   const autoAdvancedStepRef = useRef<string | null>(null);
+  const calloutTransitionInFlightRef = useRef(false);
   const currentStepIdRef = useRef<string | null>(currentStep?.id ?? null);
   const routeAtStepStartRef = useRef(pathname);
   const viewedStepRef = useRef<string | null>(null);
@@ -299,13 +312,28 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
     if (!isActive || currentStep?.id !== 'cluster-click') return;
 
     let calloutWasOpen = useMapStore.getState().selectedVenues.length > 0;
-    return useMapStore.subscribe((state) => {
+    let presentationWaitStarted = false;
+    let cancelled = false;
+    const controller = new AbortController();
+    const unsubscribe = useMapStore.subscribe((state) => {
       const calloutIsOpen = state.selectedVenues.length > 0;
-      if (!calloutWasOpen && calloutIsOpen) {
-        advanceOnce(currentStep);
+      if (!calloutWasOpen && calloutIsOpen && !presentationWaitStarted) {
+        presentationWaitStarted = true;
+        void (async () => {
+          await waitForCalloutPresentation(controller.signal);
+          if (!cancelled && !controller.signal.aborted) {
+            advanceOnce(currentStep);
+          }
+        })();
       }
       calloutWasOpen = calloutIsOpen;
     });
+
+    return () => {
+      cancelled = true;
+      controller.abort();
+      unsubscribe();
+    };
   }, [advanceOnce, currentStep, isActive]);
 
   useEffect(() => {
@@ -315,6 +343,10 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
     setSpotlight(undefined);
     setTargetUnavailable(false);
     setOpeningCluster(false);
+    if (currentStep?.id !== 'callout-venue-selector') {
+      calloutTransitionInFlightRef.current = false;
+      setClosingCallout(false);
+    }
     targetClusterRef.current = null;
     clearHighlightFlags();
 
@@ -410,6 +442,8 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
         freshAfter,
         acceptExisting: target.acceptExisting,
         signal: controller.signal,
+        isUsable: (measurement) =>
+          cleanMeasurement(measurement, screenWidth, screenHeight) !== null,
       });
       if (controller.signal.aborted) return;
       const measurement = result.measurement && cleanMeasurement(result.measurement, screenWidth, screenHeight);
@@ -464,6 +498,21 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
     if (currentStep) advanceOnce(currentStep);
   }, [advanceOnce, currentStep, pathname, router]);
 
+  const closeCalloutForTransition = useCallback(async (): Promise<boolean> => {
+    if (calloutTransitionInFlightRef.current) return false;
+    calloutTransitionInFlightRef.current = true;
+    setClosingCallout(true);
+    try {
+      await runTutorialAction('close-callout');
+      return isTutorialStepCurrent('callout-venue-selector', currentStepIdRef.current);
+    } finally {
+      calloutTransitionInFlightRef.current = false;
+      if (currentStepIdRef.current === 'callout-venue-selector') {
+        setClosingCallout(false);
+      }
+    }
+  }, []);
+
   const handleNext = useCallback(async () => {
     if (!currentStep) return;
     if (currentStep.id === 'completion') {
@@ -481,6 +530,9 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
       const ready = waitForCallout(controller.signal);
       const invoked = await runTutorialAction('open-cluster', targetClusterRef.current);
       const opened = invoked ? await ready : false;
+      if (opened) {
+        await waitForCalloutPresentation(controller.signal);
+      }
       controller.abort();
       setOpeningCluster(false);
       if (!opened) setTargetUnavailable(true);
@@ -488,8 +540,9 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
       return;
     }
     if (currentStep.id === 'callout-venue-selector') {
-      await runTutorialAction('close-callout');
-      advanceOnce(currentStep);
+      if (await closeCalloutForTransition()) {
+        advanceOnce(currentStep);
+      }
       return;
     }
     if (currentStep.id === 'events-tab') {
@@ -508,11 +561,18 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
       return;
     }
     advanceOnce(currentStep);
-  }, [advanceOnce, completeTutorial, currentStep, router, targetUnavailable]);
+  }, [
+    advanceOnce,
+    closeCalloutForTransition,
+    completeTutorial,
+    currentStep,
+    router,
+    targetUnavailable,
+  ]);
 
-  const handlePrevious = useCallback(() => {
+  const handlePrevious = useCallback(async () => {
     if (currentStep?.id === 'callout-venue-selector') {
-      void runTutorialAction('close-callout');
+      if (!await closeCalloutForTransition()) return;
     }
     const previous = TUTORIAL_STEPS[Math.max(0, stepIndex - 1)];
     if (previous?.id === 'events-tab') {
@@ -525,14 +585,18 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
       router.replace('/profile');
     }
     previousStep();
-  }, [currentStep?.id, previousStep, router, stepIndex]);
+  }, [closeCalloutForTransition, currentStep?.id, previousStep, router, stepIndex]);
 
-  const handleSkip = useCallback(() => {
+  const handleSkip = useCallback(async () => {
     stepAbortRef.current?.abort();
-    void runTutorialAction('close-callout');
+    if (currentStep?.id === 'callout-venue-selector') {
+      if (!await closeCalloutForTransition()) return;
+    } else {
+      void runTutorialAction('close-callout');
+    }
     clearHighlightFlags();
     skipTutorial();
-  }, [skipTutorial]);
+  }, [closeCalloutForTransition, currentStep?.id, skipTutorial]);
 
   const handleRestart = useCallback(() => {
     restartTutorial();
@@ -559,6 +623,8 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
     ? 'Start exploring'
     : currentStep?.id === 'cluster-click'
       ? openingCluster ? 'Opening…' : targetUnavailable ? 'Continue' : 'Open cluster'
+      : currentStep?.id === 'callout-venue-selector' && closingCallout
+        ? 'Closing…'
       : 'Continue';
   const resolvedSheetPosition = currentStep?.id === 'completion'
     ? 'center'
@@ -577,9 +643,9 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
         stepId={currentStep!.id}
         title={currentStep!.title}
         content={currentStep!.content}
-        onNext={openingCluster ? undefined : handleNext}
-        onPrevious={handlePrevious}
-        onSkip={handleSkip}
+        onNext={openingCluster || closingCallout ? undefined : handleNext}
+        onPrevious={closingCallout ? undefined : handlePrevious}
+        onSkip={closingCallout ? undefined : handleSkip}
         showPrevious={stepIndex > 0}
         showNext={showNext}
         showSkip={currentStep!.id !== 'completion'}
@@ -594,6 +660,7 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
     </TutorialSpotlight>
   ), [
     currentStep,
+    closingCallout,
     handleNext,
     handlePrevious,
     handleSkip,

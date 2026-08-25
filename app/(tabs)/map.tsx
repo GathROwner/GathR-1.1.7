@@ -119,6 +119,7 @@ import {
   markTabTracePhase,
 } from '../../utils/tabSwitchTrace';
 import { registerTutorialAction } from '../../utils/tutorialActions';
+import { createTutorialBooleanGate } from '../../utils/tutorialBooleanGate';
 import { publishTutorialMeasurement } from '../../utils/tutorialReadiness';
 import {
   getTutorialModalOverlay,
@@ -248,6 +249,8 @@ const ANDROID_CALLOUT_PREP_PREWARM_LIMIT = 8;
 const ANDROID_CALLOUT_PREP_PREWARM_STEP_MS = 45;
 const ANDROID_CALLOUT_DEFERRED_TEARDOWN_MS = 900;
 const ANDROID_CONTROLS_RELEASE_AFTER_CLOSE_MS = 150;
+const TUTORIAL_CALLOUT_READY_TIMEOUT_MS = 2500;
+const TUTORIAL_CALLOUT_CLOSE_TIMEOUT_MS = 1800;
 
 const logCalloutProbe = (...args: unknown[]): void => {
   if (DEBUG_CALLOUT_PROBE) {
@@ -3163,6 +3166,7 @@ useEffect(() => {
   const [renderedCalloutVenues, setRenderedCalloutVenues] = useState<Venue[]>([]);
   const [renderedCalloutCluster, setRenderedCalloutCluster] = useState<Cluster | null>(null);
   const [calloutLayoutReadyKey, setCalloutLayoutReadyKey] = useState<string | null>(null);
+  const [calloutPresentationReadyKey, setCalloutPresentationReadyKey] = useState<string | null>(null);
   const [isCalloutClosingVisually, setIsCalloutClosingVisually] = useState(false);
   const [mapFirstFrameRendered, setMapFirstFrameRendered] = useState<boolean>(false);
   const [mapTabOverlaysReady, setMapTabOverlaysReady] = useState<boolean>(Platform.OS !== 'android');
@@ -3460,6 +3464,26 @@ useEffect(() => {
     () => `${presentedCalloutClusterId ?? 'single'}::${presentedCalloutSignature || 'no-venues'}`,
     [presentedCalloutClusterId, presentedCalloutSignature]
   );
+  const isRenderedCalloutPresentationReady =
+    isRenderedCalloutLayoutReady &&
+    calloutPresentationReadyKey === renderedCalloutPresentationKey;
+  const tutorialCalloutPresentedGate = useMemo(() => createTutorialBooleanGate(false), []);
+  const tutorialCalloutReadyGate = useMemo(() => createTutorialBooleanGate(false), []);
+
+  useLayoutEffect(() => {
+    tutorialCalloutPresentedGate.publish(hasPresentedCallout);
+    tutorialCalloutReadyGate.publish(isRenderedCalloutPresentationReady);
+  }, [
+    hasPresentedCallout,
+    isRenderedCalloutPresentationReady,
+    tutorialCalloutPresentedGate,
+    tutorialCalloutReadyGate,
+  ]);
+
+  useEffect(() => () => {
+    tutorialCalloutPresentedGate.dispose();
+    tutorialCalloutReadyGate.dispose();
+  }, [tutorialCalloutPresentedGate, tutorialCalloutReadyGate]);
 
   useLayoutEffect(() => {
     if (!hasPresentedCallout) {
@@ -3771,6 +3795,7 @@ useEffect(() => {
       setRenderedCalloutVenues([]);
       setRenderedCalloutCluster(null);
       setCalloutLayoutReadyKey(null);
+      setCalloutPresentationReadyKey(null);
     };
 
     const cleanupTask = InteractionManager.runAfterInteractions(() => {
@@ -3838,6 +3863,7 @@ useEffect(() => {
     setRenderedCalloutVenues([]);
     setRenderedCalloutCluster(null);
     setCalloutLayoutReadyKey(null);
+    setCalloutPresentationReadyKey(null);
     isCalloutClosingVisuallyRef.current = false;
     setIsCalloutClosingVisually(false);
   }, [
@@ -5246,6 +5272,7 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
     if (venueSignature !== lastPromotedVenueSigRef.current) {
       lastPromotedVenueSigRef.current = venueSignature;
       setCalloutLayoutReadyKey(null);
+      setCalloutPresentationReadyKey(null);
     }
     setRenderedCalloutVenues(venuesToRender);
     setRenderedCalloutCluster(clusterToRender);
@@ -5645,6 +5672,7 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
     setRenderedCalloutVenues([]);
     setRenderedCalloutCluster(null);
     setCalloutLayoutReadyKey(null);
+    setCalloutPresentationReadyKey(null);
   }, [calloutAnimation]);
 
   const scheduleAndroidDeferredCalloutTeardown = useCallback((reason: string) => {
@@ -6014,6 +6042,7 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
       setRenderedCalloutVenues([]);
       setRenderedCalloutCluster(null);
       setCalloutLayoutReadyKey(null);
+      setCalloutPresentationReadyKey(null);
       setIsCalloutClosingVisually(false);
 
       traceMapEvent('callout_close_animation_finished', {
@@ -6915,9 +6944,23 @@ lastOpenedClusterIdRef.current = cluster.id;
     await handleMarkerPress(target);
   }), [handleMarkerPress]);
 
-  useEffect(() => registerTutorialAction('close-callout', () => {
+  useEffect(() => registerTutorialAction('wait-callout-ready', async (
+    timeoutMs?: number,
+    signal?: AbortSignal,
+  ) => {
+    await tutorialCalloutReadyGate.waitFor(true, {
+      timeoutMs: timeoutMs ?? TUTORIAL_CALLOUT_READY_TIMEOUT_MS,
+      signal,
+    });
+  }), [tutorialCalloutReadyGate]);
+
+  useEffect(() => registerTutorialAction('close-callout', async () => {
+    const closed = tutorialCalloutPresentedGate.waitFor(false, {
+      timeoutMs: TUTORIAL_CALLOUT_CLOSE_TIMEOUT_MS,
+    });
     closeCallout('tutorial-navigation');
-  }), [closeCallout]);
+    await closed;
+  }), [closeCallout, tutorialCalloutPresentedGate]);
 
   useEffect(() => {
     const unregister = registerTutorialAction('focus-cluster', async (target: Cluster) => {
@@ -10429,6 +10472,13 @@ Owner: Map UX stability on Android • Last validated: 2025-09-04
                 });
                 setCalloutLayoutReadyKey((currentKey) =>
                   currentKey === presentedCalloutPresentationKey ? currentKey : presentedCalloutPresentationKey
+                );
+              }}
+              onPresentationReady={() => {
+                setCalloutPresentationReadyKey((currentKey) =>
+                  currentKey === presentedCalloutPresentationKey
+                    ? currentKey
+                    : presentedCalloutPresentationKey
                 );
               }}
               onEventSelected={handleEventSelected}

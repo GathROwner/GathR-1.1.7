@@ -42,4 +42,25 @@ describe('tutorial action readiness', () => {
     expect(isTutorialStepCurrent('cluster-click', 'cluster-click')).toBe(true);
     expect(isTutorialStepCurrent('cluster-click', 'callout-venue-selector')).toBe(false);
   });
+
+  it('does not acknowledge an async close action until presentation teardown finishes', async () => {
+    let finishClose: (() => void) | undefined;
+    const closeFinished = new Promise<void>((resolve) => {
+      finishClose = resolve;
+    });
+    const unregister = registerTutorialAction('deferred-close-action', () => closeFinished);
+    let acknowledged = false;
+
+    const running = runTutorialAction('deferred-close-action').then((result) => {
+      acknowledged = true;
+      return result;
+    });
+    await Promise.resolve();
+    expect(acknowledged).toBe(false);
+
+    finishClose?.();
+    await expect(running).resolves.toBe(true);
+    expect(acknowledged).toBe(true);
+    unregister();
+  });
 });

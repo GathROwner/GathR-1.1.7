@@ -52,11 +52,23 @@ export const getTutorialMeasurement = (name: string): TutorialMeasurement | null
 
 export const waitForTutorialMeasurement = (
   name: string,
-  options: { timeoutMs: number; freshAfter?: number; acceptExisting?: boolean; signal?: AbortSignal },
+  options: {
+    timeoutMs: number;
+    freshAfter?: number;
+    acceptExisting?: boolean;
+    signal?: AbortSignal;
+    isUsable?: (measurement: TutorialMeasurement) => boolean;
+  },
 ): Promise<{ measurement: TutorialMeasurement | null; source: 'ready' | 'timeout' | 'aborted' }> => {
-  const { timeoutMs, freshAfter = 0, acceptExisting = false, signal } = options;
+  const {
+    timeoutMs,
+    freshAfter = 0,
+    acceptExisting = false,
+    signal,
+    isUsable = () => true,
+  } = options;
   const immediate = getTutorialMeasurement(name);
-  if (immediate && (acceptExisting || immediate.measuredAt >= freshAfter)) {
+  if (immediate && isUsable(immediate) && (acceptExisting || immediate.measuredAt >= freshAfter)) {
     return Promise.resolve({ measurement: immediate, source: 'ready' });
   }
 
@@ -77,7 +89,9 @@ export const waitForTutorialMeasurement = (
     };
 
     const onMeasurement: MeasurementListener = (measurement) => {
-      if (measurement.measuredAt >= freshAfter) finish(measurement, 'ready');
+      if (measurement.measuredAt >= freshAfter && isUsable(measurement)) {
+        finish(measurement, 'ready');
+      }
     };
     const onAbort = () => finish(null, 'aborted');
     const timeout = setTimeout(

@@ -44,6 +44,47 @@ describe('tutorial readiness', () => {
     await expect(waiting).resolves.toMatchObject({ source: 'timeout', measurement: { measuredAt: 100 } });
   });
 
+  it('ignores an offscreen entrance measurement until the target is usable', async () => {
+    let settled = false;
+    const waiting = waitForTutorialMeasurement('moving-target', {
+      timeoutMs: 200,
+      freshAfter: 100,
+      isUsable: (measurement) => measurement.y < 800 && measurement.y + measurement.height > 0,
+    }).then((result) => {
+      settled = true;
+      return result;
+    });
+
+    publishTutorialMeasurement('moving-target', { x: 10, y: 900, width: 200, height: 60 }, 110);
+    await Promise.resolve();
+    expect(settled).toBe(false);
+
+    publishTutorialMeasurement('moving-target', { x: 10, y: 120, width: 200, height: 60 }, 125);
+    await expect(waiting).resolves.toMatchObject({
+      source: 'ready',
+      measurement: { x: 10, y: 120, measuredAt: 125 },
+    });
+  });
+
+  it('ignores zero-sized layout events and still resolves from the next valid layout', async () => {
+    const waiting = waitForTutorialMeasurement('zero-then-valid', {
+      timeoutMs: 200,
+      freshAfter: 100,
+    });
+
+    expect(publishTutorialMeasurement(
+      'zero-then-valid',
+      { x: 0, y: 0, width: 0, height: 40 },
+      110,
+    )).toBeNull();
+    publishTutorialMeasurement('zero-then-valid', { x: 2, y: 3, width: 40, height: 50 }, 120);
+
+    await expect(waiting).resolves.toMatchObject({
+      source: 'ready',
+      measurement: { width: 40, height: 50, measuredAt: 120 },
+    });
+  });
+
   it('bounds external readiness promises', async () => {
     jest.useFakeTimers();
     const pending = new Promise<string>(() => undefined);

@@ -27,7 +27,7 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
     id: 'callout-venue-selector',
     legacyStepIds: ['callout-tabs', 'callout-event-details'],
     title: 'Explore a place',
-    content: 'Switch between places, browse Events and Specials, then tap any card for the full details.',
+    content: 'Switch places, browse Events or Specials, and tap a card for details.',
     target: 'venue-selector',
     placement: 'bottom',
     sheetPosition: 'bottom',
