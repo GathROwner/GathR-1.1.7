@@ -473,8 +473,14 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
       void runTutorialAction('close-callout');
     }
     const previous = TUTORIAL_STEPS[Math.max(0, stepIndex - 1)];
-    if (['events-tab', 'specials-tab', 'profile-facebook'].includes(previous?.id)) {
+    if (previous?.id === 'events-tab') {
       router.replace(MAP_ROUTE);
+    } else if (previous?.id === 'events-list-explanation' || previous?.id === 'specials-tab') {
+      router.replace('/(tabs)/events');
+    } else if (previous?.id === 'specials-list-explanation' || previous?.id === 'profile-facebook') {
+      router.replace('/(tabs)/specials');
+    } else if (previous?.id === 'facebook-submission') {
+      router.replace('/profile');
     }
     previousStep();
   }, [currentStep?.id, previousStep, router, stepIndex]);
