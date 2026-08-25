@@ -79,6 +79,11 @@ const LAYOUT_TARGETS: Partial<Record<string, LayoutTarget>> = {
     flag: 'tutorialHighlightFacebookSubmission',
     layout: 'facebookSubmissionLayout',
     radius: 18,
+    // Profile is already mounted when the route-driven step advances. Its
+    // child effect can publish the stable row measurement before this parent
+    // effect begins waiting, especially through the native-stack modal on
+    // iOS. That measurement belongs to the current mounted Profile screen.
+    acceptExisting: true,
   },
 };
 
