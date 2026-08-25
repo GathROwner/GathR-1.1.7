@@ -97,7 +97,7 @@ export interface TutorialManager {
   currentSubStep: number;
   tutorialStatus: TutorialStatus | null;
   startTutorial: () => void;
-  nextStep: () => void;
+  nextStep: (stepCount?: number) => void;
   previousStep: () => void;
   skipTutorial: () => void;
   completeTutorial: () => void;

@@ -24,6 +24,8 @@ import { amplitudeTrack } from '../../lib/amplitudeAnalytics';
 import { publishTutorialMeasurement as registerTutorialMeasurement } from '../../utils/tutorialReadiness';
 import { composeTutorialCalloutMeasurement } from '../../utils/tutorialCalloutMeasurement';
 import { createTutorialPresentationSettler } from '../../utils/tutorialPresentationSettler';
+import { runTutorialAction } from '../../utils/tutorialActions';
+import { shouldRouteTutorialCalloutBack } from '../../utils/tutorialCalloutClosing';
 
 
 
@@ -4095,17 +4097,21 @@ const setCalloutStateWithAnimation = (state: CalloutState) => {
   const shellPanHandlers = EVENT_CALLOUT_SHELL_ISOLATION_DEBUG ? {} : panResponder.panHandlers;
   const headerPanHandlers = EVENT_CALLOUT_SHELL_ISOLATION_DEBUG ? {} : headerPanResponder.panHandlers;
 
-    useEffect(() => {
+  useEffect(() => {
     const backHandler = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (shouldRouteTutorialCalloutBack(tutorialVisible, tutorialStepId)) {
+        void runTutorialAction('tutorial-previous');
+        return true;
+      }
       if (calloutState === 'expanded') {
-        setCalloutStateWithAnimation('normal');
+        setCalloutStateRef.current('normal');
         return true;
       }
       return false;
     });
     
     return () => backHandler.remove();
-  }, [calloutState]);
+  }, [calloutState, tutorialStepId, tutorialVisible]);
 
 // ðŸŽ¯ TUTORIAL INTEGRATION: Expose callout state control globally (attach per mount)
 useEffect(() => {

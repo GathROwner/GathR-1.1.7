@@ -3,6 +3,11 @@ import { TutorialBooleanGate } from './tutorialBooleanGate';
 export const shouldActivateAndroidRetapOverlay = (reason: string): boolean =>
   reason !== 'tutorial-navigation';
 
+export const shouldRouteTutorialCalloutBack = (
+  tutorialVisible: boolean,
+  tutorialStepId: string | null,
+): boolean => tutorialVisible && tutorialStepId === 'callout-venue-selector';
+
 /**
  * Closes a tutorial callout only when native presentation is still committed.
  * The wait is started before the close request so a synchronous teardown event

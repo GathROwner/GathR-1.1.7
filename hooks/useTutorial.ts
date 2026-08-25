@@ -7,12 +7,15 @@ import { auth, firestore } from '../config/firebaseConfig';
 import {
   LEGACY_TUTORIAL_STEP_IDS,
   TUTORIAL_STEPS,
-  getCompletedIdsForStep,
 } from '../config/tutorialSteps';
 import { amplitudeTrack } from '../lib/amplitudeAnalytics';
 import { useMapStore } from '../store/mapStore';
 import { Cluster, Venue } from '../types/events';
 import { TutorialManager, TutorialStatus } from '../types/tutorial';
+import {
+  getTutorialPreviousIndex,
+  getTutorialStepAdvance,
+} from '../utils/tutorialStepAdvance';
 
 const TUTORIAL_VERSION = 2;
 const anonymousKey = 'gathr:tutorial:anonymous:v2';
@@ -45,12 +48,26 @@ export const useTutorial = (): TutorialManager => {
     selectedVenues: Venue[];
     selectedCluster: Cluster | null;
   } | null>(null);
+  const skippedCalloutLessonRef = useRef(false);
 
   const currentStep = TUTORIAL_STEPS[currentStepIndex] ?? null;
 
   useEffect(() => {
     statusRef.current = tutorialStatus;
   }, [tutorialStatus]);
+
+  useEffect(() => {
+    if (!isActive || currentStep?.id !== 'callout-venue-selector') return;
+    const captureCallout = (state: ReturnType<typeof useMapStore.getState>) => {
+      if (!state.selectedVenues.length) return;
+      calloutSnapshotRef.current = {
+        selectedVenues: [...state.selectedVenues],
+        selectedCluster: state.selectedCluster,
+      };
+    };
+    captureCallout(useMapStore.getState());
+    return useMapStore.subscribe(captureCallout);
+  }, [currentStep?.id, isActive]);
 
   const storageKey = useCallback(
     () => (auth.currentUser ? `gathr:tutorial:${auth.currentUser.uid}:v2` : anonymousKey),
@@ -117,6 +134,8 @@ export const useTutorial = (): TutorialManager => {
   }), [loadStatus]);
 
   const startTutorial = useCallback(() => {
+    calloutSnapshotRef.current = null;
+    skippedCalloutLessonRef.current = false;
     const startingIndex = Math.min(
       Math.max(0, statusRef.current?.currentStep ?? 0),
       TUTORIAL_STEPS.length - 1,
@@ -131,42 +150,56 @@ export const useTutorial = (): TutorialManager => {
     });
   }, [persistStatus]);
 
-  const nextStep = useCallback(() => {
+  const nextStep = useCallback((stepCount = 1) => {
     setCurrentStepIndex((index) => {
-      const step = TUTORIAL_STEPS[index];
-      if (!step || index >= TUTORIAL_STEPS.length - 1) return index;
+      const advance = getTutorialStepAdvance(index, stepCount);
+      if (advance.nextIndex === index) return index;
 
-      if (TUTORIAL_STEPS[index + 1]?.id === 'filter-pills') {
+      if (advance.crossesFilterPills) {
+        const bypassedUnavailableCallout =
+          TUTORIAL_STEPS[index]?.id === 'cluster-click' &&
+          TUTORIAL_STEPS[advance.nextIndex]?.id === 'filter-pills';
+        skippedCalloutLessonRef.current = bypassedUnavailableCallout;
         const { selectedVenues, selectedCluster } = useMapStore.getState();
-        calloutSnapshotRef.current = selectedVenues.length
-          ? { selectedVenues: [...selectedVenues], selectedCluster }
-          : null;
+        if (bypassedUnavailableCallout) {
+          calloutSnapshotRef.current = null;
+        } else if (selectedVenues.length) {
+          calloutSnapshotRef.current = {
+            selectedVenues: [...selectedVenues],
+            selectedCluster,
+          };
+        }
         (global as any).closeCallout?.();
       }
 
-      const nextIndex = index + 1;
-      const completedIds = getCompletedIdsForStep(step);
       const status = statusRef.current ?? defaultStatus();
       persistStatus({
         ...status,
-        currentStep: nextIndex,
-        completedSteps: [...new Set([...status.completedSteps, ...completedIds])],
+        currentStep: advance.nextIndex,
+        completedSteps: [...new Set([...status.completedSteps, ...advance.completedIds])],
       });
-      return nextIndex;
+      return advance.nextIndex;
     });
   }, [persistStatus]);
 
   const previousStep = useCallback(() => {
     setCurrentStepIndex((index) => {
       if (index <= 0) return 0;
-      if (TUTORIAL_STEPS[index]?.id === 'filter-pills' && calloutSnapshotRef.current) {
+      const shouldSkipCalloutLesson =
+        TUTORIAL_STEPS[index]?.id === 'filter-pills' &&
+        (skippedCalloutLessonRef.current || !calloutSnapshotRef.current);
+      if (
+        TUTORIAL_STEPS[index]?.id === 'filter-pills' &&
+        calloutSnapshotRef.current
+      ) {
         const snapshot = calloutSnapshotRef.current;
         const store = useMapStore.getState();
         store.selectVenues(snapshot.selectedVenues);
         store.selectCluster(snapshot.selectedCluster);
         store.selectVenue(snapshot.selectedVenues[0] ?? null);
       }
-      const previousIndex = index - 1;
+      const previousIndex = getTutorialPreviousIndex(index, shouldSkipCalloutLesson);
+      if (shouldSkipCalloutLesson) skippedCalloutLessonRef.current = false;
       persistStatus({
         ...(statusRef.current ?? defaultStatus()),
         currentStep: previousIndex,
@@ -211,6 +244,8 @@ export const useTutorial = (): TutorialManager => {
   }, [pathname, persistStatus]);
 
   const restartTutorial = useCallback(() => {
+    calloutSnapshotRef.current = null;
+    skippedCalloutLessonRef.current = false;
     const reset = defaultStatus();
     persistStatus(reset);
     setCurrentStepIndex(0);

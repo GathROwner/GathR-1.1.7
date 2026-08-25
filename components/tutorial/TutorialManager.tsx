@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { AppState, useWindowDimensions, View } from 'react-native';
+import { AppState, Platform, useWindowDimensions, View } from 'react-native';
 import { usePathname, useRouter } from 'expo-router';
 
 import { TUTORIAL_CONFIG, TUTORIAL_STEPS, getCompletedIdsForStep } from '../../config/tutorialSteps';
@@ -11,9 +11,11 @@ import { Cluster } from '../../types/events';
 import { ComponentMeasurement, TutorialStep } from '../../types/tutorial';
 import {
   isTutorialStepCurrent,
+  registerTutorialAction,
   runTutorialAction,
   waitForTutorialAction,
 } from '../../utils/tutorialActions';
+import { getTutorialClusterSpotlightMeasurement } from '../../utils/tutorialClusterSpotlight';
 import {
   isTutorialModalHostedStep,
   setTutorialModalOverlay,
@@ -30,8 +32,6 @@ import { TutorialSpotlight } from './TutorialSpotlight';
 import { WelcomeScreen } from './WelcomeScreen';
 
 const MAP_ROUTE = '/(tabs)/map' as const;
-const CLUSTER_SPOTLIGHT_SIZE = 72;
-const CLUSTER_CORE_FALLBACK_OFFSET_Y = -20;
 
 type LayoutTarget = {
   flag: string;
@@ -215,6 +215,7 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
   const stepAbortRef = useRef<AbortController | null>(null);
   const autoAdvancedStepRef = useRef<string | null>(null);
   const calloutTransitionInFlightRef = useRef(false);
+  const clusterTransitionInFlightRef = useRef(false);
   const currentStepIdRef = useRef<string | null>(currentStep?.id ?? null);
   const routeAtStepStartRef = useRef(pathname);
   const viewedStepRef = useRef<string | null>(null);
@@ -275,6 +276,26 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
     nextStep();
   }, [nextStep, pathname]);
 
+  const recoverFailedCalloutPresentation = useCallback(async (): Promise<boolean> => {
+    const closedOnFirstAttempt = await runTutorialAction('close-callout');
+    const closed = closedOnFirstAttempt || await runTutorialAction('close-callout');
+    if (closed) return true;
+
+    amplitudeTrack('tutorial_transition_failed', {
+      tutorial_id: 'main_onboarding_v1',
+      tutorial_version: 2,
+      total_steps: TUTORIAL_STEPS.length,
+      step_key: 'cluster-click',
+      from_screen: pathname || '(unknown)',
+      reason: 'callout_presentation_and_close_timeout',
+    });
+    clearHighlightFlags();
+    setOwnedSpotlight(undefined);
+    setTutorialModalOverlay(null);
+    skipTutorial();
+    return false;
+  }, [pathname, skipTutorial]);
+
   useEffect(() => {
     if (!isActive || !currentStep) return;
 
@@ -325,9 +346,16 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
       if (!calloutWasOpen && calloutIsOpen && !presentationWaitStarted) {
         presentationWaitStarted = true;
         void (async () => {
-          await waitForCalloutPresentation(controller.signal);
-          if (!cancelled && !controller.signal.aborted) {
+          const presentationReady = await waitForCalloutPresentation(controller.signal);
+          if (presentationReady && !cancelled && !controller.signal.aborted) {
             advanceOnce(currentStep);
+            return;
+          }
+          if (!cancelled && !controller.signal.aborted) {
+            const recovered = await recoverFailedCalloutPresentation();
+            if (recovered && !cancelled && !controller.signal.aborted) {
+              setTargetUnavailable(true);
+            }
           }
         })();
       }
@@ -339,7 +367,11 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
       controller.abort();
       unsubscribe();
     };
-  }, [advanceOnce, currentStep, isActive]);
+  }, [advanceOnce, currentStep, isActive, recoverFailedCalloutPresentation]);
+
+  useEffect(() => {
+    clusterTransitionInFlightRef.current = false;
+  }, [currentStep?.id]);
 
   useEffect(() => {
     stepAbortRef.current?.abort();
@@ -410,13 +442,11 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
         const mapOriginY = Number(mapLayout?.absoluteY ?? mapLayout?.y ?? 0);
         const mapWidth = Number(mapLayout?.width ?? screenWidth);
         const mapHeight = Number(mapLayout?.height ?? screenHeight);
-        const fallbackCenterY = mapOriginY + mapHeight / 2 + CLUSTER_CORE_FALLBACK_OFFSET_Y;
-        const fallbackMeasurement: ComponentMeasurement = {
-          x: mapOriginX + mapWidth / 2 - CLUSTER_SPOTLIGHT_SIZE / 2,
-          y: fallbackCenterY - CLUSTER_SPOTLIGHT_SIZE / 2,
-          width: CLUSTER_SPOTLIGHT_SIZE,
-          height: CLUSTER_SPOTLIGHT_SIZE,
-        };
+        const fallbackMeasurement = getTutorialClusterSpotlightMeasurement(
+          [mapWidth / 2, mapHeight / 2],
+          { x: mapOriginX, y: mapOriginY },
+          Platform.OS,
+        );
         const freshlyMeasuredSpotlight = projected.source === 'ready' && projected.measurement
           ? cleanMeasurement(projected.measurement, screenWidth, screenHeight)
           : null;
@@ -535,22 +565,48 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
       return;
     }
     if (currentStep.id === 'cluster-click') {
+      if (clusterTransitionInFlightRef.current) return;
+      clusterTransitionInFlightRef.current = true;
       if (!targetClusterRef.current || targetUnavailable) {
-        advanceOnce(currentStep);
+        const unavailableSteps = TUTORIAL_STEPS.slice(stepIndex, stepIndex + 2);
+        unavailableSteps.forEach((step) => {
+          getCompletedIdsForStep(step).forEach((stepKey) => {
+            amplitudeTrack('tutorial_step_completed', {
+              tutorial_id: 'main_onboarding_v1',
+              tutorial_version: 2,
+              total_steps: TUTORIAL_STEPS.length,
+              step_key: stepKey,
+              consolidated_into: step.id,
+              from_screen: pathname || '(unknown)',
+              target_unavailable: true,
+            });
+          });
+        });
+        nextStep(2);
         return;
       }
       setOpeningCluster(true);
       const controller = new AbortController();
-      const ready = waitForCallout(controller.signal);
-      const invoked = await runTutorialAction('open-cluster', targetClusterRef.current);
-      const opened = invoked ? await ready : false;
-      if (opened) {
-        await waitForCalloutPresentation(controller.signal);
+      let transitionAdvanced = false;
+      try {
+        const ready = waitForCallout(controller.signal);
+        const invoked = await runTutorialAction('open-cluster', targetClusterRef.current);
+        const opened = invoked ? await ready : false;
+        const presentationReady = opened
+          ? await waitForCalloutPresentation(controller.signal)
+          : false;
+        if (!opened || !presentationReady) {
+          const recovered = await recoverFailedCalloutPresentation();
+          if (recovered) setTargetUnavailable(true);
+          return;
+        }
+        transitionAdvanced = true;
+        advanceOnce(currentStep);
+      } finally {
+        controller.abort();
+        setOpeningCluster(false);
+        if (!transitionAdvanced) clusterTransitionInFlightRef.current = false;
       }
-      controller.abort();
-      setOpeningCluster(false);
-      if (!opened) setTargetUnavailable(true);
-      advanceOnce(currentStep);
       return;
     }
     if (currentStep.id === 'callout-venue-selector') {
@@ -580,7 +636,11 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
     closeCalloutForTransition,
     completeTutorial,
     currentStep,
+    nextStep,
+    pathname,
+    recoverFailedCalloutPresentation,
     router,
+    stepIndex,
     targetUnavailable,
   ]);
 
@@ -600,6 +660,11 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
     }
     previousStep();
   }, [closeCalloutForTransition, currentStep?.id, previousStep, router, stepIndex]);
+
+  useEffect(
+    () => registerTutorialAction('tutorial-previous', handlePrevious),
+    [handlePrevious],
+  );
 
   const handleSkip = useCallback(() => {
     stepAbortRef.current?.abort();

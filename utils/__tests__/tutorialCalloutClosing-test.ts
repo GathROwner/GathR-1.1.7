@@ -2,6 +2,7 @@ import { createTutorialBooleanGate } from '../tutorialBooleanGate';
 import {
   closePresentedTutorialCallout,
   shouldActivateAndroidRetapOverlay,
+  shouldRouteTutorialCalloutBack,
 } from '../tutorialCalloutClosing';
 
 describe('tutorial callout closing', () => {
@@ -43,5 +44,12 @@ describe('tutorial callout closing', () => {
     expect(shouldActivateAndroidRetapOverlay('tutorial-navigation')).toBe(false);
     expect(shouldActivateAndroidRetapOverlay('map-press')).toBe(true);
     expect(shouldActivateAndroidRetapOverlay('callout-onClose-prop')).toBe(true);
+  });
+
+  it('routes native Back through tutorial Previous only for the hosted callout step', () => {
+    expect(shouldRouteTutorialCalloutBack(true, 'callout-venue-selector')).toBe(true);
+    expect(shouldRouteTutorialCalloutBack(false, 'callout-venue-selector')).toBe(false);
+    expect(shouldRouteTutorialCalloutBack(true, 'cluster-click')).toBe(false);
+    expect(shouldRouteTutorialCalloutBack(true, null)).toBe(false);
   });
 });

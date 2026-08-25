@@ -37,6 +37,7 @@ import { useAuth } from '../../contexts/AuthContext'; // Adjust path as needed
 // Import the store and types
 import { useMapStore } from '../../store';
 import { useInterestCarouselUiStore } from '../../store/interestCarouselUiStore';
+import { useTutorialUiStore } from '../../store/tutorialUiStore';
 import type { Event, Venue, Cluster, TimeStatus, InterestLevel } from '../../types/events';
 import { FilterCriteria, TimeFilterType } from '../../types/filter';
 import type { InterestCarouselFilter } from '../../types/store';
@@ -118,12 +119,14 @@ import {
   markTabScreenRenderStart,
   markTabTracePhase,
 } from '../../utils/tabSwitchTrace';
-import { registerTutorialAction } from '../../utils/tutorialActions';
+import { registerTutorialAction, runTutorialAction } from '../../utils/tutorialActions';
 import { createTutorialBooleanGate } from '../../utils/tutorialBooleanGate';
 import {
   closePresentedTutorialCallout,
   shouldActivateAndroidRetapOverlay,
+  shouldRouteTutorialCalloutBack,
 } from '../../utils/tutorialCalloutClosing';
+import { getTutorialClusterSpotlightMeasurement } from '../../utils/tutorialClusterSpotlight';
 import { publishTutorialMeasurement } from '../../utils/tutorialReadiness';
 import {
   getTutorialModalOverlay,
@@ -2955,9 +2958,7 @@ const CalloutTutorialOverlayHost = () => {
   ) : null;
 };
 
-const TUTORIAL_CLUSTER_SPOTLIGHT_SIZE = 72;
-
- // Main Map Screen component
+// Main Map Screen component
 function MapScreen() {
    markTabScreenRenderStart('map');
    const ActiveCalloutComponent = STATIC_CALLOUT_ISOLATION_DEBUG ? StaticDebugCallout : EventCallout;
@@ -3471,23 +3472,28 @@ useEffect(() => {
   const isRenderedCalloutPresentationReady =
     isRenderedCalloutLayoutReady &&
     calloutPresentationReadyKey === renderedCalloutPresentationKey;
+  const tutorialCalloutSelectedGate = useMemo(() => createTutorialBooleanGate(false), []);
   const tutorialCalloutPresentedGate = useMemo(() => createTutorialBooleanGate(false), []);
   const tutorialCalloutReadyGate = useMemo(() => createTutorialBooleanGate(false), []);
 
   useLayoutEffect(() => {
+    tutorialCalloutSelectedGate.publish(selectedVenueCount > 0);
     tutorialCalloutPresentedGate.publish(hasPresentedCallout);
     tutorialCalloutReadyGate.publish(isRenderedCalloutPresentationReady);
   }, [
     hasPresentedCallout,
     isRenderedCalloutPresentationReady,
+    selectedVenueCount,
     tutorialCalloutPresentedGate,
     tutorialCalloutReadyGate,
+    tutorialCalloutSelectedGate,
   ]);
 
   useEffect(() => () => {
+    tutorialCalloutSelectedGate.dispose();
     tutorialCalloutPresentedGate.dispose();
     tutorialCalloutReadyGate.dispose();
-  }, [tutorialCalloutPresentedGate, tutorialCalloutReadyGate]);
+  }, [tutorialCalloutPresentedGate, tutorialCalloutReadyGate, tutorialCalloutSelectedGate]);
 
   useLayoutEffect(() => {
     if (!hasPresentedCallout) {
@@ -6963,13 +6969,16 @@ lastOpenedClusterIdRef.current = cluster.id;
     });
   }), [tutorialCalloutReadyGate]);
 
-  useEffect(() => registerTutorialAction('close-callout', () =>
-    closePresentedTutorialCallout(
-      tutorialCalloutPresentedGate,
+  useEffect(() => registerTutorialAction('close-callout', () => {
+    const closeGate = tutorialCalloutPresentedGate.getValue()
+      ? tutorialCalloutPresentedGate
+      : tutorialCalloutSelectedGate;
+    return closePresentedTutorialCallout(
+      closeGate,
       () => closeCallout('tutorial-navigation'),
       TUTORIAL_CALLOUT_CLOSE_TIMEOUT_MS,
-    )
-  ), [closeCallout, tutorialCalloutPresentedGate]);
+    );
+  }), [closeCallout, tutorialCalloutPresentedGate, tutorialCalloutSelectedGate]);
 
   useEffect(() => {
     const unregister = registerTutorialAction('focus-cluster', async (target: Cluster) => {
@@ -7048,20 +7057,14 @@ lastOpenedClusterIdRef.current = cluster.id;
     const mapLayout = (global as any).mapViewLayout;
     const mapOriginX = Number(mapLayout?.absoluteX ?? mapLayout?.x ?? 0);
     const mapOriginY = Number(mapLayout?.absoluteY ?? mapLayout?.y ?? 0);
-    // MarkerView anchors this marker's visible circular core at the geographic
-    // coordinate. Internal story/label content can make the React wrapper much
-    // wider, but it does not move that Mapbox anchor. Applying the wrapper's
-    // local centre offset here would therefore shift the spotlight away from
-    // the circle users actually see and tap.
-    const markerCenterX = mapOriginX + Number(point[0]);
-    const markerCenterY = mapOriginY + Number(point[1]);
-
-    publishTutorialMeasurement('tutorialClusterLayout', {
-      x: markerCenterX - TUTORIAL_CLUSTER_SPOTLIGHT_SIZE / 2,
-      y: markerCenterY - TUTORIAL_CLUSTER_SPOTLIGHT_SIZE / 2,
-      width: TUTORIAL_CLUSTER_SPOTLIGHT_SIZE,
-      height: TUTORIAL_CLUSTER_SPOTLIGHT_SIZE,
-    });
+    publishTutorialMeasurement(
+      'tutorialClusterLayout',
+      getTutorialClusterSpotlightMeasurement(
+        [Number(point[0]), Number(point[1])],
+        { x: mapOriginX, y: mapOriginY },
+        Platform.OS,
+      ),
+    );
   }), []);
 
   const handleAndroidRetapOverlayResponderRelease = useCallback((event: GestureResponderEvent): boolean => {
@@ -9563,7 +9566,14 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
         transparent={true}
         visible={true}
         animationType="none"
-        onRequestClose={() => closeCallout('modal-request-close')}
+        onRequestClose={() => {
+          const tutorialUi = useTutorialUiStore.getState();
+          if (shouldRouteTutorialCalloutBack(tutorialUi.isVisible, tutorialUi.currentStepId)) {
+            void runTutorialAction('tutorial-previous');
+            return;
+          }
+          closeCallout('modal-request-close');
+        }}
         presentationStyle="overFullScreen"
         statusBarTranslucent={true}
         hardwareAccelerated={true}
