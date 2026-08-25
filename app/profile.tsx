@@ -809,9 +809,6 @@ export default function ProfileScreen() {
         setFacebookSubmissionHighlighted(false);
         console.log('ðŸ“ ONE-SHOT MEASUREMENT: Taking single measurement (first time only)...');
         
-        // IMMEDIATELY set the flag to prevent re-measurement
-        hasMeasuredRef.current = true;
-        
         // Clear any stale measurements before our measurement
         console.log('ðŸ§¹ ONE-SHOT MEASUREMENT: Clearing stale data before measurement');
         (global as any).facebookSubmissionLayout = null;
@@ -825,6 +822,15 @@ export default function ProfileScreen() {
             width: Math.round(width), 
             height: Math.round(height) 
           };
+
+          // Native-stack modal children can briefly report an empty frame on
+          // their first Android layout pass. Do not consume the one-shot until
+          // a real row exists; the bounded tutorial fallback remains available
+          // while this interval retries.
+          if (rawMeasurement.width <= 0 || rawMeasurement.height <= 0) {
+            return;
+          }
+          hasMeasuredRef.current = true;
           
           console.log('ðŸ“ ONE-SHOT MEASUREMENT: Raw measurement:', rawMeasurement);
           
@@ -928,12 +934,15 @@ export default function ProfileScreen() {
         };
 
         const captureAfterPulseStops = () => {
-          const overlayHost = profileTutorialOverlayHostRef.current as any;
           const profileRoot = profileContainerRef.current as any;
+          const overlayHost = profileTutorialOverlayHostRef.current as any;
+          // Prefer the concrete KeyboardAvoidingView ancestor. Android may
+          // render the absolute overlay host correctly while declining its
+          // measureInWindow callback inside a native-stack modal.
           const measurementRoot =
-            overlayHost && typeof overlayHost.measureInWindow === 'function'
-              ? overlayHost
-              : profileRoot;
+            profileRoot && typeof profileRoot.measureInWindow === 'function'
+              ? profileRoot
+              : overlayHost;
 
           if (measurementRoot && typeof measurementRoot.measureInWindow === 'function') {
             measurementRoot.measureInWindow((rootX: number, rootY: number) => {
