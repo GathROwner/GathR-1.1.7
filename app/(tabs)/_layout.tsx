@@ -850,10 +850,28 @@ export default function TabLayout() {
     <Tabs screenOptions={({ route }) => ({
       headerRight: () => (
         !isHeaderSearchActive ? (
-          <View style={{ marginRight: 16 }}>
+          <View
+            ref={profileButtonRef}
+            collapsable={false}
+            style={{ marginRight: 16 }}
+            onLayout={() => {
+              // Keep a concrete native wrapper around the header action. On
+              // Android, an Animated.View inside a native-stack header can be
+              // visually present while measureInWindow never resolves. The
+              // non-collapsible wrapper is stable on both platforms.
+              if ((global as any).tutorialHighlightProfileFacebook && profileButtonRef.current) {
+                profileButtonRef.current.measureInWindow((x: number, y: number, width: number, height: number) => {
+                  const measurement = getTutorialProfileButtonMeasurement(
+                    { x, y, width, height },
+                    insets.top,
+                  );
+                  (global as any).profileFacebookLayout = measurement;
+                  publishTutorialMeasurement('profileFacebookLayout', measurement);
+                });
+              }
+            }}
+          >
             <Animated.View
-              ref={profileButtonRef as any}
-              collapsable={false}
               style={[
                 profileButtonHighlighted ? {
                   shadowColor: '#FF6B35',
@@ -868,19 +886,6 @@ export default function TabLayout() {
                   transform: [{ scale: profileButtonPulseAnim }],
                 } : {}
               ]}
-              onLayout={() => {
-                // Immediate measurement for tutorial
-                if ((global as any).tutorialHighlightProfileFacebook && profileButtonRef.current) {
-                  profileButtonRef.current.measureInWindow((x: number, y: number, width: number, height: number) => {
-                    const measurement = getTutorialProfileButtonMeasurement(
-                      { x, y, width, height },
-                      insets.top,
-                    );
-                    (global as any).profileFacebookLayout = measurement;
-                    publishTutorialMeasurement('profileFacebookLayout', measurement);
-                  });
-                }
-              }}
             >
               <TouchableOpacity 
                 onPress={handleProfileButtonPress} 
