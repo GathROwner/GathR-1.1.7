@@ -24,6 +24,7 @@ import { WelcomeScreen } from './WelcomeScreen';
 
 const MAP_ROUTE = '/(tabs)/map' as const;
 const CLUSTER_ARTWORK_HORIZONTAL_OFFSET = 25;
+const STEP_ADVANCE_LOCK_MS = 450;
 
 type LayoutTarget = {
   flag: string;
@@ -198,6 +199,7 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
   const autoAdvancedStepRef = useRef<string | null>(null);
   const routeAtStepStartRef = useRef(pathname);
   const viewedStepRef = useRef<string | null>(null);
+  const lastAdvanceAtRef = useRef(0);
   const setTutorialVisible = useTutorialUiStore((state) => state.setVisible);
   const setTutorialCurrentStep = useTutorialUiStore((state) => state.setCurrentStepId);
   const facebookSubmissionLayout = useTutorialUiStore((state) => state.facebookSubmissionLayout);
@@ -234,6 +236,9 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
 
   const advanceOnce = useCallback((step: TutorialStep) => {
     if (autoAdvancedStepRef.current === step.id) return;
+    const now = Date.now();
+    if (now - lastAdvanceAtRef.current < STEP_ADVANCE_LOCK_MS) return;
+    lastAdvanceAtRef.current = now;
     autoAdvancedStepRef.current = step.id;
     getCompletedIdsForStep(step).forEach((stepKey) => {
       amplitudeTrack('tutorial_step_completed', {

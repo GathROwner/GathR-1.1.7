@@ -863,9 +863,11 @@ export default function ProfileScreen() {
           const SCREEN_MARGIN = 15;
           const minX = SCREEN_MARGIN;
           const minY = SCREEN_MARGIN;
-          const PULSE_SCALE = 1.15;
-          const EXTRA_HORIZONTAL_BUFFER = 16;
-          const EXTRA_VERTICAL_BUFFER = 18;
+          // The overlay now supplies its own pulse ring, so keep this cutout
+          // close to the action row instead of swallowing adjacent settings.
+          const PULSE_SCALE = 1;
+          const EXTRA_HORIZONTAL_BUFFER = 6;
+          const EXTRA_VERTICAL_BUFFER = 4;
           const IOS_SPOTLIGHT_VERTICAL_NUDGE = Platform.OS === 'ios' ? 22 : 0;
           const targetCenterX = adjustedMeasurement.x + adjustedMeasurement.width / 2;
           const targetCenterY =
