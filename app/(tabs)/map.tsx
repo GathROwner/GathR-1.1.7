@@ -6861,6 +6861,10 @@ lastOpenedClusterIdRef.current = cluster.id;
     await handleMarkerPress(target);
   }), [handleMarkerPress]);
 
+  useEffect(() => registerTutorialAction('close-callout', () => {
+    closeCallout('tutorial-navigation');
+  }), [closeCallout]);
+
   useEffect(() => {
     const unregister = registerTutorialAction('focus-cluster', async (target: Cluster) => {
       const coordinate = getClusterMapCoordinate(target);

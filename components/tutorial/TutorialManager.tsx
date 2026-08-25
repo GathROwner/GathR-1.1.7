@@ -374,6 +374,11 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
       advanceOnce(currentStep);
       return;
     }
+    if (currentStep.id === 'callout-venue-selector') {
+      await runTutorialAction('close-callout');
+      advanceOnce(currentStep);
+      return;
+    }
     if (currentStep.id === 'events-tab') {
       router.replace('/(tabs)/events');
       tutorialPerf('navigation_begin', { stepId: currentStep.id, destination: 'events' });
@@ -397,6 +402,9 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
 
   const handlePrevious = useCallback(() => {
     tutorialPerf('action', { stepId: currentStep?.id ?? 'unknown', action: 'previous' });
+    if (currentStep?.id === 'callout-venue-selector') {
+      void runTutorialAction('close-callout');
+    }
     const previous = TUTORIAL_STEPS[Math.max(0, stepIndex - 1)];
     if (['events-tab', 'specials-tab', 'profile-facebook'].includes(previous?.id)) {
       router.replace(MAP_ROUTE);
@@ -406,6 +414,7 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
 
   const handleSkip = useCallback(() => {
     stepAbortRef.current?.abort();
+    void runTutorialAction('close-callout');
     clearHighlightFlags();
     skipTutorial();
   }, [skipTutorial]);
