@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { AppState, useWindowDimensions, View } from 'react-native';
+import { AppState, Platform, useWindowDimensions, View } from 'react-native';
 import { usePathname, useRouter } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { TUTORIAL_CONFIG, TUTORIAL_STEPS, getCompletedIdsForStep } from '../../config/tutorialSteps';
 import { useTutorial } from '../../hooks/useTutorial';
@@ -168,6 +169,7 @@ interface Props {
 
 export const TutorialManager: React.FC<Props> = ({ children }) => {
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
   const router = useRouter();
   const pathname = usePathname();
   const {
@@ -308,6 +310,26 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
       if (!target) return;
       const freshAfter = Date.now();
       (global as any)[target.flag] = true;
+      if (currentStep.id === 'profile-facebook') {
+        const size = 34;
+        const measurement = cleanMeasurement({
+          x: screenWidth - 16 - size,
+          y: insets.top + (Platform.OS === 'android' ? 32 : 15),
+          width: size,
+          height: size,
+        }, screenWidth, screenHeight);
+        tutorialPerf('target_measured', {
+          stepId: currentStep.id,
+          source: 'safe-area-header-geometry',
+          layout: target.layout,
+        });
+        if (measurement) {
+          setSpotlight({ ...measurement, borderRadius: 20, showPulse: true });
+        } else {
+          setTargetUnavailable(true);
+        }
+        return;
+      }
       const result = await waitForTutorialMeasurement(target.layout, {
         timeoutMs: TUTORIAL_CONFIG.TARGET_TIMEOUT_MS,
         freshAfter,
@@ -321,7 +343,11 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
         setTargetUnavailable(true);
         return;
       }
-      setSpotlight({ ...measurement, borderRadius: target.radius, showPulse: false });
+      setSpotlight({
+        ...measurement,
+        borderRadius: target.radius,
+        showPulse: currentStep.action === 'interaction',
+      });
       setTargetUnavailable(!result.measurement);
     };
 
@@ -333,7 +359,7 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
         (global as any).ignoreProgrammaticCameraRef = false;
       }
     };
-  }, [currentStep, isActive, pathname, resumeEpoch, router, screenHeight, screenWidth]);
+  }, [currentStep, insets.top, isActive, pathname, resumeEpoch, router, screenHeight, screenWidth]);
 
   useEffect(() => {
     if (!isActive) return;
