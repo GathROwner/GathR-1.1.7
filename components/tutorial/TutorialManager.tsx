@@ -247,6 +247,37 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
   }, [nextStep, pathname]);
 
   useEffect(() => {
+    if (!isActive || !currentStep) return;
+
+    const globalAny = global as any;
+    const handleEventsReady = () => {
+      if (currentStep.id === 'events-tab') advanceOnce(currentStep);
+    };
+    const handleSpecialsReady = () => {
+      if (currentStep.id === 'specials-tab') advanceOnce(currentStep);
+    };
+    const handleProfileReady = () => {
+      if (currentStep.id === 'profile-facebook') advanceOnce(currentStep);
+    };
+
+    globalAny.onEventsScreenNavigated = handleEventsReady;
+    globalAny.onSpecialsScreenNavigated = handleSpecialsReady;
+    globalAny.onProfileScreenNavigated = handleProfileReady;
+
+    return () => {
+      if (globalAny.onEventsScreenNavigated === handleEventsReady) {
+        delete globalAny.onEventsScreenNavigated;
+      }
+      if (globalAny.onSpecialsScreenNavigated === handleSpecialsReady) {
+        delete globalAny.onSpecialsScreenNavigated;
+      }
+      if (globalAny.onProfileScreenNavigated === handleProfileReady) {
+        delete globalAny.onProfileScreenNavigated;
+      }
+    };
+  }, [advanceOnce, currentStep, isActive]);
+
+  useEffect(() => {
     if (!isActive || !currentStep || pathname === routeAtStepStartRef.current) return;
     if (currentStep.id === 'events-tab' && isRoute(pathname, 'events')) advanceOnce(currentStep);
     if (currentStep.id === 'specials-tab' && isRoute(pathname, 'specials')) advanceOnce(currentStep);
