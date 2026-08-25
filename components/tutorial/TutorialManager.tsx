@@ -8,7 +8,7 @@ import { amplitudeTrack } from '../../lib/amplitudeAnalytics';
 import { useMapStore } from '../../store/mapStore';
 import { useTutorialUiStore } from '../../store/tutorialUiStore';
 import { Cluster } from '../../types/events';
-import { ComponentMeasurement, SpotlightConfig, TutorialStep } from '../../types/tutorial';
+import { ComponentMeasurement, TutorialStep } from '../../types/tutorial';
 import {
   isTutorialStepCurrent,
   runTutorialAction,
@@ -21,6 +21,10 @@ import {
 import {
   waitForTutorialMeasurement,
 } from '../../utils/tutorialReadiness';
+import {
+  getTutorialSpotlightForStep,
+  OwnedTutorialSpotlight,
+} from '../../utils/tutorialSpotlightOwnership';
 import { TutorialBottomSheet } from './TutorialBottomSheet';
 import { TutorialSpotlight } from './TutorialSpotlight';
 import { WelcomeScreen } from './WelcomeScreen';
@@ -202,7 +206,7 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
     completeTutorial,
     restartTutorial,
   } = useTutorial();
-  const [spotlight, setSpotlight] = useState<SpotlightConfig>();
+  const [ownedSpotlight, setOwnedSpotlight] = useState<OwnedTutorialSpotlight>();
   const [targetUnavailable, setTargetUnavailable] = useState(false);
   const [openingCluster, setOpeningCluster] = useState(false);
   const [closingCallout, setClosingCallout] = useState(false);
@@ -221,6 +225,7 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
   const stepIndex = currentStep
     ? Math.max(0, TUTORIAL_STEPS.findIndex((step) => step.id === currentStep.id))
     : 0;
+  const spotlight = getTutorialSpotlightForStep(ownedSpotlight, currentStep?.id);
 
   // Async actions can finish after React has already rendered the next step.
   // Keep this ref current during render so stale callbacks cannot advance the
@@ -340,7 +345,7 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
     stepAbortRef.current?.abort();
     const controller = new AbortController();
     stepAbortRef.current = controller;
-    setSpotlight(undefined);
+    setOwnedSpotlight(undefined);
     setTargetUnavailable(false);
     setOpeningCluster(false);
     if (currentStep?.id !== 'callout-venue-selector') {
@@ -418,7 +423,10 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
         const measurement = freshlyMeasuredSpotlight
           ?? cleanMeasurement(fallbackMeasurement, screenWidth, screenHeight);
         if (measurement) {
-          setSpotlight({ ...measurement, borderRadius: 36, forceCircle: true, showPulse: true });
+          setOwnedSpotlight({
+            stepId: currentStep.id,
+            config: { ...measurement, borderRadius: 36, forceCircle: true, showPulse: true },
+          });
         } else {
           setTargetUnavailable(true);
         }
@@ -433,7 +441,10 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
         const measurement = cleanMeasurement(facebookSubmissionLayout, screenWidth, screenHeight);
         if (measurement) {
           (global as any).facebookSubmissionStable = true;
-          setSpotlight({ ...measurement, borderRadius: target.radius, showPulse: true });
+          setOwnedSpotlight({
+            stepId: currentStep.id,
+            config: { ...measurement, borderRadius: target.radius, showPulse: true },
+          });
           return;
         }
       }
@@ -451,10 +462,13 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
         setTargetUnavailable(true);
         return;
       }
-      setSpotlight({
-        ...measurement,
-        borderRadius: target.radius,
-        showPulse: currentStep.action === 'interaction' || currentStep.id === 'facebook-submission',
+      setOwnedSpotlight({
+        stepId: currentStep.id,
+        config: {
+          ...measurement,
+          borderRadius: target.radius,
+          showPulse: currentStep.action === 'interaction' || currentStep.id === 'facebook-submission',
+        },
       });
       setTargetUnavailable(!result.measurement);
     };
@@ -483,7 +497,7 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
     const subscription = AppState.addEventListener('change', (state) => {
       if (state !== 'active') stepAbortRef.current?.abort();
       if (state === 'active' && currentStep) {
-        setSpotlight(undefined);
+        setOwnedSpotlight(undefined);
         setTargetUnavailable(false);
         setResumeEpoch((epoch) => epoch + 1);
       }

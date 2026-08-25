@@ -6948,7 +6948,7 @@ lastOpenedClusterIdRef.current = cluster.id;
     timeoutMs?: number,
     signal?: AbortSignal,
   ) => {
-    await tutorialCalloutReadyGate.waitFor(true, {
+    return tutorialCalloutReadyGate.waitFor(true, {
       timeoutMs: timeoutMs ?? TUTORIAL_CALLOUT_READY_TIMEOUT_MS,
       signal,
     });

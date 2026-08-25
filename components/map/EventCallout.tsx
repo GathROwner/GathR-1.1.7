@@ -22,6 +22,8 @@ import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import { toggleSavedEvent as toggleSavedEventSvc } from '../../services/userService';
 import { amplitudeTrack } from '../../lib/amplitudeAnalytics';
 import { publishTutorialMeasurement as registerTutorialMeasurement } from '../../utils/tutorialReadiness';
+import { composeTutorialCalloutMeasurement } from '../../utils/tutorialCalloutMeasurement';
+import { createTutorialPresentationSettler } from '../../utils/tutorialPresentationSettler';
 
 
 
@@ -278,6 +280,7 @@ function formatEndDateLabel(dateStr: string) {
 
 const CALLOUT_NORMAL_HEIGHT = 440; // Increased to accommodate venue selector in all cases
 const CALLOUT_MIN_HEIGHT = 300;
+const TUTORIAL_PRESENTATION_FALLBACK_MS = 1200;
 const DRAG_THRESHOLD = 50;
 const VELOCITY_THRESHOLD = 0.3;
 const LARGE_SWIPE_DISTANCE = 250;  // Pixels for "large" swipe to dismiss (increased for better differentiation)
@@ -2630,95 +2633,81 @@ const EventCallout: React.FC<EventCalloutProps> = ({
   const isVenueSelectorHighlighted =
     tutorialVisible && tutorialStepId === 'callout-venue-selector';
   const [calloutPresentationSettled, setCalloutPresentationSettled] = useState(false);
+  const [calloutTutorialLayout, setCalloutTutorialLayout] = useState<{
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  } | null>(null);
+  const [venueSelectorTutorialLayout, setVenueSelectorTutorialLayout] = useState<{
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  } | null>(null);
   const [isEventTabsHighlighted, setEventTabsHighlighted] = useState(false);
   const onPresentationReadyRef = useRef(onPresentationReady);
   onPresentationReadyRef.current = onPresentationReady;
 
   const pulseAnimEventTabs = useRef(new Animated.Value(1)).current;
 
-  const publishTutorialLayout = useCallback((ref: View | null, layoutName: string) => {
-    const publish = (x: number, y: number, width: number, height: number) => {
-      const intersectsViewport =
-        Number.isFinite(x) &&
-        Number.isFinite(y) &&
-        Number.isFinite(width) &&
-        Number.isFinite(height) &&
-        width > 0 &&
-        height > 0 &&
-        x < SCREEN_WIDTH &&
-        y < SCREEN_HEIGHT &&
-        x + width > 0 &&
-        y + height > 0;
-      if (!intersectsViewport) return;
+  const publishTutorialLayout = useCallback((
+    layoutName: string,
+    measurement: { x: number; y: number; width: number; height: number },
+  ) => {
+    const measuredAt = Date.now();
+    (global as any)[layoutName] = { ...measurement, measuredAt };
+    (global as any)[`${layoutName}MeasuredAt`] = measuredAt;
+    registerTutorialMeasurement(layoutName, measurement, measuredAt);
+  }, []);
 
-      const measuredAt = Date.now();
-      (global as any)[layoutName] = {
-        x: Math.round(x),
-        y: Math.round(y),
-        width: Math.round(width),
-        height: Math.round(height),
-        measuredAt
-      };
-      (global as any)[`${layoutName}MeasuredAt`] = measuredAt;
-      registerTutorialMeasurement(
-        layoutName,
-        { x: Math.round(x), y: Math.round(y), width: Math.round(width), height: Math.round(height) },
-        measuredAt,
+  const measureAndPublishTutorialLayout = useCallback((ref: View | null, layoutName: string) => {
+    const node = ref as any;
+    const publish = (x: number, y: number, width: number, height: number) => {
+      const measurement = composeTutorialCalloutMeasurement(
+        { x: 0, y: 0, width: SCREEN_WIDTH, height: SCREEN_HEIGHT },
+        { x, y, width, height },
+        { width: SCREEN_WIDTH, height: SCREEN_HEIGHT },
       );
+      if (measurement) publishTutorialLayout(layoutName, measurement);
     };
 
-    const node = ref as any;
     if (typeof node?.measureInWindow === 'function') {
-      node.measureInWindow((x: number, y: number, width: number, height: number) => {
-        publish(x, y, width, height);
-      });
+      node.measureInWindow(publish);
       return;
     }
-
     if (typeof node?.measure === 'function') {
       node.measure((_x: number, _y: number, width: number, height: number, pageX: number, pageY: number) => {
         publish(pageX, pageY, width, height);
       });
     }
-  }, []);
+  }, [publishTutorialLayout]);
 
-  // Measure from actual tutorial/presentation state. The previous 200 ms poll
-  // could publish while Android's entrance spring still held the selector
-  // offscreen, causing the readiness wait to settle on unusable geometry.
+  // Convert the committed callout-local onLayout rectangles to window
+  // coordinates only after the entrance has settled. Android's native-driver
+  // transform is intentionally excluded: measureInWindow can report the
+  // pre-transform/offscreen position even after the sheet is visibly settled.
   useEffect(() => {
     if (!isVenueSelectorHighlighted || !calloutPresentationSettled) return;
-
-    const frame = requestAnimationFrame(() => {
-      const tutorialState = useTutorialUiStore.getState();
-      if (
-        tutorialState.isVisible &&
-        tutorialState.currentStepId === 'callout-venue-selector' &&
-        venueSelectorRef.current
-      ) {
-        publishTutorialLayout(venueSelectorRef.current, 'venueSelectorLayout');
-      }
-    });
-    return () => cancelAnimationFrame(frame);
+    const measurement = composeTutorialCalloutMeasurement(
+      calloutTutorialLayout,
+      venueSelectorTutorialLayout,
+      { width: SCREEN_WIDTH, height: SCREEN_HEIGHT },
+    );
+    if (!measurement) return;
+    publishTutorialLayout('venueSelectorLayout', measurement);
   }, [
     calloutPresentationSettled,
+    calloutTutorialLayout,
     isVenueSelectorHighlighted,
     publishTutorialLayout,
+    venueSelectorTutorialLayout,
     venues.length,
   ]);
 
-  const handleVenueSelectorLayout = useCallback(() => {
-    if (!isVenueSelectorHighlighted || !calloutPresentationSettled) return;
-    requestAnimationFrame(() => {
-      const tutorialState = useTutorialUiStore.getState();
-      if (
-        tutorialState.isVisible &&
-        tutorialState.currentStepId === 'callout-venue-selector' &&
-        venueSelectorRef.current
-      ) {
-        publishTutorialLayout(venueSelectorRef.current, 'venueSelectorLayout');
-      }
-    });
-  }, [calloutPresentationSettled, isVenueSelectorHighlighted, publishTutorialLayout]);
+  const handleVenueSelectorLayout = useCallback((event: LayoutChangeEvent) => {
+    setVenueSelectorTutorialLayout(event.nativeEvent.layout);
+  }, []);
 
   // Polling and Measurement for Event Tabs
   useEffect(() => {
@@ -2728,11 +2717,11 @@ const EventCallout: React.FC<EventCalloutProps> = ({
         setEventTabsHighlighted(flag);
       }
       if (flag && eventTabsRef.current) {
-        publishTutorialLayout(eventTabsRef.current, 'eventTabsLayout');
+        measureAndPublishTutorialLayout(eventTabsRef.current, 'eventTabsLayout');
       }
     }, 200);
     return () => clearInterval(interval);
-  }, [isEventTabsHighlighted, publishTutorialLayout]);
+  }, [isEventTabsHighlighted, measureAndPublishTutorialLayout]);
   
   // Animation for Event Tabs
   useEffect(() => {
@@ -4150,6 +4139,15 @@ useEffect(() => {
   console.log("Initial callout animation effect");
   let cancelled = false;
   setCalloutPresentationSettled(false);
+  const markPresentationSettled = () => {
+    if (cancelled) return;
+    setCalloutPresentationSettled(true);
+    onPresentationReadyRef.current?.();
+  };
+  const presentationSettler = createTutorialPresentationSettler(
+    markPresentationSettled,
+    TUTORIAL_PRESENTATION_FALLBACK_MS,
+  );
   if (Platform.OS === 'android') {
     (calloutRootRef.current as any)?.setNativeProps?.({ pointerEvents: 'auto' });
   }
@@ -4187,10 +4185,10 @@ useEffect(() => {
       animatedEntrance: false,
       staticIosPresentation: true,
     });
-    setCalloutPresentationSettled(true);
-    onPresentationReadyRef.current?.();
+    presentationSettler.animationComplete(true);
     return () => {
       cancelled = true;
+      presentationSettler.cancel();
     };
   }
 
@@ -4214,10 +4212,7 @@ useEffect(() => {
 
   if (keepInitialBackdropStable) {
     sheetEntranceAnimation.start(({ finished }) => {
-      if (!cancelled && finished) {
-        setCalloutPresentationSettled(true);
-        onPresentationReadyRef.current?.();
-      }
+      if (!cancelled) presentationSettler.animationComplete(finished);
     });
   } else {
     Animated.parallel([
@@ -4228,10 +4223,7 @@ useEffect(() => {
         useNativeDriver: true,
       }),
     ]).start(({ finished }) => {
-      if (!cancelled && finished) {
-        setCalloutPresentationSettled(true);
-        onPresentationReadyRef.current?.();
-      }
+      if (!cancelled) presentationSettler.animationComplete(finished);
     });
   }
 
@@ -4249,6 +4241,7 @@ useEffect(() => {
   });
   return () => {
     cancelled = true;
+    presentationSettler.cancel();
     sheetEntranceAnimation.stop();
   };
 }, [cluster?.id, safeTopOffset, useStaticIosCalloutPresentation, venues.length]);
@@ -4393,6 +4386,7 @@ useEffect(() => {
         style={calloutContainerStyle}
         onLayout={(event: LayoutChangeEvent) => {
           const { height, width, x, y } = event.nativeEvent.layout;
+          setCalloutTutorialLayout({ x, y, width, height });
           if (!calloutLayoutReady) {
             setCalloutLayoutReady(true);
           }

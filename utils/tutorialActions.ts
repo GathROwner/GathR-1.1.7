@@ -1,4 +1,4 @@
-type TutorialAction = (...args: any[]) => void | Promise<void>;
+type TutorialAction = (...args: any[]) => void | boolean | Promise<void | boolean>;
 
 export const isTutorialStepCurrent = (
   expectedStepId: string,
@@ -52,6 +52,6 @@ export const waitForTutorialAction = (
 export const runTutorialAction = async (name: string, ...args: any[]) => {
   const action = actions.get(name);
   if (!action) return false;
-  await action(...args);
-  return true;
+  const result = await action(...args);
+  return result !== false;
 };

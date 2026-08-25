@@ -38,6 +38,14 @@ describe('tutorial action readiness', () => {
     unregister();
   });
 
+  it('propagates a registered readiness action timeout', async () => {
+    const unregister = registerTutorialAction('timed-out-ready-action', () => false);
+
+    await expect(runTutorialAction('timed-out-ready-action')).resolves.toBe(false);
+
+    unregister();
+  });
+
   it('rejects a late transition after the tutorial has moved to another step', () => {
     expect(isTutorialStepCurrent('cluster-click', 'cluster-click')).toBe(true);
     expect(isTutorialStepCurrent('cluster-click', 'callout-venue-selector')).toBe(false);
