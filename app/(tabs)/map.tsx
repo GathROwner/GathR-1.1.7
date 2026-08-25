@@ -3266,6 +3266,7 @@ useEffect(() => {
   const androidRetapOverlayActiveRef = useRef(false);
   const androidRetapOverlayPressHandledRef = useRef(false);
   const androidClusterHitTargetsRef = useRef<AndroidClusterHitTarget[]>([]);
+  const closestClusterMarkerRef = useRef<any>(null);
   const androidCalloutTeardownTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const androidControlsReleaseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const androidControlsReleaseSequenceRef = useRef(0);
@@ -3276,6 +3277,20 @@ useEffect(() => {
     closeStartedAt: 0,
     attemptCount: 0,
   });
+  const publishClosestTutorialClusterLayout = useCallback((cluster: Cluster) => {
+    requestAnimationFrame(() => {
+      closestClusterMarkerRef.current?.measureInWindow?.(
+        (x: number, y: number, width: number, height: number) => {
+          if (![x, y, width, height].every(Number.isFinite) || width <= 0 || height <= 0) return;
+          publishTutorialClusterTargets([{
+            cluster,
+            x: x + width / 2,
+            y: y + height / 2,
+          }]);
+        },
+      );
+    });
+  }, []);
   useEffect(() => {
     const globalAny = globalThis as {
       __gathrArmMapSurfaceTouchGuard?: (durationMs?: number, reason?: string) => void;
@@ -6978,7 +6993,9 @@ lastOpenedClusterIdRef.current = cluster.id;
     const { projected, sourceCount } = getAndroidProjectedClusterHitTargets();
 
     setAndroidClusterHitTargetsImmediate(projected);
-    publishTutorialClusterTargets(projected);
+    if (projected.length > 0) {
+      publishTutorialClusterTargets(projected);
+    }
 
     if (androidRetapOverlayActive || hasPresentedCallout) {
       logAndroidRetapOverlayTargets('effect', sourceCount, projected);
@@ -9268,6 +9285,8 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
              
           >
             <TouchableOpacity
+              ref={isClosestCluster ? closestClusterMarkerRef : undefined}
+              onLayout={isClosestCluster ? () => publishClosestTutorialClusterLayout(cluster) : undefined}
               onPress={() => {
                 if (Platform.OS === 'android') {
                   const probe = androidZoomTapLatencyProbeRef.current;
