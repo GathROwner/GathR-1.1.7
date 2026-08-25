@@ -44,6 +44,8 @@ export const TutorialBottomSheet: React.FC<Props> = ({
   const entrance = useRef(new Animated.Value(0)).current;
   const isCompletion = stepId === 'completion';
   const isClusterStep = stepId === 'cluster-click';
+  const isFeedExplanation =
+    stepId === 'events-list-explanation' || stepId === 'specials-list-explanation';
   const horizontalInset = Math.max(14, insets.left + 12, insets.right + 12);
   const cardWidth = Math.min(430, windowWidth - horizontalInset * 2);
 
@@ -72,6 +74,7 @@ export const TutorialBottomSheet: React.FC<Props> = ({
         { width: cardWidth, left: (windowWidth - cardWidth) / 2 },
         isCompletion && styles.completionCard,
         isClusterStep && styles.clusterCard,
+        isFeedExplanation && styles.feedExplanationCard,
         {
           opacity: entrance,
           transform: [{
@@ -95,7 +98,7 @@ export const TutorialBottomSheet: React.FC<Props> = ({
         </View>
       )}
 
-      <View style={styles.progressHeader}>
+      <View style={[styles.progressHeader, isFeedExplanation && styles.feedProgressHeader]}>
         <Text style={styles.progressText}>{stepNumber} of {totalSteps}</Text>
         {showSkip && !isCompletion && (
           <TouchableOpacity accessibilityRole="button" onPress={onSkip} style={styles.headerSkip}>
@@ -103,14 +106,30 @@ export const TutorialBottomSheet: React.FC<Props> = ({
           </TouchableOpacity>
         )}
       </View>
-      <View style={[styles.progressTrack, isClusterStep && styles.clusterProgressTrack]}>
+      <View style={[
+        styles.progressTrack,
+        isClusterStep && styles.clusterProgressTrack,
+        isFeedExplanation && styles.feedProgressTrack,
+      ]}>
         <View style={[styles.progressFill, { width: `${(stepNumber / totalSteps) * 100}%` }]} />
       </View>
 
-      <Text style={[styles.title, isCompletion && styles.completionTitle, isClusterStep && styles.clusterTitle]} maxFontSizeMultiplier={1.35}>
+      <Text style={[
+        styles.title,
+        isCompletion && styles.completionTitle,
+        isClusterStep && styles.clusterTitle,
+        isFeedExplanation && styles.feedTitle,
+      ]} maxFontSizeMultiplier={1.35}>
         {title}
       </Text>
-      {!!content && <Text style={styles.content} maxFontSizeMultiplier={1.45}>{content}</Text>}
+      {!!content && (
+        <Text
+          style={[styles.content, isFeedExplanation && styles.feedContent]}
+          maxFontSizeMultiplier={1.45}
+        >
+          {content}
+        </Text>
+      )}
 
       {targetUnavailable && (
         <View style={styles.fallbackNote}>
@@ -119,13 +138,17 @@ export const TutorialBottomSheet: React.FC<Props> = ({
         </View>
       )}
 
-      <View style={[styles.actions, isClusterStep && styles.clusterActions]}>
+      <View style={[
+        styles.actions,
+        isClusterStep && styles.clusterActions,
+        isFeedExplanation && styles.feedActions,
+      ]}>
         {showPrevious ? (
           <TouchableOpacity
             accessibilityRole="button"
             accessibilityLabel="Previous tutorial step"
             onPress={onPrevious}
-            style={styles.backButton}
+            style={[styles.backButton, isFeedExplanation && styles.feedButton]}
           >
             <Ionicons name="arrow-back" size={19} color="#39566E" />
             <Text style={styles.backText}>Back</Text>
@@ -138,7 +161,11 @@ export const TutorialBottomSheet: React.FC<Props> = ({
             accessibilityLabel={nextText}
             activeOpacity={0.86}
             onPress={onNext}
-            style={[styles.nextButton, isCompletion && styles.finishButton]}
+            style={[
+              styles.nextButton,
+              isCompletion && styles.finishButton,
+              isFeedExplanation && styles.feedButton,
+            ]}
           >
             <Text style={styles.nextText}>{nextText}</Text>
             <Ionicons name={isCompletion ? 'checkmark' : 'arrow-forward'} size={19} color="#FFFFFF" />
@@ -168,23 +195,30 @@ const styles = StyleSheet.create({
   },
   completionCard: { paddingTop: 22, paddingBottom: 20 },
   clusterCard: { paddingTop: 13, paddingBottom: 13 },
+  feedExplanationCard: { borderRadius: 20, paddingHorizontal: 18, paddingTop: 11, paddingBottom: 11 },
   progressHeader: { minHeight: 25, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   progressText: { color: '#587085', fontSize: 13, fontWeight: '800' },
   headerSkip: { minWidth: 48, minHeight: 44, alignItems: 'flex-end', justifyContent: 'center' },
   headerSkipText: { color: '#587085', fontSize: 14, fontWeight: '700' },
   progressTrack: { height: 4, overflow: 'hidden', borderRadius: 2, backgroundColor: '#E7F2FB', marginTop: 4, marginBottom: 15 },
   clusterProgressTrack: { marginBottom: 11 },
+  feedProgressHeader: { minHeight: 21 },
+  feedProgressTrack: { marginTop: 2, marginBottom: 8 },
   progressFill: { height: '100%', borderRadius: 2, backgroundColor: '#2497F3' },
   title: { color: '#0B2235', fontSize: 22, lineHeight: 27, fontWeight: '800', letterSpacing: -0.35 },
   clusterTitle: { fontSize: 21, lineHeight: 25 },
+  feedTitle: { fontSize: 19, lineHeight: 23 },
   content: { color: '#50677A', fontSize: 16, lineHeight: 22, marginTop: 7 },
+  feedContent: { fontSize: 14, lineHeight: 19, marginTop: 4 },
   fallbackNote: { flexDirection: 'row', alignItems: 'flex-start', backgroundColor: '#EEF6FC', borderRadius: 12, padding: 10, marginTop: 12, gap: 8 },
   fallbackText: { flex: 1, color: '#48667E', fontSize: 13, lineHeight: 18, fontWeight: '600' },
   actions: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 17, gap: 10 },
   clusterActions: { marginTop: 13 },
+  feedActions: { marginTop: 9 },
   backButton: { minHeight: 48, minWidth: 88, borderRadius: 14, borderWidth: 1, borderColor: '#D8E5EF', backgroundColor: '#F7FAFC', flexDirection: 'row', gap: 6, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 14 },
   backText: { color: '#39566E', fontSize: 15, fontWeight: '800' },
   nextButton: { minHeight: 50, minWidth: 116, borderRadius: 15, paddingHorizontal: 18, backgroundColor: '#168BE8', flexDirection: 'row', gap: 7, alignItems: 'center', justifyContent: 'center' },
+  feedButton: { minHeight: 44 },
   finishButton: { flex: 1, backgroundColor: '#0B9B6D' },
   nextText: { color: '#FFFFFF', fontSize: 16, fontWeight: '800' },
   completionBrand: { alignItems: 'center', marginBottom: 10 },

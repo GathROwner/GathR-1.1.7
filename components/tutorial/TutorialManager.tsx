@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { AppState, Platform, useWindowDimensions, View } from 'react-native';
+import { AppState, useWindowDimensions, View } from 'react-native';
 import { usePathname, useRouter } from 'expo-router';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { TUTORIAL_CONFIG, TUTORIAL_STEPS, getCompletedIdsForStep } from '../../config/tutorialSteps';
 import { useTutorial } from '../../hooks/useTutorial';
@@ -10,7 +9,7 @@ import { useMapStore } from '../../store/mapStore';
 import { useTutorialUiStore } from '../../store/tutorialUiStore';
 import { Cluster } from '../../types/events';
 import { ComponentMeasurement, SpotlightConfig, TutorialStep } from '../../types/tutorial';
-import { runTutorialAction } from '../../utils/tutorialActions';
+import { runTutorialAction, waitForTutorialAction } from '../../utils/tutorialActions';
 import {
   isTutorialModalHostedStep,
   setTutorialModalOverlay,
@@ -23,7 +22,8 @@ import { TutorialSpotlight } from './TutorialSpotlight';
 import { WelcomeScreen } from './WelcomeScreen';
 
 const MAP_ROUTE = '/(tabs)/map' as const;
-const CLUSTER_ARTWORK_HORIZONTAL_OFFSET = 25;
+const CLUSTER_SPOTLIGHT_SIZE = 72;
+const CLUSTER_CORE_FALLBACK_OFFSET_Y = -20;
 
 type LayoutTarget = {
   flag: string;
@@ -52,7 +52,6 @@ const LAYOUT_TARGETS: Partial<Record<string, LayoutTarget>> = {
     flag: 'tutorialHighlightEventsTab',
     layout: 'eventsTabLayout',
     radius: 16,
-    acceptExisting: true,
   },
   'events-list-explanation': {
     flag: 'tutorialHighlightEventsListExplanation',
@@ -63,7 +62,6 @@ const LAYOUT_TARGETS: Partial<Record<string, LayoutTarget>> = {
     flag: 'tutorialHighlightSpecialsTab',
     layout: 'specialsTabLayout',
     radius: 16,
-    acceptExisting: true,
   },
   'specials-list-explanation': {
     flag: 'tutorialHighlightSpecialsListExplanation',
@@ -74,6 +72,7 @@ const LAYOUT_TARGETS: Partial<Record<string, LayoutTarget>> = {
     flag: 'tutorialHighlightProfileFacebook',
     layout: 'profileFacebookLayout',
     radius: 24,
+    acceptExisting: true,
   },
   'facebook-submission': {
     flag: 'tutorialHighlightFacebookSubmission',
@@ -176,7 +175,6 @@ interface Props {
 
 export const TutorialManager: React.FC<Props> = ({ children }) => {
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
-  const insets = useSafeAreaInsets();
   const router = useRouter();
   const pathname = usePathname();
   const {
@@ -256,6 +254,19 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
   }, [advanceOnce, currentStep, isActive, pathname]);
 
   useEffect(() => {
+    if (!isActive || currentStep?.id !== 'cluster-click') return;
+
+    let calloutWasOpen = useMapStore.getState().selectedVenues.length > 0;
+    return useMapStore.subscribe((state) => {
+      const calloutIsOpen = state.selectedVenues.length > 0;
+      if (!calloutWasOpen && calloutIsOpen) {
+        advanceOnce(currentStep);
+      }
+      calloutWasOpen = calloutIsOpen;
+    });
+  }, [advanceOnce, currentStep, isActive]);
+
+  useEffect(() => {
     stepAbortRef.current?.abort();
     const controller = new AbortController();
     stepAbortRef.current = controller;
@@ -275,6 +286,14 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
           router.replace(MAP_ROUTE);
           return;
         }
+        const mapActionsReady = await waitForTutorialAction('focus-cluster', {
+          timeoutMs: TUTORIAL_CONFIG.ROUTE_TIMEOUT_MS,
+          signal: controller.signal,
+        });
+        if (!mapActionsReady || controller.signal.aborted) {
+          setTargetUnavailable(true);
+          return;
+        }
         const clusters = await waitForClusters(controller.signal);
         if (!clusters || controller.signal.aborted) {
           setTargetUnavailable(true);
@@ -290,16 +309,40 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
         await runTutorialAction('focus-cluster', target);
         if (controller.signal.aborted) return;
 
-        // Centering the chosen cluster avoids Android MarkerView's unreliable
-        // window layout and keeps this independent of map pitch and safe-area
-        // offsets on both platforms. The marker artwork itself is asymmetric:
-        // its visible cluster core sits 25 dp right of the Mapbox anchor.
-        const measurement = cleanMeasurement({
-          x: screenWidth / 2 + CLUSTER_ARTWORK_HORIZONTAL_OFFSET - 36,
-          y: screenHeight / 2 - 36,
-          width: 72,
-          height: 72,
-        }, screenWidth, screenHeight);
+        const measurementReady = await waitForTutorialAction('measure-cluster', {
+          timeoutMs: TUTORIAL_CONFIG.ROUTE_TIMEOUT_MS,
+          signal: controller.signal,
+        });
+        if (!measurementReady || controller.signal.aborted) {
+          setTargetUnavailable(true);
+          return;
+        }
+        const measuredAfter = Date.now();
+        await runTutorialAction('measure-cluster', target);
+        const projected = await waitForTutorialMeasurement('tutorialClusterLayout', {
+          timeoutMs: TUTORIAL_CONFIG.MAP_PROJECTION_TIMEOUT_MS,
+          freshAfter: measuredAfter,
+          signal: controller.signal,
+        });
+        if (controller.signal.aborted) return;
+
+        const mapLayout = (global as any).mapViewLayout;
+        const mapOriginX = Number(mapLayout?.absoluteX ?? mapLayout?.x ?? 0);
+        const mapOriginY = Number(mapLayout?.absoluteY ?? mapLayout?.y ?? 0);
+        const mapWidth = Number(mapLayout?.width ?? screenWidth);
+        const mapHeight = Number(mapLayout?.height ?? screenHeight);
+        const fallbackCenterY = mapOriginY + mapHeight / 2 + CLUSTER_CORE_FALLBACK_OFFSET_Y;
+        const fallbackMeasurement: ComponentMeasurement = {
+          x: mapOriginX + mapWidth / 2 - CLUSTER_SPOTLIGHT_SIZE / 2,
+          y: fallbackCenterY - CLUSTER_SPOTLIGHT_SIZE / 2,
+          width: CLUSTER_SPOTLIGHT_SIZE,
+          height: CLUSTER_SPOTLIGHT_SIZE,
+        };
+        const freshlyMeasuredSpotlight = projected.source === 'ready' && projected.measurement
+          ? cleanMeasurement(projected.measurement, screenWidth, screenHeight)
+          : null;
+        const measurement = freshlyMeasuredSpotlight
+          ?? cleanMeasurement(fallbackMeasurement, screenWidth, screenHeight);
         if (measurement) {
           setSpotlight({ ...measurement, borderRadius: 36, forceCircle: true, showPulse: true });
         } else {
@@ -312,21 +355,6 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
       if (!target) return;
       const freshAfter = Date.now();
       (global as any)[target.flag] = true;
-      if (currentStep.id === 'profile-facebook') {
-        const size = 34;
-        const measurement = cleanMeasurement({
-          x: screenWidth - 16 - size,
-          y: insets.top + (Platform.OS === 'android' ? 32 : 15),
-          width: size,
-          height: size,
-        }, screenWidth, screenHeight);
-        if (measurement) {
-          setSpotlight({ ...measurement, borderRadius: 20, showPulse: true });
-        } else {
-          setTargetUnavailable(true);
-        }
-        return;
-      }
       if (currentStep.id === 'facebook-submission' && facebookSubmissionLayout) {
         const measurement = cleanMeasurement(facebookSubmissionLayout, screenWidth, screenHeight);
         if (measurement) {
@@ -366,7 +394,6 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
   }, [
     currentStep,
     facebookSubmissionLayout,
-    insets.top,
     isActive,
     pathname,
     resumeEpoch,
@@ -389,9 +416,11 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
   }, [currentStep, isActive]);
 
   const handleStart = useCallback(() => {
-    router.replace(MAP_ROUTE);
+    if (pathname !== '/map' && !pathname.endsWith('/map')) {
+      router.replace(MAP_ROUTE);
+    }
     if (currentStep) advanceOnce(currentStep);
-  }, [advanceOnce, currentStep, router]);
+  }, [advanceOnce, currentStep, pathname, router]);
 
   const handleNext = useCallback(async () => {
     if (!currentStep) return;
@@ -492,7 +521,10 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
       : currentStep?.sheetPosition ?? 'bottom';
 
   const renderTutorialSheet = useCallback(() => (
-    <TutorialSpotlight spotlight={spotlight}>
+    <TutorialSpotlight
+      spotlight={spotlight}
+      blockOutsideSpotlight={currentStep?.id === 'cluster-click'}
+    >
       <TutorialBottomSheet
         stepId={currentStep!.id}
         title={currentStep!.title}

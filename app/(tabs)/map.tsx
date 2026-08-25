@@ -119,6 +119,7 @@ import {
   markTabTracePhase,
 } from '../../utils/tabSwitchTrace';
 import { registerTutorialAction } from '../../utils/tutorialActions';
+import { publishTutorialMeasurement } from '../../utils/tutorialReadiness';
 import {
   getTutorialModalOverlay,
   subscribeTutorialModalOverlay,
@@ -2364,9 +2365,18 @@ interface TreeMarkerProps {
   detailMode: ClusterMarkerDetailMode;
   presentation?: GathrClusterPresentation;
   reduceMotionEnabled?: boolean;
+  tutorialTargetRef?: React.RefObject<View | null>;
+  tutorialGeometryRef?: React.MutableRefObject<TutorialClusterLocalGeometry | null>;
 }
 
-const TreeMarker: React.FC<TreeMarkerProps> = React.memo(({ cluster, isSelected, isProcessing = false, isReady = true, detailsEnabled = true, isActive = true, appearance = 'tree', detailMode, presentation = 'story', reduceMotionEnabled = false }) => {
+type LocalLayout = { x: number; y: number; width: number; height: number };
+type TutorialClusterLocalGeometry = {
+  clusterId: string;
+  wrapper: LocalLayout;
+  core: LocalLayout;
+};
+
+const TreeMarker: React.FC<TreeMarkerProps> = React.memo(({ cluster, isSelected, isProcessing = false, isReady = true, detailsEnabled = true, isActive = true, appearance = 'tree', detailMode, presentation = 'story', reduceMotionEnabled = false, tutorialTargetRef, tutorialGeometryRef }) => {
   // Determine color based on time status
   const color = getTimeStatusColor(cluster.timeStatus);
 
@@ -2376,6 +2386,27 @@ const TreeMarker: React.FC<TreeMarkerProps> = React.memo(({ cluster, isSelected,
   // Scale up if selected
   const scaleFactor = Platform.OS === 'android' ? 1 : isSelected ? 1.2 : 1;
   const adjustedSize = size * scaleFactor;
+  const tutorialWrapperLayoutRef = useRef<LocalLayout | null>(null);
+  const tutorialCoreLayoutRef = useRef<LocalLayout | null>(null);
+  const publishTutorialLocalGeometry = useCallback(() => {
+    if (!tutorialGeometryRef || !tutorialWrapperLayoutRef.current || !tutorialCoreLayoutRef.current) {
+      return;
+    }
+    tutorialGeometryRef.current = {
+      clusterId: String(cluster.id),
+      wrapper: tutorialWrapperLayoutRef.current,
+      core: tutorialCoreLayoutRef.current,
+    };
+  }, [cluster.id, tutorialGeometryRef]);
+
+  useEffect(() => {
+    publishTutorialLocalGeometry();
+    return () => {
+      if (tutorialGeometryRef?.current?.clusterId === String(cluster.id)) {
+        tutorialGeometryRef.current = null;
+      }
+    };
+  }, [cluster.id, publishTutorialLocalGeometry, tutorialGeometryRef]);
   const isBeacon = appearance === 'beacon';
   const isStoryBeacon = isBeacon && presentation === 'story';
   const isMultiVenue = cluster.venues.length > 1;
@@ -2459,7 +2490,13 @@ const TreeMarker: React.FC<TreeMarkerProps> = React.memo(({ cluster, isSelected,
   }
 
   return (
-    <View style={styles.markerWrapper}>
+    <View
+      style={styles.markerWrapper}
+      onLayout={(event) => {
+        tutorialWrapperLayoutRef.current = event.nativeEvent.layout;
+        publishTutorialLocalGeometry();
+      }}
+    >
       {/* The legacy styles keep their compact carousel; GathR gets the richer
           event stage so multiple categories are legible without waiting. */}
       {detailsEnabled && (
@@ -2491,6 +2528,12 @@ const TreeMarker: React.FC<TreeMarkerProps> = React.memo(({ cluster, isSelected,
 
       {/* Tree top (circle) */}
       <View
+        ref={tutorialTargetRef}
+        collapsable={false}
+        onLayout={(event) => {
+          tutorialCoreLayoutRef.current = event.nativeEvent.layout;
+          publishTutorialLocalGeometry();
+        }}
         style={[
           styles.treeTop,
           isBeacon && styles.beaconTop,
@@ -2748,7 +2791,8 @@ const TreeMarker: React.FC<TreeMarkerProps> = React.memo(({ cluster, isSelected,
     prevProps.appearance === nextProps.appearance &&
     prevProps.detailMode === nextProps.detailMode &&
     prevProps.presentation === nextProps.presentation &&
-    prevProps.reduceMotionEnabled === nextProps.reduceMotionEnabled
+    prevProps.reduceMotionEnabled === nextProps.reduceMotionEnabled &&
+    prevProps.tutorialTargetRef === nextProps.tutorialTargetRef
   );
 });
 
@@ -2904,6 +2948,14 @@ const CalloutTutorialOverlayHost = () => {
   ) : null;
 };
 
+const TUTORIAL_CLUSTER_SPOTLIGHT_SIZE = 72;
+const TUTORIAL_CLUSTER_CORE_FALLBACK_OFFSET_Y = -20;
+// The custom tree marker lays its visible core to the right/below its Mapbox
+// coordinate anchor. Keep the tutorial aperture on the pixels users perceive
+// as tappable; each platform composes MarkerView children slightly differently.
+const TUTORIAL_CLUSTER_CORE_VISUAL_OFFSET_X = Platform.OS === 'android' ? 26 : 22;
+const TUTORIAL_CLUSTER_CORE_VISUAL_OFFSET_Y = Platform.OS === 'android' ? 32 : 5;
+
  // Main Map Screen component
 function MapScreen() {
    markTabScreenRenderStart('map');
@@ -2988,8 +3040,12 @@ useEffect(() => {
   // Focus state - skip expensive renders when Map tab is not visible
   const isFocused = useIsFocused();
   const isFocusedRef = useRef(isFocused);
+  const tutorialRouteFocusResolverRef = useRef<(() => void) | null>(null);
   useEffect(() => {
     isFocusedRef.current = isFocused;
+    if (isFocused) {
+      tutorialRouteFocusResolverRef.current?.();
+    }
   }, [isFocused]);
   useEffect(() => {
     if (isFocused) {
@@ -3172,6 +3228,9 @@ useEffect(() => {
   const ancillaryOverlayContainerRef = useRef<View>(null);
   const androidRetapOverlayRef = useRef<View>(null);
   const mapRef = useRef<MapboxGL.MapView>(null);
+  const tutorialClusterCoreRef = useRef<View>(null);
+  const tutorialClusterLocalGeometryRef = useRef<TutorialClusterLocalGeometry | null>(null);
+  const [tutorialTargetClusterId, setTutorialTargetClusterId] = useState<string | null>(null);
   const routeFeatureCalloutRequestRef = useRef(0);
   const mapStyleSwitchInFlightRef = useRef(false);
   const pendingMapStyleCameraRef = useRef<{
@@ -6871,6 +6930,26 @@ lastOpenedClusterIdRef.current = cluster.id;
       const coordinate = getClusterMapCoordinate(target);
       if (!coordinate || !cameraRef.current) return;
 
+      setTutorialTargetClusterId(String(target.id));
+      tutorialClusterLocalGeometryRef.current = null;
+
+      if (!isFocusedRef.current) {
+        await new Promise<void>((resolve) => {
+          let settled = false;
+          const finish = () => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timeout);
+            if (tutorialRouteFocusResolverRef.current === finish) {
+              tutorialRouteFocusResolverRef.current = null;
+            }
+            resolve();
+          };
+          const timeout = setTimeout(finish, 2500);
+          tutorialRouteFocusResolverRef.current = finish;
+        });
+      }
+
       tutorialCameraIdleResolverRef.current?.();
       await new Promise<void>((resolve) => {
         let settled = false;
@@ -6894,10 +6973,58 @@ lastOpenedClusterIdRef.current = cluster.id;
     });
 
     return () => {
+      tutorialRouteFocusResolverRef.current?.();
       tutorialCameraIdleResolverRef.current?.();
       unregister();
     };
   }, []);
+
+  useEffect(() => registerTutorialAction('measure-cluster', async (target: Cluster) => {
+    // Mapbox MarkerView children live on a separate native surface. Their
+    // measureInWindow coordinates can describe the texture host rather than
+    // the marker's geographic position, especially after a route transition.
+    // Project the target coordinate through Mapbox so spotlight and marker
+    // always share the same coordinate system on both platforms.
+    const coordinate = getClusterMapCoordinate(target);
+    if (!coordinate || !mapRef.current) return;
+
+    let projectionTimeout: ReturnType<typeof setTimeout> | undefined;
+    const point = await Promise.race([
+      mapRef.current.getPointInView(coordinate),
+      new Promise<null>((resolve) => {
+        projectionTimeout = setTimeout(() => resolve(null), 350);
+      }),
+    ]).finally(() => {
+      if (projectionTimeout) clearTimeout(projectionTimeout);
+    });
+    if (!Array.isArray(point) || point.length !== 2) return;
+
+    const mapLayout = (global as any).mapViewLayout;
+    const mapOriginX = Number(mapLayout?.absoluteX ?? mapLayout?.x ?? 0);
+    const mapOriginY = Number(mapLayout?.absoluteY ?? mapLayout?.y ?? 0);
+    const localGeometry = tutorialClusterLocalGeometryRef.current;
+    const hasCurrentLocalGeometry =
+      localGeometry?.clusterId === String(target.id) &&
+      localGeometry.wrapper.width > 0 &&
+      localGeometry.wrapper.height > 0 &&
+      localGeometry.core.width > 0 &&
+      localGeometry.core.height > 0;
+    const localCoreOffsetX = hasCurrentLocalGeometry
+      ? localGeometry.core.x + localGeometry.core.width / 2 - localGeometry.wrapper.width / 2
+      : TUTORIAL_CLUSTER_CORE_VISUAL_OFFSET_X;
+    const localCoreOffsetY = hasCurrentLocalGeometry
+      ? localGeometry.core.y + localGeometry.core.height / 2 - localGeometry.wrapper.height
+      : TUTORIAL_CLUSTER_CORE_FALLBACK_OFFSET_Y + TUTORIAL_CLUSTER_CORE_VISUAL_OFFSET_Y;
+    const markerCenterX = mapOriginX + Number(point[0]) + localCoreOffsetX;
+    const markerCenterY = mapOriginY + Number(point[1]) + localCoreOffsetY;
+
+    publishTutorialMeasurement('tutorialClusterLayout', {
+      x: markerCenterX - TUTORIAL_CLUSTER_SPOTLIGHT_SIZE / 2,
+      y: markerCenterY - TUTORIAL_CLUSTER_SPOTLIGHT_SIZE / 2,
+      width: TUTORIAL_CLUSTER_SPOTLIGHT_SIZE,
+      height: TUTORIAL_CLUSTER_SPOTLIGHT_SIZE,
+    });
+  }), []);
 
   const handleAndroidRetapOverlayResponderRelease = useCallback((event: GestureResponderEvent): boolean => {
     if (
@@ -9354,6 +9481,16 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
                 }
                 presentation={mapStyleChoice === 'gathr' ? gathrPresentation : 'story'}
                 reduceMotionEnabled={reduceMotionEnabled}
+                tutorialTargetRef={
+                  tutorialTargetClusterId === String(cluster.id)
+                    ? tutorialClusterCoreRef
+                    : undefined
+                }
+                tutorialGeometryRef={
+                  tutorialTargetClusterId === String(cluster.id)
+                    ? tutorialClusterLocalGeometryRef
+                    : undefined
+                }
               />
             </TouchableOpacity>
           </MapboxGL.MarkerView>

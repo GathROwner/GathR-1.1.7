@@ -854,9 +854,9 @@ export default function ProfileScreen() {
             adjustedY: adjustedMeasurement.y
           });
           
-          // The card animation scales to 1.15, and TutorialSpotlight adds
-          // a final fixed 8px visual pad around this rect. The extra buffer
-          // covers the highlighted shell's border/shadow without moving center.
+          // TutorialSpotlight adds its own fixed visual pad around this rect.
+          // Keep the measured row centered and close to its real bounds so the
+          // neighbouring Replay Tutorial row never enters the cutout.
           
           // Constrain to screen bounds with a small margin.
           const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
@@ -865,13 +865,11 @@ export default function ProfileScreen() {
           const minY = SCREEN_MARGIN;
           // The overlay now supplies its own pulse ring, so keep this cutout
           // close to the action row instead of swallowing adjacent settings.
-          const PULSE_SCALE = 1;
-          const EXTRA_HORIZONTAL_BUFFER = 6;
-          const EXTRA_VERTICAL_BUFFER = 4;
-          const IOS_SPOTLIGHT_VERTICAL_NUDGE = Platform.OS === 'ios' ? 22 : 0;
+          const PULSE_SCALE = 1.04;
+          const EXTRA_HORIZONTAL_BUFFER = 4;
+          const EXTRA_VERTICAL_BUFFER = 2;
           const targetCenterX = adjustedMeasurement.x + adjustedMeasurement.width / 2;
-          const targetCenterY =
-            adjustedMeasurement.y + adjustedMeasurement.height / 2 + IOS_SPOTLIGHT_VERTICAL_NUDGE;
+          const targetCenterY = adjustedMeasurement.y + adjustedMeasurement.height / 2;
           const maxSpotlightWidth = SCREEN_WIDTH - SCREEN_MARGIN * 2;
           const maxSpotlightHeight = SCREEN_HEIGHT - SCREEN_MARGIN * 2;
           const centeredSpotlightWidth = Math.min(
@@ -898,7 +896,6 @@ export default function ProfileScreen() {
             pulseScale: PULSE_SCALE,
             extraHorizontalBuffer: EXTRA_HORIZONTAL_BUFFER,
             extraVerticalBuffer: EXTRA_VERTICAL_BUFFER,
-            iosSpotlightVerticalNudge: IOS_SPOTLIGHT_VERTICAL_NUDGE,
             centeredSpotlightWidth,
             centeredSpotlightHeight
           });
@@ -970,18 +967,24 @@ export default function ProfileScreen() {
   }, [facebookSubmissionHighlighted, setTutorialFacebookSubmissionLayout, tutorialStepId]);
 
   useEffect(() => {
-    if (facebookSubmissionHighlighted) {
-      Animated.loop(
-        Animated.sequence([
-          Animated.timing(facebookSubmissionPulseAnim, { toValue: 1.15, useNativeDriver: true, duration: 800 }),
-          Animated.timing(facebookSubmissionPulseAnim, { toValue: 1, useNativeDriver: true, duration: 800 }),
-        ])
-      ).start();
-    } else {
+    if (!facebookSubmissionHighlighted) {
       facebookSubmissionPulseAnim.stopAnimation();
       facebookSubmissionPulseAnim.setValue(1);
+      return;
     }
-  }, [facebookSubmissionHighlighted]);
+
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(facebookSubmissionPulseAnim, { toValue: 1.04, useNativeDriver: true, duration: 800 }),
+        Animated.timing(facebookSubmissionPulseAnim, { toValue: 1, useNativeDriver: true, duration: 800 }),
+      ])
+    );
+    loop.start();
+    return () => {
+      loop.stop();
+      facebookSubmissionPulseAnim.setValue(1);
+    };
+  }, [facebookSubmissionHighlighted, facebookSubmissionPulseAnim]);
   
 const router = useRouter();
 const navigation = useNavigation();

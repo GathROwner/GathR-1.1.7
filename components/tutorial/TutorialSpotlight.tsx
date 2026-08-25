@@ -22,6 +22,7 @@ const SPOTLIGHT_PADDING = 8;
 export const TutorialSpotlight: React.FC<TutorialSpotlightProps> = ({
   spotlight,
   children,
+  blockOutsideSpotlight = false,
 }) => {
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
   const pulseAnim = useRef(new Animated.Value(1)).current;
@@ -53,6 +54,12 @@ export const TutorialSpotlight: React.FC<TutorialSpotlightProps> = ({
     return (
       <View style={styles.container} pointerEvents="box-none">
         <View style={styles.fullOverlay} pointerEvents="none" />
+        {blockOutsideSpotlight && (
+          <View
+            style={styles.touchBlockerFill}
+            onStartShouldSetResponder={() => true}
+          />
+        )}
         {children}
       </View>
     );
@@ -234,6 +241,41 @@ return (
     {/* visual dimming layer (pointerEvents="none"), circular on Android, masked on iOS */}
     {OverlayVisual}
 
+    {blockOutsideSpotlight && (
+      <>
+        <View
+          style={[styles.touchBlocker, { top: 0, left: 0, right: 0, height: paddedY }]}
+          onStartShouldSetResponder={() => true}
+        />
+        <View
+          style={[
+            styles.touchBlocker,
+            { top: paddedY + paddedHeight, left: 0, right: 0, bottom: 0 },
+          ]}
+          onStartShouldSetResponder={() => true}
+        />
+        <View
+          style={[
+            styles.touchBlocker,
+            { top: paddedY, left: 0, width: paddedX, height: paddedHeight },
+          ]}
+          onStartShouldSetResponder={() => true}
+        />
+        <View
+          style={[
+            styles.touchBlocker,
+            {
+              top: paddedY,
+              left: paddedX + paddedWidth,
+              right: 0,
+              height: paddedHeight,
+            },
+          ]}
+          onStartShouldSetResponder={() => true}
+        />
+      </>
+    )}
+
 
       {showPulse && (
         <>
@@ -277,6 +319,8 @@ const styles = StyleSheet.create({
   container: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'transparent' },
   maskContainer: { ...StyleSheet.absoluteFillObject },
   fullOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(4,20,35,0.72)' },
+  touchBlockerFill: { ...StyleSheet.absoluteFillObject, backgroundColor: 'transparent' },
+  touchBlocker: { position: 'absolute', backgroundColor: 'transparent' },
   borderRing: { position: 'absolute', borderWidth: 3, borderColor: '#FFFFFF', backgroundColor: 'transparent', shadowColor: '#2497F3', shadowOffset: { width:0, height:0 }, shadowOpacity:0.9, shadowRadius:8, elevation:0 },
   glowRing: { position: 'absolute', borderWidth: 2, borderColor: '#2497F3', backgroundColor: 'transparent', shadowColor: '#2497F3', shadowOffset: {width:0, height:0}, shadowOpacity:0.55, shadowRadius:14, elevation:0 },
 });

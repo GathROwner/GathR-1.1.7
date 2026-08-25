@@ -21,6 +21,7 @@ import { trackTabSelect } from '../../store/guestLimitationStore';
 import useAnalytics from '../../hooks/useAnalytics';
 import { runAfterTabPaint } from '../../utils/tabFocusEffects';
 import { publishTutorialMeasurement } from '../../utils/tutorialReadiness';
+import { useTutorialUiStore } from '../../store/tutorialUiStore';
 import {
   markTabBarSelected,
   markTabButtonPressReturned,
@@ -42,6 +43,35 @@ const ANDROID_TABLET_TASKBAR_RESERVE = 52;
 type InstrumentedTabBarButtonProps = any & {
   targetTab: InstrumentedTabName;
 };
+
+const getTutorialTabMeasurement = (
+  targetTab: 'events' | 'specials',
+  measured: { x: number; y: number; width: number; height: number },
+  bottomInset: number,
+) => {
+  if (Platform.OS !== 'android') return measured;
+
+  const window = Dimensions.get('window');
+  const width = window.width / 3;
+  const tabBarHeight = BASE_TAB_BAR_HEIGHT + bottomInset;
+  // TutorialSpotlight adds 12 px around every target. Inset the measured tab
+  // by the same amount so its aperture begins at the tab bar—not in feed or
+  // Mapbox content immediately above it.
+  const spotlightPaddingCompensation = 12;
+  return {
+    x: targetTab === 'events' ? 0 : window.width - width,
+    y: Math.max(0, window.height - tabBarHeight + spotlightPaddingCompensation),
+    width,
+    height: Math.max(1, tabBarHeight - spotlightPaddingCompensation),
+  };
+};
+
+const getTutorialProfileButtonMeasurement = (
+  measured: { x: number; y: number; width: number; height: number },
+  topInset: number,
+) => Platform.OS === 'android'
+  ? { ...measured, y: measured.y + topInset }
+  : measured;
 
 const ACTIVE_TAB_INDICATOR_COLORS: Record<InstrumentedTabName, string> = {
   events: '#007AFF',
@@ -122,16 +152,21 @@ const TutorialAwareTabBarButton = (props: InstrumentedTabBarButtonProps) => {
   const isSelected = Boolean(ariaSelected ?? accessibilityState?.selected);
   const viewRef = useRef<View>(null);
   const pulseAnim = useRef(new Animated.Value(1)).current;
-  const [isHighlighted, setIsHighlighted] = useState(false);
+  const insets = useSafeAreaInsets();
+  const isHighlighted = useTutorialUiStore((state) => state.currentStepId === 'events-tab');
   const publishEventsTabLayout = useCallback(() => {
     requestAnimationFrame(() => {
       viewRef.current?.measureInWindow((x, y, width, height) => {
-        const measurement = { x, y, width, height };
+        const measurement = getTutorialTabMeasurement(
+          'events',
+          { x, y, width, height },
+          insets.bottom,
+        );
         (global as any).eventsTabLayout = measurement;
         publishTutorialMeasurement('eventsTabLayout', measurement);
       });
     });
-  }, []);
+  }, [insets.bottom]);
 
   useEffect(() => {
     if (isSelected) {
@@ -140,35 +175,44 @@ const TutorialAwareTabBarButton = (props: InstrumentedTabBarButtonProps) => {
   }, [isSelected, targetTab]);
 
   useEffect(() => {
-    const interval = setInterval(() => {
-      const globalFlag = (global as any).tutorialHighlightEventsTab || false;
-      if (globalFlag !== isHighlighted) {
-        setIsHighlighted(globalFlag);
-      }
-      if (globalFlag && viewRef.current) {
-        (viewRef.current as View).measure((_x, _y, width, height, pageX, pageY) => {
-          const measurement = { x: pageX, y: pageY, width, height };
-          (global as any).eventsTabLayout = measurement;
-          publishTutorialMeasurement('eventsTabLayout', measurement);
-        });
-      }
-    }, 500);
-    return () => clearInterval(interval);
-  }, [isHighlighted]);
+    if (!isHighlighted) return;
+    const measure = () => viewRef.current?.measureInWindow((x, y, width, height) => {
+      const measurement = getTutorialTabMeasurement(
+        'events',
+        { x, y, width, height },
+        insets.bottom,
+      );
+      (global as any).eventsTabLayout = measurement;
+      publishTutorialMeasurement('eventsTabLayout', measurement);
+    });
+    requestAnimationFrame(measure);
+    const interval = setInterval(measure, 200);
+    const timeout = setTimeout(() => clearInterval(interval), 2200);
+    return () => {
+      clearInterval(interval);
+      clearTimeout(timeout);
+    };
+  }, [insets.bottom, isHighlighted]);
 
   useEffect(() => {
-    if (isHighlighted) {
-      Animated.loop(
-        Animated.sequence([
-          Animated.timing(pulseAnim, { toValue: 1.05, useNativeDriver: true, duration: 800 }),
-          Animated.timing(pulseAnim, { toValue: 1, useNativeDriver: true, duration: 800 }),
-        ])
-      ).start();
-    } else {
+    if (!isHighlighted) {
       pulseAnim.stopAnimation();
       pulseAnim.setValue(1);
+      return;
     }
-  }, [isHighlighted]);
+
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulseAnim, { toValue: 1.05, useNativeDriver: true, duration: 800 }),
+        Animated.timing(pulseAnim, { toValue: 1, useNativeDriver: true, duration: 800 }),
+      ])
+    );
+    loop.start();
+    return () => {
+      loop.stop();
+      pulseAnim.setValue(1);
+    };
+  }, [isHighlighted, pulseAnim]);
 
   const tutorialHighlightStyle = {
     // The shadow creates a "glow" effect
@@ -227,16 +271,21 @@ const TutorialAwareSpecialsTabBarButton = (props: InstrumentedTabBarButtonProps)
   const isSelected = Boolean(ariaSelected ?? accessibilityState?.selected);
   const viewRef = useRef<View>(null);
   const pulseAnim = useRef(new Animated.Value(1)).current;
-  const [isHighlighted, setIsHighlighted] = useState(false);
+  const insets = useSafeAreaInsets();
+  const isHighlighted = useTutorialUiStore((state) => state.currentStepId === 'specials-tab');
   const publishSpecialsTabLayout = useCallback(() => {
     requestAnimationFrame(() => {
       viewRef.current?.measureInWindow((x, y, width, height) => {
-        const measurement = { x, y, width, height };
+        const measurement = getTutorialTabMeasurement(
+          'specials',
+          { x, y, width, height },
+          insets.bottom,
+        );
         (global as any).specialsTabLayout = measurement;
         publishTutorialMeasurement('specialsTabLayout', measurement);
       });
     });
-  }, []);
+  }, [insets.bottom]);
 
   useEffect(() => {
     if (isSelected) {
@@ -245,35 +294,44 @@ const TutorialAwareSpecialsTabBarButton = (props: InstrumentedTabBarButtonProps)
   }, [isSelected, targetTab]);
 
   useEffect(() => {
-    const interval = setInterval(() => {
-      const globalFlag = (global as any).tutorialHighlightSpecialsTab || false;
-      if (globalFlag !== isHighlighted) {
-        setIsHighlighted(globalFlag);
-      }
-      if (globalFlag && viewRef.current) {
-        (viewRef.current as View).measure((_x, _y, width, height, pageX, pageY) => {
-          const measurement = { x: pageX, y: pageY, width, height };
-          (global as any).specialsTabLayout = measurement;
-          publishTutorialMeasurement('specialsTabLayout', measurement);
-        });
-      }
-    }, 500);
-    return () => clearInterval(interval);
-  }, [isHighlighted]);
+    if (!isHighlighted) return;
+    const measure = () => viewRef.current?.measureInWindow((x, y, width, height) => {
+      const measurement = getTutorialTabMeasurement(
+        'specials',
+        { x, y, width, height },
+        insets.bottom,
+      );
+      (global as any).specialsTabLayout = measurement;
+      publishTutorialMeasurement('specialsTabLayout', measurement);
+    });
+    requestAnimationFrame(measure);
+    const interval = setInterval(measure, 200);
+    const timeout = setTimeout(() => clearInterval(interval), 2200);
+    return () => {
+      clearInterval(interval);
+      clearTimeout(timeout);
+    };
+  }, [insets.bottom, isHighlighted]);
 
   useEffect(() => {
-    if (isHighlighted) {
-      Animated.loop(
-        Animated.sequence([
-          Animated.timing(pulseAnim, { toValue: 1.05, useNativeDriver: true, duration: 800 }),
-          Animated.timing(pulseAnim, { toValue: 1, useNativeDriver: true, duration: 800 }),
-        ])
-      ).start();
-    } else {
+    if (!isHighlighted) {
       pulseAnim.stopAnimation();
       pulseAnim.setValue(1);
+      return;
     }
-  }, [isHighlighted]);
+
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulseAnim, { toValue: 1.05, useNativeDriver: true, duration: 800 }),
+        Animated.timing(pulseAnim, { toValue: 1, useNativeDriver: true, duration: 800 }),
+      ])
+    );
+    loop.start();
+    return () => {
+      loop.stop();
+      pulseAnim.setValue(1);
+    };
+  }, [isHighlighted, pulseAnim]);
 
   const tutorialHighlightStyle = {
     shadowColor: '#FF6B35',
@@ -637,7 +695,10 @@ export default function TabLayout() {
       if (globalFlag && profileButtonRef.current) {
         profileButtonRef.current.measureInWindow((x: number, y: number, width: number, height: number) => {
           // Add stability check to prevent measurement spam
-          const currentMeasurement = { x: Math.round(x), y: Math.round(y), width: Math.round(width), height: Math.round(height) };
+          const currentMeasurement = getTutorialProfileButtonMeasurement(
+            { x: Math.round(x), y: Math.round(y), width: Math.round(width), height: Math.round(height) },
+            insets.top,
+          );
           
           if (!lastMeasurement || 
               Math.abs(currentMeasurement.x - lastMeasurement.x) > 2 ||
@@ -660,21 +721,27 @@ export default function TabLayout() {
       }
     }, 500);
     return () => clearInterval(interval);
-  }, [profileButtonHighlighted]);
+  }, [insets.top, profileButtonHighlighted]);
 
   useEffect(() => {
-    if (profileButtonHighlighted) {
-      Animated.loop(
-        Animated.sequence([
-          Animated.timing(profileButtonPulseAnim, { toValue: 1.2, useNativeDriver: true, duration: 800 }),
-          Animated.timing(profileButtonPulseAnim, { toValue: 1, useNativeDriver: true, duration: 800 }),
-        ])
-      ).start();
-    } else {
+    if (!profileButtonHighlighted) {
       profileButtonPulseAnim.stopAnimation();
       profileButtonPulseAnim.setValue(1);
+      return;
     }
-  }, [profileButtonHighlighted]);
+
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(profileButtonPulseAnim, { toValue: 1.08, useNativeDriver: true, duration: 800 }),
+        Animated.timing(profileButtonPulseAnim, { toValue: 1, useNativeDriver: true, duration: 800 }),
+      ])
+    );
+    loop.start();
+    return () => {
+      loop.stop();
+      profileButtonPulseAnim.setValue(1);
+    };
+  }, [profileButtonHighlighted, profileButtonPulseAnim]);
 
   const handleProfileButtonPress = () => {
     analytics.trackUserAction('profile_access', { access_method: 'header_button' });
@@ -804,7 +871,10 @@ export default function TabLayout() {
                 // Immediate measurement for tutorial
                 if ((global as any).tutorialHighlightProfileFacebook && profileButtonRef.current) {
                   profileButtonRef.current.measureInWindow((x: number, y: number, width: number, height: number) => {
-                    const measurement = { x, y, width, height };
+                    const measurement = getTutorialProfileButtonMeasurement(
+                      { x, y, width, height },
+                      insets.top,
+                    );
                     (global as any).profileFacebookLayout = measurement;
                     publishTutorialMeasurement('profileFacebookLayout', measurement);
                   });

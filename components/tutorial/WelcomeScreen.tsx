@@ -2,7 +2,6 @@ import { Ionicons } from '@expo/vector-icons';
 import React, { useEffect, useRef } from 'react';
 import {
   Animated,
-  Image,
   ScrollView,
   StyleSheet,
   Text,
@@ -12,10 +11,8 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import GathrWordmarkLogo from '../common/GathrWordmarkLogo';
 import { WelcomeScreenProps } from '../../types/tutorial';
-
-const GATHR_GLOBE = require('../../assets/icon.png');
-const GATHR_WORDMARK = require('../../assets/GathR Text Logo.png');
 
 const FEATURES = [
   { icon: 'map-outline' as const, text: 'Discover what is happening nearby' },
@@ -63,11 +60,13 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
         ]}
       >
         <ScrollView bounces={false} showsVerticalScrollIndicator={false}>
-        <View style={styles.brandRow}>
-          <Image source={GATHR_GLOBE} style={styles.globe} resizeMode="contain" />
-          <View style={styles.wordmarkShell}>
-            <Image source={GATHR_WORDMARK} style={styles.wordmark} resizeMode="contain" />
-          </View>
+        <View style={styles.brandRow} accessibilityLabel="GathR">
+          <GathrWordmarkLogo
+            width={154}
+            height={54}
+            color="#0B2235"
+            accentColor="#E76F5A"
+          />
         </View>
 
         <View style={styles.progressRow}>
@@ -139,10 +138,7 @@ const styles = StyleSheet.create({
     shadowRadius: 30,
     elevation: 24,
   },
-  brandRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 22 },
-  globe: { width: 56, height: 56, borderRadius: 28 },
-  wordmarkShell: { marginLeft: 10, paddingHorizontal: 10, borderRadius: 12, backgroundColor: '#0B2235' },
-  wordmark: { width: 132, height: 42 },
+  brandRow: { alignItems: 'center', justifyContent: 'center', marginBottom: 18 },
   progressRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   eyebrow: { color: '#168BE8', fontSize: 12, fontWeight: '800', letterSpacing: 1.2 },
   progressText: { color: '#607387', fontSize: 13, fontWeight: '700' },

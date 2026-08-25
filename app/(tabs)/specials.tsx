@@ -82,6 +82,7 @@ import {
   getEventTimeStatusFast,
 } from '../../store/mapStore';
 import { useUserPrefsStore } from '../../store/userPrefsStore';
+import { useTutorialUiStore } from '../../store/tutorialUiStore';
 import { areEventIdsEquivalent } from '../../lib/api/firestoreEvents';
 import { doesEventMatchAnyInterest } from '../../utils/familyFriendly';
 
@@ -398,17 +399,22 @@ const favoriteVenues = useUserPrefsStore((s: UserPrefsState) => s.favoriteVenues
   const [isHighlighted, setIsHighlighted] = useState(false);
 
   useEffect(() => {
-    if (!isFirstItem) return; // Only first item participates in tutorial
+    if (!isFirstItem) return;
+    const syncHighlight = (stepId: string | null) => {
+      setIsHighlighted(stepId === 'specials-list-explanation');
+    };
+    syncHighlight(useTutorialUiStore.getState().currentStepId);
+    return useTutorialUiStore.subscribe((state) => syncHighlight(state.currentStepId));
+  }, [isFirstItem]);
+
+  useEffect(() => {
+    if (!isFirstItem || !isHighlighted) return;
     
     let lastMeasurement: any = null;
     let measurementCount = 0;
     
     const interval = setInterval(() => {
-      const globalFlag = (global as any).tutorialHighlightSpecialsListExplanation || false;
-      if (globalFlag !== isHighlighted) {
-        setIsHighlighted(globalFlag);
-      }
-      if (globalFlag && tutorialRef.current) {
+      if (tutorialRef.current) {
         tutorialRef.current.measureInWindow((x: number, y: number, width: number, height: number) => {
           // Add stability check to prevent measurement spam
           const currentMeasurement = { x: Math.round(x), y: Math.round(y), width: Math.round(width), height: Math.round(height) };
@@ -437,18 +443,24 @@ const favoriteVenues = useUserPrefsStore((s: UserPrefsState) => s.favoriteVenues
   }, [isHighlighted, isFirstItem]);
 
   useEffect(() => {
-    if (isFirstItem && isHighlighted) {
-      Animated.loop(
-        Animated.sequence([
-          Animated.timing(pulseAnim, { toValue: 1.05, useNativeDriver: true, duration: 800 }),
-          Animated.timing(pulseAnim, { toValue: 1, useNativeDriver: true, duration: 800 }),
-        ])
-      ).start();
-    } else {
+    if (!isFirstItem || !isHighlighted) {
       pulseAnim.stopAnimation();
       pulseAnim.setValue(1);
+      return;
     }
-  }, [isHighlighted, isFirstItem]);
+
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulseAnim, { toValue: 1.05, useNativeDriver: true, duration: 800 }),
+        Animated.timing(pulseAnim, { toValue: 1, useNativeDriver: true, duration: 800 }),
+      ])
+    );
+    loop.start();
+    return () => {
+      loop.stop();
+      pulseAnim.setValue(1);
+    };
+  }, [isHighlighted, isFirstItem, pulseAnim]);
 
   const tutorialHighlightStyle = {
     shadowColor: '#FF6B35',
@@ -1674,43 +1686,6 @@ function SpecialsScreen() {
   } | null>(null);
   
 
-
-  // Tutorial awareness for specials list
-  const tutorialSpecialsListRef = useRef<View>(null);
-  const specialsListPulseAnim = useRef(new Animated.Value(1)).current;
-  const [specialsListHighlighted, setSpecialsListHighlighted] = useState(false);
-
-  useEffect(() => {
-    const interval = setInterval(() => {
-      const globalFlag = (global as any).tutorialHighlightSpecialsListExplanation || false;
-      if (globalFlag !== specialsListHighlighted) {
-        setSpecialsListHighlighted(globalFlag);
-      }
-      if (globalFlag && tutorialSpecialsListRef.current) {
-        tutorialSpecialsListRef.current.measureInWindow((x: number, y: number, width: number, height: number) => {
-          const measurement = { x, y, width, height };
-          (global as any).specialsListExplanationLayout = measurement;
-          publishTutorialMeasurement('specialsListExplanationLayout', measurement);
-          console.log('Tutorial: Measured specials list:', { x, y, width, height });
-        });
-      }
-    }, 200);
-    return () => clearInterval(interval);
-  }, [specialsListHighlighted]);
-
-  useEffect(() => {
-    if (specialsListHighlighted) {
-      Animated.loop(
-        Animated.sequence([
-          Animated.timing(specialsListPulseAnim, { toValue: 1.05, useNativeDriver: true, duration: 800 }),
-          Animated.timing(specialsListPulseAnim, { toValue: 1, useNativeDriver: true, duration: 800 }),
-        ])
-      ).start();
-    } else {
-      specialsListPulseAnim.stopAnimation();
-      specialsListPulseAnim.setValue(1);
-    }
-  }, [specialsListHighlighted]);
 
   // Tutorial awareness for specials filters
   const specialsFiltersRef = useRef<View>(null);

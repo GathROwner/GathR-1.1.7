@@ -84,6 +84,7 @@ import {
   getEventTimeStatusFast,
 } from '../../store/mapStore';
 import { useUserPrefsStore } from '../../store/userPrefsStore';
+import { useTutorialUiStore } from '../../store/tutorialUiStore';
 import { areEventIdsEquivalent } from '../../lib/api/firestoreEvents';
 import { doesEventMatchAnyInterest } from '../../utils/familyFriendly';
 
@@ -396,144 +397,54 @@ const EventListItem: React.FC<EventListItemProps> = ({
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const [isHighlighted, setIsHighlighted] = useState(false);
 
-  // Tutorial measurement stability control (first card only)
-  const hasMeasuredRef = useRef(false);
-  const lastLayoutRef = useRef<{ x: number; y: number; width: number; height: number } | null>(null);
-  const stableCountRef = useRef(0);
-  const startTsRef = useRef<number | null>(null);
-
-  /*
-    EVENTS → "Feed explanation" spotlight measurement
-    Goals:
-      • Keep polling while the tutorial sets up (flag may turn ON after a delay).
-      • Once ON, keep measuring until either:
-          a) layout is stable for a few reads AND we're past the manager’s draw delay, or
-          b) we hit a generous time cap (accounts for banner collapse / image loads).
-      • If the list jumps UP (preferences banner collapses), reset stabilization/timer
-        so we finalize on the post-collapse layout.
-
-    Key parameters (tuned empirically):
-      • minStableMs = 3400  → don’t finalize before manager’s ~3200ms delay
-      • maxMs       = 5200  → hard cap to avoid infinite polling on slow devices
-      • jumpUp > 20px       → treat as banner collapse and restart stabilization
-
-    Result:
-      • Spotlight uses a fresh, post-banner layout.
-      • Interval clears itself — no long-running log spam.
-  */
   useEffect(() => {
-    if (!isFirstItem) return; // Only first item participates in tutorial
+    if (!isFirstItem) return;
+    const syncHighlight = (stepId: string | null) => {
+      setIsHighlighted(stepId === 'events-list-explanation');
+    };
+    syncHighlight(useTutorialUiStore.getState().currentStepId);
+    return useTutorialUiStore.subscribe((state) => syncHighlight(state.currentStepId));
+  }, [isFirstItem]);
 
-    const interval = setInterval(() => {
-      const g: any = global as any;
-      const globalFlag = g.tutorialHighlightEventsListExplanation || false;
+  useEffect(() => {
+    if (!isFirstItem || !isHighlighted) return;
 
-      // If another instance already finalized, stop quietly to avoid duplicate "FINALIZED" logs
-      if (g.eventsListExplanationStable) {
-        clearInterval(interval);
-        return;
-      }
+    const measure = () => {
+      tutorialRef.current?.measureInWindow((x, y, width, height) => {
+        const measurement = { x, y, width, height };
+        (global as any).eventsListExplanationLayout = measurement;
+        publishTutorialMeasurement('eventsListExplanationLayout', measurement);
+      });
+    };
+    requestAnimationFrame(measure);
+    const interval = setInterval(measure, 200);
+    const timeout = setTimeout(() => clearInterval(interval), 2200);
 
-      // Track flag changes locally
-      if (globalFlag !== isHighlighted) {
-        setIsHighlighted(globalFlag);
-        // When highlight turns ON, reset stability trackers & start a short timing window
-        if (globalFlag) {
-          stableCountRef.current = 0;
-          lastLayoutRef.current = null;
-          hasMeasuredRef.current = false;
-          startTsRef.current = Date.now();
-        }
-      }
-
-      // If the flag is off, skip measuring but KEEP polling — it may turn on after a delayed setup
-      if (!globalFlag) {
-        return;
-      }
-
-      // Guard: initialize timer if it wasn't set for some reason
-      if (startTsRef.current == null) {
-        startTsRef.current = Date.now();
-      }
-      const elapsed = Date.now() - startTsRef.current;
-      // Keep measuring well past the manager's 3200ms delay so it consumes a post-banner layout
-      const maxMs = 5200; // 5.2s cap = 3.2s delay + banner collapse + buffer
-      const minStableMs = 3400; // don't finalize stable before the manager draws
-
-      // Measure while highlighted until layout is stable OR we hit the time cap
-      if (tutorialRef.current) {
-        tutorialRef.current.measureInWindow((x: number, y: number, width: number, height: number) => {
-          const cur = { x, y, width, height };
-          g.eventsListExplanationLayout = cur;
-          publishTutorialMeasurement('eventsListExplanationLayout', cur);
-
-          // Track first measurement
-          if (!hasMeasuredRef.current) {
-            hasMeasuredRef.current = true;
-          }
-
-          // Stability check (a bit looser because card can nudge during image/layout settles)
-          const prev = lastLayoutRef.current;
-          if (prev) {
-            const dx = Math.abs(cur.x - prev.x);
-            const dy = Math.abs(cur.y - prev.y);
-            const dw = Math.abs(cur.width - prev.width);
-            const dh = Math.abs(cur.height - prev.height);
-
-            // If the card jumps UP noticeably, the preferences banner likely collapsed.
-            // Reset stabilization & timing so we grab a fresh, post-banner layout.
-            if (prev.y - cur.y > 20) {
-              stableCountRef.current = 0;
-              startTsRef.current = Date.now();
-              console.log('Tutorial: Detected banner collapse / list shift; resetting stabilization', { prevY: prev.y, curY: cur.y });
-            }
-
-            const isStableNow = dx < 2 && dy < 2 && dw < 2 && dh < 2;
-            stableCountRef.current = isStableNow ? (stableCountRef.current + 1) : 0;
-          } else {
-            stableCountRef.current = 0;
-          }
-          lastLayoutRef.current = cur;
-
-          // Finalize when either:
-          //   • layout is stable AND we’ve passed the minimum settle time (post-manager draw), OR
-          //   • we’ve hit the extended time cap but at least one measurement was taken.
-          const stable = stableCountRef.current >= 3;
-          const timedOut = elapsed >= maxMs;
-          const stableLongEnough = stable && elapsed >= minStableMs;
-
-          if (stableLongEnough || (timedOut && hasMeasuredRef.current)) {
-            const firstFinalizer = !g.eventsListExplanationStable;
-            g.eventsListExplanationStable = true;
-            clearInterval(interval);
-            if (firstFinalizer) {
-              console.log('Tutorial: Event card measurement FINALIZED; polling stopped', { cur, stable, elapsed });
-            }
-          } else {
-            if (Math.random() < 0.1) {
-              console.log('Tutorial: Measured first event card:', cur);
-            }
-          }
-        });
-      }
-    }, 200);
-
-    return () => clearInterval(interval);
+    return () => {
+      clearInterval(interval);
+      clearTimeout(timeout);
+    };
   }, [isHighlighted, isFirstItem]);
 
   useEffect(() => {
-    if (isFirstItem && isHighlighted) {
-      Animated.loop(
-        Animated.sequence([
-          Animated.timing(pulseAnim, { toValue: 1.05, useNativeDriver: true, duration: 800 }),
-          Animated.timing(pulseAnim, { toValue: 1, useNativeDriver: true, duration: 800 }),
-        ])
-      ).start();
-    } else {
+    if (!isFirstItem || !isHighlighted) {
       pulseAnim.stopAnimation();
       pulseAnim.setValue(1);
+      return;
     }
-  }, [isHighlighted, isFirstItem]);
+
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulseAnim, { toValue: 1.05, useNativeDriver: true, duration: 800 }),
+        Animated.timing(pulseAnim, { toValue: 1, useNativeDriver: true, duration: 800 }),
+      ])
+    );
+    loop.start();
+    return () => {
+      loop.stop();
+      pulseAnim.setValue(1);
+    };
+  }, [isHighlighted, isFirstItem, pulseAnim]);
 
   useEffect(() => {
     setBookmarked(isSaved);
