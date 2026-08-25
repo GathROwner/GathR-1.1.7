@@ -43,6 +43,7 @@ export const TutorialBottomSheet: React.FC<Props> = ({
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const entrance = useRef(new Animated.Value(0)).current;
   const isCompletion = stepId === 'completion';
+  const isClusterStep = stepId === 'cluster-click';
   const horizontalInset = Math.max(14, insets.left + 12, insets.right + 12);
   const cardWidth = Math.min(430, windowWidth - horizontalInset * 2);
 
@@ -70,6 +71,7 @@ export const TutorialBottomSheet: React.FC<Props> = ({
         verticalStyle,
         { width: cardWidth, left: (windowWidth - cardWidth) / 2 },
         isCompletion && styles.completionCard,
+        isClusterStep && styles.clusterCard,
         {
           opacity: entrance,
           transform: [{
@@ -101,11 +103,11 @@ export const TutorialBottomSheet: React.FC<Props> = ({
           </TouchableOpacity>
         )}
       </View>
-      <View style={styles.progressTrack}>
+      <View style={[styles.progressTrack, isClusterStep && styles.clusterProgressTrack]}>
         <View style={[styles.progressFill, { width: `${(stepNumber / totalSteps) * 100}%` }]} />
       </View>
 
-      <Text style={[styles.title, isCompletion && styles.completionTitle]} maxFontSizeMultiplier={1.35}>
+      <Text style={[styles.title, isCompletion && styles.completionTitle, isClusterStep && styles.clusterTitle]} maxFontSizeMultiplier={1.35}>
         {title}
       </Text>
       {!!content && <Text style={styles.content} maxFontSizeMultiplier={1.45}>{content}</Text>}
@@ -117,7 +119,7 @@ export const TutorialBottomSheet: React.FC<Props> = ({
         </View>
       )}
 
-      <View style={styles.actions}>
+      <View style={[styles.actions, isClusterStep && styles.clusterActions]}>
         {showPrevious ? (
           <TouchableOpacity
             accessibilityRole="button"
@@ -165,17 +167,21 @@ const styles = StyleSheet.create({
     elevation: 22,
   },
   completionCard: { paddingTop: 22, paddingBottom: 20 },
+  clusterCard: { paddingTop: 13, paddingBottom: 13 },
   progressHeader: { minHeight: 25, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   progressText: { color: '#587085', fontSize: 13, fontWeight: '800' },
   headerSkip: { minWidth: 48, minHeight: 44, alignItems: 'flex-end', justifyContent: 'center' },
   headerSkipText: { color: '#587085', fontSize: 14, fontWeight: '700' },
   progressTrack: { height: 4, overflow: 'hidden', borderRadius: 2, backgroundColor: '#E7F2FB', marginTop: 4, marginBottom: 15 },
+  clusterProgressTrack: { marginBottom: 11 },
   progressFill: { height: '100%', borderRadius: 2, backgroundColor: '#2497F3' },
   title: { color: '#0B2235', fontSize: 22, lineHeight: 27, fontWeight: '800', letterSpacing: -0.35 },
+  clusterTitle: { fontSize: 21, lineHeight: 25 },
   content: { color: '#50677A', fontSize: 16, lineHeight: 22, marginTop: 7 },
   fallbackNote: { flexDirection: 'row', alignItems: 'flex-start', backgroundColor: '#EEF6FC', borderRadius: 12, padding: 10, marginTop: 12, gap: 8 },
   fallbackText: { flex: 1, color: '#48667E', fontSize: 13, lineHeight: 18, fontWeight: '600' },
   actions: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 17, gap: 10 },
+  clusterActions: { marginTop: 13 },
   backButton: { minHeight: 48, minWidth: 88, borderRadius: 14, borderWidth: 1, borderColor: '#D8E5EF', backgroundColor: '#F7FAFC', flexDirection: 'row', gap: 6, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 14 },
   backText: { color: '#39566E', fontSize: 15, fontWeight: '800' },
   nextButton: { minHeight: 50, minWidth: 116, borderRadius: 15, paddingHorizontal: 18, backgroundColor: '#168BE8', flexDirection: 'row', gap: 7, alignItems: 'center', justifyContent: 'center' },

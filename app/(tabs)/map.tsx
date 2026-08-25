@@ -6876,31 +6876,13 @@ lastOpenedClusterIdRef.current = cluster.id;
         tutorialCameraIdleResolverRef.current = finish;
         cameraRef.current?.setCamera({
           centerCoordinate: coordinate,
-          padding: {
-            paddingLeft: 24,
-            paddingRight: 0,
-            paddingTop: 0,
-            paddingBottom: 112,
-          },
           animationDuration: 240,
         });
-      });
-    });
-    const unregisterReset = registerTutorialAction('reset-cluster-focus', () => {
-      cameraRef.current?.setCamera({
-        padding: {
-          paddingLeft: 0,
-          paddingRight: 0,
-          paddingTop: 0,
-          paddingBottom: 0,
-        },
-        animationDuration: 180,
       });
     });
 
     return () => {
       tutorialCameraIdleResolverRef.current?.();
-      unregisterReset();
       unregister();
     };
   }, []);

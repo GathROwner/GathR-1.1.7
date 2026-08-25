@@ -285,15 +285,15 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
         // window layout and keeps this independent of map pitch and safe-area
         // offsets on both platforms.
         const measurement = cleanMeasurement({
-          x: screenWidth / 2 + 12 - 42,
-          y: screenHeight / 2 - 56 - 42,
-          width: 84,
-          height: 84,
+          x: screenWidth / 2 + 15 - 36,
+          y: screenHeight / 2 - 36,
+          width: 72,
+          height: 72,
         }, screenWidth, screenHeight);
         tutorialPerf('camera_ready', { stepId: currentStep.id, source: 'map-idle-or-bounded-fallback' });
         tutorialPerf('target_measured', { stepId: currentStep.id, source: 'centered-camera-target' });
         if (measurement) {
-          setSpotlight({ ...measurement, borderRadius: 42, forceCircle: true, showPulse: true });
+          setSpotlight({ ...measurement, borderRadius: 36, forceCircle: true, showPulse: true });
         } else {
           setTargetUnavailable(true);
         }
@@ -323,9 +323,6 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
     void prepare();
     return () => {
       controller.abort();
-      if (currentStep.id === 'cluster-click') {
-        void runTutorialAction('reset-cluster-focus');
-      }
       clearHighlightFlags();
       if ((global as any).ignoreProgrammaticCameraRef) {
         (global as any).ignoreProgrammaticCameraRef = false;
