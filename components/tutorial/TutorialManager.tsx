@@ -194,6 +194,7 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
   const routeAtStepStartRef = useRef(pathname);
   const viewedStepRef = useRef<string | null>(null);
   const setTutorialVisible = useTutorialUiStore((state) => state.setVisible);
+  const setTutorialCurrentStep = useTutorialUiStore((state) => state.setCurrentStepId);
 
   const stepIndex = currentStep
     ? Math.max(0, TUTORIAL_STEPS.findIndex((step) => step.id === currentStep.id))
@@ -201,8 +202,12 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
 
   useEffect(() => {
     setTutorialVisible(isActive);
-    return () => setTutorialVisible(false);
-  }, [isActive, setTutorialVisible]);
+    setTutorialCurrentStep(isActive ? currentStep?.id ?? null : null);
+    return () => {
+      setTutorialVisible(false);
+      setTutorialCurrentStep(null);
+    };
+  }, [currentStep?.id, isActive, setTutorialCurrentStep, setTutorialVisible]);
 
   useEffect(() => {
     if (!currentStep) return;

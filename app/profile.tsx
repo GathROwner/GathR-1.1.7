@@ -39,6 +39,7 @@ import { TUTORIAL_STEPS } from '../config/tutorialSteps';
 import { unregisterSharedEventPushNotifications } from '../lib/sharedEventPushNotifications';
 import { requestCurrentUserEmailChange } from '../lib/accountEmailChange';
 import { useUserPrefsStore, updateShowDailyHotspot, updateShowTrendingOnOpen } from '../store/userPrefsStore';
+import { useTutorialUiStore } from '../store/tutorialUiStore';
 import GathrWordmarkLogo from '../components/common/GathrWordmarkLogo';
 import { publishTutorialMeasurement } from '../utils/tutorialReadiness';
 import { beginProfileTutorialReplay } from '../utils/tutorialReplay';
@@ -752,6 +753,7 @@ export default function ProfileScreen() {
   const facebookSubmissionRef = useRef<View>(null);
   const facebookSubmissionPulseAnim = useRef(new Animated.Value(1)).current;
   const [facebookSubmissionHighlighted, setFacebookSubmissionHighlighted] = useState(false);
+  const tutorialStepId = useTutorialUiStore((state) => state.currentStepId);
   
   // Profile container ref for modal header measurement
   const profileContainerRef = useRef<KeyboardAvoidingView>(null);
@@ -773,7 +775,7 @@ export default function ProfileScreen() {
     console.log('ðŸ“ ONE-SHOT MEASUREMENT: hasMeasured status:', hasMeasuredRef.current);
     
     const interval = setInterval(() => {
-      const globalFlag = (global as any).tutorialHighlightFacebookSubmission || false;
+      const globalFlag = tutorialStepId === 'facebook-submission';
       
       if (!globalFlag && facebookSubmissionHighlighted) {
         setFacebookSubmissionHighlighted(false);
@@ -958,7 +960,7 @@ export default function ProfileScreen() {
       console.log('ðŸ“ ONE-SHOT MEASUREMENT: Cleanup - stopping interval');
       clearInterval(interval);
     };
-  }, [facebookSubmissionHighlighted]);
+  }, [facebookSubmissionHighlighted, tutorialStepId]);
 
   useEffect(() => {
     if (facebookSubmissionHighlighted) {
