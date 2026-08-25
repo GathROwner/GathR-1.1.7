@@ -441,8 +441,7 @@ export const getPreviousStepIndex = (
  * Debug logging for tutorial system
  */
 export const tutorialLog = (message: string, data?: any) => {
-  const monotonicMs = global.performance?.now?.() ?? Date.now();
-  console.warn(`[GathR Tutorial Perf ${monotonicMs.toFixed(1)}ms] ${message}`, data || '');
+  console.log(`[GathR Tutorial] ${message}`, data || '');
 };
 
 /**

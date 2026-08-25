@@ -21,12 +21,6 @@ import { WelcomeScreen } from './WelcomeScreen';
 
 const MAP_ROUTE = '/(tabs)/map' as const;
 
-// Temporary Preview-only timing probe. Removed before the final release commit.
-const tutorialPerf = (event: string, details: Record<string, unknown> = {}) => {
-  const monotonic = global.performance?.now?.() ?? Date.now();
-  console.warn(`[GathR Tutorial Perf v2 ${monotonic.toFixed(1)}ms]`, event, JSON.stringify(details));
-};
-
 type LayoutTarget = {
   flag: string;
   layout: string;
@@ -39,6 +33,10 @@ const LAYOUT_TARGETS: Partial<Record<string, LayoutTarget>> = {
     flag: 'tutorialHighlightVenueSelector',
     layout: 'venueSelectorLayout',
     radius: 14,
+    // The callout publishes its measurement as soon as its native modal is
+    // laid out. By the time this step mounts that measurement is already the
+    // current, stable callout—not stale geometry from a previous route.
+    acceptExisting: true,
   },
   'filter-pills': {
     flag: 'tutorialHighlightFilterPills',
@@ -217,13 +215,7 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
       from_screen: pathname || '(unknown)',
       legacy_step_keys: (currentStep.legacyStepIds ?? []).join(','),
     });
-    tutorialPerf('step_rendered', { stepId: currentStep.id, pathname });
-    requestAnimationFrame(() => tutorialPerf('tooltip_stable', { stepId: currentStep.id, pathname }));
   }, [currentStep, pathname, stepIndex]);
-
-  useEffect(() => {
-    if (spotlight && currentStep) tutorialPerf('spotlight_visible', { stepId: currentStep.id, spotlight });
-  }, [currentStep, spotlight]);
 
   const advanceOnce = useCallback((step: TutorialStep) => {
     if (autoAdvancedStepRef.current === step.id) return;
@@ -243,7 +235,6 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
 
   useEffect(() => {
     if (!isActive || !currentStep || pathname === routeAtStepStartRef.current) return;
-    tutorialPerf('route_available', { stepId: currentStep.id, pathname });
     if (currentStep.id === 'events-tab' && isRoute(pathname, 'events')) advanceOnce(currentStep);
     if (currentStep.id === 'specials-tab' && isRoute(pathname, 'specials')) advanceOnce(currentStep);
     if (currentStep.id === 'profile-facebook' && isRoute(pathname, 'profile')) advanceOnce(currentStep);
@@ -264,15 +255,12 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
     }
 
     const prepare = async () => {
-      tutorialPerf('position_begin', { stepId: currentStep.id, pathname });
       if (currentStep.id === 'cluster-click') {
         if (pathname !== '/map' && !pathname.endsWith('/map')) {
           router.replace(MAP_ROUTE);
-          tutorialPerf('navigation_begin', { stepId: currentStep.id, destination: 'map' });
           return;
         }
         const clusters = await waitForClusters(controller.signal);
-        tutorialPerf('cluster_ready', { available: Boolean(clusters?.length), count: clusters?.length ?? 0 });
         if (!clusters || controller.signal.aborted) {
           setTargetUnavailable(true);
           return;
@@ -296,8 +284,6 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
           width: 72,
           height: 72,
         }, screenWidth, screenHeight);
-        tutorialPerf('camera_ready', { stepId: currentStep.id, source: 'map-idle-or-bounded-fallback' });
-        tutorialPerf('target_measured', { stepId: currentStep.id, source: 'centered-camera-target' });
         if (measurement) {
           setSpotlight({ ...measurement, borderRadius: 36, forceCircle: true, showPulse: true });
         } else {
@@ -318,11 +304,6 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
           width: size,
           height: size,
         }, screenWidth, screenHeight);
-        tutorialPerf('target_measured', {
-          stepId: currentStep.id,
-          source: 'safe-area-header-geometry',
-          layout: target.layout,
-        });
         if (measurement) {
           setSpotlight({ ...measurement, borderRadius: 20, showPulse: true });
         } else {
@@ -336,7 +317,6 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
         acceptExisting: target.acceptExisting,
         signal: controller.signal,
       });
-      tutorialPerf('target_measured', { stepId: currentStep.id, source: result.source, layout: target.layout });
       if (controller.signal.aborted) return;
       const measurement = result.measurement && cleanMeasurement(result.measurement, screenWidth, screenHeight);
       if (!measurement) {
@@ -375,15 +355,12 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
   }, [currentStep, isActive]);
 
   const handleStart = useCallback(() => {
-    tutorialPerf('action', { stepId: currentStep?.id ?? 'welcome', action: 'start' });
     router.replace(MAP_ROUTE);
-    tutorialPerf('navigation_begin', { stepId: currentStep?.id ?? 'welcome', destination: 'map' });
     if (currentStep) advanceOnce(currentStep);
   }, [advanceOnce, currentStep, router]);
 
   const handleNext = useCallback(async () => {
     if (!currentStep) return;
-    tutorialPerf('action', { stepId: currentStep.id, action: 'next' });
     if (currentStep.id === 'completion') {
       completeTutorial();
       router.replace(MAP_ROUTE);
@@ -412,19 +389,16 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
     }
     if (currentStep.id === 'events-tab') {
       router.replace('/(tabs)/events');
-      tutorialPerf('navigation_begin', { stepId: currentStep.id, destination: 'events' });
       advanceOnce(currentStep);
       return;
     }
     if (currentStep.id === 'specials-tab') {
       router.replace('/(tabs)/specials');
-      tutorialPerf('navigation_begin', { stepId: currentStep.id, destination: 'specials' });
       advanceOnce(currentStep);
       return;
     }
     if (currentStep.id === 'profile-facebook') {
       router.replace('/profile');
-      tutorialPerf('navigation_begin', { stepId: currentStep.id, destination: 'profile' });
       advanceOnce(currentStep);
       return;
     }
@@ -432,7 +406,6 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
   }, [advanceOnce, completeTutorial, currentStep, router, targetUnavailable]);
 
   const handlePrevious = useCallback(() => {
-    tutorialPerf('action', { stepId: currentStep?.id ?? 'unknown', action: 'previous' });
     if (currentStep?.id === 'callout-venue-selector') {
       void runTutorialAction('close-callout');
     }
