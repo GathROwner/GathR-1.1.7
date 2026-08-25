@@ -120,6 +120,10 @@ import {
 } from '../../utils/tabSwitchTrace';
 import { registerTutorialAction } from '../../utils/tutorialActions';
 import { createTutorialBooleanGate } from '../../utils/tutorialBooleanGate';
+import {
+  closePresentedTutorialCallout,
+  shouldActivateAndroidRetapOverlay,
+} from '../../utils/tutorialCalloutClosing';
 import { publishTutorialMeasurement } from '../../utils/tutorialReadiness';
 import {
   getTutorialModalOverlay,
@@ -5865,9 +5869,13 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
     });
     cancelPendingAndroidCalloutCameraMove(reason);
     handleCalloutCloseStart();
-      if (Platform.OS === 'android') {
+    if (Platform.OS === 'android') {
       trackClusterClosedOnce();
-      activateAndroidRetapOverlay();
+      if (shouldActivateAndroidRetapOverlay(reason)) {
+        activateAndroidRetapOverlay();
+      } else {
+        deactivateAndroidRetapOverlay();
+      }
       scheduleAndroidDeferredCalloutTeardown(reason);
       return;
     }
@@ -5875,6 +5883,7 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
   }, [
     activateAndroidRetapOverlay,
     cancelPendingAndroidCalloutCameraMove,
+    deactivateAndroidRetapOverlay,
     handleCalloutCloseStart,
     isRenderedCalloutLayoutReady,
     renderedCalloutClusterId,
@@ -6954,13 +6963,13 @@ lastOpenedClusterIdRef.current = cluster.id;
     });
   }), [tutorialCalloutReadyGate]);
 
-  useEffect(() => registerTutorialAction('close-callout', async () => {
-    const closed = tutorialCalloutPresentedGate.waitFor(false, {
-      timeoutMs: TUTORIAL_CALLOUT_CLOSE_TIMEOUT_MS,
-    });
-    closeCallout('tutorial-navigation');
-    await closed;
-  }), [closeCallout, tutorialCalloutPresentedGate]);
+  useEffect(() => registerTutorialAction('close-callout', () =>
+    closePresentedTutorialCallout(
+      tutorialCalloutPresentedGate,
+      () => closeCallout('tutorial-navigation'),
+      TUTORIAL_CALLOUT_CLOSE_TIMEOUT_MS,
+    )
+  ), [closeCallout, tutorialCalloutPresentedGate]);
 
   useEffect(() => {
     const unregister = registerTutorialAction('focus-cluster', async (target: Cluster) => {

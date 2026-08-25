@@ -517,8 +517,8 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
     calloutTransitionInFlightRef.current = true;
     setClosingCallout(true);
     try {
-      await runTutorialAction('close-callout');
-      return isTutorialStepCurrent('callout-venue-selector', currentStepIdRef.current);
+      const closed = await runTutorialAction('close-callout');
+      return closed && isTutorialStepCurrent('callout-venue-selector', currentStepIdRef.current);
     } finally {
       calloutTransitionInFlightRef.current = false;
       if (currentStepIdRef.current === 'callout-venue-selector') {
@@ -601,15 +601,15 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
     previousStep();
   }, [closeCalloutForTransition, currentStep?.id, previousStep, router, stepIndex]);
 
-  const handleSkip = useCallback(async () => {
+  const handleSkip = useCallback(() => {
     stepAbortRef.current?.abort();
-    if (currentStep?.id === 'callout-venue-selector') {
-      if (!await closeCalloutForTransition()) return;
-    } else {
-      void runTutorialAction('close-callout');
-    }
+    const shouldCloseCallout = currentStep?.id === 'callout-venue-selector';
     clearHighlightFlags();
+    setOwnedSpotlight(undefined);
+    setTargetUnavailable(false);
+    setTutorialModalOverlay(null);
     skipTutorial();
+    if (shouldCloseCallout) void closeCalloutForTransition();
   }, [closeCalloutForTransition, currentStep?.id, skipTutorial]);
 
   const handleRestart = useCallback(() => {
