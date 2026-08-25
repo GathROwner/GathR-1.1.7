@@ -2949,12 +2949,6 @@ const CalloutTutorialOverlayHost = () => {
 };
 
 const TUTORIAL_CLUSTER_SPOTLIGHT_SIZE = 72;
-const TUTORIAL_CLUSTER_CORE_FALLBACK_OFFSET_Y = -20;
-// The custom tree marker lays its visible core to the right/below its Mapbox
-// coordinate anchor. Keep the tutorial aperture on the pixels users perceive
-// as tappable; each platform composes MarkerView children slightly differently.
-const TUTORIAL_CLUSTER_CORE_VISUAL_OFFSET_X = Platform.OS === 'android' ? 26 : 22;
-const TUTORIAL_CLUSTER_CORE_VISUAL_OFFSET_Y = Platform.OS === 'android' ? 32 : 5;
 
  // Main Map Screen component
 function MapScreen() {
@@ -7002,21 +6996,13 @@ lastOpenedClusterIdRef.current = cluster.id;
     const mapLayout = (global as any).mapViewLayout;
     const mapOriginX = Number(mapLayout?.absoluteX ?? mapLayout?.x ?? 0);
     const mapOriginY = Number(mapLayout?.absoluteY ?? mapLayout?.y ?? 0);
-    const localGeometry = tutorialClusterLocalGeometryRef.current;
-    const hasCurrentLocalGeometry =
-      localGeometry?.clusterId === String(target.id) &&
-      localGeometry.wrapper.width > 0 &&
-      localGeometry.wrapper.height > 0 &&
-      localGeometry.core.width > 0 &&
-      localGeometry.core.height > 0;
-    const localCoreOffsetX = hasCurrentLocalGeometry
-      ? localGeometry.core.x + localGeometry.core.width / 2 - localGeometry.wrapper.width / 2
-      : TUTORIAL_CLUSTER_CORE_VISUAL_OFFSET_X;
-    const localCoreOffsetY = hasCurrentLocalGeometry
-      ? localGeometry.core.y + localGeometry.core.height / 2 - localGeometry.wrapper.height
-      : TUTORIAL_CLUSTER_CORE_FALLBACK_OFFSET_Y + TUTORIAL_CLUSTER_CORE_VISUAL_OFFSET_Y;
-    const markerCenterX = mapOriginX + Number(point[0]) + localCoreOffsetX;
-    const markerCenterY = mapOriginY + Number(point[1]) + localCoreOffsetY;
+    // MarkerView anchors this marker's visible circular core at the geographic
+    // coordinate. Internal story/label content can make the React wrapper much
+    // wider, but it does not move that Mapbox anchor. Applying the wrapper's
+    // local centre offset here would therefore shift the spotlight away from
+    // the circle users actually see and tap.
+    const markerCenterX = mapOriginX + Number(point[0]);
+    const markerCenterY = mapOriginY + Number(point[1]);
 
     publishTutorialMeasurement('tutorialClusterLayout', {
       x: markerCenterX - TUTORIAL_CLUSTER_SPOTLIGHT_SIZE / 2,
