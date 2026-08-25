@@ -20,6 +20,7 @@ import { TutorialSpotlight } from './TutorialSpotlight';
 import { WelcomeScreen } from './WelcomeScreen';
 
 const MAP_ROUTE = '/(tabs)/map' as const;
+const CLUSTER_ARTWORK_HORIZONTAL_OFFSET = 25;
 
 type LayoutTarget = {
   flag: string;
@@ -277,9 +278,10 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
 
         // Centering the chosen cluster avoids Android MarkerView's unreliable
         // window layout and keeps this independent of map pitch and safe-area
-        // offsets on both platforms.
+        // offsets on both platforms. The marker artwork itself is asymmetric:
+        // its visible cluster core sits 25 dp right of the Mapbox anchor.
         const measurement = cleanMeasurement({
-          x: screenWidth / 2 + 15 - 36,
+          x: screenWidth / 2 + CLUSTER_ARTWORK_HORIZONTAL_OFFSET - 36,
           y: screenHeight / 2 - 36,
           width: 72,
           height: 72,
