@@ -2894,7 +2894,14 @@ const CalloutTutorialOverlayHost = () => {
     getTutorialModalOverlay,
     getTutorialModalOverlay
   );
-  return typeof renderOverlay === 'function' ? renderOverlay() : null;
+  return typeof renderOverlay === 'function' ? (
+    <View
+      pointerEvents="box-none"
+      style={[StyleSheet.absoluteFillObject, { zIndex: 100, elevation: 100 }]}
+    >
+      {renderOverlay()}
+    </View>
+  ) : null;
 };
 
  // Main Map Screen component
