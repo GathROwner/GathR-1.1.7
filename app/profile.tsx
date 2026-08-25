@@ -41,6 +41,7 @@ import { requestCurrentUserEmailChange } from '../lib/accountEmailChange';
 import { useUserPrefsStore, updateShowDailyHotspot, updateShowTrendingOnOpen } from '../store/userPrefsStore';
 import GathrWordmarkLogo from '../components/common/GathrWordmarkLogo';
 import { publishTutorialMeasurement } from '../utils/tutorialReadiness';
+import { beginProfileTutorialReplay } from '../utils/tutorialReplay';
 import * as ImagePicker from 'expo-image-picker';
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import { 
@@ -1293,7 +1294,10 @@ const handleLogout = async () => {
 
             (global as any).tutorialLaunchUserInitiated = true;
             (global as any).tutorialLaunchSource = 'profile';
-            (global as any).restartGathRTutorial?.();
+            beginProfileTutorialReplay({
+              restartTutorial: (global as any).restartGathRTutorial,
+              dismissProfile: () => router.back(),
+            });
           },
         },
       ]
