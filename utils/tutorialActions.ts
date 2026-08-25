@@ -1,5 +1,10 @@
 type TutorialAction = (...args: any[]) => void | Promise<void>;
 
+export const isTutorialStepCurrent = (
+  expectedStepId: string,
+  currentStepId: string | null | undefined,
+): boolean => expectedStepId === currentStepId;
+
 const actions = new Map<string, TutorialAction>();
 const readinessWaiters = new Map<string, Set<() => void>>();
 

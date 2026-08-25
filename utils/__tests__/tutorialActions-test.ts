@@ -1,4 +1,5 @@
 import {
+  isTutorialStepCurrent,
   registerTutorialAction,
   runTutorialAction,
   waitForTutorialAction,
@@ -35,5 +36,10 @@ describe('tutorial action readiness', () => {
     expect(await runTutorialAction('delayed-action', 'target')).toBe(true);
     expect(action).toHaveBeenCalledWith('target');
     unregister();
+  });
+
+  it('rejects a late transition after the tutorial has moved to another step', () => {
+    expect(isTutorialStepCurrent('cluster-click', 'cluster-click')).toBe(true);
+    expect(isTutorialStepCurrent('cluster-click', 'callout-venue-selector')).toBe(false);
   });
 });

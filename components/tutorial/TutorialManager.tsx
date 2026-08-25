@@ -9,7 +9,11 @@ import { useMapStore } from '../../store/mapStore';
 import { useTutorialUiStore } from '../../store/tutorialUiStore';
 import { Cluster } from '../../types/events';
 import { ComponentMeasurement, SpotlightConfig, TutorialStep } from '../../types/tutorial';
-import { runTutorialAction, waitForTutorialAction } from '../../utils/tutorialActions';
+import {
+  isTutorialStepCurrent,
+  runTutorialAction,
+  waitForTutorialAction,
+} from '../../utils/tutorialActions';
 import {
   isTutorialModalHostedStep,
   setTutorialModalOverlay,
@@ -194,6 +198,7 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
   const targetClusterRef = useRef<Cluster | null>(null);
   const stepAbortRef = useRef<AbortController | null>(null);
   const autoAdvancedStepRef = useRef<string | null>(null);
+  const currentStepIdRef = useRef<string | null>(currentStep?.id ?? null);
   const routeAtStepStartRef = useRef(pathname);
   const viewedStepRef = useRef<string | null>(null);
   const setTutorialVisible = useTutorialUiStore((state) => state.setVisible);
@@ -203,6 +208,11 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
   const stepIndex = currentStep
     ? Math.max(0, TUTORIAL_STEPS.findIndex((step) => step.id === currentStep.id))
     : 0;
+
+  // Async actions can finish after React has already rendered the next step.
+  // Keep this ref current during render so stale callbacks cannot advance the
+  // newly rendered step (for example, the programmatic cluster-open action).
+  currentStepIdRef.current = currentStep?.id ?? null;
 
   useEffect(() => {
     setTutorialVisible(isActive);
@@ -231,6 +241,7 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
   }, [currentStep, pathname, stepIndex]);
 
   const advanceOnce = useCallback((step: TutorialStep) => {
+    if (!isTutorialStepCurrent(step.id, currentStepIdRef.current)) return;
     if (autoAdvancedStepRef.current === step.id) return;
     autoAdvancedStepRef.current = step.id;
     getCompletedIdsForStep(step).forEach((stepKey) => {
