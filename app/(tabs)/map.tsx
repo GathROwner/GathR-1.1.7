@@ -3267,6 +3267,7 @@ useEffect(() => {
   const androidRetapOverlayPressHandledRef = useRef(false);
   const androidClusterHitTargetsRef = useRef<AndroidClusterHitTarget[]>([]);
   const closestClusterMarkerRef = useRef<any>(null);
+  const closestTutorialClusterRef = useRef<Cluster | null>(null);
   const androidCalloutTeardownTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const androidControlsReleaseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const androidControlsReleaseSequenceRef = useRef(0);
@@ -3277,20 +3278,30 @@ useEffect(() => {
     closeStartedAt: 0,
     attemptCount: 0,
   });
-  const publishClosestTutorialClusterLayout = useCallback((cluster: Cluster) => {
+  const publishClosestTutorialClusterLayout = useCallback((cluster: Cluster) => new Promise<void>((resolve) => {
     requestAnimationFrame(() => {
-      closestClusterMarkerRef.current?.measureInWindow?.(
-        (x: number, y: number, width: number, height: number) => {
-          if (![x, y, width, height].every(Number.isFinite) || width <= 0 || height <= 0) return;
+      const node = closestClusterMarkerRef.current;
+      if (!node?.measureInWindow) {
+        resolve();
+        return;
+      }
+      node.measureInWindow((x: number, y: number, width: number, height: number) => {
+        if ([x, y, width, height].every(Number.isFinite) && width > 0 && height > 0) {
           publishTutorialClusterTargets([{
             cluster,
             x: x + width / 2,
             y: y + height / 2,
           }]);
-        },
-      );
+        }
+        resolve();
+      });
     });
-  }, []);
+  }), []);
+
+  useEffect(() => registerTutorialAction('measure-cluster-target', async () => {
+    const cluster = closestTutorialClusterRef.current;
+    if (cluster) await publishClosestTutorialClusterLayout(cluster);
+  }), [publishClosestTutorialClusterLayout]);
   useEffect(() => {
     const globalAny = globalThis as {
       __gathrArmMapSurfaceTouchGuard?: (durationMs?: number, reason?: string) => void;
@@ -6986,16 +6997,14 @@ lastOpenedClusterIdRef.current = cluster.id;
   ]);
 
   useEffect(() => {
+    const { projected, sourceCount } = getAndroidProjectedClusterHitTargets();
+
     if (Platform.OS !== 'android') {
+      if (projected.length > 0) publishTutorialClusterTargets(projected);
       return undefined;
     }
 
-    const { projected, sourceCount } = getAndroidProjectedClusterHitTargets();
-
     setAndroidClusterHitTargetsImmediate(projected);
-    if (projected.length > 0) {
-      publishTutorialClusterTargets(projected);
-    }
 
     if (androidRetapOverlayActive || hasPresentedCallout) {
       logAndroidRetapOverlayTargets('effect', sourceCount, projected);
@@ -9211,6 +9220,7 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
 
         // 🎯 TUTORIAL INTEGRATION: Add targeting for closest cluster
         const isClosestCluster = index === 0; // First cluster is prioritized
+        if (isClosestCluster) closestTutorialClusterRef.current = cluster;
         const isDimmedByInterestFilter = false;
         const shouldForceHotspotPreviewDetails =
           Platform.OS === 'android' &&

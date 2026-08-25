@@ -271,9 +271,11 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
           setTargetUnavailable(true);
           return;
         }
+        const targetRequestedAt = Date.now();
+        await runTutorialAction('measure-cluster-target');
         const { targets: projected, source } = await waitForTutorialClusterTargets({
           timeoutMs: TUTORIAL_CONFIG.TARGET_TIMEOUT_MS,
-          freshAfter: Date.now() - 250,
+          freshAfter: targetRequestedAt,
           signal: controller.signal,
         });
         tutorialPerf('cluster_targets_ready', { source, count: projected?.length ?? 0 });
@@ -295,7 +297,7 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
           height: 76,
         }, screenWidth, screenHeight);
         tutorialPerf('camera_ready', { stepId: currentStep.id, source: 'not-needed' });
-        tutorialPerf('target_measured', { stepId: currentStep.id, source: 'visible-cluster-projection' });
+        tutorialPerf('target_measured', { stepId: currentStep.id, source: 'rendered-cluster-layout' });
         if (measurement) {
           setSpotlight({ ...measurement, borderRadius: 38, forceCircle: true, showPulse: true });
         } else {
