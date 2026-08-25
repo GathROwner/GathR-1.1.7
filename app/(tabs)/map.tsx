@@ -119,6 +119,7 @@ import {
   markTabTracePhase,
 } from '../../utils/tabSwitchTrace';
 import { registerTutorialAction } from '../../utils/tutorialActions';
+import { publishTutorialClusterTargets } from '../../utils/tutorialClusterTargets';
 import { useReduceMotion } from '../../hooks/useReduceMotion';
 import { isAreaExperienceEvent } from '../../utils/locationScope';
 import {
@@ -6977,6 +6978,7 @@ lastOpenedClusterIdRef.current = cluster.id;
     const { projected, sourceCount } = getAndroidProjectedClusterHitTargets();
 
     setAndroidClusterHitTargetsImmediate(projected);
+    publishTutorialClusterTargets(projected);
 
     if (androidRetapOverlayActive || hasPresentedCallout) {
       logAndroidRetapOverlayTargets('effect', sourceCount, projected);

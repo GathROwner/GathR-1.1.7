@@ -10,6 +10,7 @@ import { useTutorialUiStore } from '../../store/tutorialUiStore';
 import { Cluster } from '../../types/events';
 import { ComponentMeasurement, SpotlightConfig, TutorialStep } from '../../types/tutorial';
 import { runTutorialAction } from '../../utils/tutorialActions';
+import { waitForTutorialClusterTargets } from '../../utils/tutorialClusterTargets';
 import {
   waitForTutorialMeasurement,
 } from '../../utils/tutorialReadiness';
@@ -270,11 +271,12 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
           setTargetUnavailable(true);
           return;
         }
-        const projected = (global as any).getTutorialClusterTargets?.()?.projected as {
-          cluster: Cluster;
-          x: number;
-          y: number;
-        }[] | undefined;
+        const { targets: projected, source } = await waitForTutorialClusterTargets({
+          timeoutMs: TUTORIAL_CONFIG.TARGET_TIMEOUT_MS,
+          freshAfter: Date.now() - 250,
+          signal: controller.signal,
+        });
+        tutorialPerf('cluster_targets_ready', { source, count: projected?.length ?? 0 });
         const target = projected?.find(({ cluster }) => cluster.eventCount + cluster.specialCount > 0)
           ?? projected?.[0];
         if (!target) {
