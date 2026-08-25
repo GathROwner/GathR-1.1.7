@@ -2,6 +2,12 @@ import type { ReactNode } from 'react';
 
 export type TutorialModalOverlayRenderer = () => ReactNode;
 
+const MODAL_HOSTED_STEP_IDS = new Set([
+  'callout-venue-selector',
+  'facebook-submission',
+  'completion',
+]);
+
 let renderer: TutorialModalOverlayRenderer | null = null;
 const listeners = new Set<() => void>();
 
@@ -16,3 +22,6 @@ export const setTutorialModalOverlay = (next: TutorialModalOverlayRenderer | nul
   renderer = next;
   listeners.forEach((listener) => listener());
 };
+
+export const isTutorialModalHostedStep = (stepId?: string | null): boolean =>
+  Boolean(stepId && MODAL_HOSTED_STEP_IDS.has(stepId));

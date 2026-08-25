@@ -11,7 +11,10 @@ import { useTutorialUiStore } from '../../store/tutorialUiStore';
 import { Cluster } from '../../types/events';
 import { ComponentMeasurement, SpotlightConfig, TutorialStep } from '../../types/tutorial';
 import { runTutorialAction } from '../../utils/tutorialActions';
-import { setTutorialModalOverlay } from '../../utils/tutorialModalOverlay';
+import {
+  isTutorialModalHostedStep,
+  setTutorialModalOverlay,
+} from '../../utils/tutorialModalOverlay';
 import {
   waitForTutorialMeasurement,
 } from '../../utils/tutorialReadiness';
@@ -495,7 +498,7 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
   ]);
 
   useEffect(() => {
-    if (!isActive || currentStep?.id !== 'callout-venue-selector') {
+    if (!isActive || !isTutorialModalHostedStep(currentStep?.id)) {
       setTutorialModalOverlay(null);
       return;
     }
@@ -514,7 +517,7 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
           totalSteps={TUTORIAL_STEPS.length}
         />
       )}
-      {isActive && currentStep && currentStep.id !== 'welcome' && currentStep.id !== 'callout-venue-selector' && (
+      {isActive && currentStep && currentStep.id !== 'welcome' && !isTutorialModalHostedStep(currentStep.id) && (
         renderTutorialSheet()
       )}
     </View>

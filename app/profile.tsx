@@ -42,6 +42,10 @@ import { useUserPrefsStore, updateShowDailyHotspot, updateShowTrendingOnOpen } f
 import GathrWordmarkLogo from '../components/common/GathrWordmarkLogo';
 import { publishTutorialMeasurement } from '../utils/tutorialReadiness';
 import { beginProfileTutorialReplay } from '../utils/tutorialReplay';
+import {
+  getTutorialModalOverlay,
+  subscribeTutorialModalOverlay,
+} from '../utils/tutorialModalOverlay';
 import * as ImagePicker from 'expo-image-picker';
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import { 
@@ -82,6 +86,27 @@ const APP_VERSION_DETAILS = [
   `Update: ${APP_UPDATE_ID || 'none'}`,
   `Created: ${Updates.createdAt?.toISOString() || 'unknown'}`,
 ].join('\n');
+
+const ProfileTutorialOverlayHost: React.FC<{
+  hostRef: React.RefObject<View | null>;
+}> = ({ hostRef }) => {
+  const renderOverlay = React.useSyncExternalStore(
+    subscribeTutorialModalOverlay,
+    getTutorialModalOverlay,
+    getTutorialModalOverlay,
+  );
+
+  return (
+    <View
+      ref={hostRef}
+      collapsable={false}
+      pointerEvents="box-none"
+      style={[StyleSheet.absoluteFillObject, { zIndex: 100, elevation: 100 }]}
+    >
+      {typeof renderOverlay === 'function' ? renderOverlay() : null}
+    </View>
+  );
+};
 
 // Pulsing Hotspot Circle Icon Component
 const HotspotCircleIcon: React.FC<{ isActive: boolean }> = ({ isActive }) => {
@@ -1870,15 +1895,8 @@ const handleLogout = async () => {
         </Animated.View>
       </ScrollView>
       
-      {/* Tutorial overlay for modal screens */}
-      <View
-        ref={profileTutorialOverlayHostRef}
-        collapsable={false}
-        pointerEvents="box-none"
-        style={StyleSheet.absoluteFillObject}
-      >
-        {(global as any).tutorialOverlayForModal && (global as any).tutorialOverlayForModal()}
-      </View>
+      {/* Native-stack Profile sits above the root overlay on iOS. */}
+      <ProfileTutorialOverlayHost hostRef={profileTutorialOverlayHostRef} />
 
       <Modal
         visible={showAccountModal}
