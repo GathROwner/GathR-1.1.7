@@ -341,7 +341,7 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
       setSpotlight({
         ...measurement,
         borderRadius: target.radius,
-        showPulse: currentStep.action === 'interaction',
+        showPulse: currentStep.action === 'interaction' || currentStep.id === 'facebook-submission',
       });
       setTargetUnavailable(!result.measurement);
     };
@@ -466,6 +466,8 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
       : 'Continue';
   const resolvedSheetPosition = currentStep?.id === 'completion'
     ? 'center'
+    : currentStep?.id === 'facebook-submission'
+      ? 'top'
     : spotlight
       ? spotlight.y + spotlight.height / 2 > screenHeight / 2 ? 'top' : 'bottom'
       : currentStep?.sheetPosition ?? 'bottom';
