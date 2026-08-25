@@ -16,8 +16,8 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
   },
   {
     id: 'cluster-click',
-    title: 'See what is happening nearby',
-    content: 'Each map marker groups what is happening at one or more nearby places.',
+    title: 'See what is nearby',
+    content: 'Markers group nearby events and specials.',
     target: 'closest-cluster',
     placement: 'bottom',
     sheetPosition: 'bottom',

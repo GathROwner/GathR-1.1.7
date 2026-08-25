@@ -285,8 +285,8 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
         // window layout and keeps this independent of map pitch and safe-area
         // offsets on both platforms.
         const measurement = cleanMeasurement({
-          x: screenWidth / 2 - 42,
-          y: screenHeight / 2 - 42,
+          x: screenWidth / 2 + 12 - 42,
+          y: screenHeight / 2 - 56 - 42,
           width: 84,
           height: 84,
         }, screenWidth, screenHeight);
@@ -323,6 +323,9 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
     void prepare();
     return () => {
       controller.abort();
+      if (currentStep.id === 'cluster-click') {
+        void runTutorialAction('reset-cluster-focus');
+      }
       clearHighlightFlags();
       if ((global as any).ignoreProgrammaticCameraRef) {
         (global as any).ignoreProgrammaticCameraRef = false;
