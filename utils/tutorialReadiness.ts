@@ -52,11 +52,11 @@ export const getTutorialMeasurement = (name: string): TutorialMeasurement | null
 
 export const waitForTutorialMeasurement = (
   name: string,
-  options: { timeoutMs: number; freshAfter?: number; signal?: AbortSignal },
+  options: { timeoutMs: number; freshAfter?: number; acceptExisting?: boolean; signal?: AbortSignal },
 ): Promise<{ measurement: TutorialMeasurement | null; source: 'ready' | 'timeout' | 'aborted' }> => {
-  const { timeoutMs, freshAfter = 0, signal } = options;
+  const { timeoutMs, freshAfter = 0, acceptExisting = false, signal } = options;
   const immediate = getTutorialMeasurement(name);
-  if (immediate && immediate.measuredAt >= freshAfter) {
+  if (immediate && (acceptExisting || immediate.measuredAt >= freshAfter)) {
     return Promise.resolve({ measurement: immediate, source: 'ready' });
   }
 

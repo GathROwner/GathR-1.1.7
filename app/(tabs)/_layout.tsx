@@ -7,7 +7,7 @@ import { useNavigation, useRouter } from 'expo-router';
 import { useMapStore } from '../../store/mapStore';
 import { Alert, Keyboard } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useEffect, useState, useRef } from 'react';
+import { useCallback, useEffect, useState, useRef } from 'react';
 
 // ===============================================================
 // GUEST LIMITATION IMPORTS - FOR TAB INTERACTION TRACKING
@@ -123,6 +123,15 @@ const TutorialAwareTabBarButton = (props: InstrumentedTabBarButtonProps) => {
   const viewRef = useRef<View>(null);
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const [isHighlighted, setIsHighlighted] = useState(false);
+  const publishEventsTabLayout = useCallback(() => {
+    requestAnimationFrame(() => {
+      viewRef.current?.measureInWindow((x, y, width, height) => {
+        const measurement = { x, y, width, height };
+        (global as any).eventsTabLayout = measurement;
+        publishTutorialMeasurement('eventsTabLayout', measurement);
+      });
+    });
+  }, []);
 
   useEffect(() => {
     if (isSelected) {
@@ -201,6 +210,7 @@ const TutorialAwareTabBarButton = (props: InstrumentedTabBarButtonProps) => {
       <ActiveTabIndicator targetTab={targetTab} visible={isSelected} />
       <Animated.View
         ref={viewRef}
+        onLayout={publishEventsTabLayout}
         style={[
           { flex: 1, justifyContent: 'center', alignItems: 'center' },
           isHighlighted && tutorialHighlightStyle,
@@ -218,6 +228,15 @@ const TutorialAwareSpecialsTabBarButton = (props: InstrumentedTabBarButtonProps)
   const viewRef = useRef<View>(null);
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const [isHighlighted, setIsHighlighted] = useState(false);
+  const publishSpecialsTabLayout = useCallback(() => {
+    requestAnimationFrame(() => {
+      viewRef.current?.measureInWindow((x, y, width, height) => {
+        const measurement = { x, y, width, height };
+        (global as any).specialsTabLayout = measurement;
+        publishTutorialMeasurement('specialsTabLayout', measurement);
+      });
+    });
+  }, []);
 
   useEffect(() => {
     if (isSelected) {
@@ -292,6 +311,7 @@ const TutorialAwareSpecialsTabBarButton = (props: InstrumentedTabBarButtonProps)
       <ActiveTabIndicator targetTab={targetTab} visible={isSelected} />
       <Animated.View
         ref={viewRef}
+        onLayout={publishSpecialsTabLayout}
         style={[
           { flex: 1, justifyContent: 'center', alignItems: 'center' },
           isHighlighted && tutorialHighlightStyle,

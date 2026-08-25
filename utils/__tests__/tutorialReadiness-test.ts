@@ -27,6 +27,15 @@ describe('tutorial readiness', () => {
     });
   });
 
+  it('can reuse stable mounted geometry without waiting for another layout event', async () => {
+    publishTutorialMeasurement('target', { x: 1, y: 2, width: 30, height: 40 }, 100);
+    await expect(waitForTutorialMeasurement('target', {
+      timeoutMs: 200,
+      freshAfter: 150,
+      acceptExisting: true,
+    })).resolves.toMatchObject({ source: 'ready', measurement: { measuredAt: 100 } });
+  });
+
   it('uses a bounded timeout and returns the best available fallback', async () => {
     jest.useFakeTimers();
     publishTutorialMeasurement('target', { x: 1, y: 2, width: 30, height: 40 }, 100);

@@ -30,6 +30,7 @@ type LayoutTarget = {
   flag: string;
   layout: string;
   radius: number;
+  acceptExisting?: boolean;
 };
 
 const LAYOUT_TARGETS: Partial<Record<string, LayoutTarget>> = {
@@ -42,11 +43,13 @@ const LAYOUT_TARGETS: Partial<Record<string, LayoutTarget>> = {
     flag: 'tutorialHighlightFilterPills',
     layout: 'filterPillsLayout',
     radius: 22,
+    acceptExisting: true,
   },
   'events-tab': {
     flag: 'tutorialHighlightEventsTab',
     layout: 'eventsTabLayout',
     radius: 16,
+    acceptExisting: true,
   },
   'events-list-explanation': {
     flag: 'tutorialHighlightEventsListExplanation',
@@ -57,6 +60,7 @@ const LAYOUT_TARGETS: Partial<Record<string, LayoutTarget>> = {
     flag: 'tutorialHighlightSpecialsTab',
     layout: 'specialsTabLayout',
     radius: 16,
+    acceptExisting: true,
   },
   'specials-list-explanation': {
     flag: 'tutorialHighlightSpecialsListExplanation',
@@ -307,6 +311,7 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
       const result = await waitForTutorialMeasurement(target.layout, {
         timeoutMs: TUTORIAL_CONFIG.TARGET_TIMEOUT_MS,
         freshAfter,
+        acceptExisting: target.acceptExisting,
         signal: controller.signal,
       });
       tutorialPerf('target_measured', { stepId: currentStep.id, source: result.source, layout: target.layout });
@@ -317,7 +322,7 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
         return;
       }
       setSpotlight({ ...measurement, borderRadius: target.radius, showPulse: false });
-      setTargetUnavailable(result.source === 'timeout');
+      setTargetUnavailable(!result.measurement);
     };
 
     void prepare();
