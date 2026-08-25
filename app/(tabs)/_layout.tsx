@@ -853,6 +853,7 @@ export default function TabLayout() {
           <View style={{ marginRight: 16 }}>
             <Animated.View
               ref={profileButtonRef as any}
+              collapsable={false}
               style={[
                 profileButtonHighlighted ? {
                   shadowColor: '#FF6B35',
