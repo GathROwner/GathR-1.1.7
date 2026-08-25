@@ -10,6 +10,7 @@ import { useTutorialUiStore } from '../../store/tutorialUiStore';
 import { Cluster } from '../../types/events';
 import { ComponentMeasurement, SpotlightConfig, TutorialStep } from '../../types/tutorial';
 import { runTutorialAction } from '../../utils/tutorialActions';
+import { setTutorialModalOverlay } from '../../utils/tutorialModalOverlay';
 import {
   waitForTutorialMeasurement,
 } from '../../utils/tutorialReadiness';
@@ -441,6 +442,52 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
       ? spotlight.y + spotlight.height / 2 > screenHeight / 2 ? 'top' : 'bottom'
       : currentStep?.sheetPosition ?? 'bottom';
 
+  const renderTutorialSheet = useCallback(() => (
+    <TutorialSpotlight spotlight={spotlight}>
+      <TutorialBottomSheet
+        stepId={currentStep!.id}
+        title={currentStep!.title}
+        content={currentStep!.content}
+        onNext={openingCluster ? undefined : handleNext}
+        onPrevious={handlePrevious}
+        onSkip={handleSkip}
+        showPrevious={stepIndex > 0}
+        showNext={showNext}
+        showSkip={currentStep!.id !== 'completion'}
+        nextText={nextText}
+        position={{ x: screenWidth / 2, y: screenHeight / 2 }}
+        placement={currentStep!.placement ?? 'bottom'}
+        sheetPosition={resolvedSheetPosition}
+        stepNumber={stepIndex + 1}
+        totalSteps={TUTORIAL_STEPS.length}
+        targetUnavailable={targetUnavailable}
+      />
+    </TutorialSpotlight>
+  ), [
+    currentStep,
+    handleNext,
+    handlePrevious,
+    handleSkip,
+    nextText,
+    openingCluster,
+    resolvedSheetPosition,
+    screenHeight,
+    screenWidth,
+    showNext,
+    spotlight,
+    stepIndex,
+    targetUnavailable,
+  ]);
+
+  useEffect(() => {
+    if (!isActive || currentStep?.id !== 'callout-venue-selector') {
+      setTutorialModalOverlay(null);
+      return;
+    }
+    setTutorialModalOverlay(renderTutorialSheet);
+    return () => setTutorialModalOverlay(null);
+  }, [currentStep?.id, isActive, renderTutorialSheet]);
+
   return (
     <View style={{ flex: 1 }}>
       {children}
@@ -452,27 +499,8 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
           totalSteps={TUTORIAL_STEPS.length}
         />
       )}
-      {isActive && currentStep && currentStep.id !== 'welcome' && (
-        <TutorialSpotlight spotlight={spotlight}>
-          <TutorialBottomSheet
-            stepId={currentStep.id}
-            title={currentStep.title}
-            content={currentStep.content}
-            onNext={openingCluster ? undefined : handleNext}
-            onPrevious={handlePrevious}
-            onSkip={handleSkip}
-            showPrevious={stepIndex > 0}
-            showNext={showNext}
-            showSkip={currentStep.id !== 'completion'}
-            nextText={nextText}
-            position={{ x: screenWidth / 2, y: screenHeight / 2 }}
-            placement={currentStep.placement ?? 'bottom'}
-            sheetPosition={resolvedSheetPosition}
-            stepNumber={stepIndex + 1}
-            totalSteps={TUTORIAL_STEPS.length}
-            targetUnavailable={targetUnavailable}
-          />
-        </TutorialSpotlight>
+      {isActive && currentStep && currentStep.id !== 'welcome' && currentStep.id !== 'callout-venue-selector' && (
+        renderTutorialSheet()
       )}
     </View>
   );

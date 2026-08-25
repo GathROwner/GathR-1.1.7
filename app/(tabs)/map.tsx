@@ -119,6 +119,10 @@ import {
   markTabTracePhase,
 } from '../../utils/tabSwitchTrace';
 import { registerTutorialAction } from '../../utils/tutorialActions';
+import {
+  getTutorialModalOverlay,
+  subscribeTutorialModalOverlay,
+} from '../../utils/tutorialModalOverlay';
 import { useReduceMotion } from '../../hooks/useReduceMotion';
 import { isAreaExperienceEvent } from '../../utils/locationScope';
 import {
@@ -2884,26 +2888,12 @@ const GlobalEventLightbox = ({
   );
 };
 
-const IosCalloutTutorialOverlayHost = () => {
-  const [, forceRender] = useState(0);
-
-  useEffect(() => {
-    if (Platform.OS !== 'ios') {
-      return;
-    }
-
-    const interval = setInterval(() => {
-      forceRender((value) => (value + 1) % 1000000);
-    }, 150);
-
-    return () => clearInterval(interval);
-  }, []);
-
-  if (Platform.OS !== 'ios') {
-    return null;
-  }
-
-  const renderOverlay = (global as any).tutorialOverlayForCalloutModal;
+const CalloutTutorialOverlayHost = () => {
+  const renderOverlay = React.useSyncExternalStore(
+    subscribeTutorialModalOverlay,
+    getTutorialModalOverlay,
+    getTutorialModalOverlay
+  );
   return typeof renderOverlay === 'function' ? renderOverlay() : null;
 };
 
@@ -9393,7 +9383,7 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
       >
         <View style={styles.calloutModalContent}>
           {content}
-          <IosCalloutTutorialOverlayHost />
+          <CalloutTutorialOverlayHost />
         </View>
       </Modal>
     );
