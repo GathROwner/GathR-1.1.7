@@ -10,7 +10,6 @@ import { useTutorialUiStore } from '../../store/tutorialUiStore';
 import { Cluster } from '../../types/events';
 import { ComponentMeasurement, SpotlightConfig, TutorialStep } from '../../types/tutorial';
 import { runTutorialAction } from '../../utils/tutorialActions';
-import { waitForTutorialClusterTargets } from '../../utils/tutorialClusterTargets';
 import {
   waitForTutorialMeasurement,
 } from '../../utils/tutorialReadiness';
@@ -271,35 +270,29 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
           setTargetUnavailable(true);
           return;
         }
-        const targetRequestedAt = Date.now();
-        await runTutorialAction('measure-cluster-target');
-        const { targets: projected, source } = await waitForTutorialClusterTargets({
-          timeoutMs: TUTORIAL_CONFIG.TARGET_TIMEOUT_MS,
-          freshAfter: targetRequestedAt,
-          signal: controller.signal,
-        });
-        tutorialPerf('cluster_targets_ready', { source, count: projected?.length ?? 0 });
-        const target = projected?.find(({ cluster }) => cluster.eventCount + cluster.specialCount > 0)
-          ?? projected?.[0];
+        const target = clusters.find((cluster) => cluster.eventCount + cluster.specialCount > 0)
+          ?? clusters[0];
         if (!target) {
           setTargetUnavailable(true);
           return;
         }
-        targetClusterRef.current = target.cluster;
+        targetClusterRef.current = target;
+        await runTutorialAction('focus-cluster', target);
+        if (controller.signal.aborted) return;
 
-        // The map already maintains JS-projected hit targets for its visible
-        // clusters. Reusing those coordinates avoids all synchronous Mapbox
-        // camera/projection bridge calls during the tutorial.
+        // Centering the chosen cluster avoids Android MarkerView's unreliable
+        // window layout and keeps this independent of map pitch and safe-area
+        // offsets on both platforms.
         const measurement = cleanMeasurement({
-          x: target.x - 38,
-          y: target.y - 38,
-          width: 76,
-          height: 76,
+          x: screenWidth / 2 - 42,
+          y: screenHeight / 2 - 42,
+          width: 84,
+          height: 84,
         }, screenWidth, screenHeight);
-        tutorialPerf('camera_ready', { stepId: currentStep.id, source: 'not-needed' });
-        tutorialPerf('target_measured', { stepId: currentStep.id, source: 'rendered-cluster-layout' });
+        tutorialPerf('camera_ready', { stepId: currentStep.id, source: 'map-idle-or-bounded-fallback' });
+        tutorialPerf('target_measured', { stepId: currentStep.id, source: 'centered-camera-target' });
         if (measurement) {
-          setSpotlight({ ...measurement, borderRadius: 38, forceCircle: true, showPulse: true });
+          setSpotlight({ ...measurement, borderRadius: 42, forceCircle: true, showPulse: true });
         } else {
           setTargetUnavailable(true);
         }
