@@ -1,7 +1,7 @@
 /**
  * GathR Tutorial System - Enhanced Tutorial Spotlight Component
  *
- * Updated: Restored overlay opacity to 0.85. Overlay now uses rgba(0,0,0,0.85) explicitly.
+ * Uses the shared branded navy overlay while keeping the measured target clear.
  */
 
 import React, { useEffect, useRef } from 'react';
@@ -15,6 +15,7 @@ import {
 
 import MaskedView from '@react-native-masked-view/masked-view';
 import Svg, { Rect, Defs, Mask, Circle } from 'react-native-svg';
+import { TUTORIAL_CONFIG } from '../../config/tutorialSteps';
 import { TutorialSpotlightProps } from '../../types/tutorial';
 
 const SPOTLIGHT_PADDING = 8;
@@ -115,7 +116,7 @@ const SpotlightMasked = (
           y="0"
           width="100%"
           height="100%"
-          fill="rgba(4,20,35,0.72)"
+          fill={TUTORIAL_CONFIG.OVERLAY_COLOR}
           mask="url(#spotlight-mask)"
         />
       </Svg>
@@ -158,7 +159,7 @@ const AndroidCircularOverlay = (
       y="0"
       width="100%"
       height="100%"
-      fill="rgba(4,20,35,0.72)"
+      fill={TUTORIAL_CONFIG.OVERLAY_COLOR}
       mask="url(#android-spotlight-circle)"
     />
   </Svg>
@@ -199,7 +200,7 @@ const AndroidRectangularOverlay = (
       y="0"
       width="100%"
       height="100%"
-      fill="rgba(4,20,35,0.72)"
+      fill={TUTORIAL_CONFIG.OVERLAY_COLOR}
       mask="url(#android-spotlight-rect)"
     />
   </Svg>
@@ -318,7 +319,7 @@ return (
 const styles = StyleSheet.create({
   container: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'transparent' },
   maskContainer: { ...StyleSheet.absoluteFillObject },
-  fullOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(4,20,35,0.72)' },
+  fullOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: TUTORIAL_CONFIG.OVERLAY_COLOR },
   touchBlockerFill: { ...StyleSheet.absoluteFillObject, backgroundColor: 'transparent' },
   touchBlocker: { position: 'absolute', backgroundColor: 'transparent' },
   borderRing: { position: 'absolute', borderWidth: 3, borderColor: '#FFFFFF', backgroundColor: 'transparent', shadowColor: '#2497F3', shadowOffset: { width:0, height:0 }, shadowOpacity:0.9, shadowRadius:8, elevation:0 },
