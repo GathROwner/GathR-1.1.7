@@ -22,7 +22,14 @@ export const TutorialDemoCallout: React.FC<Props> = ({
   const insets = useSafeAreaInsets();
   const venueSelectorRef = useRef<View>(null);
 
-  const handleVenueSelectorLayout = useCallback((_event: LayoutChangeEvent) => {
+  const handleVenueSelectorLayout = useCallback((event: LayoutChangeEvent) => {
+    const { width, height } = event.nativeEvent.layout;
+    if (width <= 0 || height <= 0) return;
+
+    // The row is laid out and the callout can be shown now. Do not make the
+    // tutorial transition depend on the extra asynchronous window measurement.
+    onReady();
+
     // A nested onLayout reports coordinates relative to this bottom sheet.
     // The tutorial overlay is mounted at the app root, so measure in window
     // coordinates before handing the frame to the spotlight.
@@ -30,7 +37,6 @@ export const TutorialDemoCallout: React.FC<Props> = ({
       venueSelectorRef.current?.measureInWindow((x, y, width, height) => {
         if (width <= 0 || height <= 0) return;
         onVenueSelectorLayout({ x, y, width, height });
-        onReady();
       });
     });
   }, [onReady, onVenueSelectorLayout]);
