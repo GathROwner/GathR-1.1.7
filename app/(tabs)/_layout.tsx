@@ -1,7 +1,7 @@
 // app\(tabs)\_layout.tsx
 
 import { Tabs } from 'expo-router';
-import { TouchableOpacity, View, TextInput, Text, Animated, Image, InteractionManager, Pressable, Platform, Dimensions } from 'react-native';
+import { TouchableOpacity, View, TextInput, Text, Image, InteractionManager, Pressable, Platform, Dimensions } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useRouter } from 'expo-router';
 import { useMapStore } from '../../store/mapStore';
@@ -68,10 +68,7 @@ const getTutorialTabMeasurement = (
 
 const getTutorialProfileButtonMeasurement = (
   measured: { x: number; y: number; width: number; height: number },
-  topInset: number,
-) => Platform.OS === 'android'
-  ? { ...measured, y: measured.y + topInset }
-  : measured;
+) => measured;
 
 const ACTIVE_TAB_INDICATOR_COLORS: Record<InstrumentedTabName, string> = {
   events: '#007AFF',
@@ -151,32 +148,10 @@ const TutorialAwareTabBarButton = (props: InstrumentedTabBarButtonProps) => {
   const { children, onPress, onLongPress, targetTab, accessibilityState, 'aria-selected': ariaSelected } = props;
   const isSelected = Boolean(ariaSelected ?? accessibilityState?.selected);
   const viewRef = useRef<View>(null);
-  const pulseAnim = useRef(new Animated.Value(1)).current;
   const insets = useSafeAreaInsets();
   const isHighlighted = useTutorialUiStore((state) => state.currentStepId === 'events-tab');
   const publishEventsTabLayout = useCallback(() => {
-    requestAnimationFrame(() => {
-      viewRef.current?.measureInWindow((x, y, width, height) => {
-        const measurement = getTutorialTabMeasurement(
-          'events',
-          { x, y, width, height },
-          insets.bottom,
-        );
-        (global as any).eventsTabLayout = measurement;
-        publishTutorialMeasurement('eventsTabLayout', measurement);
-      });
-    });
-  }, [insets.bottom]);
-
-  useEffect(() => {
-    if (isSelected) {
-      markTabBarSelected(targetTab);
-    }
-  }, [isSelected, targetTab]);
-
-  useEffect(() => {
-    if (!isHighlighted) return;
-    const measure = () => viewRef.current?.measureInWindow((x, y, width, height) => {
+    viewRef.current?.measureInWindow((x, y, width, height) => {
       const measurement = getTutorialTabMeasurement(
         'events',
         { x, y, width, height },
@@ -185,52 +160,19 @@ const TutorialAwareTabBarButton = (props: InstrumentedTabBarButtonProps) => {
       (global as any).eventsTabLayout = measurement;
       publishTutorialMeasurement('eventsTabLayout', measurement);
     });
-    requestAnimationFrame(measure);
-    const interval = setInterval(measure, 200);
-    const timeout = setTimeout(() => clearInterval(interval), 2200);
-    return () => {
-      clearInterval(interval);
-      clearTimeout(timeout);
-    };
-  }, [insets.bottom, isHighlighted]);
+  }, [insets.bottom]);
 
   useEffect(() => {
-    if (!isHighlighted) {
-      pulseAnim.stopAnimation();
-      pulseAnim.setValue(1);
-      return;
+    if (isSelected) {
+      markTabBarSelected(targetTab);
     }
+  }, [isSelected, targetTab]);
 
-    const loop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulseAnim, { toValue: 1.05, useNativeDriver: true, duration: 800 }),
-        Animated.timing(pulseAnim, { toValue: 1, useNativeDriver: true, duration: 800 }),
-      ])
-    );
-    loop.start();
-    return () => {
-      loop.stop();
-      pulseAnim.setValue(1);
-    };
-  }, [isHighlighted, pulseAnim]);
-
-  const tutorialHighlightStyle = {
-    // The shadow creates a "glow" effect
-    shadowColor: '#FF6B35',
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.9,
-    shadowRadius: 10,
-    elevation: 15, // Required for shadow on Android
-
-    // A subtle border to define the edge
-    borderWidth: 2,
-    borderColor: '#FF8C42', // A slightly lighter orange for the border
-    borderRadius: 12,
-    backgroundColor: 'rgba(255, 255, 255, 0.9)', // A light background to make it pop
-
-    zIndex: 99999,
-    transform: [{ scale: pulseAnim }],
-  };
+  useEffect(() => {
+    if (!isHighlighted) return;
+    const frame = requestAnimationFrame(publishEventsTabLayout);
+    return () => cancelAnimationFrame(frame);
+  }, [isHighlighted, publishEventsTabLayout]);
 
   const handlePressIn = () => {
     pauseMapAnimationsForTabHandoff(targetTab, isSelected);
@@ -252,16 +194,13 @@ const TutorialAwareTabBarButton = (props: InstrumentedTabBarButtonProps) => {
       style={{ flex: 1, position: 'relative' }}
     >
       <ActiveTabIndicator targetTab={targetTab} visible={isSelected} />
-      <Animated.View
+      <View
         ref={viewRef}
         onLayout={publishEventsTabLayout}
-        style={[
-          { flex: 1, justifyContent: 'center', alignItems: 'center' },
-          isHighlighted && tutorialHighlightStyle,
-        ]}
+        style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}
       >
         {children}
-      </Animated.View>
+      </View>
     </Pressable>
   );
 };
@@ -270,20 +209,17 @@ const TutorialAwareSpecialsTabBarButton = (props: InstrumentedTabBarButtonProps)
   const { children, onPress, onLongPress, targetTab, accessibilityState, 'aria-selected': ariaSelected } = props;
   const isSelected = Boolean(ariaSelected ?? accessibilityState?.selected);
   const viewRef = useRef<View>(null);
-  const pulseAnim = useRef(new Animated.Value(1)).current;
   const insets = useSafeAreaInsets();
   const isHighlighted = useTutorialUiStore((state) => state.currentStepId === 'specials-tab');
   const publishSpecialsTabLayout = useCallback(() => {
-    requestAnimationFrame(() => {
-      viewRef.current?.measureInWindow((x, y, width, height) => {
-        const measurement = getTutorialTabMeasurement(
-          'specials',
-          { x, y, width, height },
-          insets.bottom,
-        );
-        (global as any).specialsTabLayout = measurement;
-        publishTutorialMeasurement('specialsTabLayout', measurement);
-      });
+    viewRef.current?.measureInWindow((x, y, width, height) => {
+      const measurement = getTutorialTabMeasurement(
+        'specials',
+        { x, y, width, height },
+        insets.bottom,
+      );
+      (global as any).specialsTabLayout = measurement;
+      publishTutorialMeasurement('specialsTabLayout', measurement);
     });
   }, [insets.bottom]);
 
@@ -295,57 +231,9 @@ const TutorialAwareSpecialsTabBarButton = (props: InstrumentedTabBarButtonProps)
 
   useEffect(() => {
     if (!isHighlighted) return;
-    const measure = () => viewRef.current?.measureInWindow((x, y, width, height) => {
-      const measurement = getTutorialTabMeasurement(
-        'specials',
-        { x, y, width, height },
-        insets.bottom,
-      );
-      (global as any).specialsTabLayout = measurement;
-      publishTutorialMeasurement('specialsTabLayout', measurement);
-    });
-    requestAnimationFrame(measure);
-    const interval = setInterval(measure, 200);
-    const timeout = setTimeout(() => clearInterval(interval), 2200);
-    return () => {
-      clearInterval(interval);
-      clearTimeout(timeout);
-    };
-  }, [insets.bottom, isHighlighted]);
-
-  useEffect(() => {
-    if (!isHighlighted) {
-      pulseAnim.stopAnimation();
-      pulseAnim.setValue(1);
-      return;
-    }
-
-    const loop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulseAnim, { toValue: 1.05, useNativeDriver: true, duration: 800 }),
-        Animated.timing(pulseAnim, { toValue: 1, useNativeDriver: true, duration: 800 }),
-      ])
-    );
-    loop.start();
-    return () => {
-      loop.stop();
-      pulseAnim.setValue(1);
-    };
-  }, [isHighlighted, pulseAnim]);
-
-  const tutorialHighlightStyle = {
-    shadowColor: '#FF6B35',
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.9,
-    shadowRadius: 10,
-    elevation: 15,
-    borderWidth: 2,
-    borderColor: '#FF8C42',
-    borderRadius: 12,
-    backgroundColor: 'rgba(255, 255, 255, 0.9)',
-    zIndex: 99999,
-    transform: [{ scale: pulseAnim }],
-  };
+    const frame = requestAnimationFrame(publishSpecialsTabLayout);
+    return () => cancelAnimationFrame(frame);
+  }, [isHighlighted, publishSpecialsTabLayout]);
 
   const handlePressIn = () => {
     pauseMapAnimationsForTabHandoff(targetTab, isSelected);
@@ -367,16 +255,13 @@ const TutorialAwareSpecialsTabBarButton = (props: InstrumentedTabBarButtonProps)
       style={{ flex: 1, position: 'relative' }}
     >
       <ActiveTabIndicator targetTab={targetTab} visible={isSelected} />
-      <Animated.View
+      <View
         ref={viewRef}
         onLayout={publishSpecialsTabLayout}
-        style={[
-          { flex: 1, justifyContent: 'center', alignItems: 'center' },
-          isHighlighted && tutorialHighlightStyle,
-        ]}
+        style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}
       >
         {children}
-      </Animated.View>
+      </View>
     </Pressable>
   );
 };
@@ -680,68 +565,22 @@ export default function TabLayout() {
 
   // Tutorial awareness for profile button
   const profileButtonRef = useRef<View>(null);
-  const profileButtonPulseAnim = useRef(new Animated.Value(1)).current;
-  const [profileButtonHighlighted, setProfileButtonHighlighted] = useState(false);
+  const profileButtonHighlighted = useTutorialUiStore(
+    (state) => state.currentStepId === 'profile-facebook',
+  );
+  const publishProfileButtonLayout = useCallback(() => {
+    profileButtonRef.current?.measureInWindow((x: number, y: number, width: number, height: number) => {
+      const measurement = getTutorialProfileButtonMeasurement({ x, y, width, height });
+      (global as any).profileFacebookLayout = measurement;
+      publishTutorialMeasurement('profileFacebookLayout', measurement);
+    });
+  }, []);
 
   useEffect(() => {
-    let lastMeasurement: any = null;
-    let measurementCount = 0;
-    
-    const interval = setInterval(() => {
-      const globalFlag = (global as any).tutorialHighlightProfileFacebook || false;
-      if (globalFlag !== profileButtonHighlighted) {
-        setProfileButtonHighlighted(globalFlag);
-      }
-      if (globalFlag && profileButtonRef.current) {
-        profileButtonRef.current.measureInWindow((x: number, y: number, width: number, height: number) => {
-          // Add stability check to prevent measurement spam
-          const currentMeasurement = getTutorialProfileButtonMeasurement(
-            { x: Math.round(x), y: Math.round(y), width: Math.round(width), height: Math.round(height) },
-            insets.top,
-          );
-          
-          if (!lastMeasurement || 
-              Math.abs(currentMeasurement.x - lastMeasurement.x) > 2 ||
-              Math.abs(currentMeasurement.y - lastMeasurement.y) > 2 ||
-              Math.abs(currentMeasurement.width - lastMeasurement.width) > 2 ||
-              Math.abs(currentMeasurement.height - lastMeasurement.height) > 2) {
-            
-            lastMeasurement = currentMeasurement;
-            measurementCount++;
-            
-            // Only log first few measurements to prevent spam
-            if (measurementCount <= 3) {
-              console.log('Tutorial: Measured profile button:', currentMeasurement);
-            }
-            
-            (global as any).profileFacebookLayout = currentMeasurement;
-            publishTutorialMeasurement('profileFacebookLayout', currentMeasurement);
-          }
-        });
-      }
-    }, 500);
-    return () => clearInterval(interval);
-  }, [insets.top, profileButtonHighlighted]);
-
-  useEffect(() => {
-    if (!profileButtonHighlighted) {
-      profileButtonPulseAnim.stopAnimation();
-      profileButtonPulseAnim.setValue(1);
-      return;
-    }
-
-    const loop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(profileButtonPulseAnim, { toValue: 1.08, useNativeDriver: true, duration: 800 }),
-        Animated.timing(profileButtonPulseAnim, { toValue: 1, useNativeDriver: true, duration: 800 }),
-      ])
-    );
-    loop.start();
-    return () => {
-      loop.stop();
-      profileButtonPulseAnim.setValue(1);
-    };
-  }, [profileButtonHighlighted, profileButtonPulseAnim]);
+    if (!profileButtonHighlighted) return;
+    const frame = requestAnimationFrame(publishProfileButtonLayout);
+    return () => cancelAnimationFrame(frame);
+  }, [profileButtonHighlighted, publishProfileButtonLayout]);
 
   const handleProfileButtonPress = () => {
     analytics.trackUserAction('profile_access', { access_method: 'header_button' });
@@ -854,39 +693,9 @@ export default function TabLayout() {
             ref={profileButtonRef}
             collapsable={false}
             style={{ marginRight: 16 }}
-            onLayout={() => {
-              // Keep a concrete native wrapper around the header action. On
-              // Android, an Animated.View inside a native-stack header can be
-              // visually present while measureInWindow never resolves. The
-              // non-collapsible wrapper is stable on both platforms.
-              if ((global as any).tutorialHighlightProfileFacebook && profileButtonRef.current) {
-                profileButtonRef.current.measureInWindow((x: number, y: number, width: number, height: number) => {
-                  const measurement = getTutorialProfileButtonMeasurement(
-                    { x, y, width, height },
-                    insets.top,
-                  );
-                  (global as any).profileFacebookLayout = measurement;
-                  publishTutorialMeasurement('profileFacebookLayout', measurement);
-                });
-              }
-            }}
+            onLayout={profileButtonHighlighted ? publishProfileButtonLayout : undefined}
           >
-            <Animated.View
-              style={[
-                profileButtonHighlighted ? {
-                  shadowColor: '#FF6B35',
-                  shadowOffset: { width: 0, height: 0 },
-                  shadowOpacity: 0.9,
-                  shadowRadius: 12,
-                  elevation: 15,
-                  borderWidth: 3,
-                  borderColor: '#FF8C42',
-                  borderRadius: 20,
-                  backgroundColor: 'rgba(30, 144, 255, 0.3)',
-                  transform: [{ scale: profileButtonPulseAnim }],
-                } : {}
-              ]}
-            >
+            <View>
               <TouchableOpacity 
                 onPress={handleProfileButtonPress} 
                 style={{ padding: 5 }}
@@ -894,7 +703,7 @@ export default function TabLayout() {
               >
                 <Ionicons name="settings-outline" size={24} color="#FFFFFF" />
               </TouchableOpacity>
-            </Animated.View>
+            </View>
           </View>
         ) : null
       ),

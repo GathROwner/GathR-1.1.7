@@ -5,35 +5,13 @@ import { usePathname, useRouter } from 'expo-router';
 import { TUTORIAL_CONFIG, TUTORIAL_STEPS, getCompletedIdsForStep } from '../../config/tutorialSteps';
 import { useTutorial } from '../../hooks/useTutorial';
 import { amplitudeTrack } from '../../lib/amplitudeAnalytics';
-import { useMapStore } from '../../store/mapStore';
 import { useTutorialUiStore } from '../../store/tutorialUiStore';
-import { Cluster } from '../../types/events';
 import { ComponentMeasurement, TutorialStep } from '../../types/tutorial';
+import { isTutorialStepCurrent, registerTutorialAction } from '../../utils/tutorialActions';
+import { waitForTutorialMeasurement } from '../../utils/tutorialReadiness';
 import {
-  isTutorialStepCurrent,
-  registerTutorialAction,
-  runTutorialAction,
-  waitForTutorialAction,
-} from '../../utils/tutorialActions';
-import {
-  doesTutorialCalloutMatchAnchor,
-  getTutorialClusterAnchorVenueKey,
-  isTutorialClusterCalloutTarget,
-} from '../../utils/tutorialClusterTarget';
-import {
-  isTutorialModalHostedStep,
-  setTutorialModalOverlay,
-} from '../../utils/tutorialModalOverlay';
-import {
-  publishTutorialMeasurement,
-  subscribeTutorialMeasurement,
-  waitForTutorialMeasurement,
-} from '../../utils/tutorialReadiness';
-import {
-  getTutorialClusterActionState,
   getTutorialSpotlightForStep,
   OwnedTutorialSpotlight,
-  translateTutorialMeasurementToHost,
 } from '../../utils/tutorialSpotlightOwnership';
 import { TutorialBottomSheet } from './TutorialBottomSheet';
 import { TutorialSpotlight } from './TutorialSpotlight';
@@ -48,12 +26,13 @@ type LayoutTarget = {
   acceptExisting?: boolean;
 };
 
+/**
+ * Every guided target below is a normal React Native control measured in its
+ * own screen. Mapbox marker and native-callout geometry are deliberately not
+ * part of this tour: they cannot provide the same dependable, cross-platform
+ * target contract as the rest of the app.
+ */
 const LAYOUT_TARGETS: Partial<Record<string, LayoutTarget>> = {
-  'callout-venue-selector': {
-    flag: 'tutorialHighlightVenueSelector',
-    layout: 'venueSelectorLayout',
-    radius: 14,
-  },
   'filter-pills': {
     flag: 'tutorialHighlightFilterPills',
     layout: 'filterPillsLayout',
@@ -65,50 +44,30 @@ const LAYOUT_TARGETS: Partial<Record<string, LayoutTarget>> = {
     layout: 'eventsTabLayout',
     radius: 16,
   },
-  'events-list-explanation': {
-    flag: 'tutorialHighlightEventsListExplanation',
-    layout: 'eventsListExplanationLayout',
-    radius: 18,
-  },
   'specials-tab': {
     flag: 'tutorialHighlightSpecialsTab',
     layout: 'specialsTabLayout',
     radius: 16,
   },
-  'specials-list-explanation': {
-    flag: 'tutorialHighlightSpecialsListExplanation',
-    layout: 'specialsListExplanationLayout',
-    radius: 18,
-  },
   'profile-facebook': {
     flag: 'tutorialHighlightProfileFacebook',
     layout: 'profileFacebookLayout',
-    radius: 24,
-    acceptExisting: true,
+    radius: 20,
   },
   'facebook-submission': {
     flag: 'tutorialHighlightFacebookSubmission',
     layout: 'facebookSubmissionLayout',
     radius: 18,
-    // Profile is already mounted when the route-driven step advances. Its
-    // child effect can publish the stable row measurement before this parent
-    // effect begins waiting, especially through the native-stack modal on
-    // iOS. That measurement belongs to the current mounted Profile screen.
+    // Profile can publish its stable row measurement before this manager's
+    // effect runs through the native-stack modal transition.
     acceptExisting: true,
   },
 };
 
 const ALL_HIGHLIGHT_FLAGS = [
   'tutorialHighlightFilterPills',
-  'tutorialHighlightEventDetails',
-  'tutorialHighlightVenueSelector',
-  'tutorialHighlightEventTabs',
   'tutorialHighlightEventsTab',
-  'tutorialHighlightEventsListExplanation',
-  'tutorialHighlightEventsFilters',
   'tutorialHighlightSpecialsTab',
-  'tutorialHighlightSpecialsListExplanation',
-  'tutorialHighlightSpecialsFilters',
   'tutorialHighlightProfileFacebook',
   'tutorialHighlightFacebookSubmission',
 ] as const;
@@ -126,70 +85,6 @@ const cleanMeasurement = (
   const width = Math.min(measurement.width, screenWidth - x);
   const height = Math.min(measurement.height, screenHeight - y);
   return width > 0 && height > 0 ? { x, y, width, height } : null;
-};
-
-const waitForClusters = (signal: AbortSignal): Promise<Cluster[] | null> => {
-  const current = useMapStore.getState().clusters;
-  if (current.length) return Promise.resolve(current);
-
-  return new Promise((resolve) => {
-    let settled = false;
-    const finish = (clusters: Cluster[] | null) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timeout);
-      unsubscribe();
-      signal.removeEventListener('abort', onAbort);
-      resolve(clusters);
-    };
-    const unsubscribe = useMapStore.subscribe((state) => {
-      if (state.clusters.length) finish(state.clusters);
-    });
-    const onAbort = () => finish(null);
-    const timeout = setTimeout(() => finish(null), TUTORIAL_CONFIG.TARGET_TIMEOUT_MS);
-    signal.addEventListener('abort', onAbort, { once: true });
-  });
-};
-
-const waitForCallout = (
-  signal: AbortSignal,
-  anchorVenueKey: string,
-) => new Promise<boolean>((resolve) => {
-  const current = useMapStore.getState().selectedVenues;
-  if (doesTutorialCalloutMatchAnchor(current, anchorVenueKey)) {
-    resolve(true);
-    return;
-  }
-  let settled = false;
-  const finish = (ready: boolean) => {
-    if (settled) return;
-    settled = true;
-    clearTimeout(timeout);
-    unsubscribe();
-    signal.removeEventListener('abort', onAbort);
-    resolve(ready);
-  };
-  const unsubscribe = useMapStore.subscribe((state) => {
-    if (doesTutorialCalloutMatchAnchor(state.selectedVenues, anchorVenueKey)) finish(true);
-  });
-  const onAbort = () => finish(false);
-  const timeout = setTimeout(() => finish(false), TUTORIAL_CONFIG.ROUTE_TIMEOUT_MS);
-  signal.addEventListener('abort', onAbort, { once: true });
-});
-
-const waitForCalloutPresentation = async (signal: AbortSignal): Promise<boolean> => {
-  const actionReady = await waitForTutorialAction('wait-callout-ready', {
-    timeoutMs: TUTORIAL_CONFIG.ROUTE_TIMEOUT_MS,
-    signal,
-  });
-  if (!actionReady || signal.aborted) return false;
-
-  const invoked = await runTutorialAction(
-    'wait-callout-ready',
-    TUTORIAL_CONFIG.TARGET_TIMEOUT_MS,
-    signal,
-  );
-  return invoked && !signal.aborted;
 };
 
 const clearHighlightFlags = () => {
@@ -218,85 +113,27 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
     restartTutorial,
   } = useTutorial();
   const [ownedSpotlight, setOwnedSpotlight] = useState<OwnedTutorialSpotlight>();
-  const ownedSpotlightRef = useRef<OwnedTutorialSpotlight | undefined>(undefined);
   const updateOwnedSpotlight = useCallback((next?: OwnedTutorialSpotlight) => {
-    ownedSpotlightRef.current = next;
     setOwnedSpotlight(next);
   }, []);
   const [targetUnavailable, setTargetUnavailable] = useState(false);
-  const [openingCluster, setOpeningCluster] = useState(false);
-  const [closingCallout, setClosingCallout] = useState(false);
   const [resumeEpoch, setResumeEpoch] = useState(0);
-  const targetClusterRef = useRef<Cluster | null>(null);
   const stepAbortRef = useRef<AbortController | null>(null);
   const autoAdvancedStepRef = useRef<string | null>(null);
-  const calloutTransitionInFlightRef = useRef(false);
-  const clusterTransitionInFlightRef = useRef(false);
-  const clusterMeasurementBlockedRef = useRef(false);
-  const clusterUnavailableTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const tutorialHostRef = useRef<View>(null);
-  const tutorialHostLayoutRef = useRef<ComponentMeasurement | null>(null);
   const currentStepIdRef = useRef<string | null>(currentStep?.id ?? null);
   const routeAtStepStartRef = useRef(pathname);
   const viewedStepRef = useRef<string | null>(null);
   const setTutorialVisible = useTutorialUiStore((state) => state.setVisible);
   const setTutorialCurrentStep = useTutorialUiStore((state) => state.setCurrentStepId);
   const facebookSubmissionLayout = useTutorialUiStore((state) => state.facebookSubmissionLayout);
-  const markClusterUnavailable = useCallback(() => {
-    if (clusterUnavailableTimerRef.current) {
-      clearTimeout(clusterUnavailableTimerRef.current);
-      clusterUnavailableTimerRef.current = null;
-    }
-    clusterMeasurementBlockedRef.current = true;
-    updateOwnedSpotlight(undefined);
-    setTargetUnavailable(true);
-  }, [updateOwnedSpotlight]);
-  const scheduleClusterUnavailableFallback = useCallback(() => {
-    if (currentStepIdRef.current !== 'cluster-click') return;
-    updateOwnedSpotlight(undefined);
-    if (clusterUnavailableTimerRef.current) return;
-    clusterUnavailableTimerRef.current = setTimeout(() => {
-      clusterUnavailableTimerRef.current = null;
-      if (
-        currentStepIdRef.current === 'cluster-click' &&
-        !ownedSpotlightRef.current
-      ) {
-        markClusterUnavailable();
-      }
-    }, TUTORIAL_CONFIG.TARGET_TIMEOUT_MS);
-  }, [markClusterUnavailable, updateOwnedSpotlight]);
-  const measureTutorialHost = useCallback(() => {
-    tutorialHostRef.current?.measureInWindow((x, y, width, height) => {
-      if (
-        ![x, y, width, height].every(Number.isFinite) ||
-        width <= 0 ||
-        height <= 0
-      ) {
-        return;
-      }
-      const measurement = { x, y, width, height };
-      tutorialHostLayoutRef.current = measurement;
-      publishTutorialMeasurement('tutorialOverlayHostLayout', measurement);
-    });
-  }, []);
-  const cleanClusterMeasurement = useCallback((measurement: ComponentMeasurement) => {
-    const hostLayout = tutorialHostLayoutRef.current;
-    if (!hostLayout) return null;
-    return cleanMeasurement(
-      translateTutorialMeasurementToHost(measurement, hostLayout),
-      screenWidth,
-      screenHeight,
-    );
-  }, [screenHeight, screenWidth]);
 
   const stepIndex = currentStep
     ? Math.max(0, TUTORIAL_STEPS.findIndex((step) => step.id === currentStep.id))
     : 0;
   const spotlight = getTutorialSpotlightForStep(ownedSpotlight, currentStep?.id);
 
-  // Async actions can finish after React has already rendered the next step.
-  // Keep this ref current during render so stale callbacks cannot advance the
-  // newly rendered step (for example, the programmatic cluster-open action).
+  // Async screen readiness can settle after React has painted a new step. Keep
+  // this current during render so a stale callback can never advance it.
   currentStepIdRef.current = currentStep?.id ?? null;
 
   useEffect(() => {
@@ -342,26 +179,9 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
     nextStep();
   }, [nextStep, pathname]);
 
-  const recoverFailedCalloutPresentation = useCallback(async (): Promise<boolean> => {
-    const closedOnFirstAttempt = await runTutorialAction('close-callout');
-    const closed = closedOnFirstAttempt || await runTutorialAction('close-callout');
-    if (closed) return true;
-
-    amplitudeTrack('tutorial_transition_failed', {
-      tutorial_id: 'main_onboarding_v1',
-      tutorial_version: 2,
-      total_steps: TUTORIAL_STEPS.length,
-      step_key: 'cluster-click',
-      from_screen: pathname || '(unknown)',
-      reason: 'callout_presentation_and_close_timeout',
-    });
-    clearHighlightFlags();
-    updateOwnedSpotlight(undefined);
-    setTutorialModalOverlay(null);
-    skipTutorial();
-    return false;
-  }, [pathname, skipTutorial, updateOwnedSpotlight]);
-
+  // Existing tab/profile screens publish this callback after their navigation
+  // transition finishes. It is a fallback to the route observer below, not a
+  // blind delay, and is intentionally guarded by the current step id.
   useEffect(() => {
     if (!isActive || !currentStep) return;
 
@@ -401,244 +221,48 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
   }, [advanceOnce, currentStep, isActive, pathname]);
 
   useEffect(() => {
-    if (!isActive || currentStep?.id !== 'cluster-click') return;
-
-    let targetCalloutWasOpen = doesTutorialCalloutMatchAnchor(
-      useMapStore.getState().selectedVenues,
-      targetClusterRef.current
-        ? getTutorialClusterAnchorVenueKey(targetClusterRef.current)
-        : null,
-    );
-    let anyCalloutWasOpen = useMapStore.getState().selectedVenues.length > 0;
-    let presentationWaitStarted = false;
-    let mismatchRecoveryStarted = false;
-    let cancelled = false;
-    const controller = new AbortController();
-    const unsubscribe = useMapStore.subscribe((state) => {
-      const anchorVenueKey = targetClusterRef.current
-        ? getTutorialClusterAnchorVenueKey(targetClusterRef.current)
-        : null;
-      const targetCalloutIsOpen = doesTutorialCalloutMatchAnchor(
-        state.selectedVenues,
-        anchorVenueKey,
-      );
-      const anyCalloutIsOpen = state.selectedVenues.length > 0;
-      if (!targetCalloutWasOpen && targetCalloutIsOpen && !presentationWaitStarted) {
-        presentationWaitStarted = true;
-        void (async () => {
-          const presentationReady = await waitForCalloutPresentation(controller.signal);
-          if (presentationReady && !cancelled && !controller.signal.aborted) {
-            advanceOnce(currentStep);
-            return;
-          }
-          if (!cancelled && !controller.signal.aborted) {
-            const recovered = await recoverFailedCalloutPresentation();
-            if (recovered && !cancelled && !controller.signal.aborted) {
-              markClusterUnavailable();
-            }
-          }
-        })();
-      } else if (
-        !anyCalloutWasOpen &&
-        anyCalloutIsOpen &&
-        !targetCalloutIsOpen &&
-        !mismatchRecoveryStarted
-      ) {
-        mismatchRecoveryStarted = true;
-        updateOwnedSpotlight(undefined);
-        void (async () => {
-          const recovered = await recoverFailedCalloutPresentation();
-          if (!recovered || cancelled || controller.signal.aborted) return;
-
-          const target = targetClusterRef.current;
-          const measured = target
-            ? await runTutorialAction('measure-cluster', target)
-            : false;
-          if (!measured && !cancelled && !controller.signal.aborted) {
-            markClusterUnavailable();
-          }
-          mismatchRecoveryStarted = false;
-        })();
-      }
-      targetCalloutWasOpen = targetCalloutIsOpen;
-      anyCalloutWasOpen = anyCalloutIsOpen;
-    });
-
-    return () => {
-      cancelled = true;
-      controller.abort();
-      unsubscribe();
-    };
-  }, [
-    advanceOnce,
-    currentStep,
-    isActive,
-    recoverFailedCalloutPresentation,
-    markClusterUnavailable,
-    updateOwnedSpotlight,
-  ]);
-
-  useEffect(() => {
-    clusterTransitionInFlightRef.current = false;
-  }, [currentStep?.id]);
-
-  useEffect(() => registerTutorialAction('tutorial-cluster-unavailable', () => {
-    if (currentStepIdRef.current !== 'cluster-click') return false;
-    scheduleClusterUnavailableFallback();
-    return true;
-  }), [scheduleClusterUnavailableFallback]);
-
-  useEffect(() => registerTutorialAction('tutorial-cluster-rebinding', (shouldClear = true) => {
-    if (currentStepIdRef.current !== 'cluster-click') return false;
-    if (shouldClear) updateOwnedSpotlight(undefined);
-    return true;
-  }), [updateOwnedSpotlight]);
-
-  useEffect(() => {
     stepAbortRef.current?.abort();
     const controller = new AbortController();
     stepAbortRef.current = controller;
     updateOwnedSpotlight(undefined);
     setTargetUnavailable(false);
-    setOpeningCluster(false);
-    if (clusterUnavailableTimerRef.current) {
-      clearTimeout(clusterUnavailableTimerRef.current);
-      clusterUnavailableTimerRef.current = null;
-    }
-    clusterMeasurementBlockedRef.current = false;
-    if (currentStep?.id !== 'callout-venue-selector') {
-      calloutTransitionInFlightRef.current = false;
-      setClosingCallout(false);
-    }
-    targetClusterRef.current = null;
     clearHighlightFlags();
 
     if (!isActive || !currentStep || currentStep.id === 'welcome' || currentStep.id === 'completion') {
       return () => controller.abort();
     }
 
-    const prepare = async () => {
-      if (currentStep.id === 'cluster-click') {
-        if (pathname !== '/map' && !pathname.endsWith('/map')) {
-          router.replace(MAP_ROUTE);
-          return;
-        }
-        if (!tutorialHostLayoutRef.current) {
-          const hostReady = waitForTutorialMeasurement('tutorialOverlayHostLayout', {
-            timeoutMs: TUTORIAL_CONFIG.TARGET_TIMEOUT_MS,
-            acceptExisting: true,
-            signal: controller.signal,
-            isUsable: (measurement) =>
-              measurement.width > 0 && measurement.height > 0,
-          });
-          measureTutorialHost();
-          const hostResult = await hostReady;
-          if (hostResult.measurement) {
-            tutorialHostLayoutRef.current = hostResult.measurement;
-          }
-          if (!tutorialHostLayoutRef.current || controller.signal.aborted) {
-            markClusterUnavailable();
-            return;
-          }
-        }
-        const mapActionsReady = await waitForTutorialAction('focus-cluster', {
-          timeoutMs: TUTORIAL_CONFIG.ROUTE_TIMEOUT_MS,
-          signal: controller.signal,
-        });
-        if (!mapActionsReady || controller.signal.aborted) {
-          markClusterUnavailable();
-          return;
-        }
-        if (useMapStore.getState().selectedVenues.length > 0) {
-          const existingCalloutClosed = await recoverFailedCalloutPresentation();
-          if (!existingCalloutClosed || controller.signal.aborted) {
-            return;
-          }
-        }
-        const clusters = await waitForClusters(controller.signal);
-        if (!clusters || controller.signal.aborted) {
-          markClusterUnavailable();
-          return;
-        }
-        const target = clusters.find(isTutorialClusterCalloutTarget);
-        if (!target) {
-          markClusterUnavailable();
-          return;
-        }
-        targetClusterRef.current = target;
-        const focused = await runTutorialAction('focus-cluster', target, controller.signal);
-        if (!focused || controller.signal.aborted) {
-          markClusterUnavailable();
-          return;
-        }
+    const target = LAYOUT_TARGETS[currentStep.id];
+    if (!target) return () => controller.abort();
 
-        const measurementReady = await waitForTutorialAction('measure-cluster', {
-          timeoutMs: TUTORIAL_CONFIG.ROUTE_TIMEOUT_MS,
-          signal: controller.signal,
-        });
-        if (!measurementReady || controller.signal.aborted) {
-          markClusterUnavailable();
-          return;
-        }
-        const measuredAfter = Date.now();
-        const projectedReady = waitForTutorialMeasurement('tutorialClusterLayout', {
-          timeoutMs: TUTORIAL_CONFIG.TARGET_TIMEOUT_MS,
-          freshAfter: measuredAfter,
-          signal: controller.signal,
-        });
-        await runTutorialAction('measure-cluster', target);
-        const projected = await projectedReady;
-        if (controller.signal.aborted) return;
-
-        const freshlyMeasuredSpotlight = projected.source === 'ready' && projected.measurement
-          ? cleanClusterMeasurement(projected.measurement)
-          : null;
-        if (clusterMeasurementBlockedRef.current) return;
-        if (freshlyMeasuredSpotlight) {
-          if (clusterUnavailableTimerRef.current) {
-            clearTimeout(clusterUnavailableTimerRef.current);
-            clusterUnavailableTimerRef.current = null;
-          }
-          updateOwnedSpotlight({
-            stepId: currentStep.id,
-            config: {
-              ...freshlyMeasuredSpotlight,
-              borderRadius: 36,
-              forceCircle: true,
-              showPulse: true,
-            },
-          });
-        } else {
-          markClusterUnavailable();
-        }
-        return;
-      }
-
-      const target = LAYOUT_TARGETS[currentStep.id];
-      if (!target) return;
-      const freshAfter = Date.now();
-      (global as any)[target.flag] = true;
+    (global as any)[target.flag] = true;
+    const measure = async () => {
       if (currentStep.id === 'facebook-submission' && facebookSubmissionLayout) {
-        const measurement = cleanMeasurement(facebookSubmissionLayout, screenWidth, screenHeight);
-        if (measurement) {
+        const existing = cleanMeasurement(facebookSubmissionLayout, screenWidth, screenHeight);
+        if (existing) {
           (global as any).facebookSubmissionStable = true;
           updateOwnedSpotlight({
             stepId: currentStep.id,
-            config: { ...measurement, borderRadius: target.radius, showPulse: true },
+            config: { ...existing, borderRadius: target.radius, showPulse: true },
           });
           return;
         }
       }
+
       const result = await waitForTutorialMeasurement(target.layout, {
         timeoutMs: TUTORIAL_CONFIG.TARGET_TIMEOUT_MS,
-        freshAfter,
         acceptExisting: target.acceptExisting,
         signal: controller.signal,
         isUsable: (measurement) =>
           cleanMeasurement(measurement, screenWidth, screenHeight) !== null,
       });
-      if (controller.signal.aborted) return;
-      const measurement = result.measurement && cleanMeasurement(result.measurement, screenWidth, screenHeight);
+      if (controller.signal.aborted || currentStepIdRef.current !== currentStep.id) return;
+
+      const measurement = result.measurement && cleanMeasurement(
+        result.measurement,
+        screenWidth,
+        screenHeight,
+      );
       if (!measurement) {
         setTargetUnavailable(true);
         return;
@@ -651,74 +275,29 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
           showPulse: currentStep.action === 'interaction' || currentStep.id === 'facebook-submission',
         },
       });
-      setTargetUnavailable(!result.measurement);
     };
 
-    void prepare().catch(() => {
+    void measure().catch(() => {
       if (!controller.signal.aborted && currentStepIdRef.current === currentStep.id) {
-        if (ownedSpotlightRef.current?.stepId === currentStep.id) {
-          setTargetUnavailable(false);
-          return;
-        }
-        if (currentStep.id === 'cluster-click') {
-          markClusterUnavailable();
-          return;
-        }
         updateOwnedSpotlight(undefined);
         setTargetUnavailable(true);
       }
     });
+
     return () => {
       controller.abort();
-      if (clusterUnavailableTimerRef.current) {
-        clearTimeout(clusterUnavailableTimerRef.current);
-        clusterUnavailableTimerRef.current = null;
-      }
       clearHighlightFlags();
-      if ((global as any).ignoreProgrammaticCameraRef) {
-        (global as any).ignoreProgrammaticCameraRef = false;
-      }
     };
   }, [
     currentStep,
-    cleanClusterMeasurement,
     facebookSubmissionLayout,
     isActive,
-    markClusterUnavailable,
-    measureTutorialHost,
     pathname,
-    recoverFailedCalloutPresentation,
     resumeEpoch,
-    router,
     screenHeight,
     screenWidth,
     updateOwnedSpotlight,
   ]);
-
-  useEffect(() => {
-    if (!isActive || currentStep?.id !== 'cluster-click') return undefined;
-
-    return subscribeTutorialMeasurement('tutorialClusterLayout', (measurement) => {
-      if (currentStepIdRef.current !== 'cluster-click') return;
-      if (clusterMeasurementBlockedRef.current) return;
-      const clean = cleanClusterMeasurement(measurement);
-      if (!clean) return;
-      if (clusterUnavailableTimerRef.current) {
-        clearTimeout(clusterUnavailableTimerRef.current);
-        clusterUnavailableTimerRef.current = null;
-      }
-      updateOwnedSpotlight({
-        stepId: 'cluster-click',
-        config: {
-          ...clean,
-          borderRadius: 36,
-          forceCircle: true,
-          showPulse: true,
-        },
-      });
-      setTargetUnavailable(false);
-    });
-  }, [cleanClusterMeasurement, currentStep?.id, isActive, updateOwnedSpotlight]);
 
   useEffect(() => {
     if (!isActive) return;
@@ -740,138 +319,38 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
     if (currentStep) advanceOnce(currentStep);
   }, [advanceOnce, currentStep, pathname, router]);
 
-  const closeCalloutForTransition = useCallback(async (): Promise<boolean> => {
-    if (calloutTransitionInFlightRef.current) return false;
-    calloutTransitionInFlightRef.current = true;
-    setClosingCallout(true);
-    try {
-      const closed = await runTutorialAction('close-callout');
-      return closed && isTutorialStepCurrent('callout-venue-selector', currentStepIdRef.current);
-    } finally {
-      calloutTransitionInFlightRef.current = false;
-      if (currentStepIdRef.current === 'callout-venue-selector') {
-        setClosingCallout(false);
-      }
-    }
-  }, []);
-
-  const handleNext = useCallback(async () => {
+  const handleNext = useCallback(() => {
     if (!currentStep) return;
     if (currentStep.id === 'completion') {
       completeTutorial();
       router.replace(MAP_ROUTE);
       return;
     }
-    if (currentStep.id === 'cluster-click') {
-      if (clusterTransitionInFlightRef.current) return;
-      clusterTransitionInFlightRef.current = true;
-      if (!targetClusterRef.current || targetUnavailable) {
-        const unavailableSteps = TUTORIAL_STEPS.slice(stepIndex, stepIndex + 2);
-        unavailableSteps.forEach((step) => {
-          getCompletedIdsForStep(step).forEach((stepKey) => {
-            amplitudeTrack('tutorial_step_completed', {
-              tutorial_id: 'main_onboarding_v1',
-              tutorial_version: 2,
-              total_steps: TUTORIAL_STEPS.length,
-              step_key: stepKey,
-              consolidated_into: step.id,
-              from_screen: pathname || '(unknown)',
-              target_unavailable: true,
-            });
-          });
-        });
-        nextStep(2);
-        return;
-      }
-      if (clusterUnavailableTimerRef.current) {
-        clearTimeout(clusterUnavailableTimerRef.current);
-        clusterUnavailableTimerRef.current = null;
-      }
-      clusterMeasurementBlockedRef.current = true;
-      updateOwnedSpotlight(undefined);
-      setOpeningCluster(true);
-      const controller = new AbortController();
-      let transitionAdvanced = false;
-      try {
-        const anchorVenueKey = getTutorialClusterAnchorVenueKey(targetClusterRef.current);
-        if (!anchorVenueKey) {
-          markClusterUnavailable();
-          return;
-        }
-        const ready = waitForCallout(controller.signal, anchorVenueKey);
-        const invoked = await runTutorialAction('open-cluster', controller.signal);
-        const opened = invoked ? await ready : false;
-        const presentationReady = opened
-          ? await waitForCalloutPresentation(controller.signal)
-          : false;
-        if (!opened || !presentationReady) {
-          updateOwnedSpotlight(undefined);
-          const recovered = await recoverFailedCalloutPresentation();
-          if (recovered) markClusterUnavailable();
-          return;
-        }
-        transitionAdvanced = true;
-        advanceOnce(currentStep);
-      } finally {
-        controller.abort();
-        setOpeningCluster(false);
-        if (!transitionAdvanced) clusterTransitionInFlightRef.current = false;
-      }
-      return;
-    }
-    if (currentStep.id === 'callout-venue-selector') {
-      if (await closeCalloutForTransition()) {
-        advanceOnce(currentStep);
-      }
-      return;
-    }
+    // A measurable target may be unavailable during a slow render. Continue
+    // keeps the tour recoverable without waiting on network, map, or layout.
     if (currentStep.id === 'events-tab') {
       router.replace('/(tabs)/events');
-      advanceOnce(currentStep);
-      return;
-    }
-    if (currentStep.id === 'specials-tab') {
+    } else if (currentStep.id === 'specials-tab') {
       router.replace('/(tabs)/specials');
-      advanceOnce(currentStep);
-      return;
-    }
-    if (currentStep.id === 'profile-facebook') {
+    } else if (currentStep.id === 'profile-facebook') {
       router.replace('/profile');
-      advanceOnce(currentStep);
-      return;
     }
     advanceOnce(currentStep);
-  }, [
-    advanceOnce,
-    closeCalloutForTransition,
-    completeTutorial,
-    currentStep,
-    markClusterUnavailable,
-    nextStep,
-    pathname,
-    recoverFailedCalloutPresentation,
-    router,
-    stepIndex,
-    targetUnavailable,
-    updateOwnedSpotlight,
-  ]);
+  }, [advanceOnce, completeTutorial, currentStep, router]);
 
-  const handlePrevious = useCallback(async () => {
-    if (currentStep?.id === 'callout-venue-selector') {
-      if (!await closeCalloutForTransition()) return;
-    }
+  const handlePrevious = useCallback(() => {
     const previous = TUTORIAL_STEPS[Math.max(0, stepIndex - 1)];
     if (previous?.id === 'events-tab') {
       router.replace(MAP_ROUTE);
-    } else if (previous?.id === 'events-list-explanation' || previous?.id === 'specials-tab') {
+    } else if (previous?.id === 'specials-tab') {
       router.replace('/(tabs)/events');
-    } else if (previous?.id === 'specials-list-explanation' || previous?.id === 'profile-facebook') {
+    } else if (previous?.id === 'profile-facebook') {
       router.replace('/(tabs)/specials');
     } else if (previous?.id === 'facebook-submission') {
       router.replace('/profile');
     }
     previousStep();
-  }, [closeCalloutForTransition, currentStep?.id, previousStep, router, stepIndex]);
+  }, [previousStep, router, stepIndex]);
 
   useEffect(
     () => registerTutorialAction('tutorial-previous', handlePrevious),
@@ -880,14 +359,11 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
 
   const handleSkip = useCallback(() => {
     stepAbortRef.current?.abort();
-    const shouldCloseCallout = currentStep?.id === 'callout-venue-selector';
     clearHighlightFlags();
     updateOwnedSpotlight(undefined);
     setTargetUnavailable(false);
-    setTutorialModalOverlay(null);
     skipTutorial();
-    if (shouldCloseCallout) void closeCalloutForTransition();
-  }, [closeCalloutForTransition, currentStep?.id, skipTutorial, updateOwnedSpotlight]);
+  }, [skipTutorial, updateOwnedSpotlight]);
 
   const handleRestart = useCallback(() => {
     restartTutorial();
@@ -904,63 +380,32 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
     };
   }, [handleRestart, startTutorial]);
 
-  const showRequiredFallback = targetUnavailable && ['events-tab', 'specials-tab', 'profile-facebook'].includes(currentStep?.id ?? '');
-  const clusterActionState = getTutorialClusterActionState(
-    currentStep?.id,
-    Boolean(targetClusterRef.current),
-    Boolean(spotlight),
-    targetUnavailable,
-  );
-  const clusterTargetReady = clusterActionState === 'ready';
+  const showRequiredFallback = targetUnavailable && [
+    'events-tab',
+    'specials-tab',
+    'profile-facebook',
+  ].includes(currentStep?.id ?? '');
   const showNext = Boolean(currentStep) && (
-    currentStep?.action !== 'interaction' ||
-    currentStep.id === 'cluster-click' ||
-    showRequiredFallback
+    currentStep?.action !== 'interaction' || showRequiredFallback
   );
-  const nextText = currentStep?.id === 'completion'
-    ? 'Start exploring'
-    : currentStep?.id === 'cluster-click'
-      ? openingCluster
-        ? 'Opening…'
-        : targetUnavailable
-          ? 'Continue'
-          : clusterTargetReady
-            ? 'Open cluster'
-            : 'Locating…'
-      : currentStep?.id === 'callout-venue-selector' && closingCallout
-        ? 'Closing…'
-      : 'Continue';
+  const nextText = currentStep?.id === 'completion' ? 'Start exploring' : 'Continue';
   const resolvedSheetPosition = currentStep?.id === 'completion'
     ? 'center'
     : currentStep?.id === 'facebook-submission'
       ? 'top'
-    : spotlight
-      ? spotlight.y + spotlight.height / 2 > screenHeight / 2 ? 'top' : 'bottom'
-      : currentStep?.sheetPosition ?? 'bottom';
+      : spotlight
+        ? spotlight.y + spotlight.height / 2 > screenHeight / 2 ? 'top' : 'bottom'
+        : currentStep?.sheetPosition ?? 'bottom';
 
   const renderTutorialSheet = useCallback(() => (
-    <TutorialSpotlight
-      spotlight={spotlight}
-      blockOutsideSpotlight={currentStep?.id === 'cluster-click'}
-      onSpotlightPress={
-        currentStep?.id === 'cluster-click' && clusterTargetReady && !openingCluster
-          ? handleNext
-          : undefined
-      }
-    >
+    <TutorialSpotlight spotlight={spotlight}>
       <TutorialBottomSheet
         stepId={currentStep!.id}
         title={currentStep!.title}
         content={currentStep!.content}
-        onNext={
-          openingCluster ||
-          closingCallout ||
-          (currentStep?.id === 'cluster-click' && !targetUnavailable && !clusterTargetReady)
-            ? undefined
-            : handleNext
-        }
-        onPrevious={closingCallout ? undefined : handlePrevious}
-        onSkip={closingCallout ? undefined : handleSkip}
+        onNext={handleNext}
+        onPrevious={handlePrevious}
+        onSkip={handleSkip}
         showPrevious={stepIndex > 0}
         showNext={showNext}
         showSkip={currentStep!.id !== 'completion'}
@@ -975,13 +420,10 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
     </TutorialSpotlight>
   ), [
     currentStep,
-    clusterTargetReady,
-    closingCallout,
     handleNext,
     handlePrevious,
     handleSkip,
     nextText,
-    openingCluster,
     resolvedSheetPosition,
     screenHeight,
     screenWidth,
@@ -991,22 +433,8 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
     targetUnavailable,
   ]);
 
-  useEffect(() => {
-    if (!isActive || !isTutorialModalHostedStep(currentStep?.id)) {
-      setTutorialModalOverlay(null);
-      return;
-    }
-    setTutorialModalOverlay(renderTutorialSheet);
-    return () => setTutorialModalOverlay(null);
-  }, [currentStep?.id, isActive, renderTutorialSheet]);
-
   return (
-    <View
-      ref={tutorialHostRef}
-      collapsable={false}
-      onLayout={measureTutorialHost}
-      style={{ flex: 1 }}
-    >
+    <View style={{ flex: 1 }}>
       {children}
       {isActive && currentStep?.id === 'welcome' && (
         <WelcomeScreen
@@ -1016,9 +444,7 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
           totalSteps={TUTORIAL_STEPS.length}
         />
       )}
-      {isActive && currentStep && currentStep.id !== 'welcome' && !isTutorialModalHostedStep(currentStep.id) && (
-        renderTutorialSheet()
-      )}
+      {isActive && currentStep && currentStep.id !== 'welcome' && renderTutorialSheet()}
     </View>
   );
 };

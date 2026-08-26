@@ -9,11 +9,8 @@ import {
   TUTORIAL_STEPS,
 } from '../config/tutorialSteps';
 import { amplitudeTrack } from '../lib/amplitudeAnalytics';
-import { useMapStore } from '../store/mapStore';
-import { Cluster, Venue } from '../types/events';
 import { TutorialManager, TutorialStatus } from '../types/tutorial';
 import {
-  getTutorialPreviousIndex,
   getTutorialStepAdvance,
 } from '../utils/tutorialStepAdvance';
 
@@ -44,30 +41,11 @@ export const useTutorial = (): TutorialManager => {
   const [tutorialStatus, setTutorialStatus] = useState<TutorialStatus | null>(null);
   const writeQueueRef = useRef<Promise<void>>(Promise.resolve());
   const statusRef = useRef<TutorialStatus | null>(null);
-  const calloutSnapshotRef = useRef<{
-    selectedVenues: Venue[];
-    selectedCluster: Cluster | null;
-  } | null>(null);
-  const skippedCalloutLessonRef = useRef(false);
-
   const currentStep = TUTORIAL_STEPS[currentStepIndex] ?? null;
 
   useEffect(() => {
     statusRef.current = tutorialStatus;
   }, [tutorialStatus]);
-
-  useEffect(() => {
-    if (!isActive || currentStep?.id !== 'callout-venue-selector') return;
-    const captureCallout = (state: ReturnType<typeof useMapStore.getState>) => {
-      if (!state.selectedVenues.length) return;
-      calloutSnapshotRef.current = {
-        selectedVenues: [...state.selectedVenues],
-        selectedCluster: state.selectedCluster,
-      };
-    };
-    captureCallout(useMapStore.getState());
-    return useMapStore.subscribe(captureCallout);
-  }, [currentStep?.id, isActive]);
 
   const storageKey = useCallback(
     () => (auth.currentUser ? `gathr:tutorial:${auth.currentUser.uid}:v2` : anonymousKey),
@@ -134,8 +112,6 @@ export const useTutorial = (): TutorialManager => {
   }), [loadStatus]);
 
   const startTutorial = useCallback(() => {
-    calloutSnapshotRef.current = null;
-    skippedCalloutLessonRef.current = false;
     const startingIndex = Math.min(
       Math.max(0, statusRef.current?.currentStep ?? 0),
       TUTORIAL_STEPS.length - 1,
@@ -155,23 +131,6 @@ export const useTutorial = (): TutorialManager => {
       const advance = getTutorialStepAdvance(index, stepCount);
       if (advance.nextIndex === index) return index;
 
-      if (advance.crossesFilterPills) {
-        const bypassedUnavailableCallout =
-          TUTORIAL_STEPS[index]?.id === 'cluster-click' &&
-          TUTORIAL_STEPS[advance.nextIndex]?.id === 'filter-pills';
-        skippedCalloutLessonRef.current = bypassedUnavailableCallout;
-        const { selectedVenues, selectedCluster } = useMapStore.getState();
-        if (bypassedUnavailableCallout) {
-          calloutSnapshotRef.current = null;
-        } else if (selectedVenues.length) {
-          calloutSnapshotRef.current = {
-            selectedVenues: [...selectedVenues],
-            selectedCluster,
-          };
-        }
-        (global as any).closeCallout?.();
-      }
-
       const status = statusRef.current ?? defaultStatus();
       persistStatus({
         ...status,
@@ -185,21 +144,7 @@ export const useTutorial = (): TutorialManager => {
   const previousStep = useCallback(() => {
     setCurrentStepIndex((index) => {
       if (index <= 0) return 0;
-      const shouldSkipCalloutLesson =
-        TUTORIAL_STEPS[index]?.id === 'filter-pills' &&
-        (skippedCalloutLessonRef.current || !calloutSnapshotRef.current);
-      if (
-        TUTORIAL_STEPS[index]?.id === 'filter-pills' &&
-        calloutSnapshotRef.current
-      ) {
-        const snapshot = calloutSnapshotRef.current;
-        const store = useMapStore.getState();
-        store.selectVenues(snapshot.selectedVenues);
-        store.selectCluster(snapshot.selectedCluster);
-        store.selectVenue(snapshot.selectedVenues[0] ?? null);
-      }
-      const previousIndex = getTutorialPreviousIndex(index, shouldSkipCalloutLesson);
-      if (shouldSkipCalloutLesson) skippedCalloutLessonRef.current = false;
+      const previousIndex = Math.max(0, index - 1);
       persistStatus({
         ...(statusRef.current ?? defaultStatus()),
         currentStep: previousIndex,
@@ -244,8 +189,6 @@ export const useTutorial = (): TutorialManager => {
   }, [pathname, persistStatus]);
 
   const restartTutorial = useCallback(() => {
-    calloutSnapshotRef.current = null;
-    skippedCalloutLessonRef.current = false;
     const reset = defaultStatus();
     persistStatus(reset);
     setCurrentStepIndex(0);
