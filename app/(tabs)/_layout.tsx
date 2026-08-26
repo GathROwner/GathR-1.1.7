@@ -68,7 +68,12 @@ const getTutorialTabMeasurement = (
 
 const getTutorialProfileButtonMeasurement = (
   measured: { x: number; y: number; width: number; height: number },
-) => measured;
+  topInset: number,
+) => Platform.OS === 'android'
+  // Native-stack header measurements are inset-relative on Android, unlike
+  // the root tutorial overlay. Translate them once into window coordinates.
+  ? { ...measured, y: measured.y + topInset }
+  : measured;
 
 const ACTIVE_TAB_INDICATOR_COLORS: Record<InstrumentedTabName, string> = {
   events: '#007AFF',
@@ -570,11 +575,11 @@ export default function TabLayout() {
   );
   const publishProfileButtonLayout = useCallback(() => {
     profileButtonRef.current?.measureInWindow((x: number, y: number, width: number, height: number) => {
-      const measurement = getTutorialProfileButtonMeasurement({ x, y, width, height });
+      const measurement = getTutorialProfileButtonMeasurement({ x, y, width, height }, insets.top);
       (global as any).profileFacebookLayout = measurement;
       publishTutorialMeasurement('profileFacebookLayout', measurement);
     });
-  }, []);
+  }, [insets.top]);
 
   useEffect(() => {
     if (!profileButtonHighlighted) return;
