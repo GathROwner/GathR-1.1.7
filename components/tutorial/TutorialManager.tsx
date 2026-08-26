@@ -393,7 +393,6 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
     };
   }, [
     currentStep,
-    demoCalloutVisible,
     facebookSubmissionLayout,
     isActive,
     pathname,
