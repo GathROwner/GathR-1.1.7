@@ -1,9 +1,10 @@
 import { TutorialStep } from '../types/tutorial';
 
 /**
- * Tutorial v2 has one user-visible welcome and six focused teaching states.
- * `legacyStepIds` preserves v1 analytics/completion compatibility when old
- * cards are consolidated into one coherent lesson.
+ * Tutorial v3 uses authentic, static examples for the volatile map cluster
+ * and callout lessons, then returns to real measured controls for the rest of
+ * the app. Each screen teaches one visual idea so people can move at their own
+ * pace without the map changing underneath them.
  */
 export const TUTORIAL_STEPS: TutorialStep[] = [
   {
@@ -15,16 +16,81 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
     action: 'next',
   },
   {
+    id: 'map-overview',
+    title: 'Everything nearby, in one view',
+    content: 'GathR brings local events and specials together on one map. Here is a real example of a busy area.',
+    staticScene: 'map-overview',
+    placement: 'bottom',
+    sheetPosition: 'bottom',
+    action: 'next',
+  },
+  {
+    id: 'cluster-click',
+    title: 'Clusters keep the map readable',
+    content: 'A tree marks an area where several nearby places have something going on.',
+    staticScene: 'cluster-tree',
+    placement: 'top',
+    sheetPosition: 'top',
+    action: 'next',
+  },
+  {
+    id: 'cluster-summary',
+    title: 'Read a cluster at a glance',
+    content: 'The tree, nearby numbers, and colour cues give you a quick picture before you open it.',
+    staticScene: 'cluster-summary',
+    placement: 'bottom',
+    sheetPosition: 'bottom',
+    action: 'next',
+  },
+  {
+    id: 'map-controls',
+    title: 'Keep your plans in view',
+    content: 'The controls across the top make it easy to browse dates, events, and specials without losing your place.',
+    staticScene: 'map-controls',
+    placement: 'top',
+    sheetPosition: 'top',
+    action: 'next',
+  },
+  {
+    id: 'callout-venue-selector',
+    title: 'Choose a nearby place',
+    content: 'Opening a cluster reveals the local places inside it. Swipe the venue rail to move between them.',
+    staticScene: 'callout-venues',
+    placement: 'bottom',
+    sheetPosition: 'bottom',
+    action: 'next',
+  },
+  {
+    id: 'callout-tabs',
+    title: 'Switch the kind of plan',
+    content: 'Use Events and Specials to move between what is happening and what is being offered at that place.',
+    staticScene: 'callout-tabs',
+    placement: 'top',
+    sheetPosition: 'top',
+    action: 'next',
+  },
+  {
+    id: 'callout-event-details',
+    title: 'The important details stay together',
+    content: 'Each card gives you the listing, place, timing, and useful actions without sending you back to social feeds.',
+    staticScene: 'callout-card',
+    placement: 'top',
+    sheetPosition: 'top',
+    action: 'next',
+  },
+  {
     id: 'filter-pills',
-    legacyStepIds: [
-      'cluster-click',
-      'callout-venue-selector',
-      'callout-tabs',
-      'callout-event-details',
-      'clear-filters',
-    ],
     title: 'Make the map yours',
-    content: 'Use filters to narrow what you see. Tap Show All whenever you want to reset.',
+    content: 'Use filters to narrow what you see by time and category.',
+    target: 'filter-pills',
+    placement: 'bottom',
+    sheetPosition: 'bottom',
+    action: 'next',
+  },
+  {
+    id: 'clear-filters',
+    title: 'Start fresh whenever you want',
+    content: 'Tap Show All to clear your choices and see everything nearby again.',
     target: 'filter-pills',
     placement: 'bottom',
     sheetPosition: 'bottom',
@@ -32,7 +98,6 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
   },
   {
     id: 'events-tab',
-    legacyStepIds: ['events-list-explanation', 'events-filters'],
     title: 'Browse every event',
     content: 'Tap Events to browse local plans without scrolling social feeds.',
     target: 'events-tab',
@@ -41,14 +106,45 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
     action: 'interaction',
   },
   {
+    id: 'events-list-explanation',
+    title: 'Your event feed, sorted for real life',
+    content: 'Each card puts the time, place, and key details in one quick scan.',
+    placement: 'top',
+    sheetPosition: 'top',
+    action: 'next',
+  },
+  {
+    id: 'events-filters',
+    title: 'Focus the event feed',
+    content: 'Use the filters at the top whenever you want to narrow the list around a date or interest.',
+    placement: 'top',
+    sheetPosition: 'top',
+    action: 'next',
+  },
+  {
     id: 'specials-tab',
-    legacyStepIds: ['specials-list-explanation', 'specials-filters'],
     title: 'Find food and drink specials',
     content: 'Tap Specials to see nearby happy hours and offers in one place.',
     target: 'specials-tab',
     placement: 'top',
     sheetPosition: 'top',
     action: 'interaction',
+  },
+  {
+    id: 'specials-list-explanation',
+    title: 'See specials without the scrolling',
+    content: 'Nearby food and drink offers are collected in one place, with the useful details already visible.',
+    placement: 'top',
+    sheetPosition: 'top',
+    action: 'next',
+  },
+  {
+    id: 'specials-filters',
+    title: 'Find the right offer faster',
+    content: 'Filter by time or category when you know what kind of plan you are looking for.',
+    placement: 'top',
+    sheetPosition: 'top',
+    action: 'next',
   },
   {
     id: 'profile-facebook',

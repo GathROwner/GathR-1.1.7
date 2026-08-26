@@ -18,6 +18,7 @@ const GATHR_GLOBE = require('../../assets/icon.png');
 
 interface Props extends TutorialTooltipProps {
   stepId?: string;
+  staticScene?: boolean;
   stepNumber?: number;
   totalSteps?: number;
   targetUnavailable?: boolean;
@@ -25,6 +26,7 @@ interface Props extends TutorialTooltipProps {
 
 export const TutorialBottomSheet: React.FC<Props> = ({
   stepId,
+  staticScene = false,
   title,
   content,
   onNext,
@@ -77,6 +79,7 @@ export const TutorialBottomSheet: React.FC<Props> = ({
         isClusterStep && styles.clusterCard,
         isCalloutStep && styles.calloutCard,
         isFeedExplanation && styles.feedExplanationCard,
+        staticScene && styles.staticSceneCard,
         {
           opacity: entrance,
           transform: [{
@@ -104,6 +107,7 @@ export const TutorialBottomSheet: React.FC<Props> = ({
         styles.progressHeader,
         isCalloutStep && styles.calloutProgressHeader,
         isFeedExplanation && styles.feedProgressHeader,
+        staticScene && styles.staticSceneProgressHeader,
       ]}>
         <Text style={styles.progressText}>{stepNumber} of {totalSteps}</Text>
         {showSkip && !isCompletion && (
@@ -123,6 +127,7 @@ export const TutorialBottomSheet: React.FC<Props> = ({
         isClusterStep && styles.clusterProgressTrack,
         isCalloutStep && styles.calloutProgressTrack,
         isFeedExplanation && styles.feedProgressTrack,
+        staticScene && styles.staticSceneProgressTrack,
       ]}>
         <View style={[styles.progressFill, { width: `${(stepNumber / totalSteps) * 100}%` }]} />
       </View>
@@ -133,6 +138,7 @@ export const TutorialBottomSheet: React.FC<Props> = ({
         isClusterStep && styles.clusterTitle,
         isCalloutStep && styles.calloutTitle,
         isFeedExplanation && styles.feedTitle,
+        staticScene && styles.staticSceneTitle,
       ]} maxFontSizeMultiplier={1.35}>
         {title}
       </Text>
@@ -142,6 +148,7 @@ export const TutorialBottomSheet: React.FC<Props> = ({
             styles.content,
             isCalloutStep && styles.calloutContent,
             isFeedExplanation && styles.feedContent,
+            staticScene && styles.staticSceneContent,
           ]}
           maxFontSizeMultiplier={1.45}
         >
@@ -161,6 +168,7 @@ export const TutorialBottomSheet: React.FC<Props> = ({
         isClusterStep && styles.clusterActions,
         isCalloutStep && styles.calloutActions,
         isFeedExplanation && styles.feedActions,
+        staticScene && styles.staticSceneActions,
       ]}>
         {showPrevious ? (
           <TouchableOpacity
@@ -173,6 +181,7 @@ export const TutorialBottomSheet: React.FC<Props> = ({
               styles.backButton,
               isCalloutStep && styles.calloutButton,
               isFeedExplanation && styles.feedButton,
+              staticScene && styles.staticSceneButton,
               !onPrevious && styles.actionDisabled,
             ]}
           >
@@ -194,6 +203,7 @@ export const TutorialBottomSheet: React.FC<Props> = ({
               isCompletion && styles.finishButton,
               isCalloutStep && styles.calloutButton,
               isFeedExplanation && styles.feedButton,
+              staticScene && styles.staticSceneButton,
               !onNext && styles.actionDisabled,
             ]}
           >
@@ -228,6 +238,7 @@ const styles = StyleSheet.create({
   clusterCard: { paddingTop: 13, paddingBottom: 13 },
   calloutCard: { borderRadius: 20, paddingHorizontal: 18, paddingTop: 11, paddingBottom: 11 },
   feedExplanationCard: { borderRadius: 20, paddingHorizontal: 18, paddingTop: 11, paddingBottom: 11 },
+  staticSceneCard: { borderRadius: 20, paddingHorizontal: 18, paddingTop: 11, paddingBottom: 11 },
   progressHeader: { minHeight: 25, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   progressText: { color: '#587085', fontSize: 13, fontWeight: '800' },
   headerSkip: { minWidth: 48, minHeight: 44, alignItems: 'flex-end', justifyContent: 'center' },
@@ -237,15 +248,19 @@ const styles = StyleSheet.create({
   calloutProgressHeader: { minHeight: 21 },
   calloutProgressTrack: { marginTop: 2, marginBottom: 8 },
   feedProgressHeader: { minHeight: 21 },
+  staticSceneProgressHeader: { minHeight: 21 },
   feedProgressTrack: { marginTop: 2, marginBottom: 8 },
+  staticSceneProgressTrack: { marginTop: 2, marginBottom: 8 },
   progressFill: { height: '100%', borderRadius: 2, backgroundColor: '#2497F3' },
   title: { color: '#0B2235', fontSize: 22, lineHeight: 27, fontWeight: '800', letterSpacing: -0.35 },
   clusterTitle: { fontSize: 21, lineHeight: 25 },
   calloutTitle: { fontSize: 19, lineHeight: 23 },
   feedTitle: { fontSize: 19, lineHeight: 23 },
+  staticSceneTitle: { fontSize: 19, lineHeight: 23 },
   content: { color: '#50677A', fontSize: 16, lineHeight: 22, marginTop: 7 },
   calloutContent: { fontSize: 14, lineHeight: 19, marginTop: 4 },
   feedContent: { fontSize: 14, lineHeight: 19, marginTop: 4 },
+  staticSceneContent: { fontSize: 14, lineHeight: 19, marginTop: 4 },
   fallbackNote: { flexDirection: 'row', alignItems: 'flex-start', backgroundColor: '#EEF6FC', borderRadius: 12, padding: 10, marginTop: 12, gap: 8 },
   calloutFallbackNote: { paddingVertical: 8, marginTop: 8 },
   fallbackText: { flex: 1, color: '#48667E', fontSize: 13, lineHeight: 18, fontWeight: '600' },
@@ -253,11 +268,13 @@ const styles = StyleSheet.create({
   clusterActions: { marginTop: 13 },
   calloutActions: { marginTop: 9 },
   feedActions: { marginTop: 9 },
+  staticSceneActions: { marginTop: 9 },
   backButton: { minHeight: 48, minWidth: 88, borderRadius: 14, borderWidth: 1, borderColor: '#D8E5EF', backgroundColor: '#F7FAFC', flexDirection: 'row', gap: 6, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 14 },
   backText: { color: '#39566E', fontSize: 15, fontWeight: '800' },
   nextButton: { minHeight: 50, minWidth: 116, borderRadius: 15, paddingHorizontal: 18, backgroundColor: '#168BE8', flexDirection: 'row', gap: 7, alignItems: 'center', justifyContent: 'center' },
   calloutButton: { minHeight: 44 },
   feedButton: { minHeight: 44 },
+  staticSceneButton: { minHeight: 44 },
   finishButton: { flex: 1, backgroundColor: '#0B9B6D' },
   nextText: { color: '#FFFFFF', fontSize: 16, fontWeight: '800' },
   actionDisabled: { opacity: 0.58 },

@@ -24,6 +24,12 @@ export interface TutorialStep {
   legacyStepIds?: string[];
   title: string;
   content?: string;
+  /**
+   * A deterministic, authentic GathR screen capture used when teaching a
+   * volatile map or callout surface. These scenes are explanatory only; the
+   * rest of the tour continues to use live, measured controls.
+   */
+  staticScene?: TutorialStaticSceneId;
   target?: string; // CSS selector or component identifier for spotlight
   placement?: 'top' | 'bottom' | 'left' | 'right' | 'center';
   sheetPosition?: 'top' | 'bottom' | 'center' | number; // ← NEW: Controls bottom sheet positioning
@@ -31,6 +37,15 @@ export interface TutorialStep {
   multiStep?: boolean; // Indicates if this step has sub-steps
   subSteps?: TutorialSubStep[];
 }
+
+export type TutorialStaticSceneId =
+  | 'map-overview'
+  | 'cluster-tree'
+  | 'cluster-summary'
+  | 'map-controls'
+  | 'callout-venues'
+  | 'callout-tabs'
+  | 'callout-card';
 
 export interface TutorialSubStep {
   id: string;
@@ -48,7 +63,10 @@ export interface TutorialSubStep {
  */
 export type TutorialStepId = 
   | 'welcome'
+  | 'map-overview'
   | 'cluster-click'
+  | 'cluster-summary'
+  | 'map-controls'
   | 'callout-venue-selector'
   | 'callout-tabs'
   | 'callout-event-details'

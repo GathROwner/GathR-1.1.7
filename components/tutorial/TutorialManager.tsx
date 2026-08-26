@@ -14,6 +14,7 @@ import {
   OwnedTutorialSpotlight,
 } from '../../utils/tutorialSpotlightOwnership';
 import { TutorialBottomSheet } from './TutorialBottomSheet';
+import { StaticTutorialScene } from './StaticTutorialScene';
 import { TutorialSpotlight } from './TutorialSpotlight';
 import { WelcomeScreen } from './WelcomeScreen';
 
@@ -399,8 +400,10 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
 
   const renderTutorialSheet = useCallback(() => (
     <TutorialSpotlight spotlight={spotlight}>
+      {currentStep?.staticScene && <StaticTutorialScene scene={currentStep.staticScene} />}
       <TutorialBottomSheet
         stepId={currentStep!.id}
+        staticScene={Boolean(currentStep!.staticScene)}
         title={currentStep!.title}
         content={currentStep!.content}
         onNext={handleNext}

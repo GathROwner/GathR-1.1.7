@@ -1,17 +1,11 @@
 import { getTutorialStepAdvance } from '../tutorialStepAdvance';
+import { TUTORIAL_STEPS } from '../../config/tutorialSteps';
 
 describe('tutorial step advance', () => {
-  it('records the legacy map lesson IDs when the filter lesson advances', () => {
+  it('records the introductory map example before the cluster lesson', () => {
     expect(getTutorialStepAdvance(1)).toEqual({
       nextIndex: 2,
-      completedIds: [
-        'filter-pills',
-        'cluster-click',
-        'callout-venue-selector',
-        'callout-tabs',
-        'callout-event-details',
-        'clear-filters',
-      ],
+      completedIds: ['map-overview'],
     });
   });
 
@@ -22,9 +16,22 @@ describe('tutorial step advance', () => {
     });
   });
 
+  it('keeps the cluster and callout lessons as distinct screens', () => {
+    expect(TUTORIAL_STEPS).toHaveLength(19);
+    expect(TUTORIAL_STEPS.slice(2, 8).map((step) => step.id)).toEqual([
+      'cluster-click',
+      'cluster-summary',
+      'map-controls',
+      'callout-venue-selector',
+      'callout-tabs',
+      'callout-event-details',
+    ]);
+  });
+
   it('clamps advancement at completion', () => {
-    expect(getTutorialStepAdvance(6, 3)).toEqual({
-      nextIndex: 6,
+    const finalIndex = TUTORIAL_STEPS.length - 1;
+    expect(getTutorialStepAdvance(finalIndex, 3)).toEqual({
+      nextIndex: finalIndex,
       completedIds: [],
     });
   });

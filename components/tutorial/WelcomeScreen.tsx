@@ -112,7 +112,7 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
         >
           <Text style={styles.skipText}>Skip for now</Text>
         </TouchableOpacity>
-        <Text style={styles.duration}>About one minute</Text>
+        <Text style={styles.duration}>About two minutes</Text>
         </ScrollView>
       </Animated.View>
     </View>
