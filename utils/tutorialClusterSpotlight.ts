@@ -24,6 +24,25 @@ const getSpotlightAroundCenter = (centerX: number, centerY: number): ComponentMe
   height: TUTORIAL_CLUSTER_SPOTLIGHT_SIZE,
 });
 
+export const isPointInsideTutorialSpotlightCircle = (
+  point: { x: number; y: number },
+  bounds: { width: number; height: number },
+): boolean => {
+  if (
+    ![point.x, point.y, bounds.width, bounds.height].every(Number.isFinite) ||
+    bounds.width <= 0 ||
+    bounds.height <= 0
+  ) {
+    return false;
+  }
+
+  const radius = Math.min(bounds.width, bounds.height) / 2;
+  return Math.hypot(
+    point.x - bounds.width / 2,
+    point.y - bounds.height / 2,
+  ) <= radius;
+};
+
 /**
  * MarkerView anchors the complete React child, not the circular cluster core.
  * When the marker grows a category story or count rail, this local layout is

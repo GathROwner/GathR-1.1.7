@@ -805,6 +805,11 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
     <TutorialSpotlight
       spotlight={spotlight}
       blockOutsideSpotlight={currentStep?.id === 'cluster-click'}
+      onSpotlightPress={
+        currentStep?.id === 'cluster-click' && !openingCluster
+          ? handleNext
+          : undefined
+      }
     >
       <TutorialBottomSheet
         stepId={currentStep!.id}

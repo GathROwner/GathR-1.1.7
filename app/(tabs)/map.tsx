@@ -136,6 +136,8 @@ import {
 import {
   appendTutorialClusterTarget,
   getTutorialClusterAnchorVenueKey,
+  getTutorialClusterBindingSignature,
+  isTutorialClusterBindingCurrent,
   resolveTutorialClusterTarget,
 } from '../../utils/tutorialClusterTarget';
 import { publishTutorialMeasurement } from '../../utils/tutorialReadiness';
@@ -2284,6 +2286,9 @@ interface ClusterSummaryBeaconProps {
   cluster: Cluster;
   isProcessing: boolean;
   isReady: boolean;
+  tutorialTargetRef?: React.RefObject<View | null>;
+  onTutorialWrapperLayout?: (layout: ComponentMeasurement) => void;
+  onTutorialCoreLayout?: (layout: ComponentMeasurement) => void;
 }
 
 const ClusterSummaryBeacon: React.FC<ClusterSummaryBeaconProps> = ({
@@ -2291,6 +2296,9 @@ const ClusterSummaryBeacon: React.FC<ClusterSummaryBeaconProps> = ({
   cluster,
   isProcessing,
   isReady,
+  tutorialTargetRef,
+  onTutorialWrapperLayout,
+  onTutorialCoreLayout,
 }) => {
   const visibleCategoryItems = categoryItems.slice(0, CLUSTER_SUMMARY_VISIBLE_CATEGORY_LIMIT);
   const dominantCategory = visibleCategoryItems[0]?.category ?? '';
@@ -2309,8 +2317,16 @@ const ClusterSummaryBeacon: React.FC<ClusterSummaryBeaconProps> = ({
     <View
       style={styles.markerWrapper}
       accessibilityLabel={`${totalContentCount} items at ${venueCount} ${venueCount === 1 ? 'venue' : 'venues'}`}
+      onLayout={onTutorialWrapperLayout
+        ? (event) => onTutorialWrapperLayout(event.nativeEvent.layout)
+        : undefined}
     >
       <View
+        ref={tutorialTargetRef}
+        collapsable={tutorialTargetRef ? false : undefined}
+        onLayout={onTutorialCoreLayout
+          ? (event) => onTutorialCoreLayout(event.nativeEvent.layout)
+          : undefined}
         style={[
           styles.clusterSummaryShell,
           {
@@ -2389,11 +2405,13 @@ interface TreeMarkerProps {
   tutorialTargetRef?: React.RefObject<View | null>;
   tutorialGeometryRef?: React.MutableRefObject<TutorialClusterLocalGeometry | null>;
   onTutorialGeometryReady?: (geometry: TutorialClusterLocalGeometry) => void;
+  tutorialBindingRevision?: number;
 }
 
 type LocalLayout = { x: number; y: number; width: number; height: number };
 type TutorialClusterLocalGeometry = TutorialClusterCoreGeometry & {
   clusterId: string;
+  bindingRevision: number;
 };
 
 const measureStableTutorialClusterCoreFrame = (
@@ -2457,7 +2475,7 @@ const measureStableTutorialClusterCoreFrame = (
   scheduleSample();
 });
 
-const TreeMarker: React.FC<TreeMarkerProps> = React.memo(({ cluster, isSelected, isProcessing = false, isReady = true, detailsEnabled = true, isActive = true, appearance = 'tree', detailMode, presentation = 'story', reduceMotionEnabled = false, tutorialTargetRef, tutorialGeometryRef, onTutorialGeometryReady }) => {
+const TreeMarker: React.FC<TreeMarkerProps> = React.memo(({ cluster, isSelected, isProcessing = false, isReady = true, detailsEnabled = true, isActive = true, appearance = 'tree', detailMode, presentation = 'story', reduceMotionEnabled = false, tutorialTargetRef, tutorialGeometryRef, onTutorialGeometryReady, tutorialBindingRevision = 0 }) => {
   // Determine color based on time status
   const color = getTimeStatusColor(cluster.timeStatus);
 
@@ -2475,21 +2493,25 @@ const TreeMarker: React.FC<TreeMarkerProps> = React.memo(({ cluster, isSelected,
     }
     const geometry = {
       clusterId: String(cluster.id),
+      bindingRevision: tutorialBindingRevision,
       wrapper: tutorialWrapperLayoutRef.current,
       core: tutorialCoreLayoutRef.current,
     };
     tutorialGeometryRef.current = geometry;
     onTutorialGeometryReady?.(geometry);
-  }, [cluster.id, onTutorialGeometryReady, tutorialGeometryRef]);
+  }, [cluster.id, onTutorialGeometryReady, tutorialBindingRevision, tutorialGeometryRef]);
 
   useEffect(() => {
     publishTutorialLocalGeometry();
     return () => {
-      if (tutorialGeometryRef?.current?.clusterId === String(cluster.id)) {
+      if (
+        tutorialGeometryRef?.current?.clusterId === String(cluster.id) &&
+        tutorialGeometryRef.current.bindingRevision === tutorialBindingRevision
+      ) {
         tutorialGeometryRef.current = null;
       }
     };
-  }, [cluster.id, publishTutorialLocalGeometry, tutorialGeometryRef]);
+  }, [cluster.id, publishTutorialLocalGeometry, tutorialBindingRevision, tutorialGeometryRef]);
   const isBeacon = appearance === 'beacon';
   const isStoryBeacon = isBeacon && presentation === 'story';
   const isMultiVenue = cluster.venues.length > 1;
@@ -2562,34 +2584,22 @@ const TreeMarker: React.FC<TreeMarkerProps> = React.memo(({ cluster, isSelected,
   }
 
   if (isBeacon && presentation === 'summary') {
-    const summaryBeacon = (
+    return (
       <ClusterSummaryBeacon
         categoryItems={clusterCategoryItems}
         cluster={cluster}
         isProcessing={isProcessing}
         isReady={isReady}
-      />
-    );
-    if (!tutorialTargetRef && !tutorialGeometryRef) return summaryBeacon;
-
-    return (
-      <View
-        ref={tutorialTargetRef}
-        collapsable={false}
-        onLayout={(event) => {
-          const layout = event.nativeEvent.layout;
+        tutorialTargetRef={tutorialTargetRef}
+        onTutorialWrapperLayout={tutorialGeometryRef ? (layout) => {
           tutorialWrapperLayoutRef.current = layout;
-          tutorialCoreLayoutRef.current = {
-            x: 0,
-            y: 0,
-            width: layout.width,
-            height: layout.height,
-          };
           publishTutorialLocalGeometry();
-        }}
-      >
-        {summaryBeacon}
-      </View>
+        } : undefined}
+        onTutorialCoreLayout={tutorialGeometryRef ? (layout) => {
+          tutorialCoreLayoutRef.current = layout;
+          publishTutorialLocalGeometry();
+        } : undefined}
+      />
     );
   }
 
@@ -2898,7 +2908,8 @@ const TreeMarker: React.FC<TreeMarkerProps> = React.memo(({ cluster, isSelected,
     prevProps.reduceMotionEnabled === nextProps.reduceMotionEnabled &&
     prevProps.tutorialTargetRef === nextProps.tutorialTargetRef &&
     prevProps.tutorialGeometryRef === nextProps.tutorialGeometryRef &&
-    prevProps.onTutorialGeometryReady === nextProps.onTutorialGeometryReady
+    prevProps.onTutorialGeometryReady === nextProps.onTutorialGeometryReady &&
+    prevProps.tutorialBindingRevision === nextProps.tutorialBindingRevision
   );
 });
 
@@ -3332,18 +3343,28 @@ useEffect(() => {
   const tutorialTargetAnchorVenueKeyRef = useRef<string | null>(null);
   const tutorialCurrentClusterRef = useRef<Cluster | null>(null);
   const tutorialTargetClusterIdRef = useRef<string | null>(null);
+  const tutorialTargetBindingSignatureRef = useRef<string | null>(null);
+  const tutorialTargetBindingRevisionRef = useRef(0);
   const tutorialGeometryRemeasureFrameRef = useRef<number | null>(null);
   const [tutorialTargetClusterId, setTutorialTargetClusterId] = useState<string | null>(null);
-  const assignTutorialClusterTarget = useCallback((cluster: Cluster | null) => {
+  const [tutorialTargetBindingRevision, setTutorialTargetBindingRevision] = useState(0);
+  const assignTutorialClusterTarget = useCallback((
+    cluster: Cluster | null,
+    forceRevision = false,
+  ) => {
     tutorialCurrentClusterRef.current = cluster;
     const nextId = cluster ? String(cluster.id) : null;
-    if (tutorialTargetClusterIdRef.current === nextId) return;
+    const nextSignature = cluster ? getTutorialClusterBindingSignature(cluster) : null;
+    if (!forceRevision && tutorialTargetBindingSignatureRef.current === nextSignature) return;
 
     void runTutorialAction('tutorial-cluster-rebinding');
+    tutorialTargetBindingSignatureRef.current = nextSignature;
+    tutorialTargetBindingRevisionRef.current += 1;
     tutorialTargetClusterIdRef.current = nextId;
     tutorialClusterCoreRef.current = null;
     tutorialClusterLocalGeometryRef.current = null;
     setTutorialTargetClusterId(nextId);
+    setTutorialTargetBindingRevision(tutorialTargetBindingRevisionRef.current);
   }, []);
   const resolveCurrentTutorialCluster = useCallback((requested?: Cluster | null) => {
     const currentClusters = useMapStore.getState().clusters;
@@ -3382,6 +3403,7 @@ useEffect(() => {
     const tutorialUi = useTutorialUiStore.getState();
     if (
       geometry.clusterId !== tutorialTargetClusterIdRef.current ||
+      geometry.bindingRevision !== tutorialTargetBindingRevisionRef.current ||
       !isFocusedRef.current ||
       tutorialCameraFocusActiveRef.current ||
       !tutorialUi.isVisible ||
@@ -3398,7 +3420,8 @@ useEffect(() => {
       const currentTarget = tutorialCurrentClusterRef.current;
       if (
         currentTarget &&
-        String(currentTarget.id) === tutorialTargetClusterIdRef.current
+        String(currentTarget.id) === tutorialTargetClusterIdRef.current &&
+        geometry.bindingRevision === tutorialTargetBindingRevisionRef.current
       ) {
         void runTutorialAction('measure-cluster', currentTarget);
       }
@@ -7175,7 +7198,7 @@ lastOpenedClusterIdRef.current = cluster.id;
       tutorialCameraIdleResolverRef.current?.();
       tutorialCameraFocusActiveRef.current = true;
       setIgnoreProgrammaticTrace(true, 'tutorial_cluster_focus');
-      assignTutorialClusterTarget(currentTarget);
+      assignTutorialClusterTarget(currentTarget, true);
 
       if (!isFocusedRef.current) {
         await new Promise<void>((resolve) => {
@@ -7244,6 +7267,10 @@ lastOpenedClusterIdRef.current = cluster.id;
     if (!currentTarget || !coordinate || !mapRef.current) return false;
     assignTutorialClusterTarget(currentTarget);
     const currentTargetId = String(currentTarget.id);
+    const capturedBinding = {
+      clusterId: currentTargetId,
+      revision: tutorialTargetBindingRevisionRef.current,
+    };
 
     let projectionTimeout: ReturnType<typeof setTimeout> | undefined;
     const point = await Promise.race([
@@ -7268,13 +7295,22 @@ lastOpenedClusterIdRef.current = cluster.id;
       () => tutorialClusterCoreRef.current,
     );
     const localGeometry = tutorialClusterLocalGeometryRef.current;
-    const currentLocalGeometry = localGeometry?.clusterId === currentTargetId
+    const currentLocalGeometry =
+      localGeometry?.clusterId === currentTargetId &&
+      localGeometry.bindingRevision === capturedBinding.revision
       ? localGeometry
       : null;
-    const targetStillCurrent =
-      tutorialTargetClusterIdRef.current === currentTargetId &&
+    const targetStillCurrent = isTutorialClusterBindingCurrent(
+      capturedBinding,
+      {
+        clusterId: tutorialTargetClusterIdRef.current,
+        revision: tutorialTargetBindingRevisionRef.current,
+      },
+    ) &&
       currentLocalGeometry !== null;
-    const measurement = targetStillCurrent && measuredCoreFrame && isTutorialClusterCoreFrameUsable(
+    if (!targetStillCurrent || !currentLocalGeometry) return false;
+
+    const measurement = measuredCoreFrame && isTutorialClusterCoreFrameUsable(
       measuredCoreFrame,
       projectedCenter,
       viewport,
@@ -9659,7 +9695,7 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
           ? 38
           : cluster.venues.length > 1 ? 92 : 76;
         const estimatedMarkerWidth = gathrPresentation === 'summary' ? 84 : 136;
-        const beaconDock = projectedPoint && mapDimensions
+        const beaconDock = !isTutorialTarget && projectedPoint && mapDimensions
           ? getGathrBeaconViewportDock({
               markerHeight: estimatedMarkerHeight,
               markerWidth: estimatedMarkerWidth,
@@ -9695,7 +9731,9 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
           });
         }
 
-        const markerKey = `cluster-${cluster.id}-${markerViewEpoch}`;
+        const markerKey = isTutorialTarget
+          ? `cluster-${cluster.id}-${markerViewEpoch}-tutorial-${tutorialTargetBindingRevision}`
+          : `cluster-${cluster.id}-${markerViewEpoch}`;
 
         return (
           <MapboxGL.MarkerView
@@ -9776,6 +9814,11 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
                 onTutorialGeometryReady={
                   isTutorialTarget
                     ? handleTutorialClusterGeometryReady
+                    : undefined
+                }
+                tutorialBindingRevision={
+                  isTutorialTarget
+                    ? tutorialTargetBindingRevision
                     : undefined
                 }
               />

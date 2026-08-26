@@ -119,6 +119,7 @@ export interface TutorialSpotlightProps {
   spotlight?: SpotlightConfig;
   children?: React.ReactNode;
   blockOutsideSpotlight?: boolean;
+  onSpotlightPress?: () => void;
 }
 
 export interface TutorialTooltipProps {

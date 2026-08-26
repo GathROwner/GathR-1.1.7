@@ -3,6 +3,7 @@ import {
   getTutorialClusterSpotlightMeasurement,
   getTutorialClusterSpotlightFromCoreFrame,
   isTutorialClusterCoreFrameUsable,
+  isPointInsideTutorialSpotlightCircle,
   TUTORIAL_CLUSTER_SPOTLIGHT_SIZE,
 } from '../tutorialClusterSpotlight';
 
@@ -77,5 +78,22 @@ describe('tutorial cluster spotlight', () => {
       { width: 360, height: 800 },
       geometry,
     )).toBe(false);
+  });
+
+  it('accepts only the circular spotlight area, not its square corners', () => {
+    const bounds = { width: 88, height: 88 };
+    expect(isPointInsideTutorialSpotlightCircle({ x: 44, y: 44 }, bounds)).toBe(true);
+    expect(isPointInsideTutorialSpotlightCircle({ x: 44, y: 0 }, bounds)).toBe(true);
+    expect(isPointInsideTutorialSpotlightCircle({ x: 4, y: 4 }, bounds)).toBe(false);
+    expect(isPointInsideTutorialSpotlightCircle({ x: Number.NaN, y: 44 }, bounds)).toBe(false);
+  });
+
+  it('centers the summary aperture on its shell rather than the pin-tip wrapper', () => {
+    const summaryGeometry = {
+      wrapper: { x: 0, y: 0, width: 65, height: 35 },
+      core: { x: 0, y: 0, width: 65, height: 31 },
+    };
+
+    expect(getTutorialClusterLocalCoreOffset(summaryGeometry)).toEqual({ x: 0, y: -19.5 });
   });
 });

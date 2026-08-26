@@ -17,6 +17,7 @@ import MaskedView from '@react-native-masked-view/masked-view';
 import Svg, { Rect, Defs, Mask, Circle } from 'react-native-svg';
 import { TUTORIAL_CONFIG } from '../../config/tutorialSteps';
 import { TutorialSpotlightProps } from '../../types/tutorial';
+import { isPointInsideTutorialSpotlightCircle } from '../../utils/tutorialClusterSpotlight';
 
 const SPOTLIGHT_PADDING = 8;
 
@@ -24,6 +25,7 @@ export const TutorialSpotlight: React.FC<TutorialSpotlightProps> = ({
   spotlight,
   children,
   blockOutsideSpotlight = false,
+  onSpotlightPress,
 }) => {
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
   const pulseAnim = useRef(new Animated.Value(1)).current;
@@ -277,6 +279,38 @@ return (
       </>
     )}
 
+    {blockOutsideSpotlight && forceCircle && (
+      <View
+        accessibilityLabel="Open highlighted cluster"
+        accessibilityRole="button"
+        accessibilityState={{ disabled: !onSpotlightPress }}
+        onAccessibilityTap={onSpotlightPress}
+        style={[
+          styles.spotlightTouchTarget,
+          {
+            top: paddedY,
+            left: paddedX,
+            width: paddedWidth,
+            height: paddedHeight,
+            borderRadius: Math.min(paddedWidth, paddedHeight) / 2,
+          },
+        ]}
+        onStartShouldSetResponder={() => true}
+        onResponderRelease={(event) => {
+          const point = {
+            x: event.nativeEvent.locationX,
+            y: event.nativeEvent.locationY,
+          };
+          if (isPointInsideTutorialSpotlightCircle(point, {
+            width: paddedWidth,
+            height: paddedHeight,
+          })) {
+            onSpotlightPress?.();
+          }
+        }}
+      />
+    )}
+
 
       {showPulse && (
         <>
@@ -322,6 +356,7 @@ const styles = StyleSheet.create({
   fullOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: TUTORIAL_CONFIG.OVERLAY_COLOR },
   touchBlockerFill: { ...StyleSheet.absoluteFillObject, backgroundColor: 'transparent' },
   touchBlocker: { position: 'absolute', backgroundColor: 'transparent' },
+  spotlightTouchTarget: { position: 'absolute', backgroundColor: 'transparent' },
   borderRing: { position: 'absolute', borderWidth: 3, borderColor: '#FFFFFF', backgroundColor: 'transparent', shadowColor: '#2497F3', shadowOffset: { width:0, height:0 }, shadowOpacity:0.9, shadowRadius:8, elevation:0 },
   glowRing: { position: 'absolute', borderWidth: 2, borderColor: '#2497F3', backgroundColor: 'transparent', shadowColor: '#2497F3', shadowOffset: {width:0, height:0}, shadowOpacity:0.55, shadowRadius:14, elevation:0 },
 });

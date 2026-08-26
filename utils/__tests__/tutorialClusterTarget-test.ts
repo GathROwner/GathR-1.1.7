@@ -3,7 +3,9 @@ import {
   appendTutorialClusterTarget,
   doesTutorialCalloutMatchAnchor,
   getTutorialClusterAnchorVenueKey,
+  getTutorialClusterBindingSignature,
   isTutorialClusterCalloutTarget,
+  isTutorialClusterBindingCurrent,
   resolveTutorialClusterTarget,
 } from '../tutorialClusterTarget';
 
@@ -92,5 +94,61 @@ describe('tutorial cluster target', () => {
       .toBe(true);
     expect(doesTutorialCalloutMatchAnchor([venue('other')], 'anchor')).toBe(false);
     expect(doesTutorialCalloutMatchAnchor([venue('anchor')], null)).toBe(false);
+  });
+
+  it('changes the binding signature when a same-ID marker moves or changes shape', () => {
+    const initial = {
+      ...cluster('same', ['anchor']),
+      categories: ['Music'],
+      clusterType: 'single',
+      interestLevel: 'medium',
+      isBroadcasting: false,
+      timeStatus: 'today',
+    } as Cluster;
+    const moved = {
+      ...initial,
+      venues: [venue('anchor', 46.25, -63.11)],
+    } as Cluster;
+    const reshaped = {
+      ...initial,
+      categories: ['Food', 'Music'],
+      eventCount: 10,
+    } as Cluster;
+
+    expect(getTutorialClusterBindingSignature(moved))
+      .not.toBe(getTutorialClusterBindingSignature(initial));
+    expect(getTutorialClusterBindingSignature(reshaped))
+      .not.toBe(getTutorialClusterBindingSignature(initial));
+  });
+
+  it('keeps the binding signature deterministic when venue/category order changes', () => {
+    const forward = {
+      ...cluster('same', []),
+      categories: ['Music', 'Food'],
+      clusterType: 'multi',
+      interestLevel: 'medium',
+      isBroadcasting: false,
+      timeStatus: 'today',
+      venues: [venue('a'), venue('b')],
+    } as Cluster;
+    const reverse = {
+      ...forward,
+      categories: ['Food', 'Music'],
+      venues: [venue('b'), venue('a')],
+    } as Cluster;
+
+    expect(getTutorialClusterBindingSignature(reverse))
+      .toBe(getTutorialClusterBindingSignature(forward));
+  });
+
+  it('rejects a stale A binding after an A to B to A revision cycle', () => {
+    expect(isTutorialClusterBindingCurrent(
+      { clusterId: 'a', revision: 1 },
+      { clusterId: 'a', revision: 3 },
+    )).toBe(false);
+    expect(isTutorialClusterBindingCurrent(
+      { clusterId: 'a', revision: 3 },
+      { clusterId: 'a', revision: 3 },
+    )).toBe(true);
   });
 });

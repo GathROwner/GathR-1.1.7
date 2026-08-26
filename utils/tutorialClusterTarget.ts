@@ -1,5 +1,10 @@
 import type { Cluster, Venue } from '../types/events';
 
+export interface TutorialClusterBinding {
+  clusterId: string | null;
+  revision: number;
+}
+
 export const getTutorialClusterAnchorVenueKey = (cluster: Cluster): string | null => {
   const candidates = cluster.venues.filter((venue) =>
     typeof venue.locationKey === 'string' &&
@@ -29,6 +34,36 @@ export const getTutorialClusterAnchorVenueKey = (cluster: Cluster): string | nul
     return leftDistance - rightDistance || left.locationKey.localeCompare(right.locationKey);
   })[0].locationKey;
 };
+
+export const getTutorialClusterBindingSignature = (cluster: Cluster): string => JSON.stringify([
+  String(cluster.id),
+  cluster.clusterType,
+  cluster.timeStatus,
+  cluster.interestLevel,
+  cluster.isBroadcasting,
+  cluster.eventCount,
+  cluster.specialCount,
+  cluster.hasNewContent ?? false,
+  cluster.containsCityLevelEvent ?? false,
+  cluster.containsRouteEvent ?? false,
+  [...(cluster.categories ?? [])].sort(),
+  cluster.venues
+    .map((venue) => [
+      venue.locationKey,
+      venue.latitude,
+      venue.longitude,
+    ])
+    .sort(([leftKey], [rightKey]) => String(leftKey).localeCompare(String(rightKey))),
+]);
+
+export const isTutorialClusterBindingCurrent = (
+  captured: TutorialClusterBinding,
+  current: TutorialClusterBinding,
+): boolean => Boolean(
+  captured.clusterId &&
+  captured.clusterId === current.clusterId &&
+  captured.revision === current.revision
+);
 
 export const isTutorialClusterCalloutTarget = (cluster: Cluster): boolean => {
   if (!Array.isArray(cluster.venues) || cluster.venues.length === 0) return false;
