@@ -1,6 +1,7 @@
 import {
   getTutorialPreviousIndex,
   getTutorialStepAdvance,
+  shouldSkipTutorialCalloutLesson,
 } from '../tutorialStepAdvance';
 
 describe('tutorial step advance', () => {
@@ -37,5 +38,20 @@ describe('tutorial step advance', () => {
     expect(getTutorialPreviousIndex(3, true)).toBe(1);
     expect(getTutorialPreviousIndex(3, false)).toBe(2);
     expect(getTutorialPreviousIndex(4, true)).toBe(3);
+  });
+
+  it('keeps the demo callout lesson available for Back navigation', () => {
+    expect(shouldSkipTutorialCalloutLesson({
+      currentStepId: 'filter-pills',
+      skippedCalloutLesson: false,
+      hasCalloutSnapshot: false,
+      hasCalloutFixture: true,
+    })).toBe(false);
+    expect(shouldSkipTutorialCalloutLesson({
+      currentStepId: 'filter-pills',
+      skippedCalloutLesson: false,
+      hasCalloutSnapshot: false,
+      hasCalloutFixture: false,
+    })).toBe(true);
   });
 });

@@ -146,6 +146,7 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
     skipTutorial,
     completeTutorial,
     restartTutorial,
+    setCalloutFixtureAvailable,
   } = useTutorial();
   const [ownedSpotlight, setOwnedSpotlight] = useState<OwnedTutorialSpotlight>();
   const ownedSpotlightRef = useRef<OwnedTutorialSpotlight | undefined>(undefined);
@@ -318,7 +319,13 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
         return;
       }
 
-      if (currentStep.id === 'callout-venue-selector' && demoCalloutVisibleRef.current) {
+      if (currentStep.id === 'callout-venue-selector') {
+        if (!demoCalloutVisibleRef.current) {
+          setCalloutFixtureAvailable(true);
+          setDemoCalloutReady(false);
+          setDemoCalloutVisible(true);
+          return;
+        }
         const measurement = demoVenueSelectorLayoutRef.current
           && cleanMeasurement(demoVenueSelectorLayoutRef.current, screenWidth, screenHeight);
         if (!measurement) {
@@ -402,6 +409,7 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
     router,
     screenHeight,
     screenWidth,
+    setCalloutFixtureAvailable,
     updateOwnedSpotlight,
   ]);
 
@@ -510,6 +518,7 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
       updateOwnedSpotlight(undefined);
       setOpeningCluster(true);
       setDemoCalloutReady(false);
+      setCalloutFixtureAvailable(true);
       setDemoCalloutVisible(true);
       demoCalloutTimeoutRef.current = setTimeout(() => {
         if (
@@ -518,6 +527,7 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
         ) {
           setDemoCalloutVisible(false);
           setOpeningCluster(false);
+          setCalloutFixtureAvailable(false);
           setTargetUnavailable(true);
           clusterTransitionInFlightRef.current = false;
         }
@@ -556,6 +566,7 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
     nextStep,
     pathname,
     router,
+    setCalloutFixtureAvailable,
     stepIndex,
     spotlight,
     targetUnavailable,
@@ -568,6 +579,8 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
       setDemoCalloutReady(false);
       demoVenueSelectorLayoutRef.current = null;
       updateOwnedSpotlight(undefined);
+    } else if (currentStep?.id === 'cluster-click') {
+      setCalloutFixtureAvailable(false);
     }
     const previous = TUTORIAL_STEPS[Math.max(0, stepIndex - 1)];
     if (previous?.id === 'events-tab') {
@@ -580,7 +593,7 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
       router.replace('/profile');
     }
     previousStep();
-  }, [currentStep?.id, previousStep, router, stepIndex, updateOwnedSpotlight]);
+  }, [currentStep?.id, previousStep, router, setCalloutFixtureAvailable, stepIndex, updateOwnedSpotlight]);
 
   useEffect(
     () => registerTutorialAction('tutorial-previous', handlePrevious),
@@ -599,9 +612,10 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
     setDemoCalloutVisible(false);
     setDemoCalloutReady(false);
     demoVenueSelectorLayoutRef.current = null;
+    setCalloutFixtureAvailable(false);
     setTutorialModalOverlay(null);
     skipTutorial();
-  }, [skipTutorial, updateOwnedSpotlight]);
+  }, [setCalloutFixtureAvailable, skipTutorial, updateOwnedSpotlight]);
 
   const handleRestart = useCallback(() => {
     restartTutorial();

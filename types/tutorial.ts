@@ -103,6 +103,7 @@ export interface TutorialManager {
   completeTutorial: () => void;
   restartTutorial: () => void;
   markStepCompleted: (stepId: string) => void;
+  setCalloutFixtureAvailable: (available: boolean) => void;
 }
 
 /**
