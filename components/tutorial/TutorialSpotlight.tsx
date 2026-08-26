@@ -351,7 +351,7 @@ return (
 };
 
 const styles = StyleSheet.create({
-  container: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'transparent' },
+  container: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 100, elevation: 100, backgroundColor: 'transparent' },
   maskContainer: { ...StyleSheet.absoluteFillObject },
   fullOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: TUTORIAL_CONFIG.OVERLAY_COLOR },
   touchBlockerFill: { ...StyleSheet.absoluteFillObject, backgroundColor: 'transparent' },
