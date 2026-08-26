@@ -12,6 +12,13 @@ interface ViewportSize {
   height: number;
 }
 
+const MAX_NATIVE_CORE_ALIGNMENT_DRIFT = 18;
+
+interface NativeCoreFrameOptions {
+  allowAndroidVerticalAnchorVariant?: boolean;
+  allowFreshBoundFrameWithoutGeometry?: boolean;
+}
+
 const isPositiveFiniteFrame = (frame: ComponentMeasurement): boolean =>
   [frame.x, frame.y, frame.width, frame.height].every(Number.isFinite) &&
   frame.width > 0 &&
@@ -66,42 +73,85 @@ export const getTutorialClusterLocalCoreOffset = (
 };
 
 /**
- * Reject MarkerView host-surface measurements and stale/zero frames before
- * they can move the tutorial aperture away from the projected map anchor.
+ * A freshly bound native core ref is the most accurate source of truth for the
+ * visible marker. Validate it against the small set of anchor geometries the
+ * native MarkerView can legitimately use; a broad radius can admit a stale
+ * same-ID marker after its coordinate changes.
  */
 export const isTutorialClusterCoreFrameUsable = (
   frame: ComponentMeasurement,
   projectedCenter: { x: number; y: number },
   viewport: ViewportSize,
   localGeometry: TutorialClusterLocalGeometry | null,
+  options: NativeCoreFrameOptions = {},
 ): boolean => {
   if (!isPositiveFiniteFrame(frame)) return false;
-  const localOffset = getTutorialClusterLocalCoreOffset(localGeometry);
-  if (!localOffset || !localGeometry) return false;
-  if (
+  if (localGeometry && (
     Math.abs(frame.width - localGeometry.core.width) > 2 ||
     Math.abs(frame.height - localGeometry.core.height) > 2
-  ) {
+  )) {
     return false;
+  }
+
+  if (!localGeometry) {
+    const plausibleCoreSize =
+      frame.width <= TUTORIAL_CLUSTER_SPOTLIGHT_SIZE + 24 &&
+      frame.height <= TUTORIAL_CLUSTER_SPOTLIGHT_SIZE + 24;
+    return Boolean(
+      options.allowFreshBoundFrameWithoutGeometry &&
+      plausibleCoreSize &&
+      frame.x >= 0 &&
+      frame.y >= 0 &&
+      frame.x + frame.width <= viewport.width &&
+      frame.y + frame.height <= viewport.height
+    );
   }
 
   const centerX = frame.x + frame.width / 2;
   const centerY = frame.y + frame.height / 2;
-  const expectedCenterX = projectedCenter.x + localOffset.x;
-  const expectedCenterY = projectedCenter.y + localOffset.y;
-  const expectedCenterDistance = Math.hypot(
-    centerX - expectedCenterX,
-    centerY - expectedCenterY,
-  );
+  const localOffset = getTutorialClusterLocalCoreOffset(localGeometry);
+  const expectedCenters = localOffset
+    ? [
+        {
+          x: projectedCenter.x + localOffset.x,
+          y: projectedCenter.y + localOffset.y,
+        },
+        ...(options.allowAndroidVerticalAnchorVariant
+          ? [{
+              x: projectedCenter.x + localOffset.x,
+              y: projectedCenter.y,
+            }]
+          : []),
+      ]
+    : [];
+  if (expectedCenters.length === 0) return false;
+  const alignmentDistance = Math.min(...expectedCenters.map((expected) => Math.hypot(
+    centerX - expected.x,
+    centerY - expected.y,
+  )));
 
   return (
     centerX >= 0 &&
     centerX <= viewport.width &&
     centerY >= 0 &&
     centerY <= viewport.height &&
-    expectedCenterDistance <= 2
+    alignmentDistance <= MAX_NATIVE_CORE_ALIGNMENT_DRIFT
   );
 };
+
+export const isTutorialClusterProjectionCentered = (
+  point: readonly [number, number],
+  viewport: ViewportSize,
+  tolerance = 12,
+): boolean => (
+  point.length === 2 &&
+  [point[0], point[1], viewport.width, viewport.height, tolerance].every(Number.isFinite) &&
+  viewport.width > 0 &&
+  viewport.height > 0 &&
+  tolerance >= 0 &&
+  Math.abs(point[0] - viewport.width / 2) <= tolerance &&
+  Math.abs(point[1] - viewport.height / 2) <= tolerance
+);
 
 export const getTutorialClusterSpotlightFromCoreFrame = (
   frame: ComponentMeasurement,

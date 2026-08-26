@@ -122,6 +122,7 @@ import {
 } from '../../utils/tabSwitchTrace';
 import { registerTutorialAction, runTutorialAction } from '../../utils/tutorialActions';
 import { createTutorialBooleanGate } from '../../utils/tutorialBooleanGate';
+import { isTutorialCalloutPresentationReady as getTutorialCalloutPresentationReady } from '../../utils/tutorialCalloutReadiness';
 import {
   closePresentedTutorialCallout,
   shouldActivateAndroidRetapOverlay,
@@ -131,8 +132,10 @@ import {
   getTutorialClusterSpotlightFromCoreFrame,
   getTutorialClusterSpotlightMeasurement,
   isTutorialClusterCoreFrameUsable,
+  isTutorialClusterProjectionCentered,
   type TutorialClusterLocalGeometry as TutorialClusterCoreGeometry,
 } from '../../utils/tutorialClusterSpotlight';
+import { createTutorialClusterGeometryGate } from '../../utils/tutorialClusterGeometryGate';
 import {
   appendTutorialClusterTarget,
   getTutorialClusterAnchorVenueKey,
@@ -3279,6 +3282,12 @@ useEffect(() => {
   const [renderedCalloutCluster, setRenderedCalloutCluster] = useState<Cluster | null>(null);
   const [calloutLayoutReadyKey, setCalloutLayoutReadyKey] = useState<string | null>(null);
   const [calloutPresentationReadyKey, setCalloutPresentationReadyKey] = useState<string | null>(null);
+  const [calloutReadinessEpoch, setCalloutReadinessEpoch] = useState(0);
+  const resetCalloutReadiness = useCallback(() => {
+    setCalloutLayoutReadyKey(null);
+    setCalloutPresentationReadyKey(null);
+    setCalloutReadinessEpoch((epoch) => epoch + 1);
+  }, []);
   const [isCalloutClosingVisually, setIsCalloutClosingVisually] = useState(false);
   const [mapFirstFrameRendered, setMapFirstFrameRendered] = useState<boolean>(false);
   const [mapTabOverlaysReady, setMapTabOverlaysReady] = useState<boolean>(Platform.OS !== 'android');
@@ -3346,6 +3355,7 @@ useEffect(() => {
   const tutorialTargetBindingSignatureRef = useRef<string | null>(null);
   const tutorialTargetBindingRevisionRef = useRef(0);
   const tutorialGeometryRemeasureFrameRef = useRef<number | null>(null);
+  const tutorialClusterGeometryGate = useMemo(() => createTutorialClusterGeometryGate(), []);
   const [tutorialTargetClusterId, setTutorialTargetClusterId] = useState<string | null>(null);
   const [tutorialTargetBindingRevision, setTutorialTargetBindingRevision] = useState(0);
   const assignTutorialClusterTarget = useCallback((
@@ -3357,15 +3367,22 @@ useEffect(() => {
     const nextSignature = cluster ? getTutorialClusterBindingSignature(cluster) : null;
     if (!forceRevision && tutorialTargetBindingSignatureRef.current === nextSignature) return;
 
-    void runTutorialAction('tutorial-cluster-rebinding');
+    const shouldClearExistingSpotlight =
+      tutorialTargetClusterIdRef.current !== nextId ||
+      tutorialTargetBindingSignatureRef.current !== nextSignature;
+    void runTutorialAction('tutorial-cluster-rebinding', shouldClearExistingSpotlight);
     tutorialTargetBindingSignatureRef.current = nextSignature;
     tutorialTargetBindingRevisionRef.current += 1;
     tutorialTargetClusterIdRef.current = nextId;
+    tutorialClusterGeometryGate.reset({
+      clusterId: nextId,
+      revision: tutorialTargetBindingRevisionRef.current,
+    });
     tutorialClusterCoreRef.current = null;
     tutorialClusterLocalGeometryRef.current = null;
     setTutorialTargetClusterId(nextId);
     setTutorialTargetBindingRevision(tutorialTargetBindingRevisionRef.current);
-  }, []);
+  }, [tutorialClusterGeometryGate]);
   const resolveCurrentTutorialCluster = useCallback((requested?: Cluster | null) => {
     const currentClusters = useMapStore.getState().clusters;
     const requestedId = requested ? String(requested.id) : tutorialTargetClusterIdRef.current;
@@ -3378,6 +3395,7 @@ useEffect(() => {
 
   useEffect(() => {
     if (!tutorialTargetAnchorVenueKeyRef.current) return;
+    if (clusters.length === 0) return;
     const reboundTarget = resolveTutorialClusterTarget(
       clusters,
       tutorialTargetAnchorVenueKeyRef.current,
@@ -3403,7 +3421,12 @@ useEffect(() => {
     const tutorialUi = useTutorialUiStore.getState();
     if (
       geometry.clusterId !== tutorialTargetClusterIdRef.current ||
-      geometry.bindingRevision !== tutorialTargetBindingRevisionRef.current ||
+      geometry.bindingRevision !== tutorialTargetBindingRevisionRef.current
+    ) {
+      return;
+    }
+    tutorialClusterGeometryGate.publish(geometry);
+    if (
       !isFocusedRef.current ||
       tutorialCameraFocusActiveRef.current ||
       !tutorialUi.isVisible ||
@@ -3426,7 +3449,7 @@ useEffect(() => {
         void runTutorialAction('measure-cluster', currentTarget);
       }
     });
-  }, []);
+  }, [tutorialClusterGeometryGate]);
 
   useEffect(() => () => {
     if (tutorialGeometryRemeasureFrameRef.current !== null) {
@@ -3434,6 +3457,8 @@ useEffect(() => {
       tutorialGeometryRemeasureFrameRef.current = null;
     }
   }, []);
+
+  useEffect(() => () => tutorialClusterGeometryGate.dispose(), [tutorialClusterGeometryGate]);
   const routeFeatureCalloutRequestRef = useRef(0);
   const mapStyleSwitchInFlightRef = useRef(false);
   const pendingMapStyleCameraRef = useRef<{
@@ -3526,6 +3551,7 @@ useEffect(() => {
   const androidClusterHitTargetsRef = useRef<AndroidClusterHitTarget[]>([]);
   const tutorialCameraIdleResolverRef = useRef<(() => void) | null>(null);
   const tutorialCameraFocusActiveRef = useRef(false);
+  const tutorialCameraFocusRequestIdRef = useRef(0);
   const androidCalloutTeardownTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const androidControlsReleaseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const androidControlsReleaseSequenceRef = useRef(0);
@@ -3670,9 +3696,12 @@ useEffect(() => {
     () => `${presentedCalloutClusterId ?? 'single'}::${presentedCalloutSignature || 'no-venues'}`,
     [presentedCalloutClusterId, presentedCalloutSignature]
   );
-  const isRenderedCalloutPresentationReady =
-    isRenderedCalloutLayoutReady &&
-    calloutPresentationReadyKey === renderedCalloutPresentationKey;
+  const isRenderedCalloutPresentationReady = getTutorialCalloutPresentationReady({
+    hasSelectedCalloutRendered,
+    layoutReadyKey: calloutLayoutReadyKey,
+    presentationReadyKey: calloutPresentationReadyKey,
+    renderedPresentationKey: renderedCalloutPresentationKey,
+  });
   const tutorialCalloutSelectedGate = useMemo(() => createTutorialBooleanGate(false), []);
   const tutorialCalloutPresentedGate = useMemo(() => createTutorialBooleanGate(false), []);
   const tutorialCalloutReadyGate = useMemo(() => createTutorialBooleanGate(false), []);
@@ -4005,8 +4034,7 @@ useEffect(() => {
       }
       setRenderedCalloutVenues([]);
       setRenderedCalloutCluster(null);
-      setCalloutLayoutReadyKey(null);
-      setCalloutPresentationReadyKey(null);
+      resetCalloutReadiness();
     };
 
     const cleanupTask = InteractionManager.runAfterInteractions(() => {
@@ -4021,11 +4049,11 @@ useEffect(() => {
     };
   }, [
     isFocused,
+    resetCalloutReadiness,
     selectVenue,
     setActiveFilterPanel,
     setRenderedCalloutCluster,
     setRenderedCalloutVenues,
-    setCalloutLayoutReadyKey,
   ]);
 
   useLayoutEffect(() => {
@@ -4073,12 +4101,12 @@ useEffect(() => {
     }
     setRenderedCalloutVenues([]);
     setRenderedCalloutCluster(null);
-    setCalloutLayoutReadyKey(null);
-    setCalloutPresentationReadyKey(null);
+    resetCalloutReadiness();
     isCalloutClosingVisuallyRef.current = false;
     setIsCalloutClosingVisually(false);
   }, [
     isFocused,
+    resetCalloutReadiness,
     selectVenue,
     setActiveFilterPanel,
   ]);
@@ -4298,6 +4326,7 @@ useEffect(() => {
 
   // Actual map viewport dimensions (accounting for header, tab bar, safe areas)
   const [mapDimensions, setMapDimensions] = useState<{ width: number; height: number } | null>(null);
+  const mapDimensionsRef = useRef<{ width: number; height: number } | null>(null);
   const [, setBeaconProjectionEpoch] = useState(0);
   const [mapScreenOffset, setMapScreenOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [iosMapViewRevision, setIosMapViewRevision] = useState(0);
@@ -4366,6 +4395,7 @@ const hideCapTimeoutRef = useRef<NodeJS.Timeout | null>(null); // force-show cap
 
 
 const lastCameraChangeRef = useRef<number>(0);
+const lastMapIdleAtRef = useRef<number>(0);
 const lastViewportFetchZoomRef = useRef<number | null>(null);
 
 
@@ -5482,14 +5512,14 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
       : [...venuesToRender.map((venue) => venue.locationKey || venue.venue)].sort().join('|');
     if (venueSignature !== lastPromotedVenueSigRef.current) {
       lastPromotedVenueSigRef.current = venueSignature;
-      setCalloutLayoutReadyKey(null);
-      setCalloutPresentationReadyKey(null);
+      resetCalloutReadiness();
     }
     setRenderedCalloutVenues(venuesToRender);
     setRenderedCalloutCluster(clusterToRender);
   }, [
     cancelPendingAndroidCalloutTeardown,
     restoreAndroidCalloutContainerForInteraction,
+    resetCalloutReadiness,
     setAndroidAncillaryOverlaysNativeVisibility,
     setAndroidRetapOverlayPointerEvents,
   ]);
@@ -5882,9 +5912,8 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
     calloutAnimation.setValue(SCREEN_HEIGHT);
     setRenderedCalloutVenues([]);
     setRenderedCalloutCluster(null);
-    setCalloutLayoutReadyKey(null);
-    setCalloutPresentationReadyKey(null);
-  }, [calloutAnimation]);
+    resetCalloutReadiness();
+  }, [calloutAnimation, resetCalloutReadiness]);
 
   const scheduleAndroidDeferredCalloutTeardown = useCallback((reason: string) => {
     if (Platform.OS !== 'android') {
@@ -6257,8 +6286,7 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
       }
       setRenderedCalloutVenues([]);
       setRenderedCalloutCluster(null);
-      setCalloutLayoutReadyKey(null);
-      setCalloutPresentationReadyKey(null);
+      resetCalloutReadiness();
       setIsCalloutClosingVisually(false);
 
       traceMapEvent('callout_close_animation_finished', {
@@ -6284,6 +6312,7 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
     renderedCalloutClusterId,
     renderedCalloutPresentationKey,
     renderedCalloutSignature,
+    resetCalloutReadiness,
     scheduleAndroidDeferredCalloutTeardown,
     selectedCalloutSignature,
     selectedClusterId,
@@ -7187,10 +7216,18 @@ lastOpenedClusterIdRef.current = cluster.id;
   }), [closeCallout, tutorialCalloutPresentedGate, tutorialCalloutSelectedGate]);
 
   useEffect(() => {
-    const unregister = registerTutorialAction('focus-cluster', async (target: Cluster) => {
+    const unregister = registerTutorialAction('focus-cluster', async (
+      target: Cluster,
+      signal?: AbortSignal,
+    ) => {
       const anchorVenueKey = getTutorialClusterAnchorVenueKey(target);
-      if (!anchorVenueKey || !cameraRef.current) return false;
+      if (!anchorVenueKey || !cameraRef.current || signal?.aborted) return false;
 
+      const focusRequestId = ++tutorialCameraFocusRequestIdRef.current;
+      const requestIsCurrent = () => (
+        tutorialCameraFocusRequestIdRef.current === focusRequestId &&
+        !signal?.aborted
+      );
       tutorialTargetAnchorVenueKeyRef.current = anchorVenueKey;
       const currentTarget = resolveCurrentTutorialCluster(target);
       const coordinate = currentTarget ? getClusterMapCoordinate(currentTarget) : null;
@@ -7200,57 +7237,149 @@ lastOpenedClusterIdRef.current = cluster.id;
       setIgnoreProgrammaticTrace(true, 'tutorial_cluster_focus');
       assignTutorialClusterTarget(currentTarget, true);
 
-      if (!isFocusedRef.current) {
-        await new Promise<void>((resolve) => {
+      try {
+        if (!isFocusedRef.current) {
+          await new Promise<void>((resolve) => {
+            let settled = false;
+            const finish = () => {
+              if (settled) return;
+              settled = true;
+              clearTimeout(timeout);
+              signal?.removeEventListener('abort', finish);
+              if (tutorialRouteFocusResolverRef.current === finish) {
+                tutorialRouteFocusResolverRef.current = null;
+              }
+              resolve();
+            };
+            const timeout = setTimeout(finish, 2500);
+            tutorialRouteFocusResolverRef.current = finish;
+            signal?.addEventListener('abort', finish, { once: true });
+          });
+        }
+        if (!requestIsCurrent()) return false;
+
+        const projectTarget = async (): Promise<readonly [number, number] | null> => {
+          if (!mapRef.current || !requestIsCurrent()) return null;
+          let projectionTimeout: ReturnType<typeof setTimeout> | undefined;
+          try {
+            const projectedPoint = await Promise.race([
+              mapRef.current.getPointInView(coordinate),
+              new Promise<null>((resolve) => {
+                projectionTimeout = setTimeout(() => resolve(null), 250);
+              }),
+            ]).finally(() => {
+              if (projectionTimeout) clearTimeout(projectionTimeout);
+            });
+            if (!requestIsCurrent()) return null;
+            return Array.isArray(projectedPoint) && projectedPoint.length === 2
+              ? [Number(projectedPoint[0]), Number(projectedPoint[1])]
+              : null;
+          } catch {
+            return null;
+          }
+        };
+        const waitForTwoFrames = () => new Promise<boolean>((resolve) => {
           let settled = false;
-          const finish = () => {
+          let firstFrame: number | null = null;
+          let secondFrame: number | null = null;
+          const finish = (completed: boolean) => {
             if (settled) return;
             settled = true;
             clearTimeout(timeout);
-            if (tutorialRouteFocusResolverRef.current === finish) {
-              tutorialRouteFocusResolverRef.current = null;
-            }
-            resolve();
+            if (firstFrame !== null) cancelAnimationFrame(firstFrame);
+            if (secondFrame !== null) cancelAnimationFrame(secondFrame);
+            signal?.removeEventListener('abort', onAbort);
+            resolve(completed);
           };
-          const timeout = setTimeout(finish, 2500);
-          tutorialRouteFocusResolverRef.current = finish;
+          const onAbort = () => finish(false);
+          const timeout = setTimeout(() => finish(false), 120);
+          signal?.addEventListener('abort', onAbort, { once: true });
+          firstFrame = requestAnimationFrame(() => {
+            secondFrame = requestAnimationFrame(() => finish(true));
+          });
+          if (!requestIsCurrent()) finish(false);
         });
-      }
-
-      await new Promise<void>((resolve) => {
-        let settled = false;
-        let fallbackTimer: ReturnType<typeof setTimeout>;
-        const finish = () => {
-          if (settled) return;
-          settled = true;
-          clearTimeout(fallbackTimer);
-          if (tutorialCameraIdleResolverRef.current === finish) {
-            tutorialCameraIdleResolverRef.current = null;
-          }
-          if (tutorialCameraFocusActiveRef.current) {
-            tutorialCameraFocusActiveRef.current = false;
-            setIgnoreProgrammaticTrace(false, 'tutorial_cluster_focus_settled');
-          }
-          resolve();
+        const mapLayout = (global as any).mapViewLayout;
+        const currentMapDimensions = mapDimensionsRef.current;
+        const projectionViewport = {
+          width: Number(mapLayout?.width ?? currentMapDimensions?.width ?? 0),
+          height: Number(mapLayout?.height ?? currentMapDimensions?.height ?? 0),
         };
-        fallbackTimer = setTimeout(finish, 1600);
-        tutorialCameraIdleResolverRef.current = finish;
-        cameraRef.current?.setCamera({
-          centerCoordinate: coordinate,
-          animationDuration: 240,
-        });
-      });
+        const firstProjectedPoint = await projectTarget();
+        const firstProjectionCentered = Boolean(
+          firstProjectedPoint &&
+          isTutorialClusterProjectionCentered(firstProjectedPoint, projectionViewport)
+        );
+        const mapIdleFollowedLatestCameraChange =
+          lastMapIdleAtRef.current > 0 &&
+          lastMapIdleAtRef.current >= lastCameraChangeRef.current;
+        let targetAlreadyCentered =
+          firstProjectionCentered &&
+          mapIdleFollowedLatestCameraChange &&
+          !isMapMovingRef.current;
 
-      const reboundTarget = resolveCurrentTutorialCluster(currentTarget);
-      if (!reboundTarget) {
-        assignTutorialClusterTarget(null);
-        return false;
+        // Some Android no-op camera sets do not emit onMapIdle. Preserve that
+        // fast path only when two projected frames remain centered and no camera
+        // tick occurs between them; a route/hotspot animation crossing center
+        // therefore cannot be mistaken for a settled map.
+        if (firstProjectionCentered && !targetAlreadyCentered) {
+          const cameraChangeAtFirstProjection = lastCameraChangeRef.current;
+          const framesCompleted = await waitForTwoFrames();
+          const secondProjectedPoint = framesCompleted ? await projectTarget() : null;
+          targetAlreadyCentered = Boolean(
+            secondProjectedPoint &&
+            isTutorialClusterProjectionCentered(secondProjectedPoint, projectionViewport) &&
+            lastCameraChangeRef.current === cameraChangeAtFirstProjection &&
+            !isMapMovingRef.current
+          );
+        }
+        if (!requestIsCurrent()) return false;
+
+        if (!targetAlreadyCentered) {
+          await new Promise<void>((resolve) => {
+            let settled = false;
+            let fallbackTimer: ReturnType<typeof setTimeout>;
+            const finish = () => {
+              if (settled) return;
+              settled = true;
+              clearTimeout(fallbackTimer);
+              signal?.removeEventListener('abort', finish);
+              if (tutorialCameraIdleResolverRef.current === finish) {
+                tutorialCameraIdleResolverRef.current = null;
+              }
+              resolve();
+            };
+            fallbackTimer = setTimeout(finish, 1000);
+            tutorialCameraIdleResolverRef.current = finish;
+            signal?.addEventListener('abort', finish, { once: true });
+            cameraRef.current?.setCamera({
+              centerCoordinate: coordinate,
+              animationDuration: 240,
+            });
+          });
+        }
+        if (!requestIsCurrent()) return false;
+
+        const reboundTarget = resolveCurrentTutorialCluster(currentTarget);
+        if (!reboundTarget) {
+          assignTutorialClusterTarget(null);
+          return false;
+        }
+        assignTutorialClusterTarget(reboundTarget);
+        return true;
+      } finally {
+        if (
+          tutorialCameraFocusRequestIdRef.current === focusRequestId &&
+          tutorialCameraFocusActiveRef.current
+        ) {
+          tutorialCameraFocusActiveRef.current = false;
+          setIgnoreProgrammaticTrace(false, 'tutorial_cluster_focus_settled');
+        }
       }
-      assignTutorialClusterTarget(reboundTarget);
-      return true;
     });
 
     return () => {
+      tutorialCameraFocusRequestIdRef.current += 1;
       tutorialRouteFocusResolverRef.current?.();
       tutorialCameraIdleResolverRef.current?.();
       if (tutorialCameraFocusActiveRef.current) {
@@ -7291,37 +7420,66 @@ lastOpenedClusterIdRef.current = cluster.id;
       y: mapOriginY + Number(point[1]),
     };
     const viewport = Dimensions.get('window');
-    const measuredCoreFrame = await measureStableTutorialClusterCoreFrame(
-      () => tutorialClusterCoreRef.current,
-    );
-    const localGeometry = tutorialClusterLocalGeometryRef.current;
-    const currentLocalGeometry =
-      localGeometry?.clusterId === currentTargetId &&
-      localGeometry.bindingRevision === capturedBinding.revision
-      ? localGeometry
-      : null;
+    let currentLocalGeometry = tutorialClusterGeometryGate.get(capturedBinding);
+    const [measuredCoreFrame, awaitedLocalGeometry] = await Promise.all([
+      measureStableTutorialClusterCoreFrame(() => tutorialClusterCoreRef.current),
+      currentLocalGeometry
+        ? Promise.resolve(currentLocalGeometry)
+        : tutorialClusterGeometryGate.waitFor(capturedBinding, { timeoutMs: 700 }),
+    ]);
+    currentLocalGeometry = currentLocalGeometry ?? awaitedLocalGeometry;
     const targetStillCurrent = isTutorialClusterBindingCurrent(
       capturedBinding,
       {
         clusterId: tutorialTargetClusterIdRef.current,
         revision: tutorialTargetBindingRevisionRef.current,
       },
-    ) &&
-      currentLocalGeometry !== null;
-    if (!targetStillCurrent || !currentLocalGeometry) return false;
+    );
+    if (!targetStillCurrent) return false;
 
-    const measurement = measuredCoreFrame && isTutorialClusterCoreFrameUsable(
+    let measurement = measuredCoreFrame && isTutorialClusterCoreFrameUsable(
       measuredCoreFrame,
       projectedCenter,
       viewport,
       currentLocalGeometry,
+      {
+        allowAndroidVerticalAnchorVariant: Platform.OS === 'android',
+        allowFreshBoundFrameWithoutGeometry: true,
+      },
     )
       ? getTutorialClusterSpotlightFromCoreFrame(measuredCoreFrame)
-      : getTutorialClusterSpotlightMeasurement(
-          [Number(point[0]), Number(point[1])],
-          { x: mapOriginX, y: mapOriginY },
-          currentLocalGeometry,
+      : null;
+
+    if (!measurement) {
+      if (!isTutorialClusterBindingCurrent(
+        capturedBinding,
+        {
+          clusterId: tutorialTargetClusterIdRef.current,
+          revision: tutorialTargetBindingRevisionRef.current,
+        },
+      )) return false;
+
+      const retriedCoreFrame = measuredCoreFrame ?? await measureStableTutorialClusterCoreFrame(
+          () => tutorialClusterCoreRef.current,
+          350,
         );
+      measurement = retriedCoreFrame && isTutorialClusterCoreFrameUsable(
+        retriedCoreFrame,
+        projectedCenter,
+        viewport,
+        currentLocalGeometry,
+        {
+          allowAndroidVerticalAnchorVariant: Platform.OS === 'android',
+          allowFreshBoundFrameWithoutGeometry: true,
+        },
+      )
+        ? getTutorialClusterSpotlightFromCoreFrame(retriedCoreFrame)
+        : getTutorialClusterSpotlightMeasurement(
+            [Number(point[0]), Number(point[1])],
+            { x: mapOriginX, y: mapOriginY },
+            currentLocalGeometry,
+          );
+    }
 
     if (!measurement) return false;
 
@@ -7330,7 +7488,7 @@ lastOpenedClusterIdRef.current = cluster.id;
       measurement,
     );
     return true;
-  }), [assignTutorialClusterTarget, resolveCurrentTutorialCluster]);
+  }), [assignTutorialClusterTarget, resolveCurrentTutorialCluster, tutorialClusterGeometryGate]);
 
   const handleAndroidRetapOverlayResponderRelease = useCallback((event: GestureResponderEvent): boolean => {
     if (
@@ -9732,7 +9890,7 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
         }
 
         const markerKey = isTutorialTarget
-          ? `cluster-${cluster.id}-${markerViewEpoch}-tutorial-${tutorialTargetBindingRevision}`
+          ? `cluster-${cluster.id}-${markerViewEpoch}-tutorial-coordinate-${coordinates[0]}-${coordinates[1]}`
           : `cluster-${cluster.id}-${markerViewEpoch}`;
 
         return (
@@ -9785,6 +9943,7 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
                 </View>
               )}
               <TreeMarker
+                key={isTutorialTarget ? `tutorial-target-${tutorialTargetBindingRevision}` : undefined}
                 cluster={cluster}
                 isSelected={isSelected}
                 isProcessing={processingClusterId === cluster.id}
@@ -9951,6 +10110,7 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
         surfaceView={Platform.OS === 'android' ? false : undefined}
 onLayout={(event) => {
   const { width, height, x, y } = event.nativeEvent.layout;
+  mapDimensionsRef.current = { width, height };
   setMapDimensions({ width, height });
   setMapScreenOffset({ x, y });
   scheduleIosMapViewLayoutRefresh(width, height);
@@ -9961,6 +10121,7 @@ onLayout={(event) => {
   const nativeHandle = (mapRef.current as any)?._nativeRef;
   if (nativeHandle?.measureInWindow) {
     nativeHandle.measureInWindow((absX: number, absY: number, absWidth: number, absHeight: number) => {
+      mapDimensionsRef.current = { width: absWidth, height: absHeight };
       setMapDimensions({ width: absWidth, height: absHeight });
       setMapScreenOffset({ x: absX, y: absY });
       (global as any).mapViewLayout = {
@@ -9980,6 +10141,7 @@ onLayout={(event) => {
   }
 }}
 onMapIdle={() => {
+  lastMapIdleAtRef.current = Date.now();
   const tutorialResolverAtIdle = tutorialCameraIdleResolverRef.current;
   if (Platform.OS === 'android') {
     androidZoomTapLatencyProbeRef.current.lastMapIdleAt = Date.now();
@@ -10795,6 +10957,7 @@ Owner: Map UX stability on Android • Last validated: 2025-09-04
                     : presentedCalloutPresentationKey
                 );
               }}
+              readinessEpoch={calloutReadinessEpoch}
               onEventSelected={handleEventSelected}
             />
           </View>

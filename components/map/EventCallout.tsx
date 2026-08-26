@@ -23,6 +23,7 @@ import { toggleSavedEvent as toggleSavedEventSvc } from '../../services/userServ
 import { amplitudeTrack } from '../../lib/amplitudeAnalytics';
 import { publishTutorialMeasurement as registerTutorialMeasurement } from '../../utils/tutorialReadiness';
 import { composeTutorialCalloutMeasurement } from '../../utils/tutorialCalloutMeasurement';
+import { shouldRepublishTutorialCalloutReadiness } from '../../utils/tutorialCalloutReadiness';
 import { createTutorialPresentationSettler } from '../../utils/tutorialPresentationSettler';
 import { runTutorialAction } from '../../utils/tutorialActions';
 import { shouldRouteTutorialCalloutBack } from '../../utils/tutorialCalloutClosing';
@@ -2538,6 +2539,7 @@ interface EventCalloutProps {
   onEventSelected?: (event: Event) => void;
   onLayoutReady?: () => void;
   onPresentationReady?: () => void;
+  readinessEpoch: number;
 }
 
 const EventCallout: React.FC<EventCalloutProps> = ({ 
@@ -2548,6 +2550,7 @@ const EventCallout: React.FC<EventCalloutProps> = ({
   onEventSelected,
   onLayoutReady,
   onPresentationReady,
+  readinessEpoch,
 }) => {
   // Add store subscription to get fresh event data
   const storeEvents = useMapStore((state) => state.events);
@@ -2648,6 +2651,8 @@ const EventCallout: React.FC<EventCalloutProps> = ({
     height: number;
   } | null>(null);
   const [isEventTabsHighlighted, setEventTabsHighlighted] = useState(false);
+  const onLayoutReadyRef = useRef(onLayoutReady);
+  onLayoutReadyRef.current = onLayoutReady;
   const onPresentationReadyRef = useRef(onPresentationReady);
   onPresentationReadyRef.current = onPresentationReady;
 
@@ -2903,6 +2908,7 @@ const [calloutState, setCalloutState] = useState<CalloutState>('expanded');
   const scrollYRef = useRef(0);  // Track current scroll position for gesture handling
   const currentStateRef = useRef<CalloutState>('expanded');
   const hasReportedInitialLayoutRef = useRef(false);
+  const lastPublishedReadinessEpochRef = useRef<number | null>(null);
   const [calloutLayoutReady, setCalloutLayoutReady] = useState(false);
   const hasExitedInitialCompactTabRef = useRef(false);
   const [initialCompactTabLayoutSettled, setInitialCompactTabLayoutSettled] = useState(false);
@@ -2940,7 +2946,6 @@ const [calloutState, setCalloutState] = useState<CalloutState>('expanded');
       return;
     }
 
-    console.warn('[HydrateProbe] DEFER (hydration effect ran)', { clusterId: cluster?.id, venuesLen: venues.length });
     setAndroidInitialContentHydrated(false);
 
     let cancelled = false;
@@ -2952,7 +2957,6 @@ const [calloutState, setCalloutState] = useState<CalloutState>('expanded');
       secondFrame = requestAnimationFrame(() => {
         hydrationTimer = setTimeout(() => {
           if (!cancelled) {
-            console.warn('[HydrateProbe] HYDRATE', { clusterId: cluster?.id });
             setAndroidInitialContentHydrated(true);
           }
         }, ANDROID_INITIAL_CONTENT_HYDRATION_DELAY_MS);
@@ -4252,6 +4256,19 @@ useEffect(() => {
   };
 }, [cluster?.id, safeTopOffset, useStaticIosCalloutPresentation, venues.length]);
 
+useEffect(() => {
+  if (!shouldRepublishTutorialCalloutReadiness({
+    hasPositiveLayout: calloutLayoutReady && hasReportedInitialLayoutRef.current,
+    presentationSettled: calloutPresentationSettled,
+    readinessEpoch,
+    lastPublishedEpoch: lastPublishedReadinessEpochRef.current,
+  })) return;
+
+  lastPublishedReadinessEpochRef.current = readinessEpoch;
+  onLayoutReadyRef.current?.();
+  onPresentationReadyRef.current?.();
+}, [calloutLayoutReady, calloutPresentationSettled, readinessEpoch]);
+
 
 
   const handleTouchStart = (e: NativeSyntheticEvent<any>) => {
@@ -4392,9 +4409,11 @@ useEffect(() => {
         style={calloutContainerStyle}
         onLayout={(event: LayoutChangeEvent) => {
           const { height, width, x, y } = event.nativeEvent.layout;
-          setCalloutTutorialLayout({ x, y, width, height });
-          if (!calloutLayoutReady) {
-            setCalloutLayoutReady(true);
+          const hasPositiveLayout =
+            [height, width, x, y].every(Number.isFinite) && height > 0 && width > 0;
+          if (hasPositiveLayout) {
+            setCalloutTutorialLayout({ x, y, width, height });
+            if (!calloutLayoutReady) setCalloutLayoutReady(true);
           }
           traceMapEvent('event_callout_on_layout', {
             height,
@@ -4413,7 +4432,7 @@ useEffect(() => {
             navBarOffset,
             bottomInset,
           });
-          if (!hasReportedInitialLayoutRef.current) {
+          if (hasPositiveLayout && !hasReportedInitialLayoutRef.current) {
             hasReportedInitialLayoutRef.current = true;
             traceMapEvent('event_callout_initial_layout_ready', {
               height,
@@ -4425,7 +4444,7 @@ useEffect(() => {
               activeTab,
               calloutState,
             });
-            onLayoutReady?.();
+            onLayoutReadyRef.current?.();
           }
         }}
       >

@@ -9,6 +9,8 @@ interface StaticDebugCalloutProps {
   cluster: Cluster | null;
   onClose: () => void;
   onLayoutReady?: () => void;
+  onPresentationReady?: () => void;
+  readinessEpoch?: number;
   onEventSelected?: (event: Event) => void;
 }
 

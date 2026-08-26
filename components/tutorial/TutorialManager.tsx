@@ -424,9 +424,9 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
     return true;
   }), []);
 
-  useEffect(() => registerTutorialAction('tutorial-cluster-rebinding', () => {
+  useEffect(() => registerTutorialAction('tutorial-cluster-rebinding', (shouldClear = true) => {
     if (currentStepIdRef.current !== 'cluster-click') return false;
-    setOwnedSpotlight(undefined);
+    if (shouldClear) setOwnedSpotlight(undefined);
     return true;
   }), []);
 
@@ -479,7 +479,7 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
           return;
         }
         targetClusterRef.current = target;
-        const focused = await runTutorialAction('focus-cluster', target);
+        const focused = await runTutorialAction('focus-cluster', target, controller.signal);
         if (!focused || controller.signal.aborted) {
           setTargetUnavailable(true);
           return;
@@ -494,16 +494,13 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
           return;
         }
         const measuredAfter = Date.now();
-        const measurementInvoked = await runTutorialAction('measure-cluster', target);
-        if (!measurementInvoked || controller.signal.aborted) {
-          setTargetUnavailable(true);
-          return;
-        }
-        const projected = await waitForTutorialMeasurement('tutorialClusterLayout', {
-          timeoutMs: TUTORIAL_CONFIG.MAP_PROJECTION_TIMEOUT_MS,
+        const projectedReady = waitForTutorialMeasurement('tutorialClusterLayout', {
+          timeoutMs: TUTORIAL_CONFIG.TARGET_TIMEOUT_MS,
           freshAfter: measuredAfter,
           signal: controller.signal,
         });
+        await runTutorialAction('measure-cluster', target);
+        const projected = await projectedReady;
         if (controller.signal.aborted) return;
 
         const freshlyMeasuredSpotlight = projected.source === 'ready' && projected.measurement

@@ -89,6 +89,19 @@ describe('tutorial cluster target', () => {
     expect(appendTutorialClusterTarget([...staged, target], target)).toHaveLength(13);
   });
 
+  it('replaces a same-ID filtered clone with the live tutorial target', () => {
+    const target = cluster('target', ['target-a', 'target-b']);
+    const filteredClone = {
+      ...target,
+      eventCount: 0,
+      specialCount: 1,
+      venues: target.venues.slice(0, 1),
+    } as Cluster;
+    const other = cluster('other', ['other']);
+
+    expect(appendTutorialClusterTarget([filteredClone, other], target)).toEqual([target, other]);
+  });
+
   it('matches an opened callout only through the stable tutorial anchor', () => {
     expect(doesTutorialCalloutMatchAnchor([venue('other'), venue('anchor')], 'anchor'))
       .toBe(true);

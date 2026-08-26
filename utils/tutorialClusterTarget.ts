@@ -104,10 +104,16 @@ export const appendTutorialClusterTarget = (
   renderedClusters: readonly Cluster[],
   target: Cluster | null,
 ): Cluster[] => {
-  if (!target || renderedClusters.some((cluster) => cluster.id === target.id)) {
+  if (!target) {
     return [...renderedClusters];
   }
-  return [...renderedClusters, target];
+
+  const existingIndex = renderedClusters.findIndex((cluster) => cluster.id === target.id);
+  if (existingIndex === -1) return [...renderedClusters, target];
+
+  const withCurrentTarget = [...renderedClusters];
+  withCurrentTarget[existingIndex] = target;
+  return withCurrentTarget;
 };
 
 export const doesTutorialCalloutMatchAnchor = (

@@ -3,6 +3,7 @@ import {
   getTutorialClusterSpotlightMeasurement,
   getTutorialClusterSpotlightFromCoreFrame,
   isTutorialClusterCoreFrameUsable,
+  isTutorialClusterProjectionCentered,
   isPointInsideTutorialSpotlightCircle,
   TUTORIAL_CLUSTER_SPOTLIGHT_SIZE,
 } from '../tutorialClusterSpotlight';
@@ -61,7 +62,7 @@ describe('tutorial cluster spotlight', () => {
       .toEqual({ x: 171, y: 323, width: 72, height: 72 });
   });
 
-  it('rejects a MarkerView host frame and a stable-looking but stale core frame', () => {
+  it('rejects a MarkerView host frame and a core frame far from its projection', () => {
     const geometry = {
       wrapper: { x: 0, y: 0, width: 120, height: 96 },
       core: { x: 72, y: 50, width: 30, height: 30 },
@@ -73,11 +74,65 @@ describe('tutorial cluster spotlight', () => {
       geometry,
     )).toBe(false);
     expect(isTutorialClusterCoreFrameUsable(
-      { x: 201, y: 411, width: 30, height: 30 },
+      { x: 301, y: 511, width: 30, height: 30 },
       { x: 180, y: 390 },
       { width: 360, height: 800 },
       geometry,
     )).toBe(false);
+  });
+
+  it('accepts a fresh Android core frame despite normal MarkerView anchor drift', () => {
+    const geometry = {
+      wrapper: { x: 0, y: 0, width: 120, height: 96 },
+      core: { x: 72, y: 50, width: 30, height: 30 },
+    };
+
+    expect(isTutorialClusterCoreFrameUsable(
+      { x: 192, y: 385, width: 30, height: 30 },
+      { x: 180, y: 390 },
+      { width: 360, height: 800 },
+      geometry,
+      { allowAndroidVerticalAnchorVariant: true },
+    )).toBe(true);
+  });
+
+  it('rejects a nearby stale core that matches no supported native anchor', () => {
+    const geometry = {
+      wrapper: { x: 0, y: 0, width: 120, height: 96 },
+      core: { x: 72, y: 50, width: 30, height: 30 },
+    };
+
+    expect(isTutorialClusterCoreFrameUsable(
+      { x: 216, y: 371, width: 30, height: 30 },
+      { x: 180, y: 390 },
+      { width: 360, height: 800 },
+      geometry,
+      { allowAndroidVerticalAnchorVariant: true },
+    )).toBe(false);
+  });
+
+  it('accepts a stable freshly bound core when native onLayout geometry is absent', () => {
+    expect(isTutorialClusterCoreFrameUsable(
+      { x: 192, y: 344, width: 30, height: 30 },
+      { x: 180, y: 390 },
+      { width: 360, height: 800 },
+      null,
+      { allowFreshBoundFrameWithoutGeometry: true },
+    )).toBe(true);
+    expect(isTutorialClusterCoreFrameUsable(
+      { x: 120, y: 300, width: 120, height: 96 },
+      { x: 180, y: 390 },
+      { width: 360, height: 800 },
+      null,
+      { allowFreshBoundFrameWithoutGeometry: true },
+    )).toBe(false);
+  });
+
+  it('recognizes a no-op camera focus within a bounded center tolerance', () => {
+    expect(isTutorialClusterProjectionCentered([181, 395], { width: 360, height: 800 }))
+      .toBe(true);
+    expect(isTutorialClusterProjectionCentered([205, 395], { width: 360, height: 800 }))
+      .toBe(false);
   });
 
   it('accepts only the circular spotlight area, not its square corners', () => {
