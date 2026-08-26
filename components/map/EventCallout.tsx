@@ -27,6 +27,7 @@ import { shouldRepublishTutorialCalloutReadiness } from '../../utils/tutorialCal
 import { createTutorialPresentationSettler } from '../../utils/tutorialPresentationSettler';
 import { runTutorialAction } from '../../utils/tutorialActions';
 import { shouldRouteTutorialCalloutBack } from '../../utils/tutorialCalloutClosing';
+import { useTutorialUiStore } from '../../store/tutorialUiStore';
 
 
 
@@ -116,7 +117,6 @@ import { useEventLikeCount, setEventLikeCount, startEventLikesListener, stopEven
 import { useEventShareCount, setEventShareCount, startEventSharesListener, stopEventSharesListener } from '../../store/eventSharesStore';
 import { useEventInterestedCount, setEventInterestedCount, startEventInterestedListener, stopEventInterestedListener } from '../../store/eventInterestedStore';
 import { useMapStore } from '../../store/mapStore';
-import { useTutorialUiStore } from '../../store/tutorialUiStore';
 import { auth } from '../../config/firebaseConfig';
 import { useClusterInteractionStore } from '../../store/clusterInteractionStore';
 
