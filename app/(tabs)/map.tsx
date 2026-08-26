@@ -129,17 +129,14 @@ import {
   shouldRouteTutorialCalloutBack,
 } from '../../utils/tutorialCalloutClosing';
 import {
-  getTutorialClusterSpotlightFromCoreFrame,
-  getTutorialClusterSpotlightMeasurement,
-  isTutorialClusterBoundCoreFrameUsable,
-  isTutorialClusterCoreFrameUsable,
   isTutorialClusterProjectionCentered,
-  resolveTutorialClusterProjectedPoint,
+  resolveTutorialClusterSpotlightFromCoreFrame,
   type TutorialClusterLocalGeometry as TutorialClusterCoreGeometry,
 } from '../../utils/tutorialClusterSpotlight';
 import { createTutorialClusterGeometryGate } from '../../utils/tutorialClusterGeometryGate';
 import {
   appendTutorialClusterTarget,
+  didTutorialClusterOpen,
   getTutorialClusterAnchorVenueKey,
   getTutorialClusterBindingSignature,
   isTutorialClusterBindingCurrent,
@@ -276,6 +273,7 @@ const ANDROID_CALLOUT_DEFERRED_TEARDOWN_MS = 900;
 const ANDROID_CONTROLS_RELEASE_AFTER_CLOSE_MS = 150;
 const TUTORIAL_CALLOUT_READY_TIMEOUT_MS = 2500;
 const TUTORIAL_CALLOUT_CLOSE_TIMEOUT_MS = 1800;
+const TUTORIAL_CLUSTER_OPEN_READY_TIMEOUT_MS = 1200;
 
 const logCalloutProbe = (...args: unknown[]): void => {
   if (DEBUG_CALLOUT_PROBE) {
@@ -3349,6 +3347,16 @@ useEffect(() => {
   const ancillaryOverlayContainerRef = useRef<View>(null);
   const androidRetapOverlayRef = useRef<View>(null);
   const mapRef = useRef<MapboxGL.MapView>(null);
+  const clusterProcessingRef = useRef<string | null>(null);
+  const clusterProcessingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const tutorialClusterInteractionReadyGate = useMemo(
+    () => createTutorialBooleanGate(true),
+    [],
+  );
+  useEffect(
+    () => () => tutorialClusterInteractionReadyGate.dispose(),
+    [tutorialClusterInteractionReadyGate],
+  );
   const tutorialClusterCoreRef = useRef<View>(null);
   const tutorialClusterLocalGeometryRef = useRef<TutorialClusterLocalGeometry | null>(null);
   const tutorialTargetAnchorVenueKeyRef = useRef<string | null>(null);
@@ -4134,6 +4142,7 @@ useEffect(() => {
     sharedEventReturnGuardUntilRef.current = guardUntil;
     clusterProcessingRef.current = null;
     setProcessingClusterId(null);
+    tutorialClusterInteractionReadyGate.publish(!ignoreProgrammaticCameraRef.current);
     if (clusterProcessingTimeoutRef.current) {
       clearTimeout(clusterProcessingTimeoutRef.current);
       clusterProcessingTimeoutRef.current = null;
@@ -4154,6 +4163,7 @@ useEffect(() => {
     resetCalloutReadiness,
     selectVenue,
     setActiveFilterPanel,
+    tutorialClusterInteractionReadyGate,
   ]);
 
   useEffect(() => {
@@ -4474,6 +4484,9 @@ const logPills = (msg: string, ctx?: Record<string, any>) => {
   const setIgnoreProgrammaticTrace = useCallback((value: boolean, reason: string) => {
     ignoreProgrammaticCameraRef.current = value;
     ignoreProgrammaticCameraReasonRef.current = value ? reason : null;
+    tutorialClusterInteractionReadyGate.publish(
+      !value && clusterProcessingRef.current === null,
+    );
     setMapTraceSnapshot({
       ignoreProgrammatic: value,
       ignoreProgrammaticReason: reason,
@@ -4481,7 +4494,7 @@ const logPills = (msg: string, ctx?: Record<string, any>) => {
     traceMapEvent(value ? 'ignore_programmatic_on' : 'ignore_programmatic_off', {
       reason,
     });
-  }, []);
+  }, [tutorialClusterInteractionReadyGate]);
 
   // Enable auto-hide only after initial camera settle
   const autoHideEnabledRef = useRef<boolean>(false);
@@ -6754,12 +6767,8 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
     }
   };
 
-  // Ref to prevent duplicate cluster clicks (rapid tapping)
-  const clusterProcessingRef = useRef<string | null>(null);
-  const clusterProcessingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
   // Enhanced handleMarkerPress with comprehensive prioritization
-  const handleMarkerPress = useCallback(async (cluster: Cluster): Promise<void> => {
+  const handleMarkerPress = useCallback(async (cluster: Cluster): Promise<boolean> => {
     if ((globalThis as any).__gathrReturningFromSharedEventAt) {
       logCalloutProbe('[CalloutProbe] marker press consumed pending shared event return cleanup', {
         returnedFromSharedEventAt: Number((globalThis as any).__gathrReturningFromSharedEventAt || 0),
@@ -6823,7 +6832,7 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
         renderedCalloutClusterId: renderedCalloutClusterId ?? 'none',
         renderedVenueCount: renderedCalloutVenueCount,
       });
-      return;
+      return false;
     }
     // 🛡️ CLICK PREVENTION: Block rapid taps on same or different clusters
     if (clusterProcessingRef.current !== null) {
@@ -6836,7 +6845,7 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
         clusterId: cluster.id,
         processingClusterId: clusterProcessingRef.current,
       });
-      return;
+      return false;
     }
 
     // 🛡️ HOTSPOT PREVENTION: Block clicks during programmatic camera animations
@@ -6861,7 +6870,7 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
         clusterId: cluster.id,
         reason: ignoreProgrammaticCameraReasonRef.current ?? 'unknown',
       });
-      return;
+      return false;
     }
 
     // 📳 HAPTIC FEEDBACK: Provide immediate tactile confirmation of tap
@@ -6904,6 +6913,7 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
 
     // Mark this cluster as being processed (both ref and state)
     clusterProcessingRef.current = cluster.id;
+    tutorialClusterInteractionReadyGate.publish(false);
     setProcessingClusterId(cluster.id);
     console.log(`[map] Cluster processing started: ${cluster.id}`);
     traceMapEvent('marker_processing_started', {
@@ -6921,6 +6931,7 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
       });
       clusterProcessingRef.current = null;
       setProcessingClusterId(null);
+      tutorialClusterInteractionReadyGate.publish(!ignoreProgrammaticCameraRef.current);
     }, 1000);
 
     // LOG: Processing cluster press - tracks which cluster was tapped and venue count
@@ -6993,7 +7004,7 @@ lastOpenedClusterIdRef.current = cluster.id;
       //   reason: 'guest_limitation'
       // });
       
-      return;
+      return false;
     }
     
     try {
@@ -7167,7 +7178,8 @@ lastOpenedClusterIdRef.current = cluster.id;
       //     total_events: cluster.eventCount + cluster.specialCount
       //   });
       // }
-      
+
+      return shouldOpenCalloutForMarker && sortedVenues.length > 0;
     } catch (error) {
       console.error("Error in handleMarkerPress:", error);
       traceMapEvent('marker_press_error', {
@@ -7198,6 +7210,7 @@ lastOpenedClusterIdRef.current = cluster.id;
         selectedClusterId: cluster.clusterType === 'multi' ? cluster.id : 'none',
         primaryVenue: defaultVenues[0]?.venue || 'unknown',
       });
+      return defaultVenues.length > 0;
     } finally {
       // 🛡️ CLEANUP: Clear processing guard after completion or error
       if (clusterProcessingTimeoutRef.current) {
@@ -7213,6 +7226,7 @@ lastOpenedClusterIdRef.current = cluster.id;
       });
       clusterProcessingRef.current = null;
       setProcessingClusterId(null);
+      tutorialClusterInteractionReadyGate.publish(!ignoreProgrammaticCameraRef.current);
     }
   }, [
     getPreparedClusterCallout,
@@ -7228,16 +7242,63 @@ lastOpenedClusterIdRef.current = cluster.id;
     deactivateAndroidRetapOverlay,
     flushAndroidClosingCalloutForRetap,
     trackInteraction,
+    tutorialClusterInteractionReadyGate,
   ]); // REMOVED analytics, zoomLevel dependencies
 
-  useEffect(() => registerTutorialAction('open-cluster', async (target: Cluster) => {
-    const currentTarget = resolveCurrentTutorialCluster(target);
-    if (!currentTarget) return false;
+  useEffect(() => registerTutorialAction('open-cluster', async (signal?: AbortSignal) => {
+    const currentTarget = tutorialCurrentClusterRef.current;
+    const anchorVenueKey = tutorialTargetAnchorVenueKeyRef.current;
+    const capturedBinding = {
+      clusterId: tutorialTargetClusterIdRef.current,
+      revision: tutorialTargetBindingRevisionRef.current,
+    };
+    if (
+      !currentTarget ||
+      !anchorVenueKey ||
+      String(currentTarget.id) !== capturedBinding.clusterId ||
+      useTutorialUiStore.getState().currentStepId !== 'cluster-click'
+    ) {
+      return false;
+    }
 
-    assignTutorialClusterTarget(currentTarget);
-    await handleMarkerPress(currentTarget);
-    return true;
-  }), [assignTutorialClusterTarget, handleMarkerPress, resolveCurrentTutorialCluster]);
+    if (
+      ignoreProgrammaticCameraRef.current &&
+      ignoreProgrammaticCameraReasonRef.current === 'map_loaded_initial_lock'
+    ) {
+      setIgnoreProgrammaticTrace(false, 'tutorial_open_cluster_cleared_initial_lock');
+    }
+    const interactionReady = await tutorialClusterInteractionReadyGate.waitFor(true, {
+      timeoutMs: TUTORIAL_CLUSTER_OPEN_READY_TIMEOUT_MS,
+      signal,
+    });
+    if (
+      !interactionReady ||
+      signal?.aborted ||
+      useTutorialUiStore.getState().currentStepId !== 'cluster-click' ||
+      !isTutorialClusterBindingCurrent(capturedBinding, {
+        clusterId: tutorialTargetClusterIdRef.current,
+        revision: tutorialTargetBindingRevisionRef.current,
+      })
+    ) {
+      return false;
+    }
+
+    const interactionStarted = await handleMarkerPress(currentTarget);
+    return didTutorialClusterOpen(
+      interactionStarted,
+      useMapStore.getState().selectedVenues,
+      anchorVenueKey,
+      capturedBinding,
+      {
+        clusterId: tutorialTargetClusterIdRef.current,
+        revision: tutorialTargetBindingRevisionRef.current,
+      },
+    );
+  }), [
+    handleMarkerPress,
+    setIgnoreProgrammaticTrace,
+    tutorialClusterInteractionReadyGate,
+  ]);
 
   useEffect(() => registerTutorialAction('wait-callout-ready', async (
     timeoutMs?: number,
@@ -7450,17 +7511,13 @@ lastOpenedClusterIdRef.current = cluster.id;
 
   useEffect(() => registerTutorialAction('measure-cluster', async (target: Cluster) => {
     const currentTarget = resolveCurrentTutorialCluster(target);
-    const coordinate = currentTarget ? getClusterMapCoordinate(currentTarget) : null;
-    if (!currentTarget || !coordinate || !mapRef.current) return false;
+    if (!currentTarget) return false;
     assignTutorialClusterTarget(currentTarget);
     const currentTargetId = String(currentTarget.id);
     const capturedBinding = {
       clusterId: currentTargetId,
       revision: tutorialTargetBindingRevisionRef.current,
     };
-
-    const currentMapDimensions = mapDimensionsRef.current;
-    if (!currentMapDimensions) return false;
 
     let currentLocalGeometry = tutorialClusterGeometryGate.get(capturedBinding);
     const measuredCoreFrameReady = measureStableTutorialClusterCoreFrame(
@@ -7469,29 +7526,13 @@ lastOpenedClusterIdRef.current = cluster.id;
     const localGeometryReady = currentLocalGeometry
       ? Promise.resolve(currentLocalGeometry)
       : tutorialClusterGeometryGate.waitFor(capturedBinding, { timeoutMs: 700 });
-    let projectionTimeout: ReturnType<typeof setTimeout> | undefined;
-    const nativePointReady = resolveTutorialClusterProjectedPoint(
-      () => Promise.race([
-        mapRef.current!.getPointInView(coordinate),
-        new Promise<null>((resolve) => {
-          projectionTimeout = setTimeout(() => resolve(null), 350);
-        }),
-      ]).finally(() => {
-        if (projectionTimeout) clearTimeout(projectionTimeout);
-      }),
-      currentMapDimensions,
-    );
 
-    const [point, measuredCoreFrame, awaitedLocalGeometry] = await Promise.all([
-      nativePointReady,
+    const [measuredCoreFrame, awaitedLocalGeometry] = await Promise.all([
       measuredCoreFrameReady,
       localGeometryReady,
     ]);
     currentLocalGeometry = currentLocalGeometry ?? awaitedLocalGeometry;
 
-    const mapLayout = (global as any).mapViewLayout;
-    const mapOriginX = Number(mapLayout?.absoluteX ?? mapLayout?.x ?? 0);
-    const mapOriginY = Number(mapLayout?.absoluteY ?? mapLayout?.y ?? 0);
     const viewport = Dimensions.get('window');
     const targetStillCurrent = isTutorialClusterBindingCurrent(
       capturedBinding,
@@ -7502,29 +7543,11 @@ lastOpenedClusterIdRef.current = cluster.id;
     );
     if (!targetStillCurrent || !currentLocalGeometry) return false;
 
-    const projectedCenter = point
-      ? {
-          x: mapOriginX + point[0],
-          y: mapOriginY + point[1],
-        }
-      : null;
-
-    let measurement = measuredCoreFrame && (
-      projectedCenter
-        ? isTutorialClusterCoreFrameUsable(
-            measuredCoreFrame,
-            projectedCenter,
-            viewport,
-            currentLocalGeometry,
-          )
-        : isTutorialClusterBoundCoreFrameUsable(
-            measuredCoreFrame,
-            viewport,
-            currentLocalGeometry,
-          )
-    )
-      ? getTutorialClusterSpotlightFromCoreFrame(measuredCoreFrame)
-      : null;
+    let measurement = resolveTutorialClusterSpotlightFromCoreFrame(
+      measuredCoreFrame,
+      viewport,
+      currentLocalGeometry,
+    );
 
     if (!measurement) {
       if (!isTutorialClusterBindingCurrent(
@@ -7535,32 +7558,15 @@ lastOpenedClusterIdRef.current = cluster.id;
         },
       )) return false;
 
-      const retriedCoreFrame = measuredCoreFrame ?? await measureStableTutorialClusterCoreFrame(
-          () => tutorialClusterCoreRef.current,
-          350,
-        );
-      measurement = retriedCoreFrame && (
-        projectedCenter
-          ? isTutorialClusterCoreFrameUsable(
-              retriedCoreFrame,
-              projectedCenter,
-              viewport,
-              currentLocalGeometry,
-            )
-          : isTutorialClusterBoundCoreFrameUsable(
-              retriedCoreFrame,
-              viewport,
-              currentLocalGeometry,
-            )
-      )
-        ? getTutorialClusterSpotlightFromCoreFrame(retriedCoreFrame)
-        : point
-          ? getTutorialClusterSpotlightMeasurement(
-              point,
-              { x: mapOriginX, y: mapOriginY },
-              currentLocalGeometry,
-            )
-          : null;
+      const retriedCoreFrame = await measureStableTutorialClusterCoreFrame(
+        () => tutorialClusterCoreRef.current,
+        350,
+      );
+      measurement = resolveTutorialClusterSpotlightFromCoreFrame(
+        retriedCoreFrame,
+        viewport,
+        currentLocalGeometry,
+      );
     }
 
     if (!measurement) return false;

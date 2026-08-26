@@ -38,15 +38,7 @@ export const getTutorialClusterAnchorVenueKey = (cluster: Cluster): string | nul
 export const getTutorialClusterBindingSignature = (cluster: Cluster): string => JSON.stringify([
   String(cluster.id),
   cluster.clusterType,
-  cluster.timeStatus,
   cluster.interestLevel,
-  cluster.isBroadcasting,
-  cluster.eventCount,
-  cluster.specialCount,
-  cluster.hasNewContent ?? false,
-  cluster.containsCityLevelEvent ?? false,
-  cluster.containsRouteEvent ?? false,
-  [...(cluster.categories ?? [])].sort(),
   cluster.venues
     .map((venue) => [
       venue.locationKey,
@@ -122,4 +114,16 @@ export const doesTutorialCalloutMatchAnchor = (
 ): boolean => Boolean(
   anchorVenueKey &&
   selectedVenues.some((venue) => venue.locationKey === anchorVenueKey)
+);
+
+export const didTutorialClusterOpen = (
+  interactionStarted: boolean,
+  selectedVenues: readonly Pick<Venue, 'locationKey'>[],
+  anchorVenueKey: string | null,
+  capturedBinding: TutorialClusterBinding,
+  currentBinding: TutorialClusterBinding,
+): boolean => Boolean(
+  interactionStarted &&
+  isTutorialClusterBindingCurrent(capturedBinding, currentBinding) &&
+  doesTutorialCalloutMatchAnchor(selectedVenues, anchorVenueKey)
 );

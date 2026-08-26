@@ -1,6 +1,7 @@
 import type { Cluster, Venue } from '../../types/events';
 import {
   appendTutorialClusterTarget,
+  didTutorialClusterOpen,
   doesTutorialCalloutMatchAnchor,
   getTutorialClusterAnchorVenueKey,
   getTutorialClusterBindingSignature,
@@ -109,7 +110,40 @@ describe('tutorial cluster target', () => {
     expect(doesTutorialCalloutMatchAnchor([venue('anchor')], null)).toBe(false);
   });
 
-  it('changes the binding signature when a same-ID marker moves or changes shape', () => {
+  it('reports open success only for the current binding and selected anchor', () => {
+    const captured = { clusterId: 'target', revision: 4 };
+
+    expect(didTutorialClusterOpen(
+      true,
+      [venue('anchor')],
+      'anchor',
+      captured,
+      captured,
+    )).toBe(true);
+    expect(didTutorialClusterOpen(
+      false,
+      [venue('anchor')],
+      'anchor',
+      captured,
+      captured,
+    )).toBe(false);
+    expect(didTutorialClusterOpen(
+      true,
+      [venue('other')],
+      'anchor',
+      captured,
+      captured,
+    )).toBe(false);
+    expect(didTutorialClusterOpen(
+      true,
+      [venue('anchor')],
+      'anchor',
+      captured,
+      { clusterId: 'target', revision: 5 },
+    )).toBe(false);
+  });
+
+  it('changes the binding signature when a same-ID marker moves or changes core size', () => {
     const initial = {
       ...cluster('same', ['anchor']),
       categories: ['Music'],
@@ -122,16 +156,38 @@ describe('tutorial cluster target', () => {
       ...initial,
       venues: [venue('anchor', 46.25, -63.11)],
     } as Cluster;
-    const reshaped = {
+    const resized = {
       ...initial,
-      categories: ['Food', 'Music'],
-      eventCount: 10,
+      interestLevel: 'high',
     } as Cluster;
 
     expect(getTutorialClusterBindingSignature(moved))
       .not.toBe(getTutorialClusterBindingSignature(initial));
-    expect(getTutorialClusterBindingSignature(reshaped))
+    expect(getTutorialClusterBindingSignature(resized))
       .not.toBe(getTutorialClusterBindingSignature(initial));
+  });
+
+  it('does not invalidate a bound marker for live content enrichment', () => {
+    const initial = {
+      ...cluster('same', ['anchor']),
+      categories: ['Music'],
+      clusterType: 'single',
+      interestLevel: 'medium',
+      isBroadcasting: false,
+      timeStatus: 'today',
+    } as Cluster;
+    const enriched = {
+      ...initial,
+      categories: ['Food', 'Music'],
+      eventCount: 10,
+      specialCount: 3,
+      hasNewContent: true,
+      isBroadcasting: true,
+      timeStatus: 'now',
+    } as Cluster;
+
+    expect(getTutorialClusterBindingSignature(enriched))
+      .toBe(getTutorialClusterBindingSignature(initial));
   });
 
   it('keeps the binding signature deterministic when venue/category order changes', () => {

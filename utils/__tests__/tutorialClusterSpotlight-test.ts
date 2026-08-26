@@ -6,6 +6,7 @@ import {
   isTutorialClusterCoreFrameUsable,
   isTutorialClusterProjectionCentered,
   resolveTutorialClusterProjectedPoint,
+  resolveTutorialClusterSpotlightFromCoreFrame,
   isPointInsideTutorialSpotlightCircle,
   TUTORIAL_CLUSTER_SPOTLIGHT_SIZE,
 } from '../tutorialClusterSpotlight';
@@ -146,6 +147,26 @@ describe('tutorial cluster spotlight', () => {
         core: { x: 72, y: 50, width: 30, height: 30 },
       },
     )).toBe(true);
+  });
+
+  it('keeps the bound native core authoritative when projection geometry disagrees', () => {
+    const geometry = {
+      wrapper: { x: 0, y: 0, width: 120, height: 96 },
+      core: { x: 72, y: 50, width: 30, height: 30 },
+    };
+    const visibleCore = { x: 192, y: 385, width: 30, height: 30 };
+
+    expect(isTutorialClusterCoreFrameUsable(
+      visibleCore,
+      { x: 180, y: 390 },
+      { width: 360, height: 800 },
+      geometry,
+    )).toBe(false);
+    expect(resolveTutorialClusterSpotlightFromCoreFrame(
+      visibleCore,
+      { width: 360, height: 800 },
+      geometry,
+    )).toEqual({ x: 171, y: 364, width: 72, height: 72 });
   });
 
   it('recognizes a no-op camera focus within a bounded center tolerance', () => {

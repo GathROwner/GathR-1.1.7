@@ -183,6 +183,21 @@ export const getTutorialClusterSpotlightFromCoreFrame = (
   frame.y + frame.height / 2,
 );
 
+/**
+ * The revision-bound native core is the visible control. Mapbox projection is
+ * useful for camera focus, but it is not a reliable placement fallback for an
+ * asymmetric MarkerView wrapper on either platform.
+ */
+export const resolveTutorialClusterSpotlightFromCoreFrame = (
+  frame: ComponentMeasurement | null,
+  viewport: ViewportSize,
+  localGeometry: TutorialClusterLocalGeometry | null,
+): ComponentMeasurement | null => (
+  frame && isTutorialClusterBoundCoreFrameUsable(frame, viewport, localGeometry)
+    ? getTutorialClusterSpotlightFromCoreFrame(frame)
+    : null
+);
+
 /** Use current marker-local geometry only; never invent a platform offset. */
 export const getTutorialClusterSpotlightMeasurement = (
   point: readonly [number, number],
