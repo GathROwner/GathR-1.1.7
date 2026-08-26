@@ -695,12 +695,13 @@ export default function TabLayout() {
       headerRight: () => (
         !isHeaderSearchActive ? (
           <View
-            ref={profileButtonRef}
-            collapsable={false}
             style={{ marginRight: 16 }}
-            onLayout={publishProfileButtonLayout}
           >
-            <View>
+            <View
+              ref={profileButtonRef}
+              collapsable={false}
+              onLayout={publishProfileButtonLayout}
+            >
               <TouchableOpacity 
                 onPress={handleProfileButtonPress} 
                 style={{ padding: 5 }}
