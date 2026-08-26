@@ -130,7 +130,8 @@ import {
 } from '../../utils/tutorialCalloutClosing';
 import {
   isTutorialClusterProjectionCentered,
-  resolveTutorialClusterSpotlightFromCoreFrame,
+  resolveTutorialClusterProjectedPoint,
+  resolveTutorialClusterSpotlightMeasurement,
   type TutorialClusterLocalGeometry as TutorialClusterCoreGeometry,
 } from '../../utils/tutorialClusterSpotlight';
 import { createTutorialClusterGeometryGate } from '../../utils/tutorialClusterGeometryGate';
@@ -2474,7 +2475,11 @@ const measureStableTutorialClusterCoreFrame = (
     });
   };
 
-  const timeout = setTimeout(() => finish(null), timeoutMs);
+  // Mapbox MarkerView can keep reporting sub-pixel drift for a few frames even
+  // after the visible marker has settled. A current revision-bound finite
+  // sample is safer than discarding all geometry and needlessly entering the
+  // tutorial's no-target fallback.
+  const timeout = setTimeout(() => finish(lastValidFrame), timeoutMs);
   scheduleSample();
 });
 
@@ -3177,8 +3182,19 @@ useEffect(() => {
       }
     };
   }, []);
+  const mapScreenHostRef = useRef<View>(null);
+  const mapScreenHostLayoutRef = useRef<ComponentMeasurement | null>(null);
   const handleRootLayout = useCallback(() => {
     markTabRootLayout('map');
+    mapScreenHostRef.current?.measureInWindow((x, y, width, height) => {
+      if (
+        [x, y, width, height].every(Number.isFinite) &&
+        width > 0 &&
+        height > 0
+      ) {
+        mapScreenHostLayoutRef.current = { x, y, width, height };
+      }
+    });
   }, []);
 
   // Use the map store - individual selectors to prevent infinite loops
@@ -7511,7 +7527,8 @@ lastOpenedClusterIdRef.current = cluster.id;
 
   useEffect(() => registerTutorialAction('measure-cluster', async (target: Cluster) => {
     const currentTarget = resolveCurrentTutorialCluster(target);
-    if (!currentTarget) return false;
+    const coordinate = currentTarget ? getClusterMapCoordinate(currentTarget) : null;
+    if (!currentTarget || !coordinate || !mapRef.current) return false;
     assignTutorialClusterTarget(currentTarget);
     const currentTargetId = String(currentTarget.id);
     const capturedBinding = {
@@ -7523,15 +7540,41 @@ lastOpenedClusterIdRef.current = cluster.id;
     const measuredCoreFrameReady = measureStableTutorialClusterCoreFrame(
       () => tutorialClusterCoreRef.current,
     );
+    const measuredMapHostFrameReady = measureStableTutorialClusterCoreFrame(
+      () => mapScreenHostRef.current,
+      350,
+    );
     const localGeometryReady = currentLocalGeometry
       ? Promise.resolve(currentLocalGeometry)
       : tutorialClusterGeometryGate.waitFor(capturedBinding, { timeoutMs: 700 });
 
-    const [measuredCoreFrame, awaitedLocalGeometry] = await Promise.all([
+    const currentMapDimensions = mapDimensionsRef.current;
+    const projectCurrentTarget = () => {
+      if (!currentMapDimensions || !mapRef.current) return Promise.resolve(null);
+      let projectionTimeout: ReturnType<typeof setTimeout> | undefined;
+      return resolveTutorialClusterProjectedPoint(
+        () => Promise.race([
+          mapRef.current!.getPointInView(coordinate),
+          new Promise<null>((resolve) => {
+            projectionTimeout = setTimeout(() => resolve(null), 350);
+          }),
+        ]).finally(() => {
+          if (projectionTimeout) clearTimeout(projectionTimeout);
+        }),
+        currentMapDimensions,
+      );
+    };
+    const nativePointReady = projectCurrentTarget();
+
+    const [measuredCoreFrame, measuredMapHostFrame, point, awaitedLocalGeometry] = await Promise.all([
       measuredCoreFrameReady,
+      measuredMapHostFrameReady,
+      nativePointReady,
       localGeometryReady,
     ]);
     currentLocalGeometry = currentLocalGeometry ?? awaitedLocalGeometry;
+    const mapHostFrame = measuredMapHostFrame ?? mapScreenHostLayoutRef.current;
+    if (measuredMapHostFrame) mapScreenHostLayoutRef.current = measuredMapHostFrame;
 
     const viewport = Dimensions.get('window');
     const targetStillCurrent = isTutorialClusterBindingCurrent(
@@ -7543,11 +7586,13 @@ lastOpenedClusterIdRef.current = cluster.id;
     );
     if (!targetStillCurrent || !currentLocalGeometry) return false;
 
-    let measurement = resolveTutorialClusterSpotlightFromCoreFrame(
-      measuredCoreFrame,
+    let measurement = resolveTutorialClusterSpotlightMeasurement({
+      nativeCoreFrame: measuredCoreFrame,
+      projectedPoint: point,
+      mapHostFrame,
       viewport,
-      currentLocalGeometry,
-    );
+      localGeometry: currentLocalGeometry,
+    });
 
     if (!measurement) {
       if (!isTutorialClusterBindingCurrent(
@@ -7558,15 +7603,25 @@ lastOpenedClusterIdRef.current = cluster.id;
         },
       )) return false;
 
-      const retriedCoreFrame = await measureStableTutorialClusterCoreFrame(
-        () => tutorialClusterCoreRef.current,
-        350,
-      );
-      measurement = resolveTutorialClusterSpotlightFromCoreFrame(
-        retriedCoreFrame,
+      const [retriedCoreFrame, retriedMapHostFrame, retriedPoint] = await Promise.all([
+        measureStableTutorialClusterCoreFrame(
+          () => tutorialClusterCoreRef.current,
+          350,
+        ),
+        measureStableTutorialClusterCoreFrame(
+          () => mapScreenHostRef.current,
+          350,
+        ),
+        projectCurrentTarget(),
+      ]);
+      if (retriedMapHostFrame) mapScreenHostLayoutRef.current = retriedMapHostFrame;
+      measurement = resolveTutorialClusterSpotlightMeasurement({
+        nativeCoreFrame: retriedCoreFrame,
+        projectedPoint: retriedPoint ?? point,
+        mapHostFrame: retriedMapHostFrame ?? mapScreenHostLayoutRef.current ?? mapHostFrame,
         viewport,
-        currentLocalGeometry,
-      );
+        localGeometry: currentLocalGeometry,
+      });
     }
 
     if (!measurement) return false;
@@ -10137,7 +10192,12 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
 
   // Render the map
   return (
-    <View style={styles.container} onLayout={handleRootLayout}>
+    <View
+      ref={mapScreenHostRef}
+      collapsable={false}
+      style={styles.container}
+      onLayout={handleRootLayout}
+    >
       {isHeaderSearchActive && (
         <Pressable
           onPress={() => { setHeaderSearchActive(false); Keyboard.dismiss(); }}

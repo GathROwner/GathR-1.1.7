@@ -12,6 +12,14 @@ interface ViewportSize {
   height: number;
 }
 
+interface TutorialClusterSpotlightSources {
+  nativeCoreFrame: ComponentMeasurement | null;
+  projectedPoint: readonly [number, number] | null;
+  mapHostFrame: ComponentMeasurement | null;
+  viewport: ViewportSize;
+  localGeometry: TutorialClusterLocalGeometry | null;
+}
+
 const MAX_NATIVE_CORE_ALIGNMENT_DRIFT = 4;
 
 type ProjectedPoint = readonly [number, number];
@@ -197,6 +205,47 @@ export const resolveTutorialClusterSpotlightFromCoreFrame = (
     ? getTutorialClusterSpotlightFromCoreFrame(frame)
     : null
 );
+
+/**
+ * MarkerView children do not consistently expose a measurable native frame on
+ * Android. Prefer that exact frame when it is available, then fall back to the
+ * Mapbox projection translated through a separately measured React Native map
+ * host. The host frame keeps the fallback in window coordinates without any
+ * hard-coded status-bar or safe-area offset.
+ */
+export const resolveTutorialClusterSpotlightMeasurement = ({
+  nativeCoreFrame,
+  projectedPoint,
+  mapHostFrame,
+  viewport,
+  localGeometry,
+}: TutorialClusterSpotlightSources): ComponentMeasurement | null => {
+  const nativeMeasurement = resolveTutorialClusterSpotlightFromCoreFrame(
+    nativeCoreFrame,
+    viewport,
+    localGeometry,
+  );
+  if (nativeMeasurement) return nativeMeasurement;
+  if (!projectedPoint || !mapHostFrame || !isPositiveFiniteFrame(mapHostFrame)) return null;
+
+  const projectedMeasurement = getTutorialClusterSpotlightMeasurement(
+    projectedPoint,
+    { x: mapHostFrame.x, y: mapHostFrame.y },
+    localGeometry,
+  );
+  if (!projectedMeasurement) return null;
+
+  const centerX = projectedMeasurement.x + projectedMeasurement.width / 2;
+  const centerY = projectedMeasurement.y + projectedMeasurement.height / 2;
+  return (
+    centerX > 0 &&
+    centerX < viewport.width &&
+    centerY > 0 &&
+    centerY < viewport.height
+  )
+    ? projectedMeasurement
+    : null;
+};
 
 /** Use current marker-local geometry only; never invent a platform offset. */
 export const getTutorialClusterSpotlightMeasurement = (

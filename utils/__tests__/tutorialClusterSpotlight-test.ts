@@ -6,6 +6,7 @@ import {
   isTutorialClusterCoreFrameUsable,
   isTutorialClusterProjectionCentered,
   resolveTutorialClusterProjectedPoint,
+  resolveTutorialClusterSpotlightMeasurement,
   resolveTutorialClusterSpotlightFromCoreFrame,
   isPointInsideTutorialSpotlightCircle,
   TUTORIAL_CLUSTER_SPOTLIGHT_SIZE,
@@ -167,6 +168,34 @@ describe('tutorial cluster spotlight', () => {
       { width: 360, height: 800 },
       geometry,
     )).toEqual({ x: 171, y: 364, width: 72, height: 72 });
+  });
+
+  it('falls back through the measured map host when MarkerView has no native frame', () => {
+    const geometry = {
+      wrapper: { x: 0, y: 0, width: 120, height: 96 },
+      core: { x: 72, y: 50, width: 30, height: 30 },
+    };
+
+    expect(resolveTutorialClusterSpotlightMeasurement({
+      nativeCoreFrame: null,
+      projectedPoint: [180, 317],
+      mapHostFrame: { x: 0, y: 91, width: 360, height: 634 },
+      viewport: { width: 360, height: 800 },
+      localGeometry: geometry,
+    })).toEqual({ x: 171, y: 341, width: 72, height: 72 });
+  });
+
+  it('does not invent a map safe-area origin when the host is unmeasured', () => {
+    expect(resolveTutorialClusterSpotlightMeasurement({
+      nativeCoreFrame: null,
+      projectedPoint: [180, 317],
+      mapHostFrame: null,
+      viewport: { width: 360, height: 800 },
+      localGeometry: {
+        wrapper: { x: 0, y: 0, width: 120, height: 96 },
+        core: { x: 72, y: 50, width: 30, height: 30 },
+      },
+    })).toBeNull();
   });
 
   it('recognizes a no-op camera focus within a bounded center tolerance', () => {
