@@ -156,6 +156,7 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
   const [targetUnavailable, setTargetUnavailable] = useState(false);
   const [openingCluster, setOpeningCluster] = useState(false);
   const [demoCalloutVisible, setDemoCalloutVisible] = useState(false);
+  const demoCalloutVisibleRef = useRef(false);
   const [demoCalloutReady, setDemoCalloutReady] = useState(false);
   const [resumeEpoch, setResumeEpoch] = useState(0);
   const stepAbortRef = useRef<AbortController | null>(null);
@@ -181,6 +182,7 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
   // Keep this ref current during render so stale callbacks cannot advance the
   // newly rendered step (for example, the programmatic cluster-open action).
   currentStepIdRef.current = currentStep?.id ?? null;
+  demoCalloutVisibleRef.current = demoCalloutVisible;
 
   useEffect(() => {
     setTutorialVisible(isActive);
@@ -316,7 +318,7 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
         return;
       }
 
-      if (currentStep.id === 'callout-venue-selector' && demoCalloutVisible) {
+      if (currentStep.id === 'callout-venue-selector' && demoCalloutVisibleRef.current) {
         const measurement = demoVenueSelectorLayoutRef.current
           && cleanMeasurement(demoVenueSelectorLayoutRef.current, screenWidth, screenHeight);
         if (!measurement) {
