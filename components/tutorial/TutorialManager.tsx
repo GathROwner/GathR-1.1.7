@@ -28,10 +28,10 @@ type LayoutTarget = {
 };
 
 /**
- * Every guided target below is a normal React Native control measured in its
- * own screen. Mapbox marker and native-callout geometry are deliberately not
- * part of this tour: they cannot provide the same dependable, cross-platform
- * target contract as the rest of the app.
+ * Every live guided target below is a normal React Native control measured in
+ * its own screen. The earlier map and callout lessons deliberately use
+ * authentic static captures, avoiding volatile Mapbox and native-callout
+ * geometry while preserving the real visual language of those surfaces.
  */
 const LAYOUT_TARGETS: Partial<Record<string, LayoutTarget>> = {
   'filter-pills': {

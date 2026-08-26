@@ -47,8 +47,8 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
     title: 'Keep your plans in view',
     content: 'The controls across the top make it easy to browse dates, events, and specials without losing your place.',
     staticScene: 'map-controls',
-    placement: 'top',
-    sheetPosition: 'top',
+    placement: 'bottom',
+    sheetPosition: 'bottom',
     action: 'next',
   },
   {

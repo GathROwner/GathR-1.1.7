@@ -21,9 +21,6 @@ type SceneFocus = {
   y: number;
   width: number;
   height: number;
-  scale: number;
-  translateX: number;
-  translateY: number;
   label: string;
 };
 
@@ -41,37 +38,37 @@ type SceneDefinition = {
 const SCENES: Record<TutorialStaticSceneId, SceneDefinition> = {
   'map-overview': {
     source: CLUSTER_MAP,
-    focus: { x: 0.5, y: 0.48, width: 0.86, height: 0.7, scale: 1, translateX: 0, translateY: 0, label: 'MAP EXAMPLE' },
+    focus: { x: 0.5, y: 0.5, width: 0.86, height: 0.68, label: 'MAP EXAMPLE' },
     accessibilityLabel: 'Example of the GathR map with nearby events and specials',
   },
   'cluster-tree': {
     source: CLUSTER_MAP,
-    focus: { x: 0.53, y: 0.51, width: 0.22, height: 0.17, scale: 1.16, translateX: -0.02, translateY: -0.03, label: 'NEARBY CLUSTER' },
+    focus: { x: 0.48, y: 0.44, width: 0.25, height: 0.18, label: 'NEARBY CLUSTER' },
     accessibilityLabel: 'Example GathR map cluster marker',
   },
   'cluster-summary': {
     source: CLUSTER_MAP,
-    focus: { x: 0.53, y: 0.54, width: 0.43, height: 0.3, scale: 1.22, translateX: -0.02, translateY: -0.03, label: 'AT-A-GLANCE SUMMARY' },
+    focus: { x: 0.5, y: 0.47, width: 0.43, height: 0.28, label: 'AT-A-GLANCE SUMMARY' },
     accessibilityLabel: 'Example cluster counts and category markers',
   },
   'map-controls': {
     source: CLUSTER_MAP,
-    focus: { x: 0.5, y: 0.17, width: 0.87, height: 0.17, scale: 1.04, translateX: 0, translateY: 0.08, label: 'QUICK CONTROLS' },
+    focus: { x: 0.5, y: 0.14, width: 0.87, height: 0.16, label: 'QUICK CONTROLS' },
     accessibilityLabel: 'Example GathR map controls',
   },
   'callout-venues': {
     source: CLUSTER_CALLOUT,
-    focus: { x: 0.5, y: 0.19, width: 0.94, height: 0.16, scale: 1.02, translateX: 0, translateY: 0.04, label: 'VENUE RAIL' },
+    focus: { x: 0.5, y: 0.13, width: 0.94, height: 0.2, label: 'VENUE RAIL' },
     accessibilityLabel: 'Example GathR cluster callout with nearby venues',
   },
   'callout-tabs': {
     source: CLUSTER_CALLOUT,
-    focus: { x: 0.5, y: 0.32, width: 0.94, height: 0.09, scale: 1.08, translateX: 0, translateY: 0.02, label: 'EVENTS AND SPECIALS' },
+    focus: { x: 0.5, y: 0.21, width: 0.94, height: 0.09, label: 'EVENTS AND SPECIALS' },
     accessibilityLabel: 'Example callout tabs for events and specials',
   },
   'callout-card': {
     source: CLUSTER_CALLOUT,
-    focus: { x: 0.5, y: 0.6, width: 0.95, height: 0.38, scale: 1.1, translateX: 0, translateY: -0.09, label: 'LISTING DETAILS' },
+    focus: { x: 0.5, y: 0.5, width: 0.95, height: 0.5, label: 'LISTING DETAILS' },
     accessibilityLabel: 'Example GathR listing card with time, place, and actions',
   },
 };
@@ -86,9 +83,6 @@ export const StaticTutorialScene: React.FC<Props> = ({ scene }) => {
   const definition = SCENES[scene];
   const [frame, setFrame] = useState({ width: 0, height: 0 });
   const imageOpacity = useRef(new Animated.Value(0)).current;
-  const imageScale = useRef(new Animated.Value(1)).current;
-  const imageTranslateX = useRef(new Animated.Value(0)).current;
-  const imageTranslateY = useRef(new Animated.Value(0)).current;
   const ringPulse = useRef(new Animated.Value(1)).current;
 
   const frameInsets = useMemo(() => ({
@@ -99,13 +93,8 @@ export const StaticTutorialScene: React.FC<Props> = ({ scene }) => {
 
   useEffect(() => {
     imageOpacity.setValue(0);
-    Animated.parallel([
-      Animated.timing(imageOpacity, { toValue: 1, duration: 220, useNativeDriver: true }),
-      Animated.spring(imageScale, { toValue: definition.focus.scale, damping: 18, stiffness: 150, mass: 0.7, useNativeDriver: true }),
-      Animated.spring(imageTranslateX, { toValue: frame.width * definition.focus.translateX, damping: 18, stiffness: 150, mass: 0.7, useNativeDriver: true }),
-      Animated.spring(imageTranslateY, { toValue: frame.height * definition.focus.translateY, damping: 18, stiffness: 150, mass: 0.7, useNativeDriver: true }),
-    ]).start();
-  }, [definition.focus.scale, definition.focus.translateX, definition.focus.translateY, frame.height, frame.width, imageOpacity, imageScale, imageTranslateX, imageTranslateY, scene]);
+    Animated.timing(imageOpacity, { toValue: 1, duration: 180, useNativeDriver: true }).start();
+  }, [imageOpacity, scene]);
 
   useEffect(() => {
     const loop = Animated.loop(Animated.sequence([
@@ -131,6 +120,7 @@ export const StaticTutorialScene: React.FC<Props> = ({ scene }) => {
   const focusHeight = frame.height * definition.focus.height;
   const focusLeft = frame.width * definition.focus.x - focusWidth / 2;
   const focusTop = frame.height * definition.focus.y - focusHeight / 2;
+  const labelInsideFocus = focusTop < 34;
 
   return (
     <View
@@ -162,11 +152,6 @@ export const StaticTutorialScene: React.FC<Props> = ({ scene }) => {
             styles.image,
             {
               opacity: imageOpacity,
-              transform: [
-                { translateX: imageTranslateX },
-                { translateY: imageTranslateY },
-                { scale: imageScale },
-              ],
             },
           ]}
         />
@@ -197,7 +182,7 @@ export const StaticTutorialScene: React.FC<Props> = ({ scene }) => {
               },
             ]}
           >
-            <View style={styles.focusLabel}>
+            <View style={[styles.focusLabel, labelInsideFocus && styles.focusLabelInside]}>
               <Text style={styles.focusLabelText}>{definition.focus.label}</Text>
             </View>
           </Animated.View>
@@ -228,6 +213,7 @@ const styles = StyleSheet.create({
     position: 'absolute', top: -29, left: 8, maxWidth: '88%', borderRadius: 10,
     backgroundColor: '#0B2235', borderWidth: 1, borderColor: 'rgba(255,255,255,0.5)', paddingHorizontal: 8, paddingVertical: 5,
   },
+  focusLabelInside: { top: 8 },
   focusLabelText: { color: '#FFFFFF', fontSize: 10, fontWeight: '900', letterSpacing: 0.8 },
   exampleBadge: {
     position: 'absolute', right: 12, bottom: 12, borderRadius: 12, backgroundColor: 'rgba(5, 24, 40, 0.88)',
