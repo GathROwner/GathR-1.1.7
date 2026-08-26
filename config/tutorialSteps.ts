@@ -29,8 +29,8 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
     title: 'Explore a place',
     content: 'Switch places, browse Events or Specials, and tap a card for details.',
     target: 'venue-selector',
-    placement: 'bottom',
-    sheetPosition: 'bottom',
+    placement: 'top',
+    sheetPosition: 'top',
     action: 'next',
   },
   {

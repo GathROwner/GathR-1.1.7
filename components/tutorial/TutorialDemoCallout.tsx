@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import React from 'react';
+import React, { useCallback, useRef } from 'react';
 import { LayoutChangeEvent, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -20,13 +20,20 @@ export const TutorialDemoCallout: React.FC<Props> = ({
   onReady,
 }) => {
   const insets = useSafeAreaInsets();
+  const venueSelectorRef = useRef<View>(null);
 
-  const handleVenueSelectorLayout = (event: LayoutChangeEvent) => {
-    const { x, y, width, height } = event.nativeEvent.layout;
-    if (width <= 0 || height <= 0) return;
-    onVenueSelectorLayout({ x, y, width, height });
-    onReady();
-  };
+  const handleVenueSelectorLayout = useCallback((_event: LayoutChangeEvent) => {
+    // A nested onLayout reports coordinates relative to this bottom sheet.
+    // The tutorial overlay is mounted at the app root, so measure in window
+    // coordinates before handing the frame to the spotlight.
+    requestAnimationFrame(() => {
+      venueSelectorRef.current?.measureInWindow((x, y, width, height) => {
+        if (width <= 0 || height <= 0) return;
+        onVenueSelectorLayout({ x, y, width, height });
+        onReady();
+      });
+    });
+  }, [onReady, onVenueSelectorLayout]);
 
   return (
     <View
@@ -41,7 +48,7 @@ export const TutorialDemoCallout: React.FC<Props> = ({
         <Text style={styles.count}>3 places</Text>
       </View>
 
-      <View onLayout={handleVenueSelectorLayout} style={styles.selectorRow}>
+      <View ref={venueSelectorRef} onLayout={handleVenueSelectorLayout} style={styles.selectorRow}>
         <View style={[styles.placeCard, styles.activePlaceCard]}>
           <View style={[styles.placeAvatar, styles.activeAvatar]}>
             <Ionicons name="location" size={16} color="#168BE8" />
