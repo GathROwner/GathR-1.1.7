@@ -54,6 +54,7 @@ const LAYOUT_TARGETS: Partial<Record<string, LayoutTarget>> = {
     flag: 'tutorialHighlightProfileFacebook',
     layout: 'profileFacebookLayout',
     radius: 20,
+    acceptExisting: true,
   },
   'facebook-submission': {
     flag: 'tutorialHighlightFacebookSubmission',

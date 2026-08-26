@@ -698,7 +698,7 @@ export default function TabLayout() {
             ref={profileButtonRef}
             collapsable={false}
             style={{ marginRight: 16 }}
-            onLayout={profileButtonHighlighted ? publishProfileButtonLayout : undefined}
+            onLayout={publishProfileButtonLayout}
           >
             <View>
               <TouchableOpacity 

@@ -43,12 +43,12 @@ const SCENES: Record<TutorialStaticSceneId, SceneDefinition> = {
   },
   'cluster-tree': {
     source: CLUSTER_MAP,
-    focus: { x: 0.48, y: 0.51, width: 0.25, height: 0.18, label: 'NEARBY CLUSTER' },
+    focus: { x: 0.57, y: 0.52, width: 0.25, height: 0.18, label: 'NEARBY CLUSTER' },
     accessibilityLabel: 'Example GathR map cluster marker',
   },
   'cluster-summary': {
     source: CLUSTER_MAP,
-    focus: { x: 0.5, y: 0.47, width: 0.43, height: 0.28, label: 'AT-A-GLANCE SUMMARY' },
+    focus: { x: 0.56, y: 0.53, width: 0.43, height: 0.28, label: 'AT-A-GLANCE SUMMARY' },
     accessibilityLabel: 'Example cluster counts and category markers',
   },
   'map-controls': {

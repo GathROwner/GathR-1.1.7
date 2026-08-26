@@ -251,12 +251,6 @@ const FacebookPageSubmission = React.forwardRef<View, FacebookPageSubmissionProp
   const [isResolving, setIsResolving] = useState(false);
   const [dailyCount, setDailyCount] = useState(0);
   
-  // Log tutorial state but don't force collapse - padding handles the pulse
-  useEffect(() => {
-    const tutorialActive = (global as any).tutorialHighlightFacebookSubmission;
-    console.log('ðŸŽ¯ FACEBOOK SUBMISSION: Component mounted/updated. Tutorial active:', tutorialActive, 'Expanded:', isExpanded);
-  }, [(global as any).tutorialHighlightFacebookSubmission]);
-
   // Load daily count on component mount
   useEffect(() => {
     loadDailyCount();
@@ -770,210 +764,97 @@ export default function ProfileScreen() {
     };
   }, []);
 
-  // Use useRef to persist measurement state across re-renders
-  const hasMeasuredRef = useRef(false);
-  
+  // Native-stack profile transitions can briefly report an empty row. Measure
+  // after paint and retry a small bounded number of times rather than polling.
   useEffect(() => {
-    console.log('ðŸ“ ONE-SHOT MEASUREMENT: Starting Facebook submission measurement');
-    console.log('ðŸ“ ONE-SHOT MEASUREMENT: hasMeasured status:', hasMeasuredRef.current);
-    
-    const interval = setInterval(() => {
-      const globalFlag = tutorialStepId === 'facebook-submission';
-      
-      if (!globalFlag && facebookSubmissionHighlighted) {
-        setFacebookSubmissionHighlighted(false);
-        console.log('ðŸ“ ONE-SHOT MEASUREMENT: Tutorial highlight flag changed to:', globalFlag);
-      }
-      
-      /*
-      Polling lifecycle:
-    â€¢ While highlight flag is ON â†’ poll until we stabilize (or finalize elsewhere).
-    â€¢ When flag turns OFF â†’ clear interval immediately to avoid log spam
-      after leaving the step or finishing the tutorial.
-*/
-      // Reset when flag turns off
-      if (!globalFlag) {
-        (global as any).facebookSubmissionStable = false;
-        (global as any).facebookSubmissionLayout = null;
-        setTutorialFacebookSubmissionLayout(null);
-        if (hasMeasuredRef.current) {
-          hasMeasuredRef.current = false; // Reset the ref
-        }
-        clearInterval(interval); // ðŸ”• ensure no lingering logs
-        console.log('ðŸ“ ONE-SHOT MEASUREMENT: Reset - tutorial flag off (interval cleared)');
-        return;
-      }
-      
-      // Only measure ONCE when flag is on and we haven't measured yet
-      if (globalFlag && facebookSubmissionRef.current && !hasMeasuredRef.current) {
-        setFacebookSubmissionHighlighted(false);
-        console.log('ðŸ“ ONE-SHOT MEASUREMENT: Taking single measurement (first time only)...');
-        
-        // Clear any stale measurements before our measurement
-        console.log('ðŸ§¹ ONE-SHOT MEASUREMENT: Clearing stale data before measurement');
-        (global as any).facebookSubmissionLayout = null;
-        (global as any).facebookSubmissionStable = false;
-        
-        const measureFacebookSubmission = (rootX = 0, rootY = 0) => {
-          facebookSubmissionRef.current?.measureInWindow((x: number, y: number, width: number, height: number) => {
-          const rawMeasurement = { 
-            x: Math.round(x), 
-            y: Math.round(y), 
-            width: Math.round(width), 
-            height: Math.round(height) 
-          };
+    const isTutorialTarget = tutorialStepId === 'facebook-submission';
+    let cancelled = false;
+    let animationFrame: number | null = null;
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
+    let attempts = 0;
 
-          // Native-stack modal children can briefly report an empty frame on
-          // their first Android layout pass. Do not consume the one-shot until
-          // a real row exists; the bounded tutorial fallback remains available
-          // while this interval retries.
-          if (rawMeasurement.width <= 0 || rawMeasurement.height <= 0) {
+    const clearMeasurement = () => {
+      (global as any).facebookSubmissionStable = false;
+      (global as any).facebookSubmissionLayout = null;
+      setTutorialFacebookSubmissionLayout(null);
+      setFacebookSubmissionHighlighted(false);
+    };
+
+    if (!isTutorialTarget) {
+      clearMeasurement();
+      return () => undefined;
+    }
+
+    clearMeasurement();
+
+    const scheduleMeasurement = () => {
+      animationFrame = requestAnimationFrame(() => {
+        animationFrame = requestAnimationFrame(() => {
+          if (cancelled) return;
+
+          const target = facebookSubmissionRef.current;
+          if (!target) {
+            attempts += 1;
+            if (attempts < 4) retryTimer = setTimeout(scheduleMeasurement, 120);
             return;
           }
-          hasMeasuredRef.current = true;
-          
-          console.log('ðŸ“ ONE-SHOT MEASUREMENT: Raw measurement:', rawMeasurement);
-          
-          /*
-  PROFILE â†’ FACEBOOK SUBMISSION: ONE-SHOT MEASUREMENT
-  Coordinate normalization:
-    â€¢ measureInWindow returns screen coordinates.
-    â€¢ The tutorial overlay is rendered inside this profile root.
-  Convert the target rect into the overlay host's coordinate space instead of using a fixed iOS offset.
-*/
-            const overlayOriginY = Math.round(rootY);
-          console.log('📍 ONE-SHOT MEASUREMENT: Using profile overlay origin:', { rootX, rootY });
-          
-          const adjustedMeasurement = {
-            ...rawMeasurement,
-            x: Math.round(rawMeasurement.x - rootX),
-            y: rawMeasurement.y - overlayOriginY
-          };
-          
-          console.log('ðŸ“ ONE-SHOT MEASUREMENT: Adjusted for profile overlay origin:', {
-            rootX,
-            rootY,
-            originalX: rawMeasurement.x,
-            originalY: rawMeasurement.y,
-            overlayOriginY,
-            adjustedX: adjustedMeasurement.x,
-            adjustedY: adjustedMeasurement.y
-          });
-          
-          // TutorialSpotlight adds its own fixed visual pad around this rect.
-          // Keep the measured row centered and close to its real bounds so the
-          // neighbouring Replay Tutorial row never enters the cutout.
-          
-          // Constrain to screen bounds with a small margin.
-          const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
-          const SCREEN_MARGIN = 15;
-          const minX = SCREEN_MARGIN;
-          const minY = SCREEN_MARGIN;
-          // The overlay now supplies its own pulse ring, so keep this cutout
-          // close to the action row instead of swallowing adjacent settings.
-          const PULSE_SCALE = 1.04;
-          const EXTRA_HORIZONTAL_BUFFER = 4;
-          const EXTRA_VERTICAL_BUFFER = 2;
-          const targetCenterX = adjustedMeasurement.x + adjustedMeasurement.width / 2;
-          const targetCenterY = adjustedMeasurement.y + adjustedMeasurement.height / 2;
-          const maxSpotlightWidth = SCREEN_WIDTH - SCREEN_MARGIN * 2;
-          const maxSpotlightHeight = SCREEN_HEIGHT - SCREEN_MARGIN * 2;
-          const centeredSpotlightWidth = Math.min(
-            adjustedMeasurement.width * PULSE_SCALE + EXTRA_HORIZONTAL_BUFFER * 2,
-            maxSpotlightWidth
-          );
-          const centeredSpotlightHeight = Math.min(
-            adjustedMeasurement.height * PULSE_SCALE + EXTRA_VERTICAL_BUFFER * 2,
-            maxSpotlightHeight
-          );
-          const clamp = (value: number, min: number, max: number) => {
-            return Math.min(Math.max(value, min), Math.max(min, max));
-          };
-
-          const constrainedMeasurement = {
-            x: Math.round(clamp(targetCenterX - centeredSpotlightWidth / 2, minX, SCREEN_WIDTH - SCREEN_MARGIN - centeredSpotlightWidth)),
-            y: Math.round(clamp(targetCenterY - centeredSpotlightHeight / 2, minY, SCREEN_HEIGHT - SCREEN_MARGIN - centeredSpotlightHeight)),
-            width: Math.round(centeredSpotlightWidth),
-            height: Math.round(centeredSpotlightHeight),
-          };
-          console.log('ONE-SHOT MEASUREMENT: Recentered spotlight from target center:', {
-            targetCenterX,
-            targetCenterY,
-            pulseScale: PULSE_SCALE,
-            extraHorizontalBuffer: EXTRA_HORIZONTAL_BUFFER,
-            extraVerticalBuffer: EXTRA_VERTICAL_BUFFER,
-            centeredSpotlightWidth,
-            centeredSpotlightHeight
-          });
-          console.log('ðŸ“ ONE-SHOT MEASUREMENT: Final constrained measurement:', constrainedMeasurement);
-          console.log('ðŸ“ ONE-SHOT MEASUREMENT: Screen bounds:', {
-            screenWidth: SCREEN_WIDTH,
-            screenHeight: SCREEN_HEIGHT,
-            margin: SCREEN_MARGIN,
-            resultingBounds: {
-              left: constrainedMeasurement.x,
-              right: constrainedMeasurement.x + constrainedMeasurement.width,
-              top: constrainedMeasurement.y,
-              bottom: constrainedMeasurement.y + constrainedMeasurement.height
-            }
-          });
-          
-          // Store constrained measurement and mark as stable immediately
-          (global as any).facebookSubmissionLayout = constrainedMeasurement;
-          (global as any).facebookSubmissionStable = true;
-          publishTutorialMeasurement('facebookSubmissionLayout', constrainedMeasurement);
-          setTutorialFacebookSubmissionLayout(constrainedMeasurement);
-         
-          
-          console.log('âœ… ONE-SHOT MEASUREMENT: Complete! Marked as stable with padded bounds');
-          console.log('âœ… ONE-SHOT MEASUREMENT: hasMeasured set to true, will not measure again');
-          
-          // Force re-render to show overlay
-          setFacebookSubmissionHighlighted(true);
-        });
-        };
-
-        const captureAfterPulseStops = () => {
           const profileRoot = profileContainerRef.current as any;
           const overlayHost = profileTutorialOverlayHostRef.current as any;
-          // Prefer the concrete KeyboardAvoidingView ancestor. Android may
-          // render the absolute overlay host correctly while declining its
-          // measureInWindow callback inside a native-stack modal.
-          const measurementRoot =
-            profileRoot && typeof profileRoot.measureInWindow === 'function'
-              ? profileRoot
-              : overlayHost;
+          const measurementRoot = profileRoot && typeof profileRoot.measureInWindow === 'function'
+            ? profileRoot
+            : overlayHost;
+
+          const measureTarget = (rootX = 0, rootY = 0) => {
+            target?.measureInWindow((x: number, y: number, width: number, height: number) => {
+              if (cancelled) return;
+
+              if (width <= 0 || height <= 0) {
+                attempts += 1;
+                if (attempts < 4) retryTimer = setTimeout(scheduleMeasurement, 120);
+                return;
+              }
+
+              const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
+              const margin = 15;
+              const horizontalBuffer = 4;
+              const verticalBuffer = 2;
+              const spotlightWidth = Math.min(width * 1.04 + horizontalBuffer * 2, screenWidth - margin * 2);
+              const spotlightHeight = Math.min(height * 1.04 + verticalBuffer * 2, screenHeight - margin * 2);
+              const centerX = x - rootX + width / 2;
+              const centerY = y - rootY + height / 2;
+              const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), Math.max(min, max));
+              const measurement = {
+                x: Math.round(clamp(centerX - spotlightWidth / 2, margin, screenWidth - margin - spotlightWidth)),
+                y: Math.round(clamp(centerY - spotlightHeight / 2, margin, screenHeight - margin - spotlightHeight)),
+                width: Math.round(spotlightWidth),
+                height: Math.round(spotlightHeight),
+              };
+
+              (global as any).facebookSubmissionLayout = measurement;
+              (global as any).facebookSubmissionStable = true;
+              publishTutorialMeasurement('facebookSubmissionLayout', measurement);
+              setTutorialFacebookSubmissionLayout(measurement);
+              setFacebookSubmissionHighlighted(true);
+            });
+          };
 
           if (measurementRoot && typeof measurementRoot.measureInWindow === 'function') {
-            measurementRoot.measureInWindow((rootX: number, rootY: number) => {
-              measureFacebookSubmission(rootX, rootY);
-            });
+            measurementRoot.measureInWindow((rootX: number, rootY: number) => measureTarget(rootX, rootY));
           } else {
-            measureFacebookSubmission();
+            measureTarget();
           }
-        };
-
-        requestAnimationFrame(() => {
-          requestAnimationFrame(captureAfterPulseStops);
         });
-            } else if (globalFlag && hasMeasuredRef.current) {
-        // We've already measured; if the layout is marked stable, stop polling entirely.
-        if ((global as any).facebookSubmissionStable) {
-          clearInterval(interval);
-          console.log('ðŸ“ ONE-SHOT MEASUREMENT: Stable; interval cleared after "already measured" check');
-        } else {
-          // Not stable yet; do NOT spam logs.
-          // Leave interval running until facebookSubmissionStable flips true.
-        }
-      }
-
-    }, 200);
-    
-    return () => {
-      console.log('ðŸ“ ONE-SHOT MEASUREMENT: Cleanup - stopping interval');
-      clearInterval(interval);
+      });
     };
-  }, [facebookSubmissionHighlighted, setTutorialFacebookSubmissionLayout, tutorialStepId]);
+
+    scheduleMeasurement();
+
+    return () => {
+      cancelled = true;
+      if (animationFrame !== null) cancelAnimationFrame(animationFrame);
+      if (retryTimer) clearTimeout(retryTimer);
+    };
+  }, [setTutorialFacebookSubmissionLayout, tutorialStepId]);
 
   useEffect(() => {
     if (!facebookSubmissionHighlighted) {
@@ -1325,7 +1206,7 @@ const handleLogout = async () => {
                 lastRestartClickAtRef.current = now;
                 amplitudeTrack('tutorial_restart_clicked', {
                   tutorial_id: 'main_onboarding_v1',
-                  tutorial_version: 2,
+                  tutorial_version: 3,
                   total_steps: Array.isArray(TUTORIAL_STEPS) ? TUTORIAL_STEPS.length : 0,
                   source: 'tutorial_system',
                   from_screen: pathname || '/profile',

@@ -109,8 +109,8 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
     id: 'events-filters',
     title: 'Focus the event feed',
     content: 'Use the filters at the top whenever you want to narrow the list around a date or interest.',
-    placement: 'top',
-    sheetPosition: 'top',
+    placement: 'bottom',
+    sheetPosition: 'bottom',
     action: 'next',
   },
   {
@@ -134,8 +134,8 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
     id: 'specials-filters',
     title: 'Find the right offer faster',
     content: 'Filter by time or category when you know what kind of plan you are looking for.',
-    placement: 'top',
-    sheetPosition: 'top',
+    placement: 'bottom',
+    sheetPosition: 'bottom',
     action: 'next',
   },
   {
