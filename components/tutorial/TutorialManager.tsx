@@ -154,7 +154,7 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
     autoAdvancedStepRef.current = null;
     amplitudeTrack('tutorial_step_viewed', {
       tutorial_id: 'main_onboarding_v1',
-      tutorial_version: 2,
+      tutorial_version: 3,
       total_steps: TUTORIAL_STEPS.length,
       step_key: currentStep.id,
       step_index: stepIndex,
@@ -170,7 +170,7 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
     getCompletedIdsForStep(step).forEach((stepKey) => {
       amplitudeTrack('tutorial_step_completed', {
         tutorial_id: 'main_onboarding_v1',
-        tutorial_version: 2,
+        tutorial_version: 3,
         total_steps: TUTORIAL_STEPS.length,
         step_key: stepKey,
         consolidated_into: step.id,

@@ -43,7 +43,7 @@ const SCENES: Record<TutorialStaticSceneId, SceneDefinition> = {
   },
   'cluster-tree': {
     source: CLUSTER_MAP,
-    focus: { x: 0.48, y: 0.44, width: 0.25, height: 0.18, label: 'NEARBY CLUSTER' },
+    focus: { x: 0.48, y: 0.51, width: 0.25, height: 0.18, label: 'NEARBY CLUSTER' },
     accessibilityLabel: 'Example GathR map cluster marker',
   },
   'cluster-summary': {
@@ -82,7 +82,6 @@ export const StaticTutorialScene: React.FC<Props> = ({ scene }) => {
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
   const definition = SCENES[scene];
   const [frame, setFrame] = useState({ width: 0, height: 0 });
-  const imageOpacity = useRef(new Animated.Value(0)).current;
   const ringPulse = useRef(new Animated.Value(1)).current;
 
   const frameInsets = useMemo(() => ({
@@ -90,11 +89,6 @@ export const StaticTutorialScene: React.FC<Props> = ({ scene }) => {
     bottom: Math.max(insets.bottom + 10, 18),
     horizontal: Math.max(insets.left + 10, insets.right + 10, 10),
   }), [insets.bottom, insets.left, insets.right, insets.top]);
-
-  useEffect(() => {
-    imageOpacity.setValue(0);
-    Animated.timing(imageOpacity, { toValue: 1, duration: 180, useNativeDriver: true }).start();
-  }, [imageOpacity, scene]);
 
   useEffect(() => {
     const loop = Animated.loop(Animated.sequence([
@@ -148,12 +142,7 @@ export const StaticTutorialScene: React.FC<Props> = ({ scene }) => {
           accessibilityLabel={definition.accessibilityLabel}
           source={definition.source}
           resizeMode="cover"
-          style={[
-            styles.image,
-            {
-              opacity: imageOpacity,
-            },
-          ]}
+          style={styles.image}
         />
 
         {frame.width > 0 && frame.height > 0 && (

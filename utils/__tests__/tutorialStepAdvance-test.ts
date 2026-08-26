@@ -17,7 +17,7 @@ describe('tutorial step advance', () => {
   });
 
   it('keeps the cluster and callout lessons as distinct screens', () => {
-    expect(TUTORIAL_STEPS).toHaveLength(19);
+    expect(TUTORIAL_STEPS).toHaveLength(18);
     expect(TUTORIAL_STEPS.slice(2, 8).map((step) => step.id)).toEqual([
       'cluster-click',
       'cluster-summary',
@@ -26,6 +26,13 @@ describe('tutorial step advance', () => {
       'callout-tabs',
       'callout-event-details',
     ]);
+  });
+
+  it('records the clear-filter guidance with the filter lesson', () => {
+    expect(getTutorialStepAdvance(8)).toEqual({
+      nextIndex: 9,
+      completedIds: ['filter-pills', 'clear-filters'],
+    });
   });
 
   it('clamps advancement at completion', () => {

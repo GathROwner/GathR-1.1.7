@@ -14,7 +14,7 @@ import {
   getTutorialStepAdvance,
 } from '../utils/tutorialStepAdvance';
 
-const TUTORIAL_VERSION = 2;
+const TUTORIAL_VERSION = 3;
 const anonymousKey = 'gathr:tutorial:anonymous:v2';
 
 const defaultStatus = (): TutorialStatus => ({
