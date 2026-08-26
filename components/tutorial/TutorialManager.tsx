@@ -24,11 +24,7 @@ import {
   isTutorialModalHostedStep,
   setTutorialModalOverlay,
 } from '../../utils/tutorialModalOverlay';
-import {
-  getTutorialMeasurement,
-  subscribeTutorialMeasurement,
-  waitForTutorialMeasurement,
-} from '../../utils/tutorialReadiness';
+import { subscribeTutorialMeasurement, waitForTutorialMeasurement } from '../../utils/tutorialReadiness';
 import {
   getTutorialSpotlightForStep,
   OwnedTutorialSpotlight,
@@ -216,6 +212,11 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
     restartTutorial,
   } = useTutorial();
   const [ownedSpotlight, setOwnedSpotlight] = useState<OwnedTutorialSpotlight>();
+  const ownedSpotlightRef = useRef<OwnedTutorialSpotlight | undefined>(undefined);
+  const updateOwnedSpotlight = useCallback((next?: OwnedTutorialSpotlight) => {
+    ownedSpotlightRef.current = next;
+    setOwnedSpotlight(next);
+  }, []);
   const [targetUnavailable, setTargetUnavailable] = useState(false);
   const [openingCluster, setOpeningCluster] = useState(false);
   const [closingCallout, setClosingCallout] = useState(false);
@@ -299,11 +300,11 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
       reason: 'callout_presentation_and_close_timeout',
     });
     clearHighlightFlags();
-    setOwnedSpotlight(undefined);
+    updateOwnedSpotlight(undefined);
     setTutorialModalOverlay(null);
     skipTutorial();
     return false;
-  }, [pathname, skipTutorial]);
+  }, [pathname, skipTutorial, updateOwnedSpotlight]);
 
   useEffect(() => {
     if (!isActive || !currentStep) return;
@@ -388,7 +389,7 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
         !mismatchRecoveryStarted
       ) {
         mismatchRecoveryStarted = true;
-        setOwnedSpotlight(undefined);
+        updateOwnedSpotlight(undefined);
         void (async () => {
           const recovered = await recoverFailedCalloutPresentation();
           if (!recovered || cancelled || controller.signal.aborted) return;
@@ -412,7 +413,13 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
       controller.abort();
       unsubscribe();
     };
-  }, [advanceOnce, currentStep, isActive, recoverFailedCalloutPresentation]);
+  }, [
+    advanceOnce,
+    currentStep,
+    isActive,
+    recoverFailedCalloutPresentation,
+    updateOwnedSpotlight,
+  ]);
 
   useEffect(() => {
     clusterTransitionInFlightRef.current = false;
@@ -420,23 +427,22 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
 
   useEffect(() => registerTutorialAction('tutorial-cluster-unavailable', () => {
     if (currentStepIdRef.current !== 'cluster-click') return false;
-    setOwnedSpotlight(undefined);
+    updateOwnedSpotlight(undefined);
     setTargetUnavailable(true);
     return true;
-  }), []);
+  }), [updateOwnedSpotlight]);
 
   useEffect(() => registerTutorialAction('tutorial-cluster-rebinding', (shouldClear = true) => {
     if (currentStepIdRef.current !== 'cluster-click') return false;
-    if (shouldClear) setOwnedSpotlight(undefined);
+    if (shouldClear) updateOwnedSpotlight(undefined);
     return true;
-  }), []);
+  }), [updateOwnedSpotlight]);
 
   useEffect(() => {
     stepAbortRef.current?.abort();
     const controller = new AbortController();
-    const preparationStartedAt = Date.now();
     stepAbortRef.current = controller;
-    setOwnedSpotlight(undefined);
+    updateOwnedSpotlight(undefined);
     setTargetUnavailable(false);
     setOpeningCluster(false);
     if (currentStep?.id !== 'callout-venue-selector') {
@@ -509,7 +515,7 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
           ? cleanMeasurement(projected.measurement, screenWidth, screenHeight)
           : null;
         if (freshlyMeasuredSpotlight) {
-          setOwnedSpotlight({
+          updateOwnedSpotlight({
             stepId: currentStep.id,
             config: {
               ...freshlyMeasuredSpotlight,
@@ -532,7 +538,7 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
         const measurement = cleanMeasurement(facebookSubmissionLayout, screenWidth, screenHeight);
         if (measurement) {
           (global as any).facebookSubmissionStable = true;
-          setOwnedSpotlight({
+          updateOwnedSpotlight({
             stepId: currentStep.id,
             config: { ...measurement, borderRadius: target.radius, showPulse: true },
           });
@@ -553,7 +559,7 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
         setTargetUnavailable(true);
         return;
       }
-      setOwnedSpotlight({
+      updateOwnedSpotlight({
         stepId: currentStep.id,
         config: {
           ...measurement,
@@ -566,27 +572,11 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
 
     void prepare().catch(() => {
       if (!controller.signal.aborted && currentStepIdRef.current === currentStep.id) {
-        const recoveredClusterMeasurement = currentStep.id === 'cluster-click'
-          ? getTutorialMeasurement('tutorialClusterLayout')
-          : null;
-        const recoveredSpotlight =
-          recoveredClusterMeasurement && recoveredClusterMeasurement.measuredAt >= preparationStartedAt
-            ? cleanMeasurement(recoveredClusterMeasurement, screenWidth, screenHeight)
-            : null;
-        if (recoveredSpotlight) {
-          setOwnedSpotlight({
-            stepId: currentStep.id,
-            config: {
-              ...recoveredSpotlight,
-              borderRadius: 36,
-              forceCircle: true,
-              showPulse: true,
-            },
-          });
+        if (ownedSpotlightRef.current?.stepId === currentStep.id) {
           setTargetUnavailable(false);
           return;
         }
-        setOwnedSpotlight(undefined);
+        updateOwnedSpotlight(undefined);
         setTargetUnavailable(true);
       }
     });
@@ -607,6 +597,7 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
     router,
     screenHeight,
     screenWidth,
+    updateOwnedSpotlight,
   ]);
 
   useEffect(() => {
@@ -616,7 +607,7 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
       if (currentStepIdRef.current !== 'cluster-click') return;
       const clean = cleanMeasurement(measurement, screenWidth, screenHeight);
       if (!clean) return;
-      setOwnedSpotlight({
+      updateOwnedSpotlight({
         stepId: 'cluster-click',
         config: {
           ...clean,
@@ -627,20 +618,20 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
       });
       setTargetUnavailable(false);
     });
-  }, [currentStep?.id, isActive, screenHeight, screenWidth]);
+  }, [currentStep?.id, isActive, screenHeight, screenWidth, updateOwnedSpotlight]);
 
   useEffect(() => {
     if (!isActive) return;
     const subscription = AppState.addEventListener('change', (state) => {
       if (state !== 'active') stepAbortRef.current?.abort();
       if (state === 'active' && currentStep) {
-        setOwnedSpotlight(undefined);
+        updateOwnedSpotlight(undefined);
         setTargetUnavailable(false);
         setResumeEpoch((epoch) => epoch + 1);
       }
     });
     return () => subscription.remove();
-  }, [currentStep, isActive]);
+  }, [currentStep, isActive, updateOwnedSpotlight]);
 
   const handleStart = useCallback(() => {
     if (pathname !== '/map' && !pathname.endsWith('/map')) {
@@ -782,12 +773,12 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
     stepAbortRef.current?.abort();
     const shouldCloseCallout = currentStep?.id === 'callout-venue-selector';
     clearHighlightFlags();
-    setOwnedSpotlight(undefined);
+    updateOwnedSpotlight(undefined);
     setTargetUnavailable(false);
     setTutorialModalOverlay(null);
     skipTutorial();
     if (shouldCloseCallout) void closeCalloutForTransition();
-  }, [closeCalloutForTransition, currentStep?.id, skipTutorial]);
+  }, [closeCalloutForTransition, currentStep?.id, skipTutorial, updateOwnedSpotlight]);
 
   const handleRestart = useCallback(() => {
     restartTutorial();

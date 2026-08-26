@@ -3359,6 +3359,7 @@ useEffect(() => {
   const tutorialGeometryRemeasureFrameRef = useRef<number | null>(null);
   const tutorialGeometryRemeasurePendingRef = useRef(false);
   const tutorialGeometryRemeasureRequestRef = useRef(0);
+  const tutorialLastPublishedBindingKeyRef = useRef<string | null>(null);
   const tutorialClusterGeometryGate = useMemo(() => createTutorialClusterGeometryGate(), []);
   const [tutorialTargetClusterId, setTutorialTargetClusterId] = useState<string | null>(null);
   const [tutorialTargetBindingRevision, setTutorialTargetBindingRevision] = useState(0);
@@ -3372,6 +3373,7 @@ useEffect(() => {
     if (!forceRevision && tutorialTargetBindingSignatureRef.current === nextSignature) return;
 
     const shouldClearExistingSpotlight =
+      forceRevision ||
       tutorialTargetClusterIdRef.current !== nextId ||
       tutorialTargetBindingSignatureRef.current !== nextSignature;
     void runTutorialAction('tutorial-cluster-rebinding', shouldClearExistingSpotlight);
@@ -3386,6 +3388,7 @@ useEffect(() => {
     tutorialClusterLocalGeometryRef.current = null;
     tutorialGeometryRemeasurePendingRef.current = false;
     tutorialGeometryRemeasureRequestRef.current += 1;
+    tutorialLastPublishedBindingKeyRef.current = null;
     setTutorialTargetClusterId(nextId);
     setTutorialTargetBindingRevision(tutorialTargetBindingRevisionRef.current);
   }, [tutorialClusterGeometryGate]);
@@ -3445,7 +3448,8 @@ useEffect(() => {
           requestId === tutorialGeometryRemeasureRequestRef.current &&
           targetId === tutorialTargetClusterIdRef.current &&
           bindingRevision === tutorialTargetBindingRevisionRef.current &&
-          useTutorialUiStore.getState().currentStepId === 'cluster-click'
+          useTutorialUiStore.getState().currentStepId === 'cluster-click' &&
+          tutorialLastPublishedBindingKeyRef.current !== `${targetId}::${bindingRevision}`
         ) {
           void runTutorialAction('tutorial-cluster-unavailable');
         }
@@ -7572,6 +7576,8 @@ lastOpenedClusterIdRef.current = cluster.id;
       'tutorialClusterLayout',
       measurement,
     );
+    tutorialLastPublishedBindingKeyRef.current =
+      `${capturedBinding.clusterId}::${capturedBinding.revision}`;
     return true;
   }), [assignTutorialClusterTarget, resolveCurrentTutorialCluster, tutorialClusterGeometryGate]);
 
