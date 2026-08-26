@@ -209,6 +209,7 @@ export const TutorialBottomSheet: React.FC<Props> = ({
 const styles = StyleSheet.create({
   card: {
     position: 'absolute',
+    zIndex: 101,
     left: 14,
     borderRadius: 24,
     backgroundColor: '#FFFFFF',
@@ -221,7 +222,7 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 14 },
     shadowOpacity: 0.24,
     shadowRadius: 26,
-    elevation: 22,
+    elevation: 101,
   },
   completionCard: { paddingTop: 22, paddingBottom: 20 },
   clusterCard: { paddingTop: 13, paddingBottom: 13 },

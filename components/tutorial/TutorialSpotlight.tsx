@@ -351,7 +351,19 @@ return (
 };
 
 const styles = StyleSheet.create({
-  container: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'transparent' },
+  // Mapbox owns a native surface on Android. The tutorial must establish one
+  // explicit elevation boundary above it so both the dimmer and its controls
+  // stay together instead of leaving a spotlight with no actionable card.
+  container: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 100,
+    elevation: 100,
+    backgroundColor: 'transparent',
+  },
   maskContainer: { ...StyleSheet.absoluteFillObject },
   fullOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: TUTORIAL_CONFIG.OVERLAY_COLOR },
   touchBlockerFill: { ...StyleSheet.absoluteFillObject, backgroundColor: 'transparent' },
