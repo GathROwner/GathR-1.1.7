@@ -25,6 +25,8 @@ type LayoutTarget = {
   layout: string;
   radius: number;
   acceptExisting?: boolean;
+  requestMeasurement?: string;
+  setHighlighted?: string;
 };
 
 /**
@@ -45,10 +47,26 @@ const LAYOUT_TARGETS: Partial<Record<string, LayoutTarget>> = {
     layout: 'eventsTabLayout',
     radius: 16,
   },
+  'events-filters': {
+    flag: 'tutorialHighlightEventsFilters',
+    layout: 'eventsFiltersLayout',
+    radius: 18,
+    acceptExisting: true,
+    requestMeasurement: 'requestTutorialEventsFiltersMeasurement',
+    setHighlighted: 'setTutorialEventsFiltersHighlighted',
+  },
   'specials-tab': {
     flag: 'tutorialHighlightSpecialsTab',
     layout: 'specialsTabLayout',
     radius: 16,
+  },
+  'specials-filters': {
+    flag: 'tutorialHighlightSpecialsFilters',
+    layout: 'specialsFiltersLayout',
+    radius: 18,
+    acceptExisting: true,
+    requestMeasurement: 'requestTutorialSpecialsFiltersMeasurement',
+    setHighlighted: 'setTutorialSpecialsFiltersHighlighted',
   },
   'profile-facebook': {
     flag: 'tutorialHighlightProfileFacebook',
@@ -69,7 +87,9 @@ const LAYOUT_TARGETS: Partial<Record<string, LayoutTarget>> = {
 const ALL_HIGHLIGHT_FLAGS = [
   'tutorialHighlightFilterPills',
   'tutorialHighlightEventsTab',
+  'tutorialHighlightEventsFilters',
   'tutorialHighlightSpecialsTab',
+  'tutorialHighlightSpecialsFilters',
   'tutorialHighlightProfileFacebook',
   'tutorialHighlightFacebookSubmission',
 ] as const;
@@ -93,6 +113,8 @@ const clearHighlightFlags = () => {
   ALL_HIGHLIGHT_FLAGS.forEach((flag) => {
     (global as any)[flag] = false;
   });
+  (global as any).setTutorialEventsFiltersHighlighted?.(false);
+  (global as any).setTutorialSpecialsFiltersHighlighted?.(false);
   (global as any).facebookSubmissionStable = false;
 };
 
@@ -238,6 +260,14 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
     if (!target) return () => controller.abort();
 
     (global as any)[target.flag] = true;
+    const setHighlighted = target.setHighlighted && (global as any)[target.setHighlighted];
+    if (typeof setHighlighted === 'function') {
+      setHighlighted(true);
+    }
+    const requestMeasurement = target.requestMeasurement && (global as any)[target.requestMeasurement];
+    if (typeof requestMeasurement === 'function') {
+      requestMeasurement();
+    }
     const measure = async () => {
       if (currentStep.id === 'facebook-submission' && facebookSubmissionLayout) {
         const existing = cleanMeasurement(facebookSubmissionLayout, screenWidth, screenHeight);

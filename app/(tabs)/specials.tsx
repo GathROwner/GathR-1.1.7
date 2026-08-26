@@ -1691,6 +1691,7 @@ function SpecialsScreen() {
   const specialsFiltersRef = useRef<View>(null);
   const specialsFiltersPulseAnim = useRef(new Animated.Value(1)).current;
   const [specialsFiltersHighlighted, setSpecialsFiltersHighlighted] = useState(false);
+  const specialsFiltersHighlightActiveRef = useRef(false);
 
   const measureVisibleSpecialsFiltersLayout = useCallback((
     x: number,
@@ -1714,44 +1715,77 @@ function SpecialsScreen() {
     };
   }, []);
 
-  useEffect(() => {
-    let lastMeasurement: any = null;
-    let measurementCount = 0;
-    
-    const interval = setInterval(() => {
-      const globalFlag = (global as any).tutorialHighlightSpecialsFilters || false;
-      if (globalFlag !== specialsFiltersHighlighted) {
-        setSpecialsFiltersHighlighted(globalFlag);
+  const publishSpecialsFiltersMeasurement = useCallback((attempt = 0) => {
+    if (!specialsFiltersHighlightActiveRef.current) return;
+    const target = specialsFiltersRef.current;
+    if (!target) {
+      if (attempt < 3) {
+        setTimeout(() => publishSpecialsFiltersMeasurement(attempt + 1), 120);
       }
-      if (globalFlag && specialsFiltersRef.current) {
-        specialsFiltersRef.current.measureInWindow((x: number, y: number, width: number, height: number) => {
-          // Add stability check to prevent measurement spam
-          const measuredAt = Date.now();
-          const currentMeasurement = measureVisibleSpecialsFiltersLayout(x, y, width, height, measuredAt);
-          
-          if (!lastMeasurement || 
-              Math.abs(currentMeasurement.x - lastMeasurement.x) > 2 ||
-              Math.abs(currentMeasurement.y - lastMeasurement.y) > 2 ||
-              Math.abs(currentMeasurement.width - lastMeasurement.width) > 2 ||
-              Math.abs(currentMeasurement.height - lastMeasurement.height) > 2) {
-            
-            lastMeasurement = currentMeasurement;
-            measurementCount++;
-            
-            // Only log first few measurements to prevent spam
-            if (measurementCount <= 3) {
-              console.log('Tutorial: Measured specials filters:', currentMeasurement);
-            }
-            
-            (global as any).specialsFiltersLayout = currentMeasurement;
-            publishTutorialMeasurement('specialsFiltersLayout', currentMeasurement, measuredAt);
-            (global as any).specialsFiltersLayoutMeasuredAt = measuredAt;
+      return;
+    }
+
+    requestAnimationFrame(() => {
+      target.measureInWindow((x: number, y: number, width: number, height: number) => {
+        if (width <= 0 || height <= 0) {
+          if (attempt < 3) {
+            setTimeout(() => publishSpecialsFiltersMeasurement(attempt + 1), 120);
           }
-        });
+          return;
+        }
+
+        const measuredAt = Date.now();
+        const measurement = measureVisibleSpecialsFiltersLayout(x, y, width, height, measuredAt);
+        const g: any = global as any;
+        g.specialsFiltersLayout = measurement;
+        g.specialsFiltersLayoutMeasuredAt = measuredAt;
+        publishTutorialMeasurement('specialsFiltersLayout', measurement, measuredAt);
+      });
+    });
+  }, [measureVisibleSpecialsFiltersLayout]);
+
+  useEffect(() => {
+    const syncHighlight = (stepId: string | null) => {
+      const highlighted = stepId === 'specials-filters';
+      specialsFiltersHighlightActiveRef.current = highlighted;
+      setSpecialsFiltersHighlighted(highlighted);
+    };
+    syncHighlight(useTutorialUiStore.getState().currentStepId);
+    return useTutorialUiStore.subscribe((state) => syncHighlight(state.currentStepId));
+  }, []);
+
+  useEffect(() => {
+    const setHighlighted = (highlighted: boolean) => {
+      specialsFiltersHighlightActiveRef.current = highlighted;
+      setSpecialsFiltersHighlighted(highlighted);
+    };
+    (global as any).setTutorialSpecialsFiltersHighlighted = setHighlighted;
+    return () => {
+      if ((global as any).setTutorialSpecialsFiltersHighlighted === setHighlighted) {
+        delete (global as any).setTutorialSpecialsFiltersHighlighted;
       }
-    }, 200);
-    return () => clearInterval(interval);
-  }, [specialsFiltersHighlighted, measureVisibleSpecialsFiltersLayout]);
+    };
+  }, []);
+
+  useEffect(() => {
+    (global as any).requestTutorialSpecialsFiltersMeasurement = publishSpecialsFiltersMeasurement;
+    return () => {
+      if ((global as any).requestTutorialSpecialsFiltersMeasurement === publishSpecialsFiltersMeasurement) {
+        delete (global as any).requestTutorialSpecialsFiltersMeasurement;
+      }
+    };
+  }, [publishSpecialsFiltersMeasurement]);
+
+  useEffect(() => {
+    if (!specialsFiltersHighlighted) {
+      specialsFiltersHighlightActiveRef.current = false;
+      delete (global as any).specialsFiltersLayout;
+      return;
+    }
+
+    specialsFiltersHighlightActiveRef.current = true;
+    publishSpecialsFiltersMeasurement();
+  }, [publishSpecialsFiltersMeasurement, specialsFiltersHighlighted]);
 
   useEffect(() => {
     if (specialsFiltersHighlighted) {
@@ -1765,7 +1799,7 @@ function SpecialsScreen() {
       specialsFiltersPulseAnim.stopAnimation();
       specialsFiltersPulseAnim.setValue(1);
     }
-  }, [specialsFiltersHighlighted]);
+  }, [specialsFiltersHighlighted, specialsFiltersPulseAnim]);
   
   // Removed local fetching/listening of user prefs.
   // Now sourced from useUserPrefsStore (hydrated at login via AuthProvider).
@@ -2715,15 +2749,8 @@ useEffect(() => {
             ref={specialsFiltersRef}
             style={styles.filtersContainer}
             onLayout={() => {
-              // Immediate measurement for tutorial
-              if ((global as any).tutorialHighlightSpecialsFilters && specialsFiltersRef.current) {
-                specialsFiltersRef.current.measureInWindow((x: number, y: number, width: number, height: number) => {
-                  const measuredAt = Date.now();
-                  const measurement = measureVisibleSpecialsFiltersLayout(x, y, width, height, measuredAt);
-                  (global as any).specialsFiltersLayout = measurement;
-                  publishTutorialMeasurement('specialsFiltersLayout', measurement, measuredAt);
-                  (global as any).specialsFiltersLayoutMeasuredAt = measuredAt;
-                });
+              if (specialsFiltersHighlighted) {
+                publishSpecialsFiltersMeasurement();
               }
             }}
           >

@@ -1665,97 +1665,81 @@ useEffect(() => {
   const filtersRef = useRef<View>(null);
   const filtersPulseAnim = useRef(new Animated.Value(1)).current;
   const [filtersHighlighted, setFiltersHighlighted] = useState(false);
+  const filtersHighlightActiveRef = useRef(false);
 
-  // Tutorial measurement stability control (filters bar)
-  const filtersHasMeasuredRef = useRef(false);
-  const filtersLastLayoutRef = useRef<{ x: number; y: number; width: number; height: number } | null>(null);
-  const filtersStableCountRef = useRef(0);
-  const filtersStartTsRef = useRef<number | null>(null);
+  const publishEventsFiltersMeasurement = useCallback((attempt = 0) => {
+    if (!filtersHighlightActiveRef.current) return;
+    const target = filtersRef.current;
+    if (!target) {
+      if (attempt < 3) {
+        setTimeout(() => publishEventsFiltersMeasurement(attempt + 1), 120);
+      }
+      return;
+    }
+
+    requestAnimationFrame(() => {
+      target.measureInWindow((x: number, y: number, width: number, height: number) => {
+        if (width <= 0 || height <= 0) {
+          if (attempt < 3) {
+            setTimeout(() => publishEventsFiltersMeasurement(attempt + 1), 120);
+          }
+          return;
+        }
+
+        const measurement = { x, y, width, height };
+        const g: any = global as any;
+        g.eventsFiltersLayout = measurement;
+        g.eventsFiltersStable = true;
+        publishTutorialMeasurement('eventsFiltersLayout', measurement);
+      });
+    });
+  }, []);
 
   useEffect(() => {
-    const interval = setInterval(() => {
-      const g: any = global as any;
-      const globalFlag = g.tutorialHighlightEventsFilters || false;
+    const syncHighlight = (stepId: string | null) => {
+      const highlighted = stepId === 'events-filters';
+      filtersHighlightActiveRef.current = highlighted;
+      setFiltersHighlighted(highlighted);
+    };
+    syncHighlight(useTutorialUiStore.getState().currentStepId);
+    return useTutorialUiStore.subscribe((state) => syncHighlight(state.currentStepId));
+  }, []);
 
-      // If another instance already finalized, stop quietly to avoid duplicate "FINALIZED" logs
-      if (g.eventsFiltersStable) {
-        clearInterval(interval);
-        return;
+  useEffect(() => {
+    const setHighlighted = (highlighted: boolean) => {
+      filtersHighlightActiveRef.current = highlighted;
+      setFiltersHighlighted(highlighted);
+    };
+    (global as any).setTutorialEventsFiltersHighlighted = setHighlighted;
+    return () => {
+      if ((global as any).setTutorialEventsFiltersHighlighted === setHighlighted) {
+        delete (global as any).setTutorialEventsFiltersHighlighted;
       }
+    };
+  }, []);
 
-      // Track flag changes locally
-      if (globalFlag !== filtersHighlighted) {
-        setFiltersHighlighted(globalFlag);
-        // When highlight turns ON, reset stability trackers & start timing window
-        if (globalFlag) {
-          filtersStableCountRef.current = 0;
-          filtersLastLayoutRef.current = null;
-          filtersHasMeasuredRef.current = false;
-          filtersStartTsRef.current = Date.now();
-        }
+  useEffect(() => {
+    (global as any).requestTutorialEventsFiltersMeasurement = publishEventsFiltersMeasurement;
+    return () => {
+      if ((global as any).requestTutorialEventsFiltersMeasurement === publishEventsFiltersMeasurement) {
+        delete (global as any).requestTutorialEventsFiltersMeasurement;
       }
+    };
+  }, [publishEventsFiltersMeasurement]);
 
-      // If flag is OFF, skip measuring but KEEP polling (manager may turn it on shortly)
-      if (!globalFlag) {
-        return;
-      }
+  useEffect(() => {
+    const g: any = global as any;
+    if (!filtersHighlighted) {
+      filtersHighlightActiveRef.current = false;
+      g.eventsFiltersStable = false;
+      delete g.eventsFiltersLayout;
+      return;
+    }
 
-      // Guard: ensure timer exists
-      if (filtersStartTsRef.current == null) {
-        filtersStartTsRef.current = Date.now();
-      }
-      const elapsed = Date.now() - filtersStartTsRef.current!;
-      // Small manager delay for this step is ~250ms — give it room + any header/layout nudges
-      const maxMs = 2600;      // hard cap (~2.6s) to avoid endless polling
-      const minStableMs = 900; // don't finalize too early; wait a bit past the delay
-
-      // Measure until stable OR time-cap
-      if (filtersRef.current) {
-        filtersRef.current.measureInWindow((x: number, y: number, width: number, height: number) => {
-          const cur = { x, y, width, height };
-          g.eventsFiltersLayout = cur;
-          publishTutorialMeasurement('eventsFiltersLayout', cur);
-
-          if (!filtersHasMeasuredRef.current) {
-            filtersHasMeasuredRef.current = true;
-          }
-
-          const prev = filtersLastLayoutRef.current;
-          if (prev) {
-            const dx = Math.abs(cur.x - prev.x);
-            const dy = Math.abs(cur.y - prev.y);
-            const dw = Math.abs(cur.width - prev.width);
-            const dh = Math.abs(cur.height - prev.height);
-            const isStableNow = dx < 2 && dy < 2 && dw < 2 && dh < 2;
-            filtersStableCountRef.current = isStableNow ? (filtersStableCountRef.current + 1) : 0;
-          } else {
-            filtersStableCountRef.current = 0;
-          }
-          filtersLastLayoutRef.current = cur;
-
-          const stable = filtersStableCountRef.current >= 3;
-          const timedOut = elapsed >= maxMs;
-          const stableLongEnough = stable && elapsed >= minStableMs;
-
-          if (stableLongEnough || (timedOut && filtersHasMeasuredRef.current)) {
-            const firstFinalizer = !g.eventsFiltersStable;
-            g.eventsFiltersStable = true;
-            clearInterval(interval);
-            if (firstFinalizer) {
-              console.log('Tutorial: Events filters measurement FINALIZED; polling stopped', { cur, stable, elapsed });
-            }
-          } else {
-            // Sample occasional logs during stabilization
-            if (Math.random() < 0.1) {
-              console.log('Tutorial: Measured events filters:', cur);
-            }
-          }
-        });
-      }
-    }, 200);
-
-    return () => clearInterval(interval);
-  }, [filtersHighlighted]);
+    filtersHighlightActiveRef.current = true;
+    g.eventsFiltersStable = false;
+    publishEventsFiltersMeasurement();
+  }, [filtersHighlighted, publishEventsFiltersMeasurement]);
 
   useEffect(() => {
     if (filtersHighlighted) {
@@ -1769,7 +1753,7 @@ useEffect(() => {
       filtersPulseAnim.stopAnimation();
       filtersPulseAnim.setValue(1);
     }
-  }, [filtersHighlighted]);
+  }, [filtersHighlighted, filtersPulseAnim]);
 
   
   // Removed local fetching/listening of user prefs.
@@ -2679,14 +2663,8 @@ setSelectedImageData({ imageUrl, event });
             ref={filtersRef}
             style={styles.filtersContainer}
             onLayout={() => {
-              // Immediate measurement for tutorial (only if not already finalized/stable)
-              const g: any = global as any;
-              if (g.tutorialHighlightEventsFilters && !g.eventsFiltersStable && filtersRef.current) {
-                filtersRef.current.measureInWindow((x: number, y: number, width: number, height: number) => {
-                  const measurement = { x, y, width, height };
-                  g.eventsFiltersLayout = measurement;
-                  publishTutorialMeasurement('eventsFiltersLayout', measurement);
-                });
+              if (filtersHighlighted) {
+                publishEventsFiltersMeasurement();
               }
             }}
           >
