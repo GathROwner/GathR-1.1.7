@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { AppState, Platform, useWindowDimensions, View } from 'react-native';
+import { AppState, useWindowDimensions, View } from 'react-native';
 import { usePathname, useRouter } from 'expo-router';
 
 import { TUTORIAL_CONFIG, TUTORIAL_STEPS, getCompletedIdsForStep } from '../../config/tutorialSteps';
@@ -15,12 +15,17 @@ import {
   runTutorialAction,
   waitForTutorialAction,
 } from '../../utils/tutorialActions';
-import { getTutorialClusterSpotlightMeasurement } from '../../utils/tutorialClusterSpotlight';
+import {
+  doesTutorialCalloutMatchAnchor,
+  getTutorialClusterAnchorVenueKey,
+  isTutorialClusterCalloutTarget,
+} from '../../utils/tutorialClusterTarget';
 import {
   isTutorialModalHostedStep,
   setTutorialModalOverlay,
 } from '../../utils/tutorialModalOverlay';
 import {
+  subscribeTutorialMeasurement,
   waitForTutorialMeasurement,
 } from '../../utils/tutorialReadiness';
 import {
@@ -143,9 +148,12 @@ const waitForClusters = (signal: AbortSignal): Promise<Cluster[] | null> => {
   });
 };
 
-const waitForCallout = (signal: AbortSignal) => new Promise<boolean>((resolve) => {
+const waitForCallout = (
+  signal: AbortSignal,
+  anchorVenueKey: string,
+) => new Promise<boolean>((resolve) => {
   const current = useMapStore.getState().selectedVenues;
-  if (current.length) {
+  if (doesTutorialCalloutMatchAnchor(current, anchorVenueKey)) {
     resolve(true);
     return;
   }
@@ -159,7 +167,7 @@ const waitForCallout = (signal: AbortSignal) => new Promise<boolean>((resolve) =
     resolve(ready);
   };
   const unsubscribe = useMapStore.subscribe((state) => {
-    if (state.selectedVenues.length) finish(true);
+    if (doesTutorialCalloutMatchAnchor(state.selectedVenues, anchorVenueKey)) finish(true);
   });
   const onAbort = () => finish(false);
   const timeout = setTimeout(() => finish(false), TUTORIAL_CONFIG.ROUTE_TIMEOUT_MS);
@@ -337,13 +345,27 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
   useEffect(() => {
     if (!isActive || currentStep?.id !== 'cluster-click') return;
 
-    let calloutWasOpen = useMapStore.getState().selectedVenues.length > 0;
+    let targetCalloutWasOpen = doesTutorialCalloutMatchAnchor(
+      useMapStore.getState().selectedVenues,
+      targetClusterRef.current
+        ? getTutorialClusterAnchorVenueKey(targetClusterRef.current)
+        : null,
+    );
+    let anyCalloutWasOpen = useMapStore.getState().selectedVenues.length > 0;
     let presentationWaitStarted = false;
+    let mismatchRecoveryStarted = false;
     let cancelled = false;
     const controller = new AbortController();
     const unsubscribe = useMapStore.subscribe((state) => {
-      const calloutIsOpen = state.selectedVenues.length > 0;
-      if (!calloutWasOpen && calloutIsOpen && !presentationWaitStarted) {
+      const anchorVenueKey = targetClusterRef.current
+        ? getTutorialClusterAnchorVenueKey(targetClusterRef.current)
+        : null;
+      const targetCalloutIsOpen = doesTutorialCalloutMatchAnchor(
+        state.selectedVenues,
+        anchorVenueKey,
+      );
+      const anyCalloutIsOpen = state.selectedVenues.length > 0;
+      if (!targetCalloutWasOpen && targetCalloutIsOpen && !presentationWaitStarted) {
         presentationWaitStarted = true;
         void (async () => {
           const presentationReady = await waitForCalloutPresentation(controller.signal);
@@ -358,8 +380,30 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
             }
           }
         })();
+      } else if (
+        !anyCalloutWasOpen &&
+        anyCalloutIsOpen &&
+        !targetCalloutIsOpen &&
+        !mismatchRecoveryStarted
+      ) {
+        mismatchRecoveryStarted = true;
+        setOwnedSpotlight(undefined);
+        void (async () => {
+          const recovered = await recoverFailedCalloutPresentation();
+          if (!recovered || cancelled || controller.signal.aborted) return;
+
+          const target = targetClusterRef.current;
+          const measured = target
+            ? await runTutorialAction('measure-cluster', target)
+            : false;
+          if (!measured && !cancelled && !controller.signal.aborted) {
+            setTargetUnavailable(true);
+          }
+          mismatchRecoveryStarted = false;
+        })();
       }
-      calloutWasOpen = calloutIsOpen;
+      targetCalloutWasOpen = targetCalloutIsOpen;
+      anyCalloutWasOpen = anyCalloutIsOpen;
     });
 
     return () => {
@@ -372,6 +416,19 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
   useEffect(() => {
     clusterTransitionInFlightRef.current = false;
   }, [currentStep?.id]);
+
+  useEffect(() => registerTutorialAction('tutorial-cluster-unavailable', () => {
+    if (currentStepIdRef.current !== 'cluster-click') return false;
+    setOwnedSpotlight(undefined);
+    setTargetUnavailable(true);
+    return true;
+  }), []);
+
+  useEffect(() => registerTutorialAction('tutorial-cluster-rebinding', () => {
+    if (currentStepIdRef.current !== 'cluster-click') return false;
+    setOwnedSpotlight(undefined);
+    return true;
+  }), []);
 
   useEffect(() => {
     stepAbortRef.current?.abort();
@@ -405,20 +462,28 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
           setTargetUnavailable(true);
           return;
         }
+        if (useMapStore.getState().selectedVenues.length > 0) {
+          const existingCalloutClosed = await recoverFailedCalloutPresentation();
+          if (!existingCalloutClosed || controller.signal.aborted) {
+            return;
+          }
+        }
         const clusters = await waitForClusters(controller.signal);
         if (!clusters || controller.signal.aborted) {
           setTargetUnavailable(true);
           return;
         }
-        const target = clusters.find((cluster) => cluster.eventCount + cluster.specialCount > 0)
-          ?? clusters[0];
+        const target = clusters.find(isTutorialClusterCalloutTarget);
         if (!target) {
           setTargetUnavailable(true);
           return;
         }
         targetClusterRef.current = target;
-        await runTutorialAction('focus-cluster', target);
-        if (controller.signal.aborted) return;
+        const focused = await runTutorialAction('focus-cluster', target);
+        if (!focused || controller.signal.aborted) {
+          setTargetUnavailable(true);
+          return;
+        }
 
         const measurementReady = await waitForTutorialAction('measure-cluster', {
           timeoutMs: TUTORIAL_CONFIG.ROUTE_TIMEOUT_MS,
@@ -429,7 +494,11 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
           return;
         }
         const measuredAfter = Date.now();
-        await runTutorialAction('measure-cluster', target);
+        const measurementInvoked = await runTutorialAction('measure-cluster', target);
+        if (!measurementInvoked || controller.signal.aborted) {
+          setTargetUnavailable(true);
+          return;
+        }
         const projected = await waitForTutorialMeasurement('tutorialClusterLayout', {
           timeoutMs: TUTORIAL_CONFIG.MAP_PROJECTION_TIMEOUT_MS,
           freshAfter: measuredAfter,
@@ -437,25 +506,18 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
         });
         if (controller.signal.aborted) return;
 
-        const mapLayout = (global as any).mapViewLayout;
-        const mapOriginX = Number(mapLayout?.absoluteX ?? mapLayout?.x ?? 0);
-        const mapOriginY = Number(mapLayout?.absoluteY ?? mapLayout?.y ?? 0);
-        const mapWidth = Number(mapLayout?.width ?? screenWidth);
-        const mapHeight = Number(mapLayout?.height ?? screenHeight);
-        const fallbackMeasurement = getTutorialClusterSpotlightMeasurement(
-          [mapWidth / 2, mapHeight / 2],
-          { x: mapOriginX, y: mapOriginY },
-          Platform.OS,
-        );
         const freshlyMeasuredSpotlight = projected.source === 'ready' && projected.measurement
           ? cleanMeasurement(projected.measurement, screenWidth, screenHeight)
           : null;
-        const measurement = freshlyMeasuredSpotlight
-          ?? cleanMeasurement(fallbackMeasurement, screenWidth, screenHeight);
-        if (measurement) {
+        if (freshlyMeasuredSpotlight) {
           setOwnedSpotlight({
             stepId: currentStep.id,
-            config: { ...measurement, borderRadius: 36, forceCircle: true, showPulse: true },
+            config: {
+              ...freshlyMeasuredSpotlight,
+              borderRadius: 36,
+              forceCircle: true,
+              showPulse: true,
+            },
           });
         } else {
           setTargetUnavailable(true);
@@ -516,11 +578,32 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
     facebookSubmissionLayout,
     isActive,
     pathname,
+    recoverFailedCalloutPresentation,
     resumeEpoch,
     router,
     screenHeight,
     screenWidth,
   ]);
+
+  useEffect(() => {
+    if (!isActive || currentStep?.id !== 'cluster-click') return undefined;
+
+    return subscribeTutorialMeasurement('tutorialClusterLayout', (measurement) => {
+      if (currentStepIdRef.current !== 'cluster-click') return;
+      const clean = cleanMeasurement(measurement, screenWidth, screenHeight);
+      if (!clean) return;
+      setOwnedSpotlight({
+        stepId: 'cluster-click',
+        config: {
+          ...clean,
+          borderRadius: 36,
+          forceCircle: true,
+          showPulse: true,
+        },
+      });
+      setTargetUnavailable(false);
+    });
+  }, [currentStep?.id, isActive, screenHeight, screenWidth]);
 
   useEffect(() => {
     if (!isActive) return;
@@ -589,7 +672,12 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
       const controller = new AbortController();
       let transitionAdvanced = false;
       try {
-        const ready = waitForCallout(controller.signal);
+        const anchorVenueKey = getTutorialClusterAnchorVenueKey(targetClusterRef.current);
+        if (!anchorVenueKey) {
+          setTargetUnavailable(true);
+          return;
+        }
+        const ready = waitForCallout(controller.signal, anchorVenueKey);
         const invoked = await runTutorialAction('open-cluster', targetClusterRef.current);
         const opened = invoked ? await ready : false;
         const presentationReady = opened

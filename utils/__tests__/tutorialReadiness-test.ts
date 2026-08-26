@@ -1,6 +1,7 @@
 import {
   clearTutorialReadinessForTests,
   publishTutorialMeasurement,
+  subscribeTutorialMeasurement,
   waitForTutorialMeasurement,
   withTutorialTimeout,
 } from '../tutorialReadiness';
@@ -83,6 +84,18 @@ describe('tutorial readiness', () => {
       source: 'ready',
       measurement: { width: 40, height: 50, measuredAt: 120 },
     });
+  });
+
+  it('streams fresh target geometry until the active-step subscriber detaches', () => {
+    const listener = jest.fn();
+    const unsubscribe = subscribeTutorialMeasurement('live-target', listener);
+
+    publishTutorialMeasurement('live-target', { x: 1, y: 2, width: 30, height: 40 }, 100);
+    expect(listener).toHaveBeenCalledWith({ x: 1, y: 2, width: 30, height: 40, measuredAt: 100 });
+
+    unsubscribe();
+    publishTutorialMeasurement('live-target', { x: 5, y: 6, width: 30, height: 40 }, 120);
+    expect(listener).toHaveBeenCalledTimes(1);
   });
 
   it('bounds external readiness promises', async () => {

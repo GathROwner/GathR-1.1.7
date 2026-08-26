@@ -50,6 +50,20 @@ export const getTutorialMeasurement = (name: string): TutorialMeasurement | null
   };
 };
 
+export const subscribeTutorialMeasurement = (
+  name: string,
+  listener: MeasurementListener,
+): (() => void) => {
+  const set = listeners.get(name) ?? new Set<MeasurementListener>();
+  set.add(listener);
+  listeners.set(name, set);
+
+  return () => {
+    set.delete(listener);
+    if (set.size === 0) listeners.delete(name);
+  };
+};
+
 export const waitForTutorialMeasurement = (
   name: string,
   options: {

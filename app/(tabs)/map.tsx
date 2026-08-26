@@ -41,6 +41,7 @@ import { useTutorialUiStore } from '../../store/tutorialUiStore';
 import type { Event, Venue, Cluster, TimeStatus, InterestLevel } from '../../types/events';
 import { FilterCriteria, TimeFilterType } from '../../types/filter';
 import type { InterestCarouselFilter } from '../../types/store';
+import type { ComponentMeasurement } from '../../types/tutorial';
 import { filterClusterForInterestCarouselFilter } from '../../utils/interestCarouselFilterUtils';
 import { isMapCameraGestureActive } from '../../utils/mapCameraGestures';
 
@@ -126,7 +127,17 @@ import {
   shouldActivateAndroidRetapOverlay,
   shouldRouteTutorialCalloutBack,
 } from '../../utils/tutorialCalloutClosing';
-import { getTutorialClusterSpotlightMeasurement } from '../../utils/tutorialClusterSpotlight';
+import {
+  getTutorialClusterSpotlightFromCoreFrame,
+  getTutorialClusterSpotlightMeasurement,
+  isTutorialClusterCoreFrameUsable,
+  type TutorialClusterLocalGeometry as TutorialClusterCoreGeometry,
+} from '../../utils/tutorialClusterSpotlight';
+import {
+  appendTutorialClusterTarget,
+  getTutorialClusterAnchorVenueKey,
+  resolveTutorialClusterTarget,
+} from '../../utils/tutorialClusterTarget';
 import { publishTutorialMeasurement } from '../../utils/tutorialReadiness';
 import {
   getTutorialModalOverlay,
@@ -2377,16 +2388,76 @@ interface TreeMarkerProps {
   reduceMotionEnabled?: boolean;
   tutorialTargetRef?: React.RefObject<View | null>;
   tutorialGeometryRef?: React.MutableRefObject<TutorialClusterLocalGeometry | null>;
+  onTutorialGeometryReady?: (geometry: TutorialClusterLocalGeometry) => void;
 }
 
 type LocalLayout = { x: number; y: number; width: number; height: number };
-type TutorialClusterLocalGeometry = {
+type TutorialClusterLocalGeometry = TutorialClusterCoreGeometry & {
   clusterId: string;
-  wrapper: LocalLayout;
-  core: LocalLayout;
 };
 
-const TreeMarker: React.FC<TreeMarkerProps> = React.memo(({ cluster, isSelected, isProcessing = false, isReady = true, detailsEnabled = true, isActive = true, appearance = 'tree', detailMode, presentation = 'story', reduceMotionEnabled = false, tutorialTargetRef, tutorialGeometryRef }) => {
+const measureStableTutorialClusterCoreFrame = (
+  getNode: () => View | null,
+  timeoutMs = 450,
+): Promise<ComponentMeasurement | null> => new Promise((resolve) => {
+  let settled = false;
+  let frameRequest: number | null = null;
+  let lastValidFrame: ComponentMeasurement | null = null;
+
+  const finish = (frame: ComponentMeasurement | null) => {
+    if (settled) return;
+    settled = true;
+    clearTimeout(timeout);
+    if (frameRequest !== null) cancelAnimationFrame(frameRequest);
+    resolve(frame);
+  };
+
+  const scheduleSample = () => {
+    if (settled) return;
+    frameRequest = requestAnimationFrame(sample);
+  };
+
+  const sample = () => {
+    if (settled) return;
+    frameRequest = null;
+    const node = getNode();
+    if (!node?.measureInWindow) {
+      scheduleSample();
+      return;
+    }
+
+    node.measureInWindow((x, y, width, height) => {
+      if (settled) return;
+      const nextFrame = { x, y, width, height };
+      const isFinitePositive =
+        [x, y, width, height].every(Number.isFinite) && width > 0 && height > 0;
+      if (isFinitePositive) {
+        if (lastValidFrame) {
+          const previousCenterX = lastValidFrame.x + lastValidFrame.width / 2;
+          const previousCenterY = lastValidFrame.y + lastValidFrame.height / 2;
+          const nextCenterX = x + width / 2;
+          const nextCenterY = y + height / 2;
+          const stable =
+            Math.abs(previousCenterX - nextCenterX) <= 1 &&
+            Math.abs(previousCenterY - nextCenterY) <= 1 &&
+            Math.abs(lastValidFrame.width - width) <= 1 &&
+            Math.abs(lastValidFrame.height - height) <= 1;
+          if (stable) {
+            finish(nextFrame);
+            return;
+          }
+        }
+        lastValidFrame = nextFrame;
+      }
+      scheduleSample();
+    });
+  };
+
+  const timeout = setTimeout(() => finish(null), timeoutMs);
+  scheduleSample();
+});
+
+const TreeMarker: React.FC<TreeMarkerProps> = React.memo(({ cluster, isSelected, isProcessing = false, isReady = true, detailsEnabled = true, isActive = true, appearance = 'tree', detailMode, presentation = 'story', reduceMotionEnabled = false, tutorialTargetRef, tutorialGeometryRef, onTutorialGeometryReady }) => {
   // Determine color based on time status
   const color = getTimeStatusColor(cluster.timeStatus);
 
@@ -2402,12 +2473,14 @@ const TreeMarker: React.FC<TreeMarkerProps> = React.memo(({ cluster, isSelected,
     if (!tutorialGeometryRef || !tutorialWrapperLayoutRef.current || !tutorialCoreLayoutRef.current) {
       return;
     }
-    tutorialGeometryRef.current = {
+    const geometry = {
       clusterId: String(cluster.id),
       wrapper: tutorialWrapperLayoutRef.current,
       core: tutorialCoreLayoutRef.current,
     };
-  }, [cluster.id, tutorialGeometryRef]);
+    tutorialGeometryRef.current = geometry;
+    onTutorialGeometryReady?.(geometry);
+  }, [cluster.id, onTutorialGeometryReady, tutorialGeometryRef]);
 
   useEffect(() => {
     publishTutorialLocalGeometry();
@@ -2489,13 +2562,34 @@ const TreeMarker: React.FC<TreeMarkerProps> = React.memo(({ cluster, isSelected,
   }
 
   if (isBeacon && presentation === 'summary') {
-    return (
+    const summaryBeacon = (
       <ClusterSummaryBeacon
         categoryItems={clusterCategoryItems}
         cluster={cluster}
         isProcessing={isProcessing}
         isReady={isReady}
       />
+    );
+    if (!tutorialTargetRef && !tutorialGeometryRef) return summaryBeacon;
+
+    return (
+      <View
+        ref={tutorialTargetRef}
+        collapsable={false}
+        onLayout={(event) => {
+          const layout = event.nativeEvent.layout;
+          tutorialWrapperLayoutRef.current = layout;
+          tutorialCoreLayoutRef.current = {
+            x: 0,
+            y: 0,
+            width: layout.width,
+            height: layout.height,
+          };
+          publishTutorialLocalGeometry();
+        }}
+      >
+        {summaryBeacon}
+      </View>
     );
   }
 
@@ -2802,7 +2896,9 @@ const TreeMarker: React.FC<TreeMarkerProps> = React.memo(({ cluster, isSelected,
     prevProps.detailMode === nextProps.detailMode &&
     prevProps.presentation === nextProps.presentation &&
     prevProps.reduceMotionEnabled === nextProps.reduceMotionEnabled &&
-    prevProps.tutorialTargetRef === nextProps.tutorialTargetRef
+    prevProps.tutorialTargetRef === nextProps.tutorialTargetRef &&
+    prevProps.tutorialGeometryRef === nextProps.tutorialGeometryRef &&
+    prevProps.onTutorialGeometryReady === nextProps.onTutorialGeometryReady
   );
 });
 
@@ -3233,7 +3329,88 @@ useEffect(() => {
   const mapRef = useRef<MapboxGL.MapView>(null);
   const tutorialClusterCoreRef = useRef<View>(null);
   const tutorialClusterLocalGeometryRef = useRef<TutorialClusterLocalGeometry | null>(null);
+  const tutorialTargetAnchorVenueKeyRef = useRef<string | null>(null);
+  const tutorialCurrentClusterRef = useRef<Cluster | null>(null);
+  const tutorialTargetClusterIdRef = useRef<string | null>(null);
+  const tutorialGeometryRemeasureFrameRef = useRef<number | null>(null);
   const [tutorialTargetClusterId, setTutorialTargetClusterId] = useState<string | null>(null);
+  const assignTutorialClusterTarget = useCallback((cluster: Cluster | null) => {
+    tutorialCurrentClusterRef.current = cluster;
+    const nextId = cluster ? String(cluster.id) : null;
+    if (tutorialTargetClusterIdRef.current === nextId) return;
+
+    void runTutorialAction('tutorial-cluster-rebinding');
+    tutorialTargetClusterIdRef.current = nextId;
+    tutorialClusterCoreRef.current = null;
+    tutorialClusterLocalGeometryRef.current = null;
+    setTutorialTargetClusterId(nextId);
+  }, []);
+  const resolveCurrentTutorialCluster = useCallback((requested?: Cluster | null) => {
+    const currentClusters = useMapStore.getState().clusters;
+    const requestedId = requested ? String(requested.id) : tutorialTargetClusterIdRef.current;
+    return resolveTutorialClusterTarget(
+      currentClusters,
+      tutorialTargetAnchorVenueKeyRef.current,
+      requestedId,
+    );
+  }, []);
+
+  useEffect(() => {
+    if (!tutorialTargetAnchorVenueKeyRef.current) return;
+    const reboundTarget = resolveTutorialClusterTarget(
+      clusters,
+      tutorialTargetAnchorVenueKeyRef.current,
+      tutorialTargetClusterIdRef.current,
+    );
+    assignTutorialClusterTarget(reboundTarget);
+    if (!reboundTarget) {
+      void runTutorialAction('tutorial-cluster-unavailable');
+    }
+  }, [assignTutorialClusterTarget, clusters]);
+
+  useEffect(() => {
+    const clearTargetWhenInactive = (state: ReturnType<typeof useTutorialUiStore.getState>) => {
+      if (state.isVisible && state.currentStepId === 'cluster-click') return;
+      tutorialTargetAnchorVenueKeyRef.current = null;
+      assignTutorialClusterTarget(null);
+    };
+    clearTargetWhenInactive(useTutorialUiStore.getState());
+    return useTutorialUiStore.subscribe(clearTargetWhenInactive);
+  }, [assignTutorialClusterTarget]);
+
+  const handleTutorialClusterGeometryReady = useCallback((geometry: TutorialClusterLocalGeometry) => {
+    const tutorialUi = useTutorialUiStore.getState();
+    if (
+      geometry.clusterId !== tutorialTargetClusterIdRef.current ||
+      !isFocusedRef.current ||
+      tutorialCameraFocusActiveRef.current ||
+      !tutorialUi.isVisible ||
+      tutorialUi.currentStepId !== 'cluster-click'
+    ) {
+      return;
+    }
+
+    if (tutorialGeometryRemeasureFrameRef.current !== null) {
+      cancelAnimationFrame(tutorialGeometryRemeasureFrameRef.current);
+    }
+    tutorialGeometryRemeasureFrameRef.current = requestAnimationFrame(() => {
+      tutorialGeometryRemeasureFrameRef.current = null;
+      const currentTarget = tutorialCurrentClusterRef.current;
+      if (
+        currentTarget &&
+        String(currentTarget.id) === tutorialTargetClusterIdRef.current
+      ) {
+        void runTutorialAction('measure-cluster', currentTarget);
+      }
+    });
+  }, []);
+
+  useEffect(() => () => {
+    if (tutorialGeometryRemeasureFrameRef.current !== null) {
+      cancelAnimationFrame(tutorialGeometryRemeasureFrameRef.current);
+      tutorialGeometryRemeasureFrameRef.current = null;
+    }
+  }, []);
   const routeFeatureCalloutRequestRef = useRef(0);
   const mapStyleSwitchInFlightRef = useRef(false);
   const pendingMapStyleCameraRef = useRef<{
@@ -3325,6 +3502,7 @@ useEffect(() => {
   const androidRetapOverlayPressHandledRef = useRef(false);
   const androidClusterHitTargetsRef = useRef<AndroidClusterHitTarget[]>([]);
   const tutorialCameraIdleResolverRef = useRef<(() => void) | null>(null);
+  const tutorialCameraFocusActiveRef = useRef(false);
   const androidCalloutTeardownTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const androidControlsReleaseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const androidControlsReleaseSequenceRef = useRef(0);
@@ -6956,8 +7134,13 @@ lastOpenedClusterIdRef.current = cluster.id;
   ]); // REMOVED analytics, zoomLevel dependencies
 
   useEffect(() => registerTutorialAction('open-cluster', async (target: Cluster) => {
-    await handleMarkerPress(target);
-  }), [handleMarkerPress]);
+    const currentTarget = resolveCurrentTutorialCluster(target);
+    if (!currentTarget) return false;
+
+    assignTutorialClusterTarget(currentTarget);
+    await handleMarkerPress(currentTarget);
+    return true;
+  }), [assignTutorialClusterTarget, handleMarkerPress, resolveCurrentTutorialCluster]);
 
   useEffect(() => registerTutorialAction('wait-callout-ready', async (
     timeoutMs?: number,
@@ -6982,11 +7165,17 @@ lastOpenedClusterIdRef.current = cluster.id;
 
   useEffect(() => {
     const unregister = registerTutorialAction('focus-cluster', async (target: Cluster) => {
-      const coordinate = getClusterMapCoordinate(target);
-      if (!coordinate || !cameraRef.current) return;
+      const anchorVenueKey = getTutorialClusterAnchorVenueKey(target);
+      if (!anchorVenueKey || !cameraRef.current) return false;
 
-      setTutorialTargetClusterId(String(target.id));
-      tutorialClusterLocalGeometryRef.current = null;
+      tutorialTargetAnchorVenueKeyRef.current = anchorVenueKey;
+      const currentTarget = resolveCurrentTutorialCluster(target);
+      const coordinate = currentTarget ? getClusterMapCoordinate(currentTarget) : null;
+      if (!currentTarget || !coordinate) return false;
+      tutorialCameraIdleResolverRef.current?.();
+      tutorialCameraFocusActiveRef.current = true;
+      setIgnoreProgrammaticTrace(true, 'tutorial_cluster_focus');
+      assignTutorialClusterTarget(currentTarget);
 
       if (!isFocusedRef.current) {
         await new Promise<void>((resolve) => {
@@ -7005,7 +7194,6 @@ lastOpenedClusterIdRef.current = cluster.id;
         });
       }
 
-      tutorialCameraIdleResolverRef.current?.();
       await new Promise<void>((resolve) => {
         let settled = false;
         let fallbackTimer: ReturnType<typeof setTimeout>;
@@ -7016,6 +7204,10 @@ lastOpenedClusterIdRef.current = cluster.id;
           if (tutorialCameraIdleResolverRef.current === finish) {
             tutorialCameraIdleResolverRef.current = null;
           }
+          if (tutorialCameraFocusActiveRef.current) {
+            tutorialCameraFocusActiveRef.current = false;
+            setIgnoreProgrammaticTrace(false, 'tutorial_cluster_focus_settled');
+          }
           resolve();
         };
         fallbackTimer = setTimeout(finish, 1600);
@@ -7025,23 +7217,33 @@ lastOpenedClusterIdRef.current = cluster.id;
           animationDuration: 240,
         });
       });
+
+      const reboundTarget = resolveCurrentTutorialCluster(currentTarget);
+      if (!reboundTarget) {
+        assignTutorialClusterTarget(null);
+        return false;
+      }
+      assignTutorialClusterTarget(reboundTarget);
+      return true;
     });
 
     return () => {
       tutorialRouteFocusResolverRef.current?.();
       tutorialCameraIdleResolverRef.current?.();
+      if (tutorialCameraFocusActiveRef.current) {
+        tutorialCameraFocusActiveRef.current = false;
+        setIgnoreProgrammaticTrace(false, 'tutorial_cluster_focus_cleanup');
+      }
       unregister();
     };
-  }, []);
+  }, [assignTutorialClusterTarget, resolveCurrentTutorialCluster, setIgnoreProgrammaticTrace]);
 
   useEffect(() => registerTutorialAction('measure-cluster', async (target: Cluster) => {
-    // Mapbox MarkerView children live on a separate native surface. Their
-    // measureInWindow coordinates can describe the texture host rather than
-    // the marker's geographic position, especially after a route transition.
-    // Project the target coordinate through Mapbox so spotlight and marker
-    // always share the same coordinate system on both platforms.
-    const coordinate = getClusterMapCoordinate(target);
-    if (!coordinate || !mapRef.current) return;
+    const currentTarget = resolveCurrentTutorialCluster(target);
+    const coordinate = currentTarget ? getClusterMapCoordinate(currentTarget) : null;
+    if (!currentTarget || !coordinate || !mapRef.current) return false;
+    assignTutorialClusterTarget(currentTarget);
+    const currentTargetId = String(currentTarget.id);
 
     let projectionTimeout: ReturnType<typeof setTimeout> | undefined;
     const point = await Promise.race([
@@ -7052,20 +7254,47 @@ lastOpenedClusterIdRef.current = cluster.id;
     ]).finally(() => {
       if (projectionTimeout) clearTimeout(projectionTimeout);
     });
-    if (!Array.isArray(point) || point.length !== 2) return;
+    if (!Array.isArray(point) || point.length !== 2) return false;
 
     const mapLayout = (global as any).mapViewLayout;
     const mapOriginX = Number(mapLayout?.absoluteX ?? mapLayout?.x ?? 0);
     const mapOriginY = Number(mapLayout?.absoluteY ?? mapLayout?.y ?? 0);
+    const projectedCenter = {
+      x: mapOriginX + Number(point[0]),
+      y: mapOriginY + Number(point[1]),
+    };
+    const viewport = Dimensions.get('window');
+    const measuredCoreFrame = await measureStableTutorialClusterCoreFrame(
+      () => tutorialClusterCoreRef.current,
+    );
+    const localGeometry = tutorialClusterLocalGeometryRef.current;
+    const currentLocalGeometry = localGeometry?.clusterId === currentTargetId
+      ? localGeometry
+      : null;
+    const targetStillCurrent =
+      tutorialTargetClusterIdRef.current === currentTargetId &&
+      currentLocalGeometry !== null;
+    const measurement = targetStillCurrent && measuredCoreFrame && isTutorialClusterCoreFrameUsable(
+      measuredCoreFrame,
+      projectedCenter,
+      viewport,
+      currentLocalGeometry,
+    )
+      ? getTutorialClusterSpotlightFromCoreFrame(measuredCoreFrame)
+      : getTutorialClusterSpotlightMeasurement(
+          [Number(point[0]), Number(point[1])],
+          { x: mapOriginX, y: mapOriginY },
+          currentLocalGeometry,
+        );
+
+    if (!measurement) return false;
+
     publishTutorialMeasurement(
       'tutorialClusterLayout',
-      getTutorialClusterSpotlightMeasurement(
-        [Number(point[0]), Number(point[1])],
-        { x: mapOriginX, y: mapOriginY },
-        Platform.OS,
-      ),
+      measurement,
     );
-  }), []);
+    return true;
+  }), [assignTutorialClusterTarget, resolveCurrentTutorialCluster]);
 
   const handleAndroidRetapOverlayResponderRelease = useCallback((event: GestureResponderEvent): boolean => {
     if (
@@ -7745,6 +7974,7 @@ const reconcileCameraStateFromMapRef = useCallback(async (source: 'map_idle' | '
 
     if (
       !userGestureSeenRef.current &&
+      !ignoreProgrammaticCameraRef.current &&
       lastViewportBboxRef.current !== null &&
       cameraMovedMeaningfully
     ) {
@@ -8212,6 +8442,7 @@ if (isGesture && !userGestureSeenRef.current) {
   if (
     Platform.OS === 'android' &&
     !isGesture &&
+    !isProgrammaticCameraMove &&
     !userGestureSeenRef.current &&
     !isAndroidStartupViewportPayloadInvalid &&
     !isAndroidHotspotStartupFlowActive() &&
@@ -8805,9 +9036,10 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
       shouldUseStartupClusterSubset &&
       startupHotspotPreviewCluster &&
       !baseClustersForRender.some(cluster => cluster.id === startupHotspotPreviewCluster.id);
-    const clustersForRender = shouldAppendHotspotPreviewCluster
+    const clustersWithHotspotPreview = shouldAppendHotspotPreviewCluster
       ? [...baseClustersForRender, startupHotspotPreviewCluster]
       : baseClustersForRender;
+    const clustersForRender = clustersWithHotspotPreview;
     const hotspotPreviewClusterId =
       Platform.OS === 'android'
         ? startupHotspotPreviewCluster?.id ?? null
@@ -8826,11 +9058,18 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
       : clustersForRender;
     const activeInterestMarkerFilter =
       interestCarouselFilter?.status === 'active' ? interestCarouselFilter : null;
-    const interestFilteredClustersForRender = activeInterestMarkerFilter
+    const normallyFilteredClustersForRender = activeInterestMarkerFilter
       ? orderedClustersForRender
           .map((cluster) => filterClusterForInterestCarouselFilter(cluster, activeInterestMarkerFilter))
           .filter((cluster): cluster is Cluster => cluster !== null)
       : orderedClustersForRender;
+    const tutorialTargetCluster = tutorialTargetClusterId
+      ? clusters.find((cluster) => String(cluster.id) === tutorialTargetClusterId) ?? null
+      : null;
+    const interestFilteredClustersForRender = appendTutorialClusterTarget(
+      normallyFilteredClustersForRender,
+      tutorialTargetCluster,
+    );
 
     if (typeof __DEV__ !== 'undefined' && __DEV__ && Platform.OS === 'android' && zoomLevel >= 8.5 && zoomLevel <= 12.8) {
       const summarizeCharlottetownClusters = (renderClusters: Cluster[]) =>
@@ -9400,7 +9639,9 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
           hotspotPreviewClusterId !== null &&
           cluster.id === hotspotPreviewClusterId &&
           !richClusterMarkersEnabled;
-        const markerDetailsEnabled = richClusterMarkersEnabled || shouldForceHotspotPreviewDetails;
+        const isTutorialTarget = tutorialTargetClusterId === String(cluster.id);
+        const markerDetailsEnabled =
+          richClusterMarkersEnabled || shouldForceHotspotPreviewDetails || isTutorialTarget;
         const gathrPresentation = getGathrClusterPresentation(cluster, zoomLevel, isSelected);
         const projectedPoint =
           mapStyleChoice === 'gathr' &&
@@ -9523,13 +9764,18 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
                 presentation={mapStyleChoice === 'gathr' ? gathrPresentation : 'story'}
                 reduceMotionEnabled={reduceMotionEnabled}
                 tutorialTargetRef={
-                  tutorialTargetClusterId === String(cluster.id)
+                  isTutorialTarget
                     ? tutorialClusterCoreRef
                     : undefined
                 }
                 tutorialGeometryRef={
-                  tutorialTargetClusterId === String(cluster.id)
+                  isTutorialTarget
                     ? tutorialClusterLocalGeometryRef
+                    : undefined
+                }
+                onTutorialGeometryReady={
+                  isTutorialTarget
+                    ? handleTutorialClusterGeometryReady
                     : undefined
                 }
               />
@@ -9691,13 +9937,19 @@ onLayout={(event) => {
   }
 }}
 onMapIdle={() => {
-  tutorialCameraIdleResolverRef.current?.();
+  const tutorialResolverAtIdle = tutorialCameraIdleResolverRef.current;
   if (Platform.OS === 'android') {
     androidZoomTapLatencyProbeRef.current.lastMapIdleAt = Date.now();
     logAndroidZoomTapLatencyProbe('map_idle');
   }
   notifyHotspotCameraReady('map_idle');
   void reconcileCameraStateFromMapRef('map_idle').finally(() => {
+    if (
+      tutorialResolverAtIdle &&
+      tutorialCameraIdleResolverRef.current === tutorialResolverAtIdle
+    ) {
+      tutorialResolverAtIdle();
+    }
     setBeaconProjectionEpoch((epoch) => epoch + 1);
   });
   if (DEBUG_MAP_LOAD) {
