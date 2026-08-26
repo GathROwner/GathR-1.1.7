@@ -2,13 +2,32 @@ import {
   getTutorialClusterLocalCoreOffset,
   getTutorialClusterSpotlightMeasurement,
   getTutorialClusterSpotlightFromCoreFrame,
+  isTutorialClusterBoundCoreFrameUsable,
   isTutorialClusterCoreFrameUsable,
   isTutorialClusterProjectionCentered,
+  resolveTutorialClusterProjectedPoint,
   isPointInsideTutorialSpotlightCircle,
   TUTORIAL_CLUSTER_SPOTLIGHT_SIZE,
 } from '../tutorialClusterSpotlight';
 
 describe('tutorial cluster spotlight', () => {
+  it('falls back cleanly when the native Mapbox projection rejects', async () => {
+    await expect(resolveTutorialClusterProjectedPoint(
+      () => Promise.reject(new Error('marker is rebinding')),
+      { width: 360, height: 800 },
+    )).resolves.toBeNull();
+  });
+
+  it('rejects zero and out-of-viewport native projections', async () => {
+    await expect(resolveTutorialClusterProjectedPoint(
+      () => Promise.resolve([0, 0]),
+      { width: 360, height: 800 },
+    )).resolves.toBeNull();
+    await expect(resolveTutorialClusterProjectedPoint(
+      () => Promise.resolve([400, 395]),
+      { width: 360, height: 800 },
+    )).resolves.toBeNull();
+  });
   it('does not fabricate a platform offset without matching marker geometry', () => {
     expect(getTutorialClusterSpotlightMeasurement([180, 300], { x: 0, y: 90 }, null))
       .toBeNull();
@@ -81,7 +100,7 @@ describe('tutorial cluster spotlight', () => {
     )).toBe(false);
   });
 
-  it('accepts a fresh Android core frame despite normal MarkerView anchor drift', () => {
+  it('rejects a native core frame aligned to the wrong MarkerView anchor', () => {
     const geometry = {
       wrapper: { x: 0, y: 0, width: 120, height: 96 },
       core: { x: 72, y: 50, width: 30, height: 30 },
@@ -92,8 +111,7 @@ describe('tutorial cluster spotlight', () => {
       { x: 180, y: 390 },
       { width: 360, height: 800 },
       geometry,
-      { allowAndroidVerticalAnchorVariant: true },
-    )).toBe(true);
+    )).toBe(false);
   });
 
   it('rejects a nearby stale core that matches no supported native anchor', () => {
@@ -107,25 +125,27 @@ describe('tutorial cluster spotlight', () => {
       { x: 180, y: 390 },
       { width: 360, height: 800 },
       geometry,
-      { allowAndroidVerticalAnchorVariant: true },
     )).toBe(false);
   });
 
-  it('accepts a stable freshly bound core when native onLayout geometry is absent', () => {
+  it('rejects an uncorroborated native frame when bound geometry is absent', () => {
     expect(isTutorialClusterCoreFrameUsable(
       { x: 192, y: 344, width: 30, height: 30 },
       { x: 180, y: 390 },
       { width: 360, height: 800 },
       null,
-      { allowFreshBoundFrameWithoutGeometry: true },
-    )).toBe(true);
-    expect(isTutorialClusterCoreFrameUsable(
-      { x: 120, y: 300, width: 120, height: 96 },
-      { x: 180, y: 390 },
-      { width: 360, height: 800 },
-      null,
-      { allowFreshBoundFrameWithoutGeometry: true },
     )).toBe(false);
+  });
+
+  it('accepts a revision-bound native core frame when projection is unavailable', () => {
+    expect(isTutorialClusterBoundCoreFrameUsable(
+      { x: 192, y: 344, width: 30, height: 30 },
+      { width: 360, height: 800 },
+      {
+        wrapper: { x: 0, y: 0, width: 120, height: 96 },
+        core: { x: 72, y: 50, width: 30, height: 30 },
+      },
+    )).toBe(true);
   });
 
   it('recognizes a no-op camera focus within a bounded center tolerance', () => {

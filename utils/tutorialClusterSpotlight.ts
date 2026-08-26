@@ -12,12 +12,45 @@ interface ViewportSize {
   height: number;
 }
 
-const MAX_NATIVE_CORE_ALIGNMENT_DRIFT = 18;
+const MAX_NATIVE_CORE_ALIGNMENT_DRIFT = 4;
 
-interface NativeCoreFrameOptions {
-  allowAndroidVerticalAnchorVariant?: boolean;
-  allowFreshBoundFrameWithoutGeometry?: boolean;
-}
+type ProjectedPoint = readonly [number, number];
+
+const normalizeProjectedPoint = (value: unknown): ProjectedPoint | null => {
+  if (!Array.isArray(value) || value.length !== 2) return null;
+  const x = Number(value[0]);
+  const y = Number(value[1]);
+  return Number.isFinite(x) && Number.isFinite(y) ? [x, y] : null;
+};
+
+/**
+ * Mapbox can reject getPointInView while a MarkerView is being rebound. Keep
+ * that native race from escaping the tutorial preparation path and reject
+ * coordinates that cannot describe a visible target.
+ */
+export const resolveTutorialClusterProjectedPoint = async (
+  nativeProjection: () => Promise<unknown>,
+  viewport: ViewportSize,
+): Promise<ProjectedPoint | null> => {
+  try {
+    const projected = normalizeProjectedPoint(await nativeProjection());
+    if (
+      projected &&
+      viewport.width > 0 &&
+      viewport.height > 0 &&
+      projected[0] > 0 &&
+      projected[0] < viewport.width &&
+      projected[1] > 0 &&
+      projected[1] < viewport.height
+    ) {
+      return projected;
+    }
+  } catch {
+    // The caller has an exact, revision-bound native-frame fallback.
+  }
+
+  return null;
+};
 
 const isPositiveFiniteFrame = (frame: ComponentMeasurement): boolean =>
   [frame.x, frame.y, frame.width, frame.height].every(Number.isFinite) &&
@@ -78,34 +111,34 @@ export const getTutorialClusterLocalCoreOffset = (
  * native MarkerView can legitimately use; a broad radius can admit a stale
  * same-ID marker after its coordinate changes.
  */
+export const isTutorialClusterBoundCoreFrameUsable = (
+  frame: ComponentMeasurement,
+  viewport: ViewportSize,
+  localGeometry: TutorialClusterLocalGeometry | null,
+): boolean => {
+  if (!isPositiveFiniteFrame(frame) || !localGeometry) return false;
+  if (
+    Math.abs(frame.width - localGeometry.core.width) > 2 ||
+    Math.abs(frame.height - localGeometry.core.height) > 2
+  ) {
+    return false;
+  }
+
+  return (
+    frame.x > 0 &&
+    frame.y > 0 &&
+    frame.x + frame.width <= viewport.width &&
+    frame.y + frame.height <= viewport.height
+  );
+};
+
 export const isTutorialClusterCoreFrameUsable = (
   frame: ComponentMeasurement,
   projectedCenter: { x: number; y: number },
   viewport: ViewportSize,
   localGeometry: TutorialClusterLocalGeometry | null,
-  options: NativeCoreFrameOptions = {},
 ): boolean => {
-  if (!isPositiveFiniteFrame(frame)) return false;
-  if (localGeometry && (
-    Math.abs(frame.width - localGeometry.core.width) > 2 ||
-    Math.abs(frame.height - localGeometry.core.height) > 2
-  )) {
-    return false;
-  }
-
-  if (!localGeometry) {
-    const plausibleCoreSize =
-      frame.width <= TUTORIAL_CLUSTER_SPOTLIGHT_SIZE + 24 &&
-      frame.height <= TUTORIAL_CLUSTER_SPOTLIGHT_SIZE + 24;
-    return Boolean(
-      options.allowFreshBoundFrameWithoutGeometry &&
-      plausibleCoreSize &&
-      frame.x >= 0 &&
-      frame.y >= 0 &&
-      frame.x + frame.width <= viewport.width &&
-      frame.y + frame.height <= viewport.height
-    );
-  }
+  if (!isTutorialClusterBoundCoreFrameUsable(frame, viewport, localGeometry)) return false;
 
   const centerX = frame.x + frame.width / 2;
   const centerY = frame.y + frame.height / 2;
@@ -116,12 +149,6 @@ export const isTutorialClusterCoreFrameUsable = (
           x: projectedCenter.x + localOffset.x,
           y: projectedCenter.y + localOffset.y,
         },
-        ...(options.allowAndroidVerticalAnchorVariant
-          ? [{
-              x: projectedCenter.x + localOffset.x,
-              y: projectedCenter.y,
-            }]
-          : []),
       ]
     : [];
   if (expectedCenters.length === 0) return false;
@@ -131,10 +158,6 @@ export const isTutorialClusterCoreFrameUsable = (
   )));
 
   return (
-    centerX >= 0 &&
-    centerX <= viewport.width &&
-    centerY >= 0 &&
-    centerY <= viewport.height &&
     alignmentDistance <= MAX_NATIVE_CORE_ALIGNMENT_DRIFT
   );
 };

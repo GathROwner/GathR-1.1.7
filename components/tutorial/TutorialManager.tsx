@@ -25,6 +25,7 @@ import {
   setTutorialModalOverlay,
 } from '../../utils/tutorialModalOverlay';
 import {
+  getTutorialMeasurement,
   subscribeTutorialMeasurement,
   waitForTutorialMeasurement,
 } from '../../utils/tutorialReadiness';
@@ -433,6 +434,7 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
   useEffect(() => {
     stepAbortRef.current?.abort();
     const controller = new AbortController();
+    const preparationStartedAt = Date.now();
     stepAbortRef.current = controller;
     setOwnedSpotlight(undefined);
     setTargetUnavailable(false);
@@ -562,7 +564,32 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
       setTargetUnavailable(!result.measurement);
     };
 
-    void prepare();
+    void prepare().catch(() => {
+      if (!controller.signal.aborted && currentStepIdRef.current === currentStep.id) {
+        const recoveredClusterMeasurement = currentStep.id === 'cluster-click'
+          ? getTutorialMeasurement('tutorialClusterLayout')
+          : null;
+        const recoveredSpotlight =
+          recoveredClusterMeasurement && recoveredClusterMeasurement.measuredAt >= preparationStartedAt
+            ? cleanMeasurement(recoveredClusterMeasurement, screenWidth, screenHeight)
+            : null;
+        if (recoveredSpotlight) {
+          setOwnedSpotlight({
+            stepId: currentStep.id,
+            config: {
+              ...recoveredSpotlight,
+              borderRadius: 36,
+              forceCircle: true,
+              showPulse: true,
+            },
+          });
+          setTargetUnavailable(false);
+          return;
+        }
+        setOwnedSpotlight(undefined);
+        setTargetUnavailable(true);
+      }
+    });
     return () => {
       controller.abort();
       clearHighlightFlags();

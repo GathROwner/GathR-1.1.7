@@ -131,8 +131,10 @@ import {
 import {
   getTutorialClusterSpotlightFromCoreFrame,
   getTutorialClusterSpotlightMeasurement,
+  isTutorialClusterBoundCoreFrameUsable,
   isTutorialClusterCoreFrameUsable,
   isTutorialClusterProjectionCentered,
+  resolveTutorialClusterProjectedPoint,
   type TutorialClusterLocalGeometry as TutorialClusterCoreGeometry,
 } from '../../utils/tutorialClusterSpotlight';
 import { createTutorialClusterGeometryGate } from '../../utils/tutorialClusterGeometryGate';
@@ -3355,6 +3357,8 @@ useEffect(() => {
   const tutorialTargetBindingSignatureRef = useRef<string | null>(null);
   const tutorialTargetBindingRevisionRef = useRef(0);
   const tutorialGeometryRemeasureFrameRef = useRef<number | null>(null);
+  const tutorialGeometryRemeasurePendingRef = useRef(false);
+  const tutorialGeometryRemeasureRequestRef = useRef(0);
   const tutorialClusterGeometryGate = useMemo(() => createTutorialClusterGeometryGate(), []);
   const [tutorialTargetClusterId, setTutorialTargetClusterId] = useState<string | null>(null);
   const [tutorialTargetBindingRevision, setTutorialTargetBindingRevision] = useState(0);
@@ -3380,6 +3384,8 @@ useEffect(() => {
     });
     tutorialClusterCoreRef.current = null;
     tutorialClusterLocalGeometryRef.current = null;
+    tutorialGeometryRemeasurePendingRef.current = false;
+    tutorialGeometryRemeasureRequestRef.current += 1;
     setTutorialTargetClusterId(nextId);
     setTutorialTargetBindingRevision(tutorialTargetBindingRevisionRef.current);
   }, [tutorialClusterGeometryGate]);
@@ -3407,6 +3413,46 @@ useEffect(() => {
     }
   }, [assignTutorialClusterTarget, clusters]);
 
+  const scheduleTutorialClusterRemeasure = useCallback(() => {
+    const target = tutorialCurrentClusterRef.current;
+    const targetId = tutorialTargetClusterIdRef.current;
+    const bindingRevision = tutorialTargetBindingRevisionRef.current;
+    if (!target || String(target.id) !== targetId) return;
+
+    const requestId = ++tutorialGeometryRemeasureRequestRef.current;
+    if (tutorialGeometryRemeasureFrameRef.current !== null) {
+      cancelAnimationFrame(tutorialGeometryRemeasureFrameRef.current);
+    }
+    tutorialGeometryRemeasureFrameRef.current = requestAnimationFrame(() => {
+      tutorialGeometryRemeasureFrameRef.current = null;
+      void (async () => {
+        for (let attempt = 0; attempt < 2; attempt += 1) {
+          const bindingIsCurrent =
+            requestId === tutorialGeometryRemeasureRequestRef.current &&
+            targetId === tutorialTargetClusterIdRef.current &&
+            bindingRevision === tutorialTargetBindingRevisionRef.current &&
+            useTutorialUiStore.getState().currentStepId === 'cluster-click';
+          if (!bindingIsCurrent) return;
+
+          const measured = await runTutorialAction('measure-cluster', target).catch(() => false);
+          if (measured) return;
+          if (attempt === 0) {
+            await new Promise<void>((resolve) => setTimeout(resolve, 90));
+          }
+        }
+
+        if (
+          requestId === tutorialGeometryRemeasureRequestRef.current &&
+          targetId === tutorialTargetClusterIdRef.current &&
+          bindingRevision === tutorialTargetBindingRevisionRef.current &&
+          useTutorialUiStore.getState().currentStepId === 'cluster-click'
+        ) {
+          void runTutorialAction('tutorial-cluster-unavailable');
+        }
+      })();
+    });
+  }, []);
+
   useEffect(() => {
     const clearTargetWhenInactive = (state: ReturnType<typeof useTutorialUiStore.getState>) => {
       if (state.isVisible && state.currentStepId === 'cluster-click') return;
@@ -3428,34 +3474,29 @@ useEffect(() => {
     tutorialClusterGeometryGate.publish(geometry);
     if (
       !isFocusedRef.current ||
-      tutorialCameraFocusActiveRef.current ||
       !tutorialUi.isVisible ||
       tutorialUi.currentStepId !== 'cluster-click'
     ) {
       return;
     }
 
-    if (tutorialGeometryRemeasureFrameRef.current !== null) {
-      cancelAnimationFrame(tutorialGeometryRemeasureFrameRef.current);
+    if (tutorialCameraFocusActiveRef.current) {
+      // Marker layout commonly arrives during the short camera focus. Preserve
+      // that one-shot signal and flush it as soon as focus ownership releases.
+      tutorialGeometryRemeasurePendingRef.current = true;
+      return;
     }
-    tutorialGeometryRemeasureFrameRef.current = requestAnimationFrame(() => {
-      tutorialGeometryRemeasureFrameRef.current = null;
-      const currentTarget = tutorialCurrentClusterRef.current;
-      if (
-        currentTarget &&
-        String(currentTarget.id) === tutorialTargetClusterIdRef.current &&
-        geometry.bindingRevision === tutorialTargetBindingRevisionRef.current
-      ) {
-        void runTutorialAction('measure-cluster', currentTarget);
-      }
-    });
-  }, [tutorialClusterGeometryGate]);
+
+    tutorialGeometryRemeasurePendingRef.current = false;
+    scheduleTutorialClusterRemeasure();
+  }, [scheduleTutorialClusterRemeasure, tutorialClusterGeometryGate]);
 
   useEffect(() => () => {
     if (tutorialGeometryRemeasureFrameRef.current !== null) {
       cancelAnimationFrame(tutorialGeometryRemeasureFrameRef.current);
       tutorialGeometryRemeasureFrameRef.current = null;
     }
+    tutorialGeometryRemeasureRequestRef.current += 1;
   }, []);
 
   useEffect(() => () => tutorialClusterGeometryGate.dispose(), [tutorialClusterGeometryGate]);
@@ -7352,10 +7393,14 @@ lastOpenedClusterIdRef.current = cluster.id;
             fallbackTimer = setTimeout(finish, 1000);
             tutorialCameraIdleResolverRef.current = finish;
             signal?.addEventListener('abort', finish, { once: true });
-            cameraRef.current?.setCamera({
-              centerCoordinate: coordinate,
-              animationDuration: 240,
-            });
+            try {
+              cameraRef.current?.setCamera({
+                centerCoordinate: coordinate,
+                animationDuration: 240,
+              });
+            } catch {
+              finish();
+            }
           });
         }
         if (!requestIsCurrent()) return false;
@@ -7374,6 +7419,10 @@ lastOpenedClusterIdRef.current = cluster.id;
         ) {
           tutorialCameraFocusActiveRef.current = false;
           setIgnoreProgrammaticTrace(false, 'tutorial_cluster_focus_settled');
+          if (tutorialGeometryRemeasurePendingRef.current) {
+            tutorialGeometryRemeasurePendingRef.current = false;
+            scheduleTutorialClusterRemeasure();
+          }
         }
       }
     });
@@ -7388,7 +7437,12 @@ lastOpenedClusterIdRef.current = cluster.id;
       }
       unregister();
     };
-  }, [assignTutorialClusterTarget, resolveCurrentTutorialCluster, setIgnoreProgrammaticTrace]);
+  }, [
+    assignTutorialClusterTarget,
+    resolveCurrentTutorialCluster,
+    scheduleTutorialClusterRemeasure,
+    setIgnoreProgrammaticTrace,
+  ]);
 
   useEffect(() => registerTutorialAction('measure-cluster', async (target: Cluster) => {
     const currentTarget = resolveCurrentTutorialCluster(target);
@@ -7401,33 +7455,40 @@ lastOpenedClusterIdRef.current = cluster.id;
       revision: tutorialTargetBindingRevisionRef.current,
     };
 
+    const currentMapDimensions = mapDimensionsRef.current;
+    if (!currentMapDimensions) return false;
+
+    let currentLocalGeometry = tutorialClusterGeometryGate.get(capturedBinding);
+    const measuredCoreFrameReady = measureStableTutorialClusterCoreFrame(
+      () => tutorialClusterCoreRef.current,
+    );
+    const localGeometryReady = currentLocalGeometry
+      ? Promise.resolve(currentLocalGeometry)
+      : tutorialClusterGeometryGate.waitFor(capturedBinding, { timeoutMs: 700 });
     let projectionTimeout: ReturnType<typeof setTimeout> | undefined;
-    const point = await Promise.race([
-      mapRef.current.getPointInView(coordinate),
-      new Promise<null>((resolve) => {
-        projectionTimeout = setTimeout(() => resolve(null), 350);
+    const nativePointReady = resolveTutorialClusterProjectedPoint(
+      () => Promise.race([
+        mapRef.current!.getPointInView(coordinate),
+        new Promise<null>((resolve) => {
+          projectionTimeout = setTimeout(() => resolve(null), 350);
+        }),
+      ]).finally(() => {
+        if (projectionTimeout) clearTimeout(projectionTimeout);
       }),
-    ]).finally(() => {
-      if (projectionTimeout) clearTimeout(projectionTimeout);
-    });
-    if (!Array.isArray(point) || point.length !== 2) return false;
+      currentMapDimensions,
+    );
+
+    const [point, measuredCoreFrame, awaitedLocalGeometry] = await Promise.all([
+      nativePointReady,
+      measuredCoreFrameReady,
+      localGeometryReady,
+    ]);
+    currentLocalGeometry = currentLocalGeometry ?? awaitedLocalGeometry;
 
     const mapLayout = (global as any).mapViewLayout;
     const mapOriginX = Number(mapLayout?.absoluteX ?? mapLayout?.x ?? 0);
     const mapOriginY = Number(mapLayout?.absoluteY ?? mapLayout?.y ?? 0);
-    const projectedCenter = {
-      x: mapOriginX + Number(point[0]),
-      y: mapOriginY + Number(point[1]),
-    };
     const viewport = Dimensions.get('window');
-    let currentLocalGeometry = tutorialClusterGeometryGate.get(capturedBinding);
-    const [measuredCoreFrame, awaitedLocalGeometry] = await Promise.all([
-      measureStableTutorialClusterCoreFrame(() => tutorialClusterCoreRef.current),
-      currentLocalGeometry
-        ? Promise.resolve(currentLocalGeometry)
-        : tutorialClusterGeometryGate.waitFor(capturedBinding, { timeoutMs: 700 }),
-    ]);
-    currentLocalGeometry = currentLocalGeometry ?? awaitedLocalGeometry;
     const targetStillCurrent = isTutorialClusterBindingCurrent(
       capturedBinding,
       {
@@ -7435,17 +7496,28 @@ lastOpenedClusterIdRef.current = cluster.id;
         revision: tutorialTargetBindingRevisionRef.current,
       },
     );
-    if (!targetStillCurrent) return false;
+    if (!targetStillCurrent || !currentLocalGeometry) return false;
 
-    let measurement = measuredCoreFrame && isTutorialClusterCoreFrameUsable(
-      measuredCoreFrame,
-      projectedCenter,
-      viewport,
-      currentLocalGeometry,
-      {
-        allowAndroidVerticalAnchorVariant: Platform.OS === 'android',
-        allowFreshBoundFrameWithoutGeometry: true,
-      },
+    const projectedCenter = point
+      ? {
+          x: mapOriginX + point[0],
+          y: mapOriginY + point[1],
+        }
+      : null;
+
+    let measurement = measuredCoreFrame && (
+      projectedCenter
+        ? isTutorialClusterCoreFrameUsable(
+            measuredCoreFrame,
+            projectedCenter,
+            viewport,
+            currentLocalGeometry,
+          )
+        : isTutorialClusterBoundCoreFrameUsable(
+            measuredCoreFrame,
+            viewport,
+            currentLocalGeometry,
+          )
     )
       ? getTutorialClusterSpotlightFromCoreFrame(measuredCoreFrame)
       : null;
@@ -7463,25 +7535,38 @@ lastOpenedClusterIdRef.current = cluster.id;
           () => tutorialClusterCoreRef.current,
           350,
         );
-      measurement = retriedCoreFrame && isTutorialClusterCoreFrameUsable(
-        retriedCoreFrame,
-        projectedCenter,
-        viewport,
-        currentLocalGeometry,
-        {
-          allowAndroidVerticalAnchorVariant: Platform.OS === 'android',
-          allowFreshBoundFrameWithoutGeometry: true,
-        },
+      measurement = retriedCoreFrame && (
+        projectedCenter
+          ? isTutorialClusterCoreFrameUsable(
+              retriedCoreFrame,
+              projectedCenter,
+              viewport,
+              currentLocalGeometry,
+            )
+          : isTutorialClusterBoundCoreFrameUsable(
+              retriedCoreFrame,
+              viewport,
+              currentLocalGeometry,
+            )
       )
         ? getTutorialClusterSpotlightFromCoreFrame(retriedCoreFrame)
-        : getTutorialClusterSpotlightMeasurement(
-            [Number(point[0]), Number(point[1])],
-            { x: mapOriginX, y: mapOriginY },
-            currentLocalGeometry,
-          );
+        : point
+          ? getTutorialClusterSpotlightMeasurement(
+              point,
+              { x: mapOriginX, y: mapOriginY },
+              currentLocalGeometry,
+            )
+          : null;
     }
 
     if (!measurement) return false;
+    if (!isTutorialClusterBindingCurrent(
+      capturedBinding,
+      {
+        clusterId: tutorialTargetClusterIdRef.current,
+        revision: tutorialTargetBindingRevisionRef.current,
+      },
+    )) return false;
 
     publishTutorialMeasurement(
       'tutorialClusterLayout',
