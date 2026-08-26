@@ -15,7 +15,6 @@ import { TutorialManager, TutorialStatus } from '../types/tutorial';
 import {
   getTutorialPreviousIndex,
   getTutorialStepAdvance,
-  shouldSkipTutorialCalloutLesson,
 } from '../utils/tutorialStepAdvance';
 
 const TUTORIAL_VERSION = 2;
@@ -50,7 +49,6 @@ export const useTutorial = (): TutorialManager => {
     selectedCluster: Cluster | null;
   } | null>(null);
   const skippedCalloutLessonRef = useRef(false);
-  const calloutFixtureAvailableRef = useRef(false);
 
   const currentStep = TUTORIAL_STEPS[currentStepIndex] ?? null;
 
@@ -138,7 +136,6 @@ export const useTutorial = (): TutorialManager => {
   const startTutorial = useCallback(() => {
     calloutSnapshotRef.current = null;
     skippedCalloutLessonRef.current = false;
-    calloutFixtureAvailableRef.current = false;
     const startingIndex = Math.min(
       Math.max(0, statusRef.current?.currentStep ?? 0),
       TUTORIAL_STEPS.length - 1,
@@ -152,10 +149,6 @@ export const useTutorial = (): TutorialManager => {
       currentStep: startingIndex,
     });
   }, [persistStatus]);
-
-  const setCalloutFixtureAvailable = useCallback((available: boolean) => {
-    calloutFixtureAvailableRef.current = available;
-  }, []);
 
   const nextStep = useCallback((stepCount = 1) => {
     setCurrentStepIndex((index) => {
@@ -192,12 +185,9 @@ export const useTutorial = (): TutorialManager => {
   const previousStep = useCallback(() => {
     setCurrentStepIndex((index) => {
       if (index <= 0) return 0;
-      const shouldSkipCalloutLesson = shouldSkipTutorialCalloutLesson({
-        currentStepId: TUTORIAL_STEPS[index]?.id,
-        skippedCalloutLesson: skippedCalloutLessonRef.current,
-        hasCalloutSnapshot: Boolean(calloutSnapshotRef.current),
-        hasCalloutFixture: calloutFixtureAvailableRef.current,
-      });
+      const shouldSkipCalloutLesson =
+        TUTORIAL_STEPS[index]?.id === 'filter-pills' &&
+        (skippedCalloutLessonRef.current || !calloutSnapshotRef.current);
       if (
         TUTORIAL_STEPS[index]?.id === 'filter-pills' &&
         calloutSnapshotRef.current
@@ -219,7 +209,6 @@ export const useTutorial = (): TutorialManager => {
   }, [persistStatus]);
 
   const skipTutorial = useCallback(() => {
-    calloutFixtureAvailableRef.current = false;
     setIsActive(false);
     persistStatus({
       ...(statusRef.current ?? defaultStatus()),
@@ -237,7 +226,6 @@ export const useTutorial = (): TutorialManager => {
   }, [currentStep?.id, pathname, persistStatus]);
 
   const completeTutorial = useCallback(() => {
-    calloutFixtureAvailableRef.current = false;
     setIsActive(false);
     persistStatus({
       completed: true,
@@ -258,7 +246,6 @@ export const useTutorial = (): TutorialManager => {
   const restartTutorial = useCallback(() => {
     calloutSnapshotRef.current = null;
     skippedCalloutLessonRef.current = false;
-    calloutFixtureAvailableRef.current = false;
     const reset = defaultStatus();
     persistStatus(reset);
     setCurrentStepIndex(0);
@@ -285,6 +272,5 @@ export const useTutorial = (): TutorialManager => {
     completeTutorial,
     restartTutorial,
     markStepCompleted,
-    setCalloutFixtureAvailable,
   };
 };

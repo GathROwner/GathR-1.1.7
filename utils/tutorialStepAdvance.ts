@@ -39,16 +39,3 @@ export const getTutorialPreviousIndex = (
 
   return Math.max(0, safeCurrentIndex - (shouldJumpOverCallout ? 2 : 1));
 };
-
-export const shouldSkipTutorialCalloutLesson = ({
-  currentStepId,
-  skippedCalloutLesson,
-  hasCalloutSnapshot,
-  hasCalloutFixture,
-}: {
-  currentStepId: string | undefined;
-  skippedCalloutLesson: boolean;
-  hasCalloutSnapshot: boolean;
-  hasCalloutFixture: boolean;
-}) => currentStepId === 'filter-pills'
-  && (skippedCalloutLesson || (!hasCalloutSnapshot && !hasCalloutFixture));
