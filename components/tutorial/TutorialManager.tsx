@@ -328,9 +328,7 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
           ...measurement,
           borderRadius: target.radius,
           showPulse: currentStep.action === 'interaction'
-            || currentStep.id === 'facebook-submission'
-            || currentStep.id === 'events-list-explanation'
-            || currentStep.id === 'specials-list-explanation',
+            || currentStep.id === 'facebook-submission',
         },
       });
     };

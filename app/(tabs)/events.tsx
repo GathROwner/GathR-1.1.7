@@ -1630,7 +1630,6 @@ useEffect(() => {
   
   // Tutorial awareness for events filters
   const filtersRef = useRef<View>(null);
-  const filtersPulseAnim = useRef(new Animated.Value(1)).current;
   const [filtersHighlighted, setFiltersHighlighted] = useState(false);
   const filtersHighlightActiveRef = useRef(false);
 
@@ -1707,20 +1706,6 @@ useEffect(() => {
     g.eventsFiltersStable = false;
     publishEventsFiltersMeasurement();
   }, [filtersHighlighted, publishEventsFiltersMeasurement]);
-
-  useEffect(() => {
-    if (filtersHighlighted) {
-      Animated.loop(
-        Animated.sequence([
-          Animated.timing(filtersPulseAnim, { toValue: 1.05, useNativeDriver: true, duration: 800 }),
-          Animated.timing(filtersPulseAnim, { toValue: 1, useNativeDriver: true, duration: 800 }),
-        ])
-      ).start();
-    } else {
-      filtersPulseAnim.stopAnimation();
-      filtersPulseAnim.setValue(1);
-    }
-  }, [filtersHighlighted, filtersPulseAnim]);
 
   
   // Removed local fetching/listening of user prefs.
@@ -2622,7 +2607,6 @@ setSelectedImageData({ imageUrl, event });
               borderColor: '#FF8C42',
               borderRadius: 12,
               backgroundColor: 'rgba(11, 13, 16, 0.97)',
-              transform: [{ scale: filtersPulseAnim }],
             } : {}
           ]}
         >

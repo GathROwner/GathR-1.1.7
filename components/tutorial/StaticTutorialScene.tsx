@@ -66,12 +66,11 @@ const SCENES: Record<TutorialStaticSceneId, SceneDefinition> = {
     source: CLUSTER_CALLOUT,
     focus: {
       x: 0.5,
-      y: 0.13,
+      y: 0.12,
       width: 0.99,
       height: 0.12,
-      label: '',
+      label: 'VENUE RAIL',
       edgeOnly: true,
-      showRing: false,
     },
     accessibilityLabel: 'Example GathR cluster callout with nearby venues',
   },
@@ -90,7 +89,7 @@ const SCENES: Record<TutorialStaticSceneId, SceneDefinition> = {
   },
   'callout-card': {
     source: CLUSTER_CALLOUT,
-    focus: { x: 0.5, y: 0.5, width: 0.98, height: 0.47, label: 'LISTING DETAILS', edgeOnly: true },
+    focus: { x: 0.5, y: 0.49, width: 0.98, height: 0.49, label: 'LISTING DETAILS', edgeOnly: true },
     accessibilityLabel: 'Example GathR listing card with time, place, and actions',
   },
 };

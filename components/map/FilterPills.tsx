@@ -1093,34 +1093,6 @@ React.useEffect(() => {
     return () => clearInterval(interval);
   }, [tutorialHighlight]);
   
-  const tutorialPulseAnim = useRef(new Animated.Value(1)).current;
-  
-  React.useEffect(() => {
-    if (tutorialHighlight) {
-      const pulse = () => {
-        Animated.sequence([
-          Animated.timing(tutorialPulseAnim, {
-            toValue: 1.05,
-            duration: 800,
-            useNativeDriver: true
-          }),
-          Animated.timing(tutorialPulseAnim, {
-            toValue: 1,
-            duration: 800,
-            useNativeDriver: true
-          })
-        ]).start(({ finished }) => {
-          if (finished && tutorialHighlight) pulse();
-        });
-      };
-      pulse();
-    } else {
-      tutorialPulseAnim.stopAnimation();
-      tutorialPulseAnim.setValue(1);
-    }
-    return () => tutorialPulseAnim.stopAnimation();
-  }, [tutorialHighlight, tutorialPulseAnim]);
-
   // Calculate counts from ONLY viewport data - updates as viewport changes
   const eventsData = useMemo(() => {
     return onScreenEvents.filter(e => e.type === 'event');
@@ -1623,15 +1595,12 @@ React.useEffect(() => {
       )}
 
       {/* Filter Pills */}
-      <Animated.View
+      <View
         ref={viewRef}
         onLayout={() => {
           publishTutorialFilterPillsLayout();
         }}
-        style={[
-          styles.pillsContainer,
-          { transform: [{ scale: tutorialPulseAnim }] }
-        ]}
+        style={styles.pillsContainer}
       >
         {/* Events Pill */}
         <TouchableOpacity
@@ -1893,7 +1862,7 @@ React.useEffect(() => {
             </TouchableOpacity>
           </Animated.View>
         </TouchableOpacity>
-      </Animated.View>
+      </View>
 
       {/* Red Curtain Overlay - Rendered as sibling for proper touch handling */}
       {curtainPeekState.isActive && (

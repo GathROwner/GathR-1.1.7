@@ -1642,7 +1642,6 @@ function SpecialsScreen() {
 
   // Tutorial awareness for specials filters
   const specialsFiltersRef = useRef<View>(null);
-  const specialsFiltersPulseAnim = useRef(new Animated.Value(1)).current;
   const [specialsFiltersHighlighted, setSpecialsFiltersHighlighted] = useState(false);
   const specialsFiltersHighlightActiveRef = useRef(false);
 
@@ -1740,20 +1739,6 @@ function SpecialsScreen() {
     publishSpecialsFiltersMeasurement();
   }, [publishSpecialsFiltersMeasurement, specialsFiltersHighlighted]);
 
-  useEffect(() => {
-    if (specialsFiltersHighlighted) {
-      Animated.loop(
-        Animated.sequence([
-          Animated.timing(specialsFiltersPulseAnim, { toValue: 1.05, useNativeDriver: true, duration: 800 }),
-          Animated.timing(specialsFiltersPulseAnim, { toValue: 1, useNativeDriver: true, duration: 800 }),
-        ])
-      ).start();
-    } else {
-      specialsFiltersPulseAnim.stopAnimation();
-      specialsFiltersPulseAnim.setValue(1);
-    }
-  }, [specialsFiltersHighlighted, specialsFiltersPulseAnim]);
-  
   // Removed local fetching/listening of user prefs.
   // Now sourced from useUserPrefsStore (hydrated at login via AuthProvider).
   
@@ -2693,7 +2678,6 @@ useEffect(() => {
       borderColor: '#FF8C42',
       borderRadius: 12,
       backgroundColor: '#0B0D10',
-      transform: [{ scale: specialsFiltersPulseAnim }],
     } : {}
   ]}
 
