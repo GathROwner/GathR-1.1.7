@@ -237,6 +237,7 @@ export const StaticTutorialScene: React.FC<Props> = ({ scene }) => {
               <View style={[
                 styles.focusLabel,
                 styles.edgeFocusLabel,
+                scene === 'callout-card' && styles.calloutCardFocusLabel,
                 labelBelowFocus && { top: focusHeight + 7 },
               ]}>
                 <Text style={styles.focusLabelText}>{definition.focus.label}</Text>
@@ -303,6 +304,7 @@ const styles = StyleSheet.create({
     shadowColor: '#2497F3', shadowOpacity: 0.65, shadowRadius: 7, shadowOffset: { width: 0, height: 0 }, elevation: 4,
   },
   edgeFocusLabel: { top: 8, left: 10 },
+  calloutCardFocusLabel: { top: 22 },
   headerFocusLabel: {
     position: 'absolute', top: 8, left: 10, zIndex: 5, borderRadius: 10,
     backgroundColor: '#0B2235', borderWidth: 1, borderColor: 'rgba(255,255,255,0.5)',
