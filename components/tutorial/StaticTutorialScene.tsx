@@ -57,7 +57,7 @@ const SCENES: Record<TutorialStaticSceneId, SceneDefinition> = {
   },
   'cluster-summary': {
     source: CLUSTER_MAP,
-    focus: { x: 0.61, y: 0.4, width: 0.33, height: 0.24, label: '' },
+    focus: { x: 0.61, y: 0.43, width: 0.33, height: 0.24, label: '' },
     accessibilityLabel: 'Example cluster counts and category markers',
   },
   'map-controls': {
@@ -123,7 +123,7 @@ export const StaticTutorialScene: React.FC<Props> = ({ scene }) => {
   const focusHeight = frame.height * definition.focus.height;
   const focusLeft = frame.width * definition.focus.x - focusWidth / 2;
   const focusTop = frame.height * definition.focus.y - focusHeight / 2;
-  const labelInsideFocus = focusTop < 34;
+  const labelInsideFocus = focusTop < 34 || scene === 'map-controls';
   const isFullFrameFocus = definition.focus.width === 1 && definition.focus.height === 1;
   const stageLabel = definition.focus.labelPlacement === 'stage';
 
@@ -219,7 +219,7 @@ export const StaticTutorialScene: React.FC<Props> = ({ scene }) => {
       </View>
 
       {stageLabel && (
-        <View pointerEvents="none" style={[styles.stageLabel, { top: frameInsets.top + 48 }]}>
+        <View pointerEvents="none" style={[styles.stageLabel, { top: frameInsets.top + 14 }]}>
           <Text style={styles.stageLabelText}>{definition.focus.label}</Text>
         </View>
       )}
