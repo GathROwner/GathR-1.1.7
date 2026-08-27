@@ -395,7 +395,6 @@ const favoriteVenues = useUserPrefsStore((s: UserPrefsState) => s.favoriteVenues
   
   // Tutorial awareness - only for first item
   const tutorialRef = useRef<View>(null);
-  const pulseAnim = useRef(new Animated.Value(1)).current;
   const [isHighlighted, setIsHighlighted] = useState(false);
 
   useEffect(() => {
@@ -410,69 +409,23 @@ const favoriteVenues = useUserPrefsStore((s: UserPrefsState) => s.favoriteVenues
   useEffect(() => {
     if (!isFirstItem || !isHighlighted) return;
     
-    let lastMeasurement: any = null;
-    let measurementCount = 0;
-    
-    const interval = setInterval(() => {
-      if (tutorialRef.current) {
-        tutorialRef.current.measureInWindow((x: number, y: number, width: number, height: number) => {
-          // Add stability check to prevent measurement spam
-          const currentMeasurement = { x: Math.round(x), y: Math.round(y), width: Math.round(width), height: Math.round(height) };
-          
-          if (!lastMeasurement || 
-              Math.abs(currentMeasurement.x - lastMeasurement.x) > 2 ||
-              Math.abs(currentMeasurement.y - lastMeasurement.y) > 2 ||
-              Math.abs(currentMeasurement.width - lastMeasurement.width) > 2 ||
-              Math.abs(currentMeasurement.height - lastMeasurement.height) > 2) {
-            
-            lastMeasurement = currentMeasurement;
-            measurementCount++;
-            
-            // Only log first few measurements to prevent spam
-            if (measurementCount <= 3) {
-              console.log('Tutorial: Measured first specials card:', currentMeasurement);
-            }
-            
-            (global as any).specialsListExplanationLayout = currentMeasurement;
-            publishTutorialMeasurement('specialsListExplanationLayout', currentMeasurement);
-          }
-        });
-      }
-    }, 200);
-    return () => clearInterval(interval);
-  }, [isHighlighted, isFirstItem]);
-
-  useEffect(() => {
-    if (!isFirstItem || !isHighlighted) {
-      pulseAnim.stopAnimation();
-      pulseAnim.setValue(1);
-      return;
-    }
-
-    const loop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulseAnim, { toValue: 1.05, useNativeDriver: true, duration: 800 }),
-        Animated.timing(pulseAnim, { toValue: 1, useNativeDriver: true, duration: 800 }),
-      ])
-    );
-    loop.start();
-    return () => {
-      loop.stop();
-      pulseAnim.setValue(1);
+    const measure = () => {
+      tutorialRef.current?.measureInWindow((x: number, y: number, width: number, height: number) => {
+        const measurement = { x, y, width, height };
+        (global as any).specialsListExplanationLayout = measurement;
+        publishTutorialMeasurement('specialsListExplanationLayout', measurement);
+      });
     };
-  }, [isHighlighted, isFirstItem, pulseAnim]);
+    const animationFrame = requestAnimationFrame(measure);
+    const interval = setInterval(measure, 200);
+    const timeout = setTimeout(() => clearInterval(interval), 2200);
 
-  const tutorialHighlightStyle = {
-    shadowColor: '#FF6B35',
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.9,
-    shadowRadius: 12,
-    elevation: 15,
-    borderWidth: 3,
-    borderColor: '#FF8C42',
-    backgroundColor: 'rgba(255, 255, 255, 0.95)',
-    transform: [{ scale: pulseAnim }],
-  };
+    return () => {
+      cancelAnimationFrame(animationFrame);
+      clearInterval(interval);
+      clearTimeout(timeout);
+    };
+  }, [isHighlighted, isFirstItem]);
   
   useEffect(() => {
     setBookmarked(isSaved);
@@ -1049,7 +1002,7 @@ const result = await userService.toggleSavedEvent(event.id, {
   };
   
   return (
-    <Animated.View style={isFirstItem && isHighlighted ? tutorialHighlightStyle : {}}>
+    <View>
       <TouchableOpacity 
         ref={tutorialRef as any}
         style={styles.eventCard}
@@ -1458,7 +1411,7 @@ const result = await userService.toggleSavedEvent(event.id, {
         </View>
       </View>
       </TouchableOpacity>
-    </Animated.View>
+    </View>
   );
 };
 

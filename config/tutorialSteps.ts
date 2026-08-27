@@ -38,8 +38,8 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
     title: 'Read a cluster at a glance',
     content: 'The tree, nearby numbers, and colour cues give you a quick picture before you open it.',
     staticScene: 'cluster-summary',
-    placement: 'bottom',
-    sheetPosition: 'bottom',
+    placement: 'top',
+    sheetPosition: 'top',
     action: 'next',
   },
   {

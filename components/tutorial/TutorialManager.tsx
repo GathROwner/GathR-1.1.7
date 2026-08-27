@@ -13,6 +13,10 @@ import {
   getTutorialSpotlightForStep,
   OwnedTutorialSpotlight,
 } from '../../utils/tutorialSpotlightOwnership';
+import {
+  isTutorialModalHostedStep,
+  setTutorialModalOverlay,
+} from '../../utils/tutorialModalOverlay';
 import { TutorialBottomSheet } from './TutorialBottomSheet';
 import { StaticTutorialScene } from './StaticTutorialScene';
 import { TutorialSpotlight } from './TutorialSpotlight';
@@ -55,6 +59,11 @@ const LAYOUT_TARGETS: Partial<Record<string, LayoutTarget>> = {
     requestMeasurement: 'requestTutorialEventsFiltersMeasurement',
     setHighlighted: 'setTutorialEventsFiltersHighlighted',
   },
+  'events-list-explanation': {
+    flag: 'tutorialHighlightEventsListExplanation',
+    layout: 'eventsListExplanationLayout',
+    radius: 18,
+  },
   'specials-tab': {
     flag: 'tutorialHighlightSpecialsTab',
     layout: 'specialsTabLayout',
@@ -67,6 +76,11 @@ const LAYOUT_TARGETS: Partial<Record<string, LayoutTarget>> = {
     acceptExisting: true,
     requestMeasurement: 'requestTutorialSpecialsFiltersMeasurement',
     setHighlighted: 'setTutorialSpecialsFiltersHighlighted',
+  },
+  'specials-list-explanation': {
+    flag: 'tutorialHighlightSpecialsListExplanation',
+    layout: 'specialsListExplanationLayout',
+    radius: 18,
   },
   'profile-facebook': {
     flag: 'tutorialHighlightProfileFacebook',
@@ -88,8 +102,10 @@ const ALL_HIGHLIGHT_FLAGS = [
   'tutorialHighlightFilterPills',
   'tutorialHighlightEventsTab',
   'tutorialHighlightEventsFilters',
+  'tutorialHighlightEventsListExplanation',
   'tutorialHighlightSpecialsTab',
   'tutorialHighlightSpecialsFilters',
+  'tutorialHighlightSpecialsListExplanation',
   'tutorialHighlightProfileFacebook',
   'tutorialHighlightFacebookSubmission',
 ] as const;
@@ -268,6 +284,7 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
     if (typeof requestMeasurement === 'function') {
       requestMeasurement();
     }
+    const measurementRequestedAt = Date.now();
     const measure = async () => {
       if (currentStep.id === 'facebook-submission' && facebookSubmissionLayout) {
         const existing = cleanMeasurement(facebookSubmissionLayout, screenWidth, screenHeight);
@@ -283,6 +300,7 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
 
       const result = await waitForTutorialMeasurement(target.layout, {
         timeoutMs: TUTORIAL_CONFIG.TARGET_TIMEOUT_MS,
+        freshAfter: target.acceptExisting ? 0 : measurementRequestedAt,
         acceptExisting: target.acceptExisting,
         signal: controller.signal,
         isUsable: (measurement) =>
@@ -304,7 +322,10 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
         config: {
           ...measurement,
           borderRadius: target.radius,
-          showPulse: currentStep.action === 'interaction' || currentStep.id === 'facebook-submission',
+          showPulse: currentStep.action === 'interaction'
+            || currentStep.id === 'facebook-submission'
+            || currentStep.id === 'events-list-explanation'
+            || currentStep.id === 'specials-list-explanation',
         },
       });
     };
@@ -467,6 +488,26 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
     targetUnavailable,
   ]);
 
+  const isProfileModalHosted = Boolean(
+    isActive
+      && currentStep?.id === 'facebook-submission'
+      && isRoute(pathname, 'profile')
+      && isTutorialModalHostedStep(currentStep?.id),
+  );
+
+  // A native-stack Profile modal renders above the root app tree on iOS.
+  // Mount this one tutorial state in Profile's overlay host so its dimmer,
+  // spotlight, and controls are in the same native layer as the target row.
+  useEffect(() => {
+    if (!isProfileModalHosted) {
+      setTutorialModalOverlay(null);
+      return () => undefined;
+    }
+
+    setTutorialModalOverlay(renderTutorialSheet);
+    return () => setTutorialModalOverlay(null);
+  }, [isProfileModalHosted, renderTutorialSheet]);
+
   return (
     <View style={{ flex: 1 }}>
       {children}
@@ -478,7 +519,7 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
           totalSteps={TUTORIAL_STEPS.length}
         />
       )}
-      {isActive && currentStep && currentStep.id !== 'welcome' && renderTutorialSheet()}
+      {isActive && currentStep && currentStep.id !== 'welcome' && !isProfileModalHosted && renderTutorialSheet()}
     </View>
   );
 };

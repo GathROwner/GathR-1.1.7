@@ -394,7 +394,6 @@ const EventListItem: React.FC<EventListItemProps> = ({
 
   // Tutorial awareness - only for first item
   const tutorialRef = useRef<View>(null);
-  const pulseAnim = useRef(new Animated.Value(1)).current;
   const [isHighlighted, setIsHighlighted] = useState(false);
 
   useEffect(() => {
@@ -425,26 +424,6 @@ const EventListItem: React.FC<EventListItemProps> = ({
       clearTimeout(timeout);
     };
   }, [isHighlighted, isFirstItem]);
-
-  useEffect(() => {
-    if (!isFirstItem || !isHighlighted) {
-      pulseAnim.stopAnimation();
-      pulseAnim.setValue(1);
-      return;
-    }
-
-    const loop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulseAnim, { toValue: 1.05, useNativeDriver: true, duration: 800 }),
-        Animated.timing(pulseAnim, { toValue: 1, useNativeDriver: true, duration: 800 }),
-      ])
-    );
-    loop.start();
-    return () => {
-      loop.stop();
-      pulseAnim.setValue(1);
-    };
-  }, [isHighlighted, isFirstItem, pulseAnim]);
 
   useEffect(() => {
     setBookmarked(isSaved);
@@ -916,18 +895,6 @@ const result = await userService.toggleSavedEvent(event.id, {
     return dateTimeStr;
   };
   
-  const tutorialHighlightStyle = {
-    shadowColor: '#FF6B35',
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.9,
-    shadowRadius: 12,
-    elevation: 15,
-    borderWidth: 3,
-    borderColor: '#FF8C42',
-    backgroundColor: 'rgba(255, 255, 255, 0.95)',
-    transform: [{ scale: pulseAnim }],
-  };
-
   const handleHeroLikePress = async (e: GestureResponderEvent) => {
     e.stopPropagation();
     analytics?.trackUserAction('like_attempt', {
@@ -998,7 +965,7 @@ const result = await userService.toggleSavedEvent(event.id, {
   };
 
   return (
-    <Animated.View style={isFirstItem && isHighlighted ? tutorialHighlightStyle : {}}>
+    <View>
       <TouchableOpacity
         ref={tutorialRef}
         style={styles.eventCard}
@@ -1402,7 +1369,7 @@ const result = await userService.toggleSavedEvent(event.id, {
         </View>
       </View>
     </TouchableOpacity>
-    </Animated.View>
+    </View>
   );
 };
 

@@ -22,6 +22,8 @@ type SceneFocus = {
   width: number;
   height: number;
   label: string;
+  labelPlacement?: 'focus' | 'stage';
+  edgeOnly?: boolean;
 };
 
 type SceneDefinition = {
@@ -38,37 +40,44 @@ type SceneDefinition = {
 const SCENES: Record<TutorialStaticSceneId, SceneDefinition> = {
   'map-overview': {
     source: CLUSTER_MAP,
-    focus: { x: 0.5, y: 0.5, width: 0.86, height: 0.68, label: 'MAP EXAMPLE' },
+    focus: {
+      x: 0.5,
+      y: 0.5,
+      width: 1,
+      height: 1,
+      label: 'MAP EXAMPLE',
+      labelPlacement: 'stage',
+    },
     accessibilityLabel: 'Example of the GathR map with nearby events and specials',
   },
   'cluster-tree': {
     source: CLUSTER_MAP,
-    focus: { x: 0.57, y: 0.52, width: 0.25, height: 0.18, label: 'NEARBY CLUSTER' },
+    focus: { x: 0.62, y: 0.39, width: 0.19, height: 0.15, label: 'NEARBY CLUSTER' },
     accessibilityLabel: 'Example GathR map cluster marker',
   },
   'cluster-summary': {
     source: CLUSTER_MAP,
-    focus: { x: 0.56, y: 0.53, width: 0.43, height: 0.28, label: 'AT-A-GLANCE SUMMARY' },
+    focus: { x: 0.61, y: 0.4, width: 0.33, height: 0.24, label: 'AT-A-GLANCE SUMMARY' },
     accessibilityLabel: 'Example cluster counts and category markers',
   },
   'map-controls': {
     source: CLUSTER_MAP,
-    focus: { x: 0.5, y: 0.14, width: 0.87, height: 0.16, label: 'QUICK CONTROLS' },
+    focus: { x: 0.5, y: 0.15, width: 0.8, height: 0.12, label: 'MAP CONTROLS' },
     accessibilityLabel: 'Example GathR map controls',
   },
   'callout-venues': {
     source: CLUSTER_CALLOUT,
-    focus: { x: 0.5, y: 0.13, width: 0.94, height: 0.2, label: 'VENUE RAIL' },
+    focus: { x: 0.5, y: 0.13, width: 0.99, height: 0.18, label: 'VENUE RAIL', edgeOnly: true },
     accessibilityLabel: 'Example GathR cluster callout with nearby venues',
   },
   'callout-tabs': {
     source: CLUSTER_CALLOUT,
-    focus: { x: 0.5, y: 0.21, width: 0.94, height: 0.09, label: 'EVENTS AND SPECIALS' },
+    focus: { x: 0.5, y: 0.22, width: 0.99, height: 0.075, label: 'EVENTS AND SPECIALS', edgeOnly: true },
     accessibilityLabel: 'Example callout tabs for events and specials',
   },
   'callout-card': {
     source: CLUSTER_CALLOUT,
-    focus: { x: 0.5, y: 0.5, width: 0.95, height: 0.5, label: 'LISTING DETAILS' },
+    focus: { x: 0.5, y: 0.5, width: 0.98, height: 0.47, label: 'LISTING DETAILS', edgeOnly: true },
     accessibilityLabel: 'Example GathR listing card with time, place, and actions',
   },
 };
@@ -115,6 +124,8 @@ export const StaticTutorialScene: React.FC<Props> = ({ scene }) => {
   const focusLeft = frame.width * definition.focus.x - focusWidth / 2;
   const focusTop = frame.height * definition.focus.y - focusHeight / 2;
   const labelInsideFocus = focusTop < 34;
+  const isFullFrameFocus = definition.focus.width === 1 && definition.focus.height === 1;
+  const stageLabel = definition.focus.labelPlacement === 'stage';
 
   return (
     <View
@@ -157,23 +168,48 @@ export const StaticTutorialScene: React.FC<Props> = ({ scene }) => {
           </Svg>
         )}
 
-        {frame.width > 0 && frame.height > 0 && (
+        {frame.width > 0 && frame.height > 0 && !definition.focus.edgeOnly && (
           <Animated.View
             pointerEvents="none"
             style={[
               styles.focusRing,
+              isFullFrameFocus && styles.fullFrameFocusRing,
               {
-                left: focusLeft - 4,
-                top: focusTop - 4,
-                width: focusWidth + 8,
-                height: focusHeight + 8,
+                left: isFullFrameFocus ? 3 : focusLeft - 4,
+                top: isFullFrameFocus ? 3 : focusTop - 4,
+                width: isFullFrameFocus ? Math.max(0, focusWidth - 6) : focusWidth + 8,
+                height: isFullFrameFocus ? Math.max(0, focusHeight - 6) : focusHeight + 8,
                 transform: [{ scale: ringPulse }],
               },
             ]}
           >
-            <View style={[styles.focusLabel, labelInsideFocus && styles.focusLabelInside]}>
+            {!definition.focus.edgeOnly && !stageLabel && (
+              <View style={[styles.focusLabel, labelInsideFocus && styles.focusLabelInside]}>
+                <Text style={styles.focusLabelText}>{definition.focus.label}</Text>
+              </View>
+            )}
+          </Animated.View>
+        )}
+
+        {frame.width > 0 && frame.height > 0 && definition.focus.edgeOnly && (
+          <Animated.View
+            pointerEvents="none"
+            style={[
+              styles.edgeFocus,
+              {
+                left: focusLeft,
+                top: focusTop,
+                width: focusWidth,
+                height: focusHeight,
+                transform: [{ scaleX: ringPulse }],
+              },
+            ]}
+          >
+            <View style={styles.edgeFocusTop} />
+            <View style={[styles.focusLabel, styles.edgeFocusLabel]}>
               <Text style={styles.focusLabelText}>{definition.focus.label}</Text>
             </View>
+            <View style={[styles.edgeFocusBottom, { top: Math.max(0, focusHeight - 3) }]} />
           </Animated.View>
         )}
 
@@ -181,6 +217,12 @@ export const StaticTutorialScene: React.FC<Props> = ({ scene }) => {
           <Text style={styles.exampleBadgeText}>REAL GATHR EXAMPLE</Text>
         </View>
       </View>
+
+      {stageLabel && (
+        <View pointerEvents="none" style={[styles.stageLabel, { top: frameInsets.top + 14 }]}>
+          <Text style={styles.stageLabelText}>{definition.focus.label}</Text>
+        </View>
+      )}
     </View>
   );
 };
@@ -198,12 +240,29 @@ const styles = StyleSheet.create({
     position: 'absolute', borderWidth: 3, borderColor: '#FFFFFF', borderRadius: 22,
     shadowColor: '#2497F3', shadowOpacity: 0.95, shadowRadius: 12, shadowOffset: { width: 0, height: 0 }, elevation: 6,
   },
+  fullFrameFocusRing: { borderRadius: 24 },
   focusLabel: {
     position: 'absolute', top: -29, left: 8, maxWidth: '88%', borderRadius: 10,
     backgroundColor: '#0B2235', borderWidth: 1, borderColor: 'rgba(255,255,255,0.5)', paddingHorizontal: 8, paddingVertical: 5,
   },
   focusLabelInside: { top: 8 },
   focusLabelText: { color: '#FFFFFF', fontSize: 10, fontWeight: '900', letterSpacing: 0.8 },
+  edgeFocus: { position: 'absolute', height: '100%' },
+  edgeFocusTop: {
+    height: 3, width: '100%', backgroundColor: '#FFFFFF', borderRadius: 3,
+    shadowColor: '#2497F3', shadowOpacity: 0.95, shadowRadius: 12, shadowOffset: { width: 0, height: 0 }, elevation: 6,
+  },
+  edgeFocusBottom: {
+    position: 'absolute', height: 3, width: '100%', backgroundColor: '#FFFFFF', borderRadius: 3,
+    shadowColor: '#2497F3', shadowOpacity: 0.95, shadowRadius: 12, shadowOffset: { width: 0, height: 0 }, elevation: 6,
+  },
+  edgeFocusLabel: { top: 8, left: 10 },
+  stageLabel: {
+    position: 'absolute', alignSelf: 'center', zIndex: 4, borderRadius: 10,
+    backgroundColor: 'rgba(5, 27, 46, 0.88)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.38)',
+    paddingHorizontal: 10, paddingVertical: 5,
+  },
+  stageLabelText: { color: '#FFFFFF', fontSize: 10, fontWeight: '900', letterSpacing: 1 },
   exampleBadge: {
     position: 'absolute', right: 12, bottom: 12, borderRadius: 12, backgroundColor: 'rgba(5, 24, 40, 0.88)',
     borderWidth: 1, borderColor: 'rgba(255,255,255,0.34)', paddingHorizontal: 9, paddingVertical: 6,
