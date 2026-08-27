@@ -42,7 +42,6 @@ export type TutorialStaticSceneId =
   | 'map-overview'
   | 'cluster-tree'
   | 'cluster-summary'
-  | 'map-controls'
   | 'callout-venues'
   | 'callout-tabs'
   | 'callout-card';
@@ -66,7 +65,6 @@ export type TutorialStepId =
   | 'map-overview'
   | 'cluster-click'
   | 'cluster-summary'
-  | 'map-controls'
   | 'callout-venue-selector'
   | 'callout-tabs'
   | 'callout-event-details'

@@ -22,8 +22,9 @@ type SceneFocus = {
   width: number;
   height: number;
   label: string;
-  labelPlacement?: 'focus' | 'stage';
+  labelPlacement?: 'focus' | 'stage' | 'below';
   edgeOnly?: boolean;
+  showRing?: boolean;
 };
 
 type SceneDefinition = {
@@ -47,6 +48,7 @@ const SCENES: Record<TutorialStaticSceneId, SceneDefinition> = {
       height: 1,
       label: 'MAP EXAMPLE',
       labelPlacement: 'stage',
+      showRing: false,
     },
     accessibilityLabel: 'Example of the GathR map with nearby events and specials',
   },
@@ -60,19 +62,30 @@ const SCENES: Record<TutorialStaticSceneId, SceneDefinition> = {
     focus: { x: 0.61, y: 0.43, width: 0.33, height: 0.24, label: '' },
     accessibilityLabel: 'Example cluster counts and category markers',
   },
-  'map-controls': {
-    source: CLUSTER_MAP,
-    focus: { x: 0.5, y: 0.15, width: 0.99, height: 0.06, label: '', edgeOnly: true },
-    accessibilityLabel: 'Example GathR map controls',
-  },
   'callout-venues': {
     source: CLUSTER_CALLOUT,
-    focus: { x: 0.5, y: 0.13, width: 0.99, height: 0.18, label: 'VENUE RAIL', edgeOnly: true },
+    focus: {
+      x: 0.5,
+      y: 0.13,
+      width: 0.99,
+      height: 0.12,
+      label: '',
+      edgeOnly: true,
+      showRing: false,
+    },
     accessibilityLabel: 'Example GathR cluster callout with nearby venues',
   },
   'callout-tabs': {
     source: CLUSTER_CALLOUT,
-    focus: { x: 0.5, y: 0.22, width: 0.99, height: 0.075, label: 'EVENTS AND SPECIALS', edgeOnly: true },
+    focus: {
+      x: 0.5,
+      y: 0.208,
+      width: 0.99,
+      height: 0.06,
+      label: 'EVENTS AND SPECIALS',
+      labelPlacement: 'below',
+      edgeOnly: true,
+    },
     accessibilityLabel: 'Example callout tabs for events and specials',
   },
   'callout-card': {
@@ -123,9 +136,11 @@ export const StaticTutorialScene: React.FC<Props> = ({ scene }) => {
   const focusHeight = frame.height * definition.focus.height;
   const focusLeft = frame.width * definition.focus.x - focusWidth / 2;
   const focusTop = frame.height * definition.focus.y - focusHeight / 2;
-  const labelInsideFocus = focusTop < 34 || scene === 'map-controls';
+  const labelInsideFocus = focusTop < 34;
   const isFullFrameFocus = definition.focus.width === 1 && definition.focus.height === 1;
   const stageLabel = definition.focus.labelPlacement === 'stage';
+  const labelBelowFocus = definition.focus.labelPlacement === 'below';
+  const showRing = definition.focus.showRing !== false;
 
   return (
     <View
@@ -164,11 +179,11 @@ export const StaticTutorialScene: React.FC<Props> = ({ scene }) => {
                 <Rect x={focusLeft} y={focusTop} width={focusWidth} height={focusHeight} rx={18} ry={18} fill="black" />
               </Mask>
             </Defs>
-            <Rect x="0" y="0" width={frame.width} height={frame.height} fill="rgba(2, 13, 24, 0.54)" mask="url(#static-scene-focus-mask)" />
+            <Rect x="0" y="0" width={frame.width} height={frame.height} fill="rgba(2, 13, 24, 0.64)" mask="url(#static-scene-focus-mask)" />
           </Svg>
         )}
 
-        {frame.width > 0 && frame.height > 0 && !definition.focus.edgeOnly && (
+        {frame.width > 0 && frame.height > 0 && !definition.focus.edgeOnly && showRing && (
           <Animated.View
             pointerEvents="none"
             style={[
@@ -191,7 +206,7 @@ export const StaticTutorialScene: React.FC<Props> = ({ scene }) => {
           </Animated.View>
         )}
 
-        {frame.width > 0 && frame.height > 0 && definition.focus.edgeOnly && (
+        {frame.width > 0 && frame.height > 0 && definition.focus.edgeOnly && showRing && (
           <Animated.View
             pointerEvents="none"
             style={[
@@ -207,11 +222,15 @@ export const StaticTutorialScene: React.FC<Props> = ({ scene }) => {
           >
             <View style={styles.edgeFocusTop} />
             {Boolean(definition.focus.label) && (
-              <View style={[styles.focusLabel, styles.edgeFocusLabel]}>
+              <View style={[
+                styles.focusLabel,
+                styles.edgeFocusLabel,
+                labelBelowFocus && { top: focusHeight + 7 },
+              ]}>
                 <Text style={styles.focusLabelText}>{definition.focus.label}</Text>
               </View>
             )}
-            <View style={[styles.edgeFocusBottom, { top: Math.max(0, focusHeight - 3) }]} />
+            <View style={[styles.edgeFocusBottom, { top: Math.max(0, focusHeight - 2) }]} />
           </Animated.View>
         )}
 
@@ -254,12 +273,12 @@ const styles = StyleSheet.create({
   focusLabelText: { color: '#FFFFFF', fontSize: 10, fontWeight: '900', letterSpacing: 0.8 },
   edgeFocus: { position: 'absolute', height: '100%' },
   edgeFocusTop: {
-    height: 3, width: '100%', backgroundColor: '#FFFFFF', borderRadius: 3,
-    shadowColor: '#2497F3', shadowOpacity: 0.95, shadowRadius: 12, shadowOffset: { width: 0, height: 0 }, elevation: 6,
+    height: 2, width: '100%', backgroundColor: '#FFFFFF', borderRadius: 2,
+    shadowColor: '#2497F3', shadowOpacity: 0.65, shadowRadius: 7, shadowOffset: { width: 0, height: 0 }, elevation: 4,
   },
   edgeFocusBottom: {
-    position: 'absolute', height: 3, width: '100%', backgroundColor: '#FFFFFF', borderRadius: 3,
-    shadowColor: '#2497F3', shadowOpacity: 0.95, shadowRadius: 12, shadowOffset: { width: 0, height: 0 }, elevation: 6,
+    position: 'absolute', height: 2, width: '100%', backgroundColor: '#FFFFFF', borderRadius: 2,
+    shadowColor: '#2497F3', shadowOpacity: 0.65, shadowRadius: 7, shadowOffset: { width: 0, height: 0 }, elevation: 4,
   },
   edgeFocusLabel: { top: 8, left: 10 },
   stageLabel: {

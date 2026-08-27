@@ -64,7 +64,7 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
           <GathrWordmarkLogo
             width={154}
             height={54}
-            color="#0B2235"
+            color="#1E90FF"
             accentColor="#E76F5A"
           />
         </View>

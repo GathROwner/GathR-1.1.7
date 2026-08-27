@@ -49,8 +49,8 @@ export const TutorialBottomSheet: React.FC<Props> = ({
   const isCalloutStep = stepId === 'callout-venue-selector';
   const isFeedExplanation =
     stepId === 'events-list-explanation' || stepId === 'specials-list-explanation';
-  const horizontalInset = Math.max(14, insets.left + 12, insets.right + 12);
-  const cardWidth = Math.min(408, windowWidth - horizontalInset * 2);
+  const horizontalInset = Math.max(8, insets.left + 8, insets.right + 8);
+  const cardWidth = Math.min(440, windowWidth - horizontalInset * 2);
 
   useEffect(() => {
     entrance.setValue(0);
@@ -63,10 +63,10 @@ export const TutorialBottomSheet: React.FC<Props> = ({
   }, [entrance, stepId]);
 
   const verticalStyle = sheetPosition === 'top'
-      ? { top: Math.max(insets.top + 12, Platform.OS === 'android' ? 34 : 16) }
+      ? { top: Math.max(insets.top + 8, Platform.OS === 'android' ? 30 : 12) }
       : sheetPosition === 'center'
       ? { top: Math.max(insets.top + 20, windowHeight * (isCompletion ? 0.18 : 0.28)) }
-      : { bottom: Math.max(insets.bottom + 76, 84) };
+      : { bottom: Math.max(insets.bottom + 72, 80) };
 
   return (
     <Animated.View
@@ -222,62 +222,65 @@ const styles = StyleSheet.create({
     position: 'absolute',
     zIndex: 101,
     left: 14,
-    borderRadius: 22,
+    borderRadius: 18,
     backgroundColor: '#FCFEFF',
-    paddingHorizontal: 18,
-    paddingTop: 13,
-    paddingBottom: 13,
+    paddingHorizontal: 14,
+    paddingTop: 9,
+    paddingBottom: 10,
     borderWidth: 1,
     borderColor: '#C9DFEF',
     shadowColor: '#001526',
-    shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 0.3,
-    shadowRadius: 22,
-    elevation: 18,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.28,
+    shadowRadius: 16,
+    elevation: 14,
   },
   completionCard: { paddingTop: 22, paddingBottom: 20 },
-  clusterCard: { paddingTop: 13, paddingBottom: 13 },
-  calloutCard: { borderRadius: 20, paddingHorizontal: 17, paddingTop: 9, paddingBottom: 10 },
-  feedExplanationCard: { borderRadius: 20, paddingHorizontal: 17, paddingTop: 9, paddingBottom: 10 },
-  staticSceneCard: { borderRadius: 20, paddingHorizontal: 17, paddingTop: 9, paddingBottom: 10 },
+  clusterCard: { paddingTop: 9, paddingBottom: 10 },
+  calloutCard: { borderRadius: 18, paddingHorizontal: 13, paddingTop: 8, paddingBottom: 9 },
+  feedExplanationCard: { borderRadius: 18, paddingHorizontal: 13, paddingTop: 8, paddingBottom: 9 },
+  staticSceneCard: { borderRadius: 18, paddingHorizontal: 13, paddingTop: 8, paddingBottom: 9 },
   cardAccent: {
-    position: 'absolute', top: 0, left: 26, right: 26, height: 3, borderBottomLeftRadius: 3, borderBottomRightRadius: 3,
+    position: 'absolute', top: 0, left: 20, right: 20, height: 2, borderBottomLeftRadius: 2, borderBottomRightRadius: 2,
     backgroundColor: '#2497F3', opacity: 0.9,
   },
-  progressHeader: { minHeight: 25, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  progressHeader: { position: 'relative', minHeight: 24, flexDirection: 'row', alignItems: 'center' },
   progressText: { color: '#587085', fontSize: 13, fontWeight: '800' },
-  headerSkip: { minWidth: 48, minHeight: 44, alignItems: 'flex-end', justifyContent: 'center' },
+  headerSkip: {
+    position: 'absolute', right: -4, top: -10, minWidth: 48, minHeight: 44,
+    alignItems: 'flex-end', justifyContent: 'center',
+  },
   headerSkipText: { color: '#587085', fontSize: 14, fontWeight: '700' },
-  progressTrack: { height: 4, overflow: 'hidden', borderRadius: 2, backgroundColor: '#E3EFF8', marginTop: 3, marginBottom: 12 },
-  clusterProgressTrack: { marginBottom: 11 },
-  calloutProgressHeader: { minHeight: 21 },
-  calloutProgressTrack: { marginTop: 2, marginBottom: 8 },
-  feedProgressHeader: { minHeight: 21 },
-  staticSceneProgressHeader: { minHeight: 21 },
-  feedProgressTrack: { marginTop: 2, marginBottom: 8 },
-  staticSceneProgressTrack: { marginTop: 2, marginBottom: 8 },
+  progressTrack: { height: 3, overflow: 'hidden', borderRadius: 2, backgroundColor: '#E3EFF8', marginTop: 1, marginBottom: 9 },
+  clusterProgressTrack: { marginBottom: 8 },
+  calloutProgressHeader: { minHeight: 22 },
+  calloutProgressTrack: { marginTop: 1, marginBottom: 6 },
+  feedProgressHeader: { minHeight: 22 },
+  staticSceneProgressHeader: { minHeight: 22 },
+  feedProgressTrack: { marginTop: 1, marginBottom: 6 },
+  staticSceneProgressTrack: { marginTop: 1, marginBottom: 6 },
   progressFill: { height: '100%', borderRadius: 2, backgroundColor: '#2497F3' },
-  title: { color: '#0B2235', fontSize: 22, lineHeight: 27, fontWeight: '800', letterSpacing: -0.35 },
-  clusterTitle: { fontSize: 21, lineHeight: 25 },
-  calloutTitle: { fontSize: 19, lineHeight: 23 },
-  feedTitle: { fontSize: 19, lineHeight: 23 },
-  staticSceneTitle: { fontSize: 19, lineHeight: 23 },
-  content: { color: '#50677A', fontSize: 16, lineHeight: 22, marginTop: 6 },
-  calloutContent: { fontSize: 14, lineHeight: 19, marginTop: 4 },
-  feedContent: { fontSize: 14, lineHeight: 19, marginTop: 4 },
-  staticSceneContent: { fontSize: 14, lineHeight: 19, marginTop: 4 },
+  title: { color: '#0B2235', fontSize: 20, lineHeight: 24, fontWeight: '800', letterSpacing: -0.3 },
+  clusterTitle: { fontSize: 19, lineHeight: 23 },
+  calloutTitle: { fontSize: 18, lineHeight: 22 },
+  feedTitle: { fontSize: 18, lineHeight: 22 },
+  staticSceneTitle: { fontSize: 18, lineHeight: 22 },
+  content: { color: '#50677A', fontSize: 15, lineHeight: 20, marginTop: 4 },
+  calloutContent: { fontSize: 13.5, lineHeight: 18, marginTop: 3 },
+  feedContent: { fontSize: 13.5, lineHeight: 18, marginTop: 3 },
+  staticSceneContent: { fontSize: 13.5, lineHeight: 18, marginTop: 3 },
   fallbackNote: { flexDirection: 'row', alignItems: 'flex-start', backgroundColor: '#EEF6FC', borderRadius: 12, padding: 10, marginTop: 12, gap: 8 },
   calloutFallbackNote: { paddingVertical: 8, marginTop: 8 },
   fallbackText: { flex: 1, color: '#48667E', fontSize: 13, lineHeight: 18, fontWeight: '600' },
-  actions: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 13, gap: 10 },
-  clusterActions: { marginTop: 13 },
-  calloutActions: { marginTop: 9 },
-  feedActions: { marginTop: 9 },
-  staticSceneActions: { marginTop: 9 },
-  backButton: { minHeight: 48, minWidth: 88, borderRadius: 14, borderWidth: 1, borderColor: '#D8E5EF', backgroundColor: '#F7FAFC', flexDirection: 'row', gap: 6, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 14 },
+  actions: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 9, gap: 8 },
+  clusterActions: { marginTop: 9 },
+  calloutActions: { marginTop: 7 },
+  feedActions: { marginTop: 7 },
+  staticSceneActions: { marginTop: 7 },
+  backButton: { minHeight: 44, minWidth: 82, borderRadius: 13, borderWidth: 1, borderColor: '#D8E5EF', backgroundColor: '#F7FAFC', flexDirection: 'row', gap: 5, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 12 },
   backText: { color: '#39566E', fontSize: 15, fontWeight: '800' },
   nextButton: {
-    minHeight: 50, minWidth: 116, borderRadius: 15, paddingHorizontal: 18, backgroundColor: '#168BE8',
+    minHeight: 44, minWidth: 112, borderRadius: 13, paddingHorizontal: 16, backgroundColor: '#168BE8',
     flexDirection: 'row', gap: 7, alignItems: 'center', justifyContent: 'center', shadowColor: '#168BE8',
     shadowOpacity: 0.25, shadowRadius: 9, shadowOffset: { width: 0, height: 5 }, elevation: 3,
   },
