@@ -62,7 +62,7 @@ const SCENES: Record<TutorialStaticSceneId, SceneDefinition> = {
   },
   'map-controls': {
     source: CLUSTER_MAP,
-    focus: { x: 0.5, y: 0.15, width: 0.8, height: 0.12, label: 'MAP CONTROLS' },
+    focus: { x: 0.5, y: 0.15, width: 0.99, height: 0.06, label: '', edgeOnly: true },
     accessibilityLabel: 'Example GathR map controls',
   },
   'callout-venues': {
@@ -206,9 +206,11 @@ export const StaticTutorialScene: React.FC<Props> = ({ scene }) => {
             ]}
           >
             <View style={styles.edgeFocusTop} />
-            <View style={[styles.focusLabel, styles.edgeFocusLabel]}>
-              <Text style={styles.focusLabelText}>{definition.focus.label}</Text>
-            </View>
+            {Boolean(definition.focus.label) && (
+              <View style={[styles.focusLabel, styles.edgeFocusLabel]}>
+                <Text style={styles.focusLabelText}>{definition.focus.label}</Text>
+              </View>
+            )}
             <View style={[styles.edgeFocusBottom, { top: Math.max(0, focusHeight - 3) }]} />
           </Animated.View>
         )}
