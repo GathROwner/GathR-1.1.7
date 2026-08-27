@@ -219,7 +219,10 @@ export const StaticTutorialScene: React.FC<Props> = ({ scene }) => {
       </View>
 
       {stageLabel && (
-        <View pointerEvents="none" style={[styles.stageLabel, { top: frameInsets.top + 14 }]}>
+        <View
+          pointerEvents="none"
+          style={[styles.stageLabel, { top: Math.max(insets.top + 4, frameInsets.top - 12) }]}
+        >
           <Text style={styles.stageLabelText}>{definition.focus.label}</Text>
         </View>
       )}
