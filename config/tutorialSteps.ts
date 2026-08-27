@@ -18,7 +18,7 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
   {
     id: 'map-overview',
     title: 'Everything nearby, in one view',
-    content: 'GathR brings local events and specials together on one map. Here is a real example of a busy area.',
+    content: 'GathR puts nearby events and specials on one map, so you can see what is happening at a glance.',
     staticScene: 'map-overview',
     placement: 'bottom',
     sheetPosition: 'bottom',
@@ -27,7 +27,7 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
   {
     id: 'cluster-click',
     title: 'Clusters keep the map readable',
-    content: 'A tree marks an area where several nearby places have something going on.',
+    content: 'A tree marks a nearby area with several places to explore.',
     staticScene: 'cluster-tree',
     placement: 'top',
     sheetPosition: 'top',
@@ -36,7 +36,7 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
   {
     id: 'cluster-summary',
     title: 'Read a cluster at a glance',
-    content: 'The tree, nearby numbers, and colour cues give you a quick picture before you open it.',
+    content: 'The tree, numbers, and colour cues show what is nearby before you open it.',
     staticScene: 'cluster-summary',
     placement: 'top',
     sheetPosition: 'top',

@@ -52,12 +52,12 @@ const SCENES: Record<TutorialStaticSceneId, SceneDefinition> = {
   },
   'cluster-tree': {
     source: CLUSTER_MAP,
-    focus: { x: 0.62, y: 0.39, width: 0.19, height: 0.15, label: 'NEARBY CLUSTER' },
+    focus: { x: 0.62, y: 0.39, width: 0.19, height: 0.15, label: 'CLUSTER' },
     accessibilityLabel: 'Example GathR map cluster marker',
   },
   'cluster-summary': {
     source: CLUSTER_MAP,
-    focus: { x: 0.61, y: 0.4, width: 0.33, height: 0.24, label: 'AT-A-GLANCE SUMMARY' },
+    focus: { x: 0.61, y: 0.4, width: 0.33, height: 0.24, label: 'COUNTS' },
     accessibilityLabel: 'Example cluster counts and category markers',
   },
   'map-controls': {
@@ -219,7 +219,7 @@ export const StaticTutorialScene: React.FC<Props> = ({ scene }) => {
       </View>
 
       {stageLabel && (
-        <View pointerEvents="none" style={[styles.stageLabel, { top: frameInsets.top + 14 }]}>
+        <View pointerEvents="none" style={[styles.stageLabel, { top: frameInsets.top + 48 }]}>
           <Text style={styles.stageLabelText}>{definition.focus.label}</Text>
         </View>
       )}
