@@ -13,6 +13,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import GathrWordmarkLogo from '../common/GathrWordmarkLogo';
 import { WelcomeScreenProps } from '../../types/tutorial';
+import { TutorialFocusShimmer } from './TutorialFocusShimmer';
 
 const FEATURES = [
   { icon: 'map-outline' as const, text: 'Discover what is happening nearby' },
@@ -64,9 +65,12 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
           <GathrWordmarkLogo
             width={154}
             height={54}
-            color="#1E90FF"
+            color="#185391"
             accentColor="#E76F5A"
           />
+          <View style={styles.brandShimmerTrack}>
+            <TutorialFocusShimmer borderRadius={2} />
+          </View>
         </View>
 
         <View style={styles.progressRow}>
@@ -123,7 +127,7 @@ const styles = StyleSheet.create({
   stage: {
     ...StyleSheet.absoluteFillObject,
     justifyContent: 'center',
-    backgroundColor: 'rgba(4, 20, 35, 0.76)',
+    backgroundColor: 'rgba(4, 20, 35, 0.84)',
   },
   card: {
     width: '100%',
@@ -139,6 +143,15 @@ const styles = StyleSheet.create({
     elevation: 24,
   },
   brandRow: { alignItems: 'center', justifyContent: 'center', marginBottom: 18 },
+  brandShimmerTrack: {
+    position: 'relative',
+    width: 150,
+    height: 3,
+    marginTop: 2,
+    overflow: 'hidden',
+    borderRadius: 2,
+    backgroundColor: '#DDEAF4',
+  },
   progressRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   eyebrow: { color: '#168BE8', fontSize: 12, fontWeight: '800', letterSpacing: 1.2 },
   progressText: { color: '#607387', fontSize: 13, fontWeight: '700' },

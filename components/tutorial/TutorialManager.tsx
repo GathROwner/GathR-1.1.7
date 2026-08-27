@@ -8,7 +8,11 @@ import { amplitudeTrack } from '../../lib/amplitudeAnalytics';
 import { useTutorialUiStore } from '../../store/tutorialUiStore';
 import { ComponentMeasurement, TutorialStep } from '../../types/tutorial';
 import { isTutorialStepCurrent, registerTutorialAction } from '../../utils/tutorialActions';
-import { waitForTutorialMeasurement } from '../../utils/tutorialReadiness';
+import {
+  subscribeTutorialMeasurement,
+  waitForTutorialMeasurement,
+} from '../../utils/tutorialReadiness';
+import { normalizeTutorialSpotlightMeasurement } from '../../utils/tutorialSpotlightMeasurement';
 import {
   getTutorialSpotlightForStep,
   OwnedTutorialSpotlight,
@@ -32,6 +36,8 @@ type LayoutTarget = {
   allowStaleOnTimeout?: boolean;
   requestMeasurement?: string;
   setHighlighted?: string;
+  trackUpdates?: boolean;
+  expandHorizontalToViewport?: boolean;
 };
 
 /**
@@ -64,6 +70,7 @@ const LAYOUT_TARGETS: Partial<Record<string, LayoutTarget>> = {
     flag: 'tutorialHighlightEventsListExplanation',
     layout: 'eventsListExplanationLayout',
     radius: 18,
+    trackUpdates: true,
   },
   'specials-tab': {
     flag: 'tutorialHighlightSpecialsTab',
@@ -82,6 +89,7 @@ const LAYOUT_TARGETS: Partial<Record<string, LayoutTarget>> = {
     flag: 'tutorialHighlightSpecialsListExplanation',
     layout: 'specialsListExplanationLayout',
     radius: 18,
+    trackUpdates: true,
   },
   'profile-facebook': {
     flag: 'tutorialHighlightProfileFacebook',
@@ -99,6 +107,7 @@ const LAYOUT_TARGETS: Partial<Record<string, LayoutTarget>> = {
     // Profile can publish its stable row measurement before this manager's
     // effect runs through the native-stack modal transition.
     acceptExisting: true,
+    expandHorizontalToViewport: true,
   },
 };
 
@@ -116,18 +125,6 @@ const ALL_HIGHLIGHT_FLAGS = [
 
 const isRoute = (pathname: string, route: 'events' | 'specials' | 'profile') =>
   pathname === `/${route}` || pathname.endsWith(`/${route}`);
-
-const cleanMeasurement = (
-  measurement: ComponentMeasurement,
-  screenWidth: number,
-  screenHeight: number,
-): ComponentMeasurement | null => {
-  const x = Math.max(0, measurement.x);
-  const y = Math.max(0, measurement.y);
-  const width = Math.min(measurement.width, screenWidth - x);
-  const height = Math.min(measurement.height, screenHeight - y);
-  return width > 0 && height > 0 ? { x, y, width, height } : null;
-};
 
 const clearHighlightFlags = () => {
   ALL_HIGHLIGHT_FLAGS.forEach((flag) => {
@@ -289,15 +286,47 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
       requestMeasurement();
     }
     const measurementRequestedAt = Date.now();
+    let lastAppliedMeasurement: ComponentMeasurement | null = null;
+    const applyMeasurement = (rawMeasurement: ComponentMeasurement) => {
+      if (controller.signal.aborted || currentStepIdRef.current !== currentStep.id) return false;
+      const measurement = normalizeTutorialSpotlightMeasurement(
+        rawMeasurement,
+        screenWidth,
+        screenHeight,
+        { expandHorizontalToViewport: target.expandHorizontalToViewport },
+      );
+      if (!measurement) return false;
+
+      if (
+        lastAppliedMeasurement
+        && lastAppliedMeasurement.x === measurement.x
+        && lastAppliedMeasurement.y === measurement.y
+        && lastAppliedMeasurement.width === measurement.width
+        && lastAppliedMeasurement.height === measurement.height
+      ) {
+        return true;
+      }
+
+      lastAppliedMeasurement = measurement;
+      setTargetUnavailable(false);
+      updateOwnedSpotlight({
+        stepId: currentStep.id,
+        config: {
+          ...measurement,
+          borderRadius: target.radius,
+          showPulse: currentStep.action === 'interaction',
+        },
+      });
+      return true;
+    };
+    const unsubscribeMeasurement = target.trackUpdates
+      ? subscribeTutorialMeasurement(target.layout, applyMeasurement)
+      : undefined;
+
     const measure = async () => {
       if (currentStep.id === 'facebook-submission' && facebookSubmissionLayout) {
-        const existing = cleanMeasurement(facebookSubmissionLayout, screenWidth, screenHeight);
-        if (existing) {
+        if (applyMeasurement(facebookSubmissionLayout)) {
           (global as any).facebookSubmissionStable = true;
-          updateOwnedSpotlight({
-            stepId: currentStep.id,
-            config: { ...existing, borderRadius: target.radius, showPulse: true },
-          });
           return;
         }
       }
@@ -309,28 +338,18 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
         allowStaleOnTimeout: target.allowStaleOnTimeout,
         signal: controller.signal,
         isUsable: (measurement) =>
-          cleanMeasurement(measurement, screenWidth, screenHeight) !== null,
+          normalizeTutorialSpotlightMeasurement(
+            measurement,
+            screenWidth,
+            screenHeight,
+            { expandHorizontalToViewport: target.expandHorizontalToViewport },
+          ) !== null,
       });
       if (controller.signal.aborted || currentStepIdRef.current !== currentStep.id) return;
 
-      const measurement = result.measurement && cleanMeasurement(
-        result.measurement,
-        screenWidth,
-        screenHeight,
-      );
-      if (!measurement) {
+      if (!result.measurement || !applyMeasurement(result.measurement)) {
         setTargetUnavailable(true);
-        return;
       }
-      updateOwnedSpotlight({
-        stepId: currentStep.id,
-        config: {
-          ...measurement,
-          borderRadius: target.radius,
-          showPulse: currentStep.action === 'interaction'
-            || currentStep.id === 'facebook-submission',
-        },
-      });
     };
 
     void measure().catch(() => {
@@ -341,6 +360,7 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
     });
 
     return () => {
+      unsubscribeMeasurement?.();
       controller.abort();
       clearHighlightFlags();
     };

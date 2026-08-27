@@ -415,11 +415,12 @@ const EventListItem: React.FC<EventListItemProps> = ({
         publishTutorialMeasurement('eventsListExplanationLayout', measurement);
       });
     };
-    requestAnimationFrame(measure);
-    const interval = setInterval(measure, 200);
-    const timeout = setTimeout(() => clearInterval(interval), 2200);
+    const animationFrame = requestAnimationFrame(measure);
+    const interval = setInterval(measure, 80);
+    const timeout = setTimeout(() => clearInterval(interval), 1800);
 
     return () => {
+      cancelAnimationFrame(animationFrame);
       clearInterval(interval);
       clearTimeout(timeout);
     };
@@ -1618,6 +1619,7 @@ useEffect(() => {
   const detailsAnimation = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
   const fadeAnim = useRef(new Animated.Value(1)).current;
  const [showBanner, setShowBanner] = useState(false);
+  const tutorialVisible = useTutorialUiStore((state) => state.isVisible);
   const [selectedImageData, setSelectedImageData] = useState<{
     imageUrl: string;
     event: Event;
@@ -1713,6 +1715,13 @@ useEffect(() => {
 
   // Banner animation
   useEffect(() => {
+    if (tutorialVisible) {
+      fadeAnim.stopAnimation();
+      fadeAnim.setValue(0);
+      setShowBanner(false);
+      return;
+    }
+
     if (userInterests.length > 0) {
       setShowBanner(true);
       fadeAnim.setValue(1);
@@ -1727,7 +1736,7 @@ useEffect(() => {
       
       return () => clearTimeout(timer);
     }
-  }, [userInterests, filterCriteria]);
+  }, [fadeAnim, filterCriteria, tutorialVisible, userInterests]);
 
   // Removed Firebase listener - now handled centrally in AuthProvider.
   

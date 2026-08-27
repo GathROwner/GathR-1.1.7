@@ -13,6 +13,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { TutorialTooltipProps } from '../../types/tutorial';
+import { TutorialFocusShimmer } from './TutorialFocusShimmer';
 
 const GATHR_GLOBE = require('../../assets/icon.png');
 
@@ -92,6 +93,7 @@ export const TutorialBottomSheet: React.FC<Props> = ({
       ]}
     >
       {!isCompletion && <View pointerEvents="none" style={styles.cardAccent} />}
+      {isCompletion && <TutorialFocusShimmer borderRadius={18} />}
       {isCompletion && (
         <View style={styles.completionBrand}>
           <View style={styles.completionHalo}>

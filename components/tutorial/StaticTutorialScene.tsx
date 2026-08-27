@@ -12,6 +12,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Defs, Mask, Rect } from 'react-native-svg';
 
 import { TutorialStaticSceneId } from '../../types/tutorial';
+import { TutorialFocusShimmer } from './TutorialFocusShimmer';
 
 const CLUSTER_MAP = require('../../assets/tutorial/cluster-map-example.png');
 const CLUSTER_CALLOUT = require('../../assets/tutorial/cluster-callout-example.jpg');
@@ -22,9 +23,10 @@ type SceneFocus = {
   width: number;
   height: number;
   label: string;
-  labelPlacement?: 'focus' | 'stage' | 'below';
+  labelPlacement?: 'focus' | 'stage' | 'below' | 'header';
   edgeOnly?: boolean;
   showRing?: boolean;
+  showPulse?: boolean;
 };
 
 type SceneDefinition = {
@@ -70,7 +72,9 @@ const SCENES: Record<TutorialStaticSceneId, SceneDefinition> = {
       width: 0.99,
       height: 0.12,
       label: 'VENUE RAIL',
+      labelPlacement: 'header',
       edgeOnly: true,
+      showPulse: true,
     },
     accessibilityLabel: 'Example GathR cluster callout with nearby venues',
   },
@@ -84,12 +88,13 @@ const SCENES: Record<TutorialStaticSceneId, SceneDefinition> = {
       label: 'EVENTS AND SPECIALS',
       labelPlacement: 'below',
       edgeOnly: true,
+      showPulse: true,
     },
     accessibilityLabel: 'Example callout tabs for events and specials',
   },
   'callout-card': {
     source: CLUSTER_CALLOUT,
-    focus: { x: 0.5, y: 0.49, width: 0.98, height: 0.49, label: 'LISTING DETAILS', edgeOnly: true },
+    focus: { x: 0.5, y: 0.48, width: 0.98, height: 0.52, label: 'LISTING DETAILS', edgeOnly: true },
     accessibilityLabel: 'Example GathR listing card with time, place, and actions',
   },
 };
@@ -112,6 +117,11 @@ export const StaticTutorialScene: React.FC<Props> = ({ scene }) => {
   }), [insets.bottom, insets.left, insets.right, insets.top]);
 
   useEffect(() => {
+    if (!definition.focus.showPulse) {
+      ringPulse.setValue(1);
+      return;
+    }
+
     const loop = Animated.loop(Animated.sequence([
       Animated.timing(ringPulse, { toValue: 1.035, duration: 950, useNativeDriver: true }),
       Animated.timing(ringPulse, { toValue: 1, duration: 950, useNativeDriver: true }),
@@ -122,7 +132,7 @@ export const StaticTutorialScene: React.FC<Props> = ({ scene }) => {
       ringPulse.stopAnimation();
       ringPulse.setValue(1);
     };
-  }, [ringPulse]);
+  }, [definition.focus.showPulse, ringPulse]);
 
   const handleLayout = (event: LayoutChangeEvent) => {
     const { width, height } = event.nativeEvent.layout;
@@ -139,6 +149,7 @@ export const StaticTutorialScene: React.FC<Props> = ({ scene }) => {
   const isFullFrameFocus = definition.focus.width === 1 && definition.focus.height === 1;
   const stageLabel = definition.focus.labelPlacement === 'stage';
   const labelBelowFocus = definition.focus.labelPlacement === 'below';
+  const labelOverHeader = definition.focus.labelPlacement === 'header';
   const showRing = definition.focus.showRing !== false;
 
   return (
@@ -178,7 +189,7 @@ export const StaticTutorialScene: React.FC<Props> = ({ scene }) => {
                 <Rect x={focusLeft} y={focusTop} width={focusWidth} height={focusHeight} rx={18} ry={18} fill="black" />
               </Mask>
             </Defs>
-            <Rect x="0" y="0" width={frame.width} height={frame.height} fill="rgba(2, 13, 24, 0.64)" mask="url(#static-scene-focus-mask)" />
+            <Rect x="0" y="0" width={frame.width} height={frame.height} fill="rgba(2, 13, 24, 0.74)" mask="url(#static-scene-focus-mask)" />
           </Svg>
         )}
 
@@ -197,6 +208,7 @@ export const StaticTutorialScene: React.FC<Props> = ({ scene }) => {
               },
             ]}
           >
+            <TutorialFocusShimmer borderRadius={isFullFrameFocus ? 24 : 18} />
             {!definition.focus.edgeOnly && !stageLabel && Boolean(definition.focus.label) && (
               <View style={[styles.focusLabel, labelInsideFocus && styles.focusLabelInside]}>
                 <Text style={styles.focusLabelText}>{definition.focus.label}</Text>
@@ -220,7 +232,8 @@ export const StaticTutorialScene: React.FC<Props> = ({ scene }) => {
             ]}
           >
             <View style={styles.edgeFocusTop} />
-            {Boolean(definition.focus.label) && (
+            <TutorialFocusShimmer borderRadius={18} />
+            {Boolean(definition.focus.label) && !labelOverHeader && (
               <View style={[
                 styles.focusLabel,
                 styles.edgeFocusLabel,
@@ -231,6 +244,16 @@ export const StaticTutorialScene: React.FC<Props> = ({ scene }) => {
             )}
             <View style={[styles.edgeFocusBottom, { top: Math.max(0, focusHeight - 2) }]} />
           </Animated.View>
+        )}
+
+        {frame.width > 0 && frame.height > 0 && !showRing && (
+          <TutorialFocusShimmer borderRadius={24} style={styles.fullFrameShimmer} />
+        )}
+
+        {labelOverHeader && Boolean(definition.focus.label) && (
+          <View pointerEvents="none" style={styles.headerFocusLabel}>
+            <Text style={styles.focusLabelText}>{definition.focus.label}</Text>
+          </View>
         )}
 
         <View pointerEvents="none" style={styles.exampleBadge}>
@@ -280,6 +303,12 @@ const styles = StyleSheet.create({
     shadowColor: '#2497F3', shadowOpacity: 0.65, shadowRadius: 7, shadowOffset: { width: 0, height: 0 }, elevation: 4,
   },
   edgeFocusLabel: { top: 8, left: 10 },
+  headerFocusLabel: {
+    position: 'absolute', top: 8, left: 10, zIndex: 5, borderRadius: 10,
+    backgroundColor: '#0B2235', borderWidth: 1, borderColor: 'rgba(255,255,255,0.5)',
+    paddingHorizontal: 8, paddingVertical: 5,
+  },
+  fullFrameShimmer: { top: 3, right: 3, bottom: 3, left: 3 },
   stageLabel: {
     position: 'absolute', alignSelf: 'center', zIndex: 4, borderRadius: 10,
     backgroundColor: 'rgba(5, 27, 46, 0.88)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.38)',

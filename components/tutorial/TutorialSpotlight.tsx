@@ -18,6 +18,7 @@ import Svg, { Rect, Defs, Mask, Circle } from 'react-native-svg';
 import { TUTORIAL_CONFIG } from '../../config/tutorialSteps';
 import { TutorialSpotlightProps } from '../../types/tutorial';
 import { isPointInsideTutorialSpotlightCircle } from '../../utils/tutorialClusterSpotlight';
+import { TutorialFocusShimmer } from './TutorialFocusShimmer';
 
 const SPOTLIGHT_PADDING = 8;
 
@@ -31,7 +32,7 @@ export const TutorialSpotlight: React.FC<TutorialSpotlightProps> = ({
   const pulseAnim = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
-    if (spotlight) {
+    if (spotlight?.showPulse) {
       const pulse = Animated.sequence([
         Animated.timing(pulseAnim, {
           toValue: 1.05,
@@ -51,6 +52,7 @@ export const TutorialSpotlight: React.FC<TutorialSpotlightProps> = ({
         pulseAnim.stopAnimation();
       };
     }
+    pulseAnim.setValue(1);
   }, [spotlight, pulseAnim]);
 
   if (!spotlight) {
@@ -75,7 +77,7 @@ export const TutorialSpotlight: React.FC<TutorialSpotlightProps> = ({
     • showPulse        — pulsing ring effect
     • forceCircle      — true only for the cluster step to render a perfect circle
 */
-  const { x, y, width, height, borderRadius = 8, showPulse = true, forceCircle = false, squareCorners = false } = spotlight;
+  const { x, y, width, height, borderRadius = 8, showPulse = false, forceCircle = false, squareCorners = false } = spotlight;
   const isCircle = borderRadius >= Math.min(width, height) / 2;
   const effectiveRadius = isCircle ? Math.min(width, height) / 2 : borderRadius;
   const paddedRadius = squareCorners ? 0 : Math.max(0, effectiveRadius + SPOTLIGHT_PADDING);
@@ -312,31 +314,34 @@ return (
     )}
 
 
+      <Animated.View
+        style={[
+          styles.borderRing,
+          {
+            left: paddedX,
+            top: paddedY,
+            width: paddedWidth,
+            height: paddedHeight,
+            borderRadius: paddedRadius,
+            transform: showPulse ? [{ scale: pulseAnim }] : undefined,
+          },
+        ]}
+        pointerEvents="none"
+      >
+        <TutorialFocusShimmer borderRadius={paddedRadius} />
+      </Animated.View>
+
       {showPulse && (
         <>
           <Animated.View
             style={[
-              styles.borderRing,
+              styles.glowRing,
               {
                 left: paddedX - 4,
                 top: paddedY - 4,
                 width: paddedWidth + 8,
                 height: paddedHeight + 8,
                 borderRadius: paddedRadius + 4,
-                transform: [{ scale: pulseAnim }],
-              },
-            ]}
-            pointerEvents="none"
-          />
-          <Animated.View
-            style={[
-              styles.glowRing,
-              {
-                left: paddedX - 8,
-                top: paddedY - 8,
-                width: paddedWidth + 16,
-                height: paddedHeight + 16,
-                borderRadius: paddedRadius + 8,
                 opacity: pulseAnim.interpolate({ inputRange: [1,1.05], outputRange: [0.6,0.9] }),
               },
             ]}
@@ -369,6 +374,6 @@ const styles = StyleSheet.create({
   touchBlockerFill: { ...StyleSheet.absoluteFillObject, backgroundColor: 'transparent' },
   touchBlocker: { position: 'absolute', backgroundColor: 'transparent' },
   spotlightTouchTarget: { position: 'absolute', backgroundColor: 'transparent' },
-  borderRing: { position: 'absolute', borderWidth: 3, borderColor: '#FFFFFF', backgroundColor: 'transparent', shadowColor: '#2497F3', shadowOffset: { width:0, height:0 }, shadowOpacity:0.9, shadowRadius:8, elevation:0 },
-  glowRing: { position: 'absolute', borderWidth: 2, borderColor: '#2497F3', backgroundColor: 'transparent', shadowColor: '#2497F3', shadowOffset: {width:0, height:0}, shadowOpacity:0.55, shadowRadius:14, elevation:0 },
+  borderRing: { position: 'absolute', overflow: 'hidden', borderWidth: 2, borderColor: 'rgba(255,255,255,0.92)', backgroundColor: 'transparent', shadowColor: '#2497F3', shadowOffset: { width:0, height:0 }, shadowOpacity:0.78, shadowRadius:7, elevation:0 },
+  glowRing: { position: 'absolute', borderWidth: 1, borderColor: '#2497F3', backgroundColor: 'transparent', shadowColor: '#2497F3', shadowOffset: {width:0, height:0}, shadowOpacity:0.48, shadowRadius:12, elevation:0 },
 });

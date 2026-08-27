@@ -238,12 +238,10 @@ const confirmSubmitWithScrapeabilityWarning = (check: FacebookScrapeabilityPrech
 // Enhanced Facebook Page Submission Component  
 interface FacebookPageSubmissionProps {
   isHighlighted?: boolean;
-  pulseAnim?: Animated.Value;
 }
 
 const FacebookPageSubmission = React.forwardRef<View, FacebookPageSubmissionProps>(({ 
-  isHighlighted = false, 
-  pulseAnim 
+  isHighlighted = false,
 }, ref) => {
   const [facebookUrl, setFacebookUrl] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -577,7 +575,6 @@ const FacebookPageSubmission = React.forwardRef<View, FacebookPageSubmissionProp
     borderColor: 'transparent',
     borderRadius: 16,
     backgroundColor: 'rgba(255, 255, 255, 0.95)',
-    transform: pulseAnim ? [{ scale: pulseAnim }] : [],
   };
 
   return (
@@ -590,7 +587,7 @@ const FacebookPageSubmission = React.forwardRef<View, FacebookPageSubmissionProp
         // Do NOT overwrite facebookSubmissionLayout here or it will replace the padded measurement
       }}
     >
-      <Animated.View style={isHighlighted ? tutorialHighlightStyle : {}}>
+      <View style={isHighlighted ? tutorialHighlightStyle : {}}>
         <View style={submissionStyles.container}>
           <View style={submissionStyles.compactTrigger}>
             <TouchableOpacity
@@ -631,7 +628,7 @@ const FacebookPageSubmission = React.forwardRef<View, FacebookPageSubmissionProp
             </TouchableOpacity>
           </View>
         </View>
-      </Animated.View>
+      </View>
 
       <Modal
         visible={isExpanded}
@@ -745,7 +742,6 @@ export default function ProfileScreen() {
   
   // Tutorial awareness for Facebook submission
   const facebookSubmissionRef = useRef<View>(null);
-  const facebookSubmissionPulseAnim = useRef(new Animated.Value(1)).current;
   const [facebookSubmissionHighlighted, setFacebookSubmissionHighlighted] = useState(false);
   const tutorialStepId = useTutorialUiStore((state) => state.currentStepId);
   const setTutorialFacebookSubmissionLayout = useTutorialUiStore(
@@ -856,26 +852,6 @@ export default function ProfileScreen() {
     };
   }, [setTutorialFacebookSubmissionLayout, tutorialStepId]);
 
-  useEffect(() => {
-    if (!facebookSubmissionHighlighted) {
-      facebookSubmissionPulseAnim.stopAnimation();
-      facebookSubmissionPulseAnim.setValue(1);
-      return;
-    }
-
-    const loop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(facebookSubmissionPulseAnim, { toValue: 1.04, useNativeDriver: true, duration: 800 }),
-        Animated.timing(facebookSubmissionPulseAnim, { toValue: 1, useNativeDriver: true, duration: 800 }),
-      ])
-    );
-    loop.start();
-    return () => {
-      loop.stop();
-      facebookSubmissionPulseAnim.setValue(1);
-    };
-  }, [facebookSubmissionHighlighted, facebookSubmissionPulseAnim]);
-  
 const router = useRouter();
 const navigation = useNavigation();
 const pathname = usePathname();
@@ -1722,7 +1698,6 @@ const handleLogout = async () => {
                 <FacebookPageSubmission
                   ref={facebookSubmissionRef}
                   isHighlighted={facebookSubmissionHighlighted}
-                  pulseAnim={facebookSubmissionPulseAnim}
                 />
                 <TouchableOpacity
                   style={styles.tutorialRow}
