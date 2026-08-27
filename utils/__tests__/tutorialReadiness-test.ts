@@ -45,6 +45,18 @@ describe('tutorial readiness', () => {
     await expect(waiting).resolves.toMatchObject({ source: 'timeout', measurement: { measuredAt: 100 } });
   });
 
+  it('can reject stale fallback geometry for a moving native header target', async () => {
+    jest.useFakeTimers();
+    publishTutorialMeasurement('header-target', { x: 0, y: 20, width: 40, height: 40 }, 100);
+    const waiting = waitForTutorialMeasurement('header-target', {
+      timeoutMs: 200,
+      freshAfter: 150,
+      allowStaleOnTimeout: false,
+    });
+    jest.advanceTimersByTime(200);
+    await expect(waiting).resolves.toEqual({ source: 'timeout', measurement: null });
+  });
+
   it('ignores an offscreen entrance measurement until the target is usable', async () => {
     let settled = false;
     const waiting = waitForTutorialMeasurement('moving-target', {

@@ -70,6 +70,7 @@ export const waitForTutorialMeasurement = (
     timeoutMs: number;
     freshAfter?: number;
     acceptExisting?: boolean;
+    allowStaleOnTimeout?: boolean;
     signal?: AbortSignal;
     isUsable?: (measurement: TutorialMeasurement) => boolean;
   },
@@ -78,6 +79,7 @@ export const waitForTutorialMeasurement = (
     timeoutMs,
     freshAfter = 0,
     acceptExisting = false,
+    allowStaleOnTimeout = true,
     signal,
     isUsable = () => true,
   } = options;
@@ -109,7 +111,7 @@ export const waitForTutorialMeasurement = (
     };
     const onAbort = () => finish(null, 'aborted');
     const timeout = setTimeout(
-      () => finish(getTutorialMeasurement(name), 'timeout'),
+      () => finish(allowStaleOnTimeout ? getTutorialMeasurement(name) : null, 'timeout'),
       Math.max(0, timeoutMs),
     );
 

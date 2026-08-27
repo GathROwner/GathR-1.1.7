@@ -29,6 +29,7 @@ type LayoutTarget = {
   layout: string;
   radius: number;
   acceptExisting?: boolean;
+  allowStaleOnTimeout?: boolean;
   requestMeasurement?: string;
   setHighlighted?: string;
 };
@@ -86,7 +87,10 @@ const LAYOUT_TARGETS: Partial<Record<string, LayoutTarget>> = {
     flag: 'tutorialHighlightProfileFacebook',
     layout: 'profileFacebookLayout',
     radius: 20,
-    acceptExisting: true,
+    // The native header can publish an inset-relative entrance measurement.
+    // Wait for the layout emitted after this step becomes active instead of
+    // immediately reusing that stale header position.
+    allowStaleOnTimeout: false,
   },
   'facebook-submission': {
     flag: 'tutorialHighlightFacebookSubmission',
@@ -302,6 +306,7 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
         timeoutMs: TUTORIAL_CONFIG.TARGET_TIMEOUT_MS,
         freshAfter: target.acceptExisting ? 0 : measurementRequestedAt,
         acceptExisting: target.acceptExisting,
+        allowStaleOnTimeout: target.allowStaleOnTimeout,
         signal: controller.signal,
         isUsable: (measurement) =>
           cleanMeasurement(measurement, screenWidth, screenHeight) !== null,
