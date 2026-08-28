@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "572784950053",
+    "project_id": "gathr-social-staging",
+    "storage_bucket": "gathr-social-staging.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:572784950053:android:9266700ca87d99dae438cc",
+        "android_client_info": {
+          "package_name": "com.craigb.gathr"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyA8-wg1YI0ySO1xQm3amnXEnAonfJ8yxW8"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

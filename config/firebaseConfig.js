@@ -9,15 +9,33 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 const useFirebaseEmulators =
   __DEV__ && process.env.EXPO_PUBLIC_USE_FIREBASE_EMULATORS === 'true';
 
-const firebaseConfig = {
+const productionFirebaseConfig = {
   apiKey: "AIzaSyDlTVz1oAxaYgBQVupUFmhgWd1CLAmu2Xs",
   authDomain: "gathr-m1.firebaseapp.com",
-  projectId: useFirebaseEmulators ? "demo-gathr-social" : "gathr-m1",
+  projectId: "gathr-m1",
   storageBucket: "gathr-m1.firebasestorage.app",
   messagingSenderId: "234071683975",
   appId: "1:234071683975:ios:49809a6cf3e62989869922"
   // measurementId is NOT needed for React Native/mobile apps
 };
+
+const stagingFirebaseConfig = {
+  apiKey: "AIzaSyB8zainbIH0k6G2NHGRBDIJl_nupmJ59jc",
+  authDomain: "gathr-social-staging.firebaseapp.com",
+  projectId: "gathr-social-staging",
+  storageBucket: "gathr-social-staging.firebasestorage.app",
+  messagingSenderId: "572784950053",
+  appId: "1:572784950053:web:4e60ae8aced3b7eae438cc"
+};
+
+const requestedFirebaseTarget = process.env.EXPO_PUBLIC_FIREBASE_TARGET;
+const useStagingFirebase =
+  !useFirebaseEmulators && requestedFirebaseTarget === 'staging';
+const firebaseConfig = useFirebaseEmulators
+  ? { ...productionFirebaseConfig, projectId: 'demo-gathr-social' }
+  : useStagingFirebase
+    ? stagingFirebaseConfig
+    : productionFirebaseConfig;
 
 // Initialize Firebase app
 const app = initializeApp(firebaseConfig);
@@ -81,6 +99,10 @@ setTimeout(() => {
   console.log('🔍 FIREBASE DEBUG: Analytics is undefined?', analytics === undefined);
 }, 2000);
 
-const firebaseTarget = useFirebaseEmulators ? 'local-emulator' : 'production';
+const firebaseTarget = useFirebaseEmulators
+  ? 'local-emulator'
+  : useStagingFirebase
+    ? 'staging'
+    : 'production';
 
 export { app, auth, firestore, functions, storage, analytics, useFirebaseEmulators, firebaseTarget };

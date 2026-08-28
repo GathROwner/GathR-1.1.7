@@ -27,7 +27,9 @@
       "channel": "preview",
       "env": {
         "EXPO_PUBLIC_SOCIAL_FEATURE_ENABLED": "true",
-        "EXPO_PUBLIC_USE_FIREBASE_EMULATORS": "false"
+        "EXPO_PUBLIC_USE_FIREBASE_EMULATORS": "false",
+        "EXPO_PUBLIC_FIREBASE_TARGET": "staging",
+        "GOOGLE_SERVICES_JSON": "./google-services.staging.json"
       },
       "ios": {
         "resourceClass": "m-medium"

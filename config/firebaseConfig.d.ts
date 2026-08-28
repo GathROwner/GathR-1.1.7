@@ -16,7 +16,7 @@ declare const analytics: Analytics | null;
 declare const app: FirebaseApp;
 declare const functions: Functions;
 declare const useFirebaseEmulators: boolean;
-declare const firebaseTarget: 'local-emulator' | 'production';
+declare const firebaseTarget: 'local-emulator' | 'staging' | 'production';
 
 // Export the declarations to match the JavaScript exports
 export { app, auth, firestore, functions, storage, analytics, useFirebaseEmulators, firebaseTarget };

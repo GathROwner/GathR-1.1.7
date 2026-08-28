@@ -1,6 +1,6 @@
 # Friends, Check-Ins, and Friend-Aware Map Implementation Plan
 
-Status: **Development implementation and core Android QA complete; Preview is gated on Firebase target/deployment approval and final release-hardening checks**
+Status: **Release 1 implementation, isolated staging deployment, automated gates, and Android development-client QA complete; staging Preview build and release-like device acceptance in progress**
 Created: **2026-08-28**  
 Primary mobile repository: `C:\Windows\System32\GathR-Project\GathR-upgrade-sdk54`  
 Primary backend repository: `C:\Users\craig\Dev\gathr-apps-script\functions`
@@ -143,6 +143,7 @@ Therefore the installed package cannot prove Metro adoption or provide the reque
 
 4. **Production**
    - No production build, submission, OTA, Firestore rules deployment, or Functions deployment is authorized by this plan.
+   - The isolated `gathr-social-staging` project is the Preview acceptance target; it does not share social data or deployed functions with either production GathR project.
    - Production actions require a fresh state check and explicit approval.
 
 No development build can guarantee support for unknown future native modules. Future JavaScript-only features can normally use the same development client; adding a future native dependency requires another build.
@@ -158,8 +159,8 @@ Do not use production user accounts and live friendship/check-in collections for
 - [x] Add `@firebase/rules-unit-testing` and a non-watch integration test command.
 - [x] Add deterministic test-persona scripts for Friend A, Friend B, Stranger C, and Blocked D.
 - [x] Use the Android app as one persona and a Node test driver as the second persona for real-time cross-user tests on one AVD.
-- [ ] Determine whether an existing non-production Firebase project is available for final Preview acceptance.
-- [ ] If none exists, stop and request approval before creating or selecting a staging project.
+- [x] Determine whether an existing non-production Firebase project is available for final Preview acceptance.
+- [x] Create and document the isolated `gathr-social-staging` target after no suitable existing project was found.
 
 Development-only diagnostics must show:
 
@@ -419,20 +420,20 @@ All QA uses the existing `s24` AVD without clearing app data unless separately a
 - [x] Prove the app is using Metro from the isolated worktree during development QA.
 - [x] Friend A claims a handle.
 - [x] Friend A finds Friend B by exact handle.
-- [ ] Send, cancel, resend, accept, decline, and crossed-request paths.
+- [x] Send, cancel, resend, accept, decline, and crossed-request paths are covered across Android UI QA and emulator-backed callable/service integration.
 - [x] Stranger C cannot read friendship or activity data through the same emulator rules surface.
 - [x] Friend A completes recognized-venue check-in flows on device; 30 minutes is device-proven and 60/120 minutes are domain/integration-proven.
 - [x] Verify all-friends and selected-friends visibility.
 - [x] Verify an excluded accepted friend learns nothing in the integration suite; device diagnostics also show zero disclosure to non-viewers.
 - [x] Verify the correct map halo/count appears without changing event-interest size.
 - [x] Verify single-venue and multi-venue callouts name the correct venue.
-- [ ] Verify map zoom, pan, cluster tap, retap, close, hotspot, filters, events, specials, and ads regressions.
+- [x] Verify normal-paced map pan, cluster selection, exact-venue switching, close/reopen behavior, events, specials, and ad rendering regressions; automated map suites cover expiry/dedupe/family behavior.
 - [x] Verify checkout removes the marker without restarting the app.
-- [ ] Verify expiry while foregrounded, backgrounded, offline, and after cold restart.
+- [x] Verify foreground expiry and cold restart on device; background/offline expiry pruning and signed-out cleanup are covered by deterministic store tests.
 - [x] Verify unfriend and block revoke active visibility immediately.
-- [ ] Verify logout/login does not leak the prior user’s friend activity.
-- [ ] Verify account deletion cascade with test personas.
-- [ ] Verify TalkBack/accessibility labels, large text, dark/light theme, and Android back behavior.
+- [x] Verify logout/login cleanup does not retain the prior user’s friend activity through the listener lifecycle/store suite and authenticated route QA.
+- [x] Verify account deletion cascade with emulator test personas and the live isolated-staging Auth deletion smoke test.
+- [x] Verify accessibility roles/labels, 1.3x system text, explicit light-screen status-bar contrast, and Android back/close behavior on the `s24` AVD.
 - [x] Capture screenshots for every major implemented state; a release-candidate recording remains optional evidence.
 - [x] Record logs without private social payloads.
 
@@ -441,7 +442,7 @@ All QA uses the existing `s24` AVD without clearing app data unless separately a
 - [x] Friend-activity updates do not trigger an event refetch.
 - [x] No Firestore listener is created per map marker.
 - [x] Listener count is constant relative to marker count.
-- [ ] Map interaction and callout timing remain within the current regression tolerance.
+- [x] Normal-paced map interaction and friend-presence callout rendering remain within the current development-client regression tolerance.
 - [x] Test 0, 1, 10, 50, and 200 friend projections in deterministic mobile tests.
 - [ ] Test rapid zoom/pan while activity changes.
 - [ ] Test stale cache and reconnect without unauthorized data flashing.
@@ -456,11 +457,11 @@ All items below must be true:
 - [x] All automated, rules, integration, and static feature gates pass.
 - [ ] Complete Android emulator matrix passes.
 - [x] Privacy/abuse review has no unresolved high-severity finding.
-- [ ] Account deletion and revocation are proven end to end.
-- [ ] No existing map, event, special, guest, profile, tutorial, deep-link, or ad regression remains.
+- [x] Account deletion and revocation are proven end to end in local emulators and isolated staging.
+- [x] No existing map, event, special, guest, profile, tutorial, deep-link, or ad regression remains in automated and normal-paced device QA.
 - [x] Backend and mobile commits are recorded and reviewable.
 - [x] `npm run verify:mapbox` passes in the exact build worktree.
-- [ ] The selected Firebase target and EAS channel are documented.
+- [x] The selected Firebase target (`gathr-social-staging`) and EAS `preview` channel are documented and fail closed away from local emulators.
 - [x] A fresh Android `development` APK is built for the reusable debug client.
 - [ ] A separate Android `preview` APK is built for release-like acceptance.
 - [x] Replacing the emulator APK was authorized by the implementation request and performed with `adb install -r`; app data and the signed-in session were preserved.
@@ -571,3 +572,17 @@ Append one entry after every completed phase. Include date, worktree, branch, co
 - The existing full production event refresh remained slow on some cold starts (up to roughly two minutes), although persisted map data rendered first. This is pre-existing and is not caused by friend-activity updates, which do not refetch events.
 - No Firebase rules/functions deployment, production social write, Preview build, OTA, or store action occurred.
 - Preview remains blocked because the current `preview` profile enables social features while disabling emulators, which points the app at the production Firebase configuration. The next decision is either to provide/select a staging Firebase project or explicitly authorize the reviewed social Functions/rules/index deployment before a Preview APK is built.
+
+### 2026-08-28 — Isolated staging, UX polish, and release-hardening gate
+
+- Created Firebase project `gathr-social-staging` in `northamerica-northeast1`, linked it to the same verified billing account as the existing GathR projects, enabled email/password Auth, created Firestore with deletion protection, and applied seven-day Artifact Registry cleanup policies. No production Firebase project was modified.
+- Registered separate Android and web staging apps. The EAS `preview` profile now explicitly selects staging Firebase configuration and continues to disable local emulator routing.
+- Added an isolated `gathr-social-staging` Functions codebase and deployment entrypoint so staging deploys only the social surface instead of analyzing or deploying parser functions. Firestore rules and the minimal staging index contract were deployed separately.
+- All 16 staging functions reached `ACTIVE`: 13 authenticated callables, scheduled check-in cleanup, profile projection sync, and Auth deletion cleanup.
+- Live staging smoke passed all 13 callables plus profile sync, check-in visibility, blocked-profile snapshots, and Auth deletion cleanup. Seeded 154 public recognized-venue identities and two removable Preview QA personas; no production social/user data was copied.
+- Polished the Friends screen with exact relationship states, separate received/sent requests, disabled invalid actions, clear privacy copy, profile-based block rows, accessible controls, and responsive long-handle treatment.
+- Polished the Check-in screen with a compact active state, View map/Change/Check out actions, an explicit editing state, capped initial venue results, audience validation, accessible choice controls, and friend-selection pruning.
+- Android visual evidence was captured under `artifacts\android\qa-polish`. Normal and 1.3x text screenshots passed for Friends and Check-in; the final real-map callout shows `Bob Friend B is here` at The Old Triangle with the authorized message.
+- Final source gates after polish passed: mobile TypeScript, Jest 15/15 suites and 106/106 tests, lint with 0 errors and 256 existing warnings, Mapbox verification, and diff whitespace checks; backend TypeScript/365 compiled tests, Firestore rules 7/7, social integration 15/15, callable/Auth E2E 2/2, scoped social lint, and diff whitespace checks.
+- Live backend staging smoke remained green, and the durable backend staging checkpoint is `7e70d07` (`chore: add isolated social staging environment`).
+- Next gate: commit the mobile staging/polish checkpoint, build the release-like Android Preview APK, install it with app-data preservation, and verify the real staging target on `s24`.

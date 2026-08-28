@@ -1,5 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { StatusBar } from 'expo-status-bar';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -96,26 +97,58 @@ export default function CheckInScreen() {
   const [selectedUids, setSelectedUids] = useState<string[]>([]);
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
+  const [isEditing, setIsEditing] = useState(!ownCheckIn);
   const pendingOperationRef = useRef<{ fingerprint: string; operationId: string } | null>(null);
+  const activeRevisionRef = useRef<string | null>(ownCheckIn?.revision ?? null);
 
   useEffect(() => {
     if (!venueId && initialVenueId) setVenueId(initialVenueId);
   }, [initialVenueId, venueId]);
 
+  useEffect(() => {
+    setSelectedUids((current) => current.filter((uid) =>
+      friends.some((friend) => friend.uid === uid)
+    ));
+  }, [friends]);
+
+  useEffect(() => {
+    const revision = ownCheckIn?.revision ?? null;
+    if (revision && revision !== activeRevisionRef.current) setIsEditing(false);
+    if (!revision && activeRevisionRef.current) setIsEditing(true);
+    activeRevisionRef.current = revision;
+  }, [ownCheckIn?.revision]);
+
   const selectedVenue = options.find((option) => option.venueId === venueId) ?? null;
   const filteredOptions = useMemo(() => {
     const query = venueQuery.trim().toLowerCase();
-    if (!query) return options.slice(0, 25);
+    if (!query) return options.slice(0, 8);
     return options.filter((option) =>
       `${option.venueName} ${option.address}`.toLowerCase().includes(query)
     ).slice(0, 25);
   }, [options, venueQuery]);
   const currentAudienceCount = audienceCount(audienceMode, friends, selectedUids);
   const estimatedExpiry = Date.now() + durationMinutes * 60_000;
+  const hasAudience = audienceMode === 'all_friends'
+    ? friends.length > 0
+    : selectedUids.length > 0;
+  const canSubmit = !!selectedVenue && hasAudience && !busy && !fromCache;
 
   const toggleFriend = (uid: string) => setSelectedUids((current) =>
     current.includes(uid) ? current.filter((item) => item !== uid) : [...current, uid]
   );
+
+  const beginEditing = () => {
+    if (ownCheckIn) {
+      setVenueId(ownCheckIn.venueId);
+      setDurationMinutes(ownCheckIn.durationMinutes);
+      setAudienceMode(ownCheckIn.audienceMode);
+      setSelectedUids(ownCheckIn.selectedUids.filter((uid) =>
+        friends.some((friend) => friend.uid === uid)
+      ));
+      setMessage(ownCheckIn.message);
+    }
+    setIsEditing(true);
+  };
 
   const submit = async () => {
     if (!selectedVenue) {
@@ -204,6 +237,7 @@ export default function CheckInScreen() {
   if (!SOCIAL_FEATURE_ENABLED || !user) {
     return (
       <SafeAreaView style={styles.safeArea}>
+        <StatusBar style="dark" backgroundColor="#F6F8FB" />
         <View style={styles.centered}>
           <Text style={styles.title}>{user ? 'Check-ins unavailable' : 'Sign in to check in'}</Text>
           <Text style={styles.muted}>Check-ins are explicit and temporary; GathR does not continuously track friends.</Text>
@@ -217,13 +251,14 @@ export default function CheckInScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
+      <StatusBar style="dark" backgroundColor="#FFFFFF" />
       <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <View style={styles.header}>
           <TouchableOpacity accessibilityLabel="Close check-in" onPress={() => router.back()} style={styles.iconButton}>
             <Ionicons name="close" size={25} color="#101828" />
           </TouchableOpacity>
           <View style={styles.headerText}>
-            <Text style={styles.title}>Check in</Text>
+            <Text style={styles.title}>{ownCheckIn && !isEditing ? 'Your check-in' : ownCheckIn ? 'Update check-in' : 'Check in'}</Text>
             <Text style={styles.muted}>Share a venue, never continuous location.</Text>
           </View>
         </View>
@@ -233,17 +268,47 @@ export default function CheckInScreen() {
 
           {ownCheckIn && (
             <View style={[styles.card, styles.activeCard]}>
-              <View style={styles.rowBetween}>
-                <View style={styles.flex}>
-                  <Text style={styles.sectionTitle}>Currently at {ownCheckIn.venueNameSnapshot}</Text>
-                  <Text style={styles.muted}>
-                    {formatCheckInVisibilityCopy(ownCheckIn.viewerCount, ownCheckIn.expiresAt)}
-                  </Text>
+              <View style={styles.activeHeading}>
+                <View style={styles.activeIcon}>
+                  <Ionicons name="location" size={22} color="#175CD3" />
                 </View>
-                <TouchableOpacity accessibilityLabel="Check out now" disabled={busy} onPress={checkout} style={styles.checkoutButton}>
+                <View style={styles.flex}>
+                  <Text style={styles.activeEyebrow}>ACTIVE NOW</Text>
+                  <Text style={styles.sectionTitle}>{ownCheckIn.venueNameSnapshot}</Text>
+                </View>
+              </View>
+              <Text style={styles.muted}>
+                {formatCheckInVisibilityCopy(ownCheckIn.viewerCount, ownCheckIn.expiresAt)}
+              </Text>
+              {!!ownCheckIn.message && (
+                <Text style={styles.activeMessage}>“{ownCheckIn.message}”</Text>
+              )}
+              <View style={styles.activeActions}>
+                <TouchableOpacity accessibilityRole="button" accessibilityLabel="View check-in on map" onPress={() => router.replace('/(tabs)/map')} style={styles.secondaryButton}>
+                  <Ionicons name="map-outline" size={18} color="#175CD3" />
+                  <Text style={styles.secondaryText}>View map</Text>
+                </TouchableOpacity>
+                {!isEditing && (
+                  <TouchableOpacity accessibilityRole="button" accessibilityLabel="Change active check-in" onPress={beginEditing} style={styles.secondaryButton}>
+                    <Ionicons name="create-outline" size={18} color="#175CD3" />
+                    <Text style={styles.secondaryText}>Change</Text>
+                  </TouchableOpacity>
+                )}
+                <TouchableOpacity accessibilityRole="button" accessibilityLabel="Check out now" disabled={busy} onPress={checkout} style={styles.checkoutButton}>
                   <Text style={styles.checkoutText}>Check out</Text>
                 </TouchableOpacity>
               </View>
+            </View>
+          )}
+
+          {isEditing && (
+          <>
+          {ownCheckIn && (
+            <View style={styles.editingHeader}>
+              <Text style={styles.editingTitle}>Change your check-in</Text>
+              <TouchableOpacity accessibilityRole="button" onPress={() => setIsEditing(false)}>
+                <Text style={styles.linkText}>Cancel changes</Text>
+              </TouchableOpacity>
             </View>
           )}
 
@@ -271,7 +336,7 @@ export default function CheckInScreen() {
                   style={styles.input}
                 />
                 {filteredOptions.map((option) => (
-                  <TouchableOpacity key={option.venueId} onPress={() => setVenueId(option.venueId)} style={styles.venueOption}>
+                  <TouchableOpacity accessibilityRole="button" accessibilityLabel={`Choose ${option.venueName}`} key={option.venueId} onPress={() => setVenueId(option.venueId)} style={styles.venueOption}>
                     <Ionicons name="business-outline" size={19} color="#475467" />
                     <View style={styles.flex}>
                       <Text style={styles.venueName}>{option.venueName}</Text>
@@ -280,6 +345,9 @@ export default function CheckInScreen() {
                   </TouchableOpacity>
                 ))}
                 {options.length === 0 && <Text style={styles.emptyText}>Move the map to load recognized venues, then try again.</Text>}
+                {!venueQuery.trim() && options.length > 8 && (
+                  <Text style={styles.helperText}>Search to see more of the venues currently loaded on your map.</Text>
+                )}
               </>
             )}
           </View>
@@ -290,6 +358,8 @@ export default function CheckInScreen() {
               {DURATIONS.map((duration) => (
                 <TouchableOpacity
                   key={duration}
+                  accessibilityRole="radio"
+                  accessibilityLabel={`${duration} minute check-in`}
                   accessibilityState={{ selected: durationMinutes === duration }}
                   onPress={() => setDurationMinutes(duration)}
                   style={[styles.choice, durationMinutes === duration && styles.choiceSelected]}
@@ -304,16 +374,22 @@ export default function CheckInScreen() {
 
           <View style={styles.card}>
             <Text style={styles.sectionTitle}>3. Who can see it</Text>
-            <TouchableOpacity onPress={() => setAudienceMode('all_friends')} style={styles.radioRow} accessibilityState={{ selected: audienceMode === 'all_friends' }}>
+            {friends.length === 0 && (
+              <View style={styles.audienceNotice}>
+                <Ionicons name="people-outline" size={20} color="#175CD3" />
+                <Text style={styles.audienceNoticeText}>Add an accepted friend before checking in so someone can actually see it.</Text>
+              </View>
+            )}
+            <TouchableOpacity accessibilityRole="radio" accessibilityLabel={`All accepted friends, ${friends.length}`} onPress={() => setAudienceMode('all_friends')} style={styles.radioRow} accessibilityState={{ selected: audienceMode === 'all_friends' }}>
               <Ionicons name={audienceMode === 'all_friends' ? 'radio-button-on' : 'radio-button-off'} size={22} color={BRAND} />
               <Text style={styles.radioText}>All accepted friends ({friends.length})</Text>
             </TouchableOpacity>
-            <TouchableOpacity onPress={() => setAudienceMode('selected_friends')} style={styles.radioRow} accessibilityState={{ selected: audienceMode === 'selected_friends' }}>
+            <TouchableOpacity accessibilityRole="radio" accessibilityLabel={`Selected friends, ${selectedUids.length}`} onPress={() => setAudienceMode('selected_friends')} style={styles.radioRow} accessibilityState={{ selected: audienceMode === 'selected_friends' }}>
               <Ionicons name={audienceMode === 'selected_friends' ? 'radio-button-on' : 'radio-button-off'} size={22} color={BRAND} />
               <Text style={styles.radioText}>Selected friends ({selectedUids.length})</Text>
             </TouchableOpacity>
             {audienceMode === 'selected_friends' && friends.map((friend) => (
-              <TouchableOpacity key={friend.uid} onPress={() => toggleFriend(friend.uid)} style={styles.friendChoice} accessibilityState={{ checked: selectedUids.includes(friend.uid) }}>
+              <TouchableOpacity accessibilityRole="checkbox" accessibilityLabel={`${friend.displayName}, @${friend.socialHandle}`} key={friend.uid} onPress={() => toggleFriend(friend.uid)} style={styles.friendChoice} accessibilityState={{ checked: selectedUids.includes(friend.uid) }}>
                 <Ionicons name={selectedUids.includes(friend.uid) ? 'checkbox' : 'square-outline'} size={22} color={BRAND} />
                 <Text style={styles.radioText}>{friend.displayName} <Text style={styles.muted}>@{friend.socialHandle}</Text></Text>
               </TouchableOpacity>
@@ -337,9 +413,11 @@ export default function CheckInScreen() {
           <Text style={styles.confirmationCopy}>
             {formatCheckInVisibilityCopy(currentAudienceCount, estimatedExpiry)}
           </Text>
-          <TouchableOpacity accessibilityLabel={ownCheckIn ? 'Replace active check-in' : 'Confirm check-in'} disabled={busy || fromCache} onPress={() => void submit()} style={[styles.primaryButton, (busy || fromCache) && styles.disabled]}>
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel={ownCheckIn ? 'Replace active check-in' : 'Confirm check-in'} disabled={!canSubmit} onPress={() => void submit()} style={[styles.primaryButton, !canSubmit && styles.disabled]}>
             {busy ? <ActivityIndicator color="#FFF" /> : <Text style={styles.primaryText}>{ownCheckIn ? 'Replace check-in' : 'Check in'}</Text>}
           </TouchableOpacity>
+          </>
+          )}
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -359,9 +437,17 @@ const styles = StyleSheet.create({
   activeCard: { borderColor: '#53B1FD', backgroundColor: '#EFF8FF' },
   sectionTitle: { fontSize: 17, fontWeight: '700', color: '#101828' },
   muted: { color: '#667085', lineHeight: 19 },
-  rowBetween: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  activeHeading: { flexDirection: 'row', alignItems: 'center', gap: 11 },
+  activeIcon: { width: 42, height: 42, alignItems: 'center', justifyContent: 'center', borderRadius: 21, backgroundColor: '#DCEBFF' },
+  activeEyebrow: { color: '#175CD3', fontSize: 11, fontWeight: '800', letterSpacing: 0.8, marginBottom: 2 },
+  activeMessage: { color: '#344054', fontStyle: 'italic', lineHeight: 20 },
+  activeActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 2 },
+  secondaryButton: { minHeight: 42, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingHorizontal: 12, borderRadius: 9, backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#B2DDFF' },
+  secondaryText: { color: '#175CD3', fontWeight: '700' },
   checkoutButton: { minHeight: 42, justifyContent: 'center', paddingHorizontal: 12, borderRadius: 9, backgroundColor: '#FEE4E2' },
   checkoutText: { color: '#B42318', fontWeight: '700' },
+  editingHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, paddingHorizontal: 2 },
+  editingTitle: { flex: 1, color: '#101828', fontSize: 18, fontWeight: '800' },
   input: { minHeight: 46, borderWidth: 1, borderColor: '#D0D5DD', borderRadius: 10, paddingHorizontal: 12, color: '#101828', backgroundColor: '#FFF' },
   messageInput: { minHeight: 86, textAlignVertical: 'top', paddingTop: 12 },
   counter: { alignSelf: 'flex-end', color: '#667085' },
@@ -383,4 +469,7 @@ const styles = StyleSheet.create({
   disabled: { opacity: 0.45 },
   offlineBanner: { backgroundColor: '#FFF4CC', color: '#7A5D00', padding: 10, borderRadius: 10 },
   emptyText: { color: '#667085', fontStyle: 'italic' },
+  helperText: { color: '#667085', fontSize: 13, lineHeight: 18 },
+  audienceNotice: { flexDirection: 'row', alignItems: 'flex-start', gap: 9, padding: 11, borderRadius: 10, backgroundColor: '#EFF8FF' },
+  audienceNoticeText: { flex: 1, color: '#344054', lineHeight: 19 },
 });

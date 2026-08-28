@@ -20,7 +20,7 @@ export interface FriendRequestProjection extends SocialProfile {
   updatedAt?: SocialTimestamp;
 }
 
-export interface BlockProjection {
+export interface BlockProjection extends SocialProfile {
   ownerUid: string;
   blockedUid: string;
   createdAt?: SocialTimestamp;

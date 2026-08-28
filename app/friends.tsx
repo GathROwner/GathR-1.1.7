@@ -1,5 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+import { StatusBar } from 'expo-status-bar';
 import { doc, getDoc } from 'firebase/firestore';
 import React, { useEffect, useMemo, useState } from 'react';
 import {
@@ -26,6 +27,7 @@ import {
   cancelFriendRequest,
   claimSocialHandle,
   declineFriendRequest,
+  normalizeSocialHandle,
   removeFriend,
   reportUser,
   searchUserByHandle,
@@ -64,11 +66,17 @@ function PersonRow({
   children?: React.ReactNode;
 }) {
   return (
-    <View style={styles.personRow} accessibilityLabel={`${person.displayName}, @${person.socialHandle}`}>
+    <View style={styles.personRow}>
       <Avatar profile={person} />
-      <View style={styles.personText}>
-        <Text style={styles.personName}>{person.displayName}</Text>
-        <Text style={styles.handleText}>@{person.socialHandle || 'handle pending'}</Text>
+      <View
+        accessible
+        style={styles.personText}
+        accessibilityLabel={`${person.displayName}${person.socialHandle ? `, @${person.socialHandle}` : ''}`}
+      >
+        <Text numberOfLines={2} style={styles.personName}>{person.displayName}</Text>
+        <Text maxFontSizeMultiplier={1.1} numberOfLines={2} style={styles.handleText}>
+          {person.socialHandle ? `@${person.socialHandle}` : 'GathR member'}
+        </Text>
       </View>
       <View style={styles.rowActions}>{children}</View>
     </View>
@@ -78,6 +86,7 @@ function PersonRow({
 export default function FriendsScreen() {
   const router = useRouter();
   const { user } = useAuth();
+  const currentUid = user?.uid || '';
   const { friends, requests, blocks, loading, fromCache, error } = useSocialStore();
   const [handle, setHandle] = useState('');
   const [claimedHandle, setClaimedHandle] = useState('');
@@ -94,6 +103,19 @@ export default function FriendsScreen() {
     () => requests.filter((request) => request.direction === 'outgoing'),
     [requests]
   );
+  const normalizedHandle = normalizeSocialHandle(handle);
+  const normalizedSearch = normalizeSocialHandle(search);
+  const canSaveHandle = /^[a-z0-9_]{3,24}$/.test(normalizedHandle)
+    && normalizedHandle !== claimedHandle;
+  const canSearch = /^[a-z0-9_]{3,24}$/.test(normalizedSearch);
+  const searchRelationship = useMemo(() => {
+    if (!searchResult) return null;
+    if (searchResult.uid === currentUid) return 'self';
+    if (friends.some((friend) => friend.uid === searchResult.uid)) return 'friend';
+    if (incoming.some((request) => request.uid === searchResult.uid)) return 'incoming';
+    if (outgoing.some((request) => request.uid === searchResult.uid)) return 'outgoing';
+    return 'available';
+  }, [currentUid, friends, incoming, outgoing, searchResult]);
 
   useEffect(() => {
     if (!user) return;
@@ -129,6 +151,12 @@ export default function FriendsScreen() {
     setSearchComplete(true);
   });
 
+  const sendRequest = (person: SocialProfile) => run(
+    `add-${person.uid}`,
+    () => sendFriendRequest(person.uid),
+    `Friend request sent to ${person.displayName}.`
+  );
+
   const confirmRemove = (friend: FriendProjection) => Alert.alert(
     `Remove ${friend.displayName}?`,
     'You will immediately stop seeing each other’s check-ins.',
@@ -161,6 +189,7 @@ export default function FriendsScreen() {
   if (!SOCIAL_FEATURE_ENABLED) {
     return (
       <SafeAreaView style={styles.safeArea}>
+        <StatusBar style="dark" backgroundColor="#F6F8FB" />
         <View style={styles.centered}>
           <Text style={styles.title}>Friends</Text>
           <Text style={styles.muted}>This build does not have the social preview enabled.</Text>
@@ -175,6 +204,7 @@ export default function FriendsScreen() {
   if (!user) {
     return (
       <SafeAreaView style={styles.safeArea}>
+        <StatusBar style="dark" backgroundColor="#F6F8FB" />
         <View style={styles.centered}>
           <Ionicons name="people-outline" size={48} color={BRAND} />
           <Text style={styles.title}>Sign in to add friends</Text>
@@ -189,6 +219,7 @@ export default function FriendsScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
+      <StatusBar style="dark" backgroundColor="#FFFFFF" />
       <KeyboardAvoidingView
         style={styles.flex}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -199,7 +230,7 @@ export default function FriendsScreen() {
           </TouchableOpacity>
           <View style={styles.headerText}>
             <Text style={styles.title}>Friends</Text>
-            <Text style={styles.subtitle}>Presence is shared only after both people accept.</Text>
+            <Text style={styles.subtitle}>Connect first. Check-ins are always optional and temporary.</Text>
           </View>
         </View>
 
@@ -225,9 +256,9 @@ export default function FriendsScreen() {
               />
               <TouchableOpacity
                 accessibilityLabel={claimedHandle ? 'Update GathR handle' : 'Claim GathR handle'}
-                disabled={busyKey !== null}
+                disabled={busyKey !== null || !canSaveHandle}
                 onPress={() => void submitHandle()}
-                style={styles.smallPrimaryButton}
+                style={[styles.smallPrimaryButton, (busyKey !== null || !canSaveHandle) && styles.disabled]}
               >
                 {busyKey === 'handle' ? <ActivityIndicator color="#FFF" /> : <Text style={styles.smallPrimaryText}>{claimedHandle ? 'Update' : 'Claim'}</Text>}
               </TouchableOpacity>
@@ -245,22 +276,39 @@ export default function FriendsScreen() {
                 autoCorrect={false}
                 placeholder="Exact handle"
                 accessibilityLabel="Search exact GathR handle"
-                onSubmitEditing={() => void findPerson()}
+                onSubmitEditing={() => { if (canSearch) void findPerson(); }}
                 style={[styles.input, styles.searchInput]}
               />
-              <TouchableOpacity disabled={busyKey !== null} onPress={() => void findPerson()} style={styles.smallPrimaryButton}>
+              <TouchableOpacity
+                accessibilityLabel="Search for GathR handle"
+                accessibilityRole="button"
+                disabled={busyKey !== null || !canSearch}
+                onPress={() => void findPerson()}
+                style={[styles.smallPrimaryButton, (busyKey !== null || !canSearch) && styles.disabled]}
+              >
                 {busyKey === 'search' ? <ActivityIndicator color="#FFF" /> : <Ionicons name="search" size={19} color="#FFF" />}
               </TouchableOpacity>
             </View>
             {searchResult && (
               <PersonRow person={searchResult}>
-                <TouchableOpacity
-                  accessibilityLabel={`Send friend request to ${searchResult.displayName}`}
-                  onPress={() => void run(`add-${searchResult.uid}`, () => sendFriendRequest(searchResult.uid))}
-                  style={styles.actionButton}
-                >
-                  <Text style={styles.actionText}>Add</Text>
-                </TouchableOpacity>
+                {searchRelationship === 'available' && (
+                  <TouchableOpacity
+                    accessibilityLabel={`Send friend request to ${searchResult.displayName}`}
+                    accessibilityRole="button"
+                    onPress={() => void sendRequest(searchResult)}
+                    style={styles.actionButton}
+                  >
+                    <Text style={styles.actionText}>Add</Text>
+                  </TouchableOpacity>
+                )}
+                {searchRelationship !== 'available' && (
+                  <Text style={styles.relationshipLabel}>
+                    {searchRelationship === 'self' && 'This is you'}
+                    {searchRelationship === 'friend' && 'Friends'}
+                    {searchRelationship === 'incoming' && 'Respond below'}
+                    {searchRelationship === 'outgoing' && 'Request sent'}
+                  </Text>
+                )}
               </PersonRow>
             )}
             {searchComplete && !searchResult && <Text style={styles.emptyText}>No available account has that exact handle.</Text>}
@@ -269,18 +317,19 @@ export default function FriendsScreen() {
           {loading && <ActivityIndicator size="large" color={BRAND} />}
 
           <View style={styles.card}>
-            <Text style={styles.sectionTitle}>Requests ({incoming.length})</Text>
-            {incoming.length === 0 && <Text style={styles.emptyText}>No incoming requests.</Text>}
+            <Text style={styles.sectionTitle}>Requests ({incoming.length + outgoing.length})</Text>
+            {incoming.length > 0 && <Text style={styles.groupLabel}>RECEIVED</Text>}
             {incoming.map((request: FriendRequestProjection) => (
               <PersonRow key={request.uid} person={request}>
-                <TouchableOpacity accessibilityLabel={`Accept ${request.displayName}`} onPress={() => void run(`accept-${request.uid}`, () => acceptFriendRequest(request.uid))} style={styles.actionButton}>
-                  <Ionicons name="checkmark" size={18} color={BRAND} />
+                <TouchableOpacity accessibilityRole="button" accessibilityLabel={`Accept ${request.displayName}`} onPress={() => void run(`accept-${request.uid}`, () => acceptFriendRequest(request.uid))} style={styles.acceptButton}>
+                  <Text style={styles.acceptText}>Accept</Text>
                 </TouchableOpacity>
-                <TouchableOpacity accessibilityLabel={`Decline ${request.displayName}`} onPress={() => void run(`decline-${request.uid}`, () => declineFriendRequest(request.uid))} style={styles.actionButton}>
+                <TouchableOpacity accessibilityRole="button" accessibilityLabel={`Decline ${request.displayName}`} onPress={() => void run(`decline-${request.uid}`, () => declineFriendRequest(request.uid))} style={styles.iconActionButton}>
                   <Ionicons name="close" size={18} color="#B42318" />
                 </TouchableOpacity>
               </PersonRow>
             ))}
+            {outgoing.length > 0 && <Text style={styles.groupLabel}>SENT</Text>}
             {outgoing.map((request) => (
               <PersonRow key={request.uid} person={request}>
                 <TouchableOpacity accessibilityLabel={`Cancel request to ${request.displayName}`} onPress={() => void run(`cancel-${request.uid}`, () => cancelFriendRequest(request.uid))} style={styles.actionButton}>
@@ -288,6 +337,9 @@ export default function FriendsScreen() {
                 </TouchableOpacity>
               </PersonRow>
             ))}
+            {incoming.length === 0 && outgoing.length === 0 && (
+              <Text style={styles.emptyText}>No pending friend requests.</Text>
+            )}
           </View>
 
           <View style={styles.card}>
@@ -311,12 +363,11 @@ export default function FriendsScreen() {
             <View style={styles.card}>
               <Text style={styles.sectionTitle}>Blocked accounts</Text>
               {blocks.map((block) => (
-                <View key={block.blockedUid} style={styles.personRow}>
-                  <Text style={[styles.personText, styles.blockedText]} numberOfLines={1}>Account {block.blockedUid.slice(0, 8)}</Text>
-                  <TouchableOpacity onPress={() => void run(`unblock-${block.blockedUid}`, () => unblockUser(block.blockedUid))} style={styles.actionButton}>
-                    <Text style={styles.actionText}>Unblock</Text>
+                <PersonRow key={block.blockedUid} person={{ ...block, uid: block.blockedUid }}>
+                  <TouchableOpacity accessibilityRole="button" accessibilityLabel={`Unblock ${block.displayName}`} onPress={() => void run(`unblock-${block.blockedUid}`, () => unblockUser(block.blockedUid))} style={styles.actionButton}>
+                    <Text maxFontSizeMultiplier={1.1} style={styles.actionText}>Unblock</Text>
                   </TouchableOpacity>
-                </View>
+                </PersonRow>
               ))}
             </View>
           )}
@@ -358,9 +409,14 @@ const styles = StyleSheet.create({
   handleText: { color: '#667085', marginTop: 2 },
   rowActions: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   actionButton: { minWidth: 42, minHeight: 42, paddingHorizontal: 8, alignItems: 'center', justifyContent: 'center', borderRadius: 9, backgroundColor: '#F2F4F7' },
+  iconActionButton: { width: 42, height: 42, alignItems: 'center', justifyContent: 'center', borderRadius: 9, backgroundColor: '#FEF3F2' },
+  acceptButton: { minHeight: 42, paddingHorizontal: 12, alignItems: 'center', justifyContent: 'center', borderRadius: 9, backgroundColor: '#EFF8FF' },
+  acceptText: { color: '#175CD3', fontWeight: '700' },
   actionText: { color: '#175CD3', fontWeight: '700' },
+  relationshipLabel: { color: '#475467', fontWeight: '700', textAlign: 'right' },
+  groupLabel: { color: '#667085', fontSize: 12, fontWeight: '800', letterSpacing: 0.7, marginTop: 2 },
   emptyText: { color: '#667085', fontStyle: 'italic', paddingVertical: 5 },
   offlineBanner: { backgroundColor: '#FFF4CC', color: '#7A5D00', padding: 10, borderRadius: 10 },
   errorBanner: { backgroundColor: '#FEE4E2', color: '#B42318', padding: 10, borderRadius: 10 },
-  blockedText: { color: '#475467' },
+  disabled: { opacity: 0.45 },
 });
