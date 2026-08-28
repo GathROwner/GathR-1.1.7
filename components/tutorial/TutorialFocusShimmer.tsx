@@ -1,16 +1,17 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Animated,
   Easing,
+  LayoutChangeEvent,
   StyleProp,
   StyleSheet,
-  useWindowDimensions,
   View,
   ViewStyle,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 
 import { useReduceMotion } from '../../hooks/useReduceMotion';
+import { getTutorialShimmerGeometry } from '../../utils/tutorialShimmerGeometry';
 
 interface Props {
   borderRadius?: number;
@@ -18,9 +19,8 @@ interface Props {
 }
 
 /**
- * A restrained GathR-blue/teal glint for tutorial focus boundaries. Two quick
- * sweeps provide the cue, followed by a long quiet pause. It deliberately
- * stays on the edge so the highlighted control remains readable.
+ * A clipped, glass-like reflection across the complete tutorial focus area.
+ * Two quick GathR-orange sweeps provide the cue, followed by a quiet pause.
  */
 export const TutorialFocusShimmer: React.FC<Props> = ({
   borderRadius = 18,
@@ -28,13 +28,18 @@ export const TutorialFocusShimmer: React.FC<Props> = ({
 }) => {
   const progress = useRef(new Animated.Value(0)).current;
   const reduceMotion = useReduceMotion();
-  const { width: windowWidth } = useWindowDimensions();
+  const [size, setSize] = useState({ height: 0, width: 0 });
+
+  const geometry = useMemo(
+    () => getTutorialShimmerGeometry(size.width, size.height),
+    [size.height, size.width],
+  );
 
   useEffect(() => {
     progress.stopAnimation();
     progress.setValue(0);
 
-    if (reduceMotion) return;
+    if (reduceMotion || size.height <= 0 || size.width <= 0) return;
 
     const reset = () => Animated.timing(progress, {
       toValue: 0,
@@ -43,18 +48,18 @@ export const TutorialFocusShimmer: React.FC<Props> = ({
     });
     const sweep = () => Animated.timing(progress, {
       toValue: 1,
-      duration: 520,
-      easing: Easing.inOut(Easing.cubic),
+      duration: 680,
+      easing: Easing.out(Easing.cubic),
       useNativeDriver: true,
     });
     const loop = Animated.loop(Animated.sequence([
-      Animated.delay(420),
+      Animated.delay(460),
       sweep(),
       reset(),
-      Animated.delay(170),
+      Animated.delay(190),
       sweep(),
       reset(),
-      Animated.delay(2600),
+      Animated.delay(2500),
     ]));
 
     loop.start();
@@ -63,39 +68,60 @@ export const TutorialFocusShimmer: React.FC<Props> = ({
       progress.stopAnimation();
       progress.setValue(0);
     };
-  }, [progress, reduceMotion]);
+  }, [progress, reduceMotion, size.height, size.width]);
 
-  if (reduceMotion) return null;
+  const handleLayout = (event: LayoutChangeEvent) => {
+    const { height, width } = event.nativeEvent.layout;
+    setSize((current) => (
+      Math.abs(current.height - height) < 0.5 && Math.abs(current.width - width) < 0.5
+        ? current
+        : { height, width }
+    ));
+  };
 
   const translateX = progress.interpolate({
     inputRange: [0, 1],
-    outputRange: [-70, windowWidth + 70],
+    outputRange: [geometry.travelStart, geometry.travelEnd],
   });
-
-  const renderGlint = () => (
-    <Animated.View style={[styles.glint, { transform: [{ translateX }] }]}>
-      <LinearGradient
-        colors={[
-          'rgba(52, 204, 190, 0)',
-          'rgba(52, 204, 190, 0.72)',
-          'rgba(255, 255, 255, 0.98)',
-          'rgba(36, 151, 243, 0.78)',
-          'rgba(36, 151, 243, 0)',
-        ]}
-        end={{ x: 1, y: 0.5 }}
-        start={{ x: 0, y: 0.5 }}
-        style={styles.gradient}
-      />
-    </Animated.View>
-  );
 
   return (
     <View
+      onLayout={handleLayout}
       pointerEvents="none"
       style={[styles.container, { borderRadius }, style]}
     >
-      <View style={styles.topTrack}>{renderGlint()}</View>
-      <View style={styles.bottomTrack}>{renderGlint()}</View>
+      {!reduceMotion && size.height > 0 && size.width > 0 ? (
+        <Animated.View
+          style={[
+            styles.reflection,
+            {
+              height: size.height + (geometry.overscan * 2),
+              top: -geometry.overscan,
+              transform: [
+                { translateX },
+                { rotate: '-12deg' },
+              ],
+              width: geometry.bandWidth,
+            },
+          ]}
+        >
+          <LinearGradient
+            colors={[
+              'rgba(255, 107, 53, 0)',
+              'rgba(255, 107, 53, 0.10)',
+              'rgba(255, 107, 53, 0.36)',
+              'rgba(255, 226, 191, 0.68)',
+              'rgba(255, 107, 53, 0.42)',
+              'rgba(255, 107, 53, 0.10)',
+              'rgba(255, 107, 53, 0)',
+            ]}
+            end={{ x: 1, y: 0.5 }}
+            locations={[0, 0.18, 0.36, 0.5, 0.64, 0.82, 1]}
+            start={{ x: 0, y: 0.5 }}
+            style={styles.gradient}
+          />
+        </Animated.View>
+      ) : null}
     </View>
   );
 };
@@ -105,28 +131,9 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     overflow: 'hidden',
   },
-  topTrack: {
+  reflection: {
     position: 'absolute',
-    top: 0,
     left: 0,
-    right: 0,
-    height: 3,
-    overflow: 'hidden',
-  },
-  bottomTrack: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    height: 3,
-    overflow: 'hidden',
-  },
-  glint: {
-    position: 'absolute',
-    top: 0,
-    bottom: 0,
-    left: 0,
-    width: 64,
   },
   gradient: { flex: 1 },
 });
