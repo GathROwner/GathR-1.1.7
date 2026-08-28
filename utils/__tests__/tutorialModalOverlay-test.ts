@@ -2,6 +2,7 @@ import {
   getTutorialModalOverlay,
   isTutorialModalHostedStep,
   setTutorialModalOverlay,
+  shouldUseProfileTutorialOverlayHost,
   subscribeTutorialModalOverlay,
 } from '../tutorialModalOverlay';
 import { useTutorialUiStore } from '../../store/tutorialUiStore';
@@ -22,6 +23,29 @@ describe('tutorial modal overlay bridge', () => {
     expect(isTutorialModalHostedStep('facebook-submission')).toBe(true);
     expect(isTutorialModalHostedStep('completion')).toBe(true);
     expect(isTutorialModalHostedStep('cluster-click')).toBe(false);
+  });
+
+  it('keeps completion above Profile until the native modal is dismissed', () => {
+    expect(shouldUseProfileTutorialOverlayHost({
+      isActive: true,
+      pathname: '/profile',
+      stepId: 'facebook-submission',
+    })).toBe(true);
+    expect(shouldUseProfileTutorialOverlayHost({
+      isActive: true,
+      pathname: '/profile',
+      stepId: 'completion',
+    })).toBe(true);
+    expect(shouldUseProfileTutorialOverlayHost({
+      isActive: true,
+      pathname: '/(tabs)/specials',
+      stepId: 'completion',
+    })).toBe(false);
+    expect(shouldUseProfileTutorialOverlayHost({
+      isActive: false,
+      pathname: '/profile',
+      stepId: 'completion',
+    })).toBe(false);
   });
 
   it('notifies modal hosts when the overlay renderer changes', () => {

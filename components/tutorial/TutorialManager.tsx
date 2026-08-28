@@ -18,8 +18,8 @@ import {
   OwnedTutorialSpotlight,
 } from '../../utils/tutorialSpotlightOwnership';
 import {
-  isTutorialModalHostedStep,
   setTutorialModalOverlay,
+  shouldUseProfileTutorialOverlayHost,
 } from '../../utils/tutorialModalOverlay';
 import { TutorialBottomSheet } from './TutorialBottomSheet';
 import { StaticTutorialScene } from './StaticTutorialScene';
@@ -511,16 +511,15 @@ export const TutorialManager: React.FC<Props> = ({ children }) => {
     targetUnavailable,
   ]);
 
-  const isProfileModalHosted = Boolean(
-    isActive
-      && currentStep?.id === 'facebook-submission'
-      && isRoute(pathname, 'profile')
-      && isTutorialModalHostedStep(currentStep?.id),
-  );
+  const isProfileModalHosted = shouldUseProfileTutorialOverlayHost({
+    isActive,
+    pathname,
+    stepId: currentStep?.id,
+  });
 
   // A native-stack Profile modal renders above the root app tree on iOS.
-  // Mount this one tutorial state in Profile's overlay host so its dimmer,
-  // spotlight, and controls are in the same native layer as the target row.
+  // Keep every Profile-hosted tutorial state in that same native layer,
+  // including completion when the user advances before Profile dismisses.
   useEffect(() => {
     if (!isProfileModalHosted) {
       setTutorialModalOverlay(null);

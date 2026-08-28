@@ -25,3 +25,17 @@ export const setTutorialModalOverlay = (next: TutorialModalOverlayRenderer | nul
 
 export const isTutorialModalHostedStep = (stepId?: string | null): boolean =>
   Boolean(stepId && MODAL_HOSTED_STEP_IDS.has(stepId));
+
+export const shouldUseProfileTutorialOverlayHost = ({
+  isActive,
+  pathname,
+  stepId,
+}: {
+  isActive: boolean;
+  pathname: string;
+  stepId?: string | null;
+}): boolean => Boolean(
+  isActive
+    && (pathname === '/profile' || pathname.endsWith('/profile'))
+    && isTutorialModalHostedStep(stepId),
+);
