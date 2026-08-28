@@ -288,6 +288,17 @@ Responsibilities:
 
 Guest mode must not start social listeners and must preserve all current limitations and map behavior.
 
+### Fixed-screen UI contract
+
+GathR screens should behave like focused mobile dashboards, not vertically stacked documents.
+
+- The primary state, context, and action of Profile, setup, preferences, Friends, and Check-in screens must fit within one phone viewport at the supported default text size.
+- Event/special feeds and map callouts may scroll because their content is intentionally open-ended.
+- Unbounded relationship, venue, and audience collections must scroll only inside a clearly bounded list or focused picker; they must not lengthen the parent page.
+- Secondary or advanced controls may open a focused sheet. The sheet should fit one viewport when collapsed and may scroll internally only when variable or expanded content requires it.
+- Large-text QA is required. Primary labels and actions must remain visible; secondary copy may be capped modestly or shortened, but essential text must not be hidden.
+- Any future exception must be deliberate, documented, and tested on the target phone rather than introduced by stacking another card below the fold.
+
 ## 13. Friend management implementation
 
 - [x] Add a unique social handle to profile onboarding/editing without changing email authentication.
@@ -300,6 +311,7 @@ Guest mode must not start social listeners and must preserve all current limitat
 - [x] Make every mutation safe to retry after a network timeout.
 - [x] Add empty, loading, offline, error, and stale-data states.
 - [x] Add accessible labels and predictable Android back behavior.
+- [x] Keep handle, search, relationship tabs, and the active relationship panel in one fixed viewport; scroll only the bounded relationship list.
 
 ## 14. Check-in implementation
 
@@ -315,6 +327,7 @@ Guest mode must not start social listeners and must preserve all current limitat
 - [x] Check-in expires locally on time even while offline.
 - [x] Server cleanup removes stale canonical and projection documents.
 - [x] Editing audience revokes removed viewers before success is shown.
+- [x] Keep venue, duration, audience, note, visibility summary, and confirmation in one fixed viewport; use focused venue/friend pickers for variable lists.
 
 ## 15. Friend-aware map implementation
 
@@ -586,3 +599,20 @@ Append one entry after every completed phase. Include date, worktree, branch, co
 - Final source gates after polish passed: mobile TypeScript, Jest 15/15 suites and 106/106 tests, lint with 0 errors and 256 existing warnings, Mapbox verification, and diff whitespace checks; backend TypeScript/365 compiled tests, Firestore rules 7/7, social integration 15/15, callable/Auth E2E 2/2, scoped social lint, and diff whitespace checks.
 - Live backend staging smoke remained green, and the durable backend staging checkpoint is `7e70d07` (`chore: add isolated social staging environment`).
 - Next gate: commit the mobile staging/polish checkpoint, build the release-like Android Preview APK, install it with app-data preservation, and verify the real staging target on `s24`.
+
+### 2026-08-28 — Release-like Preview checkpoint
+
+- Mobile staging/polish checkpoint `77fb943` (`feat: polish social preview and target staging`) built successfully as EAS Android Preview build `86409035-aa50-4510-bf90-f0a8a930846e`.
+- The preserved APK is `artifacts\android\gathr-friends-preview-86409035.apk`, 227,340,463 bytes, SHA-256 `0D29ADA79EE25490BC8FF8F5065401F42FCC0225F33642C5C67395096F859491`.
+- Installed with `adb install -r` on `emulator-5554` / `s24` without clearing data. The package was release-like and non-debuggable, and launched the embedded Preview bundle without Metro or Dev Launcher.
+- Preview authenticated against `gathr-social-staging`, rendered the seeded Alice/Bob friendship, and showed Bob's authorized friend-presence map reaction.
+- This artifact became a QA checkpoint rather than the final candidate after the fixed-screen product rule was added.
+
+### 2026-08-28 — Fixed-screen dashboard iteration
+
+- Replaced the document-style Friends page with fixed handle/search controls plus Requests, Friends, and Blocked tabs sharing one bounded relationship panel. Handle editing now uses a focused modal.
+- Replaced the document-style Check-in form with one fixed control surface. Recognized venues and selected-friend audiences now use focused, internally scrollable pickers.
+- Converted the Profile page into a fixed dashboard containing identity, email, Edit Profile, Interests, Friends, Check In, Replay Tutorial, and More. Preferences, sharing, Facebook page submission, and account actions moved into a compact focused sheet.
+- Converted Interest Selection into a fixed three-column grid with persistent Cancel/Save actions; long category names no longer clip at 1.3x Android text size.
+- Normal and 1.3x emulator screenshots are stored under `artifacts\android\qa-fixed-screen`; the Profile dashboard, Profile editor, Interests, Friends, Check-in, venue/friend pickers, and More sheet keep their primary actions inside one `1080x2400` viewport.
+- Final local source gates passed after the fixed-screen changes: TypeScript, Jest 15/15 suites and 106/106 tests, lint with 0 errors, Mapbox runtime verification, and whitespace checks. The final Preview build and release-like staging acceptance remain to be run against the fixed-screen commit.

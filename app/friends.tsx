@@ -8,6 +8,7 @@ import {
   Alert,
   Image,
   KeyboardAvoidingView,
+  Modal,
   Platform,
   ScrollView,
   StyleSheet,
@@ -40,6 +41,7 @@ import type { FriendProjection, FriendRequestProjection, SocialProfile } from '.
 import { SOCIAL_FEATURE_ENABLED } from '../types/social';
 
 const BRAND = '#2F80ED';
+type RelationshipSection = 'requests' | 'friends' | 'blocked';
 
 function displayError(error: unknown) {
   return error instanceof SocialServiceError || error instanceof Error
@@ -94,6 +96,8 @@ export default function FriendsScreen() {
   const [searchResult, setSearchResult] = useState<SocialProfile | null>(null);
   const [searchComplete, setSearchComplete] = useState(false);
   const [busyKey, setBusyKey] = useState<string | null>(null);
+  const [handleModalVisible, setHandleModalVisible] = useState(false);
+  const [activeSection, setActiveSection] = useState<RelationshipSection>('friends');
 
   const incoming = useMemo(
     () => requests.filter((request) => request.direction === 'incoming'),
@@ -131,18 +135,23 @@ export default function FriendsScreen() {
     try {
       await operation();
       if (success) Alert.alert('Done', success);
+      return true;
     } catch (actionError) {
       Alert.alert('Could not complete action', displayError(actionError));
+      return false;
     } finally {
       setBusyKey(null);
     }
   };
 
-  const submitHandle = () => run('handle', async () => {
+  const submitHandle = async () => {
+    const completed = await run('handle', async () => {
     const profile = await claimSocialHandle(handle);
     setClaimedHandle(profile.socialHandle);
     setHandle(profile.socialHandle);
-  }, 'Your GathR handle is ready.');
+    }, 'Your GathR handle is ready.');
+    if (completed) setHandleModalVisible(false);
+  };
 
   const findPerson = () => run('search', async () => {
     setSearchComplete(false);
@@ -230,51 +239,42 @@ export default function FriendsScreen() {
           </TouchableOpacity>
           <View style={styles.headerText}>
             <Text style={styles.title}>Friends</Text>
-            <Text style={styles.subtitle}>Connect first. Check-ins are always optional and temporary.</Text>
+            <Text maxFontSizeMultiplier={1.15} numberOfLines={1} style={styles.subtitle}>Connect first. Check-ins stay optional.</Text>
           </View>
         </View>
 
-        <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-          {fromCache && <Text style={styles.offlineBanner}>Showing saved social data while offline.</Text>}
-          {!!error && <Text style={styles.errorBanner}>{error}</Text>}
+        <View style={styles.content}>
+          {fromCache && <Text maxFontSizeMultiplier={1.15} numberOfLines={2} style={styles.offlineBanner}>Showing saved social data while offline.</Text>}
+          {!!error && <Text maxFontSizeMultiplier={1.15} numberOfLines={2} style={styles.errorBanner}>{error}</Text>}
           <SocialDiagnosticsPanel />
 
-          <View style={styles.card}>
-            <Text style={styles.sectionTitle}>Your GathR handle</Text>
-            <Text style={styles.muted}>People search for this exact handle. Your email is never shown.</Text>
-            <View style={styles.inputRow}>
-              <Text style={styles.atSign}>@</Text>
-              <TextInput
-                value={handle}
-                onChangeText={setHandle}
-                autoCapitalize="none"
-                autoCorrect={false}
-                maxLength={25}
-                placeholder="craig_pei"
-                accessibilityLabel="GathR handle"
-                style={styles.input}
-              />
-              <TouchableOpacity
-                accessibilityLabel={claimedHandle ? 'Update GathR handle' : 'Claim GathR handle'}
-                disabled={busyKey !== null || !canSaveHandle}
-                onPress={() => void submitHandle()}
-                style={[styles.smallPrimaryButton, (busyKey !== null || !canSaveHandle) && styles.disabled]}
-              >
-                {busyKey === 'handle' ? <ActivityIndicator color="#FFF" /> : <Text style={styles.smallPrimaryText}>{claimedHandle ? 'Update' : 'Claim'}</Text>}
-              </TouchableOpacity>
+          <View style={styles.handleCard}>
+            <View style={styles.handleSummary}>
+              <Text maxFontSizeMultiplier={1.15} style={styles.eyebrow}>YOUR HANDLE</Text>
+              <Text maxFontSizeMultiplier={1.15} numberOfLines={1} style={styles.claimedHandle}>
+                {claimedHandle ? `@${claimedHandle}` : 'Claim a searchable handle'}
+              </Text>
             </View>
-            {!!claimedHandle && <Text style={styles.successText}>Active: @{claimedHandle}</Text>}
+            <TouchableOpacity
+              accessibilityLabel={claimedHandle ? 'Edit GathR handle' : 'Claim GathR handle'}
+              accessibilityRole="button"
+              onPress={() => setHandleModalVisible(true)}
+              style={styles.compactButton}
+            >
+              <Ionicons name={claimedHandle ? 'pencil' : 'add'} size={17} color="#175CD3" />
+              <Text maxFontSizeMultiplier={1.1} style={styles.actionText}>{claimedHandle ? 'Edit' : 'Claim'}</Text>
+            </TouchableOpacity>
           </View>
 
-          <View style={styles.card}>
-            <Text style={styles.sectionTitle}>Find someone</Text>
+          <View style={styles.searchCard}>
             <View style={styles.inputRow}>
+              <Ionicons name="search" size={19} color="#667085" />
               <TextInput
                 value={search}
-                onChangeText={(value) => { setSearch(value); setSearchComplete(false); }}
+                onChangeText={(value) => { setSearch(value); setSearchComplete(false); setSearchResult(null); }}
                 autoCapitalize="none"
                 autoCorrect={false}
-                placeholder="Exact handle"
+                placeholder="Find exact @handle"
                 accessibilityLabel="Search exact GathR handle"
                 onSubmitEditing={() => { if (canSearch) void findPerson(); }}
                 style={[styles.input, styles.searchInput]}
@@ -286,7 +286,7 @@ export default function FriendsScreen() {
                 onPress={() => void findPerson()}
                 style={[styles.smallPrimaryButton, (busyKey !== null || !canSearch) && styles.disabled]}
               >
-                {busyKey === 'search' ? <ActivityIndicator color="#FFF" /> : <Ionicons name="search" size={19} color="#FFF" />}
+                {busyKey === 'search' ? <ActivityIndicator color="#FFF" /> : <Text maxFontSizeMultiplier={1.1} style={styles.smallPrimaryText}>Find</Text>}
               </TouchableOpacity>
             </View>
             {searchResult && (
@@ -302,77 +302,166 @@ export default function FriendsScreen() {
                   </TouchableOpacity>
                 )}
                 {searchRelationship !== 'available' && (
-                  <Text style={styles.relationshipLabel}>
+                  <Text maxFontSizeMultiplier={1.1} style={styles.relationshipLabel}>
                     {searchRelationship === 'self' && 'This is you'}
                     {searchRelationship === 'friend' && 'Friends'}
-                    {searchRelationship === 'incoming' && 'Respond below'}
+                    {searchRelationship === 'incoming' && 'Respond in Requests'}
                     {searchRelationship === 'outgoing' && 'Request sent'}
                   </Text>
                 )}
               </PersonRow>
             )}
-            {searchComplete && !searchResult && <Text style={styles.emptyText}>No available account has that exact handle.</Text>}
+            {searchComplete && !searchResult && <Text maxFontSizeMultiplier={1.15} numberOfLines={2} style={styles.emptyText}>No account has that exact handle.</Text>}
           </View>
 
-          {loading && <ActivityIndicator size="large" color={BRAND} />}
-
-          <View style={styles.card}>
-            <Text style={styles.sectionTitle}>Requests ({incoming.length + outgoing.length})</Text>
-            {incoming.length > 0 && <Text style={styles.groupLabel}>RECEIVED</Text>}
-            {incoming.map((request: FriendRequestProjection) => (
-              <PersonRow key={request.uid} person={request}>
-                <TouchableOpacity accessibilityRole="button" accessibilityLabel={`Accept ${request.displayName}`} onPress={() => void run(`accept-${request.uid}`, () => acceptFriendRequest(request.uid))} style={styles.acceptButton}>
-                  <Text style={styles.acceptText}>Accept</Text>
+          <View style={styles.relationshipCard}>
+            <View accessible={false} style={styles.tabRow}>
+              {([
+                ['requests', 'Requests', incoming.length + outgoing.length],
+                ['friends', 'Friends', friends.length],
+                ['blocked', 'Blocked', blocks.length],
+              ] as const).map(([section, label, count]) => (
+                <TouchableOpacity
+                  key={section}
+                  accessibilityRole="tab"
+                  accessibilityState={{ selected: activeSection === section }}
+                  accessibilityLabel={`${label}, ${count}`}
+                  onPress={() => setActiveSection(section)}
+                  style={[styles.tab, activeSection === section && styles.tabSelected]}
+                >
+                  <Text maxFontSizeMultiplier={1.1} numberOfLines={1} style={[styles.tabText, activeSection === section && styles.tabTextSelected]}>{label}</Text>
+                  <View style={[styles.countBadge, activeSection === section && styles.countBadgeSelected]}>
+                    <Text maxFontSizeMultiplier={1} style={[styles.countText, activeSection === section && styles.countTextSelected]}>{count}</Text>
+                  </View>
                 </TouchableOpacity>
-                <TouchableOpacity accessibilityRole="button" accessibilityLabel={`Decline ${request.displayName}`} onPress={() => void run(`decline-${request.uid}`, () => declineFriendRequest(request.uid))} style={styles.iconActionButton}>
-                  <Ionicons name="close" size={18} color="#B42318" />
-                </TouchableOpacity>
-              </PersonRow>
-            ))}
-            {outgoing.length > 0 && <Text style={styles.groupLabel}>SENT</Text>}
-            {outgoing.map((request) => (
-              <PersonRow key={request.uid} person={request}>
-                <TouchableOpacity accessibilityLabel={`Cancel request to ${request.displayName}`} onPress={() => void run(`cancel-${request.uid}`, () => cancelFriendRequest(request.uid))} style={styles.actionButton}>
-                  <Text style={styles.actionText}>Cancel</Text>
-                </TouchableOpacity>
-              </PersonRow>
-            ))}
-            {incoming.length === 0 && outgoing.length === 0 && (
-              <Text style={styles.emptyText}>No pending friend requests.</Text>
-            )}
-          </View>
-
-          <View style={styles.card}>
-            <Text style={styles.sectionTitle}>Friends ({friends.length})</Text>
-            {friends.length === 0 && <Text style={styles.emptyText}>Accepted friends will appear here.</Text>}
-            {friends.map((friend) => (
-              <PersonRow key={friend.uid} person={friend}>
-                <TouchableOpacity accessibilityLabel={`More actions for ${friend.displayName}`} onPress={() => Alert.alert(friend.displayName, undefined, [
-                  { text: 'Remove friend', style: 'destructive', onPress: () => confirmRemove(friend) },
-                  { text: 'Block', style: 'destructive', onPress: () => confirmBlock(friend) },
-                  { text: 'Report', onPress: () => chooseReportReason(friend) },
-                  { text: 'Cancel', style: 'cancel' },
-                ])} style={styles.actionButton}>
-                  <Ionicons name="ellipsis-horizontal" size={20} color="#344054" />
-                </TouchableOpacity>
-              </PersonRow>
-            ))}
-          </View>
-
-          {blocks.length > 0 && (
-            <View style={styles.card}>
-              <Text style={styles.sectionTitle}>Blocked accounts</Text>
-              {blocks.map((block) => (
-                <PersonRow key={block.blockedUid} person={{ ...block, uid: block.blockedUid }}>
-                  <TouchableOpacity accessibilityRole="button" accessibilityLabel={`Unblock ${block.displayName}`} onPress={() => void run(`unblock-${block.blockedUid}`, () => unblockUser(block.blockedUid))} style={styles.actionButton}>
-                    <Text maxFontSizeMultiplier={1.1} style={styles.actionText}>Unblock</Text>
-                  </TouchableOpacity>
-                </PersonRow>
               ))}
             </View>
-          )}
-        </ScrollView>
+
+            {loading ? (
+              <View style={styles.listEmpty}><ActivityIndicator size="large" color={BRAND} /></View>
+            ) : (
+              <ScrollView
+                contentContainerStyle={styles.relationshipList}
+                keyboardShouldPersistTaps="handled"
+                showsVerticalScrollIndicator={false}
+                style={styles.relationshipScroller}
+              >
+                {activeSection === 'requests' && (
+                  <>
+                    {incoming.length > 0 && <Text style={styles.groupLabel}>RECEIVED</Text>}
+                    {incoming.map((request: FriendRequestProjection) => (
+                      <PersonRow key={request.uid} person={request}>
+                        <TouchableOpacity accessibilityRole="button" accessibilityLabel={`Accept ${request.displayName}`} onPress={() => void run(`accept-${request.uid}`, () => acceptFriendRequest(request.uid))} style={styles.acceptButton}>
+                          <Text maxFontSizeMultiplier={1.1} style={styles.acceptText}>Accept</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity accessibilityRole="button" accessibilityLabel={`Decline ${request.displayName}`} onPress={() => void run(`decline-${request.uid}`, () => declineFriendRequest(request.uid))} style={styles.iconActionButton}>
+                          <Ionicons name="close" size={18} color="#B42318" />
+                        </TouchableOpacity>
+                      </PersonRow>
+                    ))}
+                    {outgoing.length > 0 && <Text style={styles.groupLabel}>SENT</Text>}
+                    {outgoing.map((request) => (
+                      <PersonRow key={request.uid} person={request}>
+                        <TouchableOpacity accessibilityLabel={`Cancel request to ${request.displayName}`} onPress={() => void run(`cancel-${request.uid}`, () => cancelFriendRequest(request.uid))} style={styles.actionButton}>
+                          <Text maxFontSizeMultiplier={1.1} style={styles.actionText}>Cancel</Text>
+                        </TouchableOpacity>
+                      </PersonRow>
+                    ))}
+                    {incoming.length === 0 && outgoing.length === 0 && (
+                      <View style={styles.listEmpty}>
+                        <Ionicons name="mail-open-outline" size={32} color="#98A2B3" />
+                        <Text style={styles.emptyText}>No pending requests.</Text>
+                      </View>
+                    )}
+                  </>
+                )}
+
+                {activeSection === 'friends' && (
+                  <>
+                    {friends.map((friend) => (
+                      <PersonRow key={friend.uid} person={friend}>
+                        <TouchableOpacity accessibilityLabel={`More actions for ${friend.displayName}`} onPress={() => Alert.alert(friend.displayName, undefined, [
+                          { text: 'Remove friend', style: 'destructive', onPress: () => confirmRemove(friend) },
+                          { text: 'Block', style: 'destructive', onPress: () => confirmBlock(friend) },
+                          { text: 'Report', onPress: () => chooseReportReason(friend) },
+                          { text: 'Cancel', style: 'cancel' },
+                        ])} style={styles.actionButton}>
+                          <Ionicons name="ellipsis-horizontal" size={20} color="#344054" />
+                        </TouchableOpacity>
+                      </PersonRow>
+                    ))}
+                    {friends.length === 0 && (
+                      <View style={styles.listEmpty}>
+                        <Ionicons name="people-outline" size={34} color="#98A2B3" />
+                        <Text style={styles.emptyText}>Accepted friends will appear here.</Text>
+                      </View>
+                    )}
+                  </>
+                )}
+
+                {activeSection === 'blocked' && (
+                  <>
+                    {blocks.map((block) => (
+                      <PersonRow key={block.blockedUid} person={{ ...block, uid: block.blockedUid }}>
+                        <TouchableOpacity accessibilityRole="button" accessibilityLabel={`Unblock ${block.displayName}`} onPress={() => void run(`unblock-${block.blockedUid}`, () => unblockUser(block.blockedUid))} style={styles.actionButton}>
+                          <Text maxFontSizeMultiplier={1.1} style={styles.actionText}>Unblock</Text>
+                        </TouchableOpacity>
+                      </PersonRow>
+                    ))}
+                    {blocks.length === 0 && (
+                      <View style={styles.listEmpty}>
+                        <Ionicons name="shield-checkmark-outline" size={34} color="#98A2B3" />
+                        <Text style={styles.emptyText}>No blocked accounts.</Text>
+                      </View>
+                    )}
+                  </>
+                )}
+              </ScrollView>
+            )}
+          </View>
+        </View>
       </KeyboardAvoidingView>
+
+      <Modal animationType="fade" onRequestClose={() => setHandleModalVisible(false)} transparent visible={handleModalVisible}>
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.modalBackdrop}>
+          <View accessibilityViewIsModal style={styles.modalCard}>
+            <View style={styles.modalHeading}>
+              <View style={styles.flex}>
+                <Text style={styles.sectionTitle}>{claimedHandle ? 'Edit your handle' : 'Claim your handle'}</Text>
+                <Text maxFontSizeMultiplier={1.15} style={styles.muted}>Friends must enter it exactly. Your email stays private.</Text>
+              </View>
+              <TouchableOpacity accessibilityLabel="Close handle editor" onPress={() => { setHandle(claimedHandle); setHandleModalVisible(false); }} style={styles.iconButton}>
+                <Ionicons name="close" size={23} color="#344054" />
+              </TouchableOpacity>
+            </View>
+            <View style={styles.handleInputRow}>
+              <Text style={styles.atSign}>@</Text>
+              <TextInput
+                autoCapitalize="none"
+                autoCorrect={false}
+                autoFocus
+                maxLength={25}
+                onChangeText={setHandle}
+                onSubmitEditing={() => { if (canSaveHandle) void submitHandle(); }}
+                placeholder="craig_pei"
+                accessibilityLabel="GathR handle"
+                style={styles.modalInput}
+                value={handle}
+              />
+            </View>
+            <Text maxFontSizeMultiplier={1.15} style={styles.helperText}>3–24 letters, numbers, or underscores.</Text>
+            <TouchableOpacity
+              accessibilityLabel={claimedHandle ? 'Save GathR handle' : 'Claim GathR handle'}
+              accessibilityRole="button"
+              disabled={busyKey !== null || !canSaveHandle}
+              onPress={() => void submitHandle()}
+              style={[styles.primaryButton, (busyKey !== null || !canSaveHandle) && styles.disabled]}
+            >
+              {busyKey === 'handle' ? <ActivityIndicator color="#FFF" /> : <Text style={styles.primaryButtonText}>{claimedHandle ? 'Save handle' : 'Claim handle'}</Text>}
+            </TouchableOpacity>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -381,24 +470,29 @@ const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: '#F6F8FB' },
   flex: { flex: 1 },
   centered: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 14, padding: 28 },
-  header: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, paddingHorizontal: 16, paddingVertical: 12, backgroundColor: '#FFF', borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#D0D5DD' },
-  headerText: { flex: 1 },
+  header: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 12, paddingVertical: 8, backgroundColor: '#FFF', borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#D0D5DD' },
+  headerText: { flex: 1, minWidth: 0 },
   iconButton: { width: 42, height: 42, alignItems: 'center', justifyContent: 'center', borderRadius: 21 },
-  title: { fontSize: 25, fontWeight: '800', color: '#101828' },
-  subtitle: { marginTop: 2, color: '#667085', lineHeight: 19 },
-  content: { padding: 16, gap: 14, paddingBottom: 40 },
-  card: { backgroundColor: '#FFF', borderRadius: 16, padding: 16, gap: 10, borderWidth: StyleSheet.hairlineWidth, borderColor: '#E4E7EC' },
+  title: { fontSize: 24, fontWeight: '800', color: '#101828' },
+  subtitle: { marginTop: 1, color: '#667085', lineHeight: 18 },
+  content: { flex: 1, padding: 12, gap: 10, minHeight: 0 },
+  handleCard: { minHeight: 60, flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: '#FFF', borderRadius: 14, paddingHorizontal: 14, paddingVertical: 9, borderWidth: StyleSheet.hairlineWidth, borderColor: '#E4E7EC' },
+  handleSummary: { flex: 1, minWidth: 0 },
+  eyebrow: { color: '#667085', fontSize: 11, fontWeight: '800', letterSpacing: 0.7 },
+  claimedHandle: { color: '#101828', fontSize: 17, fontWeight: '700', marginTop: 1 },
+  compactButton: { minHeight: 40, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, paddingHorizontal: 11, borderRadius: 10, backgroundColor: '#EFF8FF' },
+  searchCard: { backgroundColor: '#FFF', borderRadius: 14, padding: 10, gap: 4, borderWidth: StyleSheet.hairlineWidth, borderColor: '#E4E7EC' },
+  relationshipCard: { flex: 1, minHeight: 0, overflow: 'hidden', backgroundColor: '#FFF', borderRadius: 16, borderWidth: StyleSheet.hairlineWidth, borderColor: '#E4E7EC' },
   sectionTitle: { fontSize: 18, fontWeight: '700', color: '#101828' },
-  muted: { color: '#667085', lineHeight: 20, textAlign: 'left' },
+  muted: { color: '#667085', lineHeight: 19, textAlign: 'left' },
   inputRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   atSign: { fontSize: 20, color: '#475467' },
-  input: { flex: 1, minHeight: 46, borderWidth: 1, borderColor: '#D0D5DD', borderRadius: 10, paddingHorizontal: 12, color: '#101828', backgroundColor: '#FFF' },
-  searchInput: { marginLeft: 0 },
+  input: { flex: 1, minHeight: 44, borderWidth: 1, borderColor: '#D0D5DD', borderRadius: 10, paddingHorizontal: 12, color: '#101828', backgroundColor: '#FFF' },
+  searchInput: { borderWidth: 0, paddingHorizontal: 0, minHeight: 42 },
   primaryButton: { backgroundColor: BRAND, paddingHorizontal: 22, paddingVertical: 13, borderRadius: 11 },
   primaryButtonText: { color: '#FFF', fontWeight: '700' },
   smallPrimaryButton: { minWidth: 54, minHeight: 44, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 12, borderRadius: 10, backgroundColor: BRAND },
   smallPrimaryText: { color: '#FFF', fontWeight: '700' },
-  successText: { color: '#067647', fontWeight: '600' },
   personRow: { flexDirection: 'row', alignItems: 'center', gap: 10, minHeight: 58, paddingVertical: 6, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#EAECF0' },
   avatar: { width: 42, height: 42, borderRadius: 21 },
   avatarImage: { width: 42, height: 42, borderRadius: 21 },
@@ -414,9 +508,27 @@ const styles = StyleSheet.create({
   acceptText: { color: '#175CD3', fontWeight: '700' },
   actionText: { color: '#175CD3', fontWeight: '700' },
   relationshipLabel: { color: '#475467', fontWeight: '700', textAlign: 'right' },
-  groupLabel: { color: '#667085', fontSize: 12, fontWeight: '800', letterSpacing: 0.7, marginTop: 2 },
-  emptyText: { color: '#667085', fontStyle: 'italic', paddingVertical: 5 },
-  offlineBanner: { backgroundColor: '#FFF4CC', color: '#7A5D00', padding: 10, borderRadius: 10 },
-  errorBanner: { backgroundColor: '#FEE4E2', color: '#B42318', padding: 10, borderRadius: 10 },
+  tabRow: { flexDirection: 'row', gap: 5, padding: 6, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#EAECF0', backgroundColor: '#F9FAFB' },
+  tab: { flex: 1, minWidth: 0, minHeight: 42, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, paddingHorizontal: 5, borderRadius: 10 },
+  tabSelected: { backgroundColor: '#EAF3FF' },
+  tabText: { flexShrink: 1, color: '#667085', fontWeight: '700' },
+  tabTextSelected: { color: '#175CD3' },
+  countBadge: { minWidth: 20, height: 20, paddingHorizontal: 5, alignItems: 'center', justifyContent: 'center', borderRadius: 10, backgroundColor: '#EAECF0' },
+  countBadgeSelected: { backgroundColor: '#B2DDFF' },
+  countText: { color: '#475467', fontSize: 11, fontWeight: '800' },
+  countTextSelected: { color: '#175CD3' },
+  relationshipScroller: { flex: 1, minHeight: 0 },
+  relationshipList: { flexGrow: 1, paddingHorizontal: 12, paddingBottom: 10 },
+  groupLabel: { color: '#667085', fontSize: 12, fontWeight: '800', letterSpacing: 0.7, marginTop: 10, marginBottom: 2 },
+  listEmpty: { flex: 1, minHeight: 150, alignItems: 'center', justifyContent: 'center', gap: 8, padding: 18 },
+  emptyText: { color: '#667085', fontStyle: 'italic', paddingVertical: 4, textAlign: 'center' },
+  offlineBanner: { backgroundColor: '#FFF4CC', color: '#7A5D00', paddingHorizontal: 10, paddingVertical: 7, borderRadius: 9 },
+  errorBanner: { backgroundColor: '#FEE4E2', color: '#B42318', paddingHorizontal: 10, paddingVertical: 7, borderRadius: 9 },
+  modalBackdrop: { flex: 1, justifyContent: 'center', padding: 20, backgroundColor: 'rgba(16, 24, 40, 0.48)' },
+  modalCard: { gap: 14, padding: 18, borderRadius: 18, backgroundColor: '#FFF', shadowColor: '#000', shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.18, shadowRadius: 18, elevation: 8 },
+  modalHeading: { flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
+  handleInputRow: { minHeight: 52, flexDirection: 'row', alignItems: 'center', gap: 7, borderWidth: 1, borderColor: '#98A2B3', borderRadius: 11, paddingHorizontal: 12 },
+  modalInput: { flex: 1, minHeight: 50, color: '#101828', fontSize: 17 },
+  helperText: { color: '#667085', fontSize: 13, lineHeight: 18 },
   disabled: { opacity: 0.45 },
 });

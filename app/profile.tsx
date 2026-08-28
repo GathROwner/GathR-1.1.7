@@ -718,6 +718,7 @@ export default function ProfileScreen() {
   const [userInterests, setUserInterests] = useState<string[]>([]);
   const [memberSince, setMemberSince] = useState('');
   const [isEmailCopied, setIsEmailCopied] = useState(false);
+  const [showMoreActions, setShowMoreActions] = useState(false);
   
   // Delete account state
   const [passwordInput, setPasswordInput] = useState('');
@@ -789,6 +790,7 @@ export default function ProfileScreen() {
     }
 
     clearMeasurement();
+    setShowMoreActions(true);
 
     const scheduleMeasurement = () => {
       animationFrame = requestAnimationFrame(() => {
@@ -1494,12 +1496,7 @@ const handleLogout = async () => {
         </View>
       </Animated.View>
       
-      <ScrollView
-        contentContainerStyle={[styles.scrollContent, isEditing && styles.editScrollContent]}
-        showsVerticalScrollIndicator={false}
-        bounces={false}
-        keyboardShouldPersistTaps="handled"
-      >
+      <View style={[styles.scrollContent, isEditing && styles.editScrollContent]}>
         <Animated.View
           style={[
             styles.profileContainer,
@@ -1710,101 +1707,22 @@ const handleLogout = async () => {
                     <View style={styles.featureDivider} />
                   </>
                 )}
-                <View style={styles.featureRow}>
-                  <View style={[styles.featureIcon, styles.hotspotFeatureIcon]}>
-                    <HotspotCircleIcon isActive={showDailyHotspot} />
+                <TouchableOpacity
+                  style={styles.featureRow}
+                  onPress={() => setShowMoreActions(true)}
+                  accessibilityRole="button"
+                  accessibilityLabel="More profile settings"
+                >
+                  <View style={styles.featureIcon}>
+                    <Ionicons name="ellipsis-horizontal-circle-outline" size={20} color={BRAND.primary} />
                   </View>
                   <View style={styles.featureCopy}>
-                    <Text style={styles.featureTitle}>Daily Hotspot</Text>
-                    <Text style={styles.featureSubtitle}>Highlight a top event each day</Text>
+                    <Text style={styles.featureTitle}>More</Text>
+                    <Text style={styles.featureSubtitle}>Preferences, sharing, tutorial, and account</Text>
                   </View>
-                  <Switch
-                    value={showDailyHotspot}
-                    onValueChange={handleToggleHotspot}
-                    trackColor={{ false: '#D9E1EA', true: '#9ECFFF' }}
-                    thumbColor={showDailyHotspot ? BRAND.primary : '#FFFFFF'}
-                    ios_backgroundColor="#D9E1EA"
-                    accessibilityLabel="Daily Hotspot"
-                  />
-                </View>
-                <View style={styles.featureDivider} />
-                <View style={styles.featureRow}>
-                  <View style={[styles.featureIcon, styles.trendingFeatureIcon]}>
-                    <MaterialIcons name="local-fire-department" size={20} color={BRAND.primary} />
-                  </View>
-                  <View style={styles.featureCopy}>
-                    <Text style={styles.featureTitle}>Trending on launch</Text>
-                    <Text style={styles.featureSubtitle}>Show what’s popular when GathR opens</Text>
-                  </View>
-                  <Switch
-                    value={showTrendingOnOpen}
-                    onValueChange={handleToggleTrending}
-                    trackColor={{ false: '#D9E1EA', true: '#9ECFFF' }}
-                    thumbColor={showTrendingOnOpen ? BRAND.primary : '#FFFFFF'}
-                    ios_backgroundColor="#D9E1EA"
-                    accessibilityLabel="Trending on launch"
-                  />
-                </View>
-                <View style={styles.featureDivider} />
-                <FacebookPageSubmission
-                  ref={facebookSubmissionRef}
-                  isHighlighted={facebookSubmissionHighlighted}
-                />
-                <TouchableOpacity
-                  style={styles.tutorialRow}
-                  onPress={handleReplayTutorial}
-                  accessibilityRole="button"
-                  accessibilityLabel="Replay tutorial"
-                  accessibilityHint="Starts the GathR tutorial again"
-                >
-                  <View style={styles.tutorialIconBadge}>
-                    <Ionicons name="play" size={14} color="#52708D" />
-                  </View>
-                  <View style={styles.tutorialCopy}>
-                    <Text style={styles.tutorialRowText}>Replay tutorial</Text>
-                    <Text style={styles.tutorialRowSubtitle}>Take the quick tour again</Text>
-                  </View>
-                  <Ionicons name="chevron-forward" size={16} color="#8A9BAD" />
+                  <Ionicons name="chevron-forward" size={18} color={BRAND.textLight} />
                 </TouchableOpacity>
               </View>
-
-              <View style={styles.communityRow}>
-                <TouchableOpacity
-                  style={styles.shareAppButton}
-                  onPress={handleShareApp}
-                  accessibilityRole="button"
-                  accessibilityLabel="Share GathR"
-                >
-                  <View style={styles.shareAppIconBadge}>
-                    <Ionicons name="share-social-outline" size={20} color={BRAND.primary} />
-                  </View>
-                  <View style={styles.shareAppTextContainer}>
-                    <View style={styles.shareAppTitleRow}>
-                      <Text style={styles.shareAppTitlePrefix}>Share</Text>
-                      <View style={styles.shareAppWordmarkInline}>
-                        <GathrWordmarkLogo width={44} height={16} color={BRAND.primary} />
-                      </View>
-                    </View>
-                    <Text style={styles.shareAppSubtext} numberOfLines={1}>Invite a friend</Text>
-                  </View>
-                </TouchableOpacity>
-              </View>
-
-              <TouchableOpacity
-                style={styles.accountPrivacyRow}
-                onPress={handleOpenAccountPrivacy}
-                accessibilityRole="button"
-                accessibilityLabel="Account and privacy"
-              >
-                <View style={styles.accountPrivacyIcon}>
-                  <Ionicons name="shield-checkmark-outline" size={20} color={BRAND.primary} />
-                </View>
-                <View style={styles.accountPrivacyCopy}>
-                  <Text style={styles.accountPrivacyTitle}>Account & privacy</Text>
-                  <Text style={styles.accountPrivacySubtitle}>Email, sign out, and account controls</Text>
-                </View>
-                <Ionicons name="chevron-forward" size={18} color={BRAND.textLight} />
-              </TouchableOpacity>
 
               <TouchableOpacity
                 style={styles.versionInfoContainer}
@@ -1821,10 +1739,147 @@ const handleLogout = async () => {
             </>
           )}
         </Animated.View>
-      </ScrollView>
+      </View>
       
       {/* Native-stack Profile sits above the root overlay on iOS. */}
       <ProfileTutorialOverlayHost hostRef={profileTutorialOverlayHostRef} />
+
+      <Modal
+        visible={showMoreActions}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowMoreActions(false)}
+      >
+        <TouchableWithoutFeedback onPress={() => setShowMoreActions(false)}>
+          <View style={styles.accountModalOverlay}>
+            <TouchableWithoutFeedback onPress={(event) => event.stopPropagation()}>
+              <View style={[styles.accountModalSheet, styles.moreSheet]}>
+                <View style={styles.accountModalHandle} />
+                <View style={styles.accountModalHeader}>
+                  <View style={styles.moreHeaderCopy}>
+                    <Text style={styles.accountModalTitle}>More</Text>
+                    <Text style={styles.accountModalSubtitle}>Preferences, sharing, tutorial, and account</Text>
+                  </View>
+                  <TouchableOpacity
+                    style={styles.accountModalClose}
+                    onPress={() => setShowMoreActions(false)}
+                    accessibilityRole="button"
+                    accessibilityLabel="Close more profile settings"
+                  >
+                    <Ionicons name="close" size={21} color={BRAND.text} />
+                  </TouchableOpacity>
+                </View>
+
+                <ScrollView
+                  contentContainerStyle={styles.moreContent}
+                  keyboardShouldPersistTaps="handled"
+                  showsVerticalScrollIndicator={false}
+                >
+                  <View style={styles.featuresCard}>
+                    <Text style={styles.sectionHeading}>Preferences</Text>
+                    <View style={styles.featureRow}>
+                      <View style={[styles.featureIcon, styles.hotspotFeatureIcon]}>
+                        <HotspotCircleIcon isActive={showDailyHotspot} />
+                      </View>
+                      <View style={styles.featureCopy}>
+                        <Text style={styles.featureTitle}>Daily Hotspot</Text>
+                        <Text style={styles.featureSubtitle}>Highlight a top event each day</Text>
+                      </View>
+                      <Switch
+                        value={showDailyHotspot}
+                        onValueChange={handleToggleHotspot}
+                        trackColor={{ false: '#D9E1EA', true: '#9ECFFF' }}
+                        thumbColor={showDailyHotspot ? BRAND.primary : '#FFFFFF'}
+                        ios_backgroundColor="#D9E1EA"
+                        accessibilityLabel="Daily Hotspot"
+                      />
+                    </View>
+                    <View style={styles.featureDivider} />
+                    <View style={styles.featureRow}>
+                      <View style={[styles.featureIcon, styles.trendingFeatureIcon]}>
+                        <MaterialIcons name="local-fire-department" size={20} color={BRAND.primary} />
+                      </View>
+                      <View style={styles.featureCopy}>
+                        <Text style={styles.featureTitle}>Trending on launch</Text>
+                        <Text style={styles.featureSubtitle}>Show what’s popular when GathR opens</Text>
+                      </View>
+                      <Switch
+                        value={showTrendingOnOpen}
+                        onValueChange={handleToggleTrending}
+                        trackColor={{ false: '#D9E1EA', true: '#9ECFFF' }}
+                        thumbColor={showTrendingOnOpen ? BRAND.primary : '#FFFFFF'}
+                        ios_backgroundColor="#D9E1EA"
+                        accessibilityLabel="Trending on launch"
+                      />
+                    </View>
+                  </View>
+
+                  <FacebookPageSubmission
+                    ref={facebookSubmissionRef}
+                    isHighlighted={facebookSubmissionHighlighted}
+                  />
+
+                  <TouchableOpacity
+                    style={styles.tutorialRow}
+                    onPress={handleReplayTutorial}
+                    accessibilityRole="button"
+                    accessibilityLabel="Replay tutorial"
+                    accessibilityHint="Starts the GathR tutorial again"
+                  >
+                    <View style={styles.tutorialIconBadge}>
+                      <Ionicons name="play" size={14} color="#52708D" />
+                    </View>
+                    <View style={styles.tutorialCopy}>
+                      <Text style={styles.tutorialRowText}>Replay tutorial</Text>
+                      <Text style={styles.tutorialRowSubtitle}>Take the quick tour again</Text>
+                    </View>
+                    <Ionicons name="chevron-forward" size={16} color="#8A9BAD" />
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={styles.shareAppButton}
+                    onPress={handleShareApp}
+                    accessibilityRole="button"
+                    accessibilityLabel="Share GathR"
+                  >
+                    <View style={styles.shareAppIconBadge}>
+                      <Ionicons name="share-social-outline" size={20} color={BRAND.primary} />
+                    </View>
+                    <View style={styles.shareAppTextContainer}>
+                      <View style={styles.shareAppTitleRow}>
+                        <Text style={styles.shareAppTitlePrefix}>Share</Text>
+                        <View style={styles.shareAppWordmarkInline}>
+                          <GathrWordmarkLogo width={44} height={16} color={BRAND.primary} />
+                        </View>
+                      </View>
+                      <Text style={styles.shareAppSubtext} numberOfLines={1}>Invite a friend</Text>
+                    </View>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={styles.accountPrivacyRow}
+                    onPress={() => {
+                      setShowMoreActions(false);
+                      handleOpenAccountPrivacy();
+                    }}
+                    accessibilityRole="button"
+                    accessibilityLabel="Account and privacy"
+                  >
+                    <View style={styles.accountPrivacyIcon}>
+                      <Ionicons name="shield-checkmark-outline" size={20} color={BRAND.primary} />
+                    </View>
+                    <View style={styles.accountPrivacyCopy}>
+                      <Text style={styles.accountPrivacyTitle}>Account & privacy</Text>
+                      <Text style={styles.accountPrivacySubtitle}>Email, sign out, and account controls</Text>
+                    </View>
+                    <Ionicons name="chevron-forward" size={18} color={BRAND.textLight} />
+                  </TouchableOpacity>
+                </ScrollView>
+              </View>
+            </TouchableWithoutFeedback>
+          </View>
+        </TouchableWithoutFeedback>
+      </Modal>
 
       <Modal
         visible={showAccountModal}
@@ -2329,7 +2384,7 @@ const styles = StyleSheet.create({
   },
   // FIXED: Adjusted content padding
   scrollContent: {
-    flexGrow: 1,
+    flex: 1,
     paddingHorizontal: 12,
     paddingBottom: 10,
     paddingTop: 10,
@@ -3200,6 +3255,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: 18,
     paddingTop: 10,
     paddingBottom: Platform.OS === 'ios' ? 34 : 22,
+  },
+  moreSheet: {
+    maxHeight: '84%',
+  },
+  moreHeaderCopy: {
+    flex: 1,
+    minWidth: 0,
+    paddingRight: 12,
+  },
+  moreContent: {
+    paddingBottom: 6,
   },
   accountModalHandle: {
     alignSelf: 'center',

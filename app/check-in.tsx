@@ -6,6 +6,7 @@ import {
   ActivityIndicator,
   Alert,
   KeyboardAvoidingView,
+  Modal,
   Platform,
   ScrollView,
   StyleSheet,
@@ -98,6 +99,8 @@ export default function CheckInScreen() {
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
   const [isEditing, setIsEditing] = useState(!ownCheckIn);
+  const [venuePickerVisible, setVenuePickerVisible] = useState(false);
+  const [audiencePickerVisible, setAudiencePickerVisible] = useState(false);
   const pendingOperationRef = useRef<{ fingerprint: string; operationId: string } | null>(null);
   const activeRevisionRef = useRef<string | null>(ownCheckIn?.revision ?? null);
 
@@ -132,10 +135,26 @@ export default function CheckInScreen() {
     ? friends.length > 0
     : selectedUids.length > 0;
   const canSubmit = !!selectedVenue && hasAudience && !busy && !fromCache;
+  const selectedFriendNames = friends
+    .filter((friend) => selectedUids.includes(friend.uid))
+    .map((friend) => friend.displayName);
+  const audienceSummary = audienceMode === 'all_friends'
+    ? `${friends.length} accepted friend${friends.length === 1 ? '' : 's'}`
+    : selectedFriendNames.length === 0
+      ? 'Choose at least one friend'
+      : selectedFriendNames.length <= 2
+        ? selectedFriendNames.join(', ')
+        : `${selectedFriendNames.slice(0, 2).join(', ')} +${selectedFriendNames.length - 2}`;
 
   const toggleFriend = (uid: string) => setSelectedUids((current) =>
     current.includes(uid) ? current.filter((item) => item !== uid) : [...current, uid]
   );
+
+  const chooseVenue = (nextVenueId: string) => {
+    setVenueId(nextVenueId);
+    setVenueQuery('');
+    setVenuePickerVisible(false);
+  };
 
   const beginEditing = () => {
     if (ownCheckIn) {
@@ -263,163 +282,234 @@ export default function CheckInScreen() {
           </View>
         </View>
 
-        <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-          {fromCache && <Text style={styles.offlineBanner}>Offline: you can view saved state, but changing a check-in requires a connection.</Text>}
+        <View style={styles.content}>
+          {fromCache && <Text maxFontSizeMultiplier={1.15} numberOfLines={2} style={styles.offlineBanner}>Offline: changing a check-in requires a connection.</Text>}
 
-          {ownCheckIn && (
+          {ownCheckIn && !isEditing && (
             <View style={[styles.card, styles.activeCard]}>
               <View style={styles.activeHeading}>
                 <View style={styles.activeIcon}>
                   <Ionicons name="location" size={22} color="#175CD3" />
                 </View>
                 <View style={styles.flex}>
-                  <Text style={styles.activeEyebrow}>ACTIVE NOW</Text>
-                  <Text style={styles.sectionTitle}>{ownCheckIn.venueNameSnapshot}</Text>
+                  <Text maxFontSizeMultiplier={1.1} style={styles.activeEyebrow}>ACTIVE NOW</Text>
+                  <Text maxFontSizeMultiplier={1.2} numberOfLines={2} style={styles.sectionTitle}>{ownCheckIn.venueNameSnapshot}</Text>
                 </View>
               </View>
-              <Text style={styles.muted}>
+              <Text maxFontSizeMultiplier={1.15} style={styles.muted}>
                 {formatCheckInVisibilityCopy(ownCheckIn.viewerCount, ownCheckIn.expiresAt)}
               </Text>
               {!!ownCheckIn.message && (
-                <Text style={styles.activeMessage}>“{ownCheckIn.message}”</Text>
+                <Text maxFontSizeMultiplier={1.15} numberOfLines={3} style={styles.activeMessage}>“{ownCheckIn.message}”</Text>
               )}
               <View style={styles.activeActions}>
                 <TouchableOpacity accessibilityRole="button" accessibilityLabel="View check-in on map" onPress={() => router.replace('/(tabs)/map')} style={styles.secondaryButton}>
                   <Ionicons name="map-outline" size={18} color="#175CD3" />
-                  <Text style={styles.secondaryText}>View map</Text>
+                  <Text maxFontSizeMultiplier={1.1} style={styles.secondaryText}>View map</Text>
                 </TouchableOpacity>
-                {!isEditing && (
-                  <TouchableOpacity accessibilityRole="button" accessibilityLabel="Change active check-in" onPress={beginEditing} style={styles.secondaryButton}>
-                    <Ionicons name="create-outline" size={18} color="#175CD3" />
-                    <Text style={styles.secondaryText}>Change</Text>
-                  </TouchableOpacity>
-                )}
+                <TouchableOpacity accessibilityRole="button" accessibilityLabel="Change active check-in" onPress={beginEditing} style={styles.secondaryButton}>
+                  <Ionicons name="create-outline" size={18} color="#175CD3" />
+                  <Text maxFontSizeMultiplier={1.1} style={styles.secondaryText}>Change</Text>
+                </TouchableOpacity>
                 <TouchableOpacity accessibilityRole="button" accessibilityLabel="Check out now" disabled={busy} onPress={checkout} style={styles.checkoutButton}>
-                  <Text style={styles.checkoutText}>Check out</Text>
+                  <Text maxFontSizeMultiplier={1.1} style={styles.checkoutText}>Check out</Text>
                 </TouchableOpacity>
               </View>
             </View>
           )}
 
           {isEditing && (
-          <>
-          {ownCheckIn && (
-            <View style={styles.editingHeader}>
-              <Text style={styles.editingTitle}>Change your check-in</Text>
-              <TouchableOpacity accessibilityRole="button" onPress={() => setIsEditing(false)}>
-                <Text style={styles.linkText}>Cancel changes</Text>
-              </TouchableOpacity>
-            </View>
-          )}
-
-          <View style={styles.card}>
-            <Text style={styles.sectionTitle}>1. Recognized venue</Text>
-            {selectedVenue && (
-              <View style={styles.selectedVenue}>
-                <Ionicons name="location" size={20} color={BRAND} />
-                <View style={styles.flex}>
-                  <Text style={styles.venueName}>{selectedVenue.venueName}</Text>
-                  <Text style={styles.muted} numberOfLines={1}>{selectedVenue.address}</Text>
+            <View style={styles.formSurface}>
+              {ownCheckIn && (
+                <View style={styles.activeStrip}>
+                  <Ionicons name="location" size={20} color="#175CD3" />
+                  <View style={styles.flex}>
+                    <Text maxFontSizeMultiplier={1.1} style={styles.activeEyebrow}>CHANGING ACTIVE CHECK-IN</Text>
+                    <Text maxFontSizeMultiplier={1.15} numberOfLines={1} style={styles.stripVenue}>{ownCheckIn.venueNameSnapshot}</Text>
+                  </View>
+                  <TouchableOpacity accessibilityRole="button" accessibilityLabel="Cancel check-in changes" onPress={() => setIsEditing(false)} style={styles.compactIconButton}>
+                    <Ionicons name="close" size={20} color="#344054" />
+                  </TouchableOpacity>
                 </View>
-                <TouchableOpacity onPress={() => setVenueId('')} accessibilityLabel="Change venue">
-                  <Text style={styles.linkText}>Change</Text>
+              )}
+
+              <View style={styles.fieldGroup}>
+                <Text maxFontSizeMultiplier={1.15} style={styles.fieldLabel}>Venue</Text>
+                <TouchableOpacity
+                  accessibilityRole="button"
+                  accessibilityLabel={selectedVenue ? `Change venue, currently ${selectedVenue.venueName}` : 'Choose a recognized venue'}
+                  onPress={() => setVenuePickerVisible(true)}
+                  style={styles.selectorButton}
+                >
+                  <View style={styles.selectorIcon}><Ionicons name="location" size={19} color={BRAND} /></View>
+                  <View style={styles.flex}>
+                    <Text maxFontSizeMultiplier={1.15} numberOfLines={1} style={selectedVenue ? styles.venueName : styles.selectorPlaceholder}>{selectedVenue?.venueName || 'Choose a recognized venue'}</Text>
+                    <Text maxFontSizeMultiplier={1.1} numberOfLines={1} style={styles.selectorDetail}>{selectedVenue?.address || `${options.length} venues loaded from the map`}</Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={20} color="#667085" />
                 </TouchableOpacity>
               </View>
-            )}
-            {!selectedVenue && (
-              <>
+
+              <View style={styles.fieldGroup}>
+                <Text maxFontSizeMultiplier={1.15} style={styles.fieldLabel}>Duration</Text>
+                <View style={styles.choiceRow}>
+                  {DURATIONS.map((duration) => (
+                    <TouchableOpacity
+                      key={duration}
+                      accessibilityRole="radio"
+                      accessibilityLabel={`${duration} minute check-in`}
+                      accessibilityState={{ selected: durationMinutes === duration }}
+                      onPress={() => setDurationMinutes(duration)}
+                      style={[styles.choice, durationMinutes === duration && styles.choiceSelected]}
+                    >
+                      <Text maxFontSizeMultiplier={1.1} style={[styles.choiceText, durationMinutes === duration && styles.choiceTextSelected]}>
+                        {duration < 60 ? '30 min' : `${duration / 60} hr`}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+
+              <View style={styles.fieldGroup}>
+                <Text maxFontSizeMultiplier={1.15} style={styles.fieldLabel}>Visible to</Text>
+                <View style={styles.choiceRow}>
+                  <TouchableOpacity
+                    accessibilityRole="radio"
+                    accessibilityLabel={`All accepted friends, ${friends.length}`}
+                    accessibilityState={{ selected: audienceMode === 'all_friends' }}
+                    onPress={() => setAudienceMode('all_friends')}
+                    style={[styles.audienceChoice, audienceMode === 'all_friends' && styles.choiceSelected]}
+                  >
+                    <Ionicons name="people" size={18} color={audienceMode === 'all_friends' ? '#175CD3' : '#667085'} />
+                    <Text maxFontSizeMultiplier={1.1} numberOfLines={1} style={[styles.choiceText, audienceMode === 'all_friends' && styles.choiceTextSelected]}>All friends</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    accessibilityRole="radio"
+                    accessibilityLabel={`Selected friends, ${selectedUids.length}`}
+                    accessibilityState={{ selected: audienceMode === 'selected_friends' }}
+                    onPress={() => { setAudienceMode('selected_friends'); if (friends.length > 0) setAudiencePickerVisible(true); }}
+                    style={[styles.audienceChoice, audienceMode === 'selected_friends' && styles.choiceSelected]}
+                  >
+                    <Ionicons name="person-add" size={18} color={audienceMode === 'selected_friends' ? '#175CD3' : '#667085'} />
+                    <Text maxFontSizeMultiplier={1.1} numberOfLines={1} style={[styles.choiceText, audienceMode === 'selected_friends' && styles.choiceTextSelected]}>Choose</Text>
+                  </TouchableOpacity>
+                </View>
+                <TouchableOpacity
+                  accessibilityRole="button"
+                  accessibilityLabel={`Audience: ${audienceSummary}`}
+                  disabled={audienceMode === 'all_friends' || friends.length === 0}
+                  onPress={() => setAudiencePickerVisible(true)}
+                  style={styles.audienceSummaryRow}
+                >
+                  <Text maxFontSizeMultiplier={1.1} numberOfLines={1} style={[styles.audienceSummary, !hasAudience && styles.warningText]}>{audienceSummary}</Text>
+                  {audienceMode === 'selected_friends' && friends.length > 0 && <Text maxFontSizeMultiplier={1.1} style={styles.linkText}>Edit</Text>}
+                </TouchableOpacity>
+              </View>
+
+              <View style={styles.fieldGroup}>
+                <View style={styles.noteHeading}>
+                  <Text maxFontSizeMultiplier={1.15} style={styles.fieldLabel}>Note <Text style={styles.optionalLabel}>optional</Text></Text>
+                  <Text maxFontSizeMultiplier={1} style={styles.counter}>{message.length}/120</Text>
+                </View>
                 <TextInput
-                  value={venueQuery}
-                  onChangeText={setVenueQuery}
-                  placeholder="Search venues loaded on the map"
-                  accessibilityLabel="Search recognized GathR venues"
+                  value={message}
+                  onChangeText={setMessage}
+                  maxLength={120}
+                  placeholder="e.g. On the patio"
+                  accessibilityLabel="Optional check-in note"
+                  returnKeyType="done"
                   style={styles.input}
                 />
-                {filteredOptions.map((option) => (
-                  <TouchableOpacity accessibilityRole="button" accessibilityLabel={`Choose ${option.venueName}`} key={option.venueId} onPress={() => setVenueId(option.venueId)} style={styles.venueOption}>
-                    <Ionicons name="business-outline" size={19} color="#475467" />
-                    <View style={styles.flex}>
-                      <Text style={styles.venueName}>{option.venueName}</Text>
-                      <Text style={styles.muted} numberOfLines={1}>{option.address}</Text>
-                    </View>
-                  </TouchableOpacity>
-                ))}
-                {options.length === 0 && <Text style={styles.emptyText}>Move the map to load recognized venues, then try again.</Text>}
-                {!venueQuery.trim() && options.length > 8 && (
-                  <Text style={styles.helperText}>Search to see more of the venues currently loaded on your map.</Text>
-                )}
-              </>
-            )}
-          </View>
+              </View>
 
-          <View style={styles.card}>
-            <Text style={styles.sectionTitle}>2. Duration</Text>
-            <View style={styles.choiceRow}>
-              {DURATIONS.map((duration) => (
-                <TouchableOpacity
-                  key={duration}
-                  accessibilityRole="radio"
-                  accessibilityLabel={`${duration} minute check-in`}
-                  accessibilityState={{ selected: durationMinutes === duration }}
-                  onPress={() => setDurationMinutes(duration)}
-                  style={[styles.choice, durationMinutes === duration && styles.choiceSelected]}
-                >
-                  <Text style={[styles.choiceText, durationMinutes === duration && styles.choiceTextSelected]}>
-                    {duration < 60 ? '30 min' : `${duration / 60} hr`}
-                  </Text>
+              <View style={styles.submitArea}>
+                <Text maxFontSizeMultiplier={1.1} numberOfLines={2} style={styles.confirmationCopy}>
+                  {formatCheckInVisibilityCopy(currentAudienceCount, estimatedExpiry)}
+                </Text>
+                <TouchableOpacity accessibilityRole="button" accessibilityLabel={ownCheckIn ? 'Replace active check-in' : 'Confirm check-in'} disabled={!canSubmit} onPress={() => void submit()} style={[styles.primaryButton, !canSubmit && styles.disabled]}>
+                  {busy ? <ActivityIndicator color="#FFF" /> : <Text maxFontSizeMultiplier={1.1} style={styles.primaryText}>{ownCheckIn ? 'Replace check-in' : 'Check in'}</Text>}
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
+        </View>
+      </KeyboardAvoidingView>
+
+      <Modal animationType="slide" onRequestClose={() => setVenuePickerVisible(false)} transparent visible={venuePickerVisible}>
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.modalBackdrop}>
+          <View accessibilityViewIsModal style={styles.pickerCard}>
+            <View style={styles.pickerHeader}>
+              <View style={styles.flex}>
+                <Text style={styles.pickerTitle}>Choose a venue</Text>
+                <Text maxFontSizeMultiplier={1.1} numberOfLines={1} style={styles.muted}>Loaded from your current map</Text>
+              </View>
+              <TouchableOpacity accessibilityLabel="Close venue picker" onPress={() => { setVenueQuery(''); setVenuePickerVisible(false); }} style={styles.compactIconButton}>
+                <Ionicons name="close" size={23} color="#344054" />
+              </TouchableOpacity>
+            </View>
+            <View style={styles.pickerSearch}>
+              <Ionicons name="search" size={19} color="#667085" />
+              <TextInput
+                autoCapitalize="none"
+                autoCorrect={false}
+                onChangeText={setVenueQuery}
+                placeholder="Search name or address"
+                accessibilityLabel="Search recognized GathR venues"
+                style={styles.pickerInput}
+                value={venueQuery}
+              />
+            </View>
+            <ScrollView contentContainerStyle={styles.pickerList} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} style={styles.pickerScroller}>
+              {filteredOptions.map((option) => (
+                <TouchableOpacity accessibilityRole="radio" accessibilityState={{ selected: option.venueId === venueId }} accessibilityLabel={`Choose ${option.venueName}`} key={option.venueId} onPress={() => chooseVenue(option.venueId)} style={styles.venueOption}>
+                  <View style={styles.selectorIcon}><Ionicons name="business-outline" size={19} color="#475467" /></View>
+                  <View style={styles.flex}>
+                    <Text maxFontSizeMultiplier={1.15} numberOfLines={1} style={styles.venueName}>{option.venueName}</Text>
+                    <Text maxFontSizeMultiplier={1.1} numberOfLines={1} style={styles.muted}>{option.address}</Text>
+                  </View>
+                  <Ionicons name={option.venueId === venueId ? 'checkmark-circle' : 'chevron-forward'} size={21} color={option.venueId === venueId ? BRAND : '#98A2B3'} />
                 </TouchableOpacity>
               ))}
-            </View>
+              {options.length === 0 && <Text style={styles.emptyText}>Move the map to load recognized venues, then try again.</Text>}
+              {options.length > 0 && filteredOptions.length === 0 && <Text style={styles.emptyText}>No loaded venue matches that search.</Text>}
+              {!venueQuery.trim() && options.length > filteredOptions.length && <Text style={styles.helperText}>Search to see the rest of the loaded venues.</Text>}
+            </ScrollView>
           </View>
+        </KeyboardAvoidingView>
+      </Modal>
 
-          <View style={styles.card}>
-            <Text style={styles.sectionTitle}>3. Who can see it</Text>
-            {friends.length === 0 && (
-              <View style={styles.audienceNotice}>
-                <Ionicons name="people-outline" size={20} color="#175CD3" />
-                <Text style={styles.audienceNoticeText}>Add an accepted friend before checking in so someone can actually see it.</Text>
+      <Modal animationType="slide" onRequestClose={() => setAudiencePickerVisible(false)} transparent visible={audiencePickerVisible}>
+        <View style={styles.modalBackdrop}>
+          <View accessibilityViewIsModal style={styles.pickerCard}>
+            <View style={styles.pickerHeader}>
+              <View style={styles.flex}>
+                <Text style={styles.pickerTitle}>Choose friends</Text>
+                <Text maxFontSizeMultiplier={1.1} style={styles.muted}>Only the people you select can see this check-in.</Text>
               </View>
-            )}
-            <TouchableOpacity accessibilityRole="radio" accessibilityLabel={`All accepted friends, ${friends.length}`} onPress={() => setAudienceMode('all_friends')} style={styles.radioRow} accessibilityState={{ selected: audienceMode === 'all_friends' }}>
-              <Ionicons name={audienceMode === 'all_friends' ? 'radio-button-on' : 'radio-button-off'} size={22} color={BRAND} />
-              <Text style={styles.radioText}>All accepted friends ({friends.length})</Text>
-            </TouchableOpacity>
-            <TouchableOpacity accessibilityRole="radio" accessibilityLabel={`Selected friends, ${selectedUids.length}`} onPress={() => setAudienceMode('selected_friends')} style={styles.radioRow} accessibilityState={{ selected: audienceMode === 'selected_friends' }}>
-              <Ionicons name={audienceMode === 'selected_friends' ? 'radio-button-on' : 'radio-button-off'} size={22} color={BRAND} />
-              <Text style={styles.radioText}>Selected friends ({selectedUids.length})</Text>
-            </TouchableOpacity>
-            {audienceMode === 'selected_friends' && friends.map((friend) => (
-              <TouchableOpacity accessibilityRole="checkbox" accessibilityLabel={`${friend.displayName}, @${friend.socialHandle}`} key={friend.uid} onPress={() => toggleFriend(friend.uid)} style={styles.friendChoice} accessibilityState={{ checked: selectedUids.includes(friend.uid) }}>
-                <Ionicons name={selectedUids.includes(friend.uid) ? 'checkbox' : 'square-outline'} size={22} color={BRAND} />
-                <Text style={styles.radioText}>{friend.displayName} <Text style={styles.muted}>@{friend.socialHandle}</Text></Text>
+              <TouchableOpacity accessibilityLabel="Close friend picker" onPress={() => setAudiencePickerVisible(false)} style={styles.compactIconButton}>
+                <Ionicons name="close" size={23} color="#344054" />
               </TouchableOpacity>
-            ))}
+            </View>
+            <ScrollView contentContainerStyle={styles.pickerList} showsVerticalScrollIndicator={false} style={styles.pickerScroller}>
+              {friends.map((friend) => (
+                <TouchableOpacity accessibilityRole="checkbox" accessibilityLabel={`${friend.displayName}, @${friend.socialHandle}`} accessibilityState={{ checked: selectedUids.includes(friend.uid) }} key={friend.uid} onPress={() => toggleFriend(friend.uid)} style={styles.friendChoice}>
+                  <View style={styles.friendAvatar}>
+                    <Text style={styles.friendInitial}>{friend.displayName.trim().charAt(0).toUpperCase() || '?'}</Text>
+                  </View>
+                  <View style={styles.flex}>
+                    <Text maxFontSizeMultiplier={1.15} numberOfLines={1} style={styles.venueName}>{friend.displayName}</Text>
+                    <Text maxFontSizeMultiplier={1.1} numberOfLines={1} style={styles.muted}>@{friend.socialHandle}</Text>
+                  </View>
+                  <Ionicons name={selectedUids.includes(friend.uid) ? 'checkbox' : 'square-outline'} size={24} color={BRAND} />
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel={`Done choosing friends, ${selectedUids.length} selected`} disabled={selectedUids.length === 0} onPress={() => setAudiencePickerVisible(false)} style={[styles.primaryButton, selectedUids.length === 0 && styles.disabled]}>
+              <Text maxFontSizeMultiplier={1.1} style={styles.primaryText}>Done · {selectedUids.length} selected</Text>
+            </TouchableOpacity>
           </View>
-
-          <View style={styles.card}>
-            <Text style={styles.sectionTitle}>4. Optional note</Text>
-            <TextInput
-              value={message}
-              onChangeText={setMessage}
-              maxLength={120}
-              multiline
-              placeholder="e.g. On the patio"
-              accessibilityLabel="Optional check-in note"
-              style={[styles.input, styles.messageInput]}
-            />
-            <Text style={styles.counter}>{message.length}/120</Text>
-          </View>
-
-          <Text style={styles.confirmationCopy}>
-            {formatCheckInVisibilityCopy(currentAudienceCount, estimatedExpiry)}
-          </Text>
-          <TouchableOpacity accessibilityRole="button" accessibilityLabel={ownCheckIn ? 'Replace active check-in' : 'Confirm check-in'} disabled={!canSubmit} onPress={() => void submit()} style={[styles.primaryButton, !canSubmit && styles.disabled]}>
-            {busy ? <ActivityIndicator color="#FFF" /> : <Text style={styles.primaryText}>{ownCheckIn ? 'Replace check-in' : 'Check in'}</Text>}
-          </TouchableOpacity>
-          </>
-          )}
-        </ScrollView>
-      </KeyboardAvoidingView>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -428,11 +518,12 @@ const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: '#F6F8FB' },
   flex: { flex: 1 },
   centered: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 14, padding: 28 },
-  header: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 16, paddingVertical: 12, backgroundColor: '#FFF', borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#D0D5DD' },
-  headerText: { flex: 1 },
+  header: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 12, paddingVertical: 8, backgroundColor: '#FFF', borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#D0D5DD' },
+  headerText: { flex: 1, minWidth: 0 },
   iconButton: { width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center' },
-  title: { fontSize: 25, fontWeight: '800', color: '#101828' },
-  content: { padding: 16, gap: 14, paddingBottom: 42 },
+  compactIconButton: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
+  title: { fontSize: 24, fontWeight: '800', color: '#101828' },
+  content: { flex: 1, padding: 12, gap: 10, minHeight: 0 },
   card: { backgroundColor: '#FFF', borderWidth: StyleSheet.hairlineWidth, borderColor: '#E4E7EC', borderRadius: 16, padding: 16, gap: 11 },
   activeCard: { borderColor: '#53B1FD', backgroundColor: '#EFF8FF' },
   sectionTitle: { fontSize: 17, fontWeight: '700', color: '#101828' },
@@ -446,30 +537,48 @@ const styles = StyleSheet.create({
   secondaryText: { color: '#175CD3', fontWeight: '700' },
   checkoutButton: { minHeight: 42, justifyContent: 'center', paddingHorizontal: 12, borderRadius: 9, backgroundColor: '#FEE4E2' },
   checkoutText: { color: '#B42318', fontWeight: '700' },
-  editingHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, paddingHorizontal: 2 },
-  editingTitle: { flex: 1, color: '#101828', fontSize: 18, fontWeight: '800' },
-  input: { minHeight: 46, borderWidth: 1, borderColor: '#D0D5DD', borderRadius: 10, paddingHorizontal: 12, color: '#101828', backgroundColor: '#FFF' },
-  messageInput: { minHeight: 86, textAlignVertical: 'top', paddingTop: 12 },
-  counter: { alignSelf: 'flex-end', color: '#667085' },
-  selectedVenue: { flexDirection: 'row', gap: 9, alignItems: 'center', borderRadius: 11, padding: 12, backgroundColor: '#EFF8FF' },
-  venueOption: { flexDirection: 'row', alignItems: 'center', gap: 9, minHeight: 56, paddingVertical: 7, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#EAECF0' },
+  formSurface: { flex: 1, minHeight: 0, gap: 9, padding: 12, borderRadius: 16, backgroundColor: '#FFF', borderWidth: StyleSheet.hairlineWidth, borderColor: '#E4E7EC' },
+  activeStrip: { minHeight: 52, flexDirection: 'row', alignItems: 'center', gap: 9, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 11, backgroundColor: '#EFF8FF' },
+  stripVenue: { color: '#101828', fontWeight: '700', marginTop: 1 },
+  fieldGroup: { gap: 5 },
+  fieldLabel: { color: '#344054', fontSize: 13, fontWeight: '800' },
+  optionalLabel: { color: '#667085', fontWeight: '500' },
+  selectorButton: { minHeight: 58, flexDirection: 'row', alignItems: 'center', gap: 9, paddingHorizontal: 10, paddingVertical: 7, borderWidth: 1, borderColor: '#D0D5DD', borderRadius: 11, backgroundColor: '#FFF' },
+  selectorIcon: { width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center', backgroundColor: '#EFF8FF' },
+  selectorPlaceholder: { color: '#475467', fontWeight: '600' },
+  selectorDetail: { color: '#667085', fontSize: 12, marginTop: 1 },
+  input: { minHeight: 44, borderWidth: 1, borderColor: '#D0D5DD', borderRadius: 10, paddingHorizontal: 11, color: '#101828', backgroundColor: '#FFF' },
+  noteHeading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  counter: { color: '#667085', fontSize: 12 },
+  venueOption: { flexDirection: 'row', alignItems: 'center', gap: 9, minHeight: 60, paddingVertical: 8, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#EAECF0' },
   venueName: { color: '#101828', fontWeight: '700' },
   linkText: { color: '#175CD3', fontWeight: '700' },
-  choiceRow: { flexDirection: 'row', gap: 8 },
-  choice: { flex: 1, minHeight: 44, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#D0D5DD', borderRadius: 10 },
+  choiceRow: { flexDirection: 'row', gap: 7 },
+  choice: { flex: 1, minHeight: 40, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#D0D5DD', borderRadius: 9 },
   choiceSelected: { borderColor: BRAND, backgroundColor: '#EFF8FF' },
   choiceText: { color: '#475467', fontWeight: '600' },
   choiceTextSelected: { color: '#175CD3' },
-  radioRow: { flexDirection: 'row', alignItems: 'center', gap: 9, minHeight: 43 },
-  friendChoice: { flexDirection: 'row', alignItems: 'center', gap: 9, minHeight: 42, paddingLeft: 14 },
-  radioText: { flex: 1, color: '#344054', fontWeight: '600' },
-  confirmationCopy: { color: '#344054', textAlign: 'center', lineHeight: 20, paddingHorizontal: 10 },
-  primaryButton: { minHeight: 50, alignItems: 'center', justifyContent: 'center', backgroundColor: BRAND, borderRadius: 12, paddingHorizontal: 20 },
+  audienceChoice: { flex: 1, minHeight: 40, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, borderWidth: 1, borderColor: '#D0D5DD', borderRadius: 9, paddingHorizontal: 8 },
+  audienceSummaryRow: { minHeight: 26, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, paddingHorizontal: 2 },
+  audienceSummary: { flex: 1, color: '#667085', fontSize: 12 },
+  warningText: { color: '#B54708' },
+  friendChoice: { flexDirection: 'row', alignItems: 'center', gap: 10, minHeight: 60, paddingVertical: 7, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#EAECF0' },
+  friendAvatar: { width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center', backgroundColor: '#DCEBFF' },
+  friendInitial: { color: '#175CD3', fontWeight: '800' },
+  submitArea: { marginTop: 'auto', gap: 7, paddingTop: 3 },
+  confirmationCopy: { color: '#344054', textAlign: 'center', fontSize: 13, lineHeight: 17, paddingHorizontal: 6 },
+  primaryButton: { minHeight: 48, alignItems: 'center', justifyContent: 'center', backgroundColor: BRAND, borderRadius: 11, paddingHorizontal: 20 },
   primaryText: { color: '#FFF', fontWeight: '800', fontSize: 16 },
   disabled: { opacity: 0.45 },
-  offlineBanner: { backgroundColor: '#FFF4CC', color: '#7A5D00', padding: 10, borderRadius: 10 },
-  emptyText: { color: '#667085', fontStyle: 'italic' },
-  helperText: { color: '#667085', fontSize: 13, lineHeight: 18 },
-  audienceNotice: { flexDirection: 'row', alignItems: 'flex-start', gap: 9, padding: 11, borderRadius: 10, backgroundColor: '#EFF8FF' },
-  audienceNoticeText: { flex: 1, color: '#344054', lineHeight: 19 },
+  offlineBanner: { backgroundColor: '#FFF4CC', color: '#7A5D00', paddingHorizontal: 10, paddingVertical: 7, borderRadius: 9 },
+  emptyText: { color: '#667085', fontStyle: 'italic', textAlign: 'center', padding: 18 },
+  helperText: { color: '#667085', fontSize: 13, lineHeight: 18, textAlign: 'center', paddingVertical: 10 },
+  modalBackdrop: { flex: 1, justifyContent: 'flex-end', paddingTop: 40, backgroundColor: 'rgba(16, 24, 40, 0.48)' },
+  pickerCard: { maxHeight: '88%', minHeight: 320, gap: 10, paddingHorizontal: 16, paddingTop: 16, paddingBottom: 18, borderTopLeftRadius: 22, borderTopRightRadius: 22, backgroundColor: '#FFF' },
+  pickerHeader: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
+  pickerTitle: { color: '#101828', fontSize: 21, fontWeight: '800' },
+  pickerSearch: { minHeight: 46, flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12, borderWidth: 1, borderColor: '#D0D5DD', borderRadius: 11, backgroundColor: '#FFF' },
+  pickerInput: { flex: 1, minHeight: 44, color: '#101828' },
+  pickerScroller: { flexShrink: 1 },
+  pickerList: { paddingBottom: 8 },
 });
