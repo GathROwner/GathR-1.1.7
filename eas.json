@@ -9,7 +9,10 @@
       "distribution": "internal",
       "channel": "development",
       "env": {
-        "SUPPRESS_XCODE_OUTPUT": "false"
+        "SUPPRESS_XCODE_OUTPUT": "false",
+        "EXPO_PUBLIC_SOCIAL_FEATURE_ENABLED": "true",
+        "EXPO_PUBLIC_USE_FIREBASE_EMULATORS": "true",
+        "EXPO_PUBLIC_FIREBASE_EMULATOR_HOST": "10.0.2.2"
       },
       "ios": {
         "resourceClass": "m-medium"
@@ -22,6 +25,10 @@
     "preview": {
       "distribution": "internal",
       "channel": "preview",
+      "env": {
+        "EXPO_PUBLIC_SOCIAL_FEATURE_ENABLED": "true",
+        "EXPO_PUBLIC_USE_FIREBASE_EMULATORS": "false"
+      },
       "ios": {
         "resourceClass": "m-medium"
       },
@@ -34,6 +41,10 @@
       "distribution": "store",
       "autoIncrement": true,
       "channel": "production",
+      "env": {
+        "EXPO_PUBLIC_SOCIAL_FEATURE_ENABLED": "false",
+        "EXPO_PUBLIC_USE_FIREBASE_EMULATORS": "false"
+      },
       "ios": {
         "resourceClass": "m-medium"
       },

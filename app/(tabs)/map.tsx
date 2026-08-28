@@ -18,9 +18,10 @@ import { View, Text, StyleSheet, Animated, Dimensions, PixelRatio, TouchableOpac
 import * as Location from 'expo-location';
 import * as Haptics from 'expo-haptics';
 import MapboxGL from '@rnmapbox/maps';
-import { MaterialIcons } from '@expo/vector-icons';
+import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import { useIsFocused } from '@react-navigation/native';
 import { Platform } from 'react-native';
+import { useRouter } from 'expo-router';
 
 
 
@@ -73,6 +74,9 @@ import {
 // Import user service for preferences
 import { getUserInterestsSync, getSavedEventsSync, getFavoriteVenuesSync } from '../../store/userPrefsStore';
 import { useClusterInteractionStore } from '../../store/clusterInteractionStore';
+import { setSocialMapDiagnostics, useSocialStore } from '../../store/socialStore';
+import { SOCIAL_FEATURE_ENABLED } from '../../types/social';
+import { annotateClustersWithFriendPresence } from '../../utils/friendPresence';
 
 // Trending lightbox (flame pill + cold-start auto-open)
 import { buildTrendingEvents } from '../../utils/trendingUtils';
@@ -2576,6 +2580,7 @@ const TreeMarker: React.FC<TreeMarkerProps> = React.memo(({ cluster, isSelected,
       ? 'home'
       : 'storefront'
   ) as React.ComponentProps<typeof MaterialIcons>['name'];
+  const friendPresence = detailsEnabled ? cluster.friendPresence : undefined;
 
   // Check if cluster contains Firestore-sourced events
   const hasFirestoreEvents = detailsEnabled
@@ -2646,6 +2651,22 @@ const TreeMarker: React.FC<TreeMarkerProps> = React.memo(({ cluster, isSelected,
       {/* Gold fireworks for city-level (festival) events */}
       {detailsEnabled && CITY_EVENT_UI_ENABLED && cluster.containsCityLevelEvent && (
         <CityEventEffect size={adjustedSize} isActive={isActive} />
+      )}
+
+      {/* Friend presence is an outer teal bloom. Inner canopy size still
+          represents event interest and the existing rings still mean "now". */}
+      {friendPresence && (
+        <View
+          pointerEvents="none"
+          style={[
+            styles.friendPresenceHalo,
+            {
+              width: adjustedSize * 2.05,
+              height: adjustedSize * 2.05,
+              borderRadius: adjustedSize * 1.025,
+            },
+          ]}
+        />
       )}
 
       {/* Tree top (circle) */}
@@ -2809,6 +2830,33 @@ const TreeMarker: React.FC<TreeMarkerProps> = React.memo(({ cluster, isSelected,
               size={Math.max(adjustedSize * 0.38, 8)}
               color="#4E342E"
             />
+          </View>
+        )}
+
+        {friendPresence && (
+          <View
+            accessible
+            accessibilityLabel={`${friendPresence.friendCount} friend${friendPresence.friendCount === 1 ? '' : 's'} checked in within this map cluster`}
+            style={[
+              styles.friendPresenceBadge,
+              {
+                width: adjustedSize * 0.72,
+                height: adjustedSize * 0.72,
+                borderRadius: adjustedSize * 0.36,
+                bottom: -(adjustedSize * 0.2),
+                right: -(adjustedSize * 0.2),
+              },
+            ]}
+          >
+            {friendPresence.previewFriends[0]?.photoURL ? (
+              <Image
+                source={{ uri: friendPresence.previewFriends[0].photoURL }}
+                style={styles.friendPresenceAvatar}
+              />
+            ) : (
+              <Ionicons name="people" size={Math.max(adjustedSize * 0.32, 8)} color="#FFFFFF" />
+            )}
+            <Text style={styles.friendPresenceBadgeText}>{friendPresence.displayCount}</Text>
           </View>
         )}
       </View>
@@ -3150,6 +3198,7 @@ useEffect(() => {
   // Auth state for guest checking  
   const { user } = useAuth(); // Adjust import path as needed
   const isGuest = !user;
+  const router = useRouter();
 
   // Guest limitation hook - only for guests
   const { trackInteraction } = useGuestInteraction();
@@ -3199,7 +3248,21 @@ useEffect(() => {
 
   // Use the map store - individual selectors to prevent infinite loops
   // (Combined object selectors with shallow cause getSnapshot caching issues)
-  const clusters = useMapStore((state) => state.clusters);
+  const baseClusters = useMapStore((state) => state.clusters);
+  const friendActivity = useSocialStore((state) => state.activity);
+  const clusters = useMemo(
+    () => SOCIAL_FEATURE_ENABLED
+      ? annotateClustersWithFriendPresence(baseClusters, friendActivity)
+      : baseClusters,
+    [baseClusters, friendActivity]
+  );
+  useEffect(() => {
+    const friendClusters = clusters.filter((cluster) => Boolean(cluster.friendPresence));
+    const friendVenueKeys = new Set(
+      friendClusters.flatMap((cluster) => Object.keys(cluster.friendPresence?.venues || {}))
+    );
+    setSocialMapDiagnostics(friendClusters.length, friendVenueKeys.size);
+  }, [clusters]);
   const events = useMapStore((state) => state.events);
   const filteredEvents = useMapStore((state) => state.filteredEvents);
   const viewportEvents = useMapStore((state) => state.viewportEvents);
@@ -3753,6 +3816,14 @@ useEffect(() => {
       : renderedCalloutCluster;
   const presentedCalloutVenueCount = presentedCalloutVenues.length;
   const presentedCalloutClusterId = presentedCalloutCluster?.id ?? null;
+  const livePresentedCalloutCluster = useMemo(() => {
+    if (!presentedCalloutCluster) return null;
+    const currentCluster = clusters.find((cluster) => cluster.id === presentedCalloutCluster.id);
+    return {
+      ...presentedCalloutCluster,
+      friendPresence: currentCluster?.friendPresence,
+    };
+  }, [clusters, presentedCalloutCluster]);
   const hasPresentedCallout = presentedCalloutVenueCount > 0;
   const presentedCalloutSignature = useMemo(
     () =>
@@ -6993,6 +7064,10 @@ amplitudeTrack('cluster_opened', {
   cluster_id: cluster.id,
   cluster_size: cluster.venues.length,
   contains_city_event: !!cluster.containsCityLevelEvent,
+  contains_friend_presence: !!cluster.friendPresence,
+  friend_count_bucket: cluster.friendPresence
+    ? cluster.friendPresence.friendCount > 3 ? '3+' : String(cluster.friendPresence.friendCount)
+    : '0',
   referrer_screen: '/map',
   source: 'map',
   session_interactions: sessionClusterInteractions.current,
@@ -10940,6 +11015,19 @@ onDidFinishLoadingMap={() => {
           disabled={!location} 
         />
       )}
+
+      {SOCIAL_FEATURE_ENABLED && user && !isCalloutOpen && (
+        <TouchableOpacity
+          accessibilityRole="button"
+          accessibilityLabel="Check in at a recognized GathR venue"
+          activeOpacity={0.85}
+          onPress={() => router.push('/check-in')}
+          style={styles.checkInMapButton}
+        >
+          <Ionicons name="location" size={18} color="#FFFFFF" />
+          <Text style={styles.checkInMapButtonText}>Check in</Text>
+        </TouchableOpacity>
+      )}
       
       {shouldRenderBlockingLoadingOverlay && (
         <View style={styles.loadingOverlay}>
@@ -11094,7 +11182,7 @@ Owner: Map UX stability on Android • Last validated: 2025-09-04
             <ActiveCalloutComponent 
               key={presentedCalloutPresentationKey}
               venues={presentedCalloutVenues}
-              cluster={presentedCalloutCluster}
+              cluster={livePresentedCalloutCluster}
               onClose={() => closeCallout('callout-onClose-prop')}
               onCloseStart={handleCalloutCloseStart}
               onLayoutReady={() => {
@@ -11599,6 +11687,45 @@ const styles = StyleSheet.create({
   beaconCategorySpectrumSegment: {
     height: '100%',
     minWidth: 4,
+  },
+  friendPresenceHalo: {
+    position: 'absolute',
+    borderWidth: 4,
+    borderColor: 'rgba(13, 148, 136, 0.88)',
+    backgroundColor: 'rgba(45, 212, 191, 0.16)',
+    shadowColor: '#0F766E',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.5,
+    shadowRadius: 7,
+    elevation: 4,
+    zIndex: 1,
+  },
+  friendPresenceBadge: {
+    position: 'absolute',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 1,
+    paddingHorizontal: 2,
+    overflow: 'hidden',
+    backgroundColor: '#0F766E',
+    borderWidth: 1.5,
+    borderColor: '#FFFFFF',
+    zIndex: 7,
+  },
+  friendPresenceAvatar: {
+    position: 'absolute',
+    width: '100%',
+    height: '100%',
+    opacity: 0.42,
+  },
+  friendPresenceBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 8,
+    fontWeight: '800',
+    textShadowColor: 'rgba(0,0,0,0.45)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 1,
   },
 venueCountContainer: {
   position: 'absolute',
@@ -12109,6 +12236,28 @@ countText: {
   recenterButtonDisabled: {
     backgroundColor: '#F5F5F5',
     shadowOpacity: 0.1,
+  },
+  checkInMapButton: {
+    position: 'absolute',
+    right: 10,
+    bottom: 126,
+    minHeight: 40,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    borderRadius: 20,
+    backgroundColor: '#0F766E',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3,
+    elevation: 6,
+    zIndex: 10,
+  },
+  checkInMapButtonText: {
+    color: '#FFFFFF',
+    fontWeight: '800',
   },
   interestPillsContainer: {
     position: 'absolute',

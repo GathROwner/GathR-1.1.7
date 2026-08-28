@@ -26,6 +26,8 @@ import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import { amplitudeMarkManualLogin } from '../lib/amplitudeAnalytics';
 // Import analytics hook
 import useAnalytics from '../hooks/useAnalytics';
+import { claimSocialHandle, validateSocialHandle } from '../services/socialService';
+import { SOCIAL_FEATURE_ENABLED } from '../types/social';
 
 export default function Index() {
   const [isLogin, setIsLogin] = useState(true);
@@ -33,6 +35,7 @@ export default function Index() {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [displayName, setDisplayName] = useState('');
+  const [socialHandle, setSocialHandle] = useState('');
   const [photoURI, setPhotoURI] = useState('');
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
@@ -237,6 +240,15 @@ export default function Index() {
         return;
       }
 
+      if (SOCIAL_FEATURE_ENABLED && socialHandle.trim()) {
+        try {
+          validateSocialHandle(socialHandle);
+        } catch (error) {
+          Alert.alert('Handle needs an update', error instanceof Error ? error.message : 'Enter a valid handle.');
+          return;
+        }
+      }
+
       setLoading(true);
       
       // Track registration attempt
@@ -273,6 +285,20 @@ export default function Index() {
         // Email/password accounts begin unverified. Request the verification message
         // automatically so new users are eligible to help confirm community events.
         void requestCurrentUserVerificationEmail();
+
+        // The account is valid even if an optional handle was claimed by
+        // somebody else between validation and registration. The user can
+        // choose another one from Profile > Friends.
+        if (SOCIAL_FEATURE_ENABLED && socialHandle.trim()) {
+          try {
+            await claimSocialHandle(socialHandle);
+          } catch (handleError) {
+            Alert.alert(
+              'Account created; handle not claimed',
+              `${handleError instanceof Error ? handleError.message : 'That handle is unavailable.'} You can choose another under Profile > Friends.`
+            );
+          }
+        }
 
         
         // Track successful registration
@@ -409,6 +435,23 @@ export default function Index() {
         testID="displayName-input"
         placeholderTextColor="#7AA3CC"
       />
+
+      {SOCIAL_FEATURE_ENABLED && (
+        <>
+          <Text style={styles.inputLabel}>GathR Handle (Optional)</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="e.g. craig_pei"
+            value={socialHandle}
+            onChangeText={setSocialHandle}
+            autoCapitalize="none"
+            autoCorrect={false}
+            maxLength={25}
+            accessibilityLabel="Optional GathR handle"
+            placeholderTextColor="#7AA3CC"
+          />
+        </>
+      )}
       
       {/* Email Address */}
       <Text style={styles.inputLabel}>Email Address</Text>

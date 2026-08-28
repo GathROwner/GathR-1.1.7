@@ -1042,6 +1042,12 @@ useEffect(() => {
           headerBackTitle: 'Back',
           presentation: 'modal'
         }} />
+        <Stack.Screen name="friends" options={{ headerShown: false }} />
+        <Stack.Screen name="check-in" options={{
+          headerShown: false,
+          presentation: 'modal',
+          animation: 'slide_from_bottom'
+        }} />
         <Stack.Screen name="attendance-survey" options={{ 
           presentation: 'modal',
           animation: 'slide_from_bottom',

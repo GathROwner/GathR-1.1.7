@@ -5,6 +5,7 @@ import { onAuthStateChanged, User } from 'firebase/auth';
 import { auth } from '../config/firebaseConfig';
 import { startUserPrefsListener, stopUserPrefsListener } from '../store/userPrefsStore';
 import { useQueryClient } from '@tanstack/react-query';
+import { startSocialListeners, stopSocialListeners } from '../store/socialStore';
 
 interface AuthContextType {
   user: User | null;
@@ -42,10 +43,12 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             !(Array.isArray(q.queryKey) && q.queryKey[0] === 'events-minimal')
         });
         startUserPrefsListener(user.uid);
+        startSocialListeners(user.uid);
       } else {
         // Clear user-specific data
         queryClient.clear();
         stopUserPrefsListener();
+        stopSocialListeners();
       }
 
     });
@@ -54,6 +57,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       console.log('AuthProvider: Cleaning up authentication listener');
       unsubscribe();
       stopUserPrefsListener();
+      stopSocialListeners();
 
     };
   }, [queryClient]); 

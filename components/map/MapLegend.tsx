@@ -4,6 +4,7 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { useIsFocused } from '@react-navigation/native';
 import { useMapStore } from '../../store';
 import { registerMapTraceSampler, traceMapEvent } from '../../utils/mapTrace';
+import { SOCIAL_FEATURE_ENABLED } from '../../types/social';
 
 export type MapStyleChoice = 'current' | 'standard' | 'gathr';
 export type MapLightPreset = 'day' | 'dusk' | 'night';
@@ -468,6 +469,16 @@ const MapLegend: React.FC<MapLegendProps> = ({
             <LegendRow label="Your interests">
               <MaterialIcons name="thumb-up" size={18} color="#4A90E2" />
             </LegendRow>
+            {SOCIAL_FEATURE_ENABLED && (
+              <>
+                <View style={styles.rowDivider} />
+                <LegendRow label="Friend checked in">
+                  <View style={styles.friendPresenceSwatch}>
+                    <MaterialIcons name="people" size={11} color="#FFFFFF" />
+                  </View>
+                </LegendRow>
+              </>
+            )}
             <View style={styles.rowDivider} />
             <LegendRow label="City-wide event">
               <View style={styles.cityEventSwatch}>
@@ -903,6 +914,16 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255, 255, 255, 0.95)',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  friendPresenceSwatch: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#0F766E',
+    borderWidth: 2,
+    borderColor: '#5EEAD4',
   },
 });
 

@@ -151,6 +151,7 @@ import EventActionLinkPill from '../common/EventActionLinkPill';
 import FamilyFriendlyBadge from '../common/FamilyFriendlyBadge';
 import { traceMapEvent } from '../../utils/mapTrace';
 import { doesEventMatchAnyInterest } from '../../utils/familyFriendly';
+import { getVenueFriendPresence } from '../../utils/friendPresence';
 
 const EVENT_CALLOUT_SHELL_ISOLATION_DEBUG = false;
 const EVENT_CALLOUT_DISABLE_NATIVE_ADS_DEBUG = false;
@@ -2852,6 +2853,7 @@ const { reorderedVenues, initialVenueIndex } = useMemo(() => {
 
 const [activeVenueIndex, setActiveVenueIndex] = useState(initialVenueIndex);
 const activeVenue = reorderedVenues[activeVenueIndex];
+const activeVenueFriendPresence = getVenueFriendPresence(cluster, activeVenue);
   // LOG: Active venue tracking - shows currently selected venue for debugging venue state
   // console.log("Active venue index:", activeVenueIndex, 
   //             "Active venue:", activeVenue ? activeVenue.venue : 'none');
@@ -4545,6 +4547,31 @@ useEffect(() => {
         
         {/* Divider between venue selector and tabs */}
         <View style={styles.venueSelectorDivider} />
+
+        {activeVenueFriendPresence && (
+          <View
+            style={styles.friendPresenceCallout}
+            accessibilityLabel={`${activeVenueFriendPresence.friendCount} friend${activeVenueFriendPresence.friendCount === 1 ? '' : 's'} checked in at ${activeVenue.venue}`}
+          >
+            <View style={styles.friendPresenceCalloutIcon}>
+              <Ionicons name="people" size={17} color="#FFFFFF" />
+            </View>
+            <View style={styles.friendPresenceCalloutText}>
+              <Text style={styles.friendPresenceCalloutTitle}>
+                {activeVenueFriendPresence.friendCount === 1
+                  ? `${activeVenueFriendPresence.friends[0].displayName} is here`
+                  : `${activeVenueFriendPresence.friendCount} friends are here`}
+              </Text>
+              <Text style={styles.friendPresenceCalloutNames} numberOfLines={2}>
+                {activeVenueFriendPresence.friends
+                  .map((friend) => friend.message
+                    ? `${friend.displayName}: ${friend.message}`
+                    : friend.displayName)
+                  .join(' · ')}
+              </Text>
+            </View>
+          </View>
+        )}
         
         <Animated.View
           {...shellPanHandlers}
@@ -4903,6 +4930,40 @@ const styles = StyleSheet.create({
     height: 1,
     backgroundColor: 'rgba(255, 255, 255, 0.12)',
     marginHorizontal: 0,
+  },
+  friendPresenceCallout: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginHorizontal: 12,
+    marginVertical: 7,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    borderRadius: 12,
+    backgroundColor: '#E6FFFB',
+    borderWidth: 1,
+    borderColor: '#5EEAD4',
+  },
+  friendPresenceCalloutIcon: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#0F766E',
+  },
+  friendPresenceCalloutText: {
+    flex: 1,
+  },
+  friendPresenceCalloutTitle: {
+    color: '#115E59',
+    fontWeight: '800',
+  },
+  friendPresenceCalloutNames: {
+    marginTop: 2,
+    color: '#134E4A',
+    fontSize: 12,
+    lineHeight: 16,
   },
   venueTopContent: {
   alignItems: 'center',

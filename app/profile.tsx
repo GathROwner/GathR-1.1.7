@@ -41,6 +41,9 @@ import { requestCurrentUserEmailChange } from '../lib/accountEmailChange';
 import { useUserPrefsStore, updateShowDailyHotspot, updateShowTrendingOnOpen } from '../store/userPrefsStore';
 import { useTutorialUiStore } from '../store/tutorialUiStore';
 import GathrWordmarkLogo from '../components/common/GathrWordmarkLogo';
+import { deleteSocialAccountData } from '../services/socialService';
+import { useSocialStore } from '../store/socialStore';
+import { SOCIAL_FEATURE_ENABLED } from '../types/social';
 import { publishTutorialMeasurement } from '../utils/tutorialReadiness';
 import { beginProfileTutorialReplay } from '../utils/tutorialReplay';
 import {
@@ -728,6 +731,10 @@ export default function ProfileScreen() {
 
   // Daily hotspot preference
   const showDailyHotspot = useUserPrefsStore((state) => state.showDailyHotspot);
+  const friendCount = useSocialStore((state) => state.friends.length);
+  const incomingFriendRequestCount = useSocialStore(
+    (state) => state.requests.filter((request) => request.direction === 'incoming').length
+  );
   const setShowDailyHotspot = useUserPrefsStore((state) => state.setShowDailyHotspot);
 
   // Trending auto-open preference
@@ -1364,6 +1371,10 @@ const handleLogout = async () => {
       const credential = EmailAuthProvider.credential(user.email, passwordInput);
       await reauthenticateWithCredential(user, credential);
 
+      if (SOCIAL_FEATURE_ENABLED) {
+        await deleteSocialAccountData();
+      }
+
       // Delete from Firestore first
       await deleteUserData(user.uid);
 
@@ -1659,6 +1670,46 @@ const handleLogout = async () => {
 
               <View style={styles.featuresCard}>
                 <Text style={styles.sectionHeading}>Features</Text>
+                {SOCIAL_FEATURE_ENABLED && (
+                  <>
+                    <TouchableOpacity
+                      style={styles.featureRow}
+                      onPress={() => router.push('/friends')}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Friends, ${friendCount} friends, ${incomingFriendRequestCount} incoming requests`}
+                    >
+                      <View style={styles.featureIcon}>
+                        <Ionicons name="people-outline" size={20} color={BRAND.primary} />
+                      </View>
+                      <View style={styles.featureCopy}>
+                        <Text style={styles.featureTitle}>Friends</Text>
+                        <Text style={styles.featureSubtitle}>
+                          {incomingFriendRequestCount > 0
+                            ? `${incomingFriendRequestCount} request${incomingFriendRequestCount === 1 ? '' : 's'}`
+                            : `${friendCount} friend${friendCount === 1 ? '' : 's'}`}
+                        </Text>
+                      </View>
+                      <Ionicons name="chevron-forward" size={18} color={BRAND.textLight} />
+                    </TouchableOpacity>
+                    <View style={styles.featureDivider} />
+                    <TouchableOpacity
+                      style={styles.featureRow}
+                      onPress={() => router.push('/check-in')}
+                      accessibilityRole="button"
+                      accessibilityLabel="Open check-in"
+                    >
+                      <View style={styles.featureIcon}>
+                        <Ionicons name="location-outline" size={20} color={BRAND.primary} />
+                      </View>
+                      <View style={styles.featureCopy}>
+                        <Text style={styles.featureTitle}>Check in</Text>
+                        <Text style={styles.featureSubtitle}>Share a recognized venue temporarily</Text>
+                      </View>
+                      <Ionicons name="chevron-forward" size={18} color={BRAND.textLight} />
+                    </TouchableOpacity>
+                    <View style={styles.featureDivider} />
+                  </>
+                )}
                 <View style={styles.featureRow}>
                   <View style={[styles.featureIcon, styles.hotspotFeatureIcon]}>
                     <HotspotCircleIcon isActive={showDailyHotspot} />

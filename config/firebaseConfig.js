@@ -1,14 +1,18 @@
 import { initializeApp } from 'firebase/app';
-import { initializeAuth, getReactNativePersistence } from 'firebase/auth';
-import { getFirestore } from 'firebase/firestore';
+import { connectAuthEmulator, initializeAuth, getReactNativePersistence } from 'firebase/auth';
+import { connectFirestoreEmulator, getFirestore } from 'firebase/firestore';
+import { connectFunctionsEmulator, getFunctions } from 'firebase/functions';
 import { getStorage } from 'firebase/storage';
 import { getAnalytics, isSupported } from 'firebase/analytics';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
+const useFirebaseEmulators =
+  __DEV__ && process.env.EXPO_PUBLIC_USE_FIREBASE_EMULATORS === 'true';
+
 const firebaseConfig = {
   apiKey: "AIzaSyDlTVz1oAxaYgBQVupUFmhgWd1CLAmu2Xs",
   authDomain: "gathr-m1.firebaseapp.com",
-  projectId: "gathr-m1",
+  projectId: useFirebaseEmulators ? "demo-gathr-social" : "gathr-m1",
   storageBucket: "gathr-m1.firebasestorage.app",
   messagingSenderId: "234071683975",
   appId: "1:234071683975:ios:49809a6cf3e62989869922"
@@ -26,6 +30,17 @@ const auth = initializeAuth(app, {
 // Initialize other Firebase services
 const firestore = getFirestore(app);
 const storage = getStorage(app);
+const functions = getFunctions(app, 'northamerica-northeast1');
+
+// Local social QA is opt-in. Android emulators reach host services at 10.0.2.2.
+// Preview and Production never switch to emulators unless a build explicitly
+// sets this development-only flag.
+if (useFirebaseEmulators) {
+  const emulatorHost = process.env.EXPO_PUBLIC_FIREBASE_EMULATOR_HOST || '10.0.2.2';
+  connectAuthEmulator(auth, `http://${emulatorHost}:9099`, { disableWarnings: true });
+  connectFirestoreEmulator(firestore, emulatorHost, 8080);
+  connectFunctionsEmulator(functions, emulatorHost, 5001);
+}
 
 // Initialize Firebase Analytics with platform support check
 let analytics = null;
@@ -66,4 +81,6 @@ setTimeout(() => {
   console.log('🔍 FIREBASE DEBUG: Analytics is undefined?', analytics === undefined);
 }, 2000);
 
-export { auth, firestore, storage, analytics };
+const firebaseTarget = useFirebaseEmulators ? 'local-emulator' : 'production';
+
+export { app, auth, firestore, functions, storage, analytics, useFirebaseEmulators, firebaseTarget };

@@ -252,4 +252,5 @@ export interface Cluster {
   hasNewContent?: boolean;           // Whether cluster has new events/specials since last interaction
   containsCityLevelEvent?: boolean;  // Whether cluster contains a city/area/route experience
   containsRouteEvent?: boolean;      // Whether cluster contains a route-scoped event
+  friendPresence?: import('./social').ClusterFriendPresence; // Derived from viewer-authorized activity only
 }
