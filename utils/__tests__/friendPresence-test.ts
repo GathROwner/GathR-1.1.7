@@ -133,7 +133,32 @@ describe('friend presence projection', () => {
 
   it('accepts only stable recognized venue identity for check-in selection', () => {
     expect(getRecognizedVenueId(venue('one'))).toBe('one');
-    expect(getRecognizedVenueId({ ...venue('one'), locationKey: 'area:charlottetown' })).toBeNull();
+    expect(getRecognizedVenueId({
+      ...venue('one'),
+      locationKey: 'venue-signature:venue-one_1-test-st',
+    })).toBe('one');
+    expect(getRecognizedVenueId({
+      ...venue('one'),
+      events: [{ ...event('area', 'one'), locationScope: 'area' }],
+    })).toBeNull();
+    expect(getRecognizedVenueId({
+      ...venue('one'),
+      events: [event('one', 'one'), event('two', 'two')],
+    })).toBeNull();
+  });
+
+  it('joins canonical venue ids without changing the map grouping key', () => {
+    const signatureVenue = {
+      ...venue('one'),
+      locationKey: 'venue-signature:venue-one_1-test-st',
+    };
+    const [annotated] = annotateClustersWithFriendPresence(
+      [cluster('signature', [signatureVenue])],
+      [activity('alice', 'one', now + 60_000)],
+      now
+    );
+    expect(annotated.friendPresence?.venues[signatureVenue.locationKey].friendCount).toBe(1);
+    expect(getVenueFriendPresence(annotated, signatureVenue)?.friends[0].ownerUid).toBe('alice');
   });
 
   it('writes exact audience and expiry confirmation copy', () => {

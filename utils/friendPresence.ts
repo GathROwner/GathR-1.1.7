@@ -5,6 +5,7 @@ import type {
   SocialTimestamp,
   VenueFriendPresence,
 } from '../types/social';
+import { isScopedLocationEvent } from './locationScope';
 
 export function socialTimestampToMillis(value: SocialTimestamp): number | null {
   if (typeof value === 'number') return Number.isFinite(value) ? value : null;
@@ -24,11 +25,13 @@ export function isFriendActivityActive(
 }
 
 export function getRecognizedVenueId(venue: Venue): string | null {
+  const venueIds = new Set<string>();
   for (const event of venue.events) {
+    if (isScopedLocationEvent(event)) return null;
     const venueId = String(event.venueId || '').trim();
-    if (venueId && venue.locationKey === `venue:${venueId}`) return venueId;
+    if (venueId) venueIds.add(venueId);
   }
-  return null;
+  return venueIds.size === 1 ? [...venueIds][0] : null;
 }
 
 export function buildFriendPresenceByVenue(
@@ -39,18 +42,19 @@ export function buildFriendPresenceByVenue(
   const seenByVenue = new Map<string, Set<string>>();
 
   for (const activity of activities) {
-    if (!isFriendActivityActive(activity, nowMs) || !activity.venueLocationKey) continue;
-    const seen = seenByVenue.get(activity.venueLocationKey) ?? new Set<string>();
+    const venueId = String(activity.venueId || '').trim();
+    if (!isFriendActivityActive(activity, nowMs) || !venueId) continue;
+    const seen = seenByVenue.get(venueId) ?? new Set<string>();
     if (seen.has(activity.ownerUid)) continue;
     seen.add(activity.ownerUid);
-    seenByVenue.set(activity.venueLocationKey, seen);
+    seenByVenue.set(venueId, seen);
 
-    const existing = result[activity.venueLocationKey];
+    const existing = result[venueId];
     if (existing) {
       existing.friends.push(activity);
       existing.friendCount = existing.friends.length;
     } else {
-      result[activity.venueLocationKey] = {
+      result[venueId] = {
         venueLocationKey: activity.venueLocationKey,
         venueName: activity.venueName,
         friends: [activity],
@@ -75,9 +79,13 @@ export function annotateClustersWithFriendPresence(
     const venues: Record<string, VenueFriendPresence> = {};
     const uniqueFriends = new Map<string, FriendActivityProjection>();
     for (const venue of cluster.venues) {
-      const presence = byVenue[venue.locationKey];
+      const venueId = getRecognizedVenueId(venue);
+      const presence = venueId ? byVenue[venueId] : undefined;
       if (!presence) continue;
-      venues[venue.locationKey] = presence;
+      venues[venue.locationKey] = {
+        ...presence,
+        venueLocationKey: venue.locationKey,
+      };
       for (const friend of presence.friends) uniqueFriends.set(friend.ownerUid, friend);
     }
     if (uniqueFriends.size === 0) return cluster;
@@ -111,4 +119,3 @@ export function formatCheckInVisibilityCopy(
     : new Date(expiresAtMs).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
   return `${safeCount} ${label} can see this check-in until ${expiry}.`;
 }
-

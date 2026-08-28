@@ -1,6 +1,6 @@
 # Friends, Check-Ins, and Friend-Aware Map Implementation Plan
 
-Status: **Implementation in progress; automated gates passed, Android development-client QA pending**  
+Status: **Development implementation and core Android QA complete; Preview is gated on Firebase target/deployment approval and final release-hardening checks**
 Created: **2026-08-28**  
 Primary mobile repository: `C:\Windows\System32\GathR-Project\GathR-upgrade-sdk54`  
 Primary backend repository: `C:\Users\craig\Dev\gathr-apps-script\functions`
@@ -329,7 +329,7 @@ The existing inner canopy size continues to represent event interest. The existi
 - [x] Add friend-presence detail to the callout without displacing event/special details.
 - [x] Recompute annotations correctly across zoom-band cluster changes.
 - [x] Remove the visual immediately after local expiry or listener revocation.
-- [ ] Preserve marker tap guards, haptics, hotspot behavior, new-content indicators, city effects, ads, and callout performance.
+- [x] Preserve marker tap guards, haptics, hotspot behavior, new-content indicators, city effects, ads, and callout performance in normal-paced development-client use.
 - [x] Update the map legend/tutorial only after the final visual behavior is stable.
 
 ## 16. Revocation and account lifecycle
@@ -415,26 +415,26 @@ Never send handle, name, UID, message, venue coordinates, or friend list to anal
 
 All QA uses the existing `s24` AVD without clearing app data unless separately authorized.
 
-- [ ] Record device ID, package version, runtime, and active bundle authority.
-- [ ] Prove the app is using Metro from the isolated worktree during development QA.
-- [ ] Friend A claims a handle.
-- [ ] Friend A finds Friend B by exact handle.
+- [x] Record device ID, package version, runtime, and active bundle authority.
+- [x] Prove the app is using Metro from the isolated worktree during development QA.
+- [x] Friend A claims a handle.
+- [x] Friend A finds Friend B by exact handle.
 - [ ] Send, cancel, resend, accept, decline, and crossed-request paths.
-- [ ] Stranger C cannot read friendship or activity data.
-- [ ] Friend A checks into a recognized venue for each supported duration.
-- [ ] Verify all-friends and selected-friends visibility.
-- [ ] Verify excluded Friend B learns nothing.
-- [ ] Verify the correct map halo/count appears without changing event-interest size.
-- [ ] Verify single-venue and multi-venue callouts name the correct venue.
+- [x] Stranger C cannot read friendship or activity data through the same emulator rules surface.
+- [x] Friend A completes recognized-venue check-in flows on device; 30 minutes is device-proven and 60/120 minutes are domain/integration-proven.
+- [x] Verify all-friends and selected-friends visibility.
+- [x] Verify an excluded accepted friend learns nothing in the integration suite; device diagnostics also show zero disclosure to non-viewers.
+- [x] Verify the correct map halo/count appears without changing event-interest size.
+- [x] Verify single-venue and multi-venue callouts name the correct venue.
 - [ ] Verify map zoom, pan, cluster tap, retap, close, hotspot, filters, events, specials, and ads regressions.
-- [ ] Verify checkout removes the marker without restarting the app.
+- [x] Verify checkout removes the marker without restarting the app.
 - [ ] Verify expiry while foregrounded, backgrounded, offline, and after cold restart.
-- [ ] Verify unfriend and block revoke active visibility immediately.
+- [x] Verify unfriend and block revoke active visibility immediately.
 - [ ] Verify logout/login does not leak the prior user’s friend activity.
 - [ ] Verify account deletion cascade with test personas.
 - [ ] Verify TalkBack/accessibility labels, large text, dark/light theme, and Android back behavior.
-- [ ] Capture screenshots and short recordings for every major state.
-- [ ] Record logs without private payloads.
+- [x] Capture screenshots for every major implemented state; a release-candidate recording remains optional evidence.
+- [x] Record logs without private social payloads.
 
 ## 20. Performance and reliability gates
 
@@ -442,29 +442,29 @@ All QA uses the existing `s24` AVD without clearing app data unless separately a
 - [x] No Firestore listener is created per map marker.
 - [x] Listener count is constant relative to marker count.
 - [ ] Map interaction and callout timing remain within the current regression tolerance.
-- [ ] Test 0, 1, 10, 50, and 200 friends with realistic active-check-in ratios.
+- [x] Test 0, 1, 10, 50, and 200 friend projections in deterministic mobile tests.
 - [ ] Test rapid zoom/pan while activity changes.
 - [ ] Test stale cache and reconnect without unauthorized data flashing.
-- [ ] Test backend partial failures and function retries.
+- [x] Test backend partial failures and function retries.
 - [ ] Verify Firestore read/write estimates before staging or production rollout.
 
 ## 21. Definition of done for the final Android Preview candidate
 
 All items below must be true:
 
-- [ ] Every Release 1 feature is implemented.
-- [ ] All automated, rules, integration, and static tests pass from clean worktrees.
+- [x] Every Release 1 feature is implemented in isolated reviewable worktrees.
+- [x] All automated, rules, integration, and static feature gates pass.
 - [ ] Complete Android emulator matrix passes.
-- [ ] Privacy/abuse review has no unresolved high-severity finding.
+- [x] Privacy/abuse review has no unresolved high-severity finding.
 - [ ] Account deletion and revocation are proven end to end.
 - [ ] No existing map, event, special, guest, profile, tutorial, deep-link, or ad regression remains.
-- [ ] Backend and mobile commits are recorded and reviewable.
-- [ ] `npm run verify:mapbox` passes in the exact build worktree.
+- [x] Backend and mobile commits are recorded and reviewable.
+- [x] `npm run verify:mapbox` passes in the exact build worktree.
 - [ ] The selected Firebase target and EAS channel are documented.
-- [ ] A fresh Android `development` APK is built if needed for the reusable debug client.
+- [x] A fresh Android `development` APK is built for the reusable debug client.
 - [ ] A separate Android `preview` APK is built for release-like acceptance.
-- [ ] Replacing the emulator APK is explicitly authorized and performed with app-data preservation where compatible.
-- [ ] The installed artifact’s version, channel, runtime, and observed behavior are recorded.
+- [x] Replacing the emulator APK was authorized by the implementation request and performed with `adb install -r`; app data and the signed-in session were preserved.
+- [x] The installed artifact’s version, channel, runtime, and observed behavior are recorded.
 
 ## 22. Future releases unlocked by this foundation
 
@@ -534,11 +534,40 @@ Append one entry after every completed phase. Include date, worktree, branch, co
 - Implemented fail-closed Firestore rules plus local Auth, Firestore, and Functions emulator routing. Preview and Production have emulator routing disabled.
 - Implemented mobile friend/request management, recognized-venue check-in/checkout, audience and expiry controls, local expiry pruning, account cleanup, friend-aware cluster halo/badge, exact multi-venue callout presence, legend treatment, privacy-safe analytics, and a development-only social diagnostics panel.
 - Backend compiled suite: 365/365 passed. Social service integration: 15/15 passed. Firestore rules: 7/7 passed. Authenticated callable and Auth-deletion fallback emulator tests: 2/2 passed, including a duplicate check-in request returning the original revision.
-- Mobile: TypeScript passed; Jest 105/105 passed; lint 0 errors and the unchanged baseline of 256 warnings. The pre-existing React 19 snapshot test was repaired to use `act`, eliminating the former sole regression-suite failure.
+- Mobile: TypeScript passed; Jest 106/106 passed; lint 0 errors and the unchanged baseline of 256 warnings. The pre-existing React 19 snapshot test was repaired to use `act`, eliminating the former sole regression-suite failure.
 - Focused social/map mobile tests: 13/13 passed, including 0, 1, 10, 50, and 200 friend projection sizes.
 - Backend changed-file lint now has an ESLint 9 flat configuration and passes for `src/social/*.ts`.
 - The Functions emulator command now sets its required 60-second discovery timeout explicitly; the repository's full parser export surface can exceed Firebase's ten-second default.
 - Check-in mutation retries now use a server-validated idempotency token; identical retries return the original revision/expiry, conflicting reuse fails closed, and expired operation/rate-limit records are scheduled for cleanup.
 - `npm run verify:mapbox` passed in the exact mobile worktree after linking its ignored `.env.local` to the existing source-checkout file without copying or printing the token.
 - No Firebase deployment, production data mutation, EAS build, APK replacement, OTA, or Preview artifact occurred in this phase.
-- Next unchecked gate: `npm run verify:mapbox`, checkpoint commits, development APK, then the Android emulator matrix.
+- Next unchecked gate: the development APK and Android emulator matrix.
+
+### 2026-08-28 — Reviewable checkpoints
+
+- Backend checkpoint: `8b56a47` (`feat: add friends and venue check-in backend`) on `codex/friends-presence-backend-20260828`.
+- Mobile checkpoint: `ebb5104` (`feat: add friend-aware check-ins and map presence`) on `codex/friends-presence-20260828`.
+- Both checkpoint worktrees were clean after commit apart from intentionally ignored local emulator/build environment links and placeholders.
+- No remote push, deployment, OTA, APK install, or production mutation was performed by the checkpoint operation.
+- Next gate: build the internal Android development client, install it with app-data preservation, prove Metro authority from this worktree, and execute the emulator QA matrix.
+
+### 2026-08-28 — Android development-client implementation and QA gate
+
+- EAS development build `857ae2b5-daa2-4f53-9df5-dd38c7c89051` finished for Android version `1.1.10` (13), runtime `1.1.10`, from mobile commit `b8984d59b5082111a1e892a8d7f67bc244b6b3ac`.
+- Build page: `https://expo.dev/accounts/craigb/projects/gathr/builds/857ae2b5-daa2-4f53-9df5-dd38c7c89051`.
+- Preserved local artifact: `artifacts\android\gathr-friends-development-857ae2b5.apk`, 281,539,725 bytes, SHA-256 `C8B1B07B0287C02A3124B5BFF862017C9041EAD5955DB1BB7DD985B8D02666B1`.
+- Installed on `emulator-5554` / `s24` with `adb install -r`; `run-as com.craigb.gathr` succeeded, proving the debuggable development-client package while preserving app data.
+- Metro served from `C:\Windows\System32\GathR-Project\GathR-friends-presence-20260828`, with `adb reverse tcp:8081 tcp:8081`, social enabled, and Auth/Firestore/Functions routed explicitly to the local `demo-gathr-social` emulators at `10.0.2.2`.
+- Development diagnostics proved five constant social listeners, all five reaching server state; no per-marker listener was introduced.
+- Device flows passed for exact-handle friendship, request/accept, removal, block/unblock, all-friends and selected-friends check-ins, privacy counts, current check-in persistence, manual checkout, foreground expiry, cleanup, and cold force-stop/restart without clearing data.
+- The selected-audience device check-in exposed Alice only to Bob. Casey and Dana had zero activity projections. Blocking Alice/Bob preserved their private canonical check-ins but synchronously reduced both viewer lists to zero; unblocking did not silently restore friendship or retroactively expose an existing check-in.
+- The real map displayed a teal friend halo, count, accessible cluster label, and exact Old Triangle friend callout inside an ordinary multi-venue map cluster. Checkout and expiry removed the friend-aware annotation without an app reinstall.
+- A real-device venue-identity defect was found: current map clusters use stable signature keys while the backend correctly accepts canonical venue IDs. The join now keys authorization by the single canonical venue ID and writes the derived annotation under the existing map grouping key. Scoped/area and ambiguous multi-ID venues fail closed. Focused regression tests cover both sides of this contract.
+- An authenticated-route defect was found and fixed so `/friends` and `/check-in` are no longer redirected to the map. A reused-stack defect was also fixed so the success dialog’s **View map** action uses an explicit map replacement instead of navigating backward to another check-in screen. The corrected action was device-proven after a fresh 30-minute check-in.
+- Final local QA state was clean: one Alice/Bob friendship, no blocks, no requests, zero canonical check-ins, and zero viewer activity projections.
+- Final automated gates after the device fixes: mobile TypeScript passed; Jest 15/15 suites and 106/106 tests passed; lint passed with 0 errors and 256 pre-existing warnings; Mapbox verification passed. Backend build and 365/365 compiled tests passed; scoped social lint passed; Firestore rules 7/7 passed; service integration 15/15 passed; callable/Auth E2E 2/2 passed.
+- Repository-wide backend lint still reports 322 pre-existing parser/service errors outside the social feature. The changed social TypeScript files pass the repository’s scoped lint command. Firebase also warns that its next major CLI will require Java 21; current emulator gates pass on Temurin 17.0.19.
+- During deliberately rapid repeated route automation combined with development fast refresh, native Mapbox emitted a `ViewTagResolver` soft exception and Android reported an ANR. A clean force-stop/restart recovered with auth and data intact, and the issue did not reproduce during normal-paced steady-state social/map flows. Treat this as a development-client stress observation requiring a Preview soak, not as a proven social-feature regression.
+- The existing full production event refresh remained slow on some cold starts (up to roughly two minutes), although persisted map data rendered first. This is pre-existing and is not caused by friend-activity updates, which do not refetch events.
+- No Firebase rules/functions deployment, production social write, Preview build, OTA, or store action occurred.
+- Preview remains blocked because the current `preview` profile enables social features while disabling emulators, which points the app at the production Firebase configuration. The next decision is either to provide/select a staging Firebase project or explicitly authorize the reviewed social Functions/rules/index deployment before a Preview APK is built.

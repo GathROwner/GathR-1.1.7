@@ -49,6 +49,12 @@ import SharedEventPushRegistration from '../components/sharedEvent/SharedEventPu
 import SharedEventUploadManager from '../components/sharedEvent/SharedEventUploadManager';
 import { preloadStartupLocation } from '../utils/startupLocationCache';
 import { GATHR_MAPBOX_STYLE_URL, initializeMapboxAccessToken } from '../utils/mapboxAccessToken';
+import { SOCIAL_FEATURE_ENABLED } from '../types/social';
+import {
+  EVENTS_PERSIST_MAX_AGE_MS,
+  EVENTS_QUERY_GC_MS,
+  EVENTS_QUERY_STALE_MS,
+} from '../lib/eventCachePolicy';
 
 
   // ðŸš€ PERFORMANCE: Preload data on app start
@@ -945,6 +951,9 @@ useEffect(() => {
     const onInterestSelection = segments[0] === 'interest-selection';
     const inAuthFlow = onLoginScreen || onInterestSelection;
     const inProfileScreen = segments[0] === 'profile';
+    const inAuthenticatedSocialFlow =
+      SOCIAL_FEATURE_ENABLED &&
+      (segments[0] === 'friends' || segments[0] === 'check-in');
     const onSharedEventScreen = segments[0] === 'shared-event';
     const inSharedEventFlow = onSharedEventScreen || isRoutingShareIntent;
 
@@ -964,7 +973,13 @@ useEffect(() => {
     if (onLoginScreen) {
       console.log('Redirecting authenticated user from login to main app');
       safeReplace('/(tabs)/map');
-    } else if (!inTabsGroup && !inProfileScreen && !inAuthFlow && !inSharedEventFlow) {
+    } else if (
+      !inTabsGroup &&
+      !inProfileScreen &&
+      !inAuthenticatedSocialFlow &&
+      !inAuthFlow &&
+      !inSharedEventFlow
+    ) {
       // Redirect from other non-app screens
       console.log('Redirecting authenticated user to main app');
       safeReplace('/(tabs)/map');

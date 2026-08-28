@@ -152,7 +152,7 @@ export default function CheckInScreen() {
         Alert.alert(
           ownCheckIn ? 'Check-in updated' : 'Checked in',
           formatCheckInVisibilityCopy(result.viewerCount, result.expiresAt),
-          [{ text: 'View map', onPress: () => router.back() }]
+          [{ text: 'View map', onPress: () => router.replace('/(tabs)/map') }]
         );
       } catch (error) {
         Alert.alert('Could not check in', messageForError(error));
