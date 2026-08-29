@@ -44,7 +44,7 @@ import {
   useMapStore,
 } from '../mapStore';
 import { getEventTimeStatus } from '../../utils/dateUtils';
-import { TimeFilterType, TypeFilterCriteria } from '../../types/filter';
+import { DEFAULT_FILTER_CRITERIA, TimeFilterType, TypeFilterCriteria } from '../../types/filter';
 import type { Cluster, Event, Venue } from '../../types/events';
 
 let nextId = 0;
@@ -188,6 +188,58 @@ describe('doesEventMatchTypeFilters past gate', () => {
         context
       )
     ).toBe(false);
+  });
+});
+
+describe('friend-presence visibility override', () => {
+  it('keeps a zero-content social marker visible under event filters', () => {
+    const friend = {
+      uid: 'friend-one',
+      ownerUid: 'friend-one',
+      displayName: 'Friend One',
+      photoURL: '',
+      socialHandle: 'friend_one',
+      venueId: 'venue-one',
+      venueLocationKey: 'venue:venue-one',
+      venueName: 'Venue One',
+      message: '',
+      createdAt: NOW.getTime(),
+      expiresAt: NOW.getTime() + 60_000,
+      revision: 'one',
+    };
+    const socialCluster: Cluster = {
+      id: 'friend-presence:venue-one',
+      clusterType: 'single',
+      venues: [{
+        locationKey: 'venue:venue-one',
+        venue: 'Venue One',
+        address: '1 Test St',
+        latitude: 46.23,
+        longitude: -63.12,
+        events: [],
+      }],
+      timeStatus: 'today',
+      interestLevel: 'low',
+      isBroadcasting: false,
+      eventCount: 0,
+      specialCount: 0,
+      categories: [],
+      friendPresence: {
+        friendCount: 1,
+        displayCount: '1',
+        previewFriends: [friend],
+        venues: {
+          'venue:venue-one': {
+            venueLocationKey: 'venue:venue-one',
+            venueName: 'Venue One',
+            friends: [friend],
+            friendCount: 1,
+          },
+        },
+      },
+    };
+
+    expect(useMapStore.getState().shouldClusterBeVisible(socialCluster, DEFAULT_FILTER_CRITERIA)).toBe(true);
   });
 });
 

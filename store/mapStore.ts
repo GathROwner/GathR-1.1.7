@@ -657,6 +657,11 @@ export const doesEventMatchTypeFilters = (
  * Determines if a cluster should be visible based on all active filters
  */
 const shouldClusterBeVisible = (cluster: Cluster, criteria: FilterCriteria): boolean => {
+  // Friend presence is a separate social overlay, not event content. Keep an
+  // authorized check-in visible even when time/category/search filters remove
+  // every event at that venue; its fallback cluster carries zero content counts.
+  if (cluster.friendPresence) return true;
+
   for (const venue of cluster.venues) {
     for (const event of venue.events) {
       // Apply type visibility filter first

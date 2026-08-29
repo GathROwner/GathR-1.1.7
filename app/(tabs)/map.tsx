@@ -76,7 +76,7 @@ import { getUserInterestsSync, getSavedEventsSync, getFavoriteVenuesSync } from 
 import { useClusterInteractionStore } from '../../store/clusterInteractionStore';
 import { setSocialMapDiagnostics, useSocialStore } from '../../store/socialStore';
 import { SOCIAL_FEATURE_ENABLED } from '../../types/social';
-import { annotateClustersWithFriendPresence } from '../../utils/friendPresence';
+import { mergeFriendPresenceIntoMapClusters } from '../../utils/friendPresence';
 
 // Trending lightbox (flame pill + cold-start auto-open)
 import { buildTrendingEvents } from '../../utils/trendingUtils';
@@ -381,6 +381,7 @@ const isAndroidHotspotStartupFlowActive = (): boolean => {
 };
 
 const getStartupClusterScore = (cluster: Cluster): number => {
+  const friendPresenceScore = cluster.friendPresence ? 200000 : 0;
   const statusScore =
     cluster.timeStatus === 'now'
       ? 100000
@@ -388,7 +389,7 @@ const getStartupClusterScore = (cluster: Cluster): number => {
       ? 50000
       : 0;
   const contentScore = ((cluster.eventCount || 0) + (cluster.specialCount || 0)) * 100;
-  return statusScore + contentScore + (cluster.venues?.length || 0);
+  return friendPresenceScore + statusScore + contentScore + (cluster.venues?.length || 0);
 };
 
 const pickStartupClusters = (clusters: Cluster[], limit: number): Cluster[] => {
@@ -3250,11 +3251,12 @@ useEffect(() => {
   // (Combined object selectors with shallow cause getSnapshot caching issues)
   const baseClusters = useMapStore((state) => state.clusters);
   const friendActivity = useSocialStore((state) => state.activity);
+  const events = useMapStore((state) => state.events);
   const clusters = useMemo(
     () => SOCIAL_FEATURE_ENABLED
-      ? annotateClustersWithFriendPresence(baseClusters, friendActivity)
+      ? mergeFriendPresenceIntoMapClusters(baseClusters, friendActivity, events)
       : baseClusters,
-    [baseClusters, friendActivity]
+    [baseClusters, events, friendActivity]
   );
   useEffect(() => {
     const friendClusters = clusters.filter((cluster) => Boolean(cluster.friendPresence));
@@ -3263,7 +3265,6 @@ useEffect(() => {
     );
     setSocialMapDiagnostics(friendClusters.length, friendVenueKeys.size);
   }, [clusters]);
-  const events = useMapStore((state) => state.events);
   const filteredEvents = useMapStore((state) => state.filteredEvents);
   const viewportEvents = useMapStore((state) => state.viewportEvents);
   const selectedVenue = useMapStore((state) => state.selectedVenue);
@@ -7119,7 +7120,7 @@ lastOpenedClusterIdRef.current = cluster.id;
           : [];
       const primaryCityEvent = cityEvents[0];
       const shouldOpenCalloutForMarker = !primaryCityEvent || sortedVenues.length > 1;
-      const calloutCluster = cluster.clusterType === 'multi' ? cluster : null;
+      const calloutCluster = cluster.clusterType === 'multi' || cluster.friendPresence ? cluster : null;
 
       if (shouldOpenCalloutForMarker) {
         if (Platform.OS === 'android') {
@@ -9468,6 +9469,7 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
     const orderedClustersForRender = Platform.OS === 'android'
       ? [...clustersForRender].sort((a, b) => {
           const getPriority = (cluster: Cluster) =>
+            (cluster.friendPresence ? 1000000 : 0) +
             cluster.venues.length * 1000 +
             (cluster.eventCount || 0) * 10 +
             (cluster.specialCount || 0) * 10 +

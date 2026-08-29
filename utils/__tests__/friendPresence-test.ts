@@ -6,6 +6,7 @@ import {
   getRecognizedVenueId,
   getVenueFriendPresence,
   isFriendActivityActive,
+  mergeFriendPresenceIntoMapClusters,
 } from '../friendPresence';
 
 const event = (id: string, venueId: string): Event => ({
@@ -159,6 +160,65 @@ describe('friend presence projection', () => {
     );
     expect(annotated.friendPresence?.venues[signatureVenue.locationKey].friendCount).toBe(1);
     expect(getVenueFriendPresence(annotated, signatureVenue)?.friends[0].ownerUid).toBe('alice');
+  });
+
+  it('adds a zero-content friend venue when event filters hide the recognized venue', () => {
+    const futureVenueEvent = {
+      ...event('future-one', 'one'),
+      startDate: '2026-09-03',
+      endDate: '2026-09-03',
+      venue: 'Venue one',
+      latitude: 46.236786,
+      longitude: -63.128785,
+    };
+    const merged = mergeFriendPresenceIntoMapClusters(
+      [],
+      [activity('alice', 'one', now + 60_000)],
+      [futureVenueEvent],
+      now
+    );
+
+    expect(merged).toHaveLength(1);
+    expect(merged[0]).toMatchObject({
+      id: 'friend-presence:one',
+      clusterType: 'single',
+      eventCount: 0,
+      specialCount: 0,
+      friendPresence: { friendCount: 1 },
+    });
+    expect(merged[0].venues[0]).toMatchObject({
+      locationKey: 'venue:one',
+      latitude: 46.236786,
+      longitude: -63.128785,
+      events: [],
+    });
+    expect(getVenueFriendPresence(merged[0], merged[0].venues[0])?.friends[0].ownerUid).toBe('alice');
+  });
+
+  it('does not duplicate a friend venue already represented by a filtered cluster', () => {
+    const existing = cluster('one', [venue('one')]);
+    const merged = mergeFriendPresenceIntoMapClusters(
+      [existing],
+      [activity('alice', 'one', now + 60_000)],
+      [event('future-one', 'one')],
+      now
+    );
+
+    expect(merged).toHaveLength(1);
+    expect(merged[0].id).toBe('one');
+    expect(merged[0].friendPresence?.friendCount).toBe(1);
+  });
+
+  it('fails closed when no loaded recognized venue supplies safe coordinates', () => {
+    const original = [cluster('two', [venue('two')])];
+    const merged = mergeFriendPresenceIntoMapClusters(
+      original,
+      [activity('alice', 'one', now + 60_000)],
+      [],
+      now
+    );
+
+    expect(merged).toEqual(original);
   });
 
   it('writes exact audience and expiry confirmation copy', () => {

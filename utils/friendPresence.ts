@@ -1,4 +1,4 @@
-import type { Cluster, Venue } from '../types/events';
+import type { Cluster, Event, Venue } from '../types/events';
 import type {
   ClusterFriendPresence,
   FriendActivityProjection,
@@ -100,6 +100,98 @@ export function annotateClustersWithFriendPresence(
     };
     return { ...cluster, friendPresence };
   });
+}
+
+/**
+ * Adds viewer-authorized friend presence to the filtered event clusters and
+ * creates a zero-content venue marker when the current event filters would
+ * otherwise hide a checked-in friend's recognized venue.
+ *
+ * The fallback deliberately carries no events or specials. This keeps event
+ * counts and time/category/search filters truthful while still making the
+ * social map reactive. Coordinates come only from a venue that already exists
+ * in the app's loaded event data; no raw or continuous friend location is used.
+ */
+export function mergeFriendPresenceIntoMapClusters(
+  clusters: Cluster[],
+  activities: FriendActivityProjection[],
+  sourceEvents: Event[],
+  nowMs = Date.now()
+): Cluster[] {
+  const annotated = annotateClustersWithFriendPresence(clusters, activities, nowMs);
+  const byVenue = buildFriendPresenceByVenue(activities, nowMs);
+  if (Object.keys(byVenue).length === 0) return annotated;
+
+  const matchedVenueIds = new Set<string>();
+  for (const cluster of annotated) {
+    for (const venue of cluster.venues) {
+      const venueId = getRecognizedVenueId(venue);
+      if (venueId && byVenue[venueId]) matchedVenueIds.add(venueId);
+    }
+  }
+
+  const representativeEvents = new Map<string, Event>();
+  for (const event of sourceEvents) {
+    const venueId = String(event.venueId || '').trim();
+    if (
+      !venueId ||
+      matchedVenueIds.has(venueId) ||
+      representativeEvents.has(venueId) ||
+      isScopedLocationEvent(event) ||
+      !Number.isFinite(event.latitude) ||
+      !Number.isFinite(event.longitude)
+    ) {
+      continue;
+    }
+    representativeEvents.set(venueId, event);
+  }
+
+  const fallbacks: Cluster[] = [];
+  for (const [venueId, presence] of Object.entries(byVenue)) {
+    if (matchedVenueIds.has(venueId)) continue;
+    const representative = representativeEvents.get(venueId);
+    if (!representative) continue;
+
+    const locationKey = presence.venueLocationKey || `venue:${venueId}`;
+    const friends = [...presence.friends].sort((a, b) => a.displayName.localeCompare(b.displayName));
+    const venue: Venue = {
+      locationKey,
+      venue: presence.venueName || representative.venue,
+      address: representative.address,
+      latitude: representative.latitude,
+      longitude: representative.longitude,
+      events: [],
+    };
+
+    fallbacks.push({
+      id: `friend-presence:${venueId}`,
+      clusterType: 'single',
+      venues: [venue],
+      timeStatus: 'today',
+      interestLevel: 'low',
+      isBroadcasting: false,
+      eventCount: 0,
+      specialCount: 0,
+      categories: [],
+      hasNewContent: false,
+      containsCityLevelEvent: false,
+      friendPresence: {
+        friendCount: friends.length,
+        displayCount: friends.length > 3 ? '3+' : String(friends.length),
+        previewFriends: friends.slice(0, 3),
+        venues: {
+          [locationKey]: {
+            ...presence,
+            venueLocationKey: locationKey,
+            friends,
+            friendCount: friends.length,
+          },
+        },
+      },
+    });
+  }
+
+  return fallbacks.length > 0 ? [...annotated, ...fallbacks] : annotated;
 }
 
 export function getVenueFriendPresence(cluster: Cluster | null, venue: Venue | null) {
