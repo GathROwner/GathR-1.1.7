@@ -9633,7 +9633,7 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
                     24,
                     Math.min(
                       500,
-                      getMetersPerPixel(pressCoordinate.latitude, zoomLevel) * 28
+                      getMetersPerPixel(pressCoordinate.latitude, zoomLevel) * 44
                     )
                   )
                 : 0;
@@ -10103,7 +10103,7 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
               circleSortKey: ['get', 'markerSortKey'] as any,
               circleStrokeColor: '#FFFFFF',
               circleStrokeWidth: 1.5,
-              circleTranslate: [22, -18],
+              circleTranslate: [-30, -24],
               circleTranslateAnchor: 'viewport',
             }}
           />
@@ -10120,7 +10120,7 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
               textIgnorePlacement: true,
               symbolSortKey: ['get', 'markerSortKey'] as any,
               textSize: 8,
-              textTranslate: [22, -18],
+              textTranslate: [-30, -24],
               textTranslateAnchor: 'viewport',
             }}
           />
