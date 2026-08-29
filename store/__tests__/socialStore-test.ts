@@ -2,7 +2,12 @@ jest.mock('../../services/socialService', () => ({
   subscribeToSocialData: jest.fn(() => jest.fn()),
 }));
 
-import { pruneExpiredSocialData, stopSocialListeners, useSocialStore } from '../socialStore';
+import {
+  filterAuthoritativeFriendActivity,
+  pruneExpiredSocialData,
+  stopSocialListeners,
+  useSocialStore,
+} from '../socialStore';
 
 describe('social store privacy lifecycle', () => {
   afterEach(() => stopSocialListeners());
@@ -53,5 +58,26 @@ describe('social store privacy lifecycle', () => {
     expect(useSocialStore.getState().uid).toBeNull();
     expect(useSocialStore.getState().error).toBeNull();
     expect(useSocialStore.getState().friends).toEqual([]);
+  });
+
+  it('fails closed for cached friend activity until the server confirms access', () => {
+    const now = Date.now();
+    const activity = [{
+      uid: 'friend',
+      ownerUid: 'friend',
+      displayName: 'Friend',
+      photoURL: '',
+      socialHandle: 'friend',
+      venueId: 'venue-1',
+      venueLocationKey: 'venue:venue-1',
+      venueName: 'Venue',
+      message: '',
+      createdAt: now - 1000,
+      expiresAt: now + 60_000,
+      revision: 'current',
+    }];
+
+    expect(filterAuthoritativeFriendActivity(activity, true)).toEqual([]);
+    expect(filterAuthoritativeFriendActivity(activity, false)).toEqual(activity);
   });
 });

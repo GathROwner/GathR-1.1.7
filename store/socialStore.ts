@@ -89,6 +89,14 @@ export function setSocialMapDiagnostics(friendClusterCount: number, friendVenueC
   useSocialStore.setState({ mapFriendClusterCount: friendClusterCount, mapFriendVenueCount: friendVenueCount });
 }
 
+export function filterAuthoritativeFriendActivity(
+  activity: FriendActivityProjection[],
+  fromCache: boolean
+) {
+  if (fromCache) return [];
+  return activity.filter((item) => isFriendActivityActive(item));
+}
+
 function handleAppState(nextState: AppStateStatus) {
   if (nextState === 'active') pruneExpiredSocialData();
 }
@@ -123,7 +131,11 @@ export function startSocialListeners(uid: string) {
       markListenerReady('requests', fromCache);
     },
     onActivity: (activity, fromCache) => {
-      const active = activity.filter((item) => isFriendActivityActive(item));
+      // Friend presence is authorization-sensitive. A cached projection may have
+      // been revoked on the server while this device was offline, so never put
+      // cached activity back on the map. The authoritative server snapshot will
+      // restore any activity the viewer is still allowed to see after reconnect.
+      const active = filterAuthoritativeFriendActivity(activity, fromCache);
       useSocialStore.setState({
         activity: active,
         activityReceivedCount: activity.length,
