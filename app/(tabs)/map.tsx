@@ -635,9 +635,13 @@ type AndroidClusterMarkerFeatureProperties = {
   categoryTextColor: string;
   clusterId: string;
   eventLabel: string;
+  friendCountLabel: string;
+  friendHaloRadius: number;
+  friendBadgeRadius: number;
   hasCategory: boolean;
   hasEvents: boolean;
   hasFirestoreEvents: boolean;
+  hasFriendPresence: boolean;
   hasNewContent: boolean;
   hasSpecials: boolean;
   isBroadcasting: boolean;
@@ -1116,6 +1120,7 @@ const buildAndroidClusterMarkerShape = (
       const hasFirestoreEvents = detailsEnabled && cluster.venues.some(venue =>
         venue.events.some(event => event.source === 'firestore')
       );
+      const hasFriendPresence = !!cluster.friendPresence;
       const categoryItems = detailsEnabled
         ? getAndroidClusterCategoryItems(cluster, options.userInterests)
         : [];
@@ -1151,9 +1156,13 @@ const buildAndroidClusterMarkerShape = (
           categoryTextColor: categoryItem?.isUserInterest ? '#4A90E2' : '#333333',
           clusterId: cluster.id,
           eventLabel: detailsEnabled && cluster.eventCount > 0 ? String(cluster.eventCount) : '',
+          friendCountLabel: hasFriendPresence ? `F${cluster.friendPresence?.displayCount || ''}` : '',
+          friendHaloRadius: markerRadius + 8,
+          friendBadgeRadius: 8.5,
           hasCategory: detailsEnabled && categoryItem != null,
           hasEvents: detailsEnabled && cluster.eventCount > 0,
           hasFirestoreEvents,
+          hasFriendPresence,
           hasNewContent: detailsEnabled && !!cluster.hasNewContent,
           hasSpecials: detailsEnabled && cluster.specialCount > 0,
           isBroadcasting,
@@ -1165,7 +1174,11 @@ const buildAndroidClusterMarkerShape = (
           markerLabelRadius: 12,
           markerOuterRingRadius: markerRadius + 7,
           markerRadius: markerRadius + (isBroadcasting ? pulseBreath * 0.55 : 0),
-          markerSortKey: Math.round(densityWeight * 10) + (isSelected ? 1000 : 0) + (isProcessing ? 500 : 0),
+          markerSortKey:
+            Math.round(densityWeight * 10) +
+            (hasFriendPresence ? 10000 : 0) +
+            (isSelected ? 1000 : 0) +
+            (isProcessing ? 500 : 0),
           markerStrokeColor: isSelected ? '#202124' : '#FFFFFF',
           markerStrokeWidth: isSelected ? 3 : 2,
           markerStatusDotRadius: Math.max(markerRadius * 0.24, 3.5),
@@ -9600,7 +9613,11 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
               return;
             }
 
-            const feature = event?.features?.[0];
+            const features = Array.isArray(event?.features) ? event.features : [];
+            const feature = [...features].sort((first: any, second: any) =>
+              Number(second?.properties?.markerSortKey || 0) -
+              Number(first?.properties?.markerSortKey || 0)
+            )[0];
             const clusterId = feature?.properties?.clusterId;
             const cluster = interestFilteredClustersForRender.find((item) => item.id === clusterId);
             logAndroidZoomTapLatencyProbe('native_shape_press_received', {
@@ -9694,6 +9711,19 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
               circleStrokeColor: ['get', 'markerColor'] as any,
               circleStrokeOpacity: 0.8,
               circleStrokeWidth: 2,
+            }}
+          />
+          <MapboxGL.CircleLayer
+            id="android-cluster-layer-friend-halos"
+            filter={['==', ['get', 'hasFriendPresence'], true] as any}
+            style={{
+              circleColor: '#2DD4BF',
+              circleOpacity: 0.18,
+              circleRadius: ['get', 'friendHaloRadius'] as any,
+              circleSortKey: ['get', 'markerSortKey'] as any,
+              circleStrokeColor: '#0F766E',
+              circleStrokeOpacity: 0.95,
+              circleStrokeWidth: 3.5,
             }}
           />
           <MapboxGL.SymbolLayer
@@ -10034,6 +10064,36 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
               symbolSortKey: ['get', 'markerSortKey'] as any,
               textSize: ['get', 'markerTextSize'] as any,
               textTranslate: [4, 0],
+              textTranslateAnchor: 'viewport',
+            }}
+          />
+          <MapboxGL.CircleLayer
+            id="android-cluster-layer-friend-badges"
+            filter={['==', ['get', 'hasFriendPresence'], true] as any}
+            style={{
+              circleColor: '#0F766E',
+              circleRadius: ['get', 'friendBadgeRadius'] as any,
+              circleSortKey: ['get', 'markerSortKey'] as any,
+              circleStrokeColor: '#FFFFFF',
+              circleStrokeWidth: 1.5,
+              circleTranslate: [13, 13],
+              circleTranslateAnchor: 'viewport',
+            }}
+          />
+          <MapboxGL.SymbolLayer
+            id="android-cluster-layer-friend-labels"
+            filter={['==', ['get', 'hasFriendPresence'], true] as any}
+            style={{
+              textAllowOverlap: true,
+              textAnchor: 'center',
+              textColor: '#FFFFFF',
+              textField: ['get', 'friendCountLabel'] as any,
+              textHaloColor: '#0F766E',
+              textHaloWidth: 0.5,
+              textIgnorePlacement: true,
+              symbolSortKey: ['get', 'markerSortKey'] as any,
+              textSize: 8,
+              textTranslate: [13, 13],
               textTranslateAnchor: 'viewport',
             }}
           />
