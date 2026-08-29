@@ -5,6 +5,7 @@ import type {
   SocialTimestamp,
   VenueFriendPresence,
 } from '../types/social';
+import { calculateDistance, type GeoCoordinate } from './geoUtils';
 import { isScopedLocationEvent } from './locationScope';
 
 export function socialTimestampToMillis(value: SocialTimestamp): number | null {
@@ -192,6 +193,56 @@ export function mergeFriendPresenceIntoMapClusters(
   }
 
   return fallbacks.length > 0 ? [...annotated, ...fallbacks] : annotated;
+}
+
+/**
+ * Resolves a friend-aware cluster from the geographic tap position rather than
+ * trusting the first native shape feature returned by Mapbox. Android may
+ * return only the visually dominant event marker when a zero-content friend
+ * venue sits underneath it, so the social target needs an explicit proximity
+ * check to remain tappable.
+ */
+export function findFriendPresenceClusterNearCoordinate(
+  clusters: Cluster[],
+  coordinate: GeoCoordinate,
+  maxDistanceMeters: number
+): Cluster | null {
+  if (
+    !Number.isFinite(coordinate.latitude) ||
+    !Number.isFinite(coordinate.longitude) ||
+    !Number.isFinite(maxDistanceMeters) ||
+    maxDistanceMeters <= 0
+  ) {
+    return null;
+  }
+
+  let closest: { cluster: Cluster; distanceMeters: number } | null = null;
+  for (const cluster of clusters) {
+    if (!cluster.friendPresence || cluster.venues.length === 0) continue;
+    const validVenues = cluster.venues.filter(
+      (venue) => Number.isFinite(venue.latitude) && Number.isFinite(venue.longitude)
+    );
+    if (validVenues.length === 0) continue;
+
+    const center = validVenues.reduce(
+      (result, venue) => ({
+        latitude: result.latitude + venue.latitude,
+        longitude: result.longitude + venue.longitude,
+      }),
+      { latitude: 0, longitude: 0 }
+    );
+    center.latitude /= validVenues.length;
+    center.longitude /= validVenues.length;
+    const distanceMeters = calculateDistance(coordinate, center);
+    if (
+      distanceMeters <= maxDistanceMeters &&
+      (closest === null || distanceMeters < closest.distanceMeters)
+    ) {
+      closest = { cluster, distanceMeters };
+    }
+  }
+
+  return closest?.cluster ?? null;
 }
 
 export function getVenueFriendPresence(cluster: Cluster | null, venue: Venue | null) {

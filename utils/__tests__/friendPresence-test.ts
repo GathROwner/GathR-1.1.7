@@ -3,6 +3,7 @@ import type { FriendActivityProjection } from '../../types/social';
 import {
   annotateClustersWithFriendPresence,
   formatCheckInVisibilityCopy,
+  findFriendPresenceClusterNearCoordinate,
   getRecognizedVenueId,
   getVenueFriendPresence,
   isFriendActivityActive,
@@ -219,6 +220,38 @@ describe('friend presence projection', () => {
     );
 
     expect(merged).toEqual(original);
+  });
+
+  it('prefers a nearby friend marker when native map layers overlap', () => {
+    const friendCluster = mergeFriendPresenceIntoMapClusters(
+      [],
+      [activity('alice', 'one', now + 60_000)],
+      [{
+        ...event('future-one', 'one'),
+        latitude: 46.236786,
+        longitude: -63.128785,
+      }],
+      now
+    )[0];
+    const unrelatedCluster = {
+      ...cluster('nearby-events', [venue('two')]),
+      venues: [{
+        ...venue('two'),
+        latitude: 46.2376,
+        longitude: -63.1302,
+      }],
+    };
+
+    expect(findFriendPresenceClusterNearCoordinate(
+      [unrelatedCluster, friendCluster],
+      { latitude: 46.23679, longitude: -63.12879 },
+      40
+    )?.id).toBe('friend-presence:one');
+    expect(findFriendPresenceClusterNearCoordinate(
+      [unrelatedCluster, friendCluster],
+      { latitude: 46.24, longitude: -63.14 },
+      40
+    )).toBeNull();
   });
 
   it('writes exact audience and expiry confirmation copy', () => {

@@ -76,7 +76,10 @@ import { getUserInterestsSync, getSavedEventsSync, getFavoriteVenuesSync } from 
 import { useClusterInteractionStore } from '../../store/clusterInteractionStore';
 import { setSocialMapDiagnostics, useSocialStore } from '../../store/socialStore';
 import { SOCIAL_FEATURE_ENABLED } from '../../types/social';
-import { mergeFriendPresenceIntoMapClusters } from '../../utils/friendPresence';
+import {
+  findFriendPresenceClusterNearCoordinate,
+  mergeFriendPresenceIntoMapClusters,
+} from '../../utils/friendPresence';
 
 // Trending lightbox (flame pill + cold-start auto-open)
 import { buildTrendingEvents } from '../../utils/trendingUtils';
@@ -93,6 +96,7 @@ import { ZOOM_THRESHOLDS, getThresholdIndexForZoom, calculateDistance } from '..
 // Import viewport calculation utilities
 import {
   getViewportBoundingBox,
+  getMetersPerPixel,
   roundBoundingBoxForCache,
   formatBoundingBoxForAPI,
   type BoundingBox,
@@ -3265,11 +3269,13 @@ useEffect(() => {
   const baseClusters = useMapStore((state) => state.clusters);
   const friendActivity = useSocialStore((state) => state.activity);
   const events = useMapStore((state) => state.events);
+  const allEvents = useMapStore((state) => state.allEvents);
+  const friendVenueSourceEvents = allEvents.length > 0 ? allEvents : events;
   const clusters = useMemo(
     () => SOCIAL_FEATURE_ENABLED
-      ? mergeFriendPresenceIntoMapClusters(baseClusters, friendActivity, events)
+      ? mergeFriendPresenceIntoMapClusters(baseClusters, friendActivity, friendVenueSourceEvents)
       : baseClusters,
-    [baseClusters, events, friendActivity]
+    [baseClusters, friendActivity, friendVenueSourceEvents]
   );
   useEffect(() => {
     const friendClusters = clusters.filter((cluster) => Boolean(cluster.friendPresence));
@@ -9619,10 +9625,31 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
               Number(first?.properties?.markerSortKey || 0)
             )[0];
             const clusterId = feature?.properties?.clusterId;
-            const cluster = interestFilteredClustersForRender.find((item) => item.id === clusterId);
+            const pressCoordinate = event?.coordinates;
+            const friendHitRadiusMeters =
+              Number.isFinite(pressCoordinate?.latitude) &&
+              Number.isFinite(pressCoordinate?.longitude)
+                ? Math.max(
+                    24,
+                    Math.min(
+                      500,
+                      getMetersPerPixel(pressCoordinate.latitude, zoomLevel) * 28
+                    )
+                  )
+                : 0;
+            const friendCluster = friendHitRadiusMeters > 0
+              ? findFriendPresenceClusterNearCoordinate(
+                  interestFilteredClustersForRender,
+                  pressCoordinate,
+                  friendHitRadiusMeters
+                )
+              : null;
+            const cluster = friendCluster ??
+              interestFilteredClustersForRender.find((item) => item.id === clusterId);
             logAndroidZoomTapLatencyProbe('native_shape_press_received', {
               featureCount: Array.isArray(event?.features) ? event.features.length : 0,
-              clusterId: clusterId ?? 'none',
+              clusterId: cluster?.id ?? clusterId ?? 'none',
+              friendClusterPreferred: Boolean(friendCluster),
               matchedCluster: Boolean(cluster),
             });
             if (cluster) {
@@ -10076,7 +10103,7 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
               circleSortKey: ['get', 'markerSortKey'] as any,
               circleStrokeColor: '#FFFFFF',
               circleStrokeWidth: 1.5,
-              circleTranslate: [13, 13],
+              circleTranslate: [22, -18],
               circleTranslateAnchor: 'viewport',
             }}
           />
@@ -10093,7 +10120,7 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
               textIgnorePlacement: true,
               symbolSortKey: ['get', 'markerSortKey'] as any,
               textSize: 8,
-              textTranslate: [13, 13],
+              textTranslate: [22, -18],
               textTranslateAnchor: 'viewport',
             }}
           />
