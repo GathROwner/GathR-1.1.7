@@ -26,7 +26,7 @@ import * as Application from 'expo-application';
 import Constants from 'expo-constants';
 import * as Updates from 'expo-updates';
 import { auth, firestore, storage } from '../config/firebaseConfig';
-import { doc, getDoc, updateDoc, deleteDoc, addDoc, collection, query, where, getDocs, serverTimestamp } from 'firebase/firestore';
+import { doc, getDoc, setDoc, deleteDoc, addDoc, collection, query, where, getDocs, serverTimestamp } from 'firebase/firestore';
 import { 
   signOut, 
   deleteUser, 
@@ -937,25 +937,42 @@ useEffect(() => {
     router.replace('/');
     return;
   }
-  if (cachedProfile) {
-    setEmail(currentUser.email || '');
-    setDisplayName(cachedProfile.displayName || '');
-    setEditedDisplayName(cachedProfile.displayName || '');
-    setPhotoURL(cachedProfile.photoURL || '');
-    setUserInterests(cachedProfile.userInterests || []);
-
-    if (cachedProfile.createdAt) {
-      const createdAt = cachedProfile.createdAt.toDate
-        ? cachedProfile.createdAt.toDate()
-        : new Date(cachedProfile.createdAt);
-      setMemberSince(createdAt.toLocaleDateString('en-US', {
-        month: 'long',
-        year: 'numeric',
-      }));
-    }
-    setLoading(false);
+  if (profileFetching) {
+    return;
   }
-}, [cachedProfile, currentUser?.uid, router]);
+
+  // A profile document can be temporarily unavailable (for example, during
+  // first-account provisioning or an offline read). The authenticated user is
+  // still enough to render a useful profile, so never leave the whole screen
+  // behind an indefinite spinner waiting for optional Firestore data.
+  const nextDisplayName = cachedProfile?.displayName || currentUser.displayName || '';
+  setEmail(currentUser.email || '');
+  setDisplayName(nextDisplayName);
+  setEditedDisplayName(nextDisplayName);
+  setPhotoURL(cachedProfile?.photoURL || currentUser.photoURL || '');
+  setUserInterests(cachedProfile?.userInterests || []);
+
+  if (cachedProfile?.createdAt) {
+    const createdAt = cachedProfile.createdAt.toDate
+      ? cachedProfile.createdAt.toDate()
+      : new Date(cachedProfile.createdAt);
+    setMemberSince(createdAt.toLocaleDateString('en-US', {
+      month: 'long',
+      year: 'numeric',
+    }));
+  } else {
+    setMemberSince('');
+  }
+  setLoading(false);
+}, [
+  cachedProfile,
+  currentUser?.displayName,
+  currentUser?.email,
+  currentUser?.photoURL,
+  currentUser?.uid,
+  profileFetching,
+  router,
+]);
 
 
 
@@ -1048,7 +1065,9 @@ useEffect(() => {
         setPhotoURL(newPhotoURL);
       }
 
-      await updateDoc(userRef, updateData);
+      // Merge creates the profile document if account provisioning has not
+      // written it yet, while preserving all unrelated server-owned fields.
+      await setDoc(userRef, updateData, { merge: true });
       
       setDisplayName(editedDisplayName);
       setNewPhotoURI('');
