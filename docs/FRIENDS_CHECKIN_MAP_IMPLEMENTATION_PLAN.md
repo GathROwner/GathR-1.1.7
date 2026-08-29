@@ -1,10 +1,11 @@
 # Friends, Check-Ins, and Friend-Aware Map Implementation Plan
 
 Status: **Release 1 implementation, isolated staging deployment, automated gates, and Android development-client QA complete; staging Preview build and release-like device acceptance in progress**
-Created: **2026-08-28**  
-Primary mobile repository: `C:\Windows\System32\GathR-Project\GathR-upgrade-sdk54`  
+
+Created: **2026-08-28**
+Primary mobile repository: `C:\Windows\System32\GathR-Project\GathR-upgrade-sdk54`
 Primary backend repository: `C:\Users\craig\Dev\gathr-apps-script\functions`
-Mobile implementation worktree: `C:\Windows\System32\GathR-Project\GathR-friends-presence-20260828`  
+Mobile implementation worktree: `C:\Windows\System32\GathR-Project\GathR-friends-presence-20260828`
 Backend implementation worktree: `C:\Users\craig\Dev\gathr-apps-script-friends-presence-20260828`
 
 This is the durable execution checklist for the first GathR social release. Every phase must leave evidence in the progress log at the end of this document. A checked box means the item was implemented and verified, not merely attempted.
