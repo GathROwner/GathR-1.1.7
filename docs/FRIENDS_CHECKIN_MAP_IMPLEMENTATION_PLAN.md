@@ -1,6 +1,6 @@
 # Friends, Check-Ins, and Friend-Aware Map Implementation Plan
 
-Status: **Release 1 implementation, isolated staging deployment, automated gates, and Android development-client QA complete; staging Preview build and release-like device acceptance in progress**
+Status: **Release 1 complete: implementation, isolated staging deployment, automated gates, Android development-client QA, fixed-screen UX, and release-like Android Preview acceptance all passed**
 
 Created: **2026-08-28**
 Primary mobile repository: `C:\Windows\System32\GathR-Project\GathR-upgrade-sdk54`
@@ -83,6 +83,7 @@ These are future releases, not unfinished Release 1 work:
 - No viewer can query another user’s raw check-in record.
 - Exact email, phone number, and precise device location are not exposed by friend discovery.
 - Server timestamps determine relationship and expiry state; device time is display-only.
+- Primary app screens should keep their essential information and actions inside one phone viewport. Event feeds, specials feeds, and callout content may scroll; variable relationship, venue, friend-picker, and secondary settings content must use bounded internal scrolling. Any future full-page scrolling exception requires a concrete usability reason.
 - Expired activity is hidden immediately by the client even if backend TTL cleanup has not run yet.
 - Blocking revokes both users’ projections before the block operation reports success.
 - Analytics and production logs contain no names, messages, coordinates, or raw user IDs.
@@ -458,10 +459,18 @@ All QA uses the existing `s24` AVD without clearing app data unless separately a
 - [x] Listener count is constant relative to marker count.
 - [x] Normal-paced map interaction and friend-presence callout rendering remain within the current development-client regression tolerance.
 - [x] Test 0, 1, 10, 50, and 200 friend projections in deterministic mobile tests.
-- [ ] Test rapid zoom/pan while activity changes.
-- [ ] Test stale cache and reconnect without unauthorized data flashing.
+- [x] Test rapid zoom/pan while activity changes.
+- [x] Test stale cache and reconnect without unauthorized data flashing.
 - [x] Test backend partial failures and function retries.
-- [ ] Verify Firestore read/write estimates before staging or production rollout.
+- [x] Verify Firestore read/write estimates before staging or production rollout.
+
+Firestore operation estimates at the enforced 200-viewer ceiling:
+
+- The app uses five constant social listener targets per signed-in user: friends, requests, friend activity, blocks, and the user's own active check-in. The count does not grow with map markers. Initial returned documents are `friends + requests + authorized activity + blocks + optional own check-in`; the largest deterministic test case returns 200 friends plus 200 authorized activity projections before empty-query billing minimums.
+- An all-friends check-in for `N` candidates performs approximately `4N + 4` backend document reads: the audience query, four base documents, and relationship/two-way-block validation. Selected-friends mode performs `3N + 4` reads because it does not query the full friend list. At `N = 200`, those are 804 and 604 reads respectively.
+- A new check-in writes `N + 2` documents: the canonical check-in, one viewer projection per authorized friend, and the idempotency record. Replacing a prior check-in writes/deletes `P + N + 2`; with both old and new audiences at the 200-person ceiling, the maximum is 402 atomic writes.
+- Checkout reads the canonical check-in and deletes `N + 1` documents, at most 201. A pending friend request uses five transaction reads and three writes; acceptance uses five reads and five writes. Remove-friend uses three reads and seven to nine writes; block uses three reads and eight to ten writes, depending on whether either active check-in requires a viewer-list update.
+- One check-in revision delivers at most `N + 1` changed documents to active listeners: one projection per viewer and the owner's canonical check-in. The callable is rate-limited to 20 check-in mutations per user per hour. The operation ceiling is safe for Release 1, but a later audience limit increase requires a new cost and atomic-write review.
 
 ## 21. Definition of done for the final Android Preview candidate
 
@@ -469,7 +478,7 @@ All items below must be true:
 
 - [x] Every Release 1 feature is implemented in isolated reviewable worktrees.
 - [x] All automated, rules, integration, and static feature gates pass.
-- [ ] Complete Android emulator matrix passes.
+- [x] Complete Android emulator matrix passes.
 - [x] Privacy/abuse review has no unresolved high-severity finding.
 - [x] Account deletion and revocation are proven end to end in local emulators and isolated staging.
 - [x] No existing map, event, special, guest, profile, tutorial, deep-link, or ad regression remains in automated and normal-paced device QA.
@@ -477,7 +486,7 @@ All items below must be true:
 - [x] `npm run verify:mapbox` passes in the exact build worktree.
 - [x] The selected Firebase target (`gathr-social-staging`) and EAS `preview` channel are documented and fail closed away from local emulators.
 - [x] A fresh Android `development` APK is built for the reusable debug client.
-- [ ] A separate Android `preview` APK is built for release-like acceptance.
+- [x] A separate Android `preview` APK is built for release-like acceptance.
 - [x] Replacing the emulator APK was authorized by the implementation request and performed with `adb install -r`; app data and the signed-in session were preserved.
 - [x] The installed artifact’s version, channel, runtime, and observed behavior are recorded.
 
@@ -617,3 +626,21 @@ Append one entry after every completed phase. Include date, worktree, branch, co
 - Converted Interest Selection into a fixed three-column grid with persistent Cancel/Save actions; long category names no longer clip at 1.3x Android text size.
 - Normal and 1.3x emulator screenshots are stored under `artifacts\android\qa-fixed-screen`; the Profile dashboard, Profile editor, Interests, Friends, Check-in, venue/friend pickers, and More sheet keep their primary actions inside one `1080x2400` viewport.
 - Final local source gates passed after the fixed-screen changes: TypeScript, Jest 15/15 suites and 106/106 tests, lint with 0 errors, Mapbox runtime verification, and whitespace checks. The final Preview build and release-like staging acceptance remain to be run against the fixed-screen commit.
+
+### 2026-08-29 — Final composite Android Preview acceptance
+
+- Created clean composite release worktree `C:\Windows\System32\GathR-Project\GathR-friends-preview-ota-20260829` on `codex/friends-preview-ota-20260829`, based on the exact previously live Preview commit `54d2c9944d09fbb627b459f60aaa027b7d92234e`. The base remains a verified ancestor of the final code commit `761a6bd1927423411d1623b921bb03976444f428`.
+- Preserved the current live tutorial, profile, map, route/area, cache, and startup work while integrating the complete friends/check-in feature. Restored one live-referenced cache-policy module and repaired the current Profile import/test baseline during integration.
+- Built release-like Android Preview build `2e5c4e00-c386-49d0-8aa7-0d6204172324`, version `1.1.10` (13), runtime `1.1.10`. Build page: `https://expo.dev/accounts/craigb/projects/gathr/builds/2e5c4e00-c386-49d0-8aa7-0d6204172324`.
+- Preserved APK: `artifacts\android\gathr-friends-definitive-preview-2e5c4e00.apk`, 227,353,599 bytes, SHA-256 `5E736606BCFF273A5DD821BC344D77512EB7C5EF4886AAC07C15CAD9438E3863`. Installed on `emulator-5554` / `s24` with `adb install -r`; package data and the authenticated staging session were preserved. The package is non-debuggable, proving release-like Preview authority rather than Metro authority.
+- Final Android-only Preview OTA group `1c4ddabd-9e4d-44de-a69f-4fb572ad48a4`, update `01a04bd9-7e2a-7acc-b19f-cb8f54a21263`, runtime `1.1.10`, commit `761a6bd1927423411d1623b921bb03976444f428`. Dashboard: `https://expo.dev/accounts/craigb/projects/gathr/updates/1c4ddabd-9e4d-44de-a69f-4fb572ad48a4`.
+- Device adoption is definitive: first launch logged the exact update ID as available and `DownloadComplete`; the second launch logged `No update available`; the Profile footer rendered `Runtime 1.1.10 · OTA 01a04bd9` with Preview Alice, one friend, Friends, Check in, and More. The EAS fingerprint-discovery warning is advisory for this artifact because actual download and adoption were observed on the installed matching-runtime build.
+- Two earlier same-session Preview groups were immediately superseded after device QA caught incomplete environment loading: `76c4c346-f2da-4501-b4f8-dbd9f5b82da9` omitted the Preview Firebase target, and `10dd7d32-76d0-419b-934f-aa3c17ce138d` omitted the social feature flag. No production write or deployment occurred. The final publish loaded every `eas.json` Preview environment value and used `gathr-social-staging` with social enabled and local emulators disabled.
+- Added a final privacy hardening at `761a6bd`: cached Firestore friend-activity projections are never rendered. A cold offline launch showed no cached friend marker; after connectivity returned, the server-authoritative listener restored the teal halo and `F1` badge. The emulator radio took roughly two minutes to reconnect, but no unauthorized presence flashed during the gap.
+- Rapid pan/zoom and overlapping cluster selections were exercised while the staging Bob check-in revision changed. The app remained responsive, the exact Old Triangle callout retained `Preview Bob is here` and `Preview map reaction QA`, and release-like logs contained no fatal exception, ANR, or Mapbox `ViewTagResolver` error.
+- Fixed-screen acceptance passed at `1080x2400`: Profile, Friends, Check-in, and Interests keep primary actions within one phone viewport. Friends scrolls only its bounded relationship list; Check-in uses focused bounded venue/friend pickers; More is a bounded secondary sheet; event/special feeds and callout content remain the intended scrolling surfaces.
+- Final screenshots are stored in `artifacts\android\qa-friends-preview-ota-76c4c346`. Key evidence includes `05-friends-final-ota.png`, `06-check-in-final-ota.png`, `07-interests-final-ota.png`, `08-more-final-ota.png`, `10-map-friend-callout.png`, `14-profile-privacy-ota.png`, `16b-offline-cold-start.png`, `17-reconnect-authoritative-presence.png`, and `18-rapid-activity-map.png`.
+- Final mobile gates: TypeScript passed; Jest 51/51 suites, 300/300 tests, and 1/1 snapshot passed; lint passed with 0 errors and 222 existing warnings; Mapbox runtime verification and `git diff --check` passed. The OTA preflight confirmed the clean `codex/` release branch, dependencies, Mapbox token, target branch/platform, and live-base ancestry.
+- Firestore sizing was reviewed at the enforced 200-viewer cap. Five client listener targets remain constant, a largest replacement check-in is 402 writes, and checkout is at most 201 deletes. The operation-level estimates are recorded in the performance section above.
+- Production Firebase, Production EAS, app-store tracks, and production user data were untouched. The isolated staging Alice/Bob personas and two-hour Bob check-in remain removable QA data.
+- Release 1 has no unchecked definition-of-done item. The pre-existing cold production event refresh can still take substantially longer than the friend listener and remains separate startup-performance debt; persisted map data renders first and friend-activity changes do not trigger an event refetch.
