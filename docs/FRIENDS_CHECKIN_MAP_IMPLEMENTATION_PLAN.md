@@ -927,3 +927,11 @@ All canonical mutations use authenticated callable functions. Clients cannot dir
 - Show no more than five merged results in the bounded dropdown, remove duplicate Mapbox results when the same GathR venue is already present, and let the keyboard Search action select the top result.
 - Preserve the manual typed-address fallback and exact-address reveal timing. Known GathR venue addresses are public venue data; custom locations remain visible only to authorized event guests according to the host's reveal choice.
 - This correction still requires no native dependency or native build. It is not complete until mobile/backend regression suites, local callable emulation, compact-screen visual QA, a separately authorized backend deployment, and a separately authorized iOS Preview OTA all pass.
+
+### 2026-08-30 — Zero-friend host access correction
+
+- Physical iOS acceptance found that a host with no friends could successfully create an `all_friends` event with a zero-person audience, then immediately see **Event unavailable** while the collection listener was still receiving the newly committed host projection.
+- Keep zero-friend creation valid, but describe it honestly as **Only you for now** and **Create private event**. The server audience remains a valid empty `all_friends` snapshot, and future friends receive nothing unless the host explicitly invites them later.
+- Add a focused server-authoritative listener for the event and exact-location projection. Cached private data is ignored; a confirmed server miss is required before showing **Event unavailable**, and network failure receives a distinct retry state.
+- Keep existing collection listeners as the source for My Events, feeds, and maps. The focused listener exists only to prevent a newly created or deep-linked event from being mistaken for a revocation while those broader listeners catch up.
+- Regression coverage must include zero-friend audience resolution, loading before server confirmation, confirmed-revocation override, and exact-location fail-closed behavior. This correction is JavaScript-only and requires no backend deployment or native build.

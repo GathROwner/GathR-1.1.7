@@ -44,6 +44,7 @@ import {
   findFriendEventLocation,
   socialTimeToMillis,
 } from '../utils/friendEvents';
+import { resolveFriendEventAudience } from '../utils/friendEventAccess';
 import {
   mergeLocationSuggestions,
   rankGathrVenueSuggestions,
@@ -339,7 +340,13 @@ export default function CreateEventScreen() {
   const hasPhysicalSelection = draft.locationType === 'recognized_venue'
     ? Boolean(draft.venueId)
     : Boolean(draft.customCoordinates);
-  const audienceCount = draft.visibility === 'all_friends' ? friends.length : draft.selectedUids.length;
+  const audienceState = resolveFriendEventAudience(
+    draft.visibility,
+    friends.length,
+    draft.selectedUids.length,
+    editing
+  );
+  const audienceCount = audienceState.audienceCount;
 
   const validateStep = (targetStep = step) => {
     if (targetStep === 0) {
@@ -360,7 +367,13 @@ export default function CreateEventScreen() {
         return 'Online links must begin with https://.';
       }
     }
-    if (targetStep === 2 && !editing && draft.visibility === 'selected_friends' && draft.selectedUids.length === 0) {
+    if (
+      targetStep === 2
+      && !editing
+      && !audienceState.hostOnly
+      && audienceState.effectiveVisibility === 'selected_friends'
+      && draft.selectedUids.length === 0
+    ) {
       return 'Choose at least one friend or switch to All friends.';
     }
     return null;
@@ -507,8 +520,8 @@ export default function CreateEventScreen() {
       category: draft.category,
       startAtMs,
       endAtMs: startAtMs + draft.durationMinutes * 60_000,
-      visibility: draft.visibility,
-      selectedUids: draft.visibility === 'selected_friends' ? draft.selectedUids : undefined,
+      visibility: audienceState.effectiveVisibility,
+      selectedUids: audienceState.effectiveVisibility === 'selected_friends' ? draft.selectedUids : undefined,
       guestInviteMode: draft.guestInviteMode,
       guestListVisible: draft.guestListVisible,
       externalUrl: draft.externalUrl.trim() || undefined,
@@ -784,7 +797,7 @@ export default function CreateEventScreen() {
                 <View style={styles.publishPreviewIcon}><Ionicons name="calendar" size={20} color="#FFFFFF" /></View>
                 <View style={styles.flex}>
                   <Text numberOfLines={1} style={styles.publishPreviewTitle}>{draft.title}</Text>
-                  <Text numberOfLines={1} style={styles.publishPreviewMeta}>{new Date(parseLocalDateTime(draft.date, draft.time) || Date.now()).toLocaleString(undefined, { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })} · {audienceCount} friend{audienceCount === 1 ? '' : 's'}</Text>
+                  <Text numberOfLines={1} style={styles.publishPreviewMeta}>{new Date(parseLocalDateTime(draft.date, draft.time) || Date.now()).toLocaleString(undefined, { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })} · {audienceState.hostOnly ? 'Only you for now' : `${audienceCount} friend${audienceCount === 1 ? '' : 's'}`}</Text>
                 </View>
                 <View style={styles.previewLock}><Ionicons name="lock-closed" size={12} color={PURPLE} /></View>
               </View>
@@ -794,24 +807,34 @@ export default function CreateEventScreen() {
                   <Text style={styles.panelCopy}>The published audience stays intact while editing. Add or remove guests from the event page.</Text>
                 </View>
               ) : (
-                <View style={styles.audienceCards}>
-                  <TouchableOpacity onPress={() => patchDraft({ visibility: 'all_friends' })} style={[styles.audienceCard, draft.visibility === 'all_friends' && styles.audienceCardActive]}>
-                    <Ionicons name="people" size={22} color={draft.visibility === 'all_friends' ? PURPLE : '#667085'} />
+                audienceState.hostOnly ? (
+                  <View style={styles.hostOnlyNotice}>
+                    <View style={styles.hostOnlyIcon}><Ionicons name="person" size={20} color={PURPLE} /></View>
                     <View style={styles.flex}>
-                      <Text style={styles.audienceTitle}>All friends</Text>
-                      <Text style={styles.panelCopy}>{friends.length} current friend{friends.length === 1 ? '' : 's'} · audience snapshots when published</Text>
+                      <Text style={styles.audienceTitle}>Only you for now</Text>
+                      <Text style={styles.panelCopy}>You do not have GathR friends yet. Create the event now, then invite people after adding friends.</Text>
                     </View>
-                    <Ionicons name={draft.visibility === 'all_friends' ? 'radio-button-on' : 'radio-button-off'} size={21} color={PURPLE} />
-                  </TouchableOpacity>
-                  <TouchableOpacity onPress={() => { patchDraft({ visibility: 'selected_friends' }); setPicker('friends'); }} style={[styles.audienceCard, draft.visibility === 'selected_friends' && styles.audienceCardActive]}>
-                    <Ionicons name="person-add" size={22} color={draft.visibility === 'selected_friends' ? PURPLE : '#667085'} />
-                    <View style={styles.flex}>
-                      <Text style={styles.audienceTitle}>Invited friends only</Text>
-                      <Text style={styles.panelCopy}>{selectedFriends.length > 0 ? `${selectedFriends.length} selected` : 'Choose specific friends'}</Text>
-                    </View>
-                    <Ionicons name="chevron-forward" size={20} color="#98A2B3" />
-                  </TouchableOpacity>
-                </View>
+                  </View>
+                ) : (
+                  <View style={styles.audienceCards}>
+                    <TouchableOpacity onPress={() => patchDraft({ visibility: 'all_friends' })} style={[styles.audienceCard, draft.visibility === 'all_friends' && styles.audienceCardActive]}>
+                      <Ionicons name="people" size={22} color={draft.visibility === 'all_friends' ? PURPLE : '#667085'} />
+                      <View style={styles.flex}>
+                        <Text style={styles.audienceTitle}>All friends</Text>
+                        <Text style={styles.panelCopy}>{friends.length} current friend{friends.length === 1 ? '' : 's'} · audience snapshots when published</Text>
+                      </View>
+                      <Ionicons name={draft.visibility === 'all_friends' ? 'radio-button-on' : 'radio-button-off'} size={21} color={PURPLE} />
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={() => { patchDraft({ visibility: 'selected_friends' }); setPicker('friends'); }} style={[styles.audienceCard, draft.visibility === 'selected_friends' && styles.audienceCardActive]}>
+                      <Ionicons name="person-add" size={22} color={draft.visibility === 'selected_friends' ? PURPLE : '#667085'} />
+                      <View style={styles.flex}>
+                        <Text style={styles.audienceTitle}>Invited friends only</Text>
+                        <Text style={styles.panelCopy}>{selectedFriends.length > 0 ? `${selectedFriends.length} selected` : 'Choose specific friends'}</Text>
+                      </View>
+                      <Ionicons name="chevron-forward" size={20} color="#98A2B3" />
+                    </TouchableOpacity>
+                  </View>
+                )
               )}
               <View style={styles.settingCard}>
                 <View style={styles.settingRow}>
@@ -840,7 +863,9 @@ export default function CreateEventScreen() {
               )}
               <View style={styles.privacySummary}>
                 <Ionicons name="lock-closed" size={18} color="#175CD3" />
-                <Text style={styles.privacySummaryText}>This event is never public or searchable. Only its snapshotted audience and later explicit invitees can open it.</Text>
+                <Text style={styles.privacySummaryText}>{audienceState.hostOnly
+                  ? 'This event is private to you right now. After adding friends, invite them deliberately from the event page.'
+                  : 'This event is never public or searchable. Only its snapshotted audience and later explicit invitees can open it.'}</Text>
               </View>
             </View>
           )}
@@ -848,7 +873,7 @@ export default function CreateEventScreen() {
           <View style={styles.footer}>
             {step > 0 && <TouchableOpacity onPress={() => setStep((current) => current - 1)} style={styles.backButton}><Text style={styles.backText}>Back</Text></TouchableOpacity>}
             <TouchableOpacity disabled={busy} onPress={step < 2 ? next : () => void publish()} style={[styles.primaryButton, busy && styles.disabled]}>
-              {busy ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.primaryText}>{step < 2 ? 'Continue' : editing ? 'Save changes' : 'Publish event'}</Text>}
+              {busy ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.primaryText}>{step < 2 ? 'Continue' : editing ? 'Save changes' : audienceState.hostOnly ? 'Create private event' : 'Publish event'}</Text>}
             </TouchableOpacity>
           </View>
         </View>
@@ -992,6 +1017,8 @@ const styles = StyleSheet.create({
   bigSelectorTitle: { color: '#101828', fontSize: 15, fontWeight: '800' },
   emptyPanel: { minHeight: 150, alignItems: 'center', justifyContent: 'center', gap: 8, padding: 18, borderRadius: 16, backgroundColor: '#FAFAFF' },
   audienceCards: { gap: 8 },
+  hostOnlyNotice: { minHeight: 72, flexDirection: 'row', alignItems: 'center', gap: 10, padding: 11, borderWidth: 1, borderColor: '#B692F6', borderRadius: 14, backgroundColor: '#FAF5FF' },
+  hostOnlyIcon: { width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center', backgroundColor: '#E9D7FE' },
   publishPreview: { minHeight: 58, flexDirection: 'row', alignItems: 'center', gap: 9, padding: 9, borderRadius: 14, backgroundColor: '#F9F5FF' },
   publishPreviewIcon: { width: 38, height: 38, borderRadius: 13, alignItems: 'center', justifyContent: 'center', backgroundColor: PURPLE },
   publishPreviewTitle: { color: '#344054', fontSize: 13, fontWeight: '900' },

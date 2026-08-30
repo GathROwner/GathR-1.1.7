@@ -399,6 +399,70 @@ export interface SocialListenerCallbacks {
   onError: (error: SocialServiceError) => void;
 }
 
+export interface FriendEventDetailCallbacks {
+  onEvent: (event: FriendEventProjection | null) => void;
+  onLocation: (location: FriendEventLocationProjection | null) => void;
+  onError: (error: SocialServiceError) => void;
+}
+
+/**
+ * Verify one private event directly against the server. Collection listeners
+ * remain the source for maps and feeds; this focused listener prevents a newly
+ * created event from being mistaken for a revoked event while that collection
+ * listener is still catching up.
+ */
+export function subscribeToFriendEventDetail(
+  uid: string,
+  eventId: string,
+  callbacks: FriendEventDetailCallbacks
+): Unsubscribe {
+  const currentUid = auth.currentUser?.uid;
+  if (!uid || !eventId || currentUid !== uid) {
+    callbacks.onError(new SocialServiceError('unauthenticated', 'Sign in to open this event.'));
+    return () => undefined;
+  }
+
+  const eventUnsubscribe = onSnapshot(
+    doc(firestore, 'users', uid, 'friendEvents', eventId),
+    { includeMetadataChanges: true },
+    (snapshot) => {
+      if (snapshot.metadata.fromCache) return;
+      if (!snapshot.exists()) {
+        callbacks.onEvent(null);
+        return;
+      }
+      const data = snapshot.data();
+      callbacks.onEvent({
+        ...data,
+        eventId: String(data.eventId || eventId),
+      } as FriendEventProjection);
+    },
+    (error) => callbacks.onError(normalizeCallableError(error))
+  );
+  const locationUnsubscribe = onSnapshot(
+    doc(firestore, 'users', uid, 'friendEventLocations', eventId),
+    { includeMetadataChanges: true },
+    (snapshot) => {
+      if (snapshot.metadata.fromCache) return;
+      if (!snapshot.exists()) {
+        callbacks.onLocation(null);
+        return;
+      }
+      const data = snapshot.data();
+      callbacks.onLocation({
+        ...data,
+        eventId: String(data.eventId || eventId),
+      } as FriendEventLocationProjection);
+    },
+    () => callbacks.onLocation(null)
+  );
+
+  return () => {
+    eventUnsubscribe();
+    locationUnsubscribe();
+  };
+}
+
 export function subscribeToSocialData(
   uid: string,
   callbacks: SocialListenerCallbacks

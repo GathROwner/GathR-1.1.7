@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -25,10 +25,20 @@ import {
   removeFromFriendEvent,
   reportUser,
   respondToFriendEvent,
+  subscribeToFriendEventDetail,
 } from '../../services/socialService';
 import { useSocialStore } from '../../store/socialStore';
-import type { FriendEventRsvp } from '../../types/social';
+import type {
+  FriendEventLocationProjection,
+  FriendEventProjection,
+  FriendEventRsvp,
+} from '../../types/social';
 import { addToCalendar } from '../../utils/calendarUtils';
+import {
+  resolveFriendEventDetail,
+  resolveFriendEventLocation,
+  type FriendEventVerificationState,
+} from '../../utils/friendEventAccess';
 import {
   findFriendEventLocation,
   formatFriendEventDate,
@@ -47,18 +57,56 @@ export default function FriendEventDetailScreen() {
   const params = useLocalSearchParams<{ id: string }>();
   const { user } = useAuth();
   const eventId = String(params.id || '');
-  const event = useSocialStore((state) => state.friendEvents.find((item) => item.eventId === eventId));
-  const location = useSocialStore((state) => findFriendEventLocation(eventId, state.friendEventLocations));
+  const storeEvent = useSocialStore((state) => state.friendEvents.find((item) => item.eventId === eventId) ?? null);
+  const storeLocation = useSocialStore((state) => findFriendEventLocation(eventId, state.friendEventLocations));
   const friends = useSocialStore((state) => state.friends);
+  const [verifiedEvent, setVerifiedEvent] = useState<FriendEventProjection | null>(null);
+  const [verifiedLocation, setVerifiedLocation] = useState<FriendEventLocationProjection | null>(null);
+  const [verification, setVerification] = useState<FriendEventVerificationState>('checking');
+  const [locationVerified, setLocationVerified] = useState(false);
+  const [verificationError, setVerificationError] = useState('');
+  const [verificationAttempt, setVerificationAttempt] = useState(0);
   const [busy, setBusy] = useState<string | null>(null);
   const [inviteVisible, setInviteVisible] = useState(false);
   const [guestListVisible, setGuestListVisible] = useState(false);
   const [historyVisible, setHistoryVisible] = useState(false);
   const [cancelVisible, setCancelVisible] = useState(false);
   const [cancelReason, setCancelReason] = useState('');
+  const event = resolveFriendEventDetail(storeEvent, verifiedEvent, verification);
+  const location = resolveFriendEventLocation(storeLocation, verifiedLocation, locationVerified);
   const canInvite = event?.viewerRole === 'host' || event?.guestInviteMode === 'guests_can_invite';
   const invitedUids = new Set((event?.guests || []).map((guest) => guest.uid));
   const inviteCandidates = friends.filter((friend) => !invitedUids.has(friend.uid));
+
+  useEffect(() => {
+    setVerifiedEvent(null);
+    setVerifiedLocation(null);
+    setLocationVerified(false);
+    setVerificationError('');
+    setVerification('checking');
+    if (!user?.uid || !eventId) {
+      setVerification('unavailable');
+      return undefined;
+    }
+    return subscribeToFriendEventDetail(user.uid, eventId, {
+      onEvent: (nextEvent) => {
+        setVerifiedEvent(nextEvent);
+        setVerification(nextEvent ? 'available' : 'unavailable');
+        if (!nextEvent) {
+          setVerifiedLocation(null);
+          setLocationVerified(true);
+        }
+      },
+      onLocation: (nextLocation) => {
+        setVerifiedLocation(nextLocation);
+        setLocationVerified(true);
+      },
+      onError: (error) => {
+        setVerificationError(error.message);
+        setVerification('error');
+      },
+    });
+  }, [eventId, user?.uid, verificationAttempt]);
 
   const run = async (key: string, action: () => Promise<unknown>) => {
     setBusy(key);
@@ -153,10 +201,25 @@ export default function FriendEventDetailScreen() {
 
   if (!user) return null;
   if (!event) {
+    const checking = verification === 'checking';
+    const failed = verification === 'error';
     return (
       <SafeAreaView style={styles.safeArea}>
-        <View style={styles.header}><TouchableOpacity onPress={() => router.back()} style={styles.iconButton}><Ionicons name="arrow-back" size={23} color="#101828" /></TouchableOpacity><Text style={styles.headerTitle}>Friend Event</Text></View>
-        <View style={styles.unavailable}><Ionicons name="lock-closed-outline" size={40} color={PURPLE} /><Text style={styles.unavailableTitle}>Event unavailable</Text><Text style={styles.muted}>It may have been deleted, or your invitation may have changed.</Text></View>
+        <View style={styles.header}><TouchableOpacity onPress={() => router.back()} style={styles.iconButton}><Ionicons name="arrow-back" size={23} color="#101828" /></TouchableOpacity><Text style={styles.headerTitle}>Friend Event</Text><View style={styles.iconButton} /></View>
+        <View style={styles.unavailable}>
+          {checking ? <ActivityIndicator size="large" color={PURPLE} /> : <Ionicons name={failed ? 'cloud-offline-outline' : 'lock-closed-outline'} size={40} color={PURPLE} />}
+          <Text style={styles.unavailableTitle}>{checking ? 'Opening your event' : failed ? 'Could not load event' : 'Event unavailable'}</Text>
+          <Text style={styles.unavailableCopy}>{checking
+            ? 'Confirming your private event securely…'
+            : failed
+              ? verificationError || 'Check your connection and try again.'
+              : 'It may have been deleted, or your invitation may have changed.'}</Text>
+          {failed && (
+            <TouchableOpacity onPress={() => setVerificationAttempt((attempt) => attempt + 1)} style={styles.retryButton} accessibilityRole="button">
+              <Text style={styles.retryButtonText}>Try again</Text>
+            </TouchableOpacity>
+          )}
+        </View>
       </SafeAreaView>
     );
   }
@@ -393,6 +456,9 @@ const styles = StyleSheet.create({
   deleteText: { color: '#B42318', fontWeight: '800' },
   unavailable: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 10, padding: 30 },
   unavailableTitle: { color: '#101828', fontSize: 19, fontWeight: '900' },
+  unavailableCopy: { maxWidth: 330, color: '#667085', fontSize: 12, lineHeight: 18, textAlign: 'center' },
+  retryButton: { minWidth: 130, minHeight: 46, alignItems: 'center', justifyContent: 'center', marginTop: 4, borderRadius: 13, backgroundColor: PURPLE },
+  retryButtonText: { color: '#FFFFFF', fontWeight: '900' },
   modalBackdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(16,24,40,0.48)' },
   centeredBackdrop: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 20, backgroundColor: 'rgba(16,24,40,0.58)' },
   cancelDialog: { width: '100%', maxWidth: 420, gap: 11, padding: 18, borderRadius: 22, backgroundColor: '#FFFFFF' },
