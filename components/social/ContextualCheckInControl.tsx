@@ -2,7 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
 import { useRouter } from 'expo-router';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, AppState, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, AppState, Modal, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 import { useAuth } from '../../contexts/AuthContext';
 import { recordCheckInEligibilitySample } from '../../services/socialService';
@@ -49,13 +49,13 @@ function createSessionId() {
   return `dwell-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
-function findCandidate(
+function findCandidates(
   venues: VenueCandidate[],
   location: Location.LocationObject
-): VenueCandidate | null {
+): VenueCandidate[] {
   const accuracy = Number(location.coords.accuracy);
-  if (!Number.isFinite(accuracy) || accuracy < 0 || accuracy > MAX_ACCURACY_METRES) return null;
-  let nearest: { venue: VenueCandidate; distance: number } | null = null;
+  if (!Number.isFinite(accuracy) || accuracy < 0 || accuracy > MAX_ACCURACY_METRES) return [];
+  const nearby: { venue: VenueCandidate; distance: number }[] = [];
   for (const venue of venues) {
     const distance = distanceMetres(
       location.coords.latitude,
@@ -64,9 +64,12 @@ function findCandidate(
       venue.longitude
     );
     if (distance > BASE_RADIUS_METRES + accuracy) continue;
-    if (!nearest || distance < nearest.distance) nearest = { venue, distance };
+    nearby.push({ venue, distance });
   }
-  return nearest?.venue ?? null;
+  return nearby
+    .sort((first, second) => first.distance - second.distance)
+    .slice(0, 4)
+    .map(({ venue }) => venue);
 }
 
 export default function ContextualCheckInControl({ enabled }: Props) {
@@ -78,6 +81,7 @@ export default function ContextualCheckInControl({ enabled }: Props) {
   const [eligibility, setEligibility] = useState<CheckInEligibilityResult | null>(null);
   const [sampling, setSampling] = useState(false);
   const [sampleError, setSampleError] = useState(false);
+  const [venuePickerVisible, setVenuePickerVisible] = useState(false);
   const sessionRef = useRef<{ venueId: string; sessionId: string } | null>(null);
   const outsideSinceRef = useRef<number | null>(null);
 
@@ -138,7 +142,8 @@ export default function ContextualCheckInControl({ enabled }: Props) {
           accuracy: Location.Accuracy.High,
         });
         if (!active) return;
-        const nearbyCandidate = findCandidate(venues, location);
+        const nearbyCandidates = findCandidates(venues, location);
+        const nearbyCandidate = nearbyCandidates[0] || null;
         const trackedCandidate = sessionRef.current
           ? venues.find((venue) => venue.venueId === sessionRef.current?.venueId) || null
           : null;
@@ -164,6 +169,7 @@ export default function ContextualCheckInControl({ enabled }: Props) {
         const result = await recordCheckInEligibilitySample({
           sessionId: sessionRef.current.sessionId,
           venueId: nextCandidate.venueId,
+          candidateVenueIds: nearbyCandidates.map((venue) => venue.venueId),
           latitude: location.coords.latitude,
           longitude: location.coords.longitude,
           accuracyMeters: location.coords.accuracy ?? MAX_ACCURACY_METRES + 1,
@@ -227,26 +233,61 @@ export default function ContextualCheckInControl({ enabled }: Props) {
 
   if (eligibility.eligible && sessionRef.current) {
     const sessionId = sessionRef.current.sessionId;
+    const eligibleCandidates = (eligibility.eligibleVenueIds || [candidate.venueId])
+      .map((venueId) => venues.find((venue) => venue.venueId === venueId))
+      .filter((venue): venue is VenueCandidate => Boolean(venue));
+    const openCheckIn = (venue: VenueCandidate) => {
+      setVenuePickerVisible(false);
+      router.push({
+        pathname: '/check-in',
+        params: { venueId: venue.venueId, eligibilitySessionId: sessionId },
+      });
+    };
     return (
-      <TouchableOpacity
-        accessibilityLabel={`Check in here at ${candidate.venueName}`}
-        accessibilityRole="button"
-        activeOpacity={0.88}
-        onPress={() => router.push({
-          pathname: '/check-in',
-          params: { venueId: candidate.venueId, eligibilitySessionId: sessionId },
-        })}
-        style={[styles.control, styles.readyControl]}
-      >
-        <View style={styles.iconCircle}>
-          <Ionicons name="location" size={18} color="#FFFFFF" />
-        </View>
-        <View style={styles.copy}>
-          <Text numberOfLines={1} style={styles.readyEyebrow}>YOU'RE HERE</Text>
-          <Text numberOfLines={1} style={styles.readyVenue}>Check in · {candidate.venueName}</Text>
-        </View>
-        <Ionicons name="arrow-forward" size={19} color="#FFFFFF" />
-      </TouchableOpacity>
+      <>
+        <TouchableOpacity
+          accessibilityLabel={eligibleCandidates.length > 1 ? `Choose from ${eligibleCandidates.length} nearby venues` : `Check in here at ${candidate.venueName}`}
+          accessibilityRole="button"
+          activeOpacity={0.88}
+          onPress={() => eligibleCandidates.length > 1 ? setVenuePickerVisible(true) : openCheckIn(eligibleCandidates[0] || candidate)}
+          style={[styles.control, styles.readyControl]}
+        >
+          <View style={styles.iconCircle}>
+            <Ionicons name="location" size={18} color="#FFFFFF" />
+          </View>
+          <View style={styles.copy}>
+            <Text numberOfLines={1} style={styles.readyEyebrow}>YOU'RE HERE</Text>
+            <Text numberOfLines={1} style={styles.readyVenue}>{eligibleCandidates.length > 1 ? `Choose venue · ${eligibleCandidates.length} nearby` : `Check in · ${candidate.venueName}`}</Text>
+          </View>
+          <Ionicons name="arrow-forward" size={19} color="#FFFFFF" />
+        </TouchableOpacity>
+        <Modal visible={venuePickerVisible} transparent animationType="slide" onRequestClose={() => setVenuePickerVisible(false)}>
+          <View style={styles.modalBackdrop}>
+            <View style={styles.venueSheet}>
+              <View style={styles.sheetHandle} />
+              <View style={styles.sheetHeader}>
+                <View style={styles.copy}>
+                  <Text style={styles.sheetTitle}>Where are you?</Text>
+                  <Text style={styles.sheetCopy}>Only nearby verified GathR venues are shown.</Text>
+                </View>
+                <TouchableOpacity accessibilityLabel="Close nearby venues" onPress={() => setVenuePickerVisible(false)} style={styles.closeButton}>
+                  <Ionicons name="close" size={22} color="#344054" />
+                </TouchableOpacity>
+              </View>
+              {eligibleCandidates.map((venue) => (
+                <TouchableOpacity key={venue.venueId} onPress={() => openCheckIn(venue)} style={styles.venueRow}>
+                  <View style={styles.venueIcon}><Ionicons name="location" size={18} color="#6941C6" /></View>
+                  <View style={styles.copy}>
+                    <Text style={styles.venueName}>{venue.venueName}</Text>
+                    {!!venue.address && <Text numberOfLines={1} style={styles.venueAddress}>{venue.address}</Text>}
+                  </View>
+                  <Ionicons name="chevron-forward" size={20} color="#98A2B3" />
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+        </Modal>
+      </>
     );
   }
 
@@ -304,4 +345,15 @@ const styles = StyleSheet.create({
   readyVenue: { color: '#FFFFFF', fontWeight: '800', marginTop: 1 },
   progressVenue: { color: '#344054', fontWeight: '800' },
   progressText: { color: '#6941C6', fontSize: 12, fontWeight: '600', marginTop: 1 },
+  modalBackdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(16,24,40,0.46)' },
+  venueSheet: { paddingHorizontal: 16, paddingTop: 10, paddingBottom: 24, borderTopLeftRadius: 24, borderTopRightRadius: 24, backgroundColor: '#FFFFFF' },
+  sheetHandle: { alignSelf: 'center', width: 38, height: 4, marginBottom: 13, borderRadius: 2, backgroundColor: '#D0D5DD' },
+  sheetHeader: { minHeight: 52, flexDirection: 'row', alignItems: 'center', gap: 10 },
+  sheetTitle: { color: '#101828', fontSize: 19, fontWeight: '900' },
+  sheetCopy: { color: '#667085', fontSize: 11, marginTop: 2 },
+  closeButton: { width: 42, height: 42, alignItems: 'center', justifyContent: 'center', borderRadius: 21, backgroundColor: '#F2F4F7' },
+  venueRow: { minHeight: 62, flexDirection: 'row', alignItems: 'center', gap: 10, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#EAECF0' },
+  venueIcon: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center', borderRadius: 18, backgroundColor: '#F4EBFF' },
+  venueName: { color: '#344054', fontWeight: '800' },
+  venueAddress: { color: '#667085', fontSize: 11, marginTop: 2 },
 });

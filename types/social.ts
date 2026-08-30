@@ -90,6 +90,7 @@ export type CheckInEligibilityReason =
 export interface CheckInEligibilityResult {
   sessionId: string;
   venueId: string;
+  eligibleVenueIds: string[];
   eligible: boolean;
   qualifyingMs: number;
   requiredMs: number;
@@ -102,6 +103,7 @@ export interface CheckInEligibilityResult {
 export interface CheckInEligibilitySampleInput {
   sessionId: string;
   venueId: string;
+  candidateVenueIds?: string[];
   latitude: number;
   longitude: number;
   accuracyMeters: number;
