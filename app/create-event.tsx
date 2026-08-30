@@ -23,12 +23,18 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useAuth } from '../contexts/AuthContext';
 import { EVENT_CATEGORIES } from '../constants/eventCategories';
-import { createFriendEvent, createSocialOperationId, geocodeFriendEventAddress, suggestFriendEventAddresses, updateFriendEvent } from '../services/socialService';
+import {
+  createFriendEvent,
+  createSocialOperationId,
+  geocodeFriendEventAddress,
+  retrieveFriendEventLocationSuggestion,
+  suggestFriendEventLocations,
+  updateFriendEvent,
+} from '../services/socialService';
 import { useMapStore } from '../store';
 import { useSocialStore } from '../store/socialStore';
 import type {
   FriendEventGuestInviteMode,
-  FriendEventAddressSuggestion,
   FriendEventInput,
   FriendEventLocationInput,
   FriendEventLocationType,
@@ -38,6 +44,11 @@ import {
   findFriendEventLocation,
   socialTimeToMillis,
 } from '../utils/friendEvents';
+import {
+  mergeLocationSuggestions,
+  rankGathrVenueSuggestions,
+  type UnifiedFriendEventLocationSuggestion,
+} from '../utils/friendEventLocationSearch';
 
 const BRAND = '#2F80ED';
 const PURPLE = '#6941C6';
@@ -60,6 +71,7 @@ interface Draft {
   durationMinutes: number;
   locationType: FriendEventLocationType;
   venueId: string;
+  locationQuery: string;
   customPlaceName: string;
   customAddress: string;
   customCoordinates: { latitude: number; longitude: number } | null;
@@ -102,6 +114,7 @@ function initialDraft(): Draft {
     durationMinutes: 120,
     locationType: 'custom_address',
     venueId: '',
+    locationQuery: '',
     customPlaceName: '',
     customAddress: '',
     customCoordinates: null,
@@ -137,17 +150,20 @@ export default function CreateEventScreen() {
   const [draft, setDraft] = useState<Draft>(initialDraft);
   const [busy, setBusy] = useState(false);
   const [geocoding, setGeocoding] = useState(false);
-  const [addressFocused, setAddressFocused] = useState(false);
-  const [addressSuggestions, setAddressSuggestions] = useState<FriendEventAddressSuggestion[]>([]);
-  const [addressSuggestionsLoading, setAddressSuggestionsLoading] = useState(false);
-  const [addressSuggestionsQueried, setAddressSuggestionsQueried] = useState(false);
-  const [addressSuggestionError, setAddressSuggestionError] = useState(false);
-  const [picker, setPicker] = useState<'category' | 'venue' | 'friends' | null>(null);
+  const [locationFocused, setLocationFocused] = useState(false);
+  const [locationSuggestions, setLocationSuggestions] = useState<UnifiedFriendEventLocationSuggestion[]>([]);
+  const [locationSuggestionsLoading, setLocationSuggestionsLoading] = useState(false);
+  const [locationSuggestionsQueried, setLocationSuggestionsQueried] = useState(false);
+  const [locationSuggestionError, setLocationSuggestionError] = useState(false);
+  const [locationResolving, setLocationResolving] = useState(false);
+  const [picker, setPicker] = useState<'category' | 'friends' | null>(null);
   const [datePickerMode, setDatePickerMode] = useState<'date' | 'time' | null>(null);
   const [pickerDate, setPickerDate] = useState(() => new Date());
   const hydratedRef = useRef(false);
   const operationIdRef = useRef(createSocialOperationId());
-  const addressRequestRef = useRef(0);
+  const locationInputRef = useRef<TextInput>(null);
+  const locationRequestRef = useRef(0);
+  const locationSessionRef = useRef(createSocialOperationId());
   const draftKey = user ? `gathr:friend-event-draft:${user.uid}` : '';
 
   const categories = EVENT_CATEGORIES;
@@ -186,6 +202,7 @@ export default function CreateEventScreen() {
         durationMinutes: startAt && endAt ? Math.max(30, Math.round((endAt - startAt) / 60_000)) : 120,
         locationType: existing.locationType,
         venueId: existing.venueId,
+        locationQuery: existing.locationLabel || existingLocation?.placeName || existingLocation?.address || '',
         customPlaceName: existingLocation?.placeName || '',
         customAddress: existingLocation?.address || '',
         customCoordinates: existingLocation
@@ -202,7 +219,14 @@ export default function CreateEventScreen() {
     void AsyncStorage.getItem(draftKey).then((stored) => {
       if (!stored) return;
       try {
-        setDraft({ ...initialDraft(), ...(JSON.parse(stored) as Draft) });
+        const saved = JSON.parse(stored) as Partial<Draft>;
+        setDraft({
+          ...initialDraft(),
+          ...saved,
+          locationQuery: typeof saved.locationQuery === 'string'
+            ? saved.locationQuery
+            : saved.customPlaceName || saved.customAddress || '',
+        });
       } catch {
         // Ignore a malformed local draft and start clean.
       }
@@ -220,30 +244,37 @@ export default function CreateEventScreen() {
   }, [draft, draftKey, editing]);
 
   useEffect(() => {
-    const requestId = ++addressRequestRef.current;
-    const query = draft.customAddress.trim();
+    const requestId = ++locationRequestRef.current;
+    const query = draft.locationQuery.trim();
+    const isPhysicalLocation = draft.locationType === 'custom_address'
+      || draft.locationType === 'recognized_venue';
+    const hasSelection = draft.locationType === 'recognized_venue'
+      ? Boolean(draft.venueId)
+      : Boolean(draft.customCoordinates);
     if (
-      draft.locationType !== 'custom_address'
-      || !addressFocused
-      || Boolean(draft.customCoordinates)
+      !isPhysicalLocation
+      || !locationFocused
+      || hasSelection
       || query.length < 3
     ) {
-      setAddressSuggestions([]);
-      setAddressSuggestionsLoading(false);
-      setAddressSuggestionsQueried(false);
-      setAddressSuggestionError(false);
+      setLocationSuggestions([]);
+      setLocationSuggestionsLoading(false);
+      setLocationSuggestionsQueried(false);
+      setLocationSuggestionError(false);
       return;
     }
 
     const controller = new AbortController();
-    setAddressSuggestions([]);
-    setAddressSuggestionsLoading(false);
-    setAddressSuggestionsQueried(false);
-    setAddressSuggestionError(false);
+    const localSuggestions = rankGathrVenueSuggestions(venues, query);
+    setLocationSuggestions(localSuggestions);
+    setLocationSuggestionsLoading(false);
+    setLocationSuggestionsQueried(localSuggestions.length > 0);
+    setLocationSuggestionError(false);
     const timer = setTimeout(() => {
-      setAddressSuggestionsLoading(true);
-      void suggestFriendEventAddresses(
+      setLocationSuggestionsLoading(true);
+      void suggestFriendEventLocations(
         query,
+        locationSessionRef.current,
         userLatitude !== undefined && userLongitude !== undefined
           ? {
               latitude: userLatitude,
@@ -252,31 +283,33 @@ export default function CreateEventScreen() {
           : null,
         controller.signal
       ).then((suggestions) => {
-        if (requestId !== addressRequestRef.current) return;
-        setAddressSuggestions(suggestions);
-        setAddressSuggestionsQueried(true);
+        if (requestId !== locationRequestRef.current) return;
+        setLocationSuggestions(mergeLocationSuggestions(localSuggestions, suggestions));
+        setLocationSuggestionsQueried(true);
       }).catch((error: unknown) => {
         if (error instanceof Error && error.name === 'AbortError') return;
-        if (requestId !== addressRequestRef.current) return;
-        setAddressSuggestionError(true);
-        setAddressSuggestionsQueried(true);
+        if (requestId !== locationRequestRef.current) return;
+        setLocationSuggestionError(localSuggestions.length === 0);
+        setLocationSuggestionsQueried(true);
       }).finally(() => {
-        if (requestId === addressRequestRef.current) setAddressSuggestionsLoading(false);
+        if (requestId === locationRequestRef.current) setLocationSuggestionsLoading(false);
       });
     }, 400);
 
     return () => {
       clearTimeout(timer);
       controller.abort();
-      if (requestId === addressRequestRef.current) addressRequestRef.current += 1;
+      if (requestId === locationRequestRef.current) locationRequestRef.current += 1;
     };
   }, [
-    addressFocused,
-    draft.customAddress,
     draft.customCoordinates,
+    draft.locationQuery,
     draft.locationType,
+    draft.venueId,
+    locationFocused,
     userLatitude,
     userLongitude,
+    venues,
   ]);
 
   const patchDraft = (values: Partial<Draft>) => setDraft((current) => ({ ...current, ...values }));
@@ -301,6 +334,11 @@ export default function CreateEventScreen() {
   };
   const selectedFriends = friends.filter((friend) => draft.selectedUids.includes(friend.uid));
   const selectedVenue = venues.find((venue) => venue.venueId === draft.venueId);
+  const isPhysicalLocation = draft.locationType === 'custom_address'
+    || draft.locationType === 'recognized_venue';
+  const hasPhysicalSelection = draft.locationType === 'recognized_venue'
+    ? Boolean(draft.venueId)
+    : Boolean(draft.customCoordinates);
   const audienceCount = draft.visibility === 'all_friends' ? friends.length : draft.selectedUids.length;
 
   const validateStep = (targetStep = step) => {
@@ -334,38 +372,108 @@ export default function CreateEventScreen() {
     setStep((current) => Math.min(2, current + 1));
   };
 
-  const geocodeAddress = async () => {
-    if (draft.customAddress.trim().length < 5) {
-      Alert.alert('Enter an address', 'Use a street address, town or city, and province/state where possible.');
+  const resetLocationSearchSession = () => {
+    locationSessionRef.current = createSocialOperationId();
+  };
+
+  const editLocationQuery = (locationQuery: string) => {
+    patchDraft({
+      locationQuery,
+      locationType: 'custom_address',
+      venueId: '',
+      customPlaceName: '',
+      customAddress: '',
+      customCoordinates: null,
+    });
+  };
+
+  const confirmTypedLocation = async () => {
+    const address = draft.locationQuery.trim();
+    if (address.length < 5) {
+      Alert.alert('Enter a location', 'Search for a venue, business, or complete street address.');
       return;
     }
     setGeocoding(true);
     try {
-      const result = await geocodeFriendEventAddress(draft.customAddress.trim());
-      patchDraft({ customCoordinates: result });
-      setAddressSuggestions([]);
-      setAddressFocused(false);
+      const result = await geocodeFriendEventAddress(address);
+      patchDraft({
+        locationType: 'custom_address',
+        venueId: '',
+        customPlaceName: '',
+        customAddress: address,
+        customCoordinates: result,
+      });
+      setLocationSuggestions([]);
+      setLocationFocused(false);
+      resetLocationSearchSession();
       Keyboard.dismiss();
       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => undefined);
     } catch (error) {
-      Alert.alert('Address not confirmed', errorMessage(error));
+      Alert.alert('Location not confirmed', errorMessage(error));
     } finally {
       setGeocoding(false);
     }
   };
 
-  const selectAddressSuggestion = (suggestion: FriendEventAddressSuggestion) => {
-    patchDraft({
-      customAddress: suggestion.fullAddress,
-      customCoordinates: {
-        latitude: suggestion.latitude,
-        longitude: suggestion.longitude,
-      },
-    });
-    setAddressSuggestions([]);
-    setAddressFocused(false);
-    Keyboard.dismiss();
-    void Haptics.selectionAsync().catch(() => undefined);
+  const selectLocationSuggestion = async (suggestion: UnifiedFriendEventLocationSuggestion) => {
+    if (suggestion.source === 'gathr') {
+      patchDraft({
+        locationType: 'recognized_venue',
+        venueId: suggestion.venueId,
+        locationQuery: suggestion.primaryText,
+        customPlaceName: suggestion.primaryText,
+        customAddress: suggestion.fullAddress,
+        customCoordinates: null,
+      });
+      setLocationSuggestions([]);
+      setLocationFocused(false);
+      resetLocationSearchSession();
+      Keyboard.dismiss();
+      void Haptics.selectionAsync().catch(() => undefined);
+      return;
+    }
+
+    setLocationResolving(true);
+    try {
+      const resolved = await retrieveFriendEventLocationSuggestion(
+        suggestion.mapboxId,
+        locationSessionRef.current
+      );
+      patchDraft({
+        locationType: 'custom_address',
+        venueId: '',
+        locationQuery: resolved.primaryText,
+        customPlaceName: resolved.featureType === 'address' ? '' : resolved.primaryText,
+        customAddress: resolved.fullAddress,
+        customCoordinates: {
+          latitude: resolved.latitude,
+          longitude: resolved.longitude,
+        },
+      });
+      setLocationSuggestions([]);
+      setLocationFocused(false);
+      resetLocationSearchSession();
+      Keyboard.dismiss();
+      await Haptics.selectionAsync().catch(() => undefined);
+    } catch (error) {
+      Alert.alert('Location not confirmed', errorMessage(error));
+    } finally {
+      setLocationResolving(false);
+    }
+  };
+
+  const submitLocationSearch = () => {
+    if (locationSuggestions[0]) {
+      void selectLocationSuggestion(locationSuggestions[0]);
+      return;
+    }
+    void confirmTypedLocation();
+  };
+
+  const changeSelectedLocation = () => {
+    editLocationQuery(draft.locationQuery);
+    resetLocationSearchSession();
+    setTimeout(() => locationInputRef.current?.focus(), 0);
   };
 
   const buildInput = (): FriendEventInput | null => {
@@ -504,68 +612,90 @@ export default function CreateEventScreen() {
               <Text style={styles.sectionTitle}>Where is it?</Text>
               <View style={styles.locationTabs}>
                 {([
-                  ['custom_address', 'Address', 'home-outline'],
-                  ['recognized_venue', 'Venue', 'business-outline'],
+                  ['physical', 'Location', 'location-outline'],
                   ['online', 'Online', 'videocam-outline'],
                   ['tbd', 'Later', 'time-outline'],
-                ] as const).map(([type, label, icon]) => (
-                  <TouchableOpacity key={type} onPress={() => patchDraft({ locationType: type })} style={[styles.locationTab, draft.locationType === type && styles.locationTabActive]}>
-                    <Ionicons name={icon} size={18} color={draft.locationType === type ? '#FFFFFF' : '#667085'} />
-                    <Text style={[styles.locationTabText, draft.locationType === type && styles.locationTabTextActive]}>{label}</Text>
-                  </TouchableOpacity>
-                ))}
+                ] as const).map(([type, label, icon]) => {
+                  const active = type === 'physical' ? isPhysicalLocation : draft.locationType === type;
+                  return (
+                    <TouchableOpacity
+                      key={type}
+                      onPress={() => patchDraft({
+                        locationType: type === 'physical'
+                          ? (draft.venueId ? 'recognized_venue' : 'custom_address')
+                          : type,
+                      })}
+                      style={[styles.locationTab, active && styles.locationTabActive]}
+                    >
+                      <Ionicons name={icon} size={18} color={active ? '#FFFFFF' : '#667085'} />
+                      <Text style={[styles.locationTabText, active && styles.locationTabTextActive]}>{label}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
               </View>
 
-              {draft.locationType === 'custom_address' && (
+              {isPhysicalLocation && (
                 <View style={styles.locationPanel}>
-                  <Text style={styles.panelTitle}>Any address works</Text>
-                  <Text style={styles.panelCopy}>Homes, parks, halls, or anywhere else. Only authorized guests receive the exact address.</Text>
-                  <TextInput value={draft.customPlaceName} onChangeText={(customPlaceName) => patchDraft({ customPlaceName })} placeholder="Place name (optional)" style={styles.input} />
+                  <Text style={styles.panelTitle}>Find the place</Text>
+                  <Text style={styles.panelCopy}>Search GathR venues, businesses, parks, homes, or any address.</Text>
                   <View style={styles.addressSearchWrap}>
                     <TextInput
-                      value={draft.customAddress}
-                      onChangeText={(customAddress) => patchDraft({ customAddress, customCoordinates: null })}
-                      onFocus={() => setAddressFocused(true)}
-                      onBlur={() => setTimeout(() => setAddressFocused(false), 180)}
-                      placeholder="Street address, city, province/state"
+                      ref={locationInputRef}
+                      value={draft.locationQuery}
+                      onChangeText={editLocationQuery}
+                      onFocus={() => setLocationFocused(true)}
+                      onBlur={() => setTimeout(() => setLocationFocused(false), 180)}
+                      onSubmitEditing={submitLocationSearch}
+                      placeholder="Venue, business, or address"
                       returnKeyType="search"
                       autoCorrect={false}
+                      editable={!locationResolving}
                       style={[styles.input, styles.addressInput]}
-                      accessibilityLabel="Custom event address"
-                      accessibilityHint="Type at least three characters to see matching addresses"
+                      accessibilityLabel="Event location search"
+                      accessibilityHint="Type at least three characters to find GathR venues, businesses, and addresses"
                     />
-                    {addressSuggestionsLoading && (
+                    {(locationSuggestionsLoading || locationResolving) && (
                       <ActivityIndicator color={PURPLE} size="small" style={styles.addressSpinner} />
                     )}
-                    {addressFocused
-                      && !draft.customCoordinates
-                      && draft.customAddress.trim().length >= 3
-                      && (addressSuggestions.length > 0 || addressSuggestionsQueried)
+                    {locationFocused
+                      && !hasPhysicalSelection
+                      && draft.locationQuery.trim().length >= 3
+                      && (locationSuggestions.length > 0 || locationSuggestionsQueried)
                       && (
                         <View style={styles.addressSuggestions}>
-                          {addressSuggestions.length > 0 ? (
+                          {locationSuggestions.length > 0 ? (
                             <ScrollView
                               keyboardShouldPersistTaps="always"
                               nestedScrollEnabled
                               showsVerticalScrollIndicator={false}
                               style={styles.addressSuggestionList}
                             >
-                              {addressSuggestions.map((suggestion, index) => (
+                              {locationSuggestions.map((suggestion, index) => (
                                 <TouchableOpacity
                                   key={suggestion.id}
-                                  onPress={() => selectAddressSuggestion(suggestion)}
+                                  onPress={() => void selectLocationSuggestion(suggestion)}
                                   style={[
                                     styles.addressSuggestionRow,
-                                    index < addressSuggestions.length - 1 && styles.addressSuggestionDivider,
+                                    index < locationSuggestions.length - 1 && styles.addressSuggestionDivider,
                                   ]}
                                   accessibilityRole="button"
-                                  accessibilityLabel={`Use ${suggestion.fullAddress}`}
+                                  accessibilityLabel={`Use ${suggestion.primaryText}, ${suggestion.fullAddress}`}
                                 >
-                                  <View style={styles.addressSuggestionIcon}>
-                                    <Ionicons name="location-outline" size={17} color={PURPLE} />
+                                  <View style={[
+                                    styles.addressSuggestionIcon,
+                                    suggestion.source === 'gathr' && styles.gathrSuggestionIcon,
+                                  ]}>
+                                    <Ionicons
+                                      name={suggestion.source === 'gathr' ? 'business' : 'location-outline'}
+                                      size={17}
+                                      color={suggestion.source === 'gathr' ? BRAND : PURPLE}
+                                    />
                                   </View>
                                   <View style={styles.flex}>
-                                    <Text numberOfLines={1} style={styles.addressSuggestionPrimary}>{suggestion.primaryText}</Text>
+                                    <View style={styles.suggestionTitleRow}>
+                                      <Text numberOfLines={1} style={styles.addressSuggestionPrimary}>{suggestion.primaryText}</Text>
+                                      {suggestion.source === 'gathr' && <Text style={styles.gathrBadge}>GathR</Text>}
+                                    </View>
                                     <Text numberOfLines={1} style={styles.addressSuggestionSecondary}>{suggestion.secondaryText}</Text>
                                   </View>
                                 </TouchableOpacity>
@@ -573,10 +703,10 @@ export default function CreateEventScreen() {
                             </ScrollView>
                           ) : (
                             <View style={styles.addressSuggestionMessage}>
-                              <Ionicons name={addressSuggestionError ? 'cloud-offline-outline' : 'search-outline'} size={17} color="#667085" />
+                              <Ionicons name={locationSuggestionError ? 'cloud-offline-outline' : 'search-outline'} size={17} color="#667085" />
                               <Text style={styles.addressSuggestionMessageText}>
-                                {addressSuggestionError
-                                  ? 'Suggestions are unavailable. You can still use Find this address.'
+                                {locationSuggestionError
+                                  ? 'Suggestions are unavailable. You can still use the typed address.'
                                   : 'No close matches. Add the town, province/state, or postal code.'}
                               </Text>
                             </View>
@@ -584,30 +714,50 @@ export default function CreateEventScreen() {
                         </View>
                       )}
                   </View>
-                  <TouchableOpacity disabled={geocoding} onPress={() => void geocodeAddress()} style={[styles.confirmAddress, geocoding && styles.disabled]}>
-                    {geocoding ? <ActivityIndicator color={PURPLE} /> : <Ionicons name={draft.customCoordinates ? 'checkmark-circle' : 'locate-outline'} size={19} color={PURPLE} />}
-                    <Text style={styles.confirmAddressText}>{draft.customCoordinates ? 'Address confirmed' : 'Find this address'}</Text>
-                  </TouchableOpacity>
-                  <Text style={styles.fieldLabel}>Share exact address</Text>
-                  <View style={styles.segmentRow}>
-                    {([['now', 'Now'], ['two_hours', '2h before'], ['start', 'At start']] as const).map(([value, label]) => (
-                      <TouchableOpacity key={value} onPress={() => patchDraft({ revealChoice: value })} style={[styles.segment, draft.revealChoice === value && styles.segmentActive]}>
-                        <Text style={[styles.segmentText, draft.revealChoice === value && styles.segmentTextActive]}>{label}</Text>
+                  {hasPhysicalSelection ? (
+                    <View style={styles.selectedLocationCard}>
+                      <View style={styles.selectedLocationIcon}>
+                        <Ionicons name={draft.locationType === 'recognized_venue' ? 'business' : 'location'} size={20} color={draft.locationType === 'recognized_venue' ? BRAND : PURPLE} />
+                      </View>
+                      <View style={styles.flex}>
+                        <View style={styles.suggestionTitleRow}>
+                          <Text numberOfLines={1} style={styles.selectedLocationTitle}>
+                            {draft.locationType === 'recognized_venue'
+                              ? selectedVenue?.name || draft.locationQuery
+                              : draft.customPlaceName || draft.locationQuery}
+                          </Text>
+                          {draft.locationType === 'recognized_venue' && <Text style={styles.gathrBadge}>GathR</Text>}
+                        </View>
+                        <Text numberOfLines={2} style={styles.panelCopy}>
+                          {draft.locationType === 'recognized_venue'
+                            ? selectedVenue?.address || draft.customAddress
+                            : draft.customAddress}
+                        </Text>
+                      </View>
+                      <TouchableOpacity onPress={changeSelectedLocation} style={styles.changeLocationButton} accessibilityLabel="Change event location">
+                        <Text style={styles.changeLocationText}>Change</Text>
                       </TouchableOpacity>
-                    ))}
-                  </View>
+                    </View>
+                  ) : draft.locationQuery.trim().length >= 5 ? (
+                    <TouchableOpacity disabled={geocoding} onPress={() => void confirmTypedLocation()} style={[styles.confirmAddress, geocoding && styles.disabled]}>
+                      {geocoding ? <ActivityIndicator color={PURPLE} /> : <Ionicons name="locate-outline" size={19} color={PURPLE} />}
+                      <Text style={styles.confirmAddressText}>Use typed address</Text>
+                    </TouchableOpacity>
+                  ) : null}
+                  {draft.locationType === 'custom_address' && Boolean(draft.customCoordinates) && (
+                    <>
+                      <Text style={styles.fieldLabel}>Share exact address</Text>
+                      <View style={styles.segmentRow}>
+                        {([['now', 'Now'], ['two_hours', '2h before'], ['start', 'At start']] as const).map(([value, label]) => (
+                          <TouchableOpacity key={value} onPress={() => patchDraft({ revealChoice: value })} style={[styles.segment, draft.revealChoice === value && styles.segmentActive]}>
+                            <Text style={[styles.segmentText, draft.revealChoice === value && styles.segmentTextActive]}>{label}</Text>
+                          </TouchableOpacity>
+                        ))}
+                      </View>
+                      <Text style={styles.privateAddressNote}>Only authorized guests receive this exact address.</Text>
+                    </>
+                  )}
                 </View>
-              )}
-
-              {draft.locationType === 'recognized_venue' && (
-                <TouchableOpacity onPress={() => setPicker('venue')} style={styles.bigSelector}>
-                  <View style={styles.bigSelectorIcon}><Ionicons name="business" size={24} color={BRAND} /></View>
-                  <View style={styles.flex}>
-                    <Text style={styles.bigSelectorTitle}>{selectedVenue?.name || 'Choose a GathR venue'}</Text>
-                    <Text numberOfLines={2} style={styles.panelCopy}>{selectedVenue?.address || 'Recognized venues use their existing map location.'}</Text>
-                  </View>
-                  <Ionicons name="chevron-forward" size={20} color="#98A2B3" />
-                </TouchableOpacity>
               )}
 
               {draft.locationType === 'online' && (
@@ -740,7 +890,7 @@ export default function CreateEventScreen() {
         <View style={styles.modalBackdrop}>
           <View style={styles.modalSheet}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>{picker === 'category' ? 'Choose category' : picker === 'venue' ? 'Choose venue' : 'Choose friends'}</Text>
+              <Text style={styles.modalTitle}>{picker === 'category' ? 'Choose category' : 'Choose friends'}</Text>
               <TouchableOpacity onPress={() => setPicker(null)} style={styles.iconButton}><Ionicons name="close" size={22} color="#344054" /></TouchableOpacity>
             </View>
             <ScrollView contentContainerStyle={styles.modalList} showsVerticalScrollIndicator={false}>
@@ -749,12 +899,6 @@ export default function CreateEventScreen() {
                   <View style={styles.selectorIcon}><Ionicons name="pricetag-outline" size={17} color={PURPLE} /></View>
                   <Text style={styles.pickerText}>{category}</Text>
                   <Ionicons name={draft.category === category ? 'checkmark-circle' : 'chevron-forward'} size={20} color={draft.category === category ? PURPLE : '#98A2B3'} />
-                </TouchableOpacity>
-              ))}
-              {picker === 'venue' && venues.map((venue) => (
-                <TouchableOpacity key={venue.venueId} onPress={() => { patchDraft({ venueId: venue.venueId }); setPicker(null); }} style={styles.pickerRow}>
-                  <View style={styles.flex}><Text style={styles.pickerText}>{venue.name}</Text><Text numberOfLines={1} style={styles.panelCopy}>{venue.address}</Text></View>
-                  <Ionicons name={draft.venueId === venue.venueId ? 'checkmark-circle' : 'chevron-forward'} size={20} color={draft.venueId === venue.venueId ? PURPLE : '#98A2B3'} />
                 </TouchableOpacity>
               ))}
               {picker === 'friends' && friends.map((friend) => (
@@ -827,10 +971,19 @@ const styles = StyleSheet.create({
   addressSuggestionRow: { minHeight: 56, flexDirection: 'row', alignItems: 'center', gap: 9, paddingHorizontal: 10, paddingVertical: 7, backgroundColor: '#FFFFFF' },
   addressSuggestionDivider: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#EAECF0' },
   addressSuggestionIcon: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center', backgroundColor: '#F4EBFF' },
-  addressSuggestionPrimary: { color: '#344054', fontSize: 13, fontWeight: '800' },
+  gathrSuggestionIcon: { backgroundColor: '#EFF8FF' },
+  suggestionTitleRow: { minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 6 },
+  addressSuggestionPrimary: { flexShrink: 1, color: '#344054', fontSize: 13, fontWeight: '800' },
   addressSuggestionSecondary: { color: '#667085', fontSize: 10, marginTop: 2 },
+  gathrBadge: { flexShrink: 0, overflow: 'hidden', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 8, color: '#175CD3', backgroundColor: '#D1E9FF', fontSize: 8, fontWeight: '900' },
   addressSuggestionMessage: { minHeight: 58, flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 11 },
   addressSuggestionMessageText: { flex: 1, color: '#667085', fontSize: 11, lineHeight: 15 },
+  selectedLocationCard: { minHeight: 66, flexDirection: 'row', alignItems: 'center', gap: 9, padding: 9, borderWidth: 1, borderColor: '#B692F6', borderRadius: 13, backgroundColor: '#FFFFFF' },
+  selectedLocationIcon: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center', backgroundColor: '#F4EBFF' },
+  selectedLocationTitle: { flexShrink: 1, color: '#344054', fontSize: 13, fontWeight: '900' },
+  changeLocationButton: { minHeight: 34, justifyContent: 'center', paddingHorizontal: 7 },
+  changeLocationText: { color: PURPLE, fontSize: 11, fontWeight: '900' },
+  privateAddressNote: { color: '#667085', fontSize: 10, lineHeight: 14 },
   fieldLabel: { color: '#475467', fontSize: 11, fontWeight: '800', marginTop: 2 },
   confirmAddress: { minHeight: 42, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, borderRadius: 11, backgroundColor: '#F4EBFF' },
   confirmAddressText: { color: '#53389E', fontWeight: '800' },

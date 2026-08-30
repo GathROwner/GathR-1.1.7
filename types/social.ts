@@ -184,11 +184,20 @@ export interface FriendEventLocationProjection {
   updatedAt?: SocialTimestamp;
 }
 
-export interface FriendEventAddressSuggestion {
+export interface FriendEventLocationSuggestion {
   id: string;
+  mapboxId: string;
   primaryText: string;
   secondaryText: string;
   fullAddress: string;
+  featureType: string;
+}
+
+export interface ResolvedFriendEventLocationSuggestion {
+  mapboxId: string;
+  primaryText: string;
+  fullAddress: string;
+  featureType: string;
   latitude: number;
   longitude: number;
 }

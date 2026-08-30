@@ -917,3 +917,13 @@ All canonical mutations use authenticated callable functions. Clients cannot dir
 - Keep address text, result labels, and coordinates out of analytics and logs. The Mapbox token remains server-side behind the authenticated social callable with a per-user rate limit.
 - Treat autocomplete results as temporary. The final server-side address verification uses Mapbox permanent-geocoding mode because its coordinates are stored in the Admin-only private event-location record.
 - This slice is JavaScript plus one isolated social callable and requires no native dependency or mobile build. Release requires a narrow Functions deployment, an iOS-only Preview OTA, and physical-device acceptance of keyboard/dropdown selection before it is marked complete.
+
+### 2026-08-30 — Unified venue, place, and address correction
+
+- Physical-device acceptance showed that address-only geocoding did not satisfy the intended location picker: business names were excluded by `types=address`, the optional place-name field did not search, and the separate Venue tab duplicated the same task.
+- Replace Address and Venue with one **Location** mode and one search field for known GathR venues, other businesses/POIs, parks, and street addresses. Online and Later remain separate modes.
+- Rank normalized local GathR venue matches first, including apostrophe-insensitive matching such as `hunters` → `Hunter's Ale House`, and identify them with a compact GathR badge. Selecting one must store its canonical `venueId`.
+- Use Mapbox Search Box `/suggest` and `/retrieve` as one session for non-GathR businesses and addresses. A selected non-GathR result remains a private custom location; its preview coordinates are replaced by the existing permanent server geocode before storage.
+- Show no more than five merged results in the bounded dropdown, remove duplicate Mapbox results when the same GathR venue is already present, and let the keyboard Search action select the top result.
+- Preserve the manual typed-address fallback and exact-address reveal timing. Known GathR venue addresses are public venue data; custom locations remain visible only to authorized event guests according to the host's reveal choice.
+- This correction still requires no native dependency or native build. It is not complete until mobile/backend regression suites, local callable emulation, compact-screen visual QA, a separately authorized backend deployment, and a separately authorized iOS Preview OTA all pass.

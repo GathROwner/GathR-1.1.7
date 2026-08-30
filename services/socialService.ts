@@ -25,14 +25,15 @@ import type {
   CheckInEligibilityResult,
   CheckInEligibilitySampleInput,
   FriendActivityProjection,
-  FriendEventAddressSuggestion,
   FriendEventInput,
+  FriendEventLocationSuggestion,
   FriendEventLocationProjection,
   FriendEventProjection,
   FriendEventRsvp,
   FriendProjection,
   FriendRequestProjection,
   OwnCheckIn,
+  ResolvedFriendEventLocationSuggestion,
   SocialProfile,
 } from '../types/social';
 
@@ -92,6 +93,7 @@ const APP_CHECKED_CALLABLES = new Set([
   'createFriendEventCallable',
   'geocodeFriendEventAddressCallable',
   'suggestFriendEventAddressesCallable',
+  'retrieveFriendEventLocationSuggestionCallable',
   'updateFriendEventCallable',
   'inviteToFriendEventCallable',
   'respondToFriendEventCallable',
@@ -301,19 +303,22 @@ export const geocodeFriendEventAddress = (address: string) =>
     { address }
   );
 
-export const suggestFriendEventAddresses = (
+export const suggestFriendEventLocations = (
   query: string,
+  sessionToken: string,
   proximity?: { latitude: number; longitude: number } | null,
   signal?: AbortSignal
 ) => callSocial<
   {
     query: string;
+    sessionToken: string;
     proximityLatitude?: number;
     proximityLongitude?: number;
   },
-  { suggestions: FriendEventAddressSuggestion[] }
+  { suggestions: FriendEventLocationSuggestion[] }
 >('suggestFriendEventAddressesCallable', {
   query,
+  sessionToken,
   ...(proximity
     ? {
         proximityLatitude: proximity.latitude,
@@ -321,6 +326,18 @@ export const suggestFriendEventAddresses = (
       }
     : {}),
 }, { signal, timeoutMs: 8_000 }).then((result) => result.suggestions);
+
+export const retrieveFriendEventLocationSuggestion = (
+  mapboxId: string,
+  sessionToken: string,
+  signal?: AbortSignal
+) => callSocial<
+  { mapboxId: string; sessionToken: string },
+  ResolvedFriendEventLocationSuggestion
+>('retrieveFriendEventLocationSuggestionCallable', {
+  mapboxId,
+  sessionToken,
+}, { signal, timeoutMs: 8_000 });
 
 export const updateFriendEvent = (eventId: string, input: FriendEventInput) =>
   callSocial<FriendEventInput & { eventId: string }, { eventId: string; revision: string }>(
