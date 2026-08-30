@@ -944,3 +944,14 @@ All canonical mutations use authenticated callable functions. Clients cannot dir
 - Listener errors remain visible until that same listener succeeds or the authenticated listener set restarts. Unrelated snapshots cannot erase the failure or re-enable a completed relationship spinner.
 - Production verification confirmed the pending incoming request for `@craig_burgoyne` still exists. Emulator integration verifies accepting a request creates both mutual friend projections.
 - This client hardening is JavaScript-only. It requires an iOS Preview OTA but no native build, Android update, Function deployment, or additional Firestore mutation.
+
+### 2026-08-30 — Live Friends destinations carousel
+
+- Repurpose the map's **Friends** pill from an invited-event layer toggle into the live answer to **Where are my friends right now?** Authorized private friend events remain on the normal map layer instead of being hidden by this control.
+- Pill inclusion is driven by an active, server-authorized friend check-in. It deliberately does not depend on the event **Now** filter: a friend checked in for an event starting in 45 minutes still produces a live destination card while that event remains classified under **Today**.
+- Keep the carousel screen-boundary and content-filter aware. It respects visible event/special types, categories, search, and Saved-only state, while ignoring only the time filter for current social presence.
+- Group all checked-in friends at the same recognized venue into one horizontal destination card. The pill labels its count as **place/places**; the card carries the friend count, up to three avatars, and compact first-name copy such as **Jen, Mike, Sarah +2**.
+- Distinguish **Public event**, **Private · Invited**, **Your private event**, and **Venue check-in** directly on the card. A private event enters the carousel only when the viewer already has an authorized event projection and an accepted friend has an active check-in there.
+- Current check-in records identify a venue, not an event. Associate a check-in with an event only when exactly one non-ended event at that venue is happening or begins within 90 minutes. If multiple candidates share the venue, show a venue check-in and open the existing venue callout rather than falsely claiming event attendance.
+- Event-backed cards open the existing event lightbox. The lightbox adds a bounded **Who's here** row with an expandable, internally scrollable authorized friend list; private friend events also show an explicit invited/hosted badge.
+- This slice is client-only and introduces no native dependency, backend deployment, Android OTA, or native build. Focused tests cover the 45-minute/Now-filter case, grouping, ambiguity fallback, category filtering, screen-boundary exclusion, private-event authorization, and name truncation.

@@ -61,6 +61,8 @@ import {
   getAreaSourceUrl,
   hasDrawableAreaLocations,
 } from '../../utils/areaEvent';
+import { getVenueFriendPresence } from '../../utils/friendPresence';
+import { formatFriendsHere } from '../../utils/friendDestinations';
 
 // Store imports for like/share functionality
 import * as userService from '../../services/userService';
@@ -258,6 +260,8 @@ const EventImageLightbox: React.FC<EventImageLightboxProps> = ({
 // Use updated event data with fallback to original prop (keep prop fields!)
   const updatedFromStore = getUpdatedEvent(event.id);
   const updatedEvent = { ...event, ...(updatedFromStore || {}) };
+  const friendPresence = getVenueFriendPresence(cluster || null, venue || null);
+  const [friendListExpanded, setFriendListExpanded] = useState(false);
 
 // If address is missing, fetch details for this id
   const fetchEventDetails = useMapStore(s => s.fetchEventDetails);
@@ -1481,6 +1485,14 @@ const handleNonTicketAction = () => {
           <View style={[styles.categoryBadge, { backgroundColor: getCategoryColor(updatedEvent.category) }]}>
             <Text style={styles.badgeText}>{updatedEvent.category}</Text>
           </View>
+          {updatedEvent.friendEvent && (
+            <View style={styles.privateInvitationBadge}>
+              <MaterialIcons name="lock" size={12} color="#FFFFFF" />
+              <Text style={styles.badgeText}>
+                {updatedEvent.friendEvent.viewerRole === 'guest' ? 'Private · Invited' : 'Your private event'}
+              </Text>
+            </View>
+          )}
           {hasDisplayableTicketPrice(updatedEvent.ticketPrice) &&
             updatedEvent.ticketPrice !== 'Ticketed Event' &&
             !(hasTicketLink && paid) && (
@@ -1538,6 +1550,63 @@ const handleNonTicketAction = () => {
             />
           )}
         </View>
+
+        {friendPresence && (
+          <View style={styles.lightboxFriendPresence}>
+            <TouchableOpacity
+              accessibilityLabel={`${friendPresence.friendCount} friend${friendPresence.friendCount === 1 ? '' : 's'} checked in. ${friendListExpanded ? 'Hide' : 'Show'} who is here.`}
+              accessibilityRole="button"
+              activeOpacity={0.8}
+              onPress={() => setFriendListExpanded((value) => !value)}
+              style={styles.lightboxFriendPresenceHeader}
+            >
+              <View style={styles.lightboxFriendPresenceIcon}>
+                <MaterialIcons name="people" size={17} color="#FFFFFF" />
+              </View>
+              <View style={styles.lightboxFriendPresenceCopy}>
+                <Text style={styles.lightboxFriendPresenceTitle} numberOfLines={1}>
+                  {formatFriendsHere(friendPresence.friends)}
+                </Text>
+                <Text style={styles.lightboxFriendPresenceHint} numberOfLines={1}>
+                  {friendListExpanded ? 'Hide check-in details' : 'Who’s here'}
+                </Text>
+              </View>
+              <View style={styles.lightboxFriendPresenceCount}>
+                <Text style={styles.lightboxFriendPresenceCountText}>{friendPresence.friendCount}</Text>
+              </View>
+              <MaterialIcons
+                name={friendListExpanded ? 'keyboard-arrow-up' : 'keyboard-arrow-down'}
+                size={20}
+                color="#53389E"
+              />
+            </TouchableOpacity>
+            {friendListExpanded && (
+              <GestureScrollView
+                nestedScrollEnabled
+                showsVerticalScrollIndicator={friendPresence.friendCount > 3}
+                style={styles.lightboxFriendPresenceList}
+              >
+                {friendPresence.friends.map((friend) => (
+                  <View key={friend.ownerUid} style={styles.lightboxFriendPresencePerson}>
+                    <View style={styles.lightboxFriendPresenceInitial}>
+                      <Text style={styles.lightboxFriendPresenceInitialText}>
+                        {(friend.displayName || 'F').trim().slice(0, 1).toUpperCase()}
+                      </Text>
+                    </View>
+                    <View style={styles.lightboxFriendPresencePersonCopy}>
+                      <Text style={styles.lightboxFriendPresenceName}>{friend.displayName}</Text>
+                      {friend.message ? (
+                        <Text style={styles.lightboxFriendPresenceMessage} numberOfLines={1}>
+                          {friend.message}
+                        </Text>
+                      ) : null}
+                    </View>
+                  </View>
+                ))}
+              </GestureScrollView>
+            )}
+          </View>
+        )}
 
         {/* Essential event information */}
         <View style={styles.infoContainer}>
@@ -2059,6 +2128,17 @@ const styles = StyleSheet.create({
     marginRight: 8,
     marginBottom: 6,
   },
+  privateInvitationBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 4,
+    marginRight: 8,
+    marginBottom: 6,
+    backgroundColor: '#6941C6',
+  },
   priceBadge: {
     backgroundColor: '#E94E77',
     paddingHorizontal: 8,
@@ -2106,6 +2186,63 @@ const styles = StyleSheet.create({
     borderRadius: 4,
     padding: 2,
   },
+  lightboxFriendPresence: {
+    marginHorizontal: 16,
+    marginBottom: 5,
+    overflow: 'hidden',
+    borderRadius: 13,
+    borderWidth: 1,
+    borderColor: '#B692F6',
+    backgroundColor: '#F4EBFF',
+  },
+  lightboxFriendPresenceHeader: {
+    minHeight: 50,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 9,
+    paddingVertical: 7,
+  },
+  lightboxFriendPresenceIcon: {
+    width: 31,
+    height: 31,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 16,
+    backgroundColor: '#6941C6',
+  },
+  lightboxFriendPresenceCopy: { flex: 1, minWidth: 0, marginLeft: 9 },
+  lightboxFriendPresenceTitle: { color: '#3E1C96', fontSize: 12.5, fontWeight: '900' },
+  lightboxFriendPresenceHint: { marginTop: 1, color: '#6941C6', fontSize: 10.5, fontWeight: '700' },
+  lightboxFriendPresenceCount: {
+    minWidth: 24,
+    height: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 6,
+    borderRadius: 12,
+    backgroundColor: '#E9D7FE',
+  },
+  lightboxFriendPresenceCountText: { color: '#53389E', fontSize: 11, fontWeight: '900' },
+  lightboxFriendPresenceList: {
+    maxHeight: 118,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: '#D6BBFB',
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+  },
+  lightboxFriendPresencePerson: { minHeight: 34, flexDirection: 'row', alignItems: 'center' },
+  lightboxFriendPresenceInitial: {
+    width: 25,
+    height: 25,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 13,
+    backgroundColor: '#D6BBFB',
+  },
+  lightboxFriendPresenceInitialText: { color: '#53389E', fontSize: 10, fontWeight: '900' },
+  lightboxFriendPresencePersonCopy: { flex: 1, minWidth: 0, marginLeft: 8 },
+  lightboxFriendPresenceName: { color: '#3E1C96', fontSize: 11.5, fontWeight: '800' },
+  lightboxFriendPresenceMessage: { color: '#6941C6', fontSize: 10.5 },
   infoContainer: {
     paddingHorizontal: 16,
     paddingTop: 8,
