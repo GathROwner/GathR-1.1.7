@@ -6,7 +6,7 @@ import {
   getLastSocialCallableDiagnostic,
   subscribeToSocialCallableDiagnostics,
 } from '../../services/socialService';
-import { useSocialStore } from '../../store/socialStore';
+import { SOCIAL_LISTENER_COUNT, useSocialStore } from '../../store/socialStore';
 import { socialTimestampToMillis } from '../../utils/friendPresence';
 
 function expiryCopy(expiresAt: unknown, now: number) {
@@ -47,7 +47,7 @@ function DevSocialDiagnosticsPanel() {
       <Text style={styles.row}>Firebase: {firebaseTarget}</Text>
       <Text style={styles.row}>User: {uid ? uid.slice(0, 8) : 'signed out'}</Text>
       <Text style={styles.row}>
-        Listeners: {listenerReadyCount}/5 · {fromCache ? 'cache/offline' : 'server'}
+        Listeners: {listenerReadyCount}/{SOCIAL_LISTENER_COUNT} · {fromCache ? 'cache/offline' : 'server'}
       </Text>
       <Text style={styles.row}>Friends: {friendCount} · Requests: {requestCount}</Text>
       <Text style={styles.row}>

@@ -388,6 +388,15 @@ function mapDocuments<T>(snapshot: QuerySnapshot<DocumentData>): T[] {
     });
 }
 
+export type SocialListenerName =
+  | 'friends'
+  | 'requests'
+  | 'activity'
+  | 'blocks'
+  | 'ownCheckIn'
+  | 'friendEvents'
+  | 'friendEventLocations';
+
 export interface SocialListenerCallbacks {
   onFriends: (friends: FriendProjection[], fromCache: boolean) => void;
   onRequests: (requests: FriendRequestProjection[], fromCache: boolean) => void;
@@ -396,7 +405,7 @@ export interface SocialListenerCallbacks {
   onOwnCheckIn: (checkIn: OwnCheckIn | null, fromCache: boolean) => void;
   onFriendEvents: (events: FriendEventProjection[], fromCache: boolean) => void;
   onFriendEventLocations: (locations: FriendEventLocationProjection[], fromCache: boolean) => void;
-  onError: (error: SocialServiceError) => void;
+  onError: (listener: SocialListenerName, error: SocialServiceError) => void;
 }
 
 export interface FriendEventDetailCallbacks {
@@ -467,7 +476,8 @@ export function subscribeToSocialData(
   uid: string,
   callbacks: SocialListenerCallbacks
 ): Unsubscribe {
-  const error = (value: unknown) => callbacks.onError(normalizeCallableError(value));
+  const error = (listener: SocialListenerName) => (value: unknown) =>
+    callbacks.onError(listener, normalizeCallableError(value));
   const subscriptions: Unsubscribe[] = [
     onSnapshot(
       collection(firestore, 'users', uid, 'friends'),
@@ -476,7 +486,7 @@ export function subscribeToSocialData(
         mapDocuments<FriendProjection>(snapshot),
         snapshot.metadata.fromCache
       ),
-      error
+      error('friends')
     ),
     onSnapshot(
       collection(firestore, 'users', uid, 'friendRequests'),
@@ -485,7 +495,7 @@ export function subscribeToSocialData(
         mapDocuments<FriendRequestProjection>(snapshot),
         snapshot.metadata.fromCache
       ),
-      error
+      error('requests')
     ),
     onSnapshot(
       collection(firestore, 'users', uid, 'friendActivity'),
@@ -494,13 +504,13 @@ export function subscribeToSocialData(
         mapDocuments<FriendActivityProjection>(snapshot),
         snapshot.metadata.fromCache
       ),
-      error
+      error('activity')
     ),
     onSnapshot(
       collection(firestore, 'users', uid, 'blocks'),
       { includeMetadataChanges: true },
       (snapshot) => callbacks.onBlocks(mapDocuments<BlockProjection>(snapshot), snapshot.metadata.fromCache),
-      error
+      error('blocks')
     ),
     onSnapshot(
       doc(firestore, 'activeCheckIns', uid),
@@ -509,7 +519,7 @@ export function subscribeToSocialData(
         snapshot.exists() ? (snapshot.data() as OwnCheckIn) : null,
         snapshot.metadata.fromCache
       ),
-      error
+      error('ownCheckIn')
     ),
   ];
 
@@ -525,7 +535,7 @@ export function subscribeToSocialData(
           })),
           snapshot.metadata.fromCache
         ),
-        error
+        error('friendEvents')
       ),
       onSnapshot(
         collection(firestore, 'users', uid, 'friendEventLocations'),
@@ -537,7 +547,7 @@ export function subscribeToSocialData(
           })),
           snapshot.metadata.fromCache
         ),
-        error
+        error('friendEventLocations')
       )
     );
   }

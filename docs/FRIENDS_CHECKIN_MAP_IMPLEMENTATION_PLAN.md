@@ -935,3 +935,12 @@ All canonical mutations use authenticated callable functions. Clients cannot dir
 - Add a focused server-authoritative listener for the event and exact-location projection. Cached private data is ignored; a confirmed server miss is required before showing **Event unavailable**, and network failure receives a distinct retry state.
 - Keep existing collection listeners as the source for My Events, feeds, and maps. The focused listener exists only to prevent a newly created or deep-linked event from being mistaken for a revocation while those broader listeners catch up.
 - Regression coverage must include zero-friend audience resolution, loading before server confirmation, confirmed-revocation override, and exact-location fail-closed behavior. This correction is JavaScript-only and requires no backend deployment or native build.
+
+### 2026-08-30 — Production projection rules and relationship-loading correction
+
+- Physical iOS acceptance exposed that the Production rules release predated Release 2: server callables created private friend-event projections correctly, but the signed-in host could not read them. The verified additive `firestore:rules` release restored owner-only access without changing Functions or application data.
+- A terminated friend-event listener could also leave the Friends screen spinning forever. The relationship screen incorrectly waited for every social domain, and a later successful listener cleared the earlier error even though that failed listener could not recover.
+- Track readiness, cache state, and errors per named listener. Friends, Requests, and Blocked now depend only on their three relationship listeners; private events, locations, activity, and check-ins cannot block those lists.
+- Listener errors remain visible until that same listener succeeds or the authenticated listener set restarts. Unrelated snapshots cannot erase the failure or re-enable a completed relationship spinner.
+- Production verification confirmed the pending incoming request for `@craig_burgoyne` still exists. Emulator integration verifies accepting a request creates both mutual friend projections.
+- This client hardening is JavaScript-only. It requires an iOS Preview OTA but no native build, Android update, Function deployment, or additional Firestore mutation.

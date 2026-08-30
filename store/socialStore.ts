@@ -1,7 +1,7 @@
 import { AppState, type AppStateStatus } from 'react-native';
 import { create } from 'zustand';
 
-import { subscribeToSocialData } from '../services/socialService';
+import { subscribeToSocialData, type SocialListenerName } from '../services/socialService';
 import type {
   BlockProjection,
   FriendActivityProjection,
@@ -26,8 +26,11 @@ interface SocialState {
   friendEvents: FriendEventProjection[];
   friendEventLocations: FriendEventLocationProjection[];
   loading: boolean;
+  relationshipLoading: boolean;
   fromCache: boolean;
+  relationshipFromCache: boolean;
   error: string | null;
+  relationshipError: string | null;
   lastUpdatedAt: number | null;
   listenerReadyCount: number;
   activityReceivedCount: number;
@@ -46,8 +49,11 @@ const EMPTY_STATE: SocialState = {
   friendEvents: [],
   friendEventLocations: [],
   loading: false,
+  relationshipLoading: false,
   fromCache: false,
+  relationshipFromCache: false,
   error: null,
+  relationshipError: null,
   lastUpdatedAt: null,
   listenerReadyCount: 0,
   activityReceivedCount: 0,
@@ -61,17 +67,62 @@ export const useSocialStore = create<SocialState>(() => ({ ...EMPTY_STATE }));
 let unsubscribeSocial: (() => void) | null = null;
 let expiryTimer: ReturnType<typeof setInterval> | null = null;
 let appStateSubscription: { remove: () => void } | null = null;
-let readyListeners = new Set<string>();
-let cachedListeners = new Set<string>();
+let readyListeners = new Set<SocialListenerName>();
+let cachedListeners = new Set<SocialListenerName>();
+let listenerErrors = new Map<SocialListenerName, string>();
 
-function markListenerReady(name: string, fromCache: boolean) {
+const RELATIONSHIP_LISTENERS = new Set<SocialListenerName>(['friends', 'requests', 'blocks']);
+export const SOCIAL_LISTENER_COUNT = SOCIAL_RELEASE_TWO_ENABLED ? 7 : 5;
+
+function firstListenerError(names?: Set<SocialListenerName>) {
+  for (const [name, message] of listenerErrors) {
+    if (!names || names.has(name)) return message;
+  }
+  return null;
+}
+
+function relationshipListenersLoading() {
+  const relationshipFailed = [...RELATIONSHIP_LISTENERS].some((name) => listenerErrors.has(name));
+  if (relationshipFailed) return false;
+  return [...RELATIONSHIP_LISTENERS].some((name) => !readyListeners.has(name));
+}
+
+function socialListenersLoading() {
+  return readyListeners.size + listenerErrors.size < SOCIAL_LISTENER_COUNT;
+}
+
+function relationshipListenersFromCache() {
+  return [...RELATIONSHIP_LISTENERS].some((name) => cachedListeners.has(name));
+}
+
+function markListenerReady(name: SocialListenerName, fromCache: boolean) {
   readyListeners.add(name);
+  listenerErrors.delete(name);
   if (fromCache) cachedListeners.add(name);
   else cachedListeners.delete(name);
   useSocialStore.setState({
-    loading: readyListeners.size < (SOCIAL_RELEASE_TWO_ENABLED ? 7 : 5),
+    loading: socialListenersLoading(),
+    relationshipLoading: relationshipListenersLoading(),
     fromCache: cachedListeners.size > 0,
-    error: null,
+    relationshipFromCache: relationshipListenersFromCache(),
+    error: firstListenerError(),
+    relationshipError: firstListenerError(RELATIONSHIP_LISTENERS),
+    lastUpdatedAt: Date.now(),
+    listenerReadyCount: readyListeners.size,
+  });
+}
+
+function markListenerError(name: SocialListenerName, message: string) {
+  readyListeners.delete(name);
+  listenerErrors.set(name, message);
+  cachedListeners.delete(name);
+  useSocialStore.setState({
+    loading: socialListenersLoading(),
+    relationshipLoading: relationshipListenersLoading(),
+    fromCache: cachedListeners.size > 0,
+    relationshipFromCache: relationshipListenersFromCache(),
+    error: firstListenerError(),
+    relationshipError: firstListenerError(RELATIONSHIP_LISTENERS),
     lastUpdatedAt: Date.now(),
     listenerReadyCount: readyListeners.size,
   });
@@ -131,8 +182,9 @@ export function stopSocialListeners() {
   expiryTimer = null;
   appStateSubscription?.remove();
   appStateSubscription = null;
-  readyListeners = new Set<string>();
-  cachedListeners = new Set<string>();
+  readyListeners = new Set<SocialListenerName>();
+  cachedListeners = new Set<SocialListenerName>();
+  listenerErrors = new Map<SocialListenerName, string>();
   useSocialStore.setState({ ...EMPTY_STATE });
   useMapStore.getState().setFriendEvents([]);
 }
@@ -144,7 +196,7 @@ export function startSocialListeners(uid: string) {
   }
   if (useSocialStore.getState().uid === uid && unsubscribeSocial) return;
   stopSocialListeners();
-  useSocialStore.setState({ ...EMPTY_STATE, uid, loading: true });
+  useSocialStore.setState({ ...EMPTY_STATE, uid, loading: true, relationshipLoading: true });
 
   unsubscribeSocial = subscribeToSocialData(uid, {
     onFriends: (friends, fromCache) => {
@@ -191,7 +243,7 @@ export function startSocialListeners(uid: string) {
       syncFriendEventsToMap();
       markListenerReady('friendEventLocations', fromCache);
     },
-    onError: (error) => useSocialStore.setState({ loading: false, error: error.message }),
+    onError: (listener, error) => markListenerError(listener, error.message),
   });
 
   expiryTimer = setInterval(() => pruneExpiredSocialData(), 15_000);

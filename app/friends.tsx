@@ -92,7 +92,14 @@ export default function FriendsScreen() {
   const params = useLocalSearchParams<{ handle?: string }>();
   const { user } = useAuth();
   const currentUid = user?.uid || '';
-  const { friends, requests, blocks, loading, fromCache, error } = useSocialStore();
+  const {
+    friends,
+    requests,
+    blocks,
+    relationshipLoading: loading,
+    relationshipFromCache: fromCache,
+    relationshipError: error,
+  } = useSocialStore();
   const [handle, setHandle] = useState('');
   const [claimedHandle, setClaimedHandle] = useState('');
   const [search, setSearch] = useState('');
