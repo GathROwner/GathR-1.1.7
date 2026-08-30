@@ -7,6 +7,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Keyboard,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -22,11 +23,12 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useAuth } from '../contexts/AuthContext';
 import { EVENT_CATEGORIES } from '../constants/eventCategories';
-import { createFriendEvent, createSocialOperationId, geocodeFriendEventAddress, updateFriendEvent } from '../services/socialService';
+import { createFriendEvent, createSocialOperationId, geocodeFriendEventAddress, suggestFriendEventAddresses, updateFriendEvent } from '../services/socialService';
 import { useMapStore } from '../store';
 import { useSocialStore } from '../store/socialStore';
 import type {
   FriendEventGuestInviteMode,
+  FriendEventAddressSuggestion,
   FriendEventInput,
   FriendEventLocationInput,
   FriendEventLocationType,
@@ -121,6 +123,9 @@ export default function CreateEventScreen() {
   const params = useLocalSearchParams<{ eventId?: string }>();
   const { user } = useAuth();
   const allEvents = useMapStore((state) => state.allEvents);
+  const userLocation = useMapStore((state) => state.userLocation);
+  const userLatitude = userLocation?.coords.latitude;
+  const userLongitude = userLocation?.coords.longitude;
   const friends = useSocialStore((state) => state.friends);
   const friendEvents = useSocialStore((state) => state.friendEvents);
   const locations = useSocialStore((state) => state.friendEventLocations);
@@ -132,11 +137,17 @@ export default function CreateEventScreen() {
   const [draft, setDraft] = useState<Draft>(initialDraft);
   const [busy, setBusy] = useState(false);
   const [geocoding, setGeocoding] = useState(false);
+  const [addressFocused, setAddressFocused] = useState(false);
+  const [addressSuggestions, setAddressSuggestions] = useState<FriendEventAddressSuggestion[]>([]);
+  const [addressSuggestionsLoading, setAddressSuggestionsLoading] = useState(false);
+  const [addressSuggestionsQueried, setAddressSuggestionsQueried] = useState(false);
+  const [addressSuggestionError, setAddressSuggestionError] = useState(false);
   const [picker, setPicker] = useState<'category' | 'venue' | 'friends' | null>(null);
   const [datePickerMode, setDatePickerMode] = useState<'date' | 'time' | null>(null);
   const [pickerDate, setPickerDate] = useState(() => new Date());
   const hydratedRef = useRef(false);
   const operationIdRef = useRef(createSocialOperationId());
+  const addressRequestRef = useRef(0);
   const draftKey = user ? `gathr:friend-event-draft:${user.uid}` : '';
 
   const categories = EVENT_CATEGORIES;
@@ -208,6 +219,66 @@ export default function CreateEventScreen() {
     return () => clearTimeout(timer);
   }, [draft, draftKey, editing]);
 
+  useEffect(() => {
+    const requestId = ++addressRequestRef.current;
+    const query = draft.customAddress.trim();
+    if (
+      draft.locationType !== 'custom_address'
+      || !addressFocused
+      || Boolean(draft.customCoordinates)
+      || query.length < 3
+    ) {
+      setAddressSuggestions([]);
+      setAddressSuggestionsLoading(false);
+      setAddressSuggestionsQueried(false);
+      setAddressSuggestionError(false);
+      return;
+    }
+
+    const controller = new AbortController();
+    setAddressSuggestions([]);
+    setAddressSuggestionsLoading(false);
+    setAddressSuggestionsQueried(false);
+    setAddressSuggestionError(false);
+    const timer = setTimeout(() => {
+      setAddressSuggestionsLoading(true);
+      void suggestFriendEventAddresses(
+        query,
+        userLatitude !== undefined && userLongitude !== undefined
+          ? {
+              latitude: userLatitude,
+              longitude: userLongitude,
+            }
+          : null,
+        controller.signal
+      ).then((suggestions) => {
+        if (requestId !== addressRequestRef.current) return;
+        setAddressSuggestions(suggestions);
+        setAddressSuggestionsQueried(true);
+      }).catch((error: unknown) => {
+        if (error instanceof Error && error.name === 'AbortError') return;
+        if (requestId !== addressRequestRef.current) return;
+        setAddressSuggestionError(true);
+        setAddressSuggestionsQueried(true);
+      }).finally(() => {
+        if (requestId === addressRequestRef.current) setAddressSuggestionsLoading(false);
+      });
+    }, 400);
+
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+      if (requestId === addressRequestRef.current) addressRequestRef.current += 1;
+    };
+  }, [
+    addressFocused,
+    draft.customAddress,
+    draft.customCoordinates,
+    draft.locationType,
+    userLatitude,
+    userLongitude,
+  ]);
+
   const patchDraft = (values: Partial<Draft>) => setDraft((current) => ({ ...current, ...values }));
 
   const applyPickedDate = (value: Date) => patchDraft({
@@ -272,12 +343,29 @@ export default function CreateEventScreen() {
     try {
       const result = await geocodeFriendEventAddress(draft.customAddress.trim());
       patchDraft({ customCoordinates: result });
+      setAddressSuggestions([]);
+      setAddressFocused(false);
+      Keyboard.dismiss();
       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => undefined);
     } catch (error) {
       Alert.alert('Address not confirmed', errorMessage(error));
     } finally {
       setGeocoding(false);
     }
+  };
+
+  const selectAddressSuggestion = (suggestion: FriendEventAddressSuggestion) => {
+    patchDraft({
+      customAddress: suggestion.fullAddress,
+      customCoordinates: {
+        latitude: suggestion.latitude,
+        longitude: suggestion.longitude,
+      },
+    });
+    setAddressSuggestions([]);
+    setAddressFocused(false);
+    Keyboard.dismiss();
+    void Haptics.selectionAsync().catch(() => undefined);
   };
 
   const buildInput = (): FriendEventInput | null => {
@@ -433,7 +521,69 @@ export default function CreateEventScreen() {
                   <Text style={styles.panelTitle}>Any address works</Text>
                   <Text style={styles.panelCopy}>Homes, parks, halls, or anywhere else. Only authorized guests receive the exact address.</Text>
                   <TextInput value={draft.customPlaceName} onChangeText={(customPlaceName) => patchDraft({ customPlaceName })} placeholder="Place name (optional)" style={styles.input} />
-                  <TextInput value={draft.customAddress} onChangeText={(customAddress) => patchDraft({ customAddress, customCoordinates: null })} placeholder="Street address, city, province/state" style={styles.input} accessibilityLabel="Custom event address" />
+                  <View style={styles.addressSearchWrap}>
+                    <TextInput
+                      value={draft.customAddress}
+                      onChangeText={(customAddress) => patchDraft({ customAddress, customCoordinates: null })}
+                      onFocus={() => setAddressFocused(true)}
+                      onBlur={() => setTimeout(() => setAddressFocused(false), 180)}
+                      placeholder="Street address, city, province/state"
+                      returnKeyType="search"
+                      autoCorrect={false}
+                      style={[styles.input, styles.addressInput]}
+                      accessibilityLabel="Custom event address"
+                      accessibilityHint="Type at least three characters to see matching addresses"
+                    />
+                    {addressSuggestionsLoading && (
+                      <ActivityIndicator color={PURPLE} size="small" style={styles.addressSpinner} />
+                    )}
+                    {addressFocused
+                      && !draft.customCoordinates
+                      && draft.customAddress.trim().length >= 3
+                      && (addressSuggestions.length > 0 || addressSuggestionsQueried)
+                      && (
+                        <View style={styles.addressSuggestions}>
+                          {addressSuggestions.length > 0 ? (
+                            <ScrollView
+                              keyboardShouldPersistTaps="always"
+                              nestedScrollEnabled
+                              showsVerticalScrollIndicator={false}
+                              style={styles.addressSuggestionList}
+                            >
+                              {addressSuggestions.map((suggestion, index) => (
+                                <TouchableOpacity
+                                  key={suggestion.id}
+                                  onPress={() => selectAddressSuggestion(suggestion)}
+                                  style={[
+                                    styles.addressSuggestionRow,
+                                    index < addressSuggestions.length - 1 && styles.addressSuggestionDivider,
+                                  ]}
+                                  accessibilityRole="button"
+                                  accessibilityLabel={`Use ${suggestion.fullAddress}`}
+                                >
+                                  <View style={styles.addressSuggestionIcon}>
+                                    <Ionicons name="location-outline" size={17} color={PURPLE} />
+                                  </View>
+                                  <View style={styles.flex}>
+                                    <Text numberOfLines={1} style={styles.addressSuggestionPrimary}>{suggestion.primaryText}</Text>
+                                    <Text numberOfLines={1} style={styles.addressSuggestionSecondary}>{suggestion.secondaryText}</Text>
+                                  </View>
+                                </TouchableOpacity>
+                              ))}
+                            </ScrollView>
+                          ) : (
+                            <View style={styles.addressSuggestionMessage}>
+                              <Ionicons name={addressSuggestionError ? 'cloud-offline-outline' : 'search-outline'} size={17} color="#667085" />
+                              <Text style={styles.addressSuggestionMessageText}>
+                                {addressSuggestionError
+                                  ? 'Suggestions are unavailable. You can still use Find this address.'
+                                  : 'No close matches. Add the town, province/state, or postal code.'}
+                              </Text>
+                            </View>
+                          )}
+                        </View>
+                      )}
+                  </View>
                   <TouchableOpacity disabled={geocoding} onPress={() => void geocodeAddress()} style={[styles.confirmAddress, geocoding && styles.disabled]}>
                     {geocoding ? <ActivityIndicator color={PURPLE} /> : <Ionicons name={draft.customCoordinates ? 'checkmark-circle' : 'locate-outline'} size={19} color={PURPLE} />}
                     <Text style={styles.confirmAddressText}>{draft.customCoordinates ? 'Address confirmed' : 'Find this address'}</Text>
@@ -669,6 +819,18 @@ const styles = StyleSheet.create({
   locationPanel: { gap: 8, padding: 11, borderRadius: 15, backgroundColor: '#FAFAFF' },
   panelTitle: { color: '#344054', fontSize: 14, fontWeight: '800' },
   panelCopy: { color: '#667085', fontSize: 11, lineHeight: 15 },
+  addressSearchWrap: { position: 'relative', zIndex: 20 },
+  addressInput: { paddingRight: 40 },
+  addressSpinner: { position: 'absolute', right: 13, top: 13 },
+  addressSuggestions: { position: 'absolute', top: 50, left: 0, right: 0, zIndex: 30, overflow: 'hidden', borderWidth: 1, borderColor: '#D6BBFB', borderRadius: 13, backgroundColor: '#FFFFFF', shadowColor: '#101828', shadowOffset: { width: 0, height: 5 }, shadowOpacity: 0.16, shadowRadius: 12, elevation: 12 },
+  addressSuggestionList: { maxHeight: 174 },
+  addressSuggestionRow: { minHeight: 56, flexDirection: 'row', alignItems: 'center', gap: 9, paddingHorizontal: 10, paddingVertical: 7, backgroundColor: '#FFFFFF' },
+  addressSuggestionDivider: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#EAECF0' },
+  addressSuggestionIcon: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center', backgroundColor: '#F4EBFF' },
+  addressSuggestionPrimary: { color: '#344054', fontSize: 13, fontWeight: '800' },
+  addressSuggestionSecondary: { color: '#667085', fontSize: 10, marginTop: 2 },
+  addressSuggestionMessage: { minHeight: 58, flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 11 },
+  addressSuggestionMessageText: { flex: 1, color: '#667085', fontSize: 11, lineHeight: 15 },
   fieldLabel: { color: '#475467', fontSize: 11, fontWeight: '800', marginTop: 2 },
   confirmAddress: { minHeight: 42, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, borderRadius: 11, backgroundColor: '#F4EBFF' },
   confirmAddressText: { color: '#53389E', fontWeight: '800' },

@@ -184,6 +184,15 @@ export interface FriendEventLocationProjection {
   updatedAt?: SocialTimestamp;
 }
 
+export interface FriendEventAddressSuggestion {
+  id: string;
+  primaryText: string;
+  secondaryText: string;
+  fullAddress: string;
+  latitude: number;
+  longitude: number;
+}
+
 export type FriendEventLocationInput =
   | { type: 'recognized_venue'; venueId: string }
   | {

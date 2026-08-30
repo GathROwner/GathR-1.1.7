@@ -907,3 +907,13 @@ All canonical mutations use authenticated callable functions. Clients cannot dir
 - Downloaded IPA: `C:\Users\craig\Downloads\GathR-1.1.10-build78-preview-c60594c6.ipa`, 60,345,559 bytes, SHA-256 `C85C3462F9907EEA10384D52097E5C4511B2DC47D751B6DE31B8D52A25ADF184`.
 - Binary inspection verified bundle `com.craigb.gathr`, app `1.1.10` (78), staging Firebase project `gathr-social-staging`, staging iOS app ID `1:572784950053:ios:65bbf7aaa983e4c8e438cc`, share-extension inclusion, runtime `1.1.10`, Preview channel, OTA enabled, and check-on-launch `ALWAYS`.
 - This checkpoint proves build integrity, not installation or end-user acceptance. Physical iPhone launch, login against staging, notification/App Check behavior, share-extension invocation, fixed-screen layouts, and 1.3x text-size review remain to be performed after installation. No App Store submission, Production build, or new Production OTA was made.
+
+### 2026-08-30 — Create Event address-autocomplete follow-up
+
+- Replace the one-result-only address interaction with authenticated typeahead autocomplete after three entered characters and a 400 ms debounce.
+- Return at most five address matches, visibly constrain the dropdown to roughly three rows with internal scrolling, and bias ranking toward the user's current location without restricting events to the local area.
+- Selecting a suggestion fills the standardized full address and preview coordinates, confirms the field, dismisses the keyboard, and retains **Find this address** as a manual fallback.
+- Cancel obsolete client requests and ignore stale responses so fast typing cannot repaint the list with older results.
+- Keep address text, result labels, and coordinates out of analytics and logs. The Mapbox token remains server-side behind the authenticated social callable with a per-user rate limit.
+- Treat autocomplete results as temporary. The final server-side address verification uses Mapbox permanent-geocoding mode because its coordinates are stored in the Admin-only private event-location record.
+- This slice is JavaScript plus one isolated social callable and requires no native dependency or mobile build. Release requires a narrow Functions deployment, an iOS-only Preview OTA, and physical-device acceptance of keyboard/dropdown selection before it is marked complete.

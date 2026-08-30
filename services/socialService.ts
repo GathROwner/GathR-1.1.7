@@ -25,6 +25,7 @@ import type {
   CheckInEligibilityResult,
   CheckInEligibilitySampleInput,
   FriendActivityProjection,
+  FriendEventAddressSuggestion,
   FriendEventInput,
   FriendEventLocationProjection,
   FriendEventProjection,
@@ -90,6 +91,7 @@ const APP_CHECKED_CALLABLES = new Set([
   'recordCheckInEligibilitySampleCallable',
   'createFriendEventCallable',
   'geocodeFriendEventAddressCallable',
+  'suggestFriendEventAddressesCallable',
   'updateFriendEventCallable',
   'inviteToFriendEventCallable',
   'respondToFriendEventCallable',
@@ -110,7 +112,8 @@ function callableUrl(name: string) {
 
 async function callAppCheckedSocial<Request, Response>(
   name: string,
-  data: Request
+  data: Request,
+  options: { signal?: AbortSignal; timeoutMs?: number } = {}
 ): Promise<Response> {
   const user = auth.currentUser;
   if (!user) throw new SocialServiceError('unauthenticated', 'Sign in to use this feature.');
@@ -119,7 +122,13 @@ async function callAppCheckedSocial<Request, Response>(
     getSocialAppCheckToken(),
   ]);
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 30_000);
+  const abortFromCaller = () => controller.abort();
+  if (options.signal?.aborted) {
+    controller.abort();
+  } else {
+    options.signal?.addEventListener('abort', abortFromCaller);
+  }
+  const timeout = setTimeout(() => controller.abort(), options.timeoutMs ?? 30_000);
   try {
     const response = await fetch(callableUrl(name), {
       method: 'POST',
@@ -145,12 +154,14 @@ async function callAppCheckedSocial<Request, Response>(
     return (payload.result ?? payload.data) as Response;
   } finally {
     clearTimeout(timeout);
+    options.signal?.removeEventListener('abort', abortFromCaller);
   }
 }
 
 async function callSocial<Request, Response>(
   name: string,
-  data: Request
+  data: Request,
+  options: { signal?: AbortSignal; timeoutMs?: number } = {}
 ): Promise<Response> {
   const startedAt = Date.now();
   const operation = name.replace(/Callable$/, '');
@@ -158,7 +169,7 @@ async function callSocial<Request, Response>(
   const requestId = `${startedAt.toString(36)}-${diagnosticSequence.toString(36)}`;
   try {
     const result = APP_CHECKED_CALLABLES.has(name)
-      ? await callAppCheckedSocial<Request, Response>(name, data)
+      ? await callAppCheckedSocial<Request, Response>(name, data, options)
       : (await httpsCallable<Request, Response>(functions, name)(data)).data;
     amplitudeTrack('social_callable_completed', {
       operation,
@@ -175,6 +186,7 @@ async function callSocial<Request, Response>(
     });
     return result;
   } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') throw error;
     const normalized = normalizeCallableError(error);
     amplitudeTrack('social_callable_completed', {
       operation,
@@ -288,6 +300,27 @@ export const geocodeFriendEventAddress = (address: string) =>
     'geocodeFriendEventAddressCallable',
     { address }
   );
+
+export const suggestFriendEventAddresses = (
+  query: string,
+  proximity?: { latitude: number; longitude: number } | null,
+  signal?: AbortSignal
+) => callSocial<
+  {
+    query: string;
+    proximityLatitude?: number;
+    proximityLongitude?: number;
+  },
+  { suggestions: FriendEventAddressSuggestion[] }
+>('suggestFriendEventAddressesCallable', {
+  query,
+  ...(proximity
+    ? {
+        proximityLatitude: proximity.latitude,
+        proximityLongitude: proximity.longitude,
+      }
+    : {}),
+}, { signal, timeoutMs: 8_000 }).then((result) => result.suggestions);
 
 export const updateFriendEvent = (eventId: string, input: FriendEventInput) =>
   callSocial<FriendEventInput & { eventId: string }, { eventId: string; revision: string }>(
