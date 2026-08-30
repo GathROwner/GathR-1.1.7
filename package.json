@@ -12,6 +12,7 @@
     "lint": "expo lint",
     "verify:mapbox": "node ./scripts/verify-mapbox-runtime-config.js",
     "verify:preview": "node ./scripts/verify-preview-native-config.js",
+    "verify:ios-preview-ota-auth": "node ./scripts/verify-ios-preview-ota-auth-config.js",
     "postinstall": "patch-package"
   },
   "jest": {

@@ -204,7 +204,16 @@ export default function Index() {
         // Navigation is handled by _layout.tsx once onAuthStateChanged fires
       } catch (error: any) {
         const duration = Date.now() - startTime;
-        const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
+        const credentialErrorCodes = new Set([
+          'auth/invalid-credential',
+          'auth/user-not-found',
+          'auth/wrong-password',
+        ]);
+        const errorMessage = credentialErrorCodes.has(error?.code)
+          ? 'The email or password is incorrect.'
+          : error instanceof Error
+            ? error.message
+            : 'An unknown error occurred';
         
         // Track login failure
         analytics.trackError('authentication', errorMessage, {

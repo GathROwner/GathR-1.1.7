@@ -14,6 +14,10 @@ function debugProviderEnabled() {
   return __DEV__ || process.env.EXPO_PUBLIC_FIREBASE_APP_CHECK_DEBUG === 'true';
 }
 
+function appCheckExplicitlyDisabled() {
+  return process.env.EXPO_PUBLIC_FIREBASE_APP_CHECK_DISABLED === 'true';
+}
+
 function createProvider() {
   const debug = debugProviderEnabled();
   const debugToken = process.env.EXPO_PUBLIC_FIREBASE_APP_CHECK_DEBUG_TOKEN?.trim();
@@ -47,7 +51,14 @@ async function appCheckInstance(): Promise<AppCheck> {
  * is already restricted to an explicit development configuration.
  */
 export async function getSocialAppCheckToken(): Promise<string | null> {
-  if (useFirebaseEmulators || Platform.OS === 'web') return null;
+  // An internal Preview OTA may intentionally use Production web Firebase
+  // services while the installed native shell remains registered to staging.
+  // Never send a token issued for the staging native app to Production. This
+  // override is opt-in at OTA export time and remains off in native/Production
+  // build profiles.
+  if (useFirebaseEmulators || Platform.OS === 'web' || appCheckExplicitlyDisabled()) {
+    return null;
+  }
   try {
     const result = await getToken(await appCheckInstance());
     if (!result.token) throw new Error('empty-token');
