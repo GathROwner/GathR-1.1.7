@@ -26,15 +26,18 @@
     "preview": {
       "distribution": "internal",
       "channel": "preview",
+      "environment": "preview",
       "env": {
         "EXPO_PUBLIC_SOCIAL_FEATURE_ENABLED": "true",
         "EXPO_PUBLIC_SOCIAL_RELEASE_TWO_ENABLED": "true",
         "EXPO_PUBLIC_FIREBASE_APP_CHECK_DEBUG": "true",
         "EXPO_PUBLIC_USE_FIREBASE_EMULATORS": "false",
         "EXPO_PUBLIC_FIREBASE_TARGET": "staging",
+        "GOOGLE_SERVICES_PLIST": "./GoogleService-Info.staging.plist",
         "GOOGLE_SERVICES_JSON": "./google-services.staging.json"
       },
       "ios": {
+        "autoIncrement": true,
         "resourceClass": "m-medium"
       },
       "android": {

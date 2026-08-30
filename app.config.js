@@ -71,7 +71,8 @@ module.exports = ({ config }) => ({
     supportsTablet: true,
     bundleIdentifier: "com.craigb.gathr",
     buildNumber: "1",
-    googleServicesFile: "GoogleService-Info.plist",
+    googleServicesFile:
+      process.env.GOOGLE_SERVICES_PLIST ?? "GoogleService-Info.plist",
     // Deep linking: Universal Links for iOS
     associatedDomains: [
       "applinks:link.gathrapp.ca",
