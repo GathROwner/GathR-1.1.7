@@ -16,6 +16,7 @@ import {
   TouchableOpacity
 } from 'react-native';
 import { useRouter } from 'expo-router';
+import { getAnalyticsEmailDomain } from '../utils/analyticsPrivacy';
 import { signInWithEmailAndPassword, createUserWithEmailAndPassword, sendPasswordResetEmail } from 'firebase/auth';
 import { requestCurrentUserVerificationEmail } from '../lib/accountVerification';
 import { auth, firestore, storage } from '../config/firebaseConfig';
@@ -353,14 +354,14 @@ export default function Index() {
     try {
       // Track password reset attempt
       analytics.trackUserAction('password_reset_attempt', {
-        email: email
+        email_domain: getAnalyticsEmailDomain(email)
       });
       
       await sendPasswordResetEmail(auth, email);
       
       // Track password reset success
       analytics.trackUserAction('password_reset_sent', {
-        email: email
+        email_domain: getAnalyticsEmailDomain(email)
       });
       
       Alert.alert('Password Reset', 'Password reset email has been sent to your email address');
@@ -369,7 +370,7 @@ export default function Index() {
       
       // Track password reset error
       analytics.trackError('password_reset', errorMessage, {
-        email: email,
+        email_domain: getAnalyticsEmailDomain(email),
         error_code: error.code || 'unknown'
       });
       
