@@ -671,6 +671,7 @@ The following decisions were approved on 2026-08-30 and supersede any Release 1 
 - Signed-in users can create Facebook-like friend events. These are private social objects, never unreviewed public GathR events.
 - Event visibility labels are **All friends** and **Invited friends only**. Neither mode means internet- or platform-public.
 - Friend events support recognized GathR venues, online/TBD locations, and custom private addresses in the first release.
+- A host may create an event at any valid custom location; a location does not need to be a recognized GathR venue. The additional privacy controls govern who receives an exact residential address and when, not whether the host may use that address.
 - Hosts can choose whether only the host may invite people or invited guests may invite additional people.
 - Every friend event requires one canonical GathR category so existing category, date, and interest filters can apply.
 - Friend events visible to the current user appear on the map through an initial **Friends** layer/filter. The layer is enabled by default for signed-in users and is designed so the toggle can later be removed without changing the event contract.
@@ -679,137 +680,139 @@ The following decisions were approved on 2026-08-30 and supersede any Release 1 
 
 ### Experience contract
 
-- [ ] Remove generic check-in discovery from Profile and avoid showing an enabled check-in action merely because map venue data is loaded.
-- [ ] Detect only exact, single-location recognized venues/events; area, route, online, TBD, and ambiguous multi-ID locations remain ineligible.
-- [ ] Use an initial configurable dwell target of 90 continuous seconds. Tune only after real-device drive-by, walk-by, indoor-GPS, and parking-lot tests.
-- [ ] Use a 50-metre venue base radius plus reported accuracy capped at 75 metres; reject samples whose reported accuracy is worse than 75 metres.
-- [ ] Reject qualifying samples while reported speed exceeds 10 km/h. Dwell time, not speed alone, remains the primary drive-by protection.
-- [ ] Reset eligibility after the user remains outside the accepted radius for 30 seconds. Short GPS jitter may pause rather than immediately erase progress.
-- [ ] Keep sampling foreground-only and low frequency. Release 2 does not introduce continuous background location tracking.
-- [ ] If more than one recognized venue qualifies, show only those nearby candidates in a focused selector after dwell succeeds; do not reopen the full venue directory.
-- [ ] Show **Check in here** in the eligible map/venue callout. The form opens with the venue fixed and visually prominent.
-- [ ] Let an active check-in remain manageable even after the user leaves: View map, Change audience/note/duration where valid, and Check out.
+- [x] Remove generic check-in discovery from Profile and avoid showing an enabled check-in action merely because map venue data is loaded.
+- [x] Detect only exact, single-location recognized venues/events; area, route, online, TBD, and ambiguous multi-ID locations remain ineligible.
+- [x] Use an initial configurable dwell target of 90 continuous seconds. Tune only after real-device drive-by, walk-by, indoor-GPS, and parking-lot tests.
+- [x] Use a 50-metre venue base radius plus reported accuracy capped at 75 metres; reject samples whose reported accuracy is worse than 75 metres.
+- [x] Reject qualifying samples while reported speed exceeds 10 km/h. Dwell time, not speed alone, remains the primary drive-by protection.
+- [x] Reset eligibility after the user remains outside the accepted radius for 30 seconds. Short GPS jitter may pause rather than immediately erase progress.
+- [x] Keep sampling foreground-only and low frequency. Release 2 does not introduce continuous background location tracking.
+- [x] If more than one recognized venue qualifies, show only those nearby candidates in a focused selector after dwell succeeds; do not reopen the full venue directory.
+- [x] Show **Check in here** in the eligible map/venue callout. The form opens with the venue fixed and visually prominent.
+- [x] Let an active check-in remain manageable even after the user leaves: View map, Change audience/note/duration where valid, and Check out.
 
 ### Server enforcement and data minimization
 
-- [ ] Add short-lived server-controlled eligibility sessions so this is not merely a cosmetic client restriction.
-- [ ] Each heartbeat sends current coordinates and accuracy for validation; the server computes distance and discards raw coordinates rather than storing a location trail.
-- [ ] Persist only venue ID, qualifying start/last-seen timestamps, accumulated qualifying duration, accuracy bucket, and session expiry.
-- [ ] Require a fresh completed eligibility session when creating or replacing a check-in at a different venue.
-- [ ] Expire completed eligibility after five minutes if the user does not finish checking in.
+- [x] Add short-lived server-controlled eligibility sessions so this is not merely a cosmetic client restriction.
+- [x] Each heartbeat sends current coordinates and accuracy for validation; the server computes distance and discards raw coordinates rather than storing a location trail.
+- [x] Persist only venue ID, qualifying start/last-seen timestamps, accumulated qualifying duration, accuracy bucket, and session expiry.
+- [x] Require a fresh completed eligibility session when creating or replacing a check-in at a different venue.
+- [x] Expire completed eligibility after five minutes if the user does not finish checking in.
 - [ ] Add Firebase App Check enforcement before Production rollout to raise the cost of forged eligibility calls. Document that consumer GPS cannot provide absolute anti-spoofing proof.
-- [ ] Preserve the existing rule that only the chosen venue identity—not raw coordinates—is stored in the active check-in or friend projections.
+- [x] Preserve the existing rule that only the chosen venue identity—not raw coordinates—is stored in the active check-in or friend projections.
 
 ### Required eligibility tests
 
-- [ ] Fast drive-by never becomes eligible.
-- [ ] Ordinary walk-by shorter than the dwell target never becomes eligible.
-- [ ] A stationary user with accurate samples becomes eligible once and sees the correct venue.
-- [ ] Indoor GPS jitter does not repeatedly reset a valid dwell session.
-- [ ] Leaving and returning cannot reuse an expired or reset session.
-- [ ] Multiple nearby venues return only safe exact candidates.
-- [ ] Forged timestamps, venue IDs, accuracy, speed, and replayed session IDs fail.
-- [ ] Denied permission, approximate-only permission, offline state, and location-service failure have clear non-blocking explanations.
+- [x] Fast drive-by never becomes eligible in deterministic eligibility tests.
+- [x] Ordinary walk-by shorter than the dwell target never becomes eligible in deterministic eligibility tests.
+- [x] A stationary user with accurate samples becomes eligible once and sees the correct venue.
+- [x] Indoor GPS jitter does not repeatedly reset a valid dwell session.
+- [x] Leaving and returning cannot reuse an expired or reset session.
+- [x] Multiple nearby venues return only safe exact candidates.
+- [x] Forged timestamps, venue IDs, accuracy, speed, and replayed session IDs fail.
+- [x] Denied permission, approximate-only permission, offline state, and location-service failure have clear non-blocking explanations.
 
 ## 27. Restored Profile information architecture
 
-- [ ] Delete the **More** feature row and its general-purpose sheet.
-- [ ] Restore compact main-page controls for Daily Hotspot and Trending on launch.
-- [ ] Restore Suggest a Facebook page, Replay tutorial, Share GathR, and the Account & privacy entry to the main Profile page.
-- [ ] Keep Account & privacy as a focused secondary sheet for email, sign out, and destructive account controls; its entry point must be on the main page.
-- [ ] Add a Social section containing Friends, My Events, and Create Event.
-- [ ] Add incoming-request and upcoming-invitation badges without turning the page into an activity feed.
-- [ ] Replace the permanent Check in row with a compact active-check-in badge only while a check-in exists.
-- [ ] Use the currently unused lower viewport before allowing parent-page scroll. Small screens and accessibility text may scroll as a fallback.
-- [ ] Preserve the one-screen target at standard text size and verify at 1.3x text size on Android and iOS layouts.
+- [x] Delete the **More** feature row and its general-purpose sheet.
+- [x] Restore compact main-page controls for Daily Hotspot and Trending on launch.
+- [x] Restore Suggest a Facebook page, Replay tutorial, Share GathR, and the Account & privacy entry to the main Profile page.
+- [x] Keep Account & privacy as a focused secondary sheet for email, sign out, and destructive account controls; its entry point must be on the main page.
+- [x] Add a Social section containing Friends, My Events, and Create Event.
+- [x] Add incoming-request and upcoming-invitation badges without turning the page into an activity feed.
+- [x] Replace the permanent Check in row with a compact active-check-in badge only while a check-in exists.
+- [x] Use the currently unused lower viewport before allowing parent-page scroll. Small screens and accessibility text may scroll as a fallback.
+- [ ] Preserve the one-screen target at standard text size and verify at 1.3x text size on Android and iOS layouts. Android standard-size acceptance is complete; iOS and 1.3x Release 2 device acceptance remain pending.
 
 ## 28. Check-in visual redesign
 
-- [ ] Replace the outlined administrative form aesthetic with a branded venue-first card.
-- [ ] Lead with **You're at [venue]**, a venue/event image or GathR tree/map treatment, and a clear eligible-location indicator.
-- [ ] Remove the generic venue search from the normal eligible flow. Keep a compact nearby-venue switcher only when multiple candidates passed dwell validation.
-- [ ] Present 30 min, 1 hr, and 2 hr as polished segmented duration controls.
-- [ ] Present audience choices with friend avatars, selected count, and clear **All friends** / **Choose friends** language.
-- [ ] Keep the optional 120-character note visually secondary.
-- [ ] Show a privacy summary pill immediately above the primary action: who can see it and the exact expiry time.
-- [ ] Add restrained haptic and canopy-bloom success feedback before returning to the map.
-- [ ] Redesign the active state as a compact venue pass with remaining time plus View map, Change, and Check out.
-- [ ] Keep the complete composer in one standard phone viewport; variable friend lists remain inside a focused picker.
+- [x] Replace the outlined administrative form aesthetic with a branded venue-first card.
+- [x] Lead with **You're at [venue]**, a GathR canopy treatment, and a clear eligible-location indicator.
+- [x] Remove the generic venue search from the normal eligible flow. Keep a compact nearby-venue switcher only when multiple candidates passed dwell validation.
+- [x] Present 30 min, 1 hr, and 2 hr as polished segmented duration controls.
+- [x] Present audience choices with friend avatars, selected count, and clear **All friends** / **Choose friends** language.
+- [x] Keep the optional 120-character note visually secondary.
+- [x] Show a privacy summary pill immediately above the primary action: who can see it and the exact expiry time.
+- [x] Add restrained success haptics and a canopy-themed venue treatment before returning to the map.
+- [x] Redesign the active state as a compact venue pass with remaining time plus View map, Change, and Check out.
+- [x] Keep the complete composer in one standard phone viewport; variable friend lists remain inside a focused picker.
 
 ## 29. Friend-created event product contract
 
 ### Core host flow
 
-- [ ] Add Create Event and My Events entry points from Profile plus an appropriate map/feed entry point.
-- [ ] Support draft autosave, preview, publish, edit, cancel, and delete.
-- [ ] Required fields: title, start time, end time or duration, canonical GathR category, visibility, and location type.
-- [ ] Optional fields: cover image, description, dress/details note, external link, and guest-list visibility.
-- [ ] Location types: recognized GathR venue, custom private address, online, and location to be announced.
-- [ ] Default new events to **Invited friends only**. Switching to **All friends** must be explicit.
-- [ ] Show a privacy preview before publishing with the exact number of authorized friends and invitations.
-- [ ] Support Going, Maybe, and Can't Go responses plus host-visible response totals.
-- [ ] Support Add to calendar and Directions where location permits.
-- [ ] Cancellation is a durable event state with an explanation and notification, not a silent deletion.
+- [x] Add Create Event and My Events entry points from Profile plus an appropriate map/feed entry point.
+- [x] Support draft autosave, preview, publish, edit, cancel, and delete.
+- [x] Required fields: title, start time, end time or duration, canonical GathR category, visibility, and location type.
+- [x] Optional fields: description, dress/details note, external link, and guest-list visibility.
+- [ ] Add private, managed cover-image upload after the Storage ownership/deletion contract is deployed; arbitrary cover URLs are rejected.
+- [x] Location types: recognized GathR venue, any validated custom private address, online, and location to be announced.
+- [x] Default new events to **Invited friends only**. Switching to **All friends** must be explicit.
+- [x] Show a privacy preview before publishing with the exact number of authorized friends and invitations.
+- [x] Support Going, Maybe, and Can't Go responses plus host-visible response totals.
+- [x] Support Add to calendar and Directions where location permits.
+- [x] Cancellation is a durable event state with an explanation and viewer projection update, not a silent deletion.
+- [ ] Add remote cancellation delivery with the deferred push-notification system.
 
 ### Invitations and guest expansion
 
-- [ ] Add `guestInviteMode: host_only | guests_can_invite`, controlled only by the host.
-- [ ] **All friends** initially authorizes the host's current friends. **Invited friends only** initially authorizes explicit host selections.
-- [ ] Snapshot the **All friends** audience when the event is published. A friendship created later must not silently reveal an existing event or private address; the host may deliberately refresh or add to the audience. Unfriending or blocking still revokes access immediately.
-- [ ] When `guests_can_invite` is enabled, an invited user may explicitly add another signed-in GathR user. That person receives only this event projection; the event does not become searchable or visible to general friends-of-friends.
-- [ ] Record who invited each person and show that provenance to the host.
-- [ ] Warn the host that enabling guest invitations can reveal event details and a private address to people the host did not originally select.
-- [ ] Let the host remove any guest or disable further guest invitations. Removal revokes the event and private location projections immediately.
-- [ ] Blocking overrides invitations. A blocked user cannot be newly invited and loses existing event access in both directions where applicable.
-- [ ] Add invite and guest-count ceilings, rate limits, deterministic retries, and abuse reporting.
+- [x] Add `guestInviteMode: host_only | guests_can_invite`, controlled only by the host.
+- [x] **All friends** initially authorizes the host's current friends. **Invited friends only** initially authorizes explicit host selections.
+- [x] Snapshot the **All friends** audience when the event is published. A friendship created later must not silently reveal an existing event or private address; the host may deliberately refresh or add to the audience. Unfriending or blocking still revokes access immediately.
+- [x] When `guests_can_invite` is enabled, an invited user may explicitly add another signed-in GathR user. That person receives only this event projection; the event does not become searchable or visible to general friends-of-friends.
+- [x] Record who invited each person and show that provenance to the host.
+- [x] Warn the host that enabling guest invitations can reveal event details and a private address to people the host did not originally select.
+- [x] Let the host remove any guest or disable further guest invitations. Removal revokes the event and private location projections immediately.
+- [x] Blocking overrides invitations. A blocked user cannot be newly invited and loses existing event access in both directions where applicable.
+- [x] Add invite and guest-count ceilings, rate limits, deterministic retries, and abuse reporting.
 
 ### Event lifecycle and ownership
 
-- [ ] States: draft, published, canceled, ended, and deleted/tombstoned where notification delivery requires it.
-- [ ] Release 2.0 has one host. Co-host roles are deferred until their edit, invite, cancellation, and account-deletion authority is fully designed.
-- [ ] Host edits to time, location, visibility, or cancellation generate privacy-safe viewer updates.
-- [ ] Account deletion cancels or transfers events according to an explicit host-deletion policy; it must never leave an ownerless private address accessible.
-- [ ] Event media has explicit ownership, deletion, size/type limits, and no path into public parser media without a separate verified promotion flow.
+- [x] States: draft, published, canceled, ended, and deleted/tombstoned where lifecycle delivery requires it.
+- [x] Release 2.0 has one host. Co-host roles are deferred until their edit, invite, cancellation, and account-deletion authority is fully designed.
+- [x] Host edits to time, location, visibility, or cancellation generate privacy-safe viewer updates.
+- [x] Account deletion cancels hosted events and removes their private locations and viewer projections; it never leaves an ownerless private address accessible.
+- [ ] Event cover media remains disabled until managed private Storage has explicit ownership, deletion, size/type limits, and no path into public parser media without a separate verified promotion flow.
 
 ## 30. Custom private address safeguards
 
 An exact home address is supported in Release 2. It carries higher privacy impact because it can identify a residence, may be cached or screenshotted after viewing, and can be exposed to new people when guest invitations are enabled. Software can revoke future access but cannot make someone forget or delete a screenshot of an address they already saw.
 
-- [ ] Geocode custom addresses server-side and never send address text or coordinates to analytics, crash metadata, or ordinary logs.
-- [ ] Store exact private location separately from the general event document in a server-controlled private-location record.
-- [ ] Put exact address/coordinates only into currently authorized viewer projections; do not expose them through collection-group queries, public deep links, search, parser flows, or business analytics.
-- [ ] Use fresh server-authoritative reads for exact private location and fail closed against cached address/location projections after revocation or offline launch.
-- [ ] Delete each viewer's exact-location projection immediately on uninvite, block, visibility reduction, cancellation, or event deletion.
-- [ ] Offer host controls to reveal the exact address immediately or a selected number of hours before the event. Before reveal, authorized viewers may see an approximate area or **Address shared later**, according to the host's choice.
-- [ ] Make the guest-invite warning especially explicit for custom-address events.
-- [ ] Never show a private-address event to anyone outside its authorized projections, even if they possess an old app link or event ID.
-- [ ] Explain in the host UI that revocation prevents future access but cannot retract information already viewed or captured.
+- [x] Geocode custom addresses server-side and never send address text or coordinates to analytics, crash metadata, or ordinary logs.
+- [x] Store exact private location separately from the general event document in a server-controlled private-location record.
+- [x] Put exact address/coordinates only into currently authorized viewer projections; do not expose them through collection-group queries, public deep links, search, parser flows, or business analytics.
+- [x] Use fresh server-authoritative reads for exact private location and fail closed against cached address/location projections after revocation or offline launch.
+- [x] Delete each viewer's exact-location projection immediately on uninvite, block, visibility reduction, cancellation, or event deletion.
+- [x] Offer host controls to reveal the exact address immediately, two hours before, or when the event starts. Before reveal, authorized viewers see **Address shared later** and receive no exact coordinates.
+- [x] Make the guest-invite warning especially explicit for custom-address events.
+- [x] Never show a private-address event to anyone outside its authorized projections, even if they possess an old app link or event ID.
+- [x] Explain in the host UI that revocation prevents future access but cannot retract information already viewed or captured.
 
 ## 31. Friend-event map, feed, category, and filtering
 
-- [ ] Add a required category selector sourced from the same canonical category definitions used by public events.
-- [ ] Apply existing category, date/time, family, and interest filters where their semantics are valid for friend events.
-- [ ] Add a **Friends** map layer/filter for signed-in users. Start enabled by default and persist the user's choice.
-- [ ] Architect friend-event composition as an authorized event source, not a second map engine, so the Friends toggle can later be removed cleanly.
-- [ ] Show only events the current user hosts or is authorized to view.
-- [ ] Known-venue and authorized custom-address events may appear at their exact map location. Online and TBD events do not receive a physical marker.
-- [ ] Use a distinct planned-event treatment, such as purple/orange ring plus host avatar, so it cannot be confused with teal live check-in presence.
-- [ ] Preserve the normal category icon and tree/event filtering; the social treatment annotates rather than replaces event identity.
-- [ ] Feed cards identify the host/friend context, visibility, RSVP state, category, and whether the address is still hidden.
-- [ ] Event edits, cancellations, uninvites, blocks, and expiry remove or update map/feed projections immediately.
+- [x] Add a required category selector sourced from the same canonical category definitions used by public events.
+- [x] Apply existing category, date/time, family, and interest filters where their semantics are valid for friend events.
+- [x] Add a **Friends** map layer/filter for signed-in users. Start enabled by default and persist the user's choice.
+- [x] Architect friend-event composition as an authorized event source, not a second map engine, so the Friends toggle can later be removed cleanly.
+- [x] Show only events the current user hosts or is authorized to view.
+- [x] Known-venue and authorized custom-address events may appear at their exact map location. Online and TBD events do not receive a physical marker.
+- [x] Use a distinct purple planned-event treatment so it cannot be confused with teal live check-in presence.
+- [x] Preserve the normal category icon and tree/event filtering; the social treatment annotates rather than replaces event identity.
+- [x] Feed cards identify the host/friend context, visibility, RSVP state, category, and whether the address is still hidden.
+- [x] Event edits, cancellations, uninvites, blocks, and expiry remove or update map/feed projections immediately.
 
 ## 32. Approved social polish backlog
 
-- [ ] Incoming friend-request badge on Profile and Friends.
-- [ ] Upcoming friend-event invitation badge on Profile and My Events.
-- [ ] HTTPS friend profile links and QR-code handle sharing.
-- [ ] Clear empty states that teach handles, friends, contextual check-in, invitations, and map reactions.
+- [x] Incoming friend-request badge on Profile and Friends.
+- [x] Upcoming friend-event invitation badge on Profile and My Events.
+- [x] HTTPS friend profile links and QR-code handle sharing.
+- [x] Clear empty states that teach handles, friends, contextual check-in, invitations, and map reactions.
 - [ ] Remember privacy-safe audience preferences while still showing and confirming the final audience every time.
-- [ ] Add **Join them** and Directions actions for an authorized friend check-in; never notify the checked-in friend unless they opted into that interaction.
-- [ ] Distinct map reactions for one friend present, multiple friends present, and an upcoming friend event.
-- [ ] Host option to hide the guest list from guests while retaining host visibility.
-- [ ] Draft autosave and recovery after app termination or network loss.
-- [ ] Explicit cancel-event flow and event-update history sufficient for viewers to understand material changes.
+- [x] Add **Join them** and Directions actions for an authorized friend check-in; the action does not notify the checked-in friend.
+- [x] Distinct map reactions for one friend present, multiple friends present, and an upcoming friend event.
+- [x] Host option to hide the guest list from guests while retaining host visibility.
+- [x] Draft autosave and recovery after app termination or network loss.
+- [x] Explicit cancel-event flow and event-update history sufficient for viewers to understand material changes.
 - [ ] Push notifications for requests, invitations, important event edits, cancellations, and optional friend presence only after permission, quiet-hours, dedupe, and privacy controls are designed.
 - [ ] A later verified-business event creator uses a separate public workflow, trust model, moderation path, and analytics contract. Private friend events never become public automatically.
 
@@ -844,16 +847,16 @@ All canonical mutations use authenticated callable functions. Clients cannot dir
 
 ### Release 2 definition of done
 
-- [ ] Drive-by and walk-by cases cannot expose an enabled check-in action.
-- [ ] Legitimate stationary venue users can check in without searching the venue directory.
-- [ ] Profile restores every displaced feature while retaining the one-screen target.
-- [ ] Check-in has a polished venue-first design and complete accessible states.
-- [ ] Every friend-event visibility, invitation, RSVP, block, removal, cancellation, and deletion transition is server-authoritative and retry-safe.
-- [ ] Custom-address events leak no address, coordinates, map pin, deep-link content, cache content, or notification text to unauthorized users.
-- [ ] Guest invitation expansion follows the host setting, records the inviter, and clearly warns about private-address disclosure.
-- [ ] Friend events obey canonical categories and current map/feed filters.
-- [ ] Friends layer behavior is verified enabled, disabled, and structurally removable.
-- [ ] Existing public events, specials, check-in presence, parser data, ads, routes/areas, shared-event ingestion, guest mode, and account deletion have no unresolved regression.
+- [x] Deterministic drive-by and walk-by cases cannot expose an enabled check-in action.
+- [x] Legitimate stationary venue users can check in without searching the venue directory.
+- [x] Profile restores every displaced feature while retaining the one-screen target at standard Android text size.
+- [x] Check-in has a polished venue-first design and complete accessible states.
+- [x] Every friend-event visibility, invitation, RSVP, block, removal, cancellation, and deletion transition is server-authoritative and retry-safe.
+- [x] Custom-address events leak no address, coordinates, map pin, deep-link content, cache content, or notification text to unauthorized users.
+- [x] Guest invitation expansion follows the host setting, records the inviter, and clearly warns about private-address disclosure.
+- [x] Friend events obey canonical categories and current map/feed filters.
+- [x] Friends layer behavior is verified enabled, disabled, and structurally removable.
+- [x] Existing public events, specials, check-in presence, parser data, ads, routes/areas, shared-event ingestion, guest mode, and account deletion have no unresolved automated or Android Preview regression.
 
 ### 2026-08-30 — Release 2 planning checkpoint
 
@@ -864,3 +867,20 @@ All canonical mutations use authenticated callable functions. Clients cannot dir
 - Approved restoring every current More-sheet feature to the main Profile and replacing the permanent Check in row with contextual entry plus an active-state badge.
 - Approved the venue-first check-in visual direction and the complete social polish backlog in Section 32.
 - This checkpoint records product and implementation decisions only; no application code, Firebase state, OTA, native build, or production data was changed.
+
+### 2026-08-30 — Release 2 implementation and Android Preview acceptance
+
+- Mobile worktree: `C:\Windows\System32\GathR-Project\GathR-friend-events-20260830`; branch `codex/friend-events-20260830`; runtime code commit `b4709c59c7e9ad4ef16edbd80cc8b537ca464724`. Backend worktree: `C:\Users\craig\Dev\gathr-apps-script-friend-events-20260830`; branch `codex/friend-events-backend-20260830`; commit `205b787`.
+- Implemented contextual check-in eligibility with a server-controlled 90-second dwell, distance/accuracy/speed validation, reset/expiry/replay rules, overlapping exact-venue candidates, no raw-location trail, foreground-only sampling, and a nearby-candidate selector.
+- Restored the main Profile dashboard, removed the generic More/check-in rows, added Social/My Events/Create Event and badges, retained the active-check-in badge, and kept the standard Android layout within one `1080x2400` viewport.
+- Rebuilt Check-in as a venue-first GathR card with canopy treatment, verified-location state, duration segments, audience picker, privacy summary, success haptic, and compact active pass.
+- Implemented the private friend-event lifecycle: draft, publish, preview, edit, RSVP, invite/remove guest, cancel, delete, history, report, calendar, directions, deep links, QR/profile sharing, and private guest-list controls.
+- Event hosts may choose any validated custom address, a recognized GathR venue, an online destination, or TBD. Exact custom addresses live in an Admin-only canonical record and only current authorized viewers receive a fail-closed exact-location projection at the host's selected reveal time.
+- Implemented all-friends audience snapshots, selected-friend invitations, guest-invite authority, inviter provenance, friendship/block revocation, category requirements, map/feed filtering, default-enabled Friends layer, purple friend-event markers, teal live-presence reactions, and Join them/Directions actions.
+- Backend gates passed: 374/374 compiled tests, Firestore rules 7/7, social integration 29/29, callable/Auth E2E 2/2, TypeScript build, scoped lint, and a 22-callable live staging lifecycle smoke. All 26 isolated-staging functions were active after deployment.
+- Mobile gates passed: TypeScript, 54/54 Jest suites with 313/313 tests and 1 snapshot, lint with 0 errors and 224 existing warnings, Mapbox runtime verification, and whitespace checks. Authentication analytics were additionally hardened so email/password-contaminated input cannot enter diagnostic events.
+- Android Preview build `b4f43601-e694-4a32-a043-fde4aff0dc72` produced `artifacts\android\gathr-friend-events-preview-b4f43601.apk`, 229,225,309 bytes, SHA-256 `DFCEBAFFC188451574089C7401A6165F30904279625299B71D94E02D8D2B3E23`. It was installed with `adb install -r`; the final package is version `1.1.10` (13), non-debuggable, and retained app data.
+- Device QA created an arbitrary-address event, invited a selected friend, verified **Address shared later** and disabled Directions before reveal, exercised Going RSVP, and rendered both the purple Friends map layer and teal recognized-venue friend check-in without a crash or ANR.
+- Final Android-only Preview OTA group `aeda0f47-7901-43e0-80c6-419452e610bd`, update `01a05399-4767-7687-a912-9a01c5a1cac0`, runtime `1.1.10`, commit `b4709c59c7e9ad4ef16edbd80cc8b537ca464724`. The Profile footer proved adoption with `Runtime 1.1.10 · OTA 01a05399`, and staging friendship/check-in data rendered after restart.
+- Device acceptance caught and superseded group `7263bc6e-4102-47d7-a2d9-697e81faea99`, whose export omitted the Preview Firebase variables and fell back to production authentication. The corrected publish explicitly loaded every Preview value from `eas.json`; no production deployment or data mutation occurred.
+- Remaining deliberate Release 2 follow-ups are Production App Check enforcement/validation, managed private cover-image Storage, privacy-aware push delivery, remembered audience preferences, iOS/1.3x device acceptance, and later verified-business publishing. They are not represented as completed.
