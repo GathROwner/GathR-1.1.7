@@ -755,6 +755,7 @@ The following decisions were approved on 2026-08-30 and supersede any Release 1 
 
 - [ ] Add `guestInviteMode: host_only | guests_can_invite`, controlled only by the host.
 - [ ] **All friends** initially authorizes the host's current friends. **Invited friends only** initially authorizes explicit host selections.
+- [ ] Snapshot the **All friends** audience when the event is published. A friendship created later must not silently reveal an existing event or private address; the host may deliberately refresh or add to the audience. Unfriending or blocking still revokes access immediately.
 - [ ] When `guests_can_invite` is enabled, an invited user may explicitly add another signed-in GathR user. That person receives only this event projection; the event does not become searchable or visible to general friends-of-friends.
 - [ ] Record who invited each person and show that provenance to the host.
 - [ ] Warn the host that enabling guest invitations can reveal event details and a private address to people the host did not originally select.
