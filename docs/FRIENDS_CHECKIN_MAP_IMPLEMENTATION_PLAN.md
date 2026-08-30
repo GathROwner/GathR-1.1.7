@@ -1,12 +1,14 @@
 # Friends, Check-Ins, and Friend-Aware Map Implementation Plan
 
-Status: **Release 1 complete and live on iOS Production. Release 2 product decisions are approved and planned: contextual dwell-based check-in, restored Profile, polished check-in, and private friend-created events.**
+Status: **Release 1 is live on iOS Production. Release 2 is implemented and accepted on Android Preview; iOS Preview build 78 is complete and awaiting physical-device acceptance. Production remains a separate release decision.**
 
 Created: **2026-08-28**
 Primary mobile repository: `C:\Windows\System32\GathR-Project\GathR-upgrade-sdk54`
 Primary backend repository: `C:\Users\craig\Dev\gathr-apps-script\functions`
 Mobile implementation worktree: `C:\Windows\System32\GathR-Project\GathR-friends-presence-20260828`
 Backend implementation worktree: `C:\Users\craig\Dev\gathr-apps-script-friends-presence-20260828`
+Release 2 mobile worktree: `C:\Windows\System32\GathR-Project\GathR-friend-events-20260830`
+Release 2 backend worktree: `C:\Users\craig\Dev\gathr-apps-script-friend-events-20260830`
 
 This is the durable execution checklist for the first GathR social release. Every phase must leave evidence in the progress log at the end of this document. A checked box means the item was implemented and verified, not merely attempted.
 
@@ -816,6 +818,15 @@ An exact home address is supported in Release 2. It carries higher privacy impac
 - [ ] Push notifications for requests, invitations, important event edits, cancellations, and optional friend presence only after permission, quiet-hours, dedupe, and privacy controls are designed.
 - [ ] A later verified-business event creator uses a separate public workflow, trust model, moderation path, and analytics contract. Private friend events never become public automatically.
 
+### Future GathR for Business boundary
+
+- The mobile app already has the native capabilities needed for a lightweight **Claim this venue** entry, claim-status view, authenticated business contact flow, media selection/upload, notifications, deep links, analytics, and the existing ad renderer. No speculative business-only native dependency is required in the Release 2 iOS binary.
+- The primary business control surface should be a responsive web dashboard with its own dependency boundary. It should cover venue claims, organization and staff roles, venue profile branding, hours/contact details, asset management, ad/special/event drafts, campaign controls, moderation status, billing, and analytics.
+- Canonical business records must separate `organizations`, organization memberships and roles, venue ownership claims, verified venue-profile overrides, creative assets, campaigns, approvals, billing state, and append-only audit history. A verified owner controls an approved presentation layer; they do not overwrite parser provenance or publish arbitrary ads directly into the consumer map.
+- Venue claims require proof, review, revocation, conflict handling, and account-recovery rules before launch. Staff permissions must be least-privilege, and every profile/ad mutation must identify the acting member.
+- Existing Firebase Auth, callable APIs, Storage, App Check, image picker, notifications, deep links, and analytics should be reused. Add Stripe or another payment package only after web-versus-native checkout and merchant geography are decided; add identity/document verification only after a provider and retention policy are selected; add camera scanning only when an approved QR-scanning workflow exists.
+- Business-created public events use canonical GathR categories and a separate moderation/publishing path. Friend events remain private social objects and cannot be converted into public business events implicitly.
+
 ## 33. Release 2 server data boundary
 
 Proposed server-controlled collections and projections:
@@ -883,4 +894,15 @@ All canonical mutations use authenticated callable functions. Clients cannot dir
 - Device QA created an arbitrary-address event, invited a selected friend, verified **Address shared later** and disabled Directions before reveal, exercised Going RSVP, and rendered both the purple Friends map layer and teal recognized-venue friend check-in without a crash or ANR.
 - Final Android-only Preview OTA group `aeda0f47-7901-43e0-80c6-419452e610bd`, update `01a05399-4767-7687-a912-9a01c5a1cac0`, runtime `1.1.10`, commit `b4709c59c7e9ad4ef16edbd80cc8b537ca464724`. The Profile footer proved adoption with `Runtime 1.1.10 · OTA 01a05399`, and staging friendship/check-in data rendered after restart.
 - Device acceptance caught and superseded group `7263bc6e-4102-47d7-a2d9-697e81faea99`, whose export omitted the Preview Firebase variables and fell back to production authentication. The corrected publish explicitly loaded every Preview value from `eas.json`; no production deployment or data mutation occurred.
-- Remaining deliberate Release 2 follow-ups are Production App Check enforcement/validation, managed private cover-image Storage, privacy-aware push delivery, remembered audience preferences, iOS/1.3x device acceptance, and later verified-business publishing. They are not represented as completed.
+- Remaining deliberate Release 2 follow-ups are Production App Check enforcement/validation, managed private cover-image Storage, privacy-aware push delivery, remembered audience preferences, iOS/1.3x physical-device acceptance, and later verified-business publishing. They are not represented as completed.
+
+### 2026-08-30 — iOS Preview native build checkpoint
+
+- Dependency alignment updated the SDK 54 packages to Expo's current compatible patch versions and pinned `babel-preset-expo` locally so Jest cannot resolve a stale parent-directory preset. No speculative payment, document-verification, image-manipulation, or QR-scanning dependency was added.
+- Added a staging iOS Firebase app for `com.craigb.gathr`, `GoogleService-Info.staging.plist`, and an EAS Preview-only App Check debug token. The debug token is stored as a sensitive EAS environment variable and is not present in Git or Production configuration.
+- Added `npm run verify:preview`, which fails when the internal Preview profile, staging Firebase files, App Check mode, OTA channel, or Production separation drifts. The iOS Preview build number now auto-increments.
+- Candidate commit `716f9c371dcb9c741535663a4fc3c0cc75527c7c` passed Expo Doctor 18/18, Expo dependency alignment, TypeScript, lint with zero errors, 54/54 Jest suites with 313/313 tests, Mapbox verification, Preview configuration verification, whitespace checks, and a complete iOS export of 2,675 modules.
+- EAS build `c60594c6-80bf-4e40-9270-327f525821d0` finished as iOS internal Preview build `1.1.10` (78), runtime `1.1.10`, channel `preview`, using active ad hoc profiles for both `com.craigb.gathr` and `com.craigb.gathr.share-extension`. Both profiles include the registered iPhone.
+- Downloaded IPA: `C:\Users\craig\Downloads\GathR-1.1.10-build78-preview-c60594c6.ipa`, 60,345,559 bytes, SHA-256 `C85C3462F9907EEA10384D52097E5C4511B2DC47D751B6DE31B8D52A25ADF184`.
+- Binary inspection verified bundle `com.craigb.gathr`, app `1.1.10` (78), staging Firebase project `gathr-social-staging`, staging iOS app ID `1:572784950053:ios:65bbf7aaa983e4c8e438cc`, share-extension inclusion, runtime `1.1.10`, Preview channel, OTA enabled, and check-on-launch `ALWAYS`.
+- This checkpoint proves build integrity, not installation or end-user acceptance. Physical iPhone launch, login against staging, notification/App Check behavior, share-extension invocation, fixed-screen layouts, and 1.3x text-size review remain to be performed after installation. No App Store submission, Production build, or new Production OTA was made.
