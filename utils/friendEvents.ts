@@ -39,6 +39,20 @@ export function findFriendEventLocation(
   return locations.find((location) => location.eventId === eventId) ?? null;
 }
 
+/**
+ * Exact location actions must only use the separately authorized location
+ * projection (or an exact event projection). Approximate map coordinates are
+ * intentionally excluded so they can never unlock directions or calendar
+ * address details before the host's reveal time.
+ */
+export function hasExactFriendEventCoordinates(
+  event: Pick<FriendEventProjection, 'latitude' | 'longitude'>,
+  location: FriendEventLocationProjection | null
+) {
+  return Number.isFinite(location?.latitude ?? event.latitude)
+    && Number.isFinite(location?.longitude ?? event.longitude);
+}
+
 export function friendEventToMapEvent(
   event: FriendEventProjection,
   location: FriendEventLocationProjection | null

@@ -145,7 +145,14 @@ export default function CreateEventScreen() {
     const byId = new Map<string, VenueOption>();
     allEvents.forEach((event) => {
       const venueId = String(event.venueId || '').trim();
-      if (!venueId || byId.has(venueId) || event.locationScope === 'area' || event.locationScope === 'route') return;
+      if (
+        !venueId
+        || byId.has(venueId)
+        || event.locationScope === 'city'
+        || event.locationScope === 'area'
+        || event.locationScope === 'route'
+        || event.locationScope === 'unknown'
+      ) return;
       byId.set(venueId, { venueId, name: event.venue || event.title, address: event.address || '' });
     });
     return [...byId.values()].sort((first, second) => first.name.localeCompare(second.name));

@@ -1,5 +1,9 @@
 import type { FriendEventLocationProjection, FriendEventProjection } from '../../types/social';
-import { friendEventToMapEvent, isFriendEventCurrent } from '../friendEvents';
+import {
+  friendEventToMapEvent,
+  hasExactFriendEventCoordinates,
+  isFriendEventCurrent,
+} from '../friendEvents';
 
 function projection(overrides: Partial<FriendEventProjection> = {}): FriendEventProjection {
   const now = Date.now();
@@ -68,6 +72,25 @@ describe('friend event map normalization', () => {
       longitude: -63.1311,
       locationPrecision: 'exact',
     });
+  });
+
+  it('never treats approximate map coordinates as permission for exact-location actions', () => {
+    expect(hasExactFriendEventCoordinates(projection(), null)).toBe(false);
+    expect(hasExactFriendEventCoordinates(
+      projection(),
+      {
+        eventId: 'event-1',
+        hostUid: 'host',
+        address: '12 Example Lane',
+        placeName: 'Craig’s place',
+        latitude: 46.2382,
+        longitude: -63.1311,
+      }
+    )).toBe(true);
+    expect(hasExactFriendEventCoordinates(
+      projection({ latitude: 46.2382, longitude: -63.1311 }),
+      null
+    )).toBe(true);
   });
 
   it('never maps canceled, ended, online, or TBD events without physical coordinates', () => {

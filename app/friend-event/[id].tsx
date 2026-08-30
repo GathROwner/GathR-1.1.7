@@ -32,6 +32,7 @@ import { addToCalendar } from '../../utils/calendarUtils';
 import {
   findFriendEventLocation,
   formatFriendEventDate,
+  hasExactFriendEventCoordinates,
   socialTimeToMillis,
 } from '../../utils/friendEvents';
 
@@ -94,7 +95,7 @@ export default function FriendEventDetailScreen() {
       title: event.title,
       startDate: new Date(start),
       endDate: new Date(end),
-      location: location?.address || event.locationLabel,
+      location: location?.address || (event.addressRevealed ? event.locationLabel : ''),
       notes: event.description,
     });
   };
@@ -166,6 +167,7 @@ export default function FriendEventDetailScreen() {
       || (event.locationAddress ? `${event.locationLabel} · ${event.locationAddress}` : '')
       || (event.addressRevealed ? event.locationLabel : 'Address shared later');
   const canceled = event.status === 'canceled';
+  const directionsAvailable = hasExactFriendEventCoordinates(event, location);
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -240,6 +242,11 @@ export default function FriendEventDetailScreen() {
           {!canceled && canInvite && <TouchableOpacity onPress={() => setInviteVisible(true)} style={styles.actionButton}><Ionicons name="person-add-outline" size={19} color={PURPLE} /><Text style={styles.actionText}>Invite</Text></TouchableOpacity>}
           {event.locationType === 'online' && event.onlineUrl ? (
             <TouchableOpacity onPress={() => void Linking.openURL(event.onlineUrl)} style={styles.actionButton}><Ionicons name="videocam-outline" size={19} color={PURPLE} /><Text style={styles.actionText}>Join</Text></TouchableOpacity>
+          ) : !directionsAvailable ? (
+            <View style={[styles.actionButton, styles.lockedAction]} accessibilityLabel="Directions unlock when the address is shared">
+              <Ionicons name="lock-closed-outline" size={19} color="#98A2B3" />
+              <Text style={styles.lockedActionText}>Address later</Text>
+            </View>
           ) : (
             <TouchableOpacity onPress={() => void directions()} style={styles.actionButton}><Ionicons name="navigate-outline" size={19} color={PURPLE} /><Text style={styles.actionText}>Directions</Text></TouchableOpacity>
           )}
@@ -377,6 +384,8 @@ const styles = StyleSheet.create({
   actions: { flexDirection: 'row', gap: 7 },
   actionButton: { flex: 1, minHeight: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, borderRadius: 13, backgroundColor: '#F4EBFF' },
   actionText: { color: '#53389E', fontSize: 11, fontWeight: '900' },
+  lockedAction: { backgroundColor: '#F2F4F7' },
+  lockedActionText: { color: '#667085', fontSize: 11, fontWeight: '800' },
   hostActions: { flexDirection: 'row', gap: 7, marginTop: 'auto' },
   cancelButton: { flex: 1, minHeight: 44, alignItems: 'center', justifyContent: 'center', borderRadius: 12, backgroundColor: '#FFF4ED' },
   cancelText: { color: '#B54708', fontWeight: '800' },

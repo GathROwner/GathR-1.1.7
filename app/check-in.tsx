@@ -73,8 +73,10 @@ export default function CheckInScreen() {
       if (
         !venueId
         || byId.has(venueId)
+        || event.locationScope === 'city'
         || event.locationScope === 'area'
         || event.locationScope === 'route'
+        || event.locationScope === 'unknown'
       ) continue;
       byId.set(venueId, {
         venueId,

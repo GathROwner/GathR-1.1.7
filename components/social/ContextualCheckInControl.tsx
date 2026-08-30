@@ -92,8 +92,10 @@ export default function ContextualCheckInControl({ enabled }: Props) {
       if (
         !venueId
         || byId.has(venueId)
+        || event.locationScope === 'city'
         || event.locationScope === 'area'
         || event.locationScope === 'route'
+        || event.locationScope === 'unknown'
         || !Number.isFinite(event.latitude)
         || !Number.isFinite(event.longitude)
       ) continue;
