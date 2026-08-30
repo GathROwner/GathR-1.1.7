@@ -62,12 +62,15 @@ let unsubscribeSocial: (() => void) | null = null;
 let expiryTimer: ReturnType<typeof setInterval> | null = null;
 let appStateSubscription: { remove: () => void } | null = null;
 let readyListeners = new Set<string>();
+let cachedListeners = new Set<string>();
 
 function markListenerReady(name: string, fromCache: boolean) {
   readyListeners.add(name);
+  if (fromCache) cachedListeners.add(name);
+  else cachedListeners.delete(name);
   useSocialStore.setState({
     loading: readyListeners.size < (SOCIAL_RELEASE_TWO_ENABLED ? 7 : 5),
-    fromCache,
+    fromCache: cachedListeners.size > 0,
     error: null,
     lastUpdatedAt: Date.now(),
     listenerReadyCount: readyListeners.size,
@@ -129,6 +132,7 @@ export function stopSocialListeners() {
   appStateSubscription?.remove();
   appStateSubscription = null;
   readyListeners = new Set<string>();
+  cachedListeners = new Set<string>();
   useSocialStore.setState({ ...EMPTY_STATE });
   useMapStore.getState().setFriendEvents([]);
 }
