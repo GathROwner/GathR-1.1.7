@@ -953,7 +953,13 @@ useEffect(() => {
     const inProfileScreen = segments[0] === 'profile';
     const inAuthenticatedSocialFlow =
       SOCIAL_FEATURE_ENABLED &&
-      (segments[0] === 'friends' || segments[0] === 'check-in');
+      (
+        segments[0] === 'friends' ||
+        segments[0] === 'check-in' ||
+        segments[0] === 'create-event' ||
+        segments[0] === 'my-events' ||
+        segments[0] === 'friend-event'
+      );
     const onSharedEventScreen = segments[0] === 'shared-event';
     const inSharedEventFlow = onSharedEventScreen || isRoutingShareIntent;
 
@@ -1058,6 +1064,13 @@ useEffect(() => {
           presentation: 'modal'
         }} />
         <Stack.Screen name="friends" options={{ headerShown: false }} />
+        <Stack.Screen name="my-events" options={{ headerShown: false }} />
+        <Stack.Screen name="friend-event/[id]" options={{ headerShown: false }} />
+        <Stack.Screen name="create-event" options={{
+          headerShown: false,
+          presentation: 'modal',
+          animation: 'slide_from_bottom'
+        }} />
         <Stack.Screen name="check-in" options={{
           headerShown: false,
           presentation: 'modal',

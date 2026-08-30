@@ -8,12 +8,27 @@ import {
 } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 
-import { firestore, functions } from '../config/firebaseConfig';
+import {
+  app,
+  auth,
+  firebaseTarget,
+  firestore,
+  functions,
+  useFirebaseEmulators,
+} from '../config/firebaseConfig';
 import { amplitudeTrack } from '../lib/amplitudeAnalytics';
+import { SOCIAL_RELEASE_TWO_ENABLED } from '../types/social';
+import { getSocialAppCheckToken } from './appCheckService';
 import type {
   BlockProjection,
   CheckInInput,
+  CheckInEligibilityResult,
+  CheckInEligibilitySampleInput,
   FriendActivityProjection,
+  FriendEventInput,
+  FriendEventLocationProjection,
+  FriendEventProjection,
+  FriendEventRsvp,
   FriendProjection,
   FriendRequestProjection,
   OwnCheckIn,
@@ -71,6 +86,68 @@ function normalizeCallableError(error: unknown): SocialServiceError {
   );
 }
 
+const APP_CHECKED_CALLABLES = new Set([
+  'recordCheckInEligibilitySampleCallable',
+  'createFriendEventCallable',
+  'geocodeFriendEventAddressCallable',
+  'updateFriendEventCallable',
+  'inviteToFriendEventCallable',
+  'respondToFriendEventCallable',
+  'removeFromFriendEventCallable',
+  'cancelFriendEventCallable',
+  'deleteFriendEventCallable',
+]);
+
+function callableUrl(name: string) {
+  const projectId = app.options.projectId;
+  if (!projectId) throw new SocialServiceError('failed-precondition', 'Firebase is not configured.');
+  if (useFirebaseEmulators) {
+    const host = process.env.EXPO_PUBLIC_FIREBASE_EMULATOR_HOST || '10.0.2.2';
+    return `http://${host}:5001/${projectId}/northamerica-northeast1/${name}`;
+  }
+  return `https://northamerica-northeast1-${projectId}.cloudfunctions.net/${name}`;
+}
+
+async function callAppCheckedSocial<Request, Response>(
+  name: string,
+  data: Request
+): Promise<Response> {
+  const user = auth.currentUser;
+  if (!user) throw new SocialServiceError('unauthenticated', 'Sign in to use this feature.');
+  const [idToken, appCheckToken] = await Promise.all([
+    user.getIdToken(),
+    getSocialAppCheckToken(),
+  ]);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 30_000);
+  try {
+    const response = await fetch(callableUrl(name), {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${idToken}`,
+        'content-type': 'application/json',
+        ...(appCheckToken ? { 'X-Firebase-AppCheck': appCheckToken } : {}),
+      },
+      body: JSON.stringify({ data }),
+      signal: controller.signal,
+    });
+    const payload = await response.json() as {
+      result?: Response;
+      data?: Response;
+      error?: { status?: string; message?: string };
+    };
+    if (!response.ok || payload.error) {
+      throw new SocialServiceError(
+        String(payload.error?.status || `http-${response.status}`).toLowerCase().replace(/_/g, '-'),
+        payload.error?.message || 'The social request could not be completed.'
+      );
+    }
+    return (payload.result ?? payload.data) as Response;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 async function callSocial<Request, Response>(
   name: string,
   data: Request
@@ -80,11 +157,13 @@ async function callSocial<Request, Response>(
   diagnosticSequence += 1;
   const requestId = `${startedAt.toString(36)}-${diagnosticSequence.toString(36)}`;
   try {
-    const callable = httpsCallable<Request, Response>(functions, name);
-    const result = (await callable(data)).data;
+    const result = APP_CHECKED_CALLABLES.has(name)
+      ? await callAppCheckedSocial<Request, Response>(name, data)
+      : (await httpsCallable<Request, Response>(functions, name)(data)).data;
     amplitudeTrack('social_callable_completed', {
       operation,
       success: true,
+      firebase_target: firebaseTarget,
       duration_ms: Date.now() - startedAt,
     });
     publishCallableDiagnostic({
@@ -100,6 +179,7 @@ async function callSocial<Request, Response>(
     amplitudeTrack('social_callable_completed', {
       operation,
       success: false,
+      firebase_target: firebaseTarget,
       error_code: normalized.code,
       duration_ms: Date.now() - startedAt,
     });
@@ -185,11 +265,56 @@ export const createCheckIn = (input: CheckInInput) =>
     operationId: input.operationId || createSocialOperationId(),
   });
 
+export const recordCheckInEligibilitySample = (input: CheckInEligibilitySampleInput) =>
+  callSocial<CheckInEligibilitySampleInput, CheckInEligibilityResult>(
+    'recordCheckInEligibilitySampleCallable',
+    input
+  );
+
 export const checkOut = () =>
   callSocial<Record<string, never>, { checkedOut: true; removedViewerCount: number }>(
     'checkOutCallable',
     {}
   );
+
+export const createFriendEvent = (input: FriendEventInput) =>
+  callSocial<FriendEventInput, FriendEventProjection>('createFriendEventCallable', {
+    ...input,
+    operationId: input.operationId || createSocialOperationId(),
+  });
+
+export const geocodeFriendEventAddress = (address: string) =>
+  callSocial<{ address: string }, { latitude: number; longitude: number }>(
+    'geocodeFriendEventAddressCallable',
+    { address }
+  );
+
+export const updateFriendEvent = (eventId: string, input: FriendEventInput) =>
+  callSocial<FriendEventInput & { eventId: string }, { eventId: string; revision: string }>(
+    'updateFriendEventCallable',
+    { ...input, eventId }
+  );
+
+export const inviteToFriendEvent = (eventId: string, targetUid: string) =>
+  callSocial<{ eventId: string; targetUid: string }, { eventId: string; invitedUid: string }>(
+    'inviteToFriendEventCallable',
+    { eventId, targetUid }
+  );
+
+export const respondToFriendEvent = (eventId: string, response: Exclude<FriendEventRsvp, 'host' | 'invited'>) =>
+  callSocial<{ eventId: string; response: string }, { eventId: string; response: string }>(
+    'respondToFriendEventCallable',
+    { eventId, response }
+  );
+
+export const removeFromFriendEvent = (eventId: string, memberUid: string) =>
+  callSocial('removeFromFriendEventCallable', { eventId, memberUid });
+
+export const cancelFriendEvent = (eventId: string, reason: string) =>
+  callSocial('cancelFriendEventCallable', { eventId, reason });
+
+export const deleteFriendEvent = (eventId: string) =>
+  callSocial('deleteFriendEventCallable', { eventId });
 
 export const deleteSocialAccountData = () =>
   callSocial<Record<string, never>, {
@@ -197,6 +322,8 @@ export const deleteSocialAccountData = () =>
     projectionsDeleted: number;
     incomingBlocksDeleted: number;
     handleReleased: boolean;
+    hostedEventsDeleted: number;
+    eventMembershipsRevoked: number;
   }>('deleteSocialAccountDataCallable', {});
 
 function mapDocuments<T>(snapshot: QuerySnapshot<DocumentData>): T[] {
@@ -217,6 +344,8 @@ export interface SocialListenerCallbacks {
   onActivity: (activity: FriendActivityProjection[], fromCache: boolean) => void;
   onBlocks: (blocks: BlockProjection[], fromCache: boolean) => void;
   onOwnCheckIn: (checkIn: OwnCheckIn | null, fromCache: boolean) => void;
+  onFriendEvents: (events: FriendEventProjection[], fromCache: boolean) => void;
+  onFriendEventLocations: (locations: FriendEventLocationProjection[], fromCache: boolean) => void;
   onError: (error: SocialServiceError) => void;
 }
 
@@ -269,6 +398,35 @@ export function subscribeToSocialData(
       error
     ),
   ];
+
+  if (SOCIAL_RELEASE_TWO_ENABLED) {
+    subscriptions.push(
+      onSnapshot(
+        collection(firestore, 'users', uid, 'friendEvents'),
+        { includeMetadataChanges: true },
+        (snapshot) => callbacks.onFriendEvents(
+          mapDocuments<FriendEventProjection & { uid: string }>(snapshot).map((event) => ({
+            ...event,
+            eventId: event.eventId || event.uid,
+          })),
+          snapshot.metadata.fromCache
+        ),
+        error
+      ),
+      onSnapshot(
+        collection(firestore, 'users', uid, 'friendEventLocations'),
+        { includeMetadataChanges: true },
+        (snapshot) => callbacks.onFriendEventLocations(
+          mapDocuments<FriendEventLocationProjection & { uid: string }>(snapshot).map((location) => ({
+            ...location,
+            eventId: location.eventId || location.uid,
+          })),
+          snapshot.metadata.fromCache
+        ),
+        error
+      )
+    );
+  }
 
   return () => subscriptions.forEach((unsubscribe) => unsubscribe());
 }

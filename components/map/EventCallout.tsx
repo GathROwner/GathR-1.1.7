@@ -3081,6 +3081,10 @@ const [calloutState, setCalloutState] = useState<CalloutState>('expanded');
   }, [mixedSpecialsContent, shouldDeferAndroidCalloutContent]);
   
   const handleImagePress = (imageUrl: string, event: Event) => {
+    if (event.friendEvent) {
+      (global as any).router?.push?.(`/friend-event/${event.friendEvent.eventId}`);
+      return;
+    }
     console.log('IMAGE PRESSED - Starting handleImagePress with URL:', imageUrl);
 console.log('EVENT DATA:', { 
   id: event.id, 
@@ -3352,6 +3356,10 @@ try {
    * Handle event selection with guest limitation tracking
    */
   const handleEventSelect = (event: Event) => {
+    if (event.friendEvent) {
+      (global as any).router?.push?.(`/friend-event/${event.friendEvent.eventId}`);
+      return;
+    }
     console.log(`[GuestLimitation] Event click: ${event.title}`);
 
     // Record venue interaction when user clicks an event
@@ -4357,6 +4365,26 @@ useEffect(() => {
     } else {
       // Render event/special card
       const event = item.data as Event;
+      if (event.friendEvent) {
+        return (
+          <TouchableOpacity
+            key={`friend-event-${event.friendEvent.eventId}`}
+            activeOpacity={0.76}
+            onPress={() => handleEventSelect(event)}
+            style={styles.friendEventCalloutCard}
+          >
+            <View style={styles.friendEventCalloutIcon}><Ionicons name="people" size={20} color="#FFFFFF" /></View>
+            <View style={styles.friendEventCalloutCopy}>
+              <Text style={styles.friendEventCalloutEyebrow}>FRIEND EVENT · {event.category.toUpperCase()}</Text>
+              <Text numberOfLines={2} style={styles.friendEventCalloutTitle}>{event.title}</Text>
+              <Text numberOfLines={1} style={styles.friendEventCalloutMeta}>
+                {event.friendEvent.viewerRole === 'host' ? 'Hosted by you' : `Hosted by ${event.friendEvent.hostName}`} · {event.friendEvent.addressRevealed ? event.venue : 'Address shared later'}
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color="#6941C6" />
+          </TouchableOpacity>
+        );
+      }
       return (
         <TouchableOpacity 
           key={`event-${event.id}-${index}`}
@@ -4570,6 +4598,19 @@ useEffect(() => {
                   .join(' · ')}
               </Text>
             </View>
+            {Number.isFinite(Number(activeVenue.latitude)) && Number.isFinite(Number(activeVenue.longitude)) && (
+              <TouchableOpacity
+                accessibilityLabel={`Get directions to join friends at ${activeVenue.venue}`}
+                onPress={() => {
+                  const url = `https://www.google.com/maps/search/?api=1&query=${Number(activeVenue.latitude)},${Number(activeVenue.longitude)}`;
+                  void Linking.openURL(url);
+                }}
+                style={styles.joinFriendsButton}
+              >
+                <Ionicons name="navigate" size={14} color="#0F766E" />
+                <Text style={styles.joinFriendsButtonText}>Join them</Text>
+              </TouchableOpacity>
+            )}
           </View>
         )}
         
@@ -4965,6 +5006,22 @@ const styles = StyleSheet.create({
     fontSize: 12,
     lineHeight: 16,
   },
+  friendEventCalloutCard: { minHeight: 92, flexDirection: 'row', alignItems: 'center', gap: 10, padding: 13, marginVertical: 4, borderRadius: 15, borderWidth: 1, borderColor: '#D6BBFB', backgroundColor: '#FCFAFF' },
+  friendEventCalloutIcon: { width: 40, height: 40, borderRadius: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: '#6941C6' },
+  friendEventCalloutCopy: { flex: 1, minWidth: 0, gap: 3 },
+  friendEventCalloutEyebrow: { color: '#6941C6', fontSize: 9, fontWeight: '900', letterSpacing: 0.4 },
+  friendEventCalloutTitle: { color: '#101828', fontSize: 15, fontWeight: '900' },
+  friendEventCalloutMeta: { color: '#667085', fontSize: 10 },
+  joinFriendsButton: {
+    minHeight: 34,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 9,
+    borderRadius: 10,
+    backgroundColor: '#CCFBF1',
+  },
+  joinFriendsButtonText: { color: '#0F766E', fontSize: 11, fontWeight: '900' },
   venueTopContent: {
   alignItems: 'center',
 },

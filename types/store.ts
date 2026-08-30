@@ -35,6 +35,10 @@ export type InterestCarouselFilter =
 export interface MapState {
   // Event data
   allEvents: Event[];  // Global cache (all 112 items from React Query)
+  // Authorization-sensitive friend events are kept outside the persisted
+  // public-event cache and are populated only by a live server snapshot.
+  friendEvents: Event[];
+  showFriendEvents: boolean;
   events: Event[];
   specials: Event[];
   filteredEvents: Event[];
@@ -101,6 +105,8 @@ export interface MapState {
   
   // Actions
   setAllEvents: (events: Event[]) => void;  // For React Query global cache
+  setFriendEvents: (events: Event[]) => void;
+  setShowFriendEvents: (visible: boolean) => void;
   setEvents: (events: Event[]) => void;  // Deprecated - use setAllEvents
   setFilterCriteria: (criteria: Partial<FilterCriteria>) => void;
   setTypeFilters: (

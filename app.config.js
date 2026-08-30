@@ -191,7 +191,7 @@ plugins: [
         "ios": {
           "deploymentTarget": "15.1",
           "useFrameworks": "static",
-          "forceStaticLinking": ["RNFBApp", "RNFBAnalytics"],
+          "forceStaticLinking": ["RNFBApp", "RNFBAnalytics", "RNFBAppCheck"],
           "podfileProperties": { 
             "use_modular_headers!": true 
           }
@@ -253,6 +253,9 @@ plugins: [
         calendarPermission: "Allow GathR to access your calendar to add events"
       }
     ],
+
+    "@react-native-community/datetimepicker",
+    "@react-native-firebase/app-check",
 
     [
       "expo-image-picker",

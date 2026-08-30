@@ -40,10 +40,9 @@ import { unregisterSharedEventPushNotifications } from '../lib/sharedEventPushNo
 import { requestCurrentUserEmailChange } from '../lib/accountEmailChange';
 import { useUserPrefsStore, updateShowDailyHotspot, updateShowTrendingOnOpen } from '../store/userPrefsStore';
 import { useTutorialUiStore } from '../store/tutorialUiStore';
-import GathrWordmarkLogo from '../components/common/GathrWordmarkLogo';
 import { deleteSocialAccountData } from '../services/socialService';
 import { useSocialStore } from '../store/socialStore';
-import { SOCIAL_FEATURE_ENABLED } from '../types/social';
+import { SOCIAL_FEATURE_ENABLED, SOCIAL_RELEASE_TWO_ENABLED } from '../types/social';
 import { publishTutorialMeasurement } from '../utils/tutorialReadiness';
 import { beginProfileTutorialReplay } from '../utils/tutorialReplay';
 import {
@@ -718,7 +717,6 @@ export default function ProfileScreen() {
   const [userInterests, setUserInterests] = useState<string[]>([]);
   const [memberSince, setMemberSince] = useState('');
   const [isEmailCopied, setIsEmailCopied] = useState(false);
-  const [showMoreActions, setShowMoreActions] = useState(false);
   
   // Delete account state
   const [passwordInput, setPasswordInput] = useState('');
@@ -733,8 +731,20 @@ export default function ProfileScreen() {
   // Daily hotspot preference
   const showDailyHotspot = useUserPrefsStore((state) => state.showDailyHotspot);
   const friendCount = useSocialStore((state) => state.friends.length);
+  const ownCheckIn = useSocialStore((state) => state.ownCheckIn);
   const incomingFriendRequestCount = useSocialStore(
     (state) => state.requests.filter((request) => request.direction === 'incoming').length
+  );
+  const upcomingInvitationCount = useSocialStore(
+    (state) => state.friendEvents.filter((event) => {
+      const endAt = typeof event.endAt === 'object' && event.endAt && 'toMillis' in event.endAt
+        ? event.endAt.toMillis()
+        : event.endAt instanceof Date ? event.endAt.getTime() : Number(event.endAt || 0);
+      return event.viewerRole === 'guest'
+        && event.status === 'published'
+        && event.ownRsvp === 'invited'
+        && endAt > Date.now();
+    }).length
   );
   const setShowDailyHotspot = useUserPrefsStore((state) => state.setShowDailyHotspot);
 
@@ -790,8 +800,6 @@ export default function ProfileScreen() {
     }
 
     clearMeasurement();
-    setShowMoreActions(true);
-
     const scheduleMeasurement = () => {
       animationFrame = requestAnimationFrame(() => {
         animationFrame = requestAnimationFrame(() => {
@@ -1685,7 +1693,7 @@ const handleLogout = async () => {
               </TouchableOpacity>
 
               <View style={styles.featuresCard}>
-                <Text style={styles.sectionHeading}>Features</Text>
+                <Text style={styles.sectionHeading}>Social</Text>
                 {SOCIAL_FEATURE_ENABLED && (
                   <>
                     <TouchableOpacity
@@ -1707,39 +1715,108 @@ const handleLogout = async () => {
                       </View>
                       <Ionicons name="chevron-forward" size={18} color={BRAND.textLight} />
                     </TouchableOpacity>
-                    <View style={styles.featureDivider} />
-                    <TouchableOpacity
-                      style={styles.featureRow}
-                      onPress={() => router.push('/check-in')}
-                      accessibilityRole="button"
-                      accessibilityLabel="Open check-in"
-                    >
-                      <View style={styles.featureIcon}>
-                        <Ionicons name="location-outline" size={20} color={BRAND.primary} />
-                      </View>
-                      <View style={styles.featureCopy}>
-                        <Text style={styles.featureTitle}>Check in</Text>
-                        <Text style={styles.featureSubtitle}>Share a recognized venue temporarily</Text>
-                      </View>
-                      <Ionicons name="chevron-forward" size={18} color={BRAND.textLight} />
-                    </TouchableOpacity>
-                    <View style={styles.featureDivider} />
+                    {SOCIAL_RELEASE_TWO_ENABLED && <View style={styles.featureDivider} />}
+                    {SOCIAL_RELEASE_TWO_ENABLED && <View style={styles.socialActionRow}>
+                      <TouchableOpacity
+                        style={styles.socialActionTile}
+                        onPress={() => router.push('/my-events')}
+                        accessibilityRole="button"
+                        accessibilityLabel="My events"
+                      >
+                        <Ionicons name="calendar-outline" size={20} color="#6941C6" />
+                        <Text style={styles.socialActionTitle}>My Events</Text>
+                        {upcomingInvitationCount > 0 && (
+                          <View style={styles.socialBadge}><Text style={styles.socialBadgeText}>{upcomingInvitationCount > 9 ? '9+' : upcomingInvitationCount}</Text></View>
+                        )}
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[styles.socialActionTile, styles.createEventTile]}
+                        onPress={() => router.push('/create-event')}
+                        accessibilityRole="button"
+                        accessibilityLabel="Create a private friend event"
+                      >
+                        <Ionicons name="add-circle" size={20} color="#FFFFFF" />
+                        <Text style={[styles.socialActionTitle, styles.createEventTitle]}>Create Event</Text>
+                      </TouchableOpacity>
+                    </View>}
                   </>
                 )}
+              </View>
+
+              {SOCIAL_FEATURE_ENABLED && ownCheckIn && (
                 <TouchableOpacity
-                  style={styles.featureRow}
-                  onPress={() => setShowMoreActions(true)}
+                  style={styles.activeCheckInBadge}
+                  onPress={() => router.push('/check-in')}
                   accessibilityRole="button"
-                  accessibilityLabel="More profile settings"
+                  accessibilityLabel={`Manage active check-in at ${ownCheckIn.venueNameSnapshot}`}
                 >
-                  <View style={styles.featureIcon}>
-                    <Ionicons name="ellipsis-horizontal-circle-outline" size={20} color={BRAND.primary} />
+                  <View style={styles.activeCheckInIcon}>
+                    <Ionicons name="location" size={17} color="#175CD3" />
                   </View>
                   <View style={styles.featureCopy}>
-                    <Text style={styles.featureTitle}>More</Text>
-                    <Text style={styles.featureSubtitle}>Preferences, sharing, tutorial, and account</Text>
+                    <Text style={styles.activeCheckInEyebrow}>CHECKED IN</Text>
+                    <Text numberOfLines={1} style={styles.featureTitle}>{ownCheckIn.venueNameSnapshot}</Text>
                   </View>
-                  <Ionicons name="chevron-forward" size={18} color={BRAND.textLight} />
+                  <Ionicons name="chevron-forward" size={18} color="#175CD3" />
+                </TouchableOpacity>
+              )}
+
+              <View style={styles.preferencesCard}>
+                <Text style={styles.sectionHeading}>Preferences</Text>
+                <View style={styles.compactPreferenceRow}>
+                  <View style={[styles.featureIcon, styles.hotspotFeatureIcon]}>
+                    <HotspotCircleIcon isActive={showDailyHotspot} />
+                  </View>
+                  <View style={styles.featureCopy}>
+                    <Text style={styles.featureTitle}>Daily Hotspot</Text>
+                    <Text numberOfLines={1} style={styles.featureSubtitle}>Highlight a top event each day</Text>
+                  </View>
+                  <Switch
+                    value={showDailyHotspot}
+                    onValueChange={handleToggleHotspot}
+                    trackColor={{ false: '#D9E1EA', true: '#9ECFFF' }}
+                    thumbColor={showDailyHotspot ? BRAND.primary : '#FFFFFF'}
+                    ios_backgroundColor="#D9E1EA"
+                    accessibilityLabel="Daily Hotspot"
+                  />
+                </View>
+                <View style={styles.featureDivider} />
+                <View style={styles.compactPreferenceRow}>
+                  <View style={[styles.featureIcon, styles.trendingFeatureIcon]}>
+                    <MaterialIcons name="local-fire-department" size={20} color={BRAND.primary} />
+                  </View>
+                  <View style={styles.featureCopy}>
+                    <Text style={styles.featureTitle}>Trending on launch</Text>
+                    <Text numberOfLines={1} style={styles.featureSubtitle}>Open what's popular first</Text>
+                  </View>
+                  <Switch
+                    value={showTrendingOnOpen}
+                    onValueChange={handleToggleTrending}
+                    trackColor={{ false: '#D9E1EA', true: '#9ECFFF' }}
+                    thumbColor={showTrendingOnOpen ? BRAND.primary : '#FFFFFF'}
+                    ios_backgroundColor="#D9E1EA"
+                    accessibilityLabel="Trending on launch"
+                  />
+                </View>
+              </View>
+
+              <FacebookPageSubmission
+                ref={facebookSubmissionRef}
+                isHighlighted={facebookSubmissionHighlighted}
+              />
+
+              <View style={styles.profileQuickActions}>
+                <TouchableOpacity style={styles.quickAction} onPress={handleReplayTutorial} accessibilityRole="button" accessibilityLabel="Replay tutorial">
+                  <Ionicons name="play-circle-outline" size={20} color={BRAND.primary} />
+                  <Text style={styles.quickActionText}>Tutorial</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.quickAction} onPress={handleShareApp} accessibilityRole="button" accessibilityLabel="Share GathR">
+                  <Ionicons name="share-social-outline" size={20} color={BRAND.primary} />
+                  <Text style={styles.quickActionText}>Share</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.quickAction} onPress={handleOpenAccountPrivacy} accessibilityRole="button" accessibilityLabel="Account and privacy">
+                  <Ionicons name="shield-checkmark-outline" size={20} color={BRAND.primary} />
+                  <Text numberOfLines={1} style={styles.quickActionText}>Account</Text>
                 </TouchableOpacity>
               </View>
 
@@ -1762,143 +1839,6 @@ const handleLogout = async () => {
       
       {/* Native-stack Profile sits above the root overlay on iOS. */}
       <ProfileTutorialOverlayHost hostRef={profileTutorialOverlayHostRef} />
-
-      <Modal
-        visible={showMoreActions}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setShowMoreActions(false)}
-      >
-        <TouchableWithoutFeedback onPress={() => setShowMoreActions(false)}>
-          <View style={styles.accountModalOverlay}>
-            <TouchableWithoutFeedback onPress={(event) => event.stopPropagation()}>
-              <View style={[styles.accountModalSheet, styles.moreSheet]}>
-                <View style={styles.accountModalHandle} />
-                <View style={styles.accountModalHeader}>
-                  <View style={styles.moreHeaderCopy}>
-                    <Text style={styles.accountModalTitle}>More</Text>
-                    <Text style={styles.accountModalSubtitle}>Preferences, sharing, tutorial, and account</Text>
-                  </View>
-                  <TouchableOpacity
-                    style={styles.accountModalClose}
-                    onPress={() => setShowMoreActions(false)}
-                    accessibilityRole="button"
-                    accessibilityLabel="Close more profile settings"
-                  >
-                    <Ionicons name="close" size={21} color={BRAND.text} />
-                  </TouchableOpacity>
-                </View>
-
-                <ScrollView
-                  contentContainerStyle={styles.moreContent}
-                  keyboardShouldPersistTaps="handled"
-                  showsVerticalScrollIndicator={false}
-                >
-                  <View style={styles.featuresCard}>
-                    <Text style={styles.sectionHeading}>Preferences</Text>
-                    <View style={styles.featureRow}>
-                      <View style={[styles.featureIcon, styles.hotspotFeatureIcon]}>
-                        <HotspotCircleIcon isActive={showDailyHotspot} />
-                      </View>
-                      <View style={styles.featureCopy}>
-                        <Text style={styles.featureTitle}>Daily Hotspot</Text>
-                        <Text style={styles.featureSubtitle}>Highlight a top event each day</Text>
-                      </View>
-                      <Switch
-                        value={showDailyHotspot}
-                        onValueChange={handleToggleHotspot}
-                        trackColor={{ false: '#D9E1EA', true: '#9ECFFF' }}
-                        thumbColor={showDailyHotspot ? BRAND.primary : '#FFFFFF'}
-                        ios_backgroundColor="#D9E1EA"
-                        accessibilityLabel="Daily Hotspot"
-                      />
-                    </View>
-                    <View style={styles.featureDivider} />
-                    <View style={styles.featureRow}>
-                      <View style={[styles.featureIcon, styles.trendingFeatureIcon]}>
-                        <MaterialIcons name="local-fire-department" size={20} color={BRAND.primary} />
-                      </View>
-                      <View style={styles.featureCopy}>
-                        <Text style={styles.featureTitle}>Trending on launch</Text>
-                        <Text style={styles.featureSubtitle}>Show what’s popular when GathR opens</Text>
-                      </View>
-                      <Switch
-                        value={showTrendingOnOpen}
-                        onValueChange={handleToggleTrending}
-                        trackColor={{ false: '#D9E1EA', true: '#9ECFFF' }}
-                        thumbColor={showTrendingOnOpen ? BRAND.primary : '#FFFFFF'}
-                        ios_backgroundColor="#D9E1EA"
-                        accessibilityLabel="Trending on launch"
-                      />
-                    </View>
-                  </View>
-
-                  <FacebookPageSubmission
-                    ref={facebookSubmissionRef}
-                    isHighlighted={facebookSubmissionHighlighted}
-                  />
-
-                  <TouchableOpacity
-                    style={styles.tutorialRow}
-                    onPress={handleReplayTutorial}
-                    accessibilityRole="button"
-                    accessibilityLabel="Replay tutorial"
-                    accessibilityHint="Starts the GathR tutorial again"
-                  >
-                    <View style={styles.tutorialIconBadge}>
-                      <Ionicons name="play" size={14} color="#52708D" />
-                    </View>
-                    <View style={styles.tutorialCopy}>
-                      <Text style={styles.tutorialRowText}>Replay tutorial</Text>
-                      <Text style={styles.tutorialRowSubtitle}>Take the quick tour again</Text>
-                    </View>
-                    <Ionicons name="chevron-forward" size={16} color="#8A9BAD" />
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    style={styles.shareAppButton}
-                    onPress={handleShareApp}
-                    accessibilityRole="button"
-                    accessibilityLabel="Share GathR"
-                  >
-                    <View style={styles.shareAppIconBadge}>
-                      <Ionicons name="share-social-outline" size={20} color={BRAND.primary} />
-                    </View>
-                    <View style={styles.shareAppTextContainer}>
-                      <View style={styles.shareAppTitleRow}>
-                        <Text style={styles.shareAppTitlePrefix}>Share</Text>
-                        <View style={styles.shareAppWordmarkInline}>
-                          <GathrWordmarkLogo width={44} height={16} color={BRAND.primary} />
-                        </View>
-                      </View>
-                      <Text style={styles.shareAppSubtext} numberOfLines={1}>Invite a friend</Text>
-                    </View>
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    style={styles.accountPrivacyRow}
-                    onPress={() => {
-                      setShowMoreActions(false);
-                      handleOpenAccountPrivacy();
-                    }}
-                    accessibilityRole="button"
-                    accessibilityLabel="Account and privacy"
-                  >
-                    <View style={styles.accountPrivacyIcon}>
-                      <Ionicons name="shield-checkmark-outline" size={20} color={BRAND.primary} />
-                    </View>
-                    <View style={styles.accountPrivacyCopy}>
-                      <Text style={styles.accountPrivacyTitle}>Account & privacy</Text>
-                      <Text style={styles.accountPrivacySubtitle}>Email, sign out, and account controls</Text>
-                    </View>
-                    <Ionicons name="chevron-forward" size={18} color={BRAND.textLight} />
-                  </TouchableOpacity>
-                </ScrollView>
-              </View>
-            </TouchableWithoutFeedback>
-          </View>
-        </TouchableWithoutFeedback>
-      </Modal>
 
       <Modal
         visible={showAccountModal}
@@ -2149,8 +2089,16 @@ const handleLogout = async () => {
 
 const submissionStyles = StyleSheet.create({
   container: {
-    backgroundColor: 'transparent',
-    minHeight: 60,
+    backgroundColor: BRAND.white,
+    minHeight: 58,
+    borderRadius: 16,
+    marginTop: 8,
+    paddingHorizontal: 12,
+    shadowColor: '#0B2748',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.07,
+    shadowRadius: 8,
+    elevation: 2,
   },
   compactTrigger: {
     minHeight: 60,
@@ -3049,6 +2997,21 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
   },
+  socialActionRow: { flexDirection: 'row', gap: 8, paddingVertical: 8 },
+  socialActionTile: { flex: 1, minHeight: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, borderRadius: 12, backgroundColor: '#F4EBFF' },
+  createEventTile: { backgroundColor: '#6941C6' },
+  socialActionTitle: { color: '#53389E', fontSize: 12, fontWeight: '800' },
+  socialBadge: { minWidth: 18, height: 18, paddingHorizontal: 4, borderRadius: 9, alignItems: 'center', justifyContent: 'center', backgroundColor: '#D92D20' },
+  socialBadgeText: { color: '#FFFFFF', fontSize: 9, fontWeight: '900' },
+  createEventTitle: { color: '#FFFFFF' },
+  activeCheckInBadge: { minHeight: 52, flexDirection: 'row', alignItems: 'center', gap: 9, marginTop: 8, paddingHorizontal: 12, borderRadius: 15, borderWidth: 1, borderColor: '#B2DDFF', backgroundColor: '#EFF8FF' },
+  activeCheckInIcon: { width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center', backgroundColor: '#FFFFFF' },
+  activeCheckInEyebrow: { color: '#175CD3', fontSize: 9, fontWeight: '900', letterSpacing: 0.7 },
+  preferencesCard: { backgroundColor: BRAND.white, borderRadius: 16, marginTop: 8, paddingHorizontal: 14, paddingTop: 9, paddingBottom: 4, shadowColor: '#0B2748', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.07, shadowRadius: 8, elevation: 2 },
+  compactPreferenceRow: { minHeight: 44, flexDirection: 'row', alignItems: 'center' },
+  profileQuickActions: { flexDirection: 'row', gap: 7, marginTop: 8 },
+  quickAction: { flex: 1, minHeight: 48, alignItems: 'center', justifyContent: 'center', gap: 3, borderRadius: 13, backgroundColor: BRAND.white, shadowColor: '#0B2748', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 7, elevation: 2 },
+  quickActionText: { color: BRAND.text, fontSize: 10, fontWeight: '700' },
   featureIcon: {
     width: 34,
     height: 34,

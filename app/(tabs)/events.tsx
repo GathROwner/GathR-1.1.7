@@ -22,10 +22,10 @@ import {
   Platform,
   useColorScheme
 } from 'react-native';
-import { usePathname } from 'expo-router';
+import { usePathname, useRouter } from 'expo-router';
 import { ScrollView as GestureScrollView } from 'react-native-gesture-handler';
 
-import { MaterialIcons } from '@expo/vector-icons';
+import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import FallbackImage from '../../components/common/FallbackImage';
 import TicketCtaPill from '../../components/common/TicketCtaPill';
@@ -435,7 +435,7 @@ const EventListItem: React.FC<EventListItemProps> = ({
   }, [event.id]);
   
   useEffect(() => {
-    if (!event.id || isGuest) return;
+    if (!event.id || isGuest || event.friendEvent) return;
 
     let started = false;
     let cancelled = false;
@@ -965,6 +965,41 @@ const result = await userService.toggleSavedEvent(event.id, {
     }
   };
 
+  if (event.friendEvent) {
+    const rsvpLabel = event.friendEvent.viewerRole === 'host'
+      ? 'You are hosting'
+      : event.friendEvent.ownRsvp === 'invited'
+        ? 'Invitation · Respond now'
+        : event.friendEvent.ownRsvp === 'cant_go'
+          ? "Can't go"
+          : event.friendEvent.ownRsvp.charAt(0).toUpperCase() + event.friendEvent.ownRsvp.slice(1);
+    return (
+      <TouchableOpacity ref={tutorialRef} activeOpacity={0.78} onPress={onPress} style={[styles.eventCard, styles.friendEventCard]}>
+        <View style={styles.friendEventAccent} />
+        <View style={styles.friendEventIcon}>
+          <Ionicons name="people" size={24} color="#FFFFFF" />
+        </View>
+        <View style={styles.friendEventCopy}>
+          <View style={styles.friendEventTopline}>
+            <Text style={styles.friendEventEyebrow}>FRIEND EVENT · {event.category.toUpperCase()}</Text>
+            <View style={styles.friendEventLock}><Ionicons name="lock-closed" size={10} color="#6941C6" /><Text style={styles.friendEventLockText}>{event.friendEvent.visibility === 'all_friends' ? 'FRIENDS' : 'INVITED'}</Text></View>
+          </View>
+          <Text numberOfLines={2} style={styles.friendEventTitle}>{event.title}</Text>
+          <Text numberOfLines={1} style={styles.friendEventMeta}>{formatFullDateTime()}</Text>
+          <View style={styles.friendEventLocationRow}>
+            <Ionicons name="location-outline" size={14} color="#667085" />
+            <Text numberOfLines={1} style={styles.friendEventLocation}>{event.friendEvent.addressRevealed ? `${event.venue}${event.address ? ` · ${event.address}` : ''}` : 'Exact address shared later'}</Text>
+          </View>
+          <View style={styles.friendEventFooter}>
+            <Text style={styles.friendEventHost}>{event.friendEvent.viewerRole === 'host' ? 'Hosted by you' : `Hosted by ${event.friendEvent.hostName}`}</Text>
+            <Text style={styles.friendEventRsvp}>{rsvpLabel}</Text>
+          </View>
+        </View>
+        <Ionicons name="chevron-forward" size={20} color="#7F56D9" />
+      </TouchableOpacity>
+    );
+  }
+
   return (
     <View>
       <TouchableOpacity
@@ -1389,6 +1424,7 @@ const MemoizedEventListItem = React.memo(EventListItem, (prevProps, nextProps) =
 
 // Main Events Screen component
 function EventsScreen() {
+  const router = useRouter();
   const adColors = AdColors[useColorScheme() ?? 'light'];
   markTabScreenRenderStart('events');
   // ===============================================================
@@ -1873,6 +1909,10 @@ useEffect(() => {
   // ===============================================================
   
   const handleEventPress = (event: Event) => {
+    if (event.friendEvent) {
+      router.push(`/friend-event/${event.friendEvent.eventId}`);
+      return;
+    }
     console.log(`[GuestLimitation] Event press: ${event.title}`);
     
     // Track event discovery and interaction
@@ -1923,6 +1963,10 @@ useEffect(() => {
   };
 
   const handleImagePress = (imageUrl: string, event: Event) => {
+    if (event.friendEvent) {
+      router.push(`/friend-event/${event.friendEvent.eventId}`);
+      return;
+    }
     console.log(`[GuestLimitation] Image press: ${event.title}`);
     
     // Track image interaction
@@ -3131,6 +3175,21 @@ const styles = StyleSheet.create({
       shadowRadius: 6,
     }),
   },
+  friendEventCard: { minHeight: 150, flexDirection: 'row', alignItems: 'center', gap: 11, padding: 14, overflow: 'hidden', borderWidth: 1, borderColor: '#D6BBFB', backgroundColor: '#FCFAFF' },
+  friendEventAccent: { position: 'absolute', left: 0, top: 0, bottom: 0, width: 5, backgroundColor: '#6941C6' },
+  friendEventIcon: { width: 46, height: 46, borderRadius: 17, alignItems: 'center', justifyContent: 'center', backgroundColor: '#6941C6' },
+  friendEventCopy: { flex: 1, minWidth: 0, gap: 4 },
+  friendEventTopline: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  friendEventEyebrow: { flex: 1, color: '#6941C6', fontSize: 9, fontWeight: '900', letterSpacing: 0.5 },
+  friendEventLock: { flexDirection: 'row', alignItems: 'center', gap: 2, paddingHorizontal: 5, paddingVertical: 3, borderRadius: 99, backgroundColor: '#F4EBFF' },
+  friendEventLockText: { color: '#6941C6', fontSize: 8, fontWeight: '900' },
+  friendEventTitle: { color: '#101828', fontSize: 17, fontWeight: '900', lineHeight: 20 },
+  friendEventMeta: { color: '#475467', fontSize: 11, fontWeight: '700' },
+  friendEventLocationRow: { flexDirection: 'row', alignItems: 'center', gap: 3 },
+  friendEventLocation: { flex: 1, color: '#667085', fontSize: 11 },
+  friendEventFooter: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginTop: 2 },
+  friendEventHost: { flex: 1, color: '#667085', fontSize: 10 },
+  friendEventRsvp: { color: '#6941C6', fontSize: 10, fontWeight: '900' },
   badgeContainer: {
     position: 'absolute',
     top: 5,

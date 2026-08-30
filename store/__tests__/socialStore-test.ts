@@ -2,6 +2,13 @@ jest.mock('../../services/socialService', () => ({
   subscribeToSocialData: jest.fn(() => jest.fn()),
 }));
 
+const mockSetFriendEvents = jest.fn();
+jest.mock('../mapStore', () => ({
+  useMapStore: {
+    getState: () => ({ setFriendEvents: mockSetFriendEvents }),
+  },
+}));
+
 import {
   filterAuthoritativeFriendActivity,
   pruneExpiredSocialData,
@@ -53,11 +60,20 @@ describe('social store privacy lifecycle', () => {
   });
 
   it('clears every user-scoped value on logout', () => {
-    useSocialStore.setState({ uid: 'viewer', error: 'old error', loading: true });
+    useSocialStore.setState({
+      uid: 'viewer',
+      error: 'old error',
+      loading: true,
+      friendEvents: [{ eventId: 'private-event' } as never],
+      friendEventLocations: [{ eventId: 'private-event', address: 'private' } as never],
+    });
     stopSocialListeners();
     expect(useSocialStore.getState().uid).toBeNull();
     expect(useSocialStore.getState().error).toBeNull();
     expect(useSocialStore.getState().friends).toEqual([]);
+    expect(useSocialStore.getState().friendEvents).toEqual([]);
+    expect(useSocialStore.getState().friendEventLocations).toEqual([]);
+    expect(mockSetFriendEvents).toHaveBeenLastCalledWith([]);
   });
 
   it('fails closed for cached friend activity until the server confirms access', () => {

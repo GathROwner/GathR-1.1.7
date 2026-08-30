@@ -1,8 +1,8 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { doc, getDoc } from 'firebase/firestore';
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -10,6 +10,7 @@ import {
   KeyboardAvoidingView,
   Modal,
   Platform,
+  Share,
   ScrollView,
   StyleSheet,
   Text,
@@ -17,6 +18,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import QRCode from 'react-native-qrcode-svg';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { SocialDiagnosticsPanel } from '../components/social/SocialDiagnosticsPanel';
@@ -87,6 +89,7 @@ function PersonRow({
 
 export default function FriendsScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams<{ handle?: string }>();
   const { user } = useAuth();
   const currentUid = user?.uid || '';
   const { friends, requests, blocks, loading, fromCache, error } = useSocialStore();
@@ -97,7 +100,9 @@ export default function FriendsScreen() {
   const [searchComplete, setSearchComplete] = useState(false);
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [handleModalVisible, setHandleModalVisible] = useState(false);
+  const [shareModalVisible, setShareModalVisible] = useState(false);
   const [activeSection, setActiveSection] = useState<RelationshipSection>('friends');
+  const handledLinkRef = useRef('');
 
   const incoming = useMemo(
     () => requests.filter((request) => request.direction === 'incoming'),
@@ -159,6 +164,32 @@ export default function FriendsScreen() {
     setSearchResult(found);
     setSearchComplete(true);
   });
+
+  useEffect(() => {
+    const linkedHandle = normalizeSocialHandle(params.handle || '');
+    if (!/^[a-z0-9_]{3,24}$/.test(linkedHandle) || handledLinkRef.current === linkedHandle) return;
+    handledLinkRef.current = linkedHandle;
+    setSearch(linkedHandle);
+    setActiveSection('requests');
+    void run('search', async () => {
+      const found = await searchUserByHandle(linkedHandle);
+      setSearchResult(found);
+      setSearchComplete(true);
+    });
+  }, [params.handle]);
+
+  const profileLink = claimedHandle
+    ? `https://www.gathrapp.ca/app/?friend=${encodeURIComponent(claimedHandle)}`
+    : '';
+
+  const shareProfile = () => {
+    if (!profileLink) return;
+    void Share.share({
+      title: 'Add me on GathR',
+      message: `Add me on GathR: @${claimedHandle}\n${profileLink}`,
+      url: profileLink,
+    });
+  };
 
   const sendRequest = (person: SocialProfile) => run(
     `add-${person.uid}`,
@@ -255,15 +286,23 @@ export default function FriendsScreen() {
                 {claimedHandle ? `@${claimedHandle}` : 'Claim a searchable handle'}
               </Text>
             </View>
-            <TouchableOpacity
-              accessibilityLabel={claimedHandle ? 'Edit GathR handle' : 'Claim GathR handle'}
-              accessibilityRole="button"
-              onPress={() => setHandleModalVisible(true)}
-              style={styles.compactButton}
-            >
-              <Ionicons name={claimedHandle ? 'pencil' : 'add'} size={17} color="#175CD3" />
-              <Text maxFontSizeMultiplier={1.1} style={styles.actionText}>{claimedHandle ? 'Edit' : 'Claim'}</Text>
-            </TouchableOpacity>
+            <View style={styles.handleActions}>
+              {claimedHandle && (
+                <TouchableOpacity accessibilityLabel="Show friend QR code" accessibilityRole="button" onPress={() => setShareModalVisible(true)} style={styles.compactButton}>
+                  <Ionicons name="qr-code-outline" size={18} color="#6941C6" />
+                  <Text maxFontSizeMultiplier={1.1} style={styles.shareActionText}>Share</Text>
+                </TouchableOpacity>
+              )}
+              <TouchableOpacity
+                accessibilityLabel={claimedHandle ? 'Edit GathR handle' : 'Claim GathR handle'}
+                accessibilityRole="button"
+                onPress={() => setHandleModalVisible(true)}
+                style={styles.compactButton}
+              >
+                <Ionicons name={claimedHandle ? 'pencil' : 'add'} size={17} color="#175CD3" />
+                <Text maxFontSizeMultiplier={1.1} style={styles.actionText}>{claimedHandle ? 'Edit' : 'Claim'}</Text>
+              </TouchableOpacity>
+            </View>
           </View>
 
           <View style={styles.searchCard}>
@@ -317,7 +356,7 @@ export default function FriendsScreen() {
           <View style={styles.relationshipCard}>
             <View accessible={false} style={styles.tabRow}>
               {([
-                ['requests', 'Requests', incoming.length + outgoing.length],
+                ['requests', 'Requests', incoming.length],
                 ['friends', 'Friends', friends.length],
                 ['blocked', 'Blocked', blocks.length],
               ] as const).map(([section, label, count]) => (
@@ -462,6 +501,25 @@ export default function FriendsScreen() {
           </View>
         </KeyboardAvoidingView>
       </Modal>
+
+      <Modal animationType="fade" onRequestClose={() => setShareModalVisible(false)} transparent visible={shareModalVisible}>
+        <View style={styles.modalBackdrop}>
+          <View accessibilityViewIsModal style={[styles.modalCard, styles.qrCard]}>
+            <TouchableOpacity accessibilityLabel="Close QR code" onPress={() => setShareModalVisible(false)} style={styles.qrClose}>
+              <Ionicons name="close" size={23} color="#344054" />
+            </TouchableOpacity>
+            <View style={styles.qrMark}><Ionicons name="people" size={23} color="#FFFFFF" /></View>
+            <Text style={styles.qrTitle}>Add me on GathR</Text>
+            <Text style={styles.qrHandle}>@{claimedHandle}</Text>
+            {!!profileLink && <View style={styles.qrCode}><QRCode value={profileLink} size={188} color="#101828" backgroundColor="#FFFFFF" /></View>}
+            <Text style={styles.qrHelp}>Scan this code or share the secure profile link.</Text>
+            <TouchableOpacity onPress={shareProfile} style={styles.primaryButton}>
+              <Ionicons name="share-outline" size={19} color="#FFFFFF" />
+              <Text style={styles.primaryButtonText}>Share link</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -478,6 +536,7 @@ const styles = StyleSheet.create({
   content: { flex: 1, padding: 12, gap: 10, minHeight: 0 },
   handleCard: { minHeight: 60, flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: '#FFF', borderRadius: 14, paddingHorizontal: 14, paddingVertical: 9, borderWidth: StyleSheet.hairlineWidth, borderColor: '#E4E7EC' },
   handleSummary: { flex: 1, minWidth: 0 },
+  handleActions: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   eyebrow: { color: '#667085', fontSize: 11, fontWeight: '800', letterSpacing: 0.7 },
   claimedHandle: { color: '#101828', fontSize: 17, fontWeight: '700', marginTop: 1 },
   compactButton: { minHeight: 40, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, paddingHorizontal: 11, borderRadius: 10, backgroundColor: '#EFF8FF' },
@@ -489,7 +548,7 @@ const styles = StyleSheet.create({
   atSign: { fontSize: 20, color: '#475467' },
   input: { flex: 1, minHeight: 44, borderWidth: 1, borderColor: '#D0D5DD', borderRadius: 10, paddingHorizontal: 12, color: '#101828', backgroundColor: '#FFF' },
   searchInput: { borderWidth: 0, paddingHorizontal: 0, minHeight: 42 },
-  primaryButton: { backgroundColor: BRAND, paddingHorizontal: 22, paddingVertical: 13, borderRadius: 11 },
+  primaryButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, backgroundColor: BRAND, paddingHorizontal: 22, paddingVertical: 13, borderRadius: 11 },
   primaryButtonText: { color: '#FFF', fontWeight: '700' },
   smallPrimaryButton: { minWidth: 54, minHeight: 44, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 12, borderRadius: 10, backgroundColor: BRAND },
   smallPrimaryText: { color: '#FFF', fontWeight: '700' },
@@ -529,6 +588,14 @@ const styles = StyleSheet.create({
   modalHeading: { flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
   handleInputRow: { minHeight: 52, flexDirection: 'row', alignItems: 'center', gap: 7, borderWidth: 1, borderColor: '#98A2B3', borderRadius: 11, paddingHorizontal: 12 },
   modalInput: { flex: 1, minHeight: 50, color: '#101828', fontSize: 17 },
+  shareActionText: { color: '#6941C6', fontWeight: '800' },
+  qrCard: { alignItems: 'center', paddingTop: 24 },
+  qrClose: { position: 'absolute', right: 10, top: 10, width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
+  qrMark: { width: 48, height: 48, borderRadius: 18, alignItems: 'center', justifyContent: 'center', backgroundColor: '#6941C6' },
+  qrTitle: { color: '#101828', fontSize: 22, fontWeight: '900' },
+  qrHandle: { color: '#6941C6', fontSize: 16, fontWeight: '800', marginTop: -8 },
+  qrCode: { padding: 12, borderRadius: 16, borderWidth: 1, borderColor: '#EAECF0', backgroundColor: '#FFFFFF' },
+  qrHelp: { color: '#667085', textAlign: 'center', lineHeight: 19 },
   helperText: { color: '#667085', fontSize: 13, lineHeight: 18 },
   disabled: { opacity: 0.45 },
 });

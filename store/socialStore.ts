@@ -5,12 +5,16 @@ import { subscribeToSocialData } from '../services/socialService';
 import type {
   BlockProjection,
   FriendActivityProjection,
+  FriendEventLocationProjection,
+  FriendEventProjection,
   FriendProjection,
   FriendRequestProjection,
   OwnCheckIn,
 } from '../types/social';
-import { SOCIAL_FEATURE_ENABLED } from '../types/social';
+import { SOCIAL_FEATURE_ENABLED, SOCIAL_RELEASE_TWO_ENABLED } from '../types/social';
+import { findFriendEventLocation, friendEventToMapEvent } from '../utils/friendEvents';
 import { isFriendActivityActive, socialTimestampToMillis } from '../utils/friendPresence';
+import { useMapStore } from './mapStore';
 
 interface SocialState {
   uid: string | null;
@@ -19,6 +23,8 @@ interface SocialState {
   activity: FriendActivityProjection[];
   blocks: BlockProjection[];
   ownCheckIn: OwnCheckIn | null;
+  friendEvents: FriendEventProjection[];
+  friendEventLocations: FriendEventLocationProjection[];
   loading: boolean;
   fromCache: boolean;
   error: string | null;
@@ -37,6 +43,8 @@ const EMPTY_STATE: SocialState = {
   activity: [],
   blocks: [],
   ownCheckIn: null,
+  friendEvents: [],
+  friendEventLocations: [],
   loading: false,
   fromCache: false,
   error: null,
@@ -58,7 +66,7 @@ let readyListeners = new Set<string>();
 function markListenerReady(name: string, fromCache: boolean) {
   readyListeners.add(name);
   useSocialStore.setState({
-    loading: readyListeners.size < 5,
+    loading: readyListeners.size < (SOCIAL_RELEASE_TWO_ENABLED ? 7 : 5),
     fromCache,
     error: null,
     lastUpdatedAt: Date.now(),
@@ -101,6 +109,18 @@ function handleAppState(nextState: AppStateStatus) {
   if (nextState === 'active') pruneExpiredSocialData();
 }
 
+function syncFriendEventsToMap() {
+  const { friendEvents, friendEventLocations } = useSocialStore.getState();
+  const mapEvents = friendEvents.flatMap((event) => {
+    const converted = friendEventToMapEvent(
+      event,
+      findFriendEventLocation(event.eventId, friendEventLocations)
+    );
+    return converted ? [converted] : [];
+  });
+  useMapStore.getState().setFriendEvents(mapEvents);
+}
+
 export function stopSocialListeners() {
   unsubscribeSocial?.();
   unsubscribeSocial = null;
@@ -110,6 +130,7 @@ export function stopSocialListeners() {
   appStateSubscription = null;
   readyListeners = new Set<string>();
   useSocialStore.setState({ ...EMPTY_STATE });
+  useMapStore.getState().setFriendEvents([]);
 }
 
 export function startSocialListeners(uid: string) {
@@ -151,6 +172,20 @@ export function startSocialListeners(uid: string) {
       useSocialStore.setState({ ownCheckIn });
       pruneExpiredSocialData();
       markListenerReady('ownCheckIn', fromCache);
+    },
+    onFriendEvents: (friendEvents, fromCache) => {
+      // Event authorization can be revoked while offline, so never restore a
+      // cached private event onto a map or feed before the server confirms it.
+      useSocialStore.setState({ friendEvents: fromCache ? [] : friendEvents });
+      syncFriendEventsToMap();
+      markListenerReady('friendEvents', fromCache);
+    },
+    onFriendEventLocations: (friendEventLocations, fromCache) => {
+      // Exact private addresses fail closed. Cached address projections are
+      // discarded until a current authoritative snapshot is available.
+      useSocialStore.setState({ friendEventLocations: fromCache ? [] : friendEventLocations });
+      syncFriendEventsToMap();
+      markListenerReady('friendEventLocations', fromCache);
     },
     onError: (error) => useSocialStore.setState({ loading: false, error: error.message }),
   });

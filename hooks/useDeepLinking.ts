@@ -16,70 +16,12 @@ import { useMapStore } from '../store/mapStore';
 import { amplitudeTrack } from '../lib/amplitudeAnalytics';
 import { Alert } from 'react-native';
 import { areEventIdsEquivalent, toAppEventId } from '../lib/api/firestoreEvents';
-
-interface DeepLinkParams {
-  eventId: string | null;
-  type: 'event' | 'special' | null;
-}
-
-function isGenericAppLink(url: string): boolean {
-  try {
-    const parsed = Linking.parse(url);
-    const hostname = String(parsed.hostname ?? '').toLowerCase();
-    const pathParts = String(parsed.path ?? '').split('/').filter(Boolean);
-
-    return (
-      hostname === 'www.gathrapp.ca' &&
-      pathParts[0] === 'app'
-    );
-  } catch {
-    return false;
-  }
-}
+import { isGenericAppLink, linkedFriendHandle, parseDeepLink } from '../utils/deepLinks';
 
 /**
  * Parse a deep link URL to extract event ID and type
  */
-export function parseDeepLink(url: string): DeepLinkParams {
-  try {
-    const parsed = Linking.parse(url);
-
-    // Handle path-based URLs: /event/12345 or /special/12345
-    // Also handles gathr://event/12345
-    if (parsed.path) {
-      const pathParts = parsed.path.split('/').filter(Boolean);
-      if (pathParts.length >= 2) {
-        const [type, eventId] = pathParts;
-        if ((type === 'event' || type === 'special') && eventId) {
-          return { eventId, type };
-        }
-      }
-      // Handle single path like "event" with ID in next segment
-      if (pathParts.length >= 1) {
-        const type = pathParts[0];
-        if (type === 'event' || type === 'special') {
-          const eventId = pathParts[1] || parsed.queryParams?.id as string;
-          if (eventId) {
-            return { eventId, type };
-          }
-        }
-      }
-    }
-
-    // Handle query-param URLs: ?eventId=12345&type=event
-    if (parsed.queryParams?.eventId) {
-      return {
-        eventId: String(parsed.queryParams.eventId),
-        type: (parsed.queryParams.type as 'event' | 'special') || 'event'
-      };
-    }
-
-    return { eventId: null, type: null };
-  } catch (error) {
-    console.warn('[DeepLink] Failed to parse URL:', url, error);
-    return { eventId: null, type: null };
-  }
-}
+export { linkedFriendHandle, parseDeepLink } from '../utils/deepLinks';
 
 /**
  * Hook to handle deep links and open events in the lightbox
@@ -117,7 +59,10 @@ export function useDeepLinking() {
         });
       } catch {}
 
-      if (!pathname.includes('map')) {
+      const friendHandle = linkedFriendHandle(url);
+      if (friendHandle) {
+        router.push({ pathname: '/friends', params: { handle: friendHandle } });
+      } else if (!pathname.includes('map')) {
         router.replace('/(tabs)/map');
       }
 

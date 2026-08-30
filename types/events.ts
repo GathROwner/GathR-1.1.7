@@ -158,7 +158,17 @@ export interface Event {
   relevanceScore?: number;
 
   // Data source tracking (for parallel API sources)
-  source?: 'google_sheets' | 'firestore' | 'private_shared';
+  source?: 'google_sheets' | 'firestore' | 'private_shared' | 'friend_event';
+
+  friendEvent?: {
+    eventId: string;
+    hostUid: string;
+    hostName: string;
+    viewerRole: 'host' | 'guest';
+    ownRsvp: import('./social').FriendEventRsvp;
+    visibility: import('./social').FriendEventVisibility;
+    addressRevealed: boolean;
+  };
 
   // User share provenance. This is intentionally separate from `source` so a
   // public Firestore event can still render normally while showing that the
@@ -252,5 +262,6 @@ export interface Cluster {
   hasNewContent?: boolean;           // Whether cluster has new events/specials since last interaction
   containsCityLevelEvent?: boolean;  // Whether cluster contains a city/area/route experience
   containsRouteEvent?: boolean;      // Whether cluster contains a route-scoped event
+  friendEventCount?: number;         // Viewer-authorized hosted/invited events in this cluster
   friendPresence?: import('./social').ClusterFriendPresence; // Derived from viewer-authorized activity only
 }

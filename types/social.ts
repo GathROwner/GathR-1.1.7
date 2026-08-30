@@ -72,6 +72,7 @@ export interface ClusterFriendPresence {
 
 export interface CheckInInput {
   operationId?: string;
+  eligibilitySessionId?: string;
   venueId: string;
   durationMinutes: CheckInDurationMinutes;
   audienceMode: CheckInAudienceMode;
@@ -79,5 +80,139 @@ export interface CheckInInput {
   message?: string;
 }
 
+export type CheckInEligibilityReason =
+  | 'qualifying'
+  | 'eligible'
+  | 'outside'
+  | 'low_accuracy'
+  | 'moving_too_fast';
+
+export interface CheckInEligibilityResult {
+  sessionId: string;
+  venueId: string;
+  eligible: boolean;
+  qualifyingMs: number;
+  requiredMs: number;
+  remainingMs: number;
+  distanceMetres: number;
+  reason: CheckInEligibilityReason;
+  expiresAt?: SocialTimestamp;
+}
+
+export interface CheckInEligibilitySampleInput {
+  sessionId: string;
+  venueId: string;
+  latitude: number;
+  longitude: number;
+  accuracyMeters: number;
+  speedMetersPerSecond?: number | null;
+}
+
+export type FriendEventVisibility = 'all_friends' | 'selected_friends';
+export type FriendEventGuestInviteMode = 'host_only' | 'guests_can_invite';
+export type FriendEventLocationType = 'recognized_venue' | 'custom_address' | 'online' | 'tbd';
+export type FriendEventStatus = 'published' | 'canceled' | 'ended';
+export type FriendEventRsvp = 'invited' | 'going' | 'maybe' | 'cant_go' | 'host';
+
+export interface FriendEventResponseCounts {
+  going: number;
+  maybe: number;
+  cant_go: number;
+}
+
+export interface FriendEventGuest extends SocialProfile {
+  invitedByUid: string;
+  response: FriendEventRsvp;
+}
+
+export interface FriendEventHistoryEntry {
+  kind: 'created' | 'edited' | 'canceled' | 'ended';
+  summary: string;
+  at?: SocialTimestamp;
+  revision: string;
+}
+
+export interface FriendEventProjection {
+  eventId: string;
+  hostUid: string;
+  host: SocialProfile;
+  viewerUid: string;
+  viewerRole: 'host' | 'guest';
+  title: string;
+  description: string;
+  category: string;
+  startAt?: SocialTimestamp;
+  endAt?: SocialTimestamp;
+  status: FriendEventStatus;
+  visibility: FriendEventVisibility;
+  guestInviteMode: FriendEventGuestInviteMode;
+  guestListVisible: boolean;
+  coverImageUrl: string;
+  externalUrl: string;
+  locationType: FriendEventLocationType;
+  locationLabel: string;
+  locationAddress: string;
+  addressRevealAt?: SocialTimestamp;
+  addressRevealed: boolean;
+  venueId: string;
+  latitude: number | null;
+  longitude: number | null;
+  approximateLatitude: number | null;
+  approximateLongitude: number | null;
+  onlineUrl: string;
+  viewerCount: number;
+  responseCounts: FriendEventResponseCounts;
+  guests: FriendEventGuest[];
+  ownRsvp: FriendEventRsvp;
+  cancellationReason: string;
+  updateHistory: FriendEventHistoryEntry[];
+  revision: string;
+  createdAt?: SocialTimestamp;
+  updatedAt?: SocialTimestamp;
+}
+
+export interface FriendEventLocationProjection {
+  eventId: string;
+  hostUid: string;
+  address: string;
+  placeName: string;
+  latitude: number;
+  longitude: number;
+  revealedAt?: SocialTimestamp;
+  updatedAt?: SocialTimestamp;
+}
+
+export type FriendEventLocationInput =
+  | { type: 'recognized_venue'; venueId: string }
+  | {
+      type: 'custom_address';
+      address: string;
+      placeName?: string;
+      latitude: number;
+      longitude: number;
+      revealAtMs?: number;
+    }
+  | { type: 'online'; onlineUrl?: string }
+  | { type: 'tbd' };
+
+export interface FriendEventInput {
+  operationId?: string;
+  title: string;
+  description?: string;
+  category: string;
+  startAtMs: number;
+  endAtMs: number;
+  visibility: FriendEventVisibility;
+  selectedUids?: string[];
+  guestInviteMode: FriendEventGuestInviteMode;
+  guestListVisible?: boolean;
+  coverImageUrl?: string;
+  externalUrl?: string;
+  location: FriendEventLocationInput;
+}
+
 export const SOCIAL_FEATURE_ENABLED =
   process.env.EXPO_PUBLIC_SOCIAL_FEATURE_ENABLED === 'true';
+
+export const SOCIAL_RELEASE_TWO_ENABLED =
+  SOCIAL_FEATURE_ENABLED && process.env.EXPO_PUBLIC_SOCIAL_RELEASE_TWO_ENABLED === 'true';

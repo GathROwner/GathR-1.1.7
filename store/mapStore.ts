@@ -62,11 +62,14 @@ import { FilterCriteria, TimeFilterType, TypeFilterCriteria } from '../types/fil
 import { MapState } from '../types/store';
 import * as Location from 'expo-location';
 import { Platform } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import Supercluster from 'supercluster';
 
 
 // Import default filter criteria
 import { DEFAULT_FILTER_CRITERIA } from '../types/filter';
+
+const FRIEND_EVENTS_MAP_VISIBILITY_KEY = '@gathr/friend-events-map-visible';
 
 // Import cluster interaction tracking
 import { getHasNewContent } from './clusterInteractionStore';
@@ -982,6 +985,7 @@ const clusterVenues = (venues: Venue[], zoom: number = 12): Cluster[] => {
       const allEvents = venuesInCluster.flatMap(v => v.events);
       const eventCount = allEvents.filter(e => e.type === 'event').length;
       const specialCount = allEvents.filter(e => e.type === 'special').length;
+      const friendEventCount = allEvents.filter(e => e.source === 'friend_event').length;
       const categories = Array.from(new Set(allEvents.map(e => e.category)));
       const timeStatus = determineClusterTimeStatus(venuesInCluster, timeContext);
       const interestLevel = calculateInterestLevel(venuesInCluster);
@@ -1012,6 +1016,7 @@ const clusterVenues = (venues: Venue[], zoom: number = 12): Cluster[] => {
         isBroadcasting,
         eventCount,
         specialCount,
+        friendEventCount,
         categories,
         hasNewContent,
         containsCityLevelEvent,
@@ -1023,6 +1028,7 @@ const clusterVenues = (venues: Venue[], zoom: number = 12): Cluster[] => {
       const allEvents = v.events;
       const eventCount = allEvents.filter(e => e.type === 'event').length;
       const specialCount = allEvents.filter(e => e.type === 'special').length;
+      const friendEventCount = allEvents.filter(e => e.source === 'friend_event').length;
       const categories = Array.from(new Set(allEvents.map(e => e.category)));
       const timeStatus = determineClusterTimeStatus([v], timeContext);
       const interestLevel = calculateInterestLevel([v]);
@@ -1047,6 +1053,7 @@ const clusterVenues = (venues: Venue[], zoom: number = 12): Cluster[] => {
         isBroadcasting,
         eventCount,
         specialCount,
+        friendEventCount,
         categories,
         hasNewContent,
         containsCityLevelEvent,
@@ -1072,6 +1079,8 @@ const clusterVenues = (venues: Venue[], zoom: number = 12): Cluster[] => {
 export const useMapStore = create<MapState>((set, get) => ({
   // Initial state
   allEvents: [],  // Global cache populated by React Query
+  friendEvents: [],
+  showFriendEvents: true,
   events: [],
   specials: [],
   filteredEvents: [],
@@ -1228,6 +1237,41 @@ export const useMapStore = create<MapState>((set, get) => ({
     set({
       allEvents: liveEvents,
     });
+  },
+
+  setFriendEvents: (events) => {
+    const next = Array.isArray(events)
+      ? events.filter((event) => event.source === 'friend_event')
+      : [];
+    set({ friendEvents: next });
+    filtersChanged = true;
+    const bbox = get().viewportBbox;
+    if (bbox) {
+      void get().fetchViewportEvents(bbox);
+      return;
+    }
+    const combined = [...get().allEvents, ...next];
+    const filtered = filterEvents(combined, get().filterCriteria)
+      .filter((event) => get().showFriendEvents || event.source !== 'friend_event');
+    set({ events: combined, filteredEvents: filtered });
+    get().generateClusters(get().zoomLevel);
+  },
+
+  setShowFriendEvents: (visible) => {
+    if (get().showFriendEvents === visible) return;
+    set({ showFriendEvents: visible });
+    void AsyncStorage.setItem(FRIEND_EVENTS_MAP_VISIBILITY_KEY, visible ? 'true' : 'false').catch(() => undefined);
+    filtersChanged = true;
+    const bbox = get().viewportBbox;
+    if (bbox) {
+      void get().fetchViewportEvents(bbox);
+      return;
+    }
+    const combined = [...get().allEvents, ...get().friendEvents];
+    const filtered = filterEvents(combined, get().filterCriteria)
+      .filter((event) => visible || event.source !== 'friend_event');
+    set({ events: combined, filteredEvents: filtered });
+    get().generateClusters(get().zoomLevel);
   },
 
   /**
@@ -1767,15 +1811,17 @@ refreshPrivateSharedEventsFromServer: async (privateEventIds?: string[]) => {
         return true;
       };
 
-      let candidateEvents = (get().allEvents || []).filter(matchesTypeFilter);
+      let publicCandidateEvents = (get().allEvents || []).filter(matchesTypeFilter);
+      const friendCandidateEvents = (get().friendEvents || []).filter(matchesTypeFilter);
       logStartupDataTiming('viewport_candidates_ready', {
         elapsedMs: Date.now() - startedAt,
-        candidateEvents: candidateEvents.length,
+        candidateEvents: publicCandidateEvents.length + friendCandidateEvents.length,
+        friendCandidateEvents: friendCandidateEvents.length,
         requestedType: typeParam,
       });
 
       // Refresh from source when cache is empty for the requested type slice.
-      if (candidateEvents.length === 0) {
+      if (publicCandidateEvents.length === 0) {
         const fetchOptions =
           typeof firestoreTypeFilter === 'boolean'
             ? { isEvent: firestoreTypeFilter }
@@ -1787,13 +1833,13 @@ refreshPrivateSharedEventsFromServer: async (privateEventIds?: string[]) => {
         });
         const result = await fetchMinimalEventsShared(fetchOptions);
         const dedupedAll = dedupeEvents(result.combinedData);
-        candidateEvents = dedupedAll.filter(matchesTypeFilter);
+        publicCandidateEvents = dedupedAll.filter(matchesTypeFilter);
         get().setAllEvents(dedupedAll);
         set({ lastFetchedAt: Date.now() });
         logStartupDataTiming('viewport_fetch_minimal_events_ready', {
           elapsedMs: Date.now() - startedAt,
           fetched: dedupedAll.length,
-          matchedTypeCount: candidateEvents.length,
+          matchedTypeCount: publicCandidateEvents.length,
         });
 
         if (DEBUG_MAP_LOAD) {
@@ -1801,10 +1847,15 @@ refreshPrivateSharedEventsFromServer: async (privateEventIds?: string[]) => {
             firestoreDefault: USE_FIRESTORE_EVENTS,
             fetched: dedupedAll.length,
             requestedType: typeParam,
-            matchedTypeCount: candidateEvents.length,
+            matchedTypeCount: publicCandidateEvents.length,
           });
         }
       }
+
+      // Friend events deliberately never enter allEvents or the persisted
+      // React Query cache. Their live per-user projections are composed only
+      // for the current in-memory map/feed view.
+      const candidateEvents = [...publicCandidateEvents, ...friendCandidateEvents];
 
       const hasValidCoordinates = (event: Event): boolean => {
         const lat = Number(event.latitude);
@@ -1854,7 +1905,8 @@ refreshPrivateSharedEventsFromServer: async (privateEventIds?: string[]) => {
 
       const partitionMs = Date.now() - partitionStartedAt;
       const filterStartedAt = Date.now();
-      const filtered = filterEvents(clusterSourceEvents, filters);
+      const filtered = filterEvents(clusterSourceEvents, filters)
+        .filter((event) => get().showFriendEvents || event.source !== 'friend_event');
       const filterMs = Date.now() - filterStartedAt;
       logStartupDataTiming('viewport_partition_complete', {
         elapsedMs: Date.now() - startedAt,
@@ -2177,7 +2229,8 @@ fetchEventDetails: async (eventIds: (string | number)[]) => {
     const { events, filterCriteria } = get();
     const t0 = Date.now();
 
-    const filtered = filterEvents(events, filterCriteria);
+    const filtered = filterEvents(events, filterCriteria)
+      .filter((event) => get().showFriendEvents || event.source !== 'friend_event');
 
     __ML_lastFilterMs = Date.now() - t0;
     __ML_lastFilterIn = events.length;
@@ -2355,3 +2408,9 @@ logStartupDataTiming('generate_clusters_completed', {
     return getCachedCategoryFilterCounts(onScreenEvents, filterCriteria, eventType);
   }
 }))
+
+void AsyncStorage.getItem(FRIEND_EVENTS_MAP_VISIBILITY_KEY)
+  .then((value) => {
+    if (value === 'false') useMapStore.getState().setShowFriendEvents(false);
+  })
+  .catch(() => undefined);

@@ -1,4 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
+import * as Haptics from 'expo-haptics';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
@@ -59,27 +61,30 @@ function audienceCount(mode: CheckInAudienceMode, friends: FriendProjection[], s
 
 export default function CheckInScreen() {
   const router = useRouter();
-  const params = useLocalSearchParams<{ venueId?: string }>();
+  const params = useLocalSearchParams<{ venueId?: string; eligibilitySessionId?: string }>();
   const { user } = useAuth();
-  const clusters = useMapStore((state) => state.clusters);
+  const allEvents = useMapStore((state) => state.allEvents);
   const selectedVenues = useMapStore((state) => state.selectedVenues);
   const { friends, ownCheckIn, fromCache } = useSocialStore();
   const options = useMemo(() => {
     const byId = new Map<string, RecognizedVenueOption>();
-    for (const cluster of clusters) {
-      for (const venue of cluster.venues) {
-        const venueId = getRecognizedVenueId(venue);
-        if (!venueId || byId.has(venueId)) continue;
-        byId.set(venueId, {
-          venueId,
-          locationKey: venue.locationKey,
-          venueName: venue.venue,
-          address: venue.address,
-        });
-      }
+    for (const event of allEvents) {
+      const venueId = String(event.venueId || '').trim();
+      if (
+        !venueId
+        || byId.has(venueId)
+        || event.locationScope === 'area'
+        || event.locationScope === 'route'
+      ) continue;
+      byId.set(venueId, {
+        venueId,
+        locationKey: `venue:${venueId}`,
+        venueName: event.venue || event.title || 'GathR venue',
+        address: event.address || '',
+      });
     }
     return [...byId.values()].sort((a, b) => a.venueName.localeCompare(b.venueName));
-  }, [clusters]);
+  }, [allEvents]);
 
   const initialVenueId = useMemo(() => {
     const requested = String(params.venueId || '');
@@ -122,6 +127,9 @@ export default function CheckInScreen() {
   }, [ownCheckIn?.revision]);
 
   const selectedVenue = options.find((option) => option.venueId === venueId) ?? null;
+  const eligibilitySessionId = String(params.eligibilitySessionId || '').trim();
+  const canReuseActiveVenue = Boolean(ownCheckIn && ownCheckIn.venueId === venueId);
+  const hasContextualEligibility = Boolean(eligibilitySessionId && String(params.venueId || '') === venueId);
   const filteredOptions = useMemo(() => {
     const query = venueQuery.trim().toLowerCase();
     if (!query) return options.slice(0, 8);
@@ -134,7 +142,11 @@ export default function CheckInScreen() {
   const hasAudience = audienceMode === 'all_friends'
     ? friends.length > 0
     : selectedUids.length > 0;
-  const canSubmit = !!selectedVenue && hasAudience && !busy && !fromCache;
+  const canSubmit = !!selectedVenue
+    && (canReuseActiveVenue || hasContextualEligibility)
+    && hasAudience
+    && !busy
+    && !fromCache;
   const selectedFriendNames = friends
     .filter((friend) => selectedUids.includes(friend.uid))
     .map((friend) => friend.displayName);
@@ -184,6 +196,7 @@ export default function CheckInScreen() {
       try {
         const input = {
           venueId: selectedVenue.venueId,
+          eligibilitySessionId: canReuseActiveVenue ? undefined : eligibilitySessionId,
           durationMinutes,
           audienceMode,
           selectedUids: audienceMode === 'selected_friends' ? [...selectedUids].sort() : undefined,
@@ -201,6 +214,7 @@ export default function CheckInScreen() {
           operationId: pendingOperationRef.current.operationId,
         });
         pendingOperationRef.current = null;
+        await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => undefined);
         Alert.alert(
           ownCheckIn ? 'Check-in updated' : 'Checked in',
           formatCheckInVisibilityCopy(result.viewerCount, result.expiresAt),
@@ -333,22 +347,42 @@ export default function CheckInScreen() {
                 </View>
               )}
 
-              <View style={styles.fieldGroup}>
-                <Text maxFontSizeMultiplier={1.15} style={styles.fieldLabel}>Venue</Text>
-                <TouchableOpacity
-                  accessibilityRole="button"
-                  accessibilityLabel={selectedVenue ? `Change venue, currently ${selectedVenue.venueName}` : 'Choose a recognized venue'}
-                  onPress={() => setVenuePickerVisible(true)}
-                  style={styles.selectorButton}
-                >
-                  <View style={styles.selectorIcon}><Ionicons name="location" size={19} color={BRAND} /></View>
-                  <View style={styles.flex}>
-                    <Text maxFontSizeMultiplier={1.15} numberOfLines={1} style={selectedVenue ? styles.venueName : styles.selectorPlaceholder}>{selectedVenue?.venueName || 'Choose a recognized venue'}</Text>
-                    <Text maxFontSizeMultiplier={1.1} numberOfLines={1} style={styles.selectorDetail}>{selectedVenue?.address || `${options.length} venues loaded from the map`}</Text>
+              <LinearGradient
+                colors={['#175CD3', '#2F80ED', '#53B1FD']}
+                end={{ x: 1, y: 1 }}
+                start={{ x: 0, y: 0 }}
+                style={styles.venueHero}
+              >
+                <View pointerEvents="none" style={styles.canopyLarge} />
+                <View pointerEvents="none" style={styles.canopySmall} />
+                <View style={styles.heroIcon}>
+                  <Ionicons name="location" size={22} color="#175CD3" />
+                </View>
+                <View style={styles.flex}>
+                  <Text maxFontSizeMultiplier={1.1} style={styles.heroEyebrow}>
+                    {selectedVenue ? "YOU'RE AT" : 'LOCATION REQUIRED'}
+                  </Text>
+                  <Text maxFontSizeMultiplier={1.2} numberOfLines={1} style={styles.heroVenue}>
+                    {selectedVenue?.venueName || 'Return to the map'}
+                  </Text>
+                  <Text maxFontSizeMultiplier={1.1} numberOfLines={1} style={styles.heroAddress}>
+                    {selectedVenue?.address || 'Check-in appears after you remain at a recognized location.'}
+                  </Text>
+                </View>
+                {(hasContextualEligibility || canReuseActiveVenue) && (
+                  <View style={styles.verifiedPill}>
+                    <Ionicons name="checkmark" size={13} color="#175CD3" />
+                    <Text style={styles.verifiedText}>Verified</Text>
                   </View>
-                  <Ionicons name="chevron-forward" size={20} color="#667085" />
-                </TouchableOpacity>
-              </View>
+                )}
+              </LinearGradient>
+
+              {!canReuseActiveVenue && !hasContextualEligibility && (
+                <View style={styles.contextWarning}>
+                  <Ionicons name="walk-outline" size={18} color="#B54708" />
+                  <Text style={styles.contextWarningText}>Return to the map and remain near the venue until check-in becomes available.</Text>
+                </View>
+              )}
 
               <View style={styles.fieldGroup}>
                 <Text maxFontSizeMultiplier={1.15} style={styles.fieldLabel}>Duration</Text>
@@ -423,9 +457,12 @@ export default function CheckInScreen() {
               </View>
 
               <View style={styles.submitArea}>
-                <Text maxFontSizeMultiplier={1.1} numberOfLines={2} style={styles.confirmationCopy}>
-                  {formatCheckInVisibilityCopy(currentAudienceCount, estimatedExpiry)}
-                </Text>
+                <View style={styles.privacyPill}>
+                  <Ionicons name="lock-closed" size={15} color="#175CD3" />
+                  <Text maxFontSizeMultiplier={1.1} numberOfLines={2} style={styles.confirmationCopy}>
+                    {formatCheckInVisibilityCopy(currentAudienceCount, estimatedExpiry)}
+                  </Text>
+                </View>
                 <TouchableOpacity accessibilityRole="button" accessibilityLabel={ownCheckIn ? 'Replace active check-in' : 'Confirm check-in'} disabled={!canSubmit} onPress={() => void submit()} style={[styles.primaryButton, !canSubmit && styles.disabled]}>
                   {busy ? <ActivityIndicator color="#FFF" /> : <Text maxFontSizeMultiplier={1.1} style={styles.primaryText}>{ownCheckIn ? 'Replace check-in' : 'Check in'}</Text>}
                 </TouchableOpacity>
@@ -537,9 +574,20 @@ const styles = StyleSheet.create({
   secondaryText: { color: '#175CD3', fontWeight: '700' },
   checkoutButton: { minHeight: 42, justifyContent: 'center', paddingHorizontal: 12, borderRadius: 9, backgroundColor: '#FEE4E2' },
   checkoutText: { color: '#B42318', fontWeight: '700' },
-  formSurface: { flex: 1, minHeight: 0, gap: 9, padding: 12, borderRadius: 16, backgroundColor: '#FFF', borderWidth: StyleSheet.hairlineWidth, borderColor: '#E4E7EC' },
+  formSurface: { flex: 1, minHeight: 0, gap: 9, padding: 12, borderRadius: 20, backgroundColor: '#FFF', borderWidth: StyleSheet.hairlineWidth, borderColor: '#E4E7EC', shadowColor: '#101828', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.07, shadowRadius: 12, elevation: 3 },
   activeStrip: { minHeight: 52, flexDirection: 'row', alignItems: 'center', gap: 9, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 11, backgroundColor: '#EFF8FF' },
   stripVenue: { color: '#101828', fontWeight: '700', marginTop: 1 },
+  venueHero: { minHeight: 94, flexDirection: 'row', alignItems: 'center', gap: 10, overflow: 'hidden', paddingHorizontal: 13, paddingVertical: 12, borderRadius: 16 },
+  canopyLarge: { position: 'absolute', width: 118, height: 118, borderRadius: 59, right: -38, top: -55, backgroundColor: 'rgba(255,255,255,0.13)' },
+  canopySmall: { position: 'absolute', width: 72, height: 72, borderRadius: 36, right: 27, bottom: -42, backgroundColor: 'rgba(255,255,255,0.10)' },
+  heroIcon: { width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center', backgroundColor: '#FFFFFF' },
+  heroEyebrow: { color: '#DCEBFF', fontSize: 10, fontWeight: '900', letterSpacing: 1 },
+  heroVenue: { color: '#FFFFFF', fontSize: 18, fontWeight: '900', marginTop: 2 },
+  heroAddress: { color: '#EAF2FF', fontSize: 12, marginTop: 2 },
+  verifiedPill: { position: 'absolute', right: 10, top: 9, flexDirection: 'row', alignItems: 'center', gap: 3, paddingHorizontal: 7, paddingVertical: 4, borderRadius: 999, backgroundColor: '#FFFFFF' },
+  verifiedText: { color: '#175CD3', fontSize: 10, fontWeight: '800' },
+  contextWarning: { minHeight: 42, flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 10, paddingVertical: 7, borderRadius: 11, backgroundColor: '#FFFAEB' },
+  contextWarningText: { flex: 1, color: '#B54708', fontSize: 12, lineHeight: 16, fontWeight: '600' },
   fieldGroup: { gap: 5 },
   fieldLabel: { color: '#344054', fontSize: 13, fontWeight: '800' },
   optionalLabel: { color: '#667085', fontWeight: '500' },
@@ -566,8 +614,9 @@ const styles = StyleSheet.create({
   friendAvatar: { width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center', backgroundColor: '#DCEBFF' },
   friendInitial: { color: '#175CD3', fontWeight: '800' },
   submitArea: { marginTop: 'auto', gap: 7, paddingTop: 3 },
-  confirmationCopy: { color: '#344054', textAlign: 'center', fontSize: 13, lineHeight: 17, paddingHorizontal: 6 },
-  primaryButton: { minHeight: 48, alignItems: 'center', justifyContent: 'center', backgroundColor: BRAND, borderRadius: 11, paddingHorizontal: 20 },
+  privacyPill: { minHeight: 40, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 12, backgroundColor: '#EFF8FF' },
+  confirmationCopy: { flexShrink: 1, color: '#175CD3', textAlign: 'center', fontSize: 12, lineHeight: 16, fontWeight: '600' },
+  primaryButton: { minHeight: 50, alignItems: 'center', justifyContent: 'center', backgroundColor: BRAND, borderRadius: 14, paddingHorizontal: 20, shadowColor: '#175CD3', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.2, shadowRadius: 7, elevation: 3 },
   primaryText: { color: '#FFF', fontWeight: '800', fontSize: 16 },
   disabled: { opacity: 0.45 },
   offlineBanner: { backgroundColor: '#FFF4CC', color: '#7A5D00', paddingHorizontal: 10, paddingVertical: 7, borderRadius: 9 },
