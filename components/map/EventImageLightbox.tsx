@@ -10,7 +10,9 @@ import {
   Platform,
   Alert,
   Animated,
+  ActivityIndicator,
   Easing,
+  Modal,
   useWindowDimensions,
 } from 'react-native';
 import { useReduceMotion } from '../../hooks/useReduceMotion';
@@ -67,8 +69,12 @@ import {
   findFriendEventLocation,
   hasExactFriendEventCoordinates,
 } from '../../utils/friendEvents';
+import {
+  formatFriendEventGuestResponse,
+  getFriendEventLightboxAction,
+} from '../../utils/friendEventLightbox';
 import { useSocialStore } from '../../store/socialStore';
-import { respondToFriendEvent } from '../../services/socialService';
+import { inviteToFriendEvent, respondToFriendEvent } from '../../services/socialService';
 import type { FriendEventRsvp } from '../../types/social';
 
 // Store imports for like/share functionality
@@ -276,6 +282,7 @@ const EventImageLightbox: React.FC<EventImageLightboxProps> = ({
   const friendEventLocation = useSocialStore((state) => (
     friendEventId ? findFriendEventLocation(friendEventId, state.friendEventLocations) : null
   ));
+  const socialFriends = useSocialStore((state) => state.friends);
   const isPrivateFriendEvent = Boolean(updatedEvent.friendEvent);
   const privateDirectionsAvailable = !isPrivateFriendEvent || Boolean(
     friendEventProjection
@@ -349,6 +356,9 @@ try {
   // Like/Share state
   const [isLikeToggling, setIsLikeToggling] = useState(false);
   const [privateRsvpBusy, setPrivateRsvpBusy] = useState<FriendEventRsvp | null>(null);
+  const [privateGuestSheetVisible, setPrivateGuestSheetVisible] = useState(false);
+  const [privateInviteExpanded, setPrivateInviteExpanded] = useState(false);
+  const [privateInviteBusyUid, setPrivateInviteBusyUid] = useState<string | null>(null);
   const eventIdString = String(updatedEvent.id);
 
   // Get user's liked events from store
@@ -1015,10 +1025,32 @@ const handleDirections = () => {
   }
 };
 
-  const handleOpenPrivateDetails = () => {
+  const handleOpenPrivateContext = () => {
     if (!friendEventId) return;
-    onClose();
-    requestAnimationFrame(() => router.push(`/friend-event/${friendEventId}`));
+
+    if (privateLightboxAction.kind === 'manage') {
+      // Keep the underlying lightbox mounted so Back returns the host to the
+      // event they were managing instead of dropping them at the bare map.
+      router.push(`/friend-event/${friendEventId}`);
+      return;
+    }
+
+    if (privateLightboxAction.kind === 'none') return;
+    setPrivateInviteExpanded(privateLightboxAction.kind === 'invite');
+    setPrivateGuestSheetVisible(true);
+  };
+
+  const handlePrivateInvite = async (targetUid: string) => {
+    if (!friendEventId || privateInviteBusyUid) return;
+    setPrivateInviteBusyUid(targetUid);
+    try {
+      await inviteToFriendEvent(friendEventId, targetUid);
+    } catch (error) {
+      console.error('Failed to invite friend from private event lightbox', error);
+      Alert.alert('Could not send invitation', 'Please check your connection and try again.');
+    } finally {
+      setPrivateInviteBusyUid(null);
+    }
   };
 
   const handlePrivateRsvp = async (
@@ -1233,17 +1265,29 @@ const handleNonTicketAction = () => {
   const privateHostName = friendEventProjection?.host.displayName
     || updatedEvent.friendEvent?.hostName
     || 'a friend';
-  const privateGuestCount = friendEventProjection?.guests.length || 0;
+  const privateGuestCount = friendEventProjection
+    ? Math.max(friendEventProjection.viewerCount || 0, friendEventProjection.guests.length)
+    : 0;
   const privateVisibility = friendEventProjection?.visibility
     || updatedEvent.friendEvent?.visibility;
   const privateAudienceCopy = privateVisibility === 'all_friends'
     ? 'Visible to all friends'
     : 'Selected friends only';
-  const privateInviteCopy = friendEventProjection
-    ? friendEventProjection.guestInviteMode === 'guests_can_invite'
-      ? 'Guest invites allowed'
-      : 'Host-managed invites'
-    : '';
+  const privateGuestListVisible = friendEventProjection?.guestListVisible === true;
+  const privateCanInvite = friendEventProjection?.viewerRole === 'host'
+    || friendEventProjection?.guestInviteMode === 'guests_can_invite';
+  const privateLightboxAction = getFriendEventLightboxAction({
+    viewerRole: updatedEvent.friendEvent?.viewerRole || 'guest',
+    guestListVisible: privateGuestListVisible,
+    guestInviteMode: friendEventProjection?.guestInviteMode || 'host_only',
+    guestCount: privateGuestCount,
+  });
+  const invitedPrivateGuestUids = new Set(
+    (friendEventProjection?.guests || []).map((guest) => guest.uid)
+  );
+  const privateInviteCandidates = socialFriends.filter(
+    (friend) => !invitedPrivateGuestUids.has(friend.uid)
+  );
 
   // Prepare images array for the image viewer
   // Use fallback if: URL is invalid OR the thumbnail reported a load error
@@ -1663,20 +1707,23 @@ const handleNonTicketAction = () => {
                 <Text style={styles.privateEventContextMeta} numberOfLines={2}>
                   {privateAudienceCopy}
                   {privateGuestCount > 0 ? ` · ${privateGuestCount} invited` : ''}
-                  {privateInviteCopy ? ` · ${privateInviteCopy}` : ''}
                 </Text>
               </View>
-              <TouchableOpacity
-                accessibilityLabel={updatedEvent.friendEvent?.viewerRole === 'host' ? 'Manage private event' : 'View private event details'}
-                activeOpacity={0.75}
-                onPress={handleOpenPrivateDetails}
-                style={styles.privateEventDetailsButton}
-              >
-                <Text style={styles.privateEventDetailsText}>
-                  {updatedEvent.friendEvent?.viewerRole === 'host' ? 'Manage' : 'Details'}
-                </Text>
-                <MaterialIcons name="chevron-right" size={17} color="#D6BBFB" />
-              </TouchableOpacity>
+              {privateLightboxAction.kind !== 'none' && (
+                <TouchableOpacity
+                  accessibilityLabel={privateLightboxAction.kind === 'manage'
+                    ? 'Manage private event'
+                    : privateLightboxAction.label}
+                  activeOpacity={0.75}
+                  onPress={handleOpenPrivateContext}
+                  style={styles.privateEventDetailsButton}
+                >
+                  <Text style={styles.privateEventDetailsText}>
+                    {privateLightboxAction.label}
+                  </Text>
+                  <MaterialIcons name="chevron-right" size={17} color="#D6BBFB" />
+                </TouchableOpacity>
+              )}
             </View>
 
             {updatedEvent.friendEvent?.viewerRole === 'guest' && (
@@ -2035,6 +2082,149 @@ const handleNonTicketAction = () => {
         FooterComponent={() => null}
       />
 
+      <Modal
+        animationType="slide"
+        onRequestClose={() => setPrivateGuestSheetVisible(false)}
+        presentationStyle="overFullScreen"
+        transparent
+        visible={privateGuestSheetVisible}
+      >
+        <View style={styles.privateGuestSheetBackdrop}>
+          <TouchableOpacity
+            accessibilityLabel="Close guest list"
+            activeOpacity={1}
+            onPress={() => setPrivateGuestSheetVisible(false)}
+            style={StyleSheet.absoluteFill}
+          />
+          <View style={[
+            styles.privateGuestSheet,
+            { paddingBottom: Math.max(16, safeAreaInsets.bottom + 8) },
+          ]}>
+            <View style={styles.privateGuestSheetHandle} />
+            <View style={styles.privateGuestSheetHeader}>
+              <View style={styles.privateGuestSheetHeaderCopy}>
+                <Text style={styles.privateGuestSheetTitle}>
+                  {privateGuestListVisible ? `Guests (${privateGuestCount})` : 'Invite a friend'}
+                </Text>
+                <Text style={styles.privateGuestSheetMeta}>
+                  {privateGuestListVisible
+                    ? 'Visible to invited guests'
+                    : 'The host keeps the guest list private'}
+                  {privateCanInvite ? ' · Guest invites allowed' : ''}
+                </Text>
+              </View>
+              <TouchableOpacity
+                accessibilityLabel="Close guest list"
+                onPress={() => setPrivateGuestSheetVisible(false)}
+                style={styles.privateGuestSheetClose}
+              >
+                <MaterialIcons name="close" size={22} color="#344054" />
+              </TouchableOpacity>
+            </View>
+
+            {privateGuestListVisible && (
+              <GestureScrollView
+                contentContainerStyle={styles.privateGuestListContent}
+                nestedScrollEnabled
+                showsVerticalScrollIndicator={(friendEventProjection?.guests.length || 0) > 4}
+                style={styles.privateGuestList}
+              >
+                {(friendEventProjection?.guests || []).map((guest) => (
+                  <View key={guest.uid} style={styles.privateGuestRow}>
+                    <View style={styles.privateGuestAvatar}>
+                      <Text style={styles.privateGuestAvatarText}>
+                        {guest.displayName.trim().charAt(0).toUpperCase() || '?'}
+                      </Text>
+                    </View>
+                    <View style={styles.privateGuestCopy}>
+                      <Text numberOfLines={1} style={styles.privateGuestName}>
+                        {guest.displayName}
+                      </Text>
+                      <Text style={styles.privateGuestResponse}>
+                        {formatFriendEventGuestResponse(guest.response)}
+                      </Text>
+                    </View>
+                  </View>
+                ))}
+                {(friendEventProjection?.guests.length || 0) === 0 && (
+                  <View style={styles.privateGuestEmpty}>
+                    <MaterialIcons name="people-outline" size={26} color="#98A2B3" />
+                    <Text style={styles.privateGuestEmptyText}>
+                      Guest names are not available yet.
+                    </Text>
+                  </View>
+                )}
+              </GestureScrollView>
+            )}
+
+            {privateCanInvite && (
+              <>
+                <TouchableOpacity
+                  accessibilityLabel="Invite a friend"
+                  activeOpacity={0.78}
+                  onPress={() => setPrivateInviteExpanded((value) => !value)}
+                  style={styles.privateInviteToggle}
+                >
+                  <View style={styles.privateInviteToggleIcon}>
+                    <MaterialIcons name="person-add" size={19} color="#6941C6" />
+                  </View>
+                  <Text style={styles.privateInviteToggleText}>Invite a friend</Text>
+                  <MaterialIcons
+                    name={privateInviteExpanded ? 'keyboard-arrow-up' : 'keyboard-arrow-down'}
+                    size={21}
+                    color="#6941C6"
+                  />
+                </TouchableOpacity>
+
+                {privateInviteExpanded && (
+                  <GestureScrollView
+                    contentContainerStyle={styles.privateInviteListContent}
+                    nestedScrollEnabled
+                    showsVerticalScrollIndicator={privateInviteCandidates.length > 3}
+                    style={styles.privateInviteList}
+                  >
+                    {privateInviteCandidates.map((friend) => {
+                      const busy = privateInviteBusyUid === friend.uid;
+                      return (
+                        <TouchableOpacity
+                          activeOpacity={0.75}
+                          disabled={privateInviteBusyUid !== null}
+                          key={friend.uid}
+                          onPress={() => void handlePrivateInvite(friend.uid)}
+                          style={styles.privateInviteRow}
+                        >
+                          <View style={styles.privateGuestAvatar}>
+                            <Text style={styles.privateGuestAvatarText}>
+                              {friend.displayName.trim().charAt(0).toUpperCase() || '?'}
+                            </Text>
+                          </View>
+                          <View style={styles.privateGuestCopy}>
+                            <Text numberOfLines={1} style={styles.privateGuestName}>
+                              {friend.displayName}
+                            </Text>
+                            <Text numberOfLines={1} style={styles.privateGuestResponse}>
+                              @{friend.socialHandle}
+                            </Text>
+                          </View>
+                          {busy
+                            ? <ActivityIndicator color="#6941C6" size="small" />
+                            : <MaterialIcons name="add-circle-outline" size={24} color="#6941C6" />}
+                        </TouchableOpacity>
+                      );
+                    })}
+                    {privateInviteCandidates.length === 0 && (
+                      <Text style={styles.privateInviteEmptyText}>
+                        All of your eligible friends are already invited.
+                      </Text>
+                    )}
+                  </GestureScrollView>
+                )}
+              </>
+            )}
+          </View>
+        </View>
+      </Modal>
+
       {/* =============================================================== */}
       {/* GUEST LIMITATION REGISTRATION PROMPT - ONLY FOR GUESTS */}
       {/* =============================================================== */}
@@ -2382,8 +2572,8 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255, 255, 255, 0.07)',
   },
   privateRsvpButtonSelected: {
-    borderColor: '#B692F6',
-    backgroundColor: '#6941C6',
+    borderColor: '#FFFFFF',
+    backgroundColor: '#7F56D9',
   },
   privateRsvpButtonDimmed: {
     opacity: 0.45,
@@ -2395,6 +2585,163 @@ const styles = StyleSheet.create({
   },
   privateRsvpTextSelected: {
     color: '#FFFFFF',
+  },
+  privateGuestSheetBackdrop: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(0, 0, 0, 0.60)',
+  },
+  privateGuestSheet: {
+    maxHeight: '72%',
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    backgroundColor: '#F9FAFB',
+  },
+  privateGuestSheetHandle: {
+    alignSelf: 'center',
+    width: 42,
+    height: 4,
+    marginBottom: 10,
+    borderRadius: 2,
+    backgroundColor: '#D0D5DD',
+  },
+  privateGuestSheetHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  privateGuestSheetHeaderCopy: {
+    flex: 1,
+    minWidth: 0,
+  },
+  privateGuestSheetTitle: {
+    color: '#101828',
+    fontSize: 18,
+    fontWeight: '900',
+  },
+  privateGuestSheetMeta: {
+    marginTop: 2,
+    color: '#667085',
+    fontSize: 11,
+    lineHeight: 15,
+    fontWeight: '600',
+  },
+  privateGuestSheetClose: {
+    width: 38,
+    height: 38,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 8,
+    borderRadius: 19,
+    backgroundColor: '#EAECF0',
+  },
+  privateGuestList: {
+    maxHeight: 224,
+    marginBottom: 10,
+    borderRadius: 16,
+    backgroundColor: '#FFFFFF',
+  },
+  privateGuestListContent: {
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+  },
+  privateGuestRow: {
+    minHeight: 52,
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#EAECF0',
+  },
+  privateGuestAvatar: {
+    width: 34,
+    height: 34,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 17,
+    backgroundColor: '#E9D7FE',
+  },
+  privateGuestAvatarText: {
+    color: '#6941C6',
+    fontSize: 13,
+    fontWeight: '900',
+  },
+  privateGuestCopy: {
+    flex: 1,
+    minWidth: 0,
+    marginLeft: 10,
+  },
+  privateGuestName: {
+    color: '#101828',
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  privateGuestResponse: {
+    marginTop: 1,
+    color: '#667085',
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  privateGuestEmpty: {
+    minHeight: 82,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+  },
+  privateGuestEmptyText: {
+    color: '#667085',
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  privateInviteToggle: {
+    minHeight: 48,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 11,
+    borderRadius: 14,
+    backgroundColor: '#F4EBFF',
+  },
+  privateInviteToggleIcon: {
+    width: 30,
+    height: 30,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 15,
+    backgroundColor: '#E9D7FE',
+  },
+  privateInviteToggleText: {
+    flex: 1,
+    marginLeft: 9,
+    color: '#53389E',
+    fontSize: 13,
+    fontWeight: '900',
+  },
+  privateInviteList: {
+    maxHeight: 184,
+    marginTop: 8,
+    borderRadius: 14,
+    backgroundColor: '#FFFFFF',
+  },
+  privateInviteListContent: {
+    paddingHorizontal: 11,
+    paddingVertical: 4,
+  },
+  privateInviteRow: {
+    minHeight: 52,
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#EAECF0',
+  },
+  privateInviteEmptyText: {
+    paddingHorizontal: 8,
+    paddingVertical: 18,
+    color: '#667085',
+    fontSize: 11,
+    lineHeight: 16,
+    textAlign: 'center',
+    fontWeight: '600',
   },
   priceBadge: {
     backgroundColor: '#E94E77',

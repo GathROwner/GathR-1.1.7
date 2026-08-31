@@ -1766,7 +1766,7 @@ const VenueInfoContent: React.FC<VenueInfoProps> = ({ venue }) => {
 // Special card component for multiple specials
 interface SpecialCardProps {
   event: Event;
-  onSelectEvent?: (event: Event) => void;
+  onSelectEvent: (event: Event) => void;
   showVenueName?: boolean;
   onImagePress: (imageUrl: string, event: Event) => void;
   isSaved?: boolean;
@@ -1774,7 +1774,10 @@ interface SpecialCardProps {
   userInterests?: string[];
   isGuest?: boolean;
   isTutorialTarget?: boolean; // Add this new prop for the tutorial
+  testID?: string;
 }
+
+const AnimatedTouchableOpacity = Animated.createAnimatedComponent(TouchableOpacity);
 
 const SpecialCard: React.FC<SpecialCardProps> = ({ 
   event, 
@@ -1786,6 +1789,7 @@ const SpecialCard: React.FC<SpecialCardProps> = ({
   userInterests = [],
   isGuest = false,
   isTutorialTarget = false, // Default to false
+  testID,
 }) => {
   const [expanded, setExpanded] = useState(false);
   const [bookmarked, setBookmarked] = useState(isSaved);
@@ -2214,7 +2218,12 @@ useUserPrefsStore.getState().setAll({ savedEvents: next });
   const paid = isPaidEvent(event.ticketPrice);
   
   return (
-    <Animated.View
+    <AnimatedTouchableOpacity
+      accessibilityLabel={`Open ${event.title}`}
+      accessibilityRole="button"
+      activeOpacity={0.82}
+      onPress={() => onSelectEvent(event)}
+      testID={testID}
       ref={(node) => {
         viewRef.current = node as View | null;
       }}
@@ -2228,7 +2237,10 @@ useUserPrefsStore.getState().setAll({ savedEvents: next });
         <View style={styles.heroImageContainer}>
           <TouchableOpacity
             activeOpacity={0.9}
-            onPress={() => onImagePress(event.imageUrl || event.profileUrl, event)}
+            onPress={(pressEvent) => {
+              pressEvent.stopPropagation();
+              onImagePress(event.imageUrl || event.profileUrl, event);
+            }}
           >
             <FallbackImage 
               imageUrl={event.imageUrl || event.profileUrl}
@@ -2478,7 +2490,7 @@ return (
           </TouchableOpacity>
         </View>
       </View>
-    </Animated.View>
+    </AnimatedTouchableOpacity>
   );
 };
 
@@ -2544,23 +2556,17 @@ const sortedEvents = useMemo(() => {
   return (
     <View style={styles.multiEventsContainer}>
       {sortedEvents.map((event, index) => (
-        <TouchableOpacity
+        <MemoSpecialCard
           key={`multiple-event-${event.id}-${index}`}
-          style={styles.multiEventCard}
-          onPress={() => onSelectEvent(event)}
-          activeOpacity={0.7}
-        >
-           <MemoSpecialCard 
-             event={getUpdatedEvent(event.id) || event}  // Uses fresh event data from store, falls back to original if not found
-             showVenueName={isMultiVenue}
-             onImagePress={onImagePress}
-             isSaved={savedEvents.includes(event.id.toString())}
-             matchesUserInterests={doesEventMatchAnyInterest(event, userInterests)}
-             userInterests={userInterests}
-             isGuest={isGuest}
-           />
-
-        </TouchableOpacity>
+          event={getUpdatedEvent(event.id) || event}  // Uses fresh event data from store, falls back to original if not found
+          onSelectEvent={onSelectEvent}
+          showVenueName={isMultiVenue}
+          onImagePress={onImagePress}
+          isSaved={savedEvents.includes(event.id.toString())}
+          matchesUserInterests={doesEventMatchAnyInterest(event, userInterests)}
+          userInterests={userInterests}
+          isGuest={isGuest}
+        />
       ))}
     </View>
   );
@@ -4403,24 +4409,20 @@ useEffect(() => {
       // Render event/special card
       const event = item.data as Event;
       return (
-        <TouchableOpacity 
+        <MemoSpecialCard
           key={`event-${event.id}-${index}`}
-          onPress={() => handleEventSelect(event)}
-          activeOpacity={0.7}
           testID={index === 0 ? "event-list-item" : undefined}
-        >
-          <MemoSpecialCard 
-            event={getUpdatedEvent(event.id) || event}  // Uses fresh event data from store, falls back to original if not found
-            showVenueName={isMultiVenue}
-            onImagePress={handleImagePress}
-            isSaved={savedEvents.includes(event.id.toString())}
-            matchesUserInterests={doesEventMatchAnyInterest(event, userInterests)}
-            userInterests={userInterests}
-            isGuest={isGuest}
-            // Pass the prop to the first card in the list
-            isTutorialTarget={index === 0}
-          />
-        </TouchableOpacity>
+          event={getUpdatedEvent(event.id) || event}  // Uses fresh event data from store, falls back to original if not found
+          onSelectEvent={handleEventSelect}
+          showVenueName={isMultiVenue}
+          onImagePress={handleImagePress}
+          isSaved={savedEvents.includes(event.id.toString())}
+          matchesUserInterests={doesEventMatchAnyInterest(event, userInterests)}
+          userInterests={userInterests}
+          isGuest={isGuest}
+          // Pass the prop to the first card in the list
+          isTutorialTarget={index === 0}
+        />
       );
     }
   };
