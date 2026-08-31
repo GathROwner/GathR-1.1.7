@@ -2216,13 +2216,22 @@ useUserPrefsStore.getState().setAll({ savedEvents: next });
   
   const hasTicketLink = Boolean(getTicketUrl(event));
   const paid = isPaidEvent(event.ticketPrice);
+  const openEventLightbox = () => {
+    const imageUrl = event.imageUrl || event.profileUrl;
+    if (imageUrl) {
+      onImagePress(imageUrl, event);
+      return;
+    }
+
+    onSelectEvent(event);
+  };
   
   return (
     <AnimatedTouchableOpacity
       accessibilityLabel={`Open ${event.title}`}
       accessibilityRole="button"
       activeOpacity={0.82}
-      onPress={() => onSelectEvent(event)}
+      onPress={openEventLightbox}
       testID={testID}
       ref={(node) => {
         viewRef.current = node as View | null;
@@ -2354,7 +2363,7 @@ useUserPrefsStore.getState().setAll({ savedEvents: next });
         activeOpacity={0.82}
         onPress={(pressEvent) => {
           pressEvent.stopPropagation();
-          onSelectEvent(event);
+          openEventLightbox();
         }}
         style={styles.contentSection}
       >
