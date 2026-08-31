@@ -955,3 +955,22 @@ All canonical mutations use authenticated callable functions. Clients cannot dir
 - Current check-in records identify a venue, not an event. Associate a check-in with an event only when exactly one non-ended event at that venue is happening or begins within 90 minutes. If multiple candidates share the venue, show a venue check-in and open the existing venue callout rather than falsely claiming event attendance.
 - Event-backed cards open the existing event lightbox. The lightbox adds a bounded **Who's here** row with an expandable, internally scrollable authorized friend list; private friend events also show an explicit invited/hosted badge.
 - This slice is client-only and introduces no native dependency, backend deployment, Android OTA, or native build. Focused tests cover the 45-minute/Now-filter case, grouping, ambiguity fallback, category filtering, screen-boundary exclusion, private-event authorization, and name truncation.
+
+## 35. Standing debugging release and visual-QA protocol
+
+- Every client-visible change being reviewed with the owner must be published as an **iOS-only Preview OTA** after its scoped automated checks pass. It is not considered visible or ready for owner acceptance merely because it exists in Git.
+- Before each OTA, re-read the current live Preview update, require it to be an ancestor of the candidate, run `npm run verify:mapbox`, use `--clear-cache`, and publish platforms separately. Production is never implied by this debugging protocol.
+- Exercise every client-visible change on the existing Android emulator before calling it visually accepted. Use Metro only with a confirmed debuggable development client; use an Android Preview OTA with the existing non-debuggable Preview build. Do not create a new native build unless the change crosses a native boundary and the owner separately authorizes that build.
+- Android QA must prove update adoption and inspect the affected authenticated state at normal phone size. A logged-out launch, static code review, automated test, or successful bundle export does not constitute visual acceptance of an authenticated/private screen.
+- Friend-created events must use the same event-card and lightbox system as ordinary events. Social or privacy differences belong in bounded pills, badges, rows, or dropdowns; a separate simplified event presentation requires an explicit product decision.
+- Record the iOS and Android update IDs, runtime, commit, automated checks, emulator adoption evidence, screenshots, and any authentication/data blocker in the progress log. Do not silently convert a blocker into a pass.
+
+### 2026-08-31 — Chronological standard friend-event cards
+
+- Venue callouts now order non-ended events with happening-now first and then upcoming events chronologically. The 8:50 a.m. Maya fixture therefore precedes the 10 p.m. Open Mic card.
+- Removed the simplified purple friend-event row. Friend events now render through the ordinary event card with their normal hero image, title, time, description, category, calendar, and save controls. A purple hero pill identifies `PRIVATE · HOSTING`, `PRIVATE · GOING`, `PRIVATE · MAYBE`, `PRIVATE · CAN'T GO`, or `PRIVATE · INVITED`.
+- Private friend-event cards do not start public engagement listeners or expose public share/interested controls. Calendar addition remains available without publishing an event-interest signal.
+- Mobile gates passed: TypeScript; five focused Jest suites with 46 tests; scoped lint with zero errors; repository Expo lint with zero errors and 224 existing warnings; Mapbox runtime verification; and whitespace checks.
+- Android Preview OTA group `2279489c-79f9-4d63-bb08-4b25b2461eec`, update `01a0579d-65b8-746a-9cbb-29cefa96537d`, runtime `1.1.10`, commit `7eba22a9df4b02dabada0fa8abb4b697045e96ef`. The existing non-debuggable `com.craigb.gathr` Preview install downloaded the exact update and reported no update on the second launch, proving adoption without a native build.
+- Android visual acceptance of the private Maya card remains blocked because the preserved emulator installation is logged out. The launch screenshot records that state; no credential, app-data reset, or unapproved synthetic account was used to conceal the limitation.
+- iOS Preview OTA group `d2814315-1e83-411d-9772-656993841957`, update `01a057a3-9736-7f39-b418-3e8e4bce6232`, runtime `1.1.10`, commit `7eba22a9df4b02dabada0fa8abb4b697045e96ef`. No Production OTA, native build, store submission, or backend deployment was performed.
