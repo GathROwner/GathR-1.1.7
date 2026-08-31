@@ -119,6 +119,8 @@ import { useEventInterestedCount, setEventInterestedCount, startEventInterestedL
 import { useMapStore } from '../../store/mapStore';
 import { auth } from '../../config/firebaseConfig';
 import { useClusterInteractionStore } from '../../store/clusterInteractionStore';
+import { usePathname } from 'expo-router';
+import { isFriendEventDetailPath } from '../../utils/friendEventLightbox';
 
 // Import the centralized date utilities
 import {
@@ -2596,6 +2598,8 @@ const EventCallout: React.FC<EventCalloutProps> = ({
   onPresentationReady,
   readinessEpoch,
 }) => {
+  const pathname = usePathname();
+  const isFriendEventDetailRoute = isFriendEventDetailPath(pathname);
   // Add store subscription to get fresh event data
   const storeEvents = useMapStore((state) => state.events);
 
@@ -4730,7 +4734,9 @@ useEffect(() => {
       </CalloutContainerComponent>
 
       {/* Render the lightbox modal when needed - supports both local and global state */}
-      {!EVENT_CALLOUT_SHELL_ISOLATION_DEBUG && (selectedImageData || globalSelectedImageData) && (
+      {!EVENT_CALLOUT_SHELL_ISOLATION_DEBUG &&
+        !isFriendEventDetailRoute &&
+        (selectedImageData || globalSelectedImageData) && (
         <Modal
           transparent={true}
           visible={true}

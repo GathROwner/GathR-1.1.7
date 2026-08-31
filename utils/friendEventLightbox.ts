@@ -8,6 +8,10 @@ export type FriendEventLightboxAction =
   | { kind: 'invite'; label: 'Invite' }
   | { kind: 'none'; label: '' };
 
+export function isFriendEventDetailPath(pathname: string): boolean {
+  return pathname.startsWith('/friend-event/');
+}
+
 interface FriendEventLightboxActionInput {
   viewerRole: 'host' | 'guest';
   guestListVisible: boolean;

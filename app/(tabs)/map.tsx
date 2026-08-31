@@ -21,7 +21,7 @@ import MapboxGL from '@rnmapbox/maps';
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import { useIsFocused } from '@react-navigation/native';
 import { Platform } from 'react-native';
-import { useRouter } from 'expo-router';
+import { usePathname, useRouter } from 'expo-router';
 
 
 
@@ -45,6 +45,7 @@ import type { InterestCarouselFilter } from '../../types/store';
 import type { ComponentMeasurement } from '../../types/tutorial';
 import { filterClusterForInterestCarouselFilter } from '../../utils/interestCarouselFilterUtils';
 import { isMapCameraGestureActive } from '../../utils/mapCameraGestures';
+import { isFriendEventDetailPath } from '../../utils/friendEventLightbox';
 
 // Import components
 import FilterPills from '../../components/map/FilterPills';
@@ -3065,6 +3066,8 @@ const GlobalEventLightbox = ({
 }: {
   onShowRoute: (event: Event) => void;
 }) => {
+  const pathname = usePathname();
+  const isFriendEventDetailRoute = isFriendEventDetailPath(pathname);
   const globalSelectedImageData = useMapStore((state) => state.selectedImageData);
   const selectedVenues = useMapStore((state) => state.selectedVenues);
   const selectedCluster = useMapStore((state) => state.selectedCluster);
@@ -3129,7 +3132,7 @@ const GlobalEventLightbox = ({
     setGlobalSelectedImageData(null);
   }, [setGlobalSelectedImageData]);
 
-  if (!globalSelectedImageData) return null;
+  if (!globalSelectedImageData || isFriendEventDetailRoute) return null;
   const isCityEventLightbox = globalSelectedImageData.source === 'city_event_marker';
   const isCalloutMounted =
     !!selectedCluster || (Array.isArray(selectedVenues) && selectedVenues.length > 0);

@@ -66,6 +66,7 @@ import { buildGathrSharePayload } from '../../utils/shareUtils';
 import { getTicketUrl, normalizeTicketUrl } from '../../utils/ticketUrls';
 import { getPrimaryNonTicketAction } from '../../utils/eventActionLinks';
 import { publishTutorialMeasurement } from '../../utils/tutorialReadiness';
+import { isFriendEventDetailPath } from '../../utils/friendEventLightbox';
 
 // Import priority utilities, user service, and distance calculation
 import {
@@ -1425,6 +1426,8 @@ const MemoizedEventListItem = React.memo(EventListItem, (prevProps, nextProps) =
 // Main Events Screen component
 function EventsScreen() {
   const router = useRouter();
+  const pathname = usePathname();
+  const isFriendEventDetailRoute = isFriendEventDetailPath(pathname);
   const adColors = AdColors[useColorScheme() ?? 'light'];
   markTabScreenRenderStart('events');
   // ===============================================================
@@ -2932,7 +2935,7 @@ setSelectedImageData({ imageUrl, event });
       )}
       
       {/* Image Lightbox */}
-      {selectedImageData && (
+      {selectedImageData && !isFriendEventDetailRoute && (
         <Modal
           transparent={true}
           visible={!!selectedImageData}

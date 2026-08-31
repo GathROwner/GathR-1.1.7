@@ -1,7 +1,16 @@
 import {
   formatFriendEventGuestResponse,
   getFriendEventLightboxAction,
+  isFriendEventDetailPath,
 } from '../friendEventLightbox';
+
+describe('isFriendEventDetailPath', () => {
+  it('suspends the lightbox only while the nested friend-event route is visible', () => {
+    expect(isFriendEventDetailPath('/friend-event/event-123')).toBe(true);
+    expect(isFriendEventDetailPath('/map')).toBe(false);
+    expect(isFriendEventDetailPath('/create-event')).toBe(false);
+  });
+});
 
 describe('getFriendEventLightboxAction', () => {
   it('keeps host controls on the dedicated management screen', () => {

@@ -28,6 +28,8 @@ import {
   traceInterestFilterPerf,
 } from '../../utils/interestFilterPerfTrace';
 import { isAreaExperienceEvent } from '../../utils/locationScope';
+import { usePathname } from 'expo-router';
+import { isFriendEventDetailPath } from '../../utils/friendEventLightbox';
 
 const readAnimatedValue = (value: Animated.Value): number | string =>
   typeof (value as any).__getValue === 'function' ? (value as any).__getValue() : 'unknown';
@@ -395,6 +397,8 @@ type CarouselEventContext = {
 // Main Carousel Component
 const InterestsCarousel: React.FC = () => {
   const isFocused = useIsFocused();
+  const pathname = usePathname();
+  const isFriendEventDetailRoute = isFriendEventDetailPath(pathname);
   const onScreenEvents = useMapStore((state) => state.onScreenEvents);
   const filterCriteria = useMapStore((state) => state.filterCriteria);
   const clusters = useMapStore((state) => state.clusters);
@@ -905,7 +909,7 @@ const InterestsCarousel: React.FC = () => {
       </Animated.View>
 
       {/* Render lightbox when carousel card is clicked */}
-      {selectedImageData && (
+      {selectedImageData && !isFriendEventDetailRoute && (
         <Modal
           transparent={true}
           visible={true}
