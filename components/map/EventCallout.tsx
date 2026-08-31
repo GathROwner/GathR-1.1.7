@@ -2214,15 +2214,6 @@ useUserPrefsStore.getState().setAll({ savedEvents: next });
   
   const hasTicketLink = Boolean(getTicketUrl(event));
   const paid = isPaidEvent(event.ticketPrice);
-  const openEventLightbox = () => {
-    const imageUrl = event.imageUrl || event.profileUrl;
-    if (imageUrl) {
-      onImagePress(imageUrl, event);
-      return;
-    }
-
-    onSelectEvent(event);
-  };
   
   return (
     <Animated.View
@@ -2355,10 +2346,7 @@ useUserPrefsStore.getState().setAll({ savedEvents: next });
         accessibilityLabel={`Open details for ${event.title}`}
         accessibilityRole="button"
         activeOpacity={0.82}
-        onPress={(pressEvent) => {
-          pressEvent.stopPropagation();
-          openEventLightbox();
-        }}
+        onPress={() => onImagePress(event.imageUrl || event.profileUrl, event)}
         style={styles.contentSection}
       >
         <Text 
