@@ -1777,8 +1777,6 @@ interface SpecialCardProps {
   testID?: string;
 }
 
-const AnimatedTouchableOpacity = Animated.createAnimatedComponent(TouchableOpacity);
-
 const SpecialCard: React.FC<SpecialCardProps> = ({ 
   event, 
   onSelectEvent,
@@ -2227,11 +2225,7 @@ useUserPrefsStore.getState().setAll({ savedEvents: next });
   };
   
   return (
-    <AnimatedTouchableOpacity
-      accessibilityLabel={`Open ${event.title}`}
-      accessibilityRole="button"
-      activeOpacity={0.82}
-      onPress={openEventLightbox}
+    <Animated.View
       testID={testID}
       ref={(node) => {
         viewRef.current = node as View | null;
@@ -2508,7 +2502,7 @@ return (
           </TouchableOpacity>
         </View>
       </View>
-    </AnimatedTouchableOpacity>
+    </Animated.View>
   );
 };
 
