@@ -2348,7 +2348,16 @@ useUserPrefsStore.getState().setAll({ savedEvents: next });
         </View>
       </View>
       
-      <View style={styles.contentSection}>
+      <TouchableOpacity
+        accessibilityLabel={`Open details for ${event.title}`}
+        accessibilityRole="button"
+        activeOpacity={0.82}
+        onPress={(pressEvent) => {
+          pressEvent.stopPropagation();
+          onSelectEvent(event);
+        }}
+        style={styles.contentSection}
+      >
         <Text 
           style={styles.cardTitle} 
           numberOfLines={2}
@@ -2407,7 +2416,7 @@ return (
 
 
         
-      </View>
+      </TouchableOpacity>
       
       <View style={styles.descriptionSection}>
         <GuestLimitedContent 
