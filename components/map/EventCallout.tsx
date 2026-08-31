@@ -1792,6 +1792,17 @@ const SpecialCard: React.FC<SpecialCardProps> = ({
   const [isToggling, setIsToggling] = useState(false);
   const [isHeroLikeToggling, setIsHeroLikeToggling] = useState(false);
   const timeStatus = getEventTimeStatus(event);
+  const friendEventBadgeLabel = event.friendEvent
+    ? event.friendEvent.viewerRole === 'host'
+      ? 'PRIVATE · HOSTING'
+      : event.friendEvent.ownRsvp === 'going'
+        ? 'PRIVATE · GOING'
+        : event.friendEvent.ownRsvp === 'maybe'
+          ? 'PRIVATE · MAYBE'
+          : event.friendEvent.ownRsvp === 'cant_go'
+            ? "PRIVATE · CAN'T GO"
+            : 'PRIVATE · INVITED'
+    : null;
 
   // --- Start of Tutorial Logic ---
   const viewRef = useRef<View | null>(null);
@@ -1894,7 +1905,7 @@ const SpecialCard: React.FC<SpecialCardProps> = ({
 
   const heroUsersRespondedCount = isGreaterThanZero(event.usersResponded) ? safeNumberToString(event.usersResponded) : null;
   useEffect(() => {
-    if (!event.id) return;
+    if (!event.id || event.friendEvent) return;
     startEventLikesListener(event.id);
     startEventSharesListener(event.id);
     startEventInterestedListener(event.id);
@@ -1903,7 +1914,7 @@ const SpecialCard: React.FC<SpecialCardProps> = ({
       stopEventSharesListener(event.id);
       stopEventInterestedListener(event.id);
     };
-  }, [event.id]);
+  }, [event.friendEvent, event.id]);
   // Combine usersResponded (Facebook) with interested (GathR) for the person icon badge
   const facebookUsersResponded = isGreaterThanZero(event.usersResponded) ? Number(event.usersResponded) : 0;
   const combinedInterestedValue = facebookUsersResponded + interestedValue;
@@ -1924,8 +1935,9 @@ const SpecialCard: React.FC<SpecialCardProps> = ({
     makeHeroMetric('shares', 'share', heroShareText),
     makeHeroMetric('interested', 'person', combinedInterestedText),
   ];
-  // Always show overlay - share button should always be visible
-  const showHeroEngagementOverlay = true;
+  // Private friend events use the normal event-card layout, but public
+  // like/share/interested actions must not cross their authorized audience.
+  const showHeroEngagementOverlay = !event.friendEvent;
 
   const handleHeroLikePress = async (e: GestureResponderEvent) => {
     e.stopPropagation();
@@ -2032,6 +2044,21 @@ const SpecialCard: React.FC<SpecialCardProps> = ({
   const handleAddToCalendar = async (e: any) => {
     e.stopPropagation();
     if (isGuest) return;
+
+    if (event.friendEvent) {
+      try {
+        await addToCalendar({
+          title: event.title,
+          startDate: combineDateAndTime(event.startDate, event.startTime),
+          endDate: combineDateAndTime(event.endDate || event.startDate, event.endTime || '11:59 PM'),
+          location: `${event.venue}, ${event.address}`,
+          notes: event.description
+        });
+      } catch (error) {
+        console.error('Failed to add private friend event to calendar', error);
+      }
+      return;
+    }
 
     // If not already interested, mark as interested (which will also add to calendar)
     if (!isInterested) {
@@ -2219,6 +2246,13 @@ useUserPrefsStore.getState().setAll({ savedEvents: next });
               isSaved={isSaved}
               isSharedByUser={event.sharedEventProvenance?.sharedByCurrentUser === true}
             />
+
+            {friendEventBadgeLabel && (
+              <View style={styles.friendEventHeroBadge}>
+                <Ionicons name="people" size={13} color="#FFFFFF" />
+                <Text style={styles.friendEventHeroBadgeText}>{friendEventBadgeLabel}</Text>
+              </View>
+            )}
             
             {showHeroEngagementOverlay && (
               <View style={styles.heroEngagementOverlay} pointerEvents="box-none">
@@ -2396,7 +2430,7 @@ return (
             <Text style={styles.categoryText}>{getCategoryTag()}</Text>
           </View>
           
-          {hasDisplayableTicketPrice(event.ticketPrice) && event.ticketPrice !== "0" && event.ticketPrice !== "Ticketed Event" && !(hasTicketLink && paid) && !(event.ticketPrice.toLowerCase() === "free" && hasTicketLink && !paid) && (
+          {!event.friendEvent && hasDisplayableTicketPrice(event.ticketPrice) && event.ticketPrice !== "0" && event.ticketPrice !== "Ticketed Event" && !(hasTicketLink && paid) && !(event.ticketPrice.toLowerCase() === "free" && hasTicketLink && !paid) && (
             <View style={styles.priceTag}><Text style={styles.priceText}>{event.ticketPrice}</Text></View>
           )}
           
@@ -2451,6 +2485,9 @@ return (
 // NEW: Memoized wrapper to prevent unnecessary re-renders of SpecialCard
 const MemoSpecialCard = React.memo(SpecialCard, (prev, next) => {
   return prev.event.id === next.event.id &&
+    prev.event.friendEvent?.viewerRole === next.event.friendEvent?.viewerRole &&
+    prev.event.friendEvent?.ownRsvp === next.event.friendEvent?.ownRsvp &&
+    prev.event.friendEvent?.addressRevealed === next.event.friendEvent?.addressRevealed &&
     prev.event.familyFriendlyScore === next.event.familyFriendlyScore &&
     prev.event.ticketLinkPosts === next.event.ticketLinkPosts &&  // Add this
     prev.event.ticketLinkEvents === next.event.ticketLinkEvents && // Add this
@@ -4373,26 +4410,6 @@ useEffect(() => {
     } else {
       // Render event/special card
       const event = item.data as Event;
-      if (event.friendEvent) {
-        return (
-          <TouchableOpacity
-            key={`friend-event-${event.friendEvent.eventId}`}
-            activeOpacity={0.76}
-            onPress={() => handleEventSelect(event)}
-            style={styles.friendEventCalloutCard}
-          >
-            <View style={styles.friendEventCalloutIcon}><Ionicons name="people" size={20} color="#FFFFFF" /></View>
-            <View style={styles.friendEventCalloutCopy}>
-              <Text style={styles.friendEventCalloutEyebrow}>FRIEND EVENT · {event.category.toUpperCase()}</Text>
-              <Text numberOfLines={2} style={styles.friendEventCalloutTitle}>{event.title}</Text>
-              <Text numberOfLines={1} style={styles.friendEventCalloutMeta}>
-                {event.friendEvent.viewerRole === 'host' ? 'Hosted by you' : `Hosted by ${event.friendEvent.hostName}`} · {event.friendEvent.addressRevealed ? event.venue : 'Address shared later'}
-              </Text>
-            </View>
-            <Ionicons name="chevron-forward" size={20} color="#6941C6" />
-          </TouchableOpacity>
-        );
-      }
       return (
         <TouchableOpacity 
           key={`event-${event.id}-${index}`}
@@ -5014,12 +5031,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     lineHeight: 16,
   },
-  friendEventCalloutCard: { minHeight: 92, flexDirection: 'row', alignItems: 'center', gap: 10, padding: 13, marginVertical: 4, borderRadius: 15, borderWidth: 1, borderColor: '#D6BBFB', backgroundColor: '#FCFAFF' },
-  friendEventCalloutIcon: { width: 40, height: 40, borderRadius: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: '#6941C6' },
-  friendEventCalloutCopy: { flex: 1, minWidth: 0, gap: 3 },
-  friendEventCalloutEyebrow: { color: '#6941C6', fontSize: 9, fontWeight: '900', letterSpacing: 0.4 },
-  friendEventCalloutTitle: { color: '#101828', fontSize: 15, fontWeight: '900' },
-  friendEventCalloutMeta: { color: '#667085', fontSize: 10 },
   joinFriendsButton: {
     minHeight: 34,
     flexDirection: 'row',
@@ -5542,6 +5553,33 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '600',
     color: '#333333',
+  },
+  friendEventHeroBadge: {
+    position: 'absolute',
+    top: 9,
+    left: 9,
+    zIndex: 11,
+    minHeight: 27,
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+    borderRadius: 9,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(105, 65, 198, 0.94)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.42)',
+    shadowColor: '#42307D',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.24,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  friendEventHeroBadgeText: {
+    marginLeft: 5,
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.3,
   },
   // Add new style for image container background
   heroImageContainer: {
