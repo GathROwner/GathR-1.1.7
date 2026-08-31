@@ -2863,7 +2863,15 @@ const activeVenueFriendPresence = getVenueFriendPresence(cluster, activeVenue);
   // console.log("Is multi-venue:", isMultiVenue, 
   //             "Total venues:", venues.length);
   
-  const events = activeVenue.events.filter(event => event.type === 'event');
+  // A venue callout is a schedule: show what is happening now first, followed
+  // by the earliest upcoming event. Interest/saved state remains visible on
+  // each card, but must not place a later event above an earlier one.
+  const events = useMemo(
+    () => sortEventsByTimeStatus(
+      activeVenue.events.filter(event => event.type === 'event' && !isEventPast(event))
+    ),
+    [activeVenue.events]
+  );
   const specials = activeVenue.events.filter(event => event.type === 'special');
   // LOG: Active venue content counts - shows events and specials count for debugging content display
   // console.log("Active venue events:", events.length, 

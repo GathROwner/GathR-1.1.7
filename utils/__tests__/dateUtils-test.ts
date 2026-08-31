@@ -8,7 +8,12 @@
  * those times could never read as "happening now" from the dateUtils engine.
  */
 
-import { getEventDisplayUntilDate, getEventTimeStatus, isEventNow } from '../dateUtils';
+import {
+  getEventDisplayUntilDate,
+  getEventTimeStatus,
+  isEventNow,
+  sortEventsByTimeStatus,
+} from '../dateUtils';
 
 // Freeze "now" at 2026-07-10 20:00 local - inside a 7 PM-11 PM event window.
 const NOW = new Date(2026, 6, 10, 20, 0, 0);
@@ -59,6 +64,60 @@ describe('getEventTimeStatus time-format handling', () => {
       ).toBe('now');
     }
   );
+});
+
+describe('sortEventsByTimeStatus', () => {
+  it('puts the earliest upcoming event first within today', () => {
+    jest.setSystemTime(new Date(2026, 7, 31, 8, 15, 0));
+
+    const events = [
+      {
+        id: 'open-mic',
+        startDate: '2026-08-31',
+        endDate: '2026-08-31',
+        startTime: '10:00 PM',
+        endTime: '11:59 PM',
+      },
+      {
+        id: 'maya-patio-meetup',
+        startDate: '2026-08-31',
+        endDate: '2026-08-31',
+        startTime: '8:50 AM',
+        endTime: '10:50 AM',
+      },
+    ];
+
+    expect(sortEventsByTimeStatus(events).map((event) => event.id)).toEqual([
+      'maya-patio-meetup',
+      'open-mic',
+    ]);
+  });
+
+  it('keeps an event happening now ahead of upcoming events', () => {
+    jest.setSystemTime(new Date(2026, 7, 31, 8, 15, 0));
+
+    const events = [
+      {
+        id: 'starts-soon',
+        startDate: '2026-08-31',
+        endDate: '2026-08-31',
+        startTime: '8:30 AM',
+        endTime: '9:30 AM',
+      },
+      {
+        id: 'happening-now',
+        startDate: '2026-08-31',
+        endDate: '2026-08-31',
+        startTime: '8:00 AM',
+        endTime: '9:00 AM',
+      },
+    ];
+
+    expect(sortEventsByTimeStatus(events).map((event) => event.id)).toEqual([
+      'happening-now',
+      'starts-soon',
+    ]);
+  });
 });
 
 describe('getEventDisplayUntilDate', () => {
