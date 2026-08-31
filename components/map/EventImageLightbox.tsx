@@ -1029,8 +1029,17 @@ const handleDirections = () => {
     if (!friendEventId) return;
 
     if (privateLightboxAction.kind === 'manage') {
-      // Keep the underlying lightbox mounted so Back returns the host to the
-      // event they were managing instead of dropping them at the bare map.
+      // Native modals do not survive an Expo Router screen transition
+      // consistently on both platforms. Persist the exact lightbox payload in
+      // the map store before opening management so the active surface (or the
+      // map-level fallback) can restore it when Back returns.
+      setSelectedImageData({
+        imageUrl,
+        event: updatedEvent,
+        venue,
+        cluster,
+        source: 'friend_event_resume',
+      });
       router.push(`/friend-event/${friendEventId}`);
       return;
     }

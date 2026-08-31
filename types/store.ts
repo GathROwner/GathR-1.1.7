@@ -92,7 +92,14 @@ export interface MapState {
     // renders swipe/chevron navigation and the "X / N" indicator.
     events?: Event[];
     currentIndex?: number;
-    source?: 'deep_link' | 'trending_manual' | 'trending_auto' | 'city_event_marker' | 'route_summary' | 'friend_presence';
+    source?:
+      | 'deep_link'
+      | 'trending_manual'
+      | 'trending_auto'
+      | 'city_event_marker'
+      | 'route_summary'
+      | 'friend_presence'
+      | 'friend_event_resume';
   } | null;
 
   // Route selected from any tab and waiting for the Map tab to display it.
@@ -139,7 +146,14 @@ export interface MapState {
     cluster?: Cluster;
     events?: Event[];
     currentIndex?: number;
-    source?: 'deep_link' | 'trending_manual' | 'trending_auto' | 'city_event_marker' | 'route_summary' | 'friend_presence';
+    source?:
+      | 'deep_link'
+      | 'trending_manual'
+      | 'trending_auto'
+      | 'city_event_marker'
+      | 'route_summary'
+      | 'friend_presence'
+      | 'friend_event_resume';
   } | null) => void;
   setPendingRouteEvent: (event: Event | null) => void;
   fetchEvents: () => Promise<void>;

@@ -3134,9 +3134,14 @@ const GlobalEventLightbox = ({
 
   if (!globalSelectedImageData || isFriendEventDetailRoute) return null;
   const isCityEventLightbox = globalSelectedImageData.source === 'city_event_marker';
+  const isFriendEventResume = globalSelectedImageData.source === 'friend_event_resume';
   const isCalloutMounted =
     !!selectedCluster || (Array.isArray(selectedVenues) && selectedVenues.length > 0);
   if (isCityEventLightbox && isCalloutMounted) return null;
+  // EventCallout owns this resume payload while its callout is still mounted.
+  // If routing removed the callout, this map-level lightbox becomes the
+  // fallback and restores the same event instead of leaving a bare map.
+  if (isFriendEventResume && isCalloutMounted) return null;
 
   return (
     <Modal
