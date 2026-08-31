@@ -1,6 +1,8 @@
 import type { FriendEventLocationProjection, FriendEventProjection } from '../../types/social';
 import {
   friendEventToMapEvent,
+  getFriendEventMapAddress,
+  getFriendEventMapLocationLabel,
   hasExactFriendEventCoordinates,
   isFriendEventCurrent,
 } from '../friendEvents';
@@ -72,6 +74,41 @@ describe('friend event map normalization', () => {
       longitude: -63.1311,
       locationPrecision: 'exact',
     });
+  });
+
+  it('uses a private place name when available, then an authorized short address', () => {
+    expect(getFriendEventMapLocationLabel(projection(), null)).toBe('Craig’s place');
+    expect(getFriendEventMapLocationLabel(
+      projection({ locationLabel: 'Private event' }),
+      {
+        eventId: 'event-1',
+        hostUid: 'host',
+        address: '12 Example Lane, Charlottetown, PE',
+        placeName: '',
+        latitude: 46.2382,
+        longitude: -63.1311,
+      }
+    )).toBe('12 Example Lane');
+  });
+
+  it('does not use a hidden custom address from the event projection', () => {
+    const hidden = projection({
+      locationLabel: 'Private event',
+      locationAddress: '12 Example Lane',
+      addressRevealed: false,
+    });
+    expect(getFriendEventMapAddress(hidden, null)).toBe('Address shared later');
+    expect(friendEventToMapEvent(hidden, null)?.address).toBe('Address shared later');
+  });
+
+  it('keeps a recognized venue address because it is already public', () => {
+    const recognized = projection({
+      locationType: 'recognized_venue',
+      locationLabel: "Hunter's Ale House",
+      locationAddress: '185 Kent St, Charlottetown, PE',
+    });
+    expect(getFriendEventMapLocationLabel(recognized, null)).toBe("Hunter's Ale House");
+    expect(getFriendEventMapAddress(recognized, null)).toBe('185 Kent St, Charlottetown, PE');
   });
 
   it('never treats approximate map coordinates as permission for exact-location actions', () => {

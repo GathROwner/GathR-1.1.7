@@ -3126,10 +3126,6 @@ const [calloutState, setCalloutState] = useState<CalloutState>('expanded');
   }, [mixedSpecialsContent, shouldDeferAndroidCalloutContent]);
   
   const handleImagePress = (imageUrl: string, event: Event) => {
-    if (event.friendEvent) {
-      (global as any).router?.push?.(`/friend-event/${event.friendEvent.eventId}`);
-      return;
-    }
     console.log('IMAGE PRESSED - Starting handleImagePress with URL:', imageUrl);
 console.log('EVENT DATA:', { 
   id: event.id, 
@@ -3401,10 +3397,6 @@ try {
    * Handle event selection with guest limitation tracking
    */
   const handleEventSelect = (event: Event) => {
-    if (event.friendEvent) {
-      (global as any).router?.push?.(`/friend-event/${event.friendEvent.eventId}`);
-      return;
-    }
     console.log(`[GuestLimitation] Event click: ${event.title}`);
 
     // Record venue interaction when user clicks an event

@@ -53,6 +53,50 @@ export function hasExactFriendEventCoordinates(
     && Number.isFinite(location?.longitude ?? event.longitude);
 }
 
+function hasUsefulLocationLabel(value?: string | null) {
+  const normalized = String(value || '').trim().toLowerCase();
+  return Boolean(normalized && normalized !== 'friend event' && normalized !== 'private event');
+}
+
+function shortAddress(value?: string | null) {
+  return String(value || '').split(',')[0]?.trim() || '';
+}
+
+/**
+ * Map callouts need a useful location heading without turning a hidden home
+ * address into a venue name. An authorized place name wins; an exact address
+ * is only shortened into the heading after the location projection is present.
+ */
+export function getFriendEventMapLocationLabel(
+  event: FriendEventProjection,
+  location: FriendEventLocationProjection | null
+) {
+  if (hasUsefulLocationLabel(location?.placeName)) return location!.placeName.trim();
+  if (hasUsefulLocationLabel(event.locationLabel)) return event.locationLabel.trim();
+  if (location?.address) return shortAddress(location.address);
+  if (event.locationType === 'recognized_venue' && event.locationAddress) {
+    return shortAddress(event.locationAddress);
+  }
+  return 'Private event';
+}
+
+/**
+ * Exact custom addresses fail closed. Recognized venue addresses are public;
+ * custom addresses require either the separate authorized location projection
+ * or an explicitly revealed exact event projection.
+ */
+export function getFriendEventMapAddress(
+  event: FriendEventProjection,
+  location: FriendEventLocationProjection | null
+) {
+  if (location?.address) return location.address.trim();
+  if (event.locationType === 'recognized_venue') {
+    return event.locationAddress.trim() || event.locationLabel.trim();
+  }
+  if (event.addressRevealed && event.locationAddress) return event.locationAddress.trim();
+  return 'Address shared later';
+}
+
 export function friendEventToMapEvent(
   event: FriendEventProjection,
   location: FriendEventLocationProjection | null
@@ -77,8 +121,8 @@ export function friendEventToMapEvent(
     title: event.title,
     description: event.description,
     venueId: event.venueId || null,
-    venue: location?.placeName || event.locationLabel || 'Friend event',
-    address: location?.address || event.locationAddress || (event.addressRevealed ? event.locationLabel : 'Address shared later'),
+    venue: getFriendEventMapLocationLabel(event, location),
+    address: getFriendEventMapAddress(event, location),
     startDate: start.toISOString().slice(0, 10),
     endDate: end.toISOString().slice(0, 10),
     startTime: start.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),

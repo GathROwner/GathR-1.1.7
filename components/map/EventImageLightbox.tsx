@@ -63,6 +63,13 @@ import {
 } from '../../utils/areaEvent';
 import { getVenueFriendPresence } from '../../utils/friendPresence';
 import { formatFriendsHere } from '../../utils/friendDestinations';
+import {
+  findFriendEventLocation,
+  hasExactFriendEventCoordinates,
+} from '../../utils/friendEvents';
+import { useSocialStore } from '../../store/socialStore';
+import { respondToFriendEvent } from '../../services/socialService';
+import type { FriendEventRsvp } from '../../types/social';
 
 // Store imports for like/share functionality
 import * as userService from '../../services/userService';
@@ -260,6 +267,25 @@ const EventImageLightbox: React.FC<EventImageLightboxProps> = ({
 // Use updated event data with fallback to original prop (keep prop fields!)
   const updatedFromStore = getUpdatedEvent(event.id);
   const updatedEvent = { ...event, ...(updatedFromStore || {}) };
+  const friendEventId = updatedEvent.friendEvent?.eventId || null;
+  const friendEventProjection = useSocialStore((state) => (
+    friendEventId
+      ? state.friendEvents.find((candidate) => candidate.eventId === friendEventId) ?? null
+      : null
+  ));
+  const friendEventLocation = useSocialStore((state) => (
+    friendEventId ? findFriendEventLocation(friendEventId, state.friendEventLocations) : null
+  ));
+  const isPrivateFriendEvent = Boolean(updatedEvent.friendEvent);
+  const privateDirectionsAvailable = !isPrivateFriendEvent || Boolean(
+    friendEventProjection
+      && hasExactFriendEventCoordinates(friendEventProjection, friendEventLocation)
+  );
+  const privateCalendarLocation = isPrivateFriendEvent
+    ? updatedEvent.address === 'Address shared later'
+      ? updatedEvent.venue
+      : `${updatedEvent.venue}, ${updatedEvent.address}`
+    : `${updatedEvent.venue}, ${updatedEvent.address}`;
   const friendPresence = getVenueFriendPresence(cluster || null, venue || null);
   const [friendListExpanded, setFriendListExpanded] = useState(false);
 
@@ -322,6 +348,7 @@ try {
 
   // Like/Share state
   const [isLikeToggling, setIsLikeToggling] = useState(false);
+  const [privateRsvpBusy, setPrivateRsvpBusy] = useState<FriendEventRsvp | null>(null);
   const eventIdString = String(updatedEvent.id);
 
   // Get user's liked events from store
@@ -357,7 +384,7 @@ try {
   const interestedText = combinedInterestedValue > 0 ? String(combinedInterestedValue) : '';
 
   // Engagement metrics for overlay - always show (share button always visible)
-  const showEngagementOverlay = true;
+  const showEngagementOverlay = !isPrivateFriendEvent;
 
   // State for full-screen image viewer
   const [isImageViewerVisible, setIsImageViewerVisible] = useState(false);
@@ -482,7 +509,7 @@ try {
 
   // Start/stop like, share, and interested listeners
   useEffect(() => {
-    if (!updatedEvent.id) return;
+    if (!updatedEvent.id || isPrivateFriendEvent) return;
     startEventLikesListener(updatedEvent.id);
     startEventSharesListener(updatedEvent.id);
     startEventInterestedListener(updatedEvent.id);
@@ -491,7 +518,7 @@ try {
       stopEventSharesListener(updatedEvent.id);
       stopEventInterestedListener(updatedEvent.id);
     };
-  }, [updatedEvent.id]);
+  }, [isPrivateFriendEvent, updatedEvent.id]);
 
   // (read-more removed; description is now scrollable)
 
@@ -746,7 +773,7 @@ useEffect(() => {
    * Handle like press - BLOCKED for guests (premium feature)
    */
   const handleLikePress = async () => {
-    if (isGuest) {
+    if (isGuest || isPrivateFriendEvent) {
       console.log('[GuestLimitation] Like blocked - premium feature for registered users only');
       return;
     }
@@ -793,7 +820,7 @@ useEffect(() => {
    * Handle share - BLOCKED for guests (premium feature)
    */
   const handleShare = async () => {
-    if (isGuest) {
+    if (isGuest || isPrivateFriendEvent) {
       console.log('[GuestLimitation] Share blocked - premium feature for registered users only');
       return;
     }
@@ -846,7 +873,7 @@ useEffect(() => {
    * Handle interested press - toggles interested state and adds to calendar
    */
   const handleInterestedPress = async () => {
-    if (isGuest) {
+    if (isGuest || isPrivateFriendEvent) {
       console.log('[GuestLimitation] Interested blocked - premium feature for registered users only');
       return;
     }
@@ -908,6 +935,21 @@ useEffect(() => {
       return; // Always block for guests
     }
 
+    if (isPrivateFriendEvent) {
+      try {
+        await addToCalendar({
+          title: updatedEvent.title,
+          startDate: combineDateAndTime(updatedEvent.startDate, updatedEvent.startTime),
+          endDate: combineDateAndTime(updatedEvent.endDate || updatedEvent.startDate, updatedEvent.endTime || '11:59 PM'),
+          location: privateCalendarLocation,
+          notes: updatedEvent.description,
+        });
+      } catch (error) {
+        console.error('Failed to add private friend event to calendar', error);
+      }
+      return;
+    }
+
     // If not already interested, mark as interested (which will also add to calendar)
     if (!isInterested) {
       await handleInterestedPress();
@@ -937,6 +979,14 @@ const handleDirections = () => {
     return; // Always block for guests
   }
 
+  if (!privateDirectionsAvailable) {
+    Alert.alert(
+      'Address shared later',
+      'Directions will become available when the host shares the exact location.'
+    );
+    return;
+  }
+
   // Proceed with getting directions for registered users
   const destination = encodeURIComponent(`${updatedEvent.venue}, ${updatedEvent.address}`);
   const url = Platform.select({
@@ -964,6 +1014,27 @@ const handleDirections = () => {
     Linking.openURL(url);
   }
 };
+
+  const handleOpenPrivateDetails = () => {
+    if (!friendEventId) return;
+    onClose();
+    requestAnimationFrame(() => router.push(`/friend-event/${friendEventId}`));
+  };
+
+  const handlePrivateRsvp = async (
+    response: Exclude<FriendEventRsvp, 'host' | 'invited'>
+  ) => {
+    if (!friendEventId || privateRsvpBusy) return;
+    setPrivateRsvpBusy(response);
+    try {
+      await respondToFriendEvent(friendEventId, response);
+    } catch (error) {
+      console.error('Failed to update private event RSVP', error);
+      Alert.alert('Could not update RSVP', 'Please check your connection and try again.');
+    } finally {
+      setPrivateRsvpBusy(null);
+    }
+  };
 
   const routeEvent = updatedEvent.locationScope === 'route';
   const drawableRoute = hasDrawableRoute(updatedEvent);
@@ -1147,6 +1218,32 @@ const handleNonTicketAction = () => {
     : showRange
       ? `${label} • ${s}${e ? ` – ${e}` : ''}${endDateSuffix}`
       : labelWithTime;
+  const privateOwnRsvp = friendEventProjection?.ownRsvp
+    || updatedEvent.friendEvent?.ownRsvp
+    || 'invited';
+  const privateBadgeLabel = updatedEvent.friendEvent?.viewerRole === 'host'
+    ? 'Private · Hosting'
+    : privateOwnRsvp === 'going'
+      ? 'Private · Going'
+      : privateOwnRsvp === 'maybe'
+        ? 'Private · Maybe'
+        : privateOwnRsvp === 'cant_go'
+          ? "Private · Can't go"
+          : 'Private · Invited';
+  const privateHostName = friendEventProjection?.host.displayName
+    || updatedEvent.friendEvent?.hostName
+    || 'a friend';
+  const privateGuestCount = friendEventProjection?.guests.length || 0;
+  const privateVisibility = friendEventProjection?.visibility
+    || updatedEvent.friendEvent?.visibility;
+  const privateAudienceCopy = privateVisibility === 'all_friends'
+    ? 'Visible to all friends'
+    : 'Selected friends only';
+  const privateInviteCopy = friendEventProjection
+    ? friendEventProjection.guestInviteMode === 'guests_can_invite'
+      ? 'Guest invites allowed'
+      : 'Host-managed invites'
+    : '';
 
   // Prepare images array for the image viewer
   // Use fallback if: URL is invalid OR the thumbnail reported a load error
@@ -1247,15 +1344,17 @@ const handleNonTicketAction = () => {
               item={updatedEvent}
               resizeMode="cover"
             />
-            <View style={styles.headerVenueFavoriteOverlay}>
-              <VenueFavoriteButton
-                locationKey={createLocationKeyFromEvent(updatedEvent)}
-                venueName={updatedEvent.venue}
-                size={12}
-                source="event_image_lightbox"
-                style={styles.headerVenueFavoriteButton}
-              />
-            </View>
+            {(!isPrivateFriendEvent || friendEventProjection?.locationType === 'recognized_venue') && (
+              <View style={styles.headerVenueFavoriteOverlay}>
+                <VenueFavoriteButton
+                  locationKey={createLocationKeyFromEvent(updatedEvent)}
+                  venueName={updatedEvent.venue}
+                  size={12}
+                  source="event_image_lightbox"
+                  style={styles.headerVenueFavoriteButton}
+                />
+              </View>
+            )}
           </View>
           <View style={styles.headerTextContainer}>
             <GestureScrollView
@@ -1488,12 +1587,10 @@ const handleNonTicketAction = () => {
           {updatedEvent.friendEvent && (
             <View style={styles.privateInvitationBadge}>
               <MaterialIcons name="lock" size={12} color="#FFFFFF" />
-              <Text style={styles.badgeText}>
-                {updatedEvent.friendEvent.viewerRole === 'guest' ? 'Private · Invited' : 'Your private event'}
-              </Text>
+              <Text style={styles.badgeText}>{privateBadgeLabel}</Text>
             </View>
           )}
-          {hasDisplayableTicketPrice(updatedEvent.ticketPrice) &&
+          {!isPrivateFriendEvent && hasDisplayableTicketPrice(updatedEvent.ticketPrice) &&
             updatedEvent.ticketPrice !== 'Ticketed Event' &&
             !(hasTicketLink && paid) && (
             <View style={styles.priceBadge}>
@@ -1550,6 +1647,77 @@ const handleNonTicketAction = () => {
             />
           )}
         </View>
+
+        {isPrivateFriendEvent && (
+          <View style={styles.privateEventContext}>
+            <View style={styles.privateEventContextHeader}>
+              <View style={styles.privateEventContextIcon}>
+                <MaterialIcons name="lock" size={17} color="#FFFFFF" />
+              </View>
+              <View style={styles.privateEventContextCopy}>
+                <Text style={styles.privateEventContextTitle} numberOfLines={1}>
+                  {updatedEvent.friendEvent?.viewerRole === 'host'
+                    ? 'Hosted by you'
+                    : `Hosted by ${privateHostName}`}
+                </Text>
+                <Text style={styles.privateEventContextMeta} numberOfLines={1}>
+                  {privateAudienceCopy}
+                  {privateGuestCount > 0 ? ` · ${privateGuestCount} invited` : ''}
+                  {privateInviteCopy ? ` · ${privateInviteCopy}` : ''}
+                </Text>
+              </View>
+              <TouchableOpacity
+                accessibilityLabel={updatedEvent.friendEvent?.viewerRole === 'host' ? 'Manage private event' : 'View private event details'}
+                activeOpacity={0.75}
+                onPress={handleOpenPrivateDetails}
+                style={styles.privateEventDetailsButton}
+              >
+                <Text style={styles.privateEventDetailsText}>
+                  {updatedEvent.friendEvent?.viewerRole === 'host' ? 'Manage' : 'Details'}
+                </Text>
+                <MaterialIcons name="chevron-right" size={17} color="#D6BBFB" />
+              </TouchableOpacity>
+            </View>
+
+            {updatedEvent.friendEvent?.viewerRole === 'guest' && (
+              <View style={styles.privateRsvpRow}>
+                {([
+                  ['going', 'Going', 'check-circle'],
+                  ['maybe', 'Maybe', 'help'],
+                  ['cant_go', "Can't go", 'cancel'],
+                ] as const).map(([value, label, icon]) => {
+                  const selected = privateOwnRsvp === value;
+                  const busy = privateRsvpBusy === value;
+                  return (
+                    <TouchableOpacity
+                      key={value}
+                      accessibilityLabel={`RSVP ${label}`}
+                      accessibilityState={{ selected, busy }}
+                      activeOpacity={0.75}
+                      disabled={privateRsvpBusy !== null}
+                      onPress={() => void handlePrivateRsvp(value)}
+                      style={[
+                        styles.privateRsvpButton,
+                        selected && styles.privateRsvpButtonSelected,
+                        privateRsvpBusy !== null && !busy && styles.privateRsvpButtonDimmed,
+                      ]}
+                    >
+                      <MaterialIcons
+                        name={busy ? 'hourglass-empty' : icon}
+                        size={15}
+                        color={selected || busy ? '#FFFFFF' : '#D6BBFB'}
+                      />
+                      <Text style={[
+                        styles.privateRsvpText,
+                        (selected || busy) && styles.privateRsvpTextSelected,
+                      ]}>{label}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            )}
+          </View>
+        )}
 
         {friendPresence && (
           <View style={styles.lightboxFriendPresence}>
@@ -1750,7 +1918,7 @@ const handleNonTicketAction = () => {
             <TouchableOpacity
               style={[
                 styles.actionButton,
-                isGuest && styles.disabledActionButton
+                (isGuest || !privateDirectionsAvailable) && styles.disabledActionButton
               ]}
               onPress={handleDirections}
               activeOpacity={isGuest ? 1 : 0.7}
@@ -1760,7 +1928,7 @@ const handleNonTicketAction = () => {
                 <MaterialIcons
                   name="directions"
                   size={22}
-                  color={isGuest ? "#666666" : "#FFFFFF"}
+                  color={isGuest || !privateDirectionsAvailable ? "#666666" : "#FFFFFF"}
                 />
                 {isGuest && (
                   <View style={styles.lockIconOverlay}>
@@ -1774,9 +1942,9 @@ const handleNonTicketAction = () => {
               </View>
               <Text style={[
                 styles.actionText,
-                isGuest && styles.disabledActionText
+                (isGuest || !privateDirectionsAvailable) && styles.disabledActionText
               ]}>
-                Directions
+                {privateDirectionsAvailable ? 'Directions' : 'Location later'}
               </Text>
             </TouchableOpacity>
           )}
@@ -2138,6 +2306,94 @@ const styles = StyleSheet.create({
     marginRight: 8,
     marginBottom: 6,
     backgroundColor: '#6941C6',
+  },
+  privateEventContext: {
+    marginHorizontal: 16,
+    marginBottom: 5,
+    overflow: 'hidden',
+    borderRadius: 13,
+    borderWidth: 1,
+    borderColor: '#7F56D9',
+    backgroundColor: '#2D1B4E',
+  },
+  privateEventContextHeader: {
+    minHeight: 48,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 9,
+    paddingVertical: 7,
+  },
+  privateEventContextIcon: {
+    width: 31,
+    height: 31,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 16,
+    backgroundColor: '#6941C6',
+  },
+  privateEventContextCopy: {
+    flex: 1,
+    minWidth: 0,
+    marginLeft: 9,
+  },
+  privateEventContextTitle: {
+    color: '#FFFFFF',
+    fontSize: 12.5,
+    fontWeight: '900',
+  },
+  privateEventContextMeta: {
+    marginTop: 1,
+    color: '#D6BBFB',
+    fontSize: 10.5,
+    fontWeight: '600',
+  },
+  privateEventDetailsButton: {
+    minHeight: 32,
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginLeft: 7,
+    paddingLeft: 9,
+    paddingRight: 5,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255, 255, 255, 0.10)',
+  },
+  privateEventDetailsText: {
+    color: '#F4EBFF',
+    fontSize: 10.5,
+    fontWeight: '800',
+  },
+  privateRsvpRow: {
+    flexDirection: 'row',
+    gap: 6,
+    paddingHorizontal: 9,
+    paddingBottom: 8,
+  },
+  privateRsvpButton: {
+    flex: 1,
+    minHeight: 32,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    borderRadius: 9,
+    borderWidth: 1,
+    borderColor: 'rgba(214, 187, 251, 0.45)',
+    backgroundColor: 'rgba(255, 255, 255, 0.07)',
+  },
+  privateRsvpButtonSelected: {
+    borderColor: '#B692F6',
+    backgroundColor: '#6941C6',
+  },
+  privateRsvpButtonDimmed: {
+    opacity: 0.45,
+  },
+  privateRsvpText: {
+    color: '#D6BBFB',
+    fontSize: 10.5,
+    fontWeight: '800',
+  },
+  privateRsvpTextSelected: {
+    color: '#FFFFFF',
   },
   priceBadge: {
     backgroundColor: '#E94E77',
