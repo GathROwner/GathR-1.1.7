@@ -1660,7 +1660,7 @@ const handleNonTicketAction = () => {
                     ? 'Hosted by you'
                     : `Hosted by ${privateHostName}`}
                 </Text>
-                <Text style={styles.privateEventContextMeta} numberOfLines={1}>
+                <Text style={styles.privateEventContextMeta} numberOfLines={2}>
                   {privateAudienceCopy}
                   {privateGuestCount > 0 ? ` · ${privateGuestCount} invited` : ''}
                   {privateInviteCopy ? ` · ${privateInviteCopy}` : ''}
@@ -2345,6 +2345,7 @@ const styles = StyleSheet.create({
     marginTop: 1,
     color: '#D6BBFB',
     fontSize: 10.5,
+    lineHeight: 13,
     fontWeight: '600',
   },
   privateEventDetailsButton: {
