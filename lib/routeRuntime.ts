@@ -5,7 +5,12 @@ import type {
   EventRouteStop,
   RouteCoordinate,
 } from '../types/events';
-import { app, auth, useFirebaseEmulators } from '../config/firebaseConfig';
+import {
+  app,
+  auth,
+  firebaseTarget,
+  useFirebaseEmulators,
+} from '../config/firebaseConfig';
 import { getSocialAppCheckToken } from '../services/appCheckService';
 
 type RouteRuntimeResponse = {
@@ -24,6 +29,8 @@ type CallableEnvelope = {
 
 const FUNCTION_NAME = 'resolveEventRoutePathCallable';
 const REGION = 'northamerica-northeast1';
+const ROUTE_FUNCTION_PROJECT_ID = 'gathr-m1';
+const STAGING_AUTH_HEADER = 'x-gathr-staging-auth';
 const sessionRouteCache = new Map<string, Promise<Event>>();
 
 export class RouteRuntimeError extends Error {
@@ -43,7 +50,23 @@ function callableUrl(): string {
     const host = process.env.EXPO_PUBLIC_FIREBASE_EMULATOR_HOST || '10.0.2.2';
     return `http://${host}:5001/${projectId}/${REGION}/${FUNCTION_NAME}`;
   }
-  return `https://${REGION}-${projectId}.cloudfunctions.net/${FUNCTION_NAME}`;
+  // Keep quota accounting in one production-owned function. Android Preview
+  // authenticates against staging and uses a separately verified header below.
+  return `https://${REGION}-${ROUTE_FUNCTION_PROJECT_ID}.cloudfunctions.net/${FUNCTION_NAME}`;
+}
+
+export function buildRouteRuntimeHeaders(
+  target: string,
+  idToken: string | null,
+  appCheckToken: string | null
+): Record<string, string> {
+  if (target === 'staging') {
+    return idToken ? { [STAGING_AUTH_HEADER]: `Bearer ${idToken}` } : {};
+  }
+  return {
+    ...(idToken ? { authorization: `Bearer ${idToken}` } : {}),
+    ...(appCheckToken ? { 'X-Firebase-AppCheck': appCheckToken } : {}),
+  };
 }
 
 function providerGeneratedStoredSegment(segment: EventRouteSegment): boolean {
@@ -164,8 +187,7 @@ async function requestSessionRoute(event: Event): Promise<Event> {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
-      ...(idToken ? { authorization: `Bearer ${idToken}` } : {}),
-      ...(appCheckToken ? { 'X-Firebase-AppCheck': appCheckToken } : {}),
+      ...buildRouteRuntimeHeaders(firebaseTarget, idToken, appCheckToken),
     },
     body: JSON.stringify({
       data: {

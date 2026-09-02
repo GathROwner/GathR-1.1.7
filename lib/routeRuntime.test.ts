@@ -1,6 +1,7 @@
 import type { Event } from '../types/events';
 import {
   applySessionRouteResult,
+  buildRouteRuntimeHeaders,
   clearSessionRouteCacheForTests,
   needsSessionRouteResolution,
   resolveRouteForMap,
@@ -9,6 +10,7 @@ import {
 jest.mock('../config/firebaseConfig', () => ({
   app: { options: { projectId: 'gathr-m1' } },
   auth: { currentUser: { getIdToken: jest.fn(async () => 'id-token') } },
+  firebaseTarget: 'production',
   useFirebaseEmulators: false,
 }));
 
@@ -80,6 +82,16 @@ describe('session-only route runtime', () => {
 
   it('requires runtime resolution for old routed geometry', () => {
     expect(needsSessionRouteResolution(storedRouteEvent)).toBe(true);
+  });
+
+  it('keeps staging credentials out of production Firebase auth headers', () => {
+    expect(buildRouteRuntimeHeaders('staging', 'staging-token', 'staging-app-check')).toEqual({
+      'x-gathr-staging-auth': 'Bearer staging-token',
+    });
+    expect(buildRouteRuntimeHeaders('production', 'production-token', 'app-check')).toEqual({
+      authorization: 'Bearer production-token',
+      'X-Firebase-AppCheck': 'app-check',
+    });
   });
 
   it('reuses one network request during the same app session', async () => {
