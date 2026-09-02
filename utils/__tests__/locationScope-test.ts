@@ -25,6 +25,7 @@ describe('locationScope predicates', () => {
   it('isScopedLocationEvent mirrors the scope predicate', () => {
     expect(isScopedLocationEvent(eventWithScope('city'))).toBe(true);
     expect(isScopedLocationEvent(eventWithScope('route'))).toBe(true);
+    expect(isScopedLocationEvent(eventWithScope('province'))).toBe(true);
     expect(isScopedLocationEvent(eventWithScope('venue'))).toBe(false);
     expect(isScopedLocationEvent(eventWithScope(null))).toBe(false);
   });
