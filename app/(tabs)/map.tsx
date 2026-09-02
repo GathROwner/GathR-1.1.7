@@ -186,6 +186,10 @@ import {
 } from '../../utils/areaEvent';
 import { buildRouteSummaryLightboxSelection } from '../../utils/routeEventLightbox';
 import {
+  AREA_LOCATION_MAP_FIT_PADDING,
+  ROUTE_MAP_FIT_PADDING,
+} from '../../utils/spatialMapFitPadding';
+import {
   doesEventMatchAnyInterest,
 } from '../../utils/familyFriendly';
 
@@ -194,11 +198,6 @@ initializeMapboxAccessToken(MapboxGL);
 
 // Constants
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
-const ROUTE_MAP_FIT_PADDING: [number, number, number, number] = [72, 48, 190, 48];
-// Multi-location events have no connecting line to keep their locations visually
-// grouped. Reserve the right-side control rail so the easternmost point is not
-// technically in-bounds but hidden beneath the interest pills.
-const AREA_LOCATION_MAP_FIT_PADDING: [number, number, number, number] = [72, 112, 190, 48];
 const HOTSPOT_HARD_DISABLED_FOR_PREVIEW_DEBUG = false;
 const STATIC_CALLOUT_ISOLATION_DEBUG = false;
 const ANDROID_MAPBOX_STARTUP_ISOLATION_DEBUG = false;
