@@ -201,7 +201,7 @@ export interface Event {
   originalEventId?: string | null;
 
   // Non-venue location metadata for citywide/area events
-  locationScope?: 'venue' | 'city' | 'area' | 'route' | 'unknown' | null;
+  locationScope?: 'venue' | 'city' | 'area' | 'province' | 'route' | 'unknown' | null;
   locationLabel?: string | null;
   locationCity?: string | null;
   locationProvince?: string | null;

@@ -57,6 +57,12 @@ describe('resolvePeiCityCentroid', () => {
     expect(resolvePeiCityCentroid({ locationLabel: 'PEI' })).toBeNull();
     expect(resolvePeiCityCentroid({})).toBeNull();
   });
+
+  it('uses the PEI reference anchor for province-scope discovery', () => {
+    expect(resolvePeiCityCentroid({
+      locationScope: 'province', locationLabel: 'Across Prince Edward Island', locationCity: null,
+    })).toEqual({ latitude: 46.5107, longitude: -63.4168 });
+  });
 });
 
 describe('applyCityCentroidFallback', () => {

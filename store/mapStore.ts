@@ -2260,7 +2260,11 @@ fetchEventDetails: async (eventIds: (string | number)[]) => {
       filteredEvents: filteredEvents.length,
     });
 
-    const venues = groupEventsByVenue(filteredEvents);
+    // Province-scope records participate in the Area pill and event lists but
+    // have no physical map marker: their PEI coordinate is a discovery anchor,
+    // not a claim that the event occurs at the island centre.
+    const mapRenderableEvents = filteredEvents.filter((event) => event.mapMode !== 'none');
+    const venues = groupEventsByVenue(mapRenderableEvents);
     const clusters = clusterVenues(venues, currentZoom);
 
     if (__DEV__ && currentZoom >= 8.5 && currentZoom <= 12.5 && filteredEvents.length > 0) {

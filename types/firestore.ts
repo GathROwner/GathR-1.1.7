@@ -84,7 +84,7 @@ export interface FirestoreEventMetadata {
   sharedEventSourcePlatform?: string;
   sharedEventSourceVisibility?: string;
   sharedEventRouting?: string;
-  locationScope?: 'venue' | 'city' | 'area' | 'route' | 'unknown' | null;
+  locationScope?: 'venue' | 'city' | 'area' | 'province' | 'route' | 'unknown' | null;
   locationLabel?: string | null;
   locationCity?: string | null;
   locationProvince?: string | null;
@@ -143,7 +143,7 @@ export interface FirestoreEvent {
   address?: string | null;
   latitude?: number | null;
   longitude?: number | null;
-  locationScope?: 'venue' | 'city' | 'area' | 'route' | 'unknown' | null;
+  locationScope?: 'venue' | 'city' | 'area' | 'province' | 'route' | 'unknown' | null;
   locationLabel?: string | null;
   locationCity?: string | null;
   locationProvince?: string | null;

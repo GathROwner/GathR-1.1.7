@@ -7,12 +7,12 @@ import type { Event } from '../types/events';
  * mapStore/events/firestoreEvents.
  */
 
-export type ScopedLocationScope = 'city' | 'area' | 'route';
+export type ScopedLocationScope = 'city' | 'area' | 'province' | 'route';
 
 export const isScopedLocationScope = (
   scope?: string | null
 ): scope is ScopedLocationScope =>
-  scope === 'city' || scope === 'area' || scope === 'route';
+  scope === 'city' || scope === 'area' || scope === 'province' || scope === 'route';
 
 /** Any non-venue location scope (city/area/route). */
 export const isScopedLocationEvent = (event: Event): boolean =>
@@ -24,7 +24,11 @@ export const isScopedLocationEvent = (event: Event): boolean =>
  * scoped but not city-level.
  */
 export const isCityLevelEvent = (event: Event): boolean =>
-  event.locationScope === 'city' || event.locationScope === 'area';
+  event.locationScope === 'city' || event.locationScope === 'area' || event.locationScope === 'province';
+
+/** Coverage events are discoverable across PEI, but must not claim a venue. */
+export const isProvinceScopeEvent = (event: Event): boolean =>
+  event.locationScope === 'province';
 
 /**
  * Events represented by the gold Area treatment: citywide, area-wide, and
