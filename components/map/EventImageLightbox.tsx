@@ -73,6 +73,11 @@ import {
   formatFriendEventGuestResponse,
   getFriendEventLightboxAction,
 } from '../../utils/friendEventLightbox';
+import {
+  hasPhysicalEventDestination,
+  isAreaExperienceEvent,
+  isProvinceScopeEvent,
+} from '../../utils/locationScope';
 import { useSocialStore } from '../../store/socialStore';
 import { inviteToFriendEvent, respondToFriendEvent } from '../../services/socialService';
 import type { FriendEventRsvp } from '../../types/social';
@@ -273,6 +278,7 @@ const EventImageLightbox: React.FC<EventImageLightboxProps> = ({
 // Use updated event data with fallback to original prop (keep prop fields!)
   const updatedFromStore = getUpdatedEvent(event.id);
   const updatedEvent = { ...event, ...(updatedFromStore || {}) };
+  const provinceScopeEvent = isProvinceScopeEvent(updatedEvent);
   const friendEventId = updatedEvent.friendEvent?.eventId || null;
   const friendEventProjection = useSocialStore((state) => (
     friendEventId
@@ -284,14 +290,19 @@ const EventImageLightbox: React.FC<EventImageLightboxProps> = ({
   ));
   const socialFriends = useSocialStore((state) => state.friends);
   const isPrivateFriendEvent = Boolean(updatedEvent.friendEvent);
-  const privateDirectionsAvailable = !isPrivateFriendEvent || Boolean(
-    friendEventProjection
-      && hasExactFriendEventCoordinates(friendEventProjection, friendEventLocation)
+  const privateDirectionsAvailable = hasPhysicalEventDestination(updatedEvent) && (
+    !isPrivateFriendEvent || Boolean(
+      friendEventProjection
+        && hasExactFriendEventCoordinates(friendEventProjection, friendEventLocation)
+    )
   );
   const privateCalendarLocation = isPrivateFriendEvent
     ? updatedEvent.address === 'Address shared later'
       ? updatedEvent.venue
       : `${updatedEvent.venue}, ${updatedEvent.address}`
+    : `${updatedEvent.venue}, ${updatedEvent.address}`;
+  const publicCalendarLocation = provinceScopeEvent
+    ? updatedEvent.locationLabel || updatedEvent.venue
     : `${updatedEvent.venue}, ${updatedEvent.address}`;
   const friendPresence = getVenueFriendPresence(cluster || null, venue || null);
   const [friendListExpanded, setFriendListExpanded] = useState(false);
@@ -924,7 +935,7 @@ useEffect(() => {
           title: updatedEvent.title,
           startDate: combineDateAndTime(updatedEvent.startDate, updatedEvent.startTime),
           endDate: combineDateAndTime(updatedEvent.endDate || updatedEvent.startDate, updatedEvent.endTime || '11:59 PM'),
-          location: `${updatedEvent.venue}, ${updatedEvent.address}`,
+          location: publicCalendarLocation,
           notes: updatedEvent.description
         });
       }
@@ -972,7 +983,7 @@ useEffect(() => {
         title: updatedEvent.title,
         startDate: combineDateAndTime(updatedEvent.startDate, updatedEvent.startTime),
         endDate: combineDateAndTime(updatedEvent.endDate || updatedEvent.startDate, updatedEvent.endTime || '11:59 PM'),
-        location: `${updatedEvent.venue}, ${updatedEvent.address}`,
+        location: publicCalendarLocation,
         notes: updatedEvent.description
       });
     } catch (error) {
@@ -991,8 +1002,10 @@ const handleDirections = () => {
 
   if (!privateDirectionsAvailable) {
     Alert.alert(
-      'Address shared later',
-      'Directions will become available when the host shares the exact location.'
+      provinceScopeEvent ? 'Province-wide event' : 'Address shared later',
+      provinceScopeEvent
+        ? 'This event takes place across Prince Edward Island and has no single directions destination.'
+        : 'Directions will become available when the host shares the exact location.'
     );
     return;
   }
@@ -1080,6 +1093,7 @@ const handleDirections = () => {
   const routeEvent = updatedEvent.locationScope === 'route';
   const drawableRoute = hasDrawableRoute(updatedEvent);
   const areaLocationsEvent = hasDrawableAreaLocations(updatedEvent);
+  const showAreaExperience = isCityEvent || isAreaExperienceEvent(updatedEvent);
   const drawableMapExperience = drawableRoute || areaLocationsEvent;
   const routeSourceUrl = getRouteSourceUrl(updatedEvent);
   const mapExperienceSourceUrl = routeEvent
@@ -1397,7 +1411,7 @@ const handleNonTicketAction = () => {
               item={updatedEvent}
               resizeMode="cover"
             />
-            {(!isPrivateFriendEvent || friendEventProjection?.locationType === 'recognized_venue') && (
+            {!provinceScopeEvent && (!isPrivateFriendEvent || friendEventProjection?.locationType === 'recognized_venue') && (
               <View style={styles.headerVenueFavoriteOverlay}>
                 <VenueFavoriteButton
                   locationKey={createLocationKeyFromEvent(updatedEvent)}
@@ -1510,16 +1524,18 @@ const handleNonTicketAction = () => {
             </View>
           )}
 
-          {isCityEvent && !showTrendingOverlay && (
+          {showAreaExperience && !showTrendingOverlay && (
             <View style={styles.trendingOverlay} pointerEvents="none">
               <View style={styles.cityEventStatusPill}>
                 <MaterialIcons
-                  name={routeEvent ? 'alt-route' : 'festival'}
+                  name={provinceScopeEvent ? 'public' : routeEvent ? 'alt-route' : 'festival'}
                   size={15}
                   color="#4E342E"
                 />
                 <Text style={styles.cityEventStatusText} numberOfLines={1}>
-                  {routeEvent
+                  {provinceScopeEvent
+                    ? 'Province-wide'
+                    : routeEvent
                     ? getRouteCompactCertaintyLabel(updatedEvent.routeData)
                     : areaLocationsEvent
                       ? getAreaLocationsLabel(updatedEvent)
@@ -1957,12 +1973,14 @@ const handleNonTicketAction = () => {
             </Text>
           </TouchableOpacity>
           
-          {routeEvent || areaLocationsEvent ? (
+          {provinceScopeEvent || routeEvent || areaLocationsEvent ? (
             <View style={styles.routeActionSlot}>
               <GathRShimmerPill
-                iconName={routeEvent ? 'alt-route' : 'festival'}
+                iconName={provinceScopeEvent ? 'public' : routeEvent ? 'alt-route' : 'festival'}
                 iconSize={20}
-                label={routeEvent
+                label={provinceScopeEvent
+                  ? 'Event Info'
+                  : routeEvent
                   ? (drawableRoute ? 'Show Route' : 'Route Info')
                   : (areaLocationsEvent ? 'Show Locations' : 'Location Info')}
                 onPress={handleRouteAction}
@@ -2066,7 +2084,7 @@ const handleNonTicketAction = () => {
         {navigationEnabled && (
           <>
             {/* Position indicator */}
-            {!isTrending && !isCityEvent && events && currentIndex !== undefined && (
+            {!isTrending && !showAreaExperience && events && currentIndex !== undefined && (
               <View style={styles.positionIndicator}>
                 <Text style={styles.positionText}>
                   {currentIndex + 1} / {events.length}

@@ -193,10 +193,17 @@ export function normalizeFirestoreEvent(fsEvent: FirestoreEvent): Event {
   const locationLabel = fsEvent.locationLabel ?? fsEvent.metadata?.locationLabel ?? null;
   const locationCity = fsEvent.locationCity ?? fsEvent.metadata?.locationCity ?? null;
   const scopedLocation = isScopedLocationScope(locationScope);
+  const provinceScoped = locationScope === 'province';
 
-  // Legacy city-level events were published without coordinates; place them
-  // at the canonical PEI centroid so they can reach the map and clusters.
-  if (scopedLocation && latitude === 0 && longitude === 0) {
+  // A province projection can carry an internal discovery anchor, but that is
+  // not a physical event destination. Keep it coordinate-less in app state;
+  // the viewport partition handles province-wide discovery explicitly.
+  if (provinceScoped) {
+    latitude = 0;
+    longitude = 0;
+  } else if (scopedLocation && latitude === 0 && longitude === 0) {
+    // Legacy city/area events were published without coordinates; place them
+    // at their canonical local centroid so they can reach the Area experience.
     const centroid = resolvePeiCityCentroid({ locationScope, locationCity, locationLabel });
     if (centroid) {
       latitude = centroid.latitude;
@@ -259,7 +266,9 @@ export function normalizeFirestoreEvent(fsEvent: FirestoreEvent): Event {
       null,
     title: fsEvent.title || '',
     description: rawDescription,
-    venueId: fsEvent.venueId ?? null,
+    // The collection-group endpoint derives a parent key such as
+    // "province_pei" for feed projections. It is not a claimable venue.
+    venueId: provinceScoped ? null : fsEvent.venueId ?? null,
 
     // Venue info (flattened from nested structure)
     venue: venueName,
@@ -273,7 +282,7 @@ export function normalizeFirestoreEvent(fsEvent: FirestoreEvent): Event {
     locationPrecision: fsEvent.locationPrecision ?? fsEvent.metadata?.locationPrecision ?? null,
     locationReviewStatus:
       fsEvent.locationReviewStatus ?? fsEvent.metadata?.locationReviewStatus ?? null,
-    mapMode: fsEvent.mapMode ?? fsEvent.metadata?.mapMode ?? null,
+    mapMode: provinceScoped ? 'none' : fsEvent.mapMode ?? fsEvent.metadata?.mapMode ?? null,
     routeData: fsEvent.routeData ?? fsEvent.metadata?.routeData ?? null,
     areaData: fsEvent.areaData ?? fsEvent.metadata?.areaData ?? null,
 

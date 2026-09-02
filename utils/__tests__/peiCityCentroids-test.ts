@@ -58,10 +58,10 @@ describe('resolvePeiCityCentroid', () => {
     expect(resolvePeiCityCentroid({})).toBeNull();
   });
 
-  it('uses the PEI reference anchor for province-scope discovery', () => {
+  it('does not invent a physical centroid for province-scope discovery', () => {
     expect(resolvePeiCityCentroid({
       locationScope: 'province', locationLabel: 'Across Prince Edward Island', locationCity: null,
-    })).toEqual({ latitude: 46.5107, longitude: -63.4168 });
+    })).toBeNull();
   });
 });
 
@@ -99,5 +99,16 @@ describe('applyCityCentroidFallback', () => {
       locationCity: 'Borden-Carleton',
     });
     expect(applyCityCentroidFallback(event)).toBe(event);
+  });
+
+  it('leaves province coverage coordinate-less', () => {
+    const event = makeEvent({
+      locationScope: 'province',
+      locationLabel: 'Across Prince Edward Island',
+      locationCity: null,
+    });
+    expect(applyCityCentroidFallback(event)).toBe(event);
+    expect(event.latitude).toBe(0);
+    expect(event.longitude).toBe(0);
   });
 });

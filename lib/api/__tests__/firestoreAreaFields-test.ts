@@ -43,4 +43,44 @@ describe('Firestore multi-location area field mapping', () => {
     expect(normalized.areaData?.locations).toHaveLength(1);
     expect(normalized.routeData).toBeNull();
   });
+
+  it('normalizes the live province feed projection without inventing a venue or destination', () => {
+    const normalized = normalizeFirestoreEvent({
+      id: 'cityevt_3cbef1e81919fa57f23bb16c',
+      title: '2026 SUMMER GAMES - PEI 55+',
+      description: '',
+      startDate: '2026-09-14',
+      startTime: '08:00',
+      endDate: '2026-09-17',
+      endTime: '17:00',
+      venueId: 'province_pei',
+      venue: 'Across Prince Edward Island',
+      address: 'Across Prince Edward Island',
+      latitude: 46.5107,
+      longitude: -63.4168,
+      category: 'Gatherings & Parties',
+      isEvent: true,
+      metadata: {
+        venueId: null,
+        locationScope: 'province',
+        locationLabel: 'Across Prince Edward Island',
+        locationProvince: 'PEI',
+        locationPrecision: 'none',
+        mapMode: 'none',
+      },
+    } as FirestoreEvent);
+
+    expect(normalized).toMatchObject({
+      id: 'fb_cityevt_3cbef1e81919fa57f23bb16c',
+      venueId: null,
+      venue: 'Across Prince Edward Island',
+      address: 'Across Prince Edward Island',
+      latitude: 0,
+      longitude: 0,
+      locationScope: 'province',
+      locationLabel: 'Across Prince Edward Island',
+      locationProvince: 'PEI',
+      mapMode: 'none',
+    });
+  });
 });

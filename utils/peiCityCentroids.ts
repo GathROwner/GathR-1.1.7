@@ -9,9 +9,6 @@ import { isScopedLocationEvent } from './locationScope';
  * without a backend backfill. Keep the two tables in sync.
  */
 const PEI_CITY_CENTROIDS: Record<string, { latitude: number; longitude: number }> = {
-  // Discovery reference only. Province events intentionally use mapMode 'none'
-  // and are excluded from map marker clustering.
-  pei: { latitude: 46.5107, longitude: -63.4168 },
   charlottetown: { latitude: 46.2382, longitude: -63.1311 },
   'downtown charlottetown': { latitude: 46.2343, longitude: -63.1258 },
   summerside: { latitude: 46.3959, longitude: -63.7876 },
@@ -44,13 +41,9 @@ export const resolvePeiCityCentroid = (details: {
   locationCity?: string | null;
   locationLabel?: string | null;
 }): { latitude: number; longitude: number } | null => {
+  // Province coverage has no representative physical point. Its discovery
+  // path is handled explicitly by the viewport partition.
   if (details.locationScope === 'province') {
-    const corpus = [details.locationLabel, details.locationCity]
-      .map((value) => String(value ?? '').toLowerCase())
-      .join(' ');
-    if (/\b(pei|p\.?e\.?i\.?|prince edward island)\b/.test(corpus)) {
-      return PEI_CITY_CENTROIDS.pei;
-    }
     return null;
   }
   const rawCandidates = details.locationScope === 'area'

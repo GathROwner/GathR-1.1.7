@@ -88,6 +88,7 @@ import { useUserPrefsStore } from '../../store/userPrefsStore';
 import { useTutorialUiStore } from '../../store/tutorialUiStore';
 import { areEventIdsEquivalent } from '../../lib/api/firestoreEvents';
 import { doesEventMatchAnyInterest } from '../../utils/familyFriendly';
+import { isProvinceScopeEvent } from '../../utils/locationScope';
 
 // Import for loading native ads
 import useNativeAds from '../../hooks/useNativeAds';
@@ -2216,10 +2217,11 @@ setSelectedImageData({ imageUrl, event });
       const isSaved = isEventSaved(event);
       const timeStatus = getEventTimeStatusFast(event, eventTimeContext);
       const matchesInterest = matchesUserInterests(event);
+      const provinceWide = isProvinceScopeEvent(event);
 
       // Check if event is from a favorite venue
-      const eventLocationKey = createLocationKeyFromEvent(event);
-      const isFromFavoriteVenue = favoriteVenueSet.has(eventLocationKey);
+      const eventLocationKey = provinceWide ? '' : createLocationKeyFromEvent(event);
+      const isFromFavoriteVenue = !provinceWide && favoriteVenueSet.has(eventLocationKey);
 
       const scoreCategory = matchesInterest ? 'INTEREST_MATCH' : 'NON_INTEREST';
       const baseScore = timeStatus === 'past' ? 0 : BASE_SCORES[scoreCategory][timeStatus];
@@ -2227,7 +2229,7 @@ setSelectedImageData({ imageUrl, event });
       let proximityMultiplier = 1.0;
       let distance = Infinity;
 
-      if (userLocation) {
+      if (userLocation && !provinceWide) {
         distance = calculateDistance(
           userLocation.coords.latitude,
           userLocation.coords.longitude,

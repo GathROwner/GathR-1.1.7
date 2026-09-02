@@ -30,6 +30,14 @@ export const isCityLevelEvent = (event: Event): boolean =>
 export const isProvinceScopeEvent = (event: Event): boolean =>
   event.locationScope === 'province';
 
+/** Province records have coverage, not a physical destination. */
+export const hasPhysicalEventDestination = (event: Event): boolean =>
+  !isProvinceScopeEvent(event) && event.mapMode !== 'none';
+
+/** Only events with a physical map representation may enter clustering. */
+export const isMapRenderableEvent = (event: Event): boolean =>
+  hasPhysicalEventDestination(event);
+
 /**
  * Events represented by the gold Area treatment: citywide, area-wide, and
  * route experiences. Route remains a distinct scope so map geometry and

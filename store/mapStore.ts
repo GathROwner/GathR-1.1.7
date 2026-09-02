@@ -77,9 +77,14 @@ import { getHasNewContent } from './clusterInteractionStore';
 // Shared scoped-location (city-level) predicates
 import {
   isAreaExperienceEvent,
+  isMapRenderableEvent,
   isRouteEvent,
   isScopedLocationEvent,
 } from '../utils/locationScope';
+import {
+  getEventViewportMembership,
+  type ViewportBoundingBox,
+} from '../utils/eventViewport';
 import {
   doesEventMatchCategoryOrFacet,
   getEventFacetKeys,
@@ -230,8 +235,6 @@ const scheduleCalloutCloseClusterRefresh = (refreshClusters: () => void): void =
   // indicator state can refresh immediately without blocking user input.
   refreshClusters();
 };
-
-type ViewportBoundingBox = { west: number; south: number; east: number; north: number };
 
 const clampNumber = (value: number, min: number, max: number): number =>
   Math.min(max, Math.max(min, value));
@@ -1428,7 +1431,7 @@ export const useMapStore = create<MapState>((set, get) => ({
   // Do ALL processing synchronously in one batch
   const categories = Array.from(new Set(events.map(event => event.category)));
   const filtered = filterEvents(events, filterCriteria);
-  const venues = groupEventsByVenue(filtered);
+  const venues = groupEventsByVenue(filtered.filter(isMapRenderableEvent));
   const clusters = clusterVenues(venues, zoomLevel);
   
   // Single store update - prevents render cascade
@@ -1503,7 +1506,7 @@ export const useMapStore = create<MapState>((set, get) => ({
     __ML_lastFilterOut = filtered.length;
 
     const clusterStartedAt = Date.now();
-    const venues = groupEventsByVenue(filtered);
+    const venues = groupEventsByVenue(filtered.filter(isMapRenderableEvent));
     const clusters = clusterVenues(venues, zoomLevel);
 
     __ML_lastVenueCount = venues.length;
@@ -1857,23 +1860,6 @@ refreshPrivateSharedEventsFromServer: async (privateEventIds?: string[]) => {
       // for the current in-memory map/feed view.
       const candidateEvents = [...publicCandidateEvents, ...friendCandidateEvents];
 
-      const hasValidCoordinates = (event: Event): boolean => {
-        const lat = Number(event.latitude);
-        const lng = Number(event.longitude);
-        return Number.isFinite(lat) && Number.isFinite(lng) && !(lat === 0 && lng === 0);
-      };
-
-      const inBbox = (event: Event, targetBbox: ViewportBoundingBox = bbox): boolean => {
-        const lat = Number(event.latitude);
-        const lng = Number(event.longitude);
-        return (
-          lat >= targetBbox.south &&
-          lat <= targetBbox.north &&
-          lng >= targetBbox.west &&
-          lng <= targetBbox.east
-        );
-      };
-
       const partitionStartedAt = Date.now();
       const clusterBbox = expandBoundingBox(bbox, CLUSTER_SOURCE_BBOX_BUFFER_MULTIPLIER);
       const coordinateEvents: Event[] = [];
@@ -1884,23 +1870,11 @@ refreshPrivateSharedEventsFromServer: async (privateEventIds?: string[]) => {
       // candidateEvents comes from fetchMinimalEvents/dedupeEvents or allEvents,
       // so keep this pass allocation-light and avoid re-deduping the same list.
       for (const event of candidateEvents) {
-        if (!hasValidCoordinates(event)) {
-          if (isScopedLocationEvent(event)) {
-            outsideViewportEvents.push(event);
-          }
-          continue;
-        }
-
-        coordinateEvents.push(event);
-        if (inBbox(event)) {
-          viewportEvents.push(event);
-        } else {
-          outsideViewportEvents.push(event);
-        }
-
-        if (inBbox(event, clusterBbox)) {
-          clusterSourceEvents.push(event);
-        }
+        const membership = getEventViewportMembership(event, bbox, clusterBbox);
+        if (membership.hasPhysicalCoordinates) coordinateEvents.push(event);
+        if (membership.includeInViewport) viewportEvents.push(event);
+        if (membership.includeOutsideViewport) outsideViewportEvents.push(event);
+        if (membership.includeInClusterSource) clusterSourceEvents.push(event);
       }
 
       const partitionMs = Date.now() - partitionStartedAt;
@@ -2034,6 +2008,7 @@ fetchEventDetails: async (eventIds: (string | number)[]) => {
       category: detail?.category || 'Other',
       title: detail?.title || '',
       description: detail?.fullDescription || detail?.description || '',
+      venueId: detail?.venueId ?? null,
       venue: detail?.venue || '',
       address: detail?.address || '',
       startDate: detail?.startDate || '',
@@ -2046,6 +2021,15 @@ fetchEventDetails: async (eventIds: (string | number)[]) => {
       SharedPostThumbnail: detail?.SharedPostThumbnail || '',
       latitude: Number(detail?.latitude) || 0,
       longitude: Number(detail?.longitude) || 0,
+      locationScope: detail?.locationScope ?? null,
+      locationLabel: detail?.locationLabel ?? null,
+      locationCity: detail?.locationCity ?? null,
+      locationProvince: detail?.locationProvince ?? null,
+      locationPrecision: detail?.locationPrecision ?? null,
+      locationReviewStatus: detail?.locationReviewStatus ?? null,
+      mapMode: detail?.mapMode ?? null,
+      routeData: detail?.routeData ?? null,
+      areaData: detail?.areaData ?? null,
       ticketLinkPosts: detail?.ticketLinkPosts || '',
       ticketLinkEvents: detail?.ticketLinkEvents || '',
       ticketsBuyUrl: detail?.ticketsBuyUrl || '',
@@ -2261,9 +2245,8 @@ fetchEventDetails: async (eventIds: (string | number)[]) => {
     });
 
     // Province-scope records participate in the Area pill and event lists but
-    // have no physical map marker: their PEI coordinate is a discovery anchor,
-    // not a claim that the event occurs at the island centre.
-    const mapRenderableEvents = filteredEvents.filter((event) => event.mapMode !== 'none');
+    // have no physical destination, so every clustering path excludes them.
+    const mapRenderableEvents = filteredEvents.filter(isMapRenderableEvent);
     const venues = groupEventsByVenue(mapRenderableEvents);
     const clusters = clusterVenues(venues, currentZoom);
 
@@ -2390,7 +2373,7 @@ logStartupDataTiming('generate_clusters_completed', {
 
   getClustersForZoom: (zoom) => {
     const { filteredEvents } = get();
-    const venues = groupEventsByVenue(filteredEvents);
+    const venues = groupEventsByVenue(filteredEvents.filter(isMapRenderableEvent));
     return clusterVenues(venues, zoom);
   },
   

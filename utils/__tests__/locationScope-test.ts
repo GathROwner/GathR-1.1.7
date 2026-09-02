@@ -1,7 +1,9 @@
 import {
   CITY_EVENTS_CATEGORY,
+  hasPhysicalEventDestination,
   isAreaExperienceEvent,
   isCityLevelEvent,
+  isMapRenderableEvent,
   isRouteEvent,
   isScopedLocationEvent,
   isScopedLocationScope,
@@ -12,9 +14,10 @@ const eventWithScope = (locationScope: Event['locationScope']): Event =>
   ({ locationScope } as Event);
 
 describe('locationScope predicates', () => {
-  it('isScopedLocationScope accepts city/area/route only', () => {
+  it('isScopedLocationScope accepts city/area/province/route only', () => {
     expect(isScopedLocationScope('city')).toBe(true);
     expect(isScopedLocationScope('area')).toBe(true);
+    expect(isScopedLocationScope('province')).toBe(true);
     expect(isScopedLocationScope('route')).toBe(true);
     expect(isScopedLocationScope('venue')).toBe(false);
     expect(isScopedLocationScope('unknown')).toBe(false);
@@ -44,6 +47,16 @@ describe('locationScope predicates', () => {
     expect(isAreaExperienceEvent(eventWithScope('venue'))).toBe(false);
     expect(isRouteEvent(eventWithScope('route'))).toBe(true);
     expect(isRouteEvent(eventWithScope('area'))).toBe(false);
+  });
+
+  it('keeps province coverage out of physical destination and map-marker paths', () => {
+    const provinceEvent = { locationScope: 'province', mapMode: 'none' } as Event;
+    const venueEvent = { locationScope: 'venue', mapMode: 'venue' } as Event;
+
+    expect(hasPhysicalEventDestination(provinceEvent)).toBe(false);
+    expect(isMapRenderableEvent(provinceEvent)).toBe(false);
+    expect(hasPhysicalEventDestination(venueEvent)).toBe(true);
+    expect(isMapRenderableEvent(venueEvent)).toBe(true);
   });
 
   it('exposes the city-events sentinel category', () => {
