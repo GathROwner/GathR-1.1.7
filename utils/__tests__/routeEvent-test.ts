@@ -9,6 +9,7 @@ import {
   getRouteSegmentCallout,
   getRouteStopCallout,
   hasDrawableRoute,
+  hasRouteMapExperience,
   shouldSuppressOrdinaryMapMarkers,
 } from '../routeEvent';
 
@@ -88,7 +89,7 @@ describe('route event map contract', () => {
     expect(renderedIds).not.toContain('unsafe-connected-stops');
   });
 
-  it('distinguishes a street-routed guess from an estimate based on listed streets', () => {
+  it('does not draw a previously persisted Directions result', () => {
     const suggestedEvent = {
       ...routeEvent,
       routeData: {
@@ -111,8 +112,36 @@ describe('route event map contract', () => {
 
     expect(
       buildRouteLineFeatureCollection(suggestedEvent, 'suggested_connection').features
-    ).toHaveLength(1);
+    ).toHaveLength(0);
     expect(getRouteCertaintyLabel(suggestedEvent.routeData)).toBe(
+      'Route unknown • showing possible stops'
+    );
+  });
+
+  it('draws a Directions result only when marked as session runtime data', () => {
+    const runtimeEvent = {
+      ...routeEvent,
+      routeData: {
+        ...routeEvent.routeData,
+        status: 'approximate' as const,
+        runtimeResolvedAt: '2026-09-02T12:00:00.000Z',
+        confirmedStreets: [],
+        segments: [{
+          id: 'runtime-route',
+          certainty: 'approximate' as const,
+          source: 'runtime_directions' as const,
+          coordinates: [
+            { longitude: -63.142, latitude: 46.248 },
+            { longitude: -63.126, latitude: 46.238 },
+          ],
+        }],
+      },
+    } as Event;
+
+    expect(
+      buildRouteLineFeatureCollection(runtimeEvent, 'suggested_connection').features
+    ).toHaveLength(1);
+    expect(getRouteCertaintyLabel(runtimeEvent.routeData)).toBe(
       'Suggested street connection • route unconfirmed'
     );
   });
@@ -277,6 +306,27 @@ describe('route event map contract', () => {
     expect(hasDrawableRoute({ ...routeEvent, locationScope: 'area' })).toBe(false);
   });
 
+  it('offers the route experience for address-only runtime inputs', () => {
+    const runtimeRequestEvent = {
+      ...routeEvent,
+      routeData: {
+        version: 1 as const,
+        status: 'approximate' as const,
+        routeRequest: {
+          profile: 'walking' as const,
+          waypoints: [
+            { id: 'start', label: 'Start', address: '1 Main Street' },
+            { id: 'finish', label: 'Finish', address: '10 Main Street' },
+          ],
+        },
+        stops: [],
+        segments: [],
+      },
+    } as Event;
+    expect(hasDrawableRoute(runtimeRequestEvent)).toBe(false);
+    expect(hasRouteMapExperience(runtimeRequestEvent)).toBe(true);
+  });
+
   it('uses honest user-facing certainty language', () => {
     expect(getRouteCertaintyLabel(routeEvent.routeData)).toBe(
       'Confirmed streets + estimated connections'
@@ -295,7 +345,7 @@ describe('route event map contract', () => {
       segments: routeEvent.routeData!.segments!.map((segment) => ({
         ...segment,
         certainty: 'approximate' as const,
-        source: 'official_streets' as const,
+        source: 'manual_review' as const,
       })),
     };
     expect(getRouteCompactCertaintyLabel(estimatedRouteData)).toBe(
@@ -323,7 +373,7 @@ describe('route event map contract', () => {
       segments: [{
         id: 'road-routed-guess',
         certainty: 'approximate',
-        source: 'routed_streets',
+        source: 'runtime_directions',
         coordinates: [
           { longitude: -63.142, latitude: 46.248 },
           { longitude: -63.126, latitude: 46.238 },

@@ -55,8 +55,9 @@ import { areEventIdsEquivalent } from '../../lib/api/firestoreEvents';
 import {
   getRouteCompactCertaintyLabel,
   getRouteSourceUrl,
-  hasDrawableRoute,
+  hasRouteMapExperience,
 } from '../../utils/routeEvent';
+import { resolveRouteForMap, RouteRuntimeError } from '../../lib/routeRuntime';
 import {
   getAreaLocations,
   getAreaLocationsLabel,
@@ -306,6 +307,8 @@ const EventImageLightbox: React.FC<EventImageLightboxProps> = ({
     : `${updatedEvent.venue}, ${updatedEvent.address}`;
   const friendPresence = getVenueFriendPresence(cluster || null, venue || null);
   const [friendListExpanded, setFriendListExpanded] = useState(false);
+  const [routeActionBusy, setRouteActionBusy] = useState(false);
+  const routeActionInFlightRef = useRef(false);
 
 // If address is missing, fetch details for this id
   const fetchEventDetails = useMapStore(s => s.fetchEventDetails);
@@ -1091,43 +1094,64 @@ const handleDirections = () => {
   };
 
   const routeEvent = updatedEvent.locationScope === 'route';
-  const drawableRoute = hasDrawableRoute(updatedEvent);
+  const routeMapExperience = hasRouteMapExperience(updatedEvent);
   const areaLocationsEvent = hasDrawableAreaLocations(updatedEvent);
   const showAreaExperience = isCityEvent || isAreaExperienceEvent(updatedEvent);
-  const drawableMapExperience = drawableRoute || areaLocationsEvent;
+  const drawableMapExperience = routeMapExperience || areaLocationsEvent;
   const routeSourceUrl = getRouteSourceUrl(updatedEvent);
   const mapExperienceSourceUrl = routeEvent
     ? routeSourceUrl
     : getAreaSourceUrl(updatedEvent);
-  const handleRouteAction = () => {
+  const handleRouteAction = async () => {
+    if (routeActionInFlightRef.current) return;
     if (drawableMapExperience) {
-      amplitudeTrack(routeEvent ? 'route_map_opened' : 'area_locations_map_opened', {
-        event_id: String(updatedEvent.id),
-        route_status: routeEvent
-          ? updatedEvent.routeData?.status || 'unknown'
-          : updatedEvent.areaData?.status || 'unknown',
-        confirmed_segments: updatedEvent.routeData?.segments?.filter(
-          (segment) => segment.certainty === 'confirmed'
-        ).length || 0,
-        approximate_segments: updatedEvent.routeData?.segments?.filter(
-          (segment) => segment.certainty === 'approximate'
-        ).length || 0,
-        stop_count: routeEvent
-          ? updatedEvent.routeData?.stops?.length || 0
-          : getAreaLocations(updatedEvent).length,
-        navigation_mode: onShowRoute ? 'same_screen' : 'cross_tab',
-      });
+      routeActionInFlightRef.current = true;
+      setRouteActionBusy(routeEvent);
+      try {
+        // Organizer-supplied geometry is used as-is. Provider-generated route
+        // geometry is requested only now, kept in process memory, and passed
+        // directly to the Map without entering the event store or AsyncStorage.
+        const mapEvent = routeEvent
+          ? await resolveRouteForMap(updatedEvent)
+          : updatedEvent;
 
-      if (onShowRoute) {
-        onShowRoute(updatedEvent);
-        return;
+        amplitudeTrack(routeEvent ? 'route_map_opened' : 'area_locations_map_opened', {
+          event_id: String(mapEvent.id),
+          route_status: routeEvent
+            ? mapEvent.routeData?.status || 'unknown'
+            : mapEvent.areaData?.status || 'unknown',
+          confirmed_segments: mapEvent.routeData?.segments?.filter(
+            (segment) => segment.certainty === 'confirmed'
+          ).length || 0,
+          approximate_segments: mapEvent.routeData?.segments?.filter(
+            (segment) => segment.certainty === 'approximate'
+          ).length || 0,
+          stop_count: routeEvent
+            ? mapEvent.routeData?.stops?.length || 0
+            : getAreaLocations(mapEvent).length,
+          navigation_mode: onShowRoute ? 'same_screen' : 'cross_tab',
+          route_resolution: mapEvent.routeData?.runtimeResolvedAt ? 'session' : 'organizer',
+        });
+
+        if (onShowRoute) {
+          onShowRoute(mapEvent);
+          return;
+        }
+
+        // Lightboxes also live on Events, Specials, and carousel surfaces.
+        // This ephemeral event is queued only in Zustand process memory.
+        setPendingRouteEvent(mapEvent);
+        onClose();
+        router.push('/(tabs)/map');
+      } catch (error) {
+        const message = error instanceof RouteRuntimeError
+          ? error.message
+          : 'The route could not be calculated right now. Please try again.';
+        Alert.alert('Could not show route', message);
+      } finally {
+        routeActionInFlightRef.current = false;
+        setRouteActionBusy(false);
       }
-
-      // Lightboxes also live on Events, Specials, and carousel surfaces. Queue
-      // the route before switching tabs so the Map can draw it immediately.
-      setPendingRouteEvent(updatedEvent);
-      onClose();
-      router.push('/(tabs)/map');
       return;
     }
 
@@ -1981,7 +2005,7 @@ const handleNonTicketAction = () => {
                 label={provinceScopeEvent
                   ? 'Event Info'
                   : routeEvent
-                  ? (drawableRoute ? 'Show Route' : 'Route Info')
+                  ? (routeActionBusy ? 'Calculating…' : routeMapExperience ? 'Show Route' : 'Route Info')
                   : (areaLocationsEvent ? 'Show Locations' : 'Location Info')}
                 onPress={handleRouteAction}
                 style={styles.routeActionPill}

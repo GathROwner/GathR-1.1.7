@@ -47,6 +47,18 @@ export interface EventRouteStop {
   sourceLabel?: string;
 }
 
+export interface EventRouteRequestWaypoint {
+  id: string;
+  label: string;
+  address?: string;
+  coordinates?: RouteCoordinate;
+}
+
+export interface EventRouteRequest {
+  profile?: 'walking' | 'driving' | 'cycling';
+  waypoints: EventRouteRequestWaypoint[];
+}
+
 export interface EventRouteSegment {
   id: string;
   label?: string;
@@ -59,6 +71,7 @@ export interface EventRouteSegment {
     | 'official_map'
     | 'official_streets'
     | 'routed_streets'
+    | 'runtime_directions'
     | 'connected_stops'
     | 'manual_review';
 }
@@ -83,6 +96,10 @@ export interface EventRouteData {
   verifiedAt?: string;
   confirmedStreets?: string[];
   geometrySource?: string;
+  /** Provider-independent inputs only. Mapbox results must never be stored here. */
+  routeRequest?: EventRouteRequest;
+  /** Ephemeral marker added only to the in-memory event returned by the route callable. */
+  runtimeResolvedAt?: string;
   stops?: EventRouteStop[];
   segments?: EventRouteSegment[];
 }

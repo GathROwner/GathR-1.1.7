@@ -170,8 +170,14 @@ export const getRouteSegmentDisplayKind = (
   routeData?: EventRouteData | null
 ): RouteLineDisplayKind | null => {
   if (segment.certainty === 'confirmed') return 'confirmed';
-  if (segment.source === 'routed_streets') return 'suggested_connection';
-  if (segment.source === 'official_streets') return 'street_estimate';
+  if (segment.source === 'runtime_directions') return 'suggested_connection';
+
+  // Approximate geometry previously produced by Directions was persisted on
+  // some events. Never render those stored provider results; the route runtime
+  // replaces them with a session-only calculation after the user asks for it.
+  if (segment.source === 'routed_streets' || segment.source === 'official_streets') {
+    return null;
+  }
 
   const listedStreets = new Set(
     (routeData?.confirmedStreets || []).map(normalizeStreetName).filter(Boolean)
@@ -203,6 +209,17 @@ export const getRouteStops = (event: Event): EventRouteStop[] =>
 export const hasDrawableRoute = (event: Event): boolean =>
   event.locationScope === 'route' &&
   (getRenderableRouteSegments(event).length > 0 || getRouteStops(event).length > 0);
+
+export const hasRuntimeRouteRequest = (event: Event): boolean => {
+  if (event.locationScope !== 'route') return false;
+  const explicitWaypoints = event.routeData?.routeRequest?.waypoints || [];
+  if (explicitWaypoints.length >= 2) return true;
+  const stops = event.routeData?.stops || [];
+  return stops.length >= 2 && stops.every((stop) => Boolean(stop.coordinates || stop.address));
+};
+
+export const hasRouteMapExperience = (event: Event): boolean =>
+  hasDrawableRoute(event) || hasRuntimeRouteRequest(event);
 
 /**
  * Route focus is a temporary map presentation mode. Ordinary event and
