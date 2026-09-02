@@ -3361,6 +3361,7 @@ useEffect(() => {
   const isHeaderSearchActive = useMapStore((state) => state.isHeaderSearchActive);
   const setHeaderSearchActive = useMapStore((state) => state.setHeaderSearchActive);
   const setTypeFiltersBatch = useMapStore((state) => state.setTypeFiltersBatch);
+  const pendingRouteEvent = useMapStore((state) => state.pendingRouteEvent);
   const interestCarouselFilter = useInterestCarouselUiStore((state) => state.interestCarouselFilter);
   const setInterestCarouselFilter = useInterestCarouselUiStore((state) => state.setInterestCarouselFilter);
 
@@ -3708,13 +3709,11 @@ useEffect(() => {
 
   useEffect(() => {
     if (!isFocused) return;
-
-    const pendingRouteEvent = useMapStore.getState().pendingRouteEvent;
     if (!pendingRouteEvent) return;
 
     useMapStore.getState().setPendingRouteEvent(null);
     showRouteOnMap(pendingRouteEvent);
-  }, [isFocused, showRouteOnMap]);
+  }, [isFocused, pendingRouteEvent, showRouteOnMap]);
 
   const hideRouteOnMap = useCallback(() => {
     if (activeMapExperienceEvent) {
