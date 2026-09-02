@@ -137,6 +137,7 @@ import { isTutorialCalloutPresentationReady as getTutorialCalloutPresentationRea
 import {
   closePresentedTutorialCallout,
   shouldActivateAndroidRetapOverlay,
+  shouldBypassCalloutOpenGuard,
   shouldRouteTutorialCalloutBack,
 } from '../../utils/tutorialCalloutClosing';
 import {
@@ -6278,8 +6279,7 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
     const sharedEventReturnGuardRemainingMs = Math.max(0, sharedEventReturnGuardUntil - Date.now());
     if (
       calloutOpenGuardRemainingMs > 0 &&
-      reason !== 'modal-request-close' &&
-      reason !== 'tutorial-navigation'
+      !shouldBypassCalloutOpenGuard(reason)
     ) {
       logCalloutProbe('[CalloutProbe] closeCallout ignored during post-open guard', {
         reason,
@@ -6345,6 +6345,14 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
     selectVenue,
     trackClusterClosedOnce,
   ]);
+
+  const showRouteFromCallout = useCallback((event: Event) => {
+    // The callout owns the lightbox when a route event is opened from a
+    // multi-venue cluster. Remove that parent surface before fitting the route
+    // so it cannot remain in front of the map.
+    closeCallout('route-handoff');
+    showRouteOnMap(event);
+  }, [closeCallout, showRouteOnMap]);
 
   // Parent callout lifecycle only mounts/dismisses the subtree.
   // EventCallout owns the visible sheet presentation.
@@ -11377,6 +11385,7 @@ Owner: Map UX stability on Android • Last validated: 2025-09-04
               }}
               readinessEpoch={calloutReadinessEpoch}
               onEventSelected={handleEventSelected}
+              onShowRoute={showRouteFromCallout}
             />
           </View>
         </>

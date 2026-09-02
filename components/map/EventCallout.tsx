@@ -2583,6 +2583,7 @@ interface EventCalloutProps {
   onClose: () => void;
   onCloseStart?: () => void;
   onEventSelected?: (event: Event) => void;
+  onShowRoute?: (event: Event) => void;
   onLayoutReady?: () => void;
   onPresentationReady?: () => void;
   readinessEpoch: number;
@@ -2594,6 +2595,7 @@ const EventCallout: React.FC<EventCalloutProps> = ({
   onClose,
   onCloseStart,
   onEventSelected,
+  onShowRoute,
   onLayoutReady,
   onPresentationReady,
   readinessEpoch,
@@ -3165,11 +3167,19 @@ console.log('ATTEMPTING to set selectedImageData state...');
     console.log('ATTEMPTING to set selectedImageData state...');
   };
   
-  const handleModalClose = () => {
+  const handleModalClose = useCallback(() => {
     console.log('LIGHTBOX CLOSE triggered');
     setSelectedImageData(null);
     setGlobalSelectedImageData(null);
-  };
+  }, [setGlobalSelectedImageData]);
+
+  const handleShowRoute = useCallback((event: Event) => {
+    // A lightbox opened from a cluster is nested above that cluster's
+    // callout. Dismiss the lightbox first, then let MapScreen remove the
+    // parent callout and present the route in a single handoff.
+    handleModalClose();
+    onShowRoute?.(event);
+  }, [handleModalClose, onShowRoute]);
   
   // ===============================================================
   // GUEST LIMITATION INTERACTION HANDLERS
@@ -4760,6 +4770,7 @@ useEffect(() => {
               globalSelectedImageData?.events ? handleGlobalLightboxNavigate : undefined
             }
             isCityEvent={globalSelectedImageData?.source === 'city_event_marker'}
+            onShowRoute={onShowRoute ? handleShowRoute : undefined}
           />
         </Modal>
       )}

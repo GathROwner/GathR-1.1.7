@@ -2,6 +2,7 @@ import { createTutorialBooleanGate } from '../tutorialBooleanGate';
 import {
   closePresentedTutorialCallout,
   shouldActivateAndroidRetapOverlay,
+  shouldBypassCalloutOpenGuard,
   shouldRouteTutorialCalloutBack,
 } from '../tutorialCalloutClosing';
 
@@ -40,10 +41,18 @@ describe('tutorial callout closing', () => {
     gate.dispose();
   });
 
-  it('does not leave the Android retap blocker active for tutorial navigation', () => {
+  it('does not leave the Android retap blocker active for direct map handoffs', () => {
     expect(shouldActivateAndroidRetapOverlay('tutorial-navigation')).toBe(false);
+    expect(shouldActivateAndroidRetapOverlay('route-handoff')).toBe(false);
     expect(shouldActivateAndroidRetapOverlay('map-press')).toBe(true);
     expect(shouldActivateAndroidRetapOverlay('callout-onClose-prop')).toBe(true);
+  });
+
+  it('allows an explicit route handoff through the short callout-open guard', () => {
+    expect(shouldBypassCalloutOpenGuard('route-handoff')).toBe(true);
+    expect(shouldBypassCalloutOpenGuard('modal-request-close')).toBe(true);
+    expect(shouldBypassCalloutOpenGuard('tutorial-navigation')).toBe(true);
+    expect(shouldBypassCalloutOpenGuard('map-press')).toBe(false);
   });
 
   it('routes native Back through tutorial Previous only for the hosted callout step', () => {

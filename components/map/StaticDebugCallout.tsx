@@ -12,6 +12,7 @@ interface StaticDebugCalloutProps {
   onPresentationReady?: () => void;
   readinessEpoch?: number;
   onEventSelected?: (event: Event) => void;
+  onShowRoute?: (event: Event) => void;
 }
 
 const StaticDebugCallout: React.FC<StaticDebugCalloutProps> = ({
