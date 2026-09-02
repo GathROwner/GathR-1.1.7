@@ -6,6 +6,7 @@ import {
   needsSessionRouteResolution,
   resolveRouteForMap,
 } from './routeRuntime';
+import { getSocialAppCheckToken } from '../services/appCheckService';
 
 jest.mock('../config/firebaseConfig', () => ({
   app: { options: { projectId: 'gathr-m1' } },
@@ -55,6 +56,7 @@ const storedRouteEvent = {
 describe('session-only route runtime', () => {
   beforeEach(() => {
     clearSessionRouteCacheForTests();
+    jest.clearAllMocks();
     jest.restoreAllMocks();
   });
 
@@ -116,6 +118,7 @@ describe('session-only route runtime', () => {
       resolveRouteForMap(storedRouteEvent),
     ]);
     expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(getSocialAppCheckToken).not.toHaveBeenCalled();
     expect(second).toBe(first);
     expect(JSON.parse(String(fetchSpy.mock.calls[0][1]?.body))).toEqual(
       expect.objectContaining({ data: expect.objectContaining({ eventId: 'route-1' }) })

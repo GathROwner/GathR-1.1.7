@@ -179,10 +179,14 @@ async function requestSessionRoute(event: Event): Promise<Event> {
   if (waypoints.length < 2) return sanitized;
 
   const user = auth.currentUser;
-  const [idToken, appCheckToken] = await Promise.all([
-    user ? user.getIdToken() : Promise.resolve(null),
-    getSocialAppCheckToken(),
-  ]);
+  const idToken = user ? await user.getIdToken() : null;
+  // A signed-in user already satisfies the callable's authorization gate.
+  // Avoid making Preview route requests depend on native App Check, which can
+  // fail before fetch when the Preview shell and web Firebase target differ.
+  // Production guests still require App Check.
+  const appCheckToken = idToken || firebaseTarget === 'staging'
+    ? null
+    : await getSocialAppCheckToken();
   const response = await fetch(callableUrl(), {
     method: 'POST',
     headers: {
