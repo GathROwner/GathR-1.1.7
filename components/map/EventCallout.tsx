@@ -3175,10 +3175,11 @@ console.log('ATTEMPTING to set selectedImageData state...');
 
   const handleShowRoute = useCallback((event: Event) => {
     // A lightbox opened from a cluster is nested above that cluster's
-    // callout. Dismiss the lightbox first, then let MapScreen remove the
-    // parent callout and present the route in a single handoff.
-    handleModalClose();
+    // callout. Let MapScreen commit the route underneath the still-opaque
+    // lightbox first. Closing this modal on the next frame prevents the
+    // parent callout from flashing between the lightbox and route map.
     onShowRoute?.(event);
+    requestAnimationFrame(handleModalClose);
   }, [handleModalClose, onShowRoute]);
   
   // ===============================================================

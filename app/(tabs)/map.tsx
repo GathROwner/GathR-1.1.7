@@ -3677,7 +3677,7 @@ useEffect(() => {
   const mapStyleMarkerRemountTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mapPerspectiveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const showRouteOnMap = useCallback((event: Event) => {
+  const showRouteOnMap = useCallback((event: Event, fitDelayMs = 120) => {
     const routeExperience = hasDrawableRoute(event);
     const areaExperience = hasDrawableAreaLocations(event);
     if (!routeExperience && !areaExperience) return;
@@ -3703,7 +3703,7 @@ useEffect(() => {
             fitPadding,
             700
           );
-        }, 120);
+        }, fitDelayMs);
       });
     }
   }, []);
@@ -6347,11 +6347,12 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
   ]);
 
   const showRouteFromCallout = useCallback((event: Event) => {
-    // The callout owns the lightbox when a route event is opened from a
-    // multi-venue cluster. Remove that parent surface before fitting the route
-    // so it cannot remain in front of the map.
+    // Start rendering/fitting the route before hiding the nested surfaces.
+    // EventCallout keeps its lightbox opaque until the next frame, so the
+    // user sees one continuous lightbox-to-map transition instead of a flash
+    // of the parent cluster callout.
+    showRouteOnMap(event, 0);
     closeCallout('route-handoff');
-    showRouteOnMap(event);
   }, [closeCallout, showRouteOnMap]);
 
   // Parent callout lifecycle only mounts/dismisses the subtree.
