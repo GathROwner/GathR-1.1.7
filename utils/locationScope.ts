@@ -1,4 +1,5 @@
 import type { Event } from '../types/events';
+import { getAreaLocations } from './areaEvent';
 
 /**
  * Shared predicates for scoped-location ("city-level") events — events whose
@@ -8,6 +9,14 @@ import type { Event } from '../types/events';
  */
 
 export type ScopedLocationScope = 'city' | 'area' | 'province' | 'route';
+
+export type AreaScopeBadgePresentation = {
+  label: string;
+  iconName: 'location-city' | 'map' | 'public';
+};
+
+const cleanLocationText = (value: unknown): string =>
+  typeof value === 'string' ? value.trim() : '';
 
 export const isScopedLocationScope = (
   scope?: string | null
@@ -48,6 +57,71 @@ export const isAreaExperienceEvent = (event: Event): boolean =>
 
 export const isRouteEvent = (event: Event): boolean =>
   event.locationScope === 'route';
+
+/**
+ * User-facing treatment for unordered broad-location events. Route events keep
+ * their separate route badge because their ordered stops have different
+ * meaning and map behavior.
+ */
+export const getAreaScopeBadgePresentation = (
+  event: Event
+): AreaScopeBadgePresentation | null => {
+  if (event.locationScope === 'province') {
+    return { label: 'Province-wide', iconName: 'public' };
+  }
+
+  if (event.locationScope === 'city') {
+    return { label: 'City-wide', iconName: 'location-city' };
+  }
+
+  if (event.locationScope === 'area') {
+    const locationCount = getAreaLocations(event).length;
+    return {
+      label: locationCount >= 2
+        ? `Area · ${locationCount} locations`
+        : 'Area-wide',
+      iconName: 'map',
+    };
+  }
+
+  return null;
+};
+
+/**
+ * Concise location copy for cards and lightbox headers. Multi-point area
+ * events lead with their stored city/area and state the number of independent
+ * locations without implying an order or route.
+ */
+export const getScopedLocationSummary = (event: Event): string | null => {
+  if (event.locationScope === 'province') {
+    return cleanLocationText(event.locationLabel)
+      || 'Across Prince Edward Island';
+  }
+
+  if (event.locationScope === 'city') {
+    return cleanLocationText(event.locationLabel)
+      || cleanLocationText(event.locationCity)
+      || cleanLocationText(event.venue)
+      || 'City-wide event';
+  }
+
+  if (event.locationScope === 'area') {
+    const locationCount = getAreaLocations(event).length;
+    const place = cleanLocationText(event.locationCity)
+      || cleanLocationText(event.locationLabel)
+      || cleanLocationText(event.venue);
+
+    if (locationCount >= 2) {
+      return place
+        ? `${place} · ${locationCount} locations`
+        : `${locationCount} locations`;
+    }
+
+    return place || 'Area-wide event';
+  }
+
+  return null;
+};
 
 /**
  * A scoped event may skip the callout only when its marker represents one

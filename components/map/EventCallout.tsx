@@ -140,6 +140,10 @@ import { getTicketUrl, isValidTicketUrl, normalizeTicketUrl } from '../../utils/
 import { getPrimaryNonTicketAction } from '../../utils/eventActionLinks';
 import { getTrendingLightboxImageUrl } from '../../utils/trendingLightbox';
 import { getRouteCalloutBadgeLabel } from '../../utils/routeEvent';
+import {
+  getAreaScopeBadgePresentation,
+  getScopedLocationSummary,
+} from '../../utils/locationScope';
 import * as Haptics from 'expo-haptics';
 
 // Import for lazy-loading venue details
@@ -1809,6 +1813,10 @@ const SpecialCard: React.FC<SpecialCardProps> = ({
             : 'PRIVATE · INVITED'
     : null;
   const routeBadgeLabel = getRouteCalloutBadgeLabel(event);
+  const areaScopeBadge = getAreaScopeBadgePresentation(event);
+  const spatialBadgeLabel = routeBadgeLabel || areaScopeBadge?.label || null;
+  const spatialBadgeIcon = routeBadgeLabel ? 'alt-route' : areaScopeBadge?.iconName;
+  const scopedLocationSummary = getScopedLocationSummary(event);
 
   // --- Start of Tutorial Logic ---
   const viewRef = useRef<View | null>(null);
@@ -2264,14 +2272,14 @@ useUserPrefsStore.getState().setAll({ savedEvents: next });
               </View>
             )}
 
-            {routeBadgeLabel && (
+            {spatialBadgeLabel && spatialBadgeIcon && (
               <View
-                accessibilityLabel={routeBadgeLabel}
+                accessibilityLabel={spatialBadgeLabel}
                 pointerEvents="none"
                 style={styles.routeEventHeroBadge}
               >
-                <MaterialIcons name="alt-route" size={14} color="#4E342E" />
-                <Text style={styles.routeEventHeroBadgeText}>{routeBadgeLabel}</Text>
+                <MaterialIcons name={spatialBadgeIcon} size={14} color="#4E342E" />
+                <Text style={styles.routeEventHeroBadgeText}>{spatialBadgeLabel}</Text>
               </View>
             )}
             
@@ -2373,7 +2381,7 @@ useUserPrefsStore.getState().setAll({ savedEvents: next });
         </Text>
         
         {showVenueName && (
-          <Text style={styles.venueNameText}>{event.venue}</Text>
+          <Text style={styles.venueNameText}>{scopedLocationSummary || event.venue}</Text>
         )}
         
         <View style={styles.dateTimeRow}>

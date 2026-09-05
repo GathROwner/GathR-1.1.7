@@ -60,7 +60,6 @@ import {
 import { resolveRouteForMap, RouteRuntimeError } from '../../lib/routeRuntime';
 import {
   getAreaLocations,
-  getAreaLocationsLabel,
   getAreaSourceUrl,
   hasDrawableAreaLocations,
 } from '../../utils/areaEvent';
@@ -76,6 +75,8 @@ import {
 } from '../../utils/friendEventLightbox';
 import {
   hasPhysicalEventDestination,
+  getAreaScopeBadgePresentation,
+  getScopedLocationSummary,
   isAreaExperienceEvent,
   isProvinceScopeEvent,
 } from '../../utils/locationScope';
@@ -280,6 +281,8 @@ const EventImageLightbox: React.FC<EventImageLightboxProps> = ({
   const updatedFromStore = getUpdatedEvent(event.id);
   const updatedEvent = { ...event, ...(updatedFromStore || {}) };
   const provinceScopeEvent = isProvinceScopeEvent(updatedEvent);
+  const areaScopeBadge = getAreaScopeBadgePresentation(updatedEvent);
+  const scopedLocationSummary = getScopedLocationSummary(updatedEvent);
   const friendEventId = updatedEvent.friendEvent?.eventId || null;
   const friendEventProjection = useSocialStore((state) => (
     friendEventId
@@ -1467,7 +1470,7 @@ const handleNonTicketAction = () => {
               </Text>
             </GestureScrollView>
             <Text style={styles.subtitle} numberOfLines={1}>
-              {updatedEvent.venue}
+              {scopedLocationSummary || updatedEvent.venue}
             </Text>
           </View>
           <TouchableOpacity style={styles.closeButton} onPress={handleCloseButton}>
@@ -1552,18 +1555,14 @@ const handleNonTicketAction = () => {
             <View style={styles.trendingOverlay} pointerEvents="none">
               <View style={styles.cityEventStatusPill}>
                 <MaterialIcons
-                  name={provinceScopeEvent ? 'public' : routeEvent ? 'alt-route' : 'festival'}
+                  name={routeEvent ? 'alt-route' : areaScopeBadge?.iconName || 'map'}
                   size={15}
                   color="#4E342E"
                 />
                 <Text style={styles.cityEventStatusText} numberOfLines={1}>
-                  {provinceScopeEvent
-                    ? 'Province-wide'
-                    : routeEvent
+                  {routeEvent
                     ? getRouteCompactCertaintyLabel(updatedEvent.routeData)
-                    : areaLocationsEvent
-                      ? getAreaLocationsLabel(updatedEvent)
-                      : 'Area-wide'}
+                    : areaScopeBadge?.label || 'Area-wide'}
                 </Text>
               </View>
               {events && currentIndex !== undefined && (
@@ -1883,7 +1882,9 @@ const handleNonTicketAction = () => {
 
           <View style={styles.infoRow}>
             <MaterialIcons name="place" size={20} color="#FFFFFF" />
-            <Text style={styles.infoText}>{updatedEvent.address}</Text>
+            <Text style={styles.infoText}>
+              {scopedLocationSummary || updatedEvent.address}
+            </Text>
           </View>
         </View>
 
@@ -1997,16 +1998,16 @@ const handleNonTicketAction = () => {
             </Text>
           </TouchableOpacity>
           
-          {provinceScopeEvent || routeEvent || areaLocationsEvent ? (
+          {showAreaExperience ? (
             <View style={styles.routeActionSlot}>
               <GathRShimmerPill
-                iconName={provinceScopeEvent ? 'public' : routeEvent ? 'alt-route' : 'festival'}
+                iconName={routeEvent ? 'alt-route' : areaScopeBadge?.iconName || 'map'}
                 iconSize={20}
                 label={provinceScopeEvent
                   ? 'Event Info'
                   : routeEvent
                   ? (routeActionBusy ? 'Calculating…' : routeMapExperience ? 'Show Route' : 'Route Info')
-                  : (areaLocationsEvent ? 'Show Locations' : 'Location Info')}
+                  : (areaLocationsEvent ? 'View Locations' : 'Event Info')}
                 onPress={handleRouteAction}
                 style={styles.routeActionPill}
                 testID="show-route-shimmer-button"

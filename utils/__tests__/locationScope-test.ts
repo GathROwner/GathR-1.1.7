@@ -1,5 +1,7 @@
 import {
   CITY_EVENTS_CATEGORY,
+  getAreaScopeBadgePresentation,
+  getScopedLocationSummary,
   hasPhysicalEventDestination,
   isAreaExperienceEvent,
   isCityLevelEvent,
@@ -71,5 +73,66 @@ describe('locationScope predicates', () => {
 
   it('exposes the city-events sentinel category', () => {
     expect(CITY_EVENTS_CATEGORY).toBe('__city_events__');
+  });
+
+  it('presents area scopes consistently without implying a route', () => {
+    const areaEvent = {
+      locationScope: 'area',
+      locationCity: 'Charlottetown',
+      venue: "Hunter's Corner and Kent Street",
+      areaData: {
+        version: 1,
+        status: 'verified',
+        locations: [
+          {
+            id: 'kent-street',
+            label: 'Kent Street',
+            coordinates: { latitude: 46.235, longitude: -63.13 },
+            certainty: 'confirmed',
+          },
+          {
+            id: 'hunters-corner',
+            label: "Hunter's Corner",
+            coordinates: { latitude: 46.236, longitude: -63.129 },
+            certainty: 'confirmed',
+          },
+        ],
+      },
+    } as Event;
+
+    expect(getAreaScopeBadgePresentation(areaEvent)).toEqual({
+      label: 'Area · 2 locations',
+      iconName: 'map',
+    });
+    expect(getScopedLocationSummary(areaEvent)).toBe('Charlottetown · 2 locations');
+  });
+
+  it('uses explicit city and province scope labels', () => {
+    const cityEvent = {
+      locationScope: 'city',
+      locationLabel: 'Charlottetown, PEI',
+    } as Event;
+    const provinceEvent = {
+      locationScope: 'province',
+      locationLabel: 'Across Prince Edward Island',
+      mapMode: 'none',
+    } as Event;
+
+    expect(getAreaScopeBadgePresentation(cityEvent)).toEqual({
+      label: 'City-wide',
+      iconName: 'location-city',
+    });
+    expect(getScopedLocationSummary(cityEvent)).toBe('Charlottetown, PEI');
+    expect(getAreaScopeBadgePresentation(provinceEvent)).toEqual({
+      label: 'Province-wide',
+      iconName: 'public',
+    });
+    expect(getScopedLocationSummary(provinceEvent)).toBe('Across Prince Edward Island');
+  });
+
+  it('keeps route and venue events out of unordered-area presentation', () => {
+    expect(getAreaScopeBadgePresentation(eventWithScope('route'))).toBeNull();
+    expect(getAreaScopeBadgePresentation(eventWithScope('venue'))).toBeNull();
+    expect(getScopedLocationSummary(eventWithScope('route'))).toBeNull();
   });
 });
