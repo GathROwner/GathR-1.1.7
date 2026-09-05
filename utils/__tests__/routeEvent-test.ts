@@ -3,6 +3,7 @@ import {
   buildRouteLineFeatureCollection,
   buildRouteStopFeatureCollection,
   getRouteBounds,
+  getRouteCalloutBadgeLabel,
   getRouteCertaintyLabel,
   getRouteCompactCertaintyLabel,
   getRouteFeatureCalloutPresentation,
@@ -407,6 +408,27 @@ describe('route event map contract', () => {
     };
     expect(getRouteCompactCertaintyLabel(stopsOnlyRouteData)).toBe('Stops Only');
     expect(getRouteCompactCertaintyLabel(undefined)).toBe('Route Details');
+  });
+
+  it('labels callout cards as routes without exposing the route action', () => {
+    expect(getRouteCalloutBadgeLabel(routeEvent)).toBe('Route · 2 stops');
+    expect(getRouteCalloutBadgeLabel({
+      ...routeEvent,
+      routeData: {
+        version: 1,
+        status: 'approximate',
+        stops: [],
+        segments: [],
+        routeRequest: {
+          profile: 'walking',
+          waypoints: [
+            { id: 'start', label: 'Start', address: '1 Main Street' },
+            { id: 'finish', label: 'Finish', address: '10 Main Street' },
+          ],
+        },
+      },
+    } as Event)).toBe('Route · 2 stops');
+    expect(getRouteCalloutBadgeLabel({ ...routeEvent, locationScope: 'venue' })).toBeNull();
   });
 
   it('separates an organizer-confirmed route from its map-aligned geometry method', () => {

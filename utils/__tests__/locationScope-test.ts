@@ -7,6 +7,7 @@ import {
   isRouteEvent,
   isScopedLocationEvent,
   isScopedLocationScope,
+  shouldOpenAreaExperienceLightboxDirectly,
 } from '../locationScope';
 import type { Event } from '../../types/events';
 
@@ -47,6 +48,15 @@ describe('locationScope predicates', () => {
     expect(isAreaExperienceEvent(eventWithScope('venue'))).toBe(false);
     expect(isRouteEvent(eventWithScope('route'))).toBe(true);
     expect(isRouteEvent(eventWithScope('area'))).toBe(false);
+  });
+
+  it('opens a scoped-event lightbox directly only for a single-venue marker', () => {
+    const routeEvent = eventWithScope('route');
+
+    expect(shouldOpenAreaExperienceLightboxDirectly(routeEvent, 1)).toBe(true);
+    expect(shouldOpenAreaExperienceLightboxDirectly(routeEvent, 2)).toBe(false);
+    expect(shouldOpenAreaExperienceLightboxDirectly(eventWithScope('venue'), 1)).toBe(false);
+    expect(shouldOpenAreaExperienceLightboxDirectly(undefined, 1)).toBe(false);
   });
 
   it('keeps province coverage out of physical destination and map-marker paths', () => {

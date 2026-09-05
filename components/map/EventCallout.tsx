@@ -139,6 +139,7 @@ import { buildGathrSharePayload } from '../../utils/shareUtils';
 import { getTicketUrl, isValidTicketUrl, normalizeTicketUrl } from '../../utils/ticketUrls';
 import { getPrimaryNonTicketAction } from '../../utils/eventActionLinks';
 import { getTrendingLightboxImageUrl } from '../../utils/trendingLightbox';
+import { getRouteCalloutBadgeLabel } from '../../utils/routeEvent';
 import * as Haptics from 'expo-haptics';
 
 // Import for lazy-loading venue details
@@ -1807,6 +1808,7 @@ const SpecialCard: React.FC<SpecialCardProps> = ({
             ? "PRIVATE · CAN'T GO"
             : 'PRIVATE · INVITED'
     : null;
+  const routeBadgeLabel = getRouteCalloutBadgeLabel(event);
 
   // --- Start of Tutorial Logic ---
   const viewRef = useRef<View | null>(null);
@@ -2440,6 +2442,15 @@ return (
       <View style={styles.cardBottomRow}>
         <View style={styles.leftSection}>
           <FamilyFriendlyBadge event={event} />
+          {routeBadgeLabel && (
+            <View
+              accessibilityLabel={routeBadgeLabel}
+              style={styles.routeEventCardBadge}
+            >
+              <MaterialIcons name="alt-route" size={14} color="#4E342E" />
+              <Text style={styles.routeEventCardBadgeText}>{routeBadgeLabel}</Text>
+            </View>
+          )}
           <View style={[ styles.categoryButton2, { backgroundColor: getCategoryColor(event.category) } ]}>
             <Text style={styles.categoryText}>{getCategoryTag()}</Text>
           </View>
@@ -5750,6 +5761,29 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 12,
     fontWeight: '500',
+  },
+  routeEventCardBadge: {
+    minHeight: 28,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+    marginRight: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F4C542',
+    borderWidth: 1,
+    borderColor: '#DCA900',
+    shadowColor: '#4E342E',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.12,
+    shadowRadius: 3,
+    elevation: 2,
+  },
+  routeEventCardBadgeText: {
+    marginLeft: 5,
+    color: '#4E342E',
+    fontSize: 12,
+    fontWeight: '700',
   },
   priceTag: {
     backgroundColor: '#FFFFFF',

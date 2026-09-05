@@ -50,6 +50,16 @@ export const isRouteEvent = (event: Event): boolean =>
   event.locationScope === 'route';
 
 /**
+ * A scoped event may skip the callout only when its marker represents one
+ * venue. Multi-venue markers must reveal their contents first so users can
+ * choose the intended venue/event before opening a lightbox.
+ */
+export const shouldOpenAreaExperienceLightboxDirectly = (
+  event: Event | null | undefined,
+  venueCount: number
+): boolean => Boolean(event && isAreaExperienceEvent(event) && venueCount === 1);
+
+/**
  * Sentinel category for the city-events filter pill. Not a real event
  * category — matchers special-case it to isCityLevelEvent (same pattern as
  * __FILTER_PILLS_HIDE__).

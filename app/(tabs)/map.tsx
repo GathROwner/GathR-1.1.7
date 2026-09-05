@@ -161,7 +161,10 @@ import {
   subscribeTutorialModalOverlay,
 } from '../../utils/tutorialModalOverlay';
 import { useReduceMotion } from '../../hooks/useReduceMotion';
-import { isAreaExperienceEvent } from '../../utils/locationScope';
+import {
+  isAreaExperienceEvent,
+  shouldOpenAreaExperienceLightboxDirectly,
+} from '../../utils/locationScope';
 import {
   buildRouteLineFeatureCollection,
   buildRouteStopFeatureCollection,
@@ -7197,7 +7200,11 @@ lastOpenedClusterIdRef.current = cluster.id;
               )
           : [];
       const primaryCityEvent = cityEvents[0];
-      const shouldOpenCalloutForMarker = !primaryCityEvent || sortedVenues.length > 1;
+      const shouldOpenAreaLightboxDirectly = shouldOpenAreaExperienceLightboxDirectly(
+        primaryCityEvent,
+        sortedVenues.length
+      );
+      const shouldOpenCalloutForMarker = !shouldOpenAreaLightboxDirectly;
       const calloutCluster = cluster.clusterType === 'multi' || cluster.friendPresence ? cluster : null;
 
       if (shouldOpenCalloutForMarker) {
@@ -7221,10 +7228,9 @@ lastOpenedClusterIdRef.current = cluster.id;
         });
       }
 
-      // City-level (festival) events open the lightbox first. Multi-venue
-      // clusters keep the callout underneath; single-venue city markers close
-      // straight back to the map.
-      if (primaryCityEvent) {
+      // A single-venue area/route marker can open its lightbox immediately.
+      // Multi-venue markers stop at the callout so the user chooses an event.
+      if (primaryCityEvent && shouldOpenAreaLightboxDirectly) {
         const primaryImageUrl = primaryCityEvent
           ? getTrendingLightboxImageUrl(primaryCityEvent)
           : '';
@@ -7261,14 +7267,7 @@ lastOpenedClusterIdRef.current = cluster.id;
             });
           };
 
-          // Let the callout mount and the camera move settle first when there
-          // is actually a callout underlay. Single-venue city markers open as
-          // lightbox-only and should close straight back to the map.
-          if (shouldOpenCalloutForMarker) {
-            InteractionManager.runAfterInteractions(openCityLightbox);
-          } else {
-            openCityLightbox();
-          }
+          openCityLightbox();
         }
       }
 

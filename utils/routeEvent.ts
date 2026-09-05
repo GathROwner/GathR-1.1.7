@@ -221,6 +221,19 @@ export const hasRuntimeRouteRequest = (event: Event): boolean => {
 export const hasRouteMapExperience = (event: Event): boolean =>
   hasDrawableRoute(event) || hasRuntimeRouteRequest(event);
 
+/** Compact, informational label for route events in ordinary callout cards. */
+export const getRouteCalloutBadgeLabel = (event: Event): string | null => {
+  if (event.locationScope !== 'route') return null;
+
+  const stopCount = Math.max(
+    event.routeData?.stops?.length || 0,
+    event.routeData?.routeRequest?.waypoints?.length || 0
+  );
+
+  if (stopCount === 0) return 'Route event';
+  return `Route · ${stopCount} ${stopCount === 1 ? 'stop' : 'stops'}`;
+};
+
 /**
  * Route focus is a temporary map presentation mode. Ordinary event and
  * special markers must leave the map so they cannot cover route lines or stop
