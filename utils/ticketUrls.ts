@@ -31,20 +31,39 @@ export const normalizeTicketUrl = (value?: unknown): string => {
   return /^https?:\/\//i.test(candidate) ? candidate : `https://${candidate}`;
 };
 
+const NON_TICKET_OPERATIONAL_PATH_PATTERN =
+  /\/(?:mall-|store-|business-|holiday-|opening-)?hours(?:\/|$)|\/(?:visit\/)?mall-hours(?:\/|$)/i;
+
+export const isClearlyNonTicketUrl = (value?: unknown): boolean => {
+  const normalized = normalizeTicketUrl(value);
+  if (!normalized) return false;
+
+  try {
+    return NON_TICKET_OPERATIONAL_PATH_PATTERN.test(new URL(normalized).pathname);
+  } catch {
+    return false;
+  }
+};
+
+export const normalizeTicketPurchaseUrl = (value?: unknown): string => {
+  const normalized = normalizeTicketUrl(value);
+  return normalized && !isClearlyNonTicketUrl(normalized) ? normalized : '';
+};
+
 export const isValidTicketUrl = (value?: unknown): boolean =>
-  Boolean(normalizeTicketUrl(value));
+  Boolean(normalizeTicketPurchaseUrl(value));
 
 export const getTicketUrl = (source: TicketUrlSource): string => {
   const metadata = source.metadata;
 
   return (
-    normalizeTicketUrl(source.ticketLinkEvents) ||
-    normalizeTicketUrl(source.ticketLinkPosts) ||
-    normalizeTicketUrl(source.ticketsBuyUrl) ||
-    normalizeTicketUrl(source.ticketLink) ||
-    normalizeTicketUrl(metadata?.ticketLinkEvents) ||
-    normalizeTicketUrl(metadata?.ticketLinkPosts) ||
-    normalizeTicketUrl(metadata?.ticketsBuyUrl) ||
-    normalizeTicketUrl(metadata?.ticketLink)
+    normalizeTicketPurchaseUrl(source.ticketLinkEvents) ||
+    normalizeTicketPurchaseUrl(source.ticketLinkPosts) ||
+    normalizeTicketPurchaseUrl(source.ticketsBuyUrl) ||
+    normalizeTicketPurchaseUrl(source.ticketLink) ||
+    normalizeTicketPurchaseUrl(metadata?.ticketLinkEvents) ||
+    normalizeTicketPurchaseUrl(metadata?.ticketLinkPosts) ||
+    normalizeTicketPurchaseUrl(metadata?.ticketsBuyUrl) ||
+    normalizeTicketPurchaseUrl(metadata?.ticketLink)
   );
 };

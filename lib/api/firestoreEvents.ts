@@ -14,7 +14,11 @@ import {
 } from '../config/backend';
 import { isScopedLocationScope } from '../../utils/locationScope';
 import { resolvePeiCityCentroid } from '../../utils/peiCityCentroids';
-import { getTicketUrl, normalizeTicketUrl } from '../../utils/ticketUrls';
+import {
+  getTicketUrl,
+  normalizeTicketPurchaseUrl,
+  normalizeTicketUrl,
+} from '../../utils/ticketUrls';
 
 // Debug flag for logging
 const DEBUG_FIRESTORE = __DEV__ ?? true;
@@ -238,8 +242,8 @@ export function normalizeFirestoreEvent(fsEvent: FirestoreEvent): Event {
     ? firstText(fsEvent.address, locationLabel, fsEvent.metadata?.address, venueRecord?.address)
     : firstText(fsEvent.venueInfo?.address, fsEvent.metadata?.address, fsEvent.address, venueRecord?.address);
   const ticketsBuyUrl =
-    normalizeTicketUrl(fsEvent.ticketsBuyUrl) ||
-    normalizeTicketUrl(fsEvent.metadata?.ticketsBuyUrl);
+    normalizeTicketPurchaseUrl(fsEvent.ticketsBuyUrl) ||
+    normalizeTicketPurchaseUrl(fsEvent.metadata?.ticketsBuyUrl);
   const resolvedTicketUrl = getTicketUrl(fsEvent);
 
   return {

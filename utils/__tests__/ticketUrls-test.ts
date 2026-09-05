@@ -1,4 +1,9 @@
-import { getTicketUrl, normalizeTicketUrl } from '../ticketUrls';
+import {
+  getTicketUrl,
+  isClearlyNonTicketUrl,
+  normalizeTicketPurchaseUrl,
+  normalizeTicketUrl,
+} from '../ticketUrls';
 
 describe('ticket URL resolution', () => {
   it('uses the documented field precedence', () => {
@@ -64,6 +69,20 @@ describe('ticket URL resolution', () => {
   it('does not treat ticketPrice as a URL fallback', () => {
     expect(
       getTicketUrl({ ticketPrice: 'https://example.com/legacy-price-url' } as never)
+    ).toBe('');
+  });
+
+  it('does not treat the Confederation Court mall-hours page as ticket sales', () => {
+    const mallHoursUrl = 'https://confedcourtmall.com/visit/mall-hours/';
+
+    expect(isClearlyNonTicketUrl(mallHoursUrl)).toBe(true);
+    expect(normalizeTicketPurchaseUrl(mallHoursUrl)).toBe('');
+    expect(
+      getTicketUrl({
+        ticketLinkEvents: mallHoursUrl,
+        ticketsBuyUrl: mallHoursUrl,
+        ticketLink: mallHoursUrl,
+      })
     ).toBe('');
   });
 });

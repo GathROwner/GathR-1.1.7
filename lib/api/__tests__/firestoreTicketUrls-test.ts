@@ -5,6 +5,7 @@ jest.mock('../../../config/firebaseConfig', () => ({
 
 import { normalizeFirestoreEvent } from '../firestoreEvents';
 import type { FirestoreEvent } from '../../../types/firestore';
+import { getPrimaryNonTicketAction } from '../../../utils/eventActionLinks';
 
 describe('Firestore ticket URL mapping', () => {
   it('maps the Come From Away ticketsBuyUrl into the app ticket CTA field', () => {
@@ -60,5 +61,43 @@ describe('Firestore ticket URL mapping', () => {
     expect(normalized.ticketLinkEvents).toBe('');
     expect(normalized.ticketPrice).toBe('');
     expect(normalized.actionLinks).toEqual(event.actionLinks);
+  });
+
+  it('does not synthesize a ticket CTA from a mall-hours URL', () => {
+    const mallHoursUrl = 'https://confedcourtmall.com/visit/mall-hours/';
+    const event = {
+      id: 'n1i4FeSuJmsDwsXPKupo',
+      title: 'Confederation Court Mall Saturday Hours',
+      description:
+        'Mall open hours stated as part of a weekend reminder about free downtown parking on weekends.',
+      startDate: '2026-08-29',
+      startTime: '09:00',
+      venueId: 'name_2lgcnn',
+      venue: 'The Confederation Court Mall',
+      category: 'Gatherings & Parties',
+      isEvent: true,
+      price: null,
+      ticketsBuyUrl: mallHoursUrl,
+      ticketLink: mallHoursUrl,
+      actionLinks: [
+        {
+          url: mallHoursUrl,
+          role: 'event_info',
+          label: 'Event Info',
+        },
+      ],
+      metadata: {},
+    } as FirestoreEvent;
+
+    const normalized = normalizeFirestoreEvent(event);
+
+    expect(normalized.ticketLinkEvents).toBe('');
+    expect(normalized.ticketsBuyUrl).toBe('');
+    expect(normalized.ticketPrice).toBe('');
+    expect(getPrimaryNonTicketAction(normalized)).toMatchObject({
+      url: mallHoursUrl,
+      role: 'event_info',
+      label: 'Event Info',
+    });
   });
 });
