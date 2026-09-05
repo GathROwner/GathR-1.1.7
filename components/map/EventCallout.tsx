@@ -2263,6 +2263,17 @@ useUserPrefsStore.getState().setAll({ savedEvents: next });
                 <Text style={styles.friendEventHeroBadgeText}>{friendEventBadgeLabel}</Text>
               </View>
             )}
+
+            {routeBadgeLabel && (
+              <View
+                accessibilityLabel={routeBadgeLabel}
+                pointerEvents="none"
+                style={styles.routeEventHeroBadge}
+              >
+                <MaterialIcons name="alt-route" size={14} color="#4E342E" />
+                <Text style={styles.routeEventHeroBadgeText}>{routeBadgeLabel}</Text>
+              </View>
+            )}
             
             {showHeroEngagementOverlay && (
               <View style={styles.heroEngagementOverlay} pointerEvents="box-none">
@@ -2442,15 +2453,6 @@ return (
       <View style={styles.cardBottomRow}>
         <View style={styles.leftSection}>
           <FamilyFriendlyBadge event={event} />
-          {routeBadgeLabel && (
-            <View
-              accessibilityLabel={routeBadgeLabel}
-              style={styles.routeEventCardBadge}
-            >
-              <MaterialIcons name="alt-route" size={14} color="#4E342E" />
-              <Text style={styles.routeEventCardBadgeText}>{routeBadgeLabel}</Text>
-            </View>
-          )}
           <View style={[ styles.categoryButton2, { backgroundColor: getCategoryColor(event.category) } ]}>
             <Text style={styles.categoryText}>{getCategoryTag()}</Text>
           </View>
@@ -5762,24 +5764,27 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '500',
   },
-  routeEventCardBadge: {
+  routeEventHeroBadge: {
+    position: 'absolute',
+    bottom: 16,
+    left: 16,
+    zIndex: 12,
     minHeight: 28,
     paddingHorizontal: 10,
     paddingVertical: 5,
-    borderRadius: 8,
-    marginRight: 8,
+    borderRadius: 9,
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F4C542',
+    backgroundColor: 'rgba(244, 197, 66, 0.96)',
     borderWidth: 1,
-    borderColor: '#DCA900',
+    borderColor: 'rgba(255, 255, 255, 0.58)',
     shadowColor: '#4E342E',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.12,
-    shadowRadius: 3,
-    elevation: 2,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.22,
+    shadowRadius: 4,
+    elevation: 4,
   },
-  routeEventCardBadgeText: {
+  routeEventHeroBadgeText: {
     marginLeft: 5,
     color: '#4E342E',
     fontSize: 12,
