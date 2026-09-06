@@ -19,7 +19,10 @@ import {
   normalizeTicketPurchaseUrl,
   normalizeTicketUrl,
 } from '../../utils/ticketUrls';
-import { createLegacyTimingContract } from '../../utils/eventTiming';
+import {
+  createLegacyTimingContract,
+  EVENT_TIMING_POLICY_VERSION,
+} from '../../utils/eventTiming';
 
 // Debug flag for logging
 const DEBUG_FIRESTORE = __DEV__ ?? true;
@@ -110,7 +113,53 @@ const normalizeContractTime = (value: unknown): string | null => {
   return raw ? convert24to12Hour(raw) : null;
 };
 
+const TIMING_VISUAL_QA_EVENT_ID = 'W3NoODb8z0zY6TdDdY9s';
+
+const getTimingVisualQaFixture = (fsEvent: FirestoreEvent): EventTiming | null => {
+  if (
+    process.env.EXPO_PUBLIC_TIMING_QA_DEMO !== 'true' ||
+    fsEvent.id !== TIMING_VISUAL_QA_EVENT_ID
+  ) {
+    return null;
+  }
+
+  return {
+    version: 2,
+    timeZone: 'America/Halifax',
+    scheduleKind: 'timed_session',
+    schedule: {
+      start: {
+        localDate: '2026-09-06',
+        localTime: '11:00:00 AM',
+        timeZone: 'America/Halifax',
+        status: 'observed',
+        sourceType: 'visual_qa_fixture',
+      },
+      end: {
+        localDate: null,
+        localTime: null,
+        timeZone: 'America/Halifax',
+        status: 'unknown',
+      },
+    },
+    estimate: {
+      confidence: 'high',
+      displayEndDate: '2026-09-06',
+      displayEndTime: '1:00:00 PM',
+      discoveryCutoffDate: '2026-09-06',
+      discoveryCutoffTime: '1:15:00 PM',
+      method: 'visual_qa_fixture',
+      estimateVersion: EVENT_TIMING_POLICY_VERSION,
+      evidenceRefs: ['Temporary Android Preview visual QA fixture'],
+    },
+    policyVersion: EVENT_TIMING_POLICY_VERSION,
+  };
+};
+
 export const normalizeFirestoreTiming = (fsEvent: FirestoreEvent): EventTiming => {
+  const visualQaFixture = getTimingVisualQaFixture(fsEvent);
+  if (visualQaFixture) return visualQaFixture;
+
   const metadata = fsEvent.metadata || {};
   const rawTiming = fsEvent.timing ?? metadata.timing;
   if (rawTiming?.version === 2 && rawTiming.schedule?.start && rawTiming.schedule?.end) {
