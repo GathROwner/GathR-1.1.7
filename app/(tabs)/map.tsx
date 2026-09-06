@@ -3453,7 +3453,7 @@ useEffect(() => {
   const [androidClusterHitTargets, setAndroidClusterHitTargets] = useState<AndroidClusterHitTarget[]>([]);
   const [androidAncillaryOverlaysReleasedForClose, setAndroidAncillaryOverlaysReleasedForClose] = useState(false);
   const [isTracePanelVisible, setIsTracePanelVisible] = useState(false);
-  const mapTraceLogoPressStartedAtRef = useRef<number | null>(null);
+  const mapTraceLogoHoldTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [renderedCalloutVenues, setRenderedCalloutVenues] = useState<Venue[]>([]);
   const [renderedCalloutCluster, setRenderedCalloutCluster] = useState<Cluster | null>(null);
   const [calloutLayoutReadyKey, setCalloutLayoutReadyKey] = useState<string | null>(null);
@@ -3468,6 +3468,24 @@ useEffect(() => {
   const [mapFirstFrameRendered, setMapFirstFrameRendered] = useState<boolean>(false);
   const [mapTabOverlaysReady, setMapTabOverlaysReady] = useState<boolean>(Platform.OS !== 'android');
   const [activeRouteEvent, setActiveRouteEvent] = useState<Event | null>(null);
+  const cancelMapTraceLogoHold = useCallback(() => {
+    if (mapTraceLogoHoldTimerRef.current !== null) {
+      clearTimeout(mapTraceLogoHoldTimerRef.current);
+      mapTraceLogoHoldTimerRef.current = null;
+    }
+  }, []);
+  const startMapTraceLogoHold = useCallback(() => {
+    cancelMapTraceLogoHold();
+    mapTraceLogoHoldTimerRef.current = setTimeout(() => {
+      mapTraceLogoHoldTimerRef.current = null;
+      traceMapEvent('trace_panel_opened', {
+        source: 'logo_responder_hold',
+      });
+      setIsTracePanelVisible(true);
+    }, 700);
+  }, [cancelMapTraceLogoHold]);
+
+  useEffect(() => cancelMapTraceLogoHold, [cancelMapTraceLogoHold]);
   const [activeAreaEvent, setActiveAreaEvent] = useState<Event | null>(null);
   const activeMapExperienceEvent = activeRouteEvent || activeAreaEvent;
   const [routeOverlayHeight, setRouteOverlayHeight] = useState(0);
@@ -11955,43 +11973,23 @@ Owner: Map UX stability on Android • Last validated: 2025-09-04
 
       {MAP_TRACE_UI_ENABLED && (
         <View
+          accessible
+          accessibilityLabel="Open map trace"
+          accessibilityRole="button"
           collapsable={false}
+          onMoveShouldSetResponder={() => false}
+          onResponderGrant={startMapTraceLogoHold}
+          onResponderRelease={cancelMapTraceLogoHold}
+          onResponderTerminate={cancelMapTraceLogoHold}
+          onStartShouldSetResponder={() => true}
           pointerEvents="auto"
           style={styles.mapTraceLogoHost}
         >
-          <TouchableOpacity
-            activeOpacity={1}
-            accessibilityLabel="Open map trace"
-            delayLongPress={700}
-            hitSlop={10}
-            onPressIn={() => {
-              mapTraceLogoPressStartedAtRef.current = Date.now();
-            }}
-            onLongPress={() => {
-              mapTraceLogoPressStartedAtRef.current = null;
-              traceMapEvent('trace_panel_opened', {
-                source: 'logo_long_press',
-              });
-              setIsTracePanelVisible(true);
-            }}
-            onPress={() => {
-              const startedAt = mapTraceLogoPressStartedAtRef.current;
-              mapTraceLogoPressStartedAtRef.current = null;
-              if (startedAt !== null && Date.now() - startedAt >= 650) {
-                traceMapEvent('trace_panel_opened', {
-                  source: 'logo_hold_fallback',
-                });
-                setIsTracePanelVisible(true);
-              }
-            }}
-            style={styles.mapTraceLogoTouchable}
-          >
-            <Image
-              source={require('../../assets/images/icon.png')}
-              style={styles.mapLogo}
-              resizeMode="contain"
-            />
-          </TouchableOpacity>
+          <Image
+            source={require('../../assets/images/icon.png')}
+            style={styles.mapLogo}
+            resizeMode="contain"
+          />
         </View>
       )}
 
@@ -13036,19 +13034,15 @@ countText: {
     zIndex: 6,
   },
   mapTraceLogoHost: {
+    alignItems: 'center',
     position: 'absolute',
+    justifyContent: 'center',
     left: 0,
     bottom: 24,
     width: 40,
     height: 40,
     zIndex: 200,
     elevation: 200,
-  },
-  mapTraceLogoTouchable: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    width: 40,
-    height: 40,
   },
   mapLogo: {
     width: 20,
