@@ -11590,6 +11590,7 @@ onDidFinishLoadingMap={() => {
 
       {MAP_TRACE_UI_ENABLED && (
         <Pressable
+          accessibilityLabel="Open map trace"
           style={styles.mapTraceTrigger}
           delayLongPress={700}
           onLongPress={() => {
@@ -13010,6 +13011,7 @@ countText: {
     width: 40,
     height: 40,
     zIndex: 8,
+    elevation: 9,
   },
   mapLogo: {
     width: 20,
