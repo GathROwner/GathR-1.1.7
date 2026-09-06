@@ -22,7 +22,6 @@ import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import { useIsFocused } from '@react-navigation/native';
 import { Platform } from 'react-native';
 import { usePathname, useRouter } from 'expo-router';
-import { LongPressGestureHandler, State } from 'react-native-gesture-handler';
 
 
 
@@ -11954,41 +11953,40 @@ Owner: Map UX stability on Android • Last validated: 2025-09-04
       <GlobalEventLightbox onShowRoute={showRouteOnMap} />
 
       {MAP_TRACE_UI_ENABLED && (
-        <LongPressGestureHandler
-          minDurationMs={700}
-          onHandlerStateChange={(event) => {
-            if (event.nativeEvent.state === State.ACTIVE) {
+        <TouchableOpacity
+          activeOpacity={0.75}
+          accessibilityActions={[{ name: 'activate', label: 'Open map trace' }]}
+          accessibilityLabel="Open map trace"
+          accessibilityRole="button"
+          delayLongPress={700}
+          onAccessibilityAction={(event) => {
+            if (event.nativeEvent.actionName === 'activate') {
               traceMapEvent('trace_panel_opened', {
-                source: 'logo_native_long_press',
+                source: 'logo_accessibility_action',
               });
               setIsTracePanelVisible(true);
             }
           }}
+          onLongPress={() => {
+            traceMapEvent('trace_panel_opened', {
+              source: 'logo_long_press',
+            });
+            setIsTracePanelVisible(true);
+          }}
+          onPress={() => {
+            traceMapEvent('trace_panel_opened', {
+              source: 'logo_press_fallback',
+            });
+            setIsTracePanelVisible(true);
+          }}
+          style={styles.mapTraceLogoHost}
         >
-          <View
-            accessible
-            accessibilityActions={[{ name: 'activate', label: 'Open map trace' }]}
-            accessibilityLabel="Open map trace"
-            accessibilityRole="button"
-            collapsable={false}
-            onAccessibilityAction={(event) => {
-              if (event.nativeEvent.actionName === 'activate') {
-                traceMapEvent('trace_panel_opened', {
-                  source: 'logo_accessibility_action',
-                });
-                setIsTracePanelVisible(true);
-              }
-            }}
-            pointerEvents="auto"
-            style={styles.mapTraceLogoHost}
-          >
-            <Image
-              source={require('../../assets/images/icon.png')}
-              style={styles.mapLogo}
-              resizeMode="contain"
-            />
-          </View>
-        </LongPressGestureHandler>
+          <Image
+            source={require('../../assets/images/icon.png')}
+            style={styles.mapLogo}
+            resizeMode="contain"
+          />
+        </TouchableOpacity>
       )}
 
       {MAP_TRACE_UI_ENABLED && isTracePanelVisible && (
