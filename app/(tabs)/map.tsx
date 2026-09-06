@@ -13041,8 +13041,8 @@ countText: {
     bottom: 24,
     width: 40,
     height: 40,
-    zIndex: 40,
-    elevation: 40,
+    zIndex: 200,
+    elevation: 200,
   },
   mapTraceLogoTouchable: {
     alignItems: 'center',
