@@ -39,6 +39,7 @@ export function EventTimingBadge({
     badge.tone === 'muted' && styles.muted,
     badge.tone === 'neutral' && styles.neutral,
     badge.infoTitle && styles.withInfo,
+    carousel && badge.infoTitle && styles.carouselWithInfo,
     style,
   ];
 
@@ -48,8 +49,12 @@ export function EventTimingBadge({
         {badge.text}
       </Text>
       {badge.infoTitle ? (
-        <View pointerEvents="none" style={styles.infoCorner} testID="event-timing-badge-info">
-          <Text style={styles.infoCornerText}>i</Text>
+        <View
+          pointerEvents="none"
+          style={[styles.infoCorner, carousel && styles.carouselInfoCorner]}
+          testID="event-timing-badge-info"
+        >
+          <Text style={[styles.infoCornerText, carousel && styles.carouselInfoCornerText]}>i</Text>
         </View>
       ) : null}
     </>
@@ -122,11 +127,14 @@ const styles = StyleSheet.create({
     paddingVertical: 3,
   },
   carousel: {
-    borderRadius: 6,
-    minHeight: 20,
-    minWidth: 40,
-    paddingHorizontal: 4,
-    paddingVertical: 2,
+    borderRadius: 5,
+    minHeight: 18,
+    minWidth: 34,
+    paddingHorizontal: 3,
+    paddingVertical: 1,
+  },
+  carouselWithInfo: {
+    marginRight: 2,
   },
   text: {
     color: '#FFFFFF',
@@ -141,9 +149,9 @@ const styles = StyleSheet.create({
     lineHeight: 9,
   },
   carouselText: {
-    fontSize: 7.5,
-    letterSpacing: 0.15,
-    lineHeight: 8,
+    fontSize: 6.5,
+    letterSpacing: 0.1,
+    lineHeight: 7,
   },
   infoCorner: {
     alignItems: 'center',
@@ -164,6 +172,17 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     lineHeight: 9,
     textAlign: 'center',
+  },
+  carouselInfoCorner: {
+    borderRadius: 5,
+    height: 10,
+    right: -2,
+    top: -3,
+    width: 10,
+  },
+  carouselInfoCornerText: {
+    fontSize: 7,
+    lineHeight: 8,
   },
   pressed: {
     opacity: 0.72,

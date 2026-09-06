@@ -978,7 +978,7 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
   carouselTimingBadge: {
-    marginLeft: 3,
+    marginLeft: 0,
   },
   cardContent: {
     paddingHorizontal: 8,
