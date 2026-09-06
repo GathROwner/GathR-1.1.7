@@ -11596,26 +11596,32 @@ onDidFinishLoadingMap={() => {
 
       {/* GathR logo above Mapbox logo */}
       {MAP_TRACE_UI_ENABLED ? (
-        <TouchableOpacity
-          activeOpacity={1}
-          accessibilityLabel="Open map trace"
-          delayLongPress={700}
-          hitSlop={10}
-          onLongPress={() => {
-            traceMapEvent('trace_panel_opened', {
-              source: 'logo_long_press',
-            });
-            setIsTracePanelVisible(true);
-          }}
-          onPress={() => undefined}
-          style={[styles.mapLogoContainer, styles.mapLogoTraceTarget]}
+        <View
+          collapsable={false}
+          pointerEvents="box-none"
+          style={styles.mapTraceOverlay}
         >
-          <Image
-            source={require('../../assets/images/icon.png')}
-            style={styles.mapLogo}
-            resizeMode="contain"
-          />
-        </TouchableOpacity>
+          <TouchableOpacity
+            activeOpacity={1}
+            accessibilityLabel="Open map trace"
+            delayLongPress={700}
+            hitSlop={10}
+            onLongPress={() => {
+              traceMapEvent('trace_panel_opened', {
+                source: 'logo_long_press',
+              });
+              setIsTracePanelVisible(true);
+            }}
+            onPress={() => undefined}
+            style={[styles.mapLogoContainer, styles.mapLogoTraceTarget]}
+          >
+            <Image
+              source={require('../../assets/images/icon.png')}
+              style={styles.mapLogo}
+              resizeMode="contain"
+            />
+          </TouchableOpacity>
+        </View>
       ) : (
         <View style={styles.mapLogoContainer} pointerEvents="none">
           <Image
@@ -13014,6 +13020,11 @@ countText: {
     zIndex: 6,
   },
   mapLogoTraceTarget: {
+    zIndex: 8,
+    elevation: 9,
+  },
+  mapTraceOverlay: {
+    ...StyleSheet.absoluteFillObject,
     zIndex: 8,
     elevation: 9,
   },
