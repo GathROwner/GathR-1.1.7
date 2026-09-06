@@ -11599,7 +11599,7 @@ onDidFinishLoadingMap={() => {
         <View
           collapsable={false}
           pointerEvents="box-none"
-          style={styles.mapTraceOverlay}
+          style={styles.mapTraceLogoHost}
         >
           <TouchableOpacity
             activeOpacity={1}
@@ -11613,7 +11613,7 @@ onDidFinishLoadingMap={() => {
               setIsTracePanelVisible(true);
             }}
             onPress={() => undefined}
-            style={[styles.mapLogoContainer, styles.mapLogoTraceTarget]}
+            style={styles.mapTraceLogoTouchable}
           >
             <Image
               source={require('../../assets/images/icon.png')}
@@ -13019,14 +13019,20 @@ countText: {
     bottom: 34, // sits just above the Mapbox logo area
     zIndex: 6,
   },
-  mapLogoTraceTarget: {
+  mapTraceLogoHost: {
+    position: 'absolute',
+    left: 0,
+    bottom: 24,
+    width: 40,
+    height: 40,
     zIndex: 8,
     elevation: 9,
   },
-  mapTraceOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    zIndex: 8,
-    elevation: 9,
+  mapTraceLogoTouchable: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 40,
+    height: 40,
   },
   mapLogo: {
     width: 20,
