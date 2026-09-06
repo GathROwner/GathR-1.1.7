@@ -11588,33 +11588,41 @@ onDidFinishLoadingMap={() => {
         </Pressable>
       )}
 
-      {MAP_TRACE_UI_ENABLED && (
-        <Pressable
-          style={styles.mapTraceTrigger}
-          delayLongPress={700}
-          onLongPress={() => {
-            traceMapEvent('trace_panel_opened', {
-              source: 'logo_long_press',
-            });
-            setIsTracePanelVisible(true);
-          }}
-        />
-      )}
-
       {ANDROID_CLUSTER_MARKERVIEW_ISOLATION_DEBUG && (
         <View pointerEvents="none" style={styles.androidMarkerIsolationBadge}>
           <Text style={styles.androidMarkerIsolationBadgeText}>Android dev: cluster markers disabled</Text>
         </View>
       )}
 
-            {/* GathR logo above Mapbox logo */}
-      <View style={styles.mapLogoContainer} pointerEvents="none">
-        <Image
-          source={require('../../assets/images/icon.png')}
-          style={styles.mapLogo}
-          resizeMode="contain"
-        />
-      </View>
+      {/* GathR logo above Mapbox logo */}
+      {MAP_TRACE_UI_ENABLED ? (
+        <Pressable
+          accessibilityLabel="Open map trace"
+          delayLongPress={700}
+          hitSlop={10}
+          onLongPress={() => {
+            traceMapEvent('trace_panel_opened', {
+              source: 'logo_long_press',
+            });
+            setIsTracePanelVisible(true);
+          }}
+          style={[styles.mapLogoContainer, styles.mapLogoTraceTarget]}
+        >
+          <Image
+            source={require('../../assets/images/icon.png')}
+            style={styles.mapLogo}
+            resizeMode="contain"
+          />
+        </Pressable>
+      ) : (
+        <View style={styles.mapLogoContainer} pointerEvents="none">
+          <Image
+            source={require('../../assets/images/icon.png')}
+            style={styles.mapLogo}
+            resizeMode="contain"
+          />
+        </View>
+      )}
 
       {shouldMountAncillaryOverlays && (
         <View
@@ -13003,13 +13011,9 @@ countText: {
     bottom: 34, // sits just above the Mapbox logo area
     zIndex: 6,
   },
-  mapTraceTrigger: {
-    position: 'absolute',
-    left: 2,
-    bottom: 24,
-    width: 40,
-    height: 40,
+  mapLogoTraceTarget: {
     zIndex: 8,
+    elevation: 9,
   },
   mapLogo: {
     width: 20,
