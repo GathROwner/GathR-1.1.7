@@ -71,6 +71,21 @@ describe('bounded map latency diagnostics', () => {
     });
   });
 
+  it('resets per-caller schedule metrics when a new gesture begins', () => {
+    jest.spyOn(globalThis.performance, 'now').mockReturnValue(300);
+    const trace = loadEnabledTrace();
+    const firstGestureSessionId = trace.beginMapTraceGestureSession('first_gesture');
+
+    trace.measureMapScheduleState('map_filtering', () => 'first');
+    expect(trace.getMapScheduleStateMetricSnapshot('map_filtering', firstGestureSessionId).count).toBe(1);
+
+    const secondGestureSessionId = trace.beginMapTraceGestureSession('second_gesture');
+    expect(trace.getMapScheduleStateMetricSnapshot('map_filtering', firstGestureSessionId).count).toBe(0);
+
+    trace.measureMapScheduleState('map_filtering', () => 'second');
+    expect(trace.getMapScheduleStateMetricSnapshot('map_filtering', secondGestureSessionId).count).toBe(1);
+  });
+
   it('records expected versus actual timer timing and event-loop lateness', () => {
     jest.spyOn(globalThis.performance, 'now').mockReturnValue(900);
     const trace = loadEnabledTrace();

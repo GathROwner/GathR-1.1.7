@@ -605,7 +605,7 @@ export const doesEventMatchTypeFilters = (
   timeContext: EventTimeContext = createEventTimeContext()
 ): boolean => {
   // Ended events (past end time + grace) never show, regardless of time filter
-  if (isEventPastFast(event, timeContext)) {
+  if (isEventPastMeasured(event, timeContext, 'map_filtering')) {
     return false;
   }
 
@@ -720,8 +720,13 @@ export const calculateDistance = (
  */
 const filterEvents = (events: Event[], criteria: FilterCriteria): Event[] => {
   const timeContext = createEventTimeContext();
+  const gestureSessionId = getActiveMapTraceGestureSessionId();
+  const traceStartedAt = MAP_TRACE_ENABLED ? mapTraceNow() : 0;
+  const scheduleMetricBefore = MAP_TRACE_ENABLED
+    ? getMapScheduleStateMetricSnapshot('map_filtering', gestureSessionId)
+    : { count: 0, cumulativeDurationMs: 0 };
 
-  return events.filter(event => {
+  const filteredEvents = events.filter(event => {
     // Apply basic visibility filter
     const isVisible = 
       (event.type === 'event' && criteria.showEvents) || 
@@ -736,6 +741,24 @@ const filterEvents = (events: Event[], criteria: FilterCriteria): Event[] => {
     
     return doesEventMatchTypeFilters(event, typeFilters, timeContext);
   });
+
+  if (MAP_TRACE_ENABLED) {
+    const scheduleMetric = diffMapScheduleStateMetrics(
+      scheduleMetricBefore,
+      getMapScheduleStateMetricSnapshot('map_filtering', gestureSessionId)
+    );
+    traceMapEvent('map_filtering_completed', {
+      durationMs: mapTraceNow() - traceStartedAt,
+      inputEvents: events.length,
+      outputEvents: filteredEvents.length,
+      scheduleCalls: scheduleMetric.count,
+      scheduleCumulativeDurationMs: scheduleMetric.cumulativeDurationMs,
+      eventTimeFilter: criteria.eventFilters.timeFilter,
+      specialTimeFilter: criteria.specialFilters.timeFilter,
+    }, { gestureSessionId });
+  }
+
+  return filteredEvents;
 };
 
 /**

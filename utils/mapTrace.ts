@@ -138,6 +138,10 @@ export const beginMapTraceGestureSession = (
     return null;
   }
 
+  // All per-caller totals needed for an earlier gesture are emitted into trace
+  // entries before the next gesture begins. Reset here so this diagnostic map
+  // cannot grow for the lifetime of a long-running Preview session.
+  scheduleStateMetrics.clear();
   const gestureSessionId = `${TRACE_RUN_ID}-g${nextGestureSessionId++}`;
   activeGestureSessionId = gestureSessionId;
   traceMapEvent(

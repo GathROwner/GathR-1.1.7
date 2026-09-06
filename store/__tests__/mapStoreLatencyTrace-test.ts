@@ -126,4 +126,27 @@ describe('map store latency caller attribution', () => {
       clusterNowTodayCalls: 4,
     });
   });
+
+  it('measures the version-2 expiry check and emits complete map-filtering totals', () => {
+    const event = makeFutureEvent('filter-one', 'event');
+    const gestureSessionId = trace.beginMapTraceGestureSession('filter_test');
+
+    useMapStore.getState().setEvents([event]);
+
+    expect(trace.getMapScheduleStateMetricSnapshot('map_filtering', gestureSessionId).count).toBe(2);
+    const filteringEntry = trace.getMapTraceState().entries.find((entry) =>
+      entry.label === 'map_filtering_completed'
+    );
+    expect(filteringEntry).toMatchObject({
+      gestureSessionId,
+      details: {
+        inputEvents: 1,
+        outputEvents: 0,
+        scheduleCalls: 2,
+        eventTimeFilter: 'today',
+        specialTimeFilter: 'today',
+      },
+    });
+    expect(Number(filteringEntry?.details?.scheduleCumulativeDurationMs)).toBeGreaterThanOrEqual(0);
+  });
 });
