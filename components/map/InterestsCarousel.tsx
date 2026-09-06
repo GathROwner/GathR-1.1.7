@@ -240,9 +240,22 @@ const EventCard = memo(({
         <View style={styles.timeRow}>
           <MaterialIcons name="schedule" size={13} color="#1967D2" />
           {hasEstimatedEndpoint ? (
-            <EventTimingSummaryText event={event} style={styles.timeText} numberOfLines={1} />
+            <EventTimingSummaryText
+              event={event}
+              style={styles.timeText}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              minimumFontScale={0.8}
+            />
           ) : (
-            <Text style={styles.timeText} numberOfLines={1}>{formatEventTime(event)}</Text>
+            <Text
+              style={styles.timeText}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              minimumFontScale={0.8}
+            >
+              {formatEventTime(event)}
+            </Text>
           )}
           {!isNow && (
             <EventTimingBadge event={event} compact style={styles.carouselTimingBadge} />
