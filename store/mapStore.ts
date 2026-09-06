@@ -120,9 +120,17 @@ import {
 } from '../utils/eventExpiry';
 import {
   getEventScheduleState,
-  getEventTimeStatusFromTiming,
-  isEventDefaultMapEligible,
 } from '../utils/eventTiming';
+import {
+  MAP_TRACE_ENABLED,
+  diffMapScheduleStateMetrics,
+  getActiveMapTraceGestureSessionId,
+  getMapScheduleStateMetricSnapshot,
+  mapTraceNow,
+  measureMapScheduleState,
+  traceMapEvent,
+  type MapScheduleStateCaller,
+} from '../utils/mapTrace';
 
 // Define zoom threshold bands and their corresponding clustering radii
 export interface ZoomThreshold {
@@ -464,13 +472,13 @@ const determineClusterTimeStatus = (
   timeContext: EventTimeContext = createEventTimeContext()
 ): TimeStatus => {
   const hasNowEvents = venues.some(venue => 
-    venue.events.some(event => isEventNowFast(event, timeContext))
+    venue.events.some(event => isEventNowFast(event, timeContext, 'cluster_now_today'))
   );
   
   if (hasNowEvents) return 'now';
   
   const hasTodayEvents = venues.some(venue => 
-    venue.events.some(event => isEventHappeningTodayFast(event, timeContext))
+    venue.events.some(event => isEventHappeningTodayFast(event, timeContext, 'cluster_now_today'))
   );
   
   if (hasTodayEvents) return 'today';
@@ -527,22 +535,66 @@ export const createEventTimeContext = (now = new Date()): EventTimeContext => ({
   nowMinutes: now.getHours() * 60 + now.getMinutes(),
 });
 
+const getMeasuredEventScheduleState = (
+  event: Pick<Event, 'startDate' | 'startTime' | 'endDate' | 'endTime' | 'timing'>,
+  context: EventTimeContext,
+  traceCaller: MapScheduleStateCaller = 'map_filtering'
+): ReturnType<typeof getEventScheduleState> => {
+  const now = eventTimeContextToDate(context);
+  if (!MAP_TRACE_ENABLED) {
+    return getEventScheduleState(event, now);
+  }
+
+  return measureMapScheduleState(
+    traceCaller,
+    () => getEventScheduleState(event, now)
+  );
+};
+
 const isEventNowFast = (
   event: Pick<Event, 'startDate' | 'startTime' | 'endDate' | 'endTime' | 'timing'>,
-  context: EventTimeContext
-): boolean => getEventScheduleState(event, eventTimeContextToDate(context)).nowEligibility === 'confirmed';
+  context: EventTimeContext,
+  traceCaller: MapScheduleStateCaller = 'map_filtering'
+): boolean => getMeasuredEventScheduleState(event, context, traceCaller).nowEligibility === 'confirmed';
 
 const isEventHappeningTodayFast = (
   event: Pick<Event, 'startDate' | 'startTime' | 'endDate' | 'endTime' | 'timing'>,
-  context: EventTimeContext
+  context: EventTimeContext,
+  traceCaller: MapScheduleStateCaller = 'map_filtering'
 ): boolean => {
-  return getEventScheduleState(event, eventTimeContextToDate(context)).todayEligible;
+  return getMeasuredEventScheduleState(event, context, traceCaller).todayEligible;
 };
 
 export const getEventTimeStatusFast = (
   event: Pick<Event, 'startDate' | 'startTime' | 'endDate' | 'endTime' | 'timing'>,
-  context: EventTimeContext
-): TimeStatus => getEventTimeStatusFromTiming(event, eventTimeContextToDate(context));
+  context: EventTimeContext,
+  traceCaller: MapScheduleStateCaller = 'map_filtering'
+): TimeStatus => {
+  const state = getMeasuredEventScheduleState(event, context, traceCaller);
+  if (state.nowEligibility === 'confirmed') return 'now';
+  if (state.code === 'confirmed_ended') return 'past';
+  if (state.todayEligible) return 'today';
+  return 'future';
+};
+
+const isEventDefaultMapEligibleMeasured = (event: Event): boolean => {
+  if (!MAP_TRACE_ENABLED) {
+    return getEventScheduleState(event).defaultMapEligible;
+  }
+
+  return measureMapScheduleState(
+    'default_map_eligibility',
+    () => getEventScheduleState(event)
+  ).defaultMapEligible;
+};
+
+const isEventPastMeasured = (
+  event: Event,
+  context: EventTimeContext,
+  traceCaller: MapScheduleStateCaller
+): boolean => event.timing?.version === 2
+  ? getMeasuredEventScheduleState(event, context, traceCaller).code === 'confirmed_ended'
+  : isEventPastFast(event, context);
 
 /**
  * Determines if an event matches the given type-specific filters
@@ -708,6 +760,9 @@ const calculateTimeFilterCounts = (
     [TimeFilterType.TOMORROW]: 0,
     [TimeFilterType.UPCOMING]: 0
   };
+  const traceCaller: MapScheduleStateCaller = eventType === 'event'
+    ? 'events_pill_counts'
+    : 'specials_pill_counts';
 
   for (const event of events) {
     const isVisible =
@@ -729,12 +784,12 @@ const calculateTimeFilterCounts = (
       if (!matchesSearch) continue;
     }
 
-    if (isEventPastFast(event, timeContext)) continue;
+    if (isEventPastMeasured(event, timeContext, traceCaller)) continue;
 
     counts[TimeFilterType.ALL] += 1;
 
-    const isNow = isEventNowFast(event, timeContext);
-    const isToday = isNow || isEventHappeningTodayFast(event, timeContext);
+    const isNow = isEventNowFast(event, timeContext, traceCaller);
+    const isToday = isNow || isEventHappeningTodayFast(event, timeContext, traceCaller);
 
     if (isNow) counts[TimeFilterType.NOW] += 1;
     if (isToday) counts[TimeFilterType.TODAY] += 1;
@@ -766,6 +821,9 @@ const calculateCategoryFilterCounts = (
   const searchTerm = typeFilters.search?.trim().toLowerCase();
   
   const counts: { [category: string]: number } = {};
+  const traceCaller: MapScheduleStateCaller = eventType === 'event'
+    ? 'events_pill_counts'
+    : 'specials_pill_counts';
 
   for (const event of events) {
     if (event.type !== eventType) continue;
@@ -781,19 +839,19 @@ const calculateCategoryFilterCounts = (
 
     if (!isVisible) continue;
 
-    if (isEventPastFast(event, timeContext)) continue;
+    if (isEventPastMeasured(event, timeContext, traceCaller)) continue;
 
     if (typeFilters.timeFilter === TimeFilterType.NOW) {
-      const isNow = isEventNowFast(event, timeContext);
+      const isNow = isEventNowFast(event, timeContext, traceCaller);
       if (!isNow) continue;
     } else if (typeFilters.timeFilter === TimeFilterType.TODAY) {
-      const isToday = isEventHappeningTodayFast(event, timeContext);
+      const isToday = isEventHappeningTodayFast(event, timeContext, traceCaller);
       if (!isToday) continue;
     } else if (typeFilters.timeFilter === TimeFilterType.TOMORROW) {
       const isTomorrow = getEventDateKey(event.startDate) === timeContext.tomorrowKey;
       if (!isTomorrow) continue;
     } else if (typeFilters.timeFilter === TimeFilterType.UPCOMING) {
-      const timeStatus = getEventTimeStatusFast(event, timeContext);
+      const timeStatus = getEventTimeStatusFast(event, timeContext, traceCaller);
       if (timeStatus !== 'future') continue;
     }
 
@@ -1378,7 +1436,7 @@ export const useMapStore = create<MapState>((set, get) => ({
   const categories = Array.from(new Set(events.map(event => event.category)));
   const filtered = filterEvents(events, filterCriteria);
   const venues = groupEventsByVenue(
-    filtered.filter(isMapRenderableEvent).filter((event) => isEventDefaultMapEligible(event))
+    filtered.filter(isMapRenderableEvent).filter(isEventDefaultMapEligibleMeasured)
   );
   const clusters = clusterVenues(venues, zoomLevel);
   
@@ -1455,7 +1513,7 @@ export const useMapStore = create<MapState>((set, get) => ({
 
     const clusterStartedAt = Date.now();
     const venues = groupEventsByVenue(
-      filtered.filter(isMapRenderableEvent).filter((event) => isEventDefaultMapEligible(event))
+      filtered.filter(isMapRenderableEvent).filter(isEventDefaultMapEligibleMeasured)
     );
     const clusters = clusterVenues(venues, zoomLevel);
 
@@ -1736,6 +1794,17 @@ refreshPrivateSharedEventsFromServer: async (privateEventIds?: string[]) => {
    */
   fetchViewportEvents: async (bbox: { west: number; south: number; east: number; north: number }) => {
     const startedAt = Date.now();
+    const traceStartedAt = MAP_TRACE_ENABLED ? mapTraceNow() : 0;
+    const traceGestureSessionId = getActiveMapTraceGestureSessionId();
+    traceMapEvent('viewport_fetch_started', {
+      allEvents: get().allEvents.length,
+      events: get().events.length,
+      viewportEvents: get().viewportEvents.length,
+      onScreenEvents: get().onScreenEvents.length,
+      filteredEvents: get().filteredEvents.length,
+      clusters: get().clusters.length,
+      bbox,
+    }, { gestureSessionId: traceGestureSessionId });
     logStartupDataTiming('viewport_fetch_called', {
       bbox,
       allEvents: get().allEvents.length,
@@ -1811,6 +1880,7 @@ refreshPrivateSharedEventsFromServer: async (privateEventIds?: string[]) => {
       const candidateEvents = [...publicCandidateEvents, ...friendCandidateEvents];
 
       const partitionStartedAt = Date.now();
+      const partitionTraceStartedAt = MAP_TRACE_ENABLED ? mapTraceNow() : 0;
       const clusterBbox = expandBoundingBox(bbox, CLUSTER_SOURCE_BBOX_BUFFER_MULTIPLIER);
       const coordinateEvents: Event[] = [];
       const clusterSourceEvents: Event[] = [];
@@ -1828,10 +1898,25 @@ refreshPrivateSharedEventsFromServer: async (privateEventIds?: string[]) => {
       }
 
       const partitionMs = Date.now() - partitionStartedAt;
+      const partitionTraceMs = MAP_TRACE_ENABLED ? mapTraceNow() - partitionTraceStartedAt : 0;
       const filterStartedAt = Date.now();
+      const filterTraceStartedAt = MAP_TRACE_ENABLED ? mapTraceNow() : 0;
       const filtered = filterEvents(clusterSourceEvents, filters)
         .filter((event) => get().showFriendEvents || event.source !== 'friend_event');
       const filterMs = Date.now() - filterStartedAt;
+      const filterTraceMs = MAP_TRACE_ENABLED ? mapTraceNow() - filterTraceStartedAt : 0;
+      traceMapEvent('viewport_partition_completed', {
+        elapsedMs: MAP_TRACE_ENABLED ? mapTraceNow() - traceStartedAt : 0,
+        partitionMs: partitionTraceMs,
+        filterMs: filterTraceMs,
+        candidateEvents: candidateEvents.length,
+        coordinateEvents: coordinateEvents.length,
+        clusterSourceEvents: clusterSourceEvents.length,
+        viewportEvents: viewportEvents.length,
+        outsideViewportEvents: outsideViewportEvents.length,
+        filteredEvents: filtered.length,
+        clustersBeforeCommit: get().clusters.length,
+      }, { gestureSessionId: traceGestureSessionId });
       logStartupDataTiming('viewport_partition_complete', {
         elapsedMs: Date.now() - startedAt,
         partitionMs,
@@ -1878,7 +1963,25 @@ refreshPrivateSharedEventsFromServer: async (privateEventIds?: string[]) => {
         lastFetchedAt: Date.now(),
       });
 
+      traceMapEvent('viewport_store_committed', {
+        elapsedMs: MAP_TRACE_ENABLED ? mapTraceNow() - traceStartedAt : 0,
+        events: get().events.length,
+        viewportEvents: get().viewportEvents.length,
+        outsideViewportEvents: get().outsideViewportEvents.length,
+        onScreenEvents: get().onScreenEvents.length,
+        filteredEvents: get().filteredEvents.length,
+        clustersBeforeGeneration: get().clusters.length,
+      }, { gestureSessionId: traceGestureSessionId });
+
       get().generateClusters(get().zoomLevel);
+      traceMapEvent('viewport_fetch_completed', {
+        durationMs: MAP_TRACE_ENABLED ? mapTraceNow() - traceStartedAt : 0,
+        events: get().events.length,
+        viewportEvents: get().viewportEvents.length,
+        onScreenEvents: get().onScreenEvents.length,
+        filteredEvents: get().filteredEvents.length,
+        clusters: get().clusters.length,
+      }, { gestureSessionId: traceGestureSessionId });
       logStartupDataTiming('viewport_fetch_completed', {
         elapsedMs: Date.now() - startedAt,
         clusters: get().clusters.length,
@@ -1890,6 +1993,15 @@ refreshPrivateSharedEventsFromServer: async (privateEventIds?: string[]) => {
         error: errorMsg,
         isLoading: false,
       });
+      traceMapEvent('viewport_fetch_failed', {
+        durationMs: MAP_TRACE_ENABLED ? mapTraceNow() - traceStartedAt : 0,
+        error: errorMsg,
+        events: get().events.length,
+        viewportEvents: get().viewportEvents.length,
+        onScreenEvents: get().onScreenEvents.length,
+        filteredEvents: get().filteredEvents.length,
+        clusters: get().clusters.length,
+      }, { gestureSessionId: traceGestureSessionId });
       logStartupDataTiming('viewport_fetch_failed', {
         elapsedMs: Date.now() - startedAt,
         error: errorMsg,
@@ -2211,11 +2323,61 @@ fetchEventDetails: async (eventIds: (string | number)[]) => {
 
     // Province-scope records participate in the Area pill and event lists but
     // have no physical destination, so every clustering path excludes them.
+    const traceGestureSessionId = getActiveMapTraceGestureSessionId();
+    const traceStartedAt = MAP_TRACE_ENABLED ? mapTraceNow() : 0;
+    const eligibilityBefore = MAP_TRACE_ENABLED
+      ? getMapScheduleStateMetricSnapshot('default_map_eligibility', traceGestureSessionId)
+      : { count: 0, cumulativeDurationMs: 0 };
+    const clusterClassificationBefore = MAP_TRACE_ENABLED
+      ? getMapScheduleStateMetricSnapshot('cluster_now_today', traceGestureSessionId)
+      : { count: 0, cumulativeDurationMs: 0 };
+    traceMapEvent('cluster_generation_started', {
+      zoom: currentZoom,
+      filteredEvents: filteredEvents.length,
+      clustersBeforeGeneration: get().clusters.length,
+    }, { gestureSessionId: traceGestureSessionId });
+
+    const eligibilityStartedAt = MAP_TRACE_ENABLED ? mapTraceNow() : 0;
     const mapRenderableEvents = filteredEvents
       .filter(isMapRenderableEvent)
-      .filter((event) => isEventDefaultMapEligible(event));
+      .filter(isEventDefaultMapEligibleMeasured);
+    const eligibilityDurationMs = MAP_TRACE_ENABLED ? mapTraceNow() - eligibilityStartedAt : 0;
+
+    const groupingStartedAt = MAP_TRACE_ENABLED ? mapTraceNow() : 0;
     const venues = groupEventsByVenue(mapRenderableEvents);
+    const groupingDurationMs = MAP_TRACE_ENABLED ? mapTraceNow() - groupingStartedAt : 0;
+
+    const clusteringStartedAt = MAP_TRACE_ENABLED ? mapTraceNow() : 0;
     const clusters = clusterVenues(venues, currentZoom);
+    const clusteringDurationMs = MAP_TRACE_ENABLED ? mapTraceNow() - clusteringStartedAt : 0;
+    const eligibilityMetric = MAP_TRACE_ENABLED
+      ? diffMapScheduleStateMetrics(
+          eligibilityBefore,
+          getMapScheduleStateMetricSnapshot('default_map_eligibility', traceGestureSessionId)
+        )
+      : eligibilityBefore;
+    const clusterClassificationMetric = MAP_TRACE_ENABLED
+      ? diffMapScheduleStateMetrics(
+          clusterClassificationBefore,
+          getMapScheduleStateMetricSnapshot('cluster_now_today', traceGestureSessionId)
+        )
+      : clusterClassificationBefore;
+
+    traceMapEvent('cluster_generation_computed', {
+      elapsedMs: MAP_TRACE_ENABLED ? mapTraceNow() - traceStartedAt : 0,
+      zoom: currentZoom,
+      filteredEvents: filteredEvents.length,
+      mapRenderableEvents: mapRenderableEvents.length,
+      venues: venues.length,
+      clusters: clusters.length,
+      eligibilityDurationMs,
+      groupingDurationMs,
+      clusteringDurationMs,
+      defaultMapEligibilityCalls: eligibilityMetric.count,
+      defaultMapEligibilityCumulativeMs: eligibilityMetric.cumulativeDurationMs,
+      clusterNowTodayCalls: clusterClassificationMetric.count,
+      clusterNowTodayCumulativeMs: clusterClassificationMetric.cumulativeDurationMs,
+    }, { gestureSessionId: traceGestureSessionId });
 
     if (__DEV__ && currentZoom >= 8.5 && currentZoom <= 12.5 && filteredEvents.length > 0) {
       const zoomBucket = Math.round(currentZoom * 4) / 4;
@@ -2330,6 +2492,21 @@ if (DEBUG_MAP_LOAD) {
 }
 
 set({ clusters });
+traceMapEvent('cluster_store_committed', {
+  durationMs: MAP_TRACE_ENABLED ? mapTraceNow() - traceStartedAt : 0,
+  zoom: currentZoom,
+  events: get().events.length,
+  viewportEvents: get().viewportEvents.length,
+  onScreenEvents: get().onScreenEvents.length,
+  filteredEvents: get().filteredEvents.length,
+  mapRenderableEvents: mapRenderableEvents.length,
+  venues: venues.length,
+  clusters: get().clusters.length,
+  defaultMapEligibilityCalls: eligibilityMetric.count,
+  defaultMapEligibilityCumulativeMs: eligibilityMetric.cumulativeDurationMs,
+  clusterNowTodayCalls: clusterClassificationMetric.count,
+  clusterNowTodayCumulativeMs: clusterClassificationMetric.cumulativeDurationMs,
+}, { gestureSessionId: traceGestureSessionId });
 logStartupDataTiming('generate_clusters_completed', {
   elapsedMs: Date.now() - t0,
   zoom: currentZoom,
@@ -2343,7 +2520,7 @@ logStartupDataTiming('generate_clusters_completed', {
     const venues = groupEventsByVenue(
       filteredEvents
         .filter(isMapRenderableEvent)
-        .filter((event) => isEventDefaultMapEligible(event))
+        .filter(isEventDefaultMapEligibleMeasured)
     );
     return clusterVenues(venues, zoom);
   },

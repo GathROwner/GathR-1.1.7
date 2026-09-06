@@ -8,7 +8,15 @@ import { TimeFilterType } from '../../types';
 import TimeFilterOptions from './TimeFilterOptions';
 import CategoryFilterOptions from './CategoryFilterOptions';
 import { isEventNow, isEventHappeningToday } from '../../utils/dateUtils';
-import { registerMapTraceSampler, traceMapEvent } from '../../utils/mapTrace';
+import {
+  MAP_TRACE_ENABLED,
+  diffMapScheduleStateMetrics,
+  getActiveMapTraceGestureSessionId,
+  getMapScheduleStateMetricSnapshot,
+  mapTraceNow,
+  registerMapTraceSampler,
+  traceMapEvent,
+} from '../../utils/mapTrace';
 import { publishTutorialMeasurement } from '../../utils/tutorialReadiness';
 
 type CurtainPeekState = {
@@ -151,6 +159,13 @@ const useCurtainPeekTiming = ({
 
 
 const FilterPills = () => {
+  const traceRenderStartedAt = MAP_TRACE_ENABLED ? mapTraceNow() : 0;
+  const traceGestureSessionId = getActiveMapTraceGestureSessionId();
+  const lastCommittedScheduleMetricsRef = useRef({
+    gestureSessionId: traceGestureSessionId,
+    events: getMapScheduleStateMetricSnapshot('events_pill_counts', traceGestureSessionId),
+    specials: getMapScheduleStateMetricSnapshot('specials_pill_counts', traceGestureSessionId),
+  });
   // Use explicit selectors to ensure Zustand triggers re-renders when these change
   const events = useMapStore((state) => state.events);
   const filteredEvents = useMapStore((state) => state.filteredEvents);
@@ -1112,6 +1127,51 @@ React.useEffect(() => {
 
   const visibleEvents = eventFilterCounts[filterCriteria.eventFilters.timeFilter];
   const visibleSpecials = specialFilterCounts[filterCriteria.specialFilters.timeFilter];
+
+  React.useLayoutEffect(() => {
+    if (!MAP_TRACE_ENABLED) {
+      return;
+    }
+
+    const gestureSessionId = getActiveMapTraceGestureSessionId();
+    const previous = lastCommittedScheduleMetricsRef.current;
+    const currentEvents = getMapScheduleStateMetricSnapshot('events_pill_counts', gestureSessionId);
+    const currentSpecials = getMapScheduleStateMetricSnapshot('specials_pill_counts', gestureSessionId);
+    const committedMapState = useMapStore.getState();
+    const eventDelta = previous.gestureSessionId === gestureSessionId
+      ? diffMapScheduleStateMetrics(previous.events, currentEvents)
+      : currentEvents;
+    const specialDelta = previous.gestureSessionId === gestureSessionId
+      ? diffMapScheduleStateMetrics(previous.specials, currentSpecials)
+      : currentSpecials;
+
+    lastCommittedScheduleMetricsRef.current = {
+      gestureSessionId,
+      events: currentEvents,
+      specials: currentSpecials,
+    };
+
+    traceMapEvent('filter_pills_react_commit', {
+      renderToCommitMs: mapTraceNow() - traceRenderStartedAt,
+      events: committedMapState.events.length,
+      filteredEvents: committedMapState.filteredEvents.length,
+      viewportEvents: committedMapState.viewportEvents.length,
+      onScreenEvents: committedMapState.onScreenEvents.length,
+      clusters: committedMapState.clusters.length,
+      committedEvents: totalEvents,
+      committedSpecials: totalSpecials,
+      visibleEvents,
+      visibleSpecials,
+      eventsPillScheduleCalls: eventDelta.count,
+      eventsPillScheduleCumulativeMs: eventDelta.cumulativeDurationMs,
+      specialsPillScheduleCalls: specialDelta.count,
+      specialsPillScheduleCumulativeMs: specialDelta.cumulativeDurationMs,
+      eventsPillScheduleTotalCalls: currentEvents.count,
+      eventsPillScheduleTotalCumulativeMs: currentEvents.cumulativeDurationMs,
+      specialsPillScheduleTotalCalls: currentSpecials.count,
+      specialsPillScheduleTotalCumulativeMs: currentSpecials.cumulativeDurationMs,
+    }, { gestureSessionId });
+  });
 
   // Debug logging for FilterPills (disabled - runs on every render)
   // console.log('[FilterPills] Counts updated:', {

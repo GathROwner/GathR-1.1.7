@@ -156,7 +156,7 @@ import FamilyFriendlyBadge from '../common/FamilyFriendlyBadge';
 import { EventTimingBadge } from '../common/EventTimingBadge';
 import { EventTimingSummaryText } from '../common/EventTimingSummaryText';
 import { EventSeriesContextLine } from '../common/EventSeriesContextLine';
-import { traceMapEvent } from '../../utils/mapTrace';
+import { MAP_TRACE_ENABLED, traceMapEvent } from '../../utils/mapTrace';
 import { doesEventMatchAnyInterest } from '../../utils/familyFriendly';
 import { getVenueFriendPresence } from '../../utils/friendPresence';
 import {
@@ -4184,6 +4184,22 @@ useEffect(() => {
 useEffect(() => {
   console.log("Initial callout animation effect");
   let cancelled = false;
+  let firstVisibleFrameId: number | null = null;
+  const scheduleFirstVisibleFrameTrace = (presentation: 'static' | 'animated') => {
+    if (!MAP_TRACE_ENABLED) return;
+
+    firstVisibleFrameId = requestAnimationFrame(() => {
+      firstVisibleFrameId = null;
+      if (cancelled) return;
+      traceMapEvent('event_callout_first_visible_frame', {
+        clusterId: cluster?.id ?? 'none',
+        venueCount: venues.length,
+        presentation,
+        currentTranslateY: readAnimatedNumeric(translateY),
+        currentBackgroundOpacity: readAnimatedNumeric(backgroundOpacity),
+      });
+    });
+  };
   setCalloutPresentationSettled(false);
   const markPresentationSettled = () => {
     if (cancelled) return;
@@ -4231,9 +4247,16 @@ useEffect(() => {
       animatedEntrance: false,
       staticIosPresentation: true,
     });
+    traceMapEvent('event_callout_native_presentation_dispatched', {
+      clusterId: cluster?.id ?? 'none',
+      venueCount: venues.length,
+      presentation: 'static',
+    });
+    scheduleFirstVisibleFrameTrace('static');
     presentationSettler.animationComplete(true);
     return () => {
       cancelled = true;
+      if (firstVisibleFrameId !== null) cancelAnimationFrame(firstVisibleFrameId);
       presentationSettler.cancel();
     };
   }
@@ -4273,6 +4296,13 @@ useEffect(() => {
     });
   }
 
+  traceMapEvent('event_callout_native_presentation_dispatched', {
+    clusterId: cluster?.id ?? 'none',
+    venueCount: venues.length,
+    presentation: 'animated',
+  });
+  scheduleFirstVisibleFrameTrace('animated');
+
   traceMapEvent('event_callout_initial_position_applied', {
     clusterId: cluster?.id ?? 'none',
     venueCount: venues.length,
@@ -4287,6 +4317,7 @@ useEffect(() => {
   });
   return () => {
     cancelled = true;
+    if (firstVisibleFrameId !== null) cancelAnimationFrame(firstVisibleFrameId);
     presentationSettler.cancel();
     sheetEntranceAnimation.stop();
   };

@@ -105,11 +105,18 @@ import {
   type GeoCoordinate
 } from '../../utils/geoUtils';
 import {
+  MAP_TRACE_ENABLED,
   MAP_TRACE_UI_ENABLED,
+  beginMapTraceGestureSession,
   captureMapTraceSamplers,
+  createMapTraceTimerExpectation,
+  getActiveMapTraceGestureSessionId,
+  mapTraceNow,
   registerMapTraceSampler,
   setMapTraceSnapshot,
   traceMapEvent,
+  traceMapTimerFired,
+  traceMapTimerScheduled,
 } from '../../utils/mapTrace';
 import {
   cacheStartupLocation,
@@ -198,6 +205,20 @@ import {
 
 // Initialize Mapbox token
 initializeMapboxAccessToken(MapboxGL);
+
+const getCommittedMapTraceCounts = () => {
+  if (!MAP_TRACE_ENABLED) return {};
+
+  const state = useMapStore.getState();
+
+  return {
+    events: state.events?.length ?? 0,
+    filteredEvents: state.filteredEvents?.length ?? 0,
+    viewportEvents: state.viewportEvents?.length ?? 0,
+    onScreenEvents: state.onScreenEvents?.length ?? 0,
+    clusters: state.clusters?.length ?? 0,
+  };
+};
 
 // Constants
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
@@ -4455,9 +4476,23 @@ useEffect(() => {
     traceMapEvent('clusters_ready_state_changed', {
       clustersReady,
       clustersReadyForInteraction,
-      clusterCount: clusters.length,
+      isLoading,
+      ...getCommittedMapTraceCounts(),
     });
-  }, [clusters.length, clustersReady, clustersReadyForInteraction]);
+  }, [clusters.length, clustersReady, clustersReadyForInteraction, isLoading]);
+
+  useLayoutEffect(() => {
+    traceMapEvent('map_interaction_state_react_commit', {
+      isMapMovingState: isMapMoving,
+      isMapMovingRef: isMapMovingRef.current,
+      isLoading,
+      clustersReadyForInteraction,
+      clustersReadyState: clustersReady,
+      processingClusterId: processingClusterId ?? 'none',
+      ignoreProgrammatic: ignoreProgrammaticCameraRef.current,
+      ...getCommittedMapTraceCounts(),
+    }, { gestureSessionId: gestureTraceSessionIdRef.current });
+  }, [clusters.length, clustersReady, clustersReadyForInteraction, isLoading, isMapMoving, processingClusterId]);
 
   useEffect(() => {
     logCalloutProbe('[CalloutProbe] store selection changed', {
@@ -4477,6 +4512,13 @@ useEffect(() => {
       processingClusterId: processingClusterId ?? 'none',
     });
   }, [processingClusterId]);
+
+  useEffect(() => {
+    traceMapEvent('marker_view_epoch_committed', {
+      markerViewEpoch,
+      ...getCommittedMapTraceCounts(),
+    }, { gestureSessionId: gestureTraceSessionIdRef.current });
+  }, [markerViewEpoch]);
 
   // Dismiss interest carousel (category filters)
   const dismissInterestCarousel = useCallback((reason: string = 'unspecified') => {
@@ -4612,6 +4654,24 @@ const hideCapTimeoutRef = useRef<NodeJS.Timeout | null>(null); // force-show cap
 const lastCameraChangeRef = useRef<number>(0);
 const lastMapIdleAtRef = useRef<number>(0);
 const lastViewportFetchZoomRef = useRef<number | null>(null);
+const gestureTraceSessionIdRef = useRef<string | null>(null);
+const gestureTraceNativeActiveRef = useRef(false);
+const gestureTraceMeaningfulTickCountRef = useRef(0);
+const gestureTraceFirstMeaningfulAtRef = useRef<number | null>(null);
+const gestureTraceLastMeaningfulAtRef = useRef<number | null>(null);
+const gestureTraceMovementEndCancellationCountRef = useRef(0);
+const gestureTraceViewportDebounceCancellationCountRef = useRef(0);
+const gestureTraceRenderedClusterArrayRef = useRef<Cluster[] | null>(null);
+const gestureTraceMarkerRenderStatsRef = useRef({
+  gestureSessionId: null as string | null,
+  count: 0,
+  cumulativeDurationMs: 0,
+  maxDurationMs: 0,
+  lastMarkerViewEpoch: 0,
+  lastClusterCount: 0,
+  lastVisibleCount: 0,
+  lastRenderedCount: 0,
+});
 
 
 // Track previous camera values to compute true deltas
@@ -6561,14 +6621,16 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
         clusterCount: clusters.length,
       });
       traceMapEvent('clusters_ready_immediate_started', {
-        clusterCount: clusters.length,
         delayMs: 0,
-      });
+        isLoading,
+        ...getCommittedMapTraceCounts(),
+      }, { gestureSessionId: gestureTraceSessionIdRef.current });
       console.log('[map] Clusters ready for interaction');
       setClustersReady(true);
       traceMapEvent('clusters_ready_immediate_completed', {
-        clusterCount: clusters.length,
-      });
+        isLoading,
+        ...getCommittedMapTraceCounts(),
+      }, { gestureSessionId: gestureTraceSessionIdRef.current });
       logAndroidStartupTiming('clusters_ready_immediate_completed', {
         clusterCount: clusters.length,
       });
@@ -6578,9 +6640,12 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
     // Reset clustersReady when loading starts again
     if (!clustersReadyForInteraction && clustersReady) {
       setClustersReady(false);
-      traceMapEvent('clusters_ready_reset_for_loading');
+      traceMapEvent('clusters_ready_reset_for_loading', {
+        isLoading,
+        ...getCommittedMapTraceCounts(),
+      }, { gestureSessionId: gestureTraceSessionIdRef.current });
     }
-  }, [clusters.length, clustersReady, clustersReadyForInteraction]);
+  }, [clusters.length, clustersReady, clustersReadyForInteraction, isLoading]);
 
   useEffect(() => {
     return () => {
@@ -6961,11 +7026,18 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
       clusterId: cluster.id,
       clusterType: cluster.clusterType,
       venueCount: cluster.venues?.length ?? 0,
+      sinceLastMeaningfulCameraMs: gestureTraceLastMeaningfulAtRef.current === null
+        ? null
+        : mapTraceNow() - gestureTraceLastMeaningfulAtRef.current,
+      isMapMovingRef: isMapMovingRef.current,
+      isLoadingRef: isMapLoadingRef.current,
+      clustersReadyForInteractionRef: clustersReadyForInteractionRef.current,
       ignoreProgrammatic: ignoreProgrammaticCameraRef.current,
       activeProcessingClusterId: clusterProcessingRef.current ?? 'none',
       hasRenderedCallout,
       renderedCalloutClusterId: renderedCalloutClusterId ?? 'none',
-    });
+      ...getCommittedMapTraceCounts(),
+    }, { gestureSessionId: gestureTraceSessionIdRef.current });
     logAndroidRetapLatencyProbe('marker_press_started', {
       clusterId: cluster.id,
       clusterType: cluster.clusterType,
@@ -8052,6 +8124,21 @@ lastOpenedClusterIdRef.current = cluster.id;
       Number((globalThis as any).__gathrSharedEventReturnGuardUntil || 0)
     );
     const sharedEventReturnGuardRemainingMs = Math.max(0, sharedEventReturnGuardUntil - Date.now());
+    traceMapEvent('map_surface_press_received', {
+      sinceLastMeaningfulCameraMs: gestureTraceLastMeaningfulAtRef.current === null
+        ? null
+        : mapTraceNow() - gestureTraceLastMeaningfulAtRef.current,
+      isMapMovingState: isMapMoving,
+      isMapMovingRef: isMapMovingRef.current,
+      isLoading,
+      clustersReadyForInteraction,
+      processingClusterId: clusterProcessingRef.current ?? 'none',
+      ignoreProgrammatic: ignoreProgrammaticCameraRef.current,
+      guardRemainingMs,
+      filterGuardRemainingMs,
+      sharedEventReturnGuardRemainingMs,
+      ...getCommittedMapTraceCounts(),
+    }, { gestureSessionId: gestureTraceSessionIdRef.current });
     logCalloutProbe('[CalloutProbe] handleMapPress fired', {
       selectedVenueCount,
       selectedClusterId: selectedClusterId ?? 'none',
@@ -8197,13 +8284,20 @@ const hidePills = useCallback((reason: string = 'unspecified') => {
  * can’t immediately trigger a new hide (prevents “blink-hide”).
  */
 const showPills = useCallback((reason: string = 'unspecified') => {
-
+    const gestureSessionId = gestureTraceSessionIdRef.current ?? getActiveMapTraceGestureSessionId();
+    const requestedAt = MAP_TRACE_ENABLED ? mapTraceNow() : 0;
+    traceMapEvent('filter_pills_show_requested', {
+      reason,
+      requestedAtMonotonicMs: requestedAt,
+      isMapMovingRef: isMapMovingRef.current,
+      ...getCommittedMapTraceCounts(),
+    }, { gestureSessionId });
     logPills('showPills RUN', { reason });
     // Set a brief lockout to prevent immediate re-hide flicker
     postShowLockoutUntilRef.current = Date.now() + POST_SHOW_LOCKOUT_MS;
     logPills('LOCKOUT set post-show', { lockoutMs: POST_SHOW_LOCKOUT_MS });
 
-    Animated.parallel([
+    const showAnimation = Animated.parallel([
       Animated.timing(pillsAnimation, {
         toValue: 0,
         duration: 180,
@@ -8214,9 +8308,26 @@ const showPills = useCallback((reason: string = 'unspecified') => {
         duration: 160,
         useNativeDriver: true,
       }),
-    ]).start(() => {
+    ]);
+    traceMapEvent('filter_pills_native_animation_dispatch_started', {
+      reason,
+      sinceShowRequestedMs: mapTraceNow() - requestedAt,
+      ...getCommittedMapTraceCounts(),
+    }, { gestureSessionId });
+    showAnimation.start(({ finished }) => {
       logPills('showPills DONE', { reason });
+      traceMapEvent('filter_pills_animation_callback_completed', {
+        reason,
+        finished,
+        sinceShowRequestedMs: mapTraceNow() - requestedAt,
+        ...getCommittedMapTraceCounts(),
+      }, { gestureSessionId });
     });
+    traceMapEvent('filter_pills_native_animation_dispatched', {
+      reason,
+      sinceShowRequestedMs: mapTraceNow() - requestedAt,
+      ...getCommittedMapTraceCounts(),
+    }, { gestureSessionId });
   }, [pillsAnimation, pillsOpacity]);
 
 
@@ -8373,6 +8484,13 @@ const handleMapMovementStart = useCallback(() => {
   // Already moving? Nothing to do.
   if (isMapMovingRef.current) return;
 
+  const gestureSessionId = gestureTraceSessionIdRef.current ?? getActiveMapTraceGestureSessionId();
+  traceMapEvent('map_movement_started', {
+    isMapMovingState: isMapMoving,
+    isMapMovingRef: isMapMovingRef.current,
+    ignoreProgrammatic: ignoreProgrammaticCameraRef.current,
+    ...getCommittedMapTraceCounts(),
+  }, { gestureSessionId });
   isMapMovingRef.current = true;
   setIsMapMoving(true);
   mapInteractionStartTime.current = now;
@@ -8383,7 +8501,23 @@ const handleMapMovementStart = useCallback(() => {
   if (hideCapTimeoutRef.current) { clearTimeout(hideCapTimeoutRef.current); hideCapTimeoutRef.current = null; }
 
   // Kick off the hard cap: force-show if we stay “moving” too long (e.g., long zoom-out tail)
+  const hiddenCapExpectation = MAP_TRACE_ENABLED
+    ? createMapTraceTimerExpectation(
+        'filter_pills_hidden_cap',
+        MAX_HIDDEN_MS,
+        gestureSessionId
+      )
+    : null;
+  if (hiddenCapExpectation) {
+    traceMapTimerScheduled(hiddenCapExpectation, getCommittedMapTraceCounts());
+  }
   hideCapTimeoutRef.current = setTimeout(() => {
+    if (hiddenCapExpectation) {
+      traceMapTimerFired(hiddenCapExpectation, {
+        isMapMovingRef: isMapMovingRef.current,
+        ...getCommittedMapTraceCounts(),
+      });
+    }
     if (isMapMovingRef.current) {
       // logPills('MAX_HIDDEN cap reached — forcing show');
       handleMapMovementEnd(); // will call showPills after debounce
@@ -8400,7 +8534,27 @@ const handleMapMovementStart = useCallback(() => {
 
 
 const reconcileCameraStateFromMapRef = useCallback(async (source: 'map_idle' | 'movement_end' | 'hotspot_return' = 'map_idle') => {
+  const gestureSessionId = gestureTraceSessionIdRef.current ?? getActiveMapTraceGestureSessionId();
+  const startedAt = MAP_TRACE_ENABLED ? mapTraceNow() : 0;
+  const traceCompleted = (result: string, extra: Record<string, unknown> = {}) => {
+    traceMapEvent('camera_reconcile_completed', {
+      source,
+      result,
+      durationMs: mapTraceNow() - startedAt,
+      ...getCommittedMapTraceCounts(),
+      ...extra,
+    }, { gestureSessionId });
+  };
+  traceMapEvent('camera_reconcile_started', {
+    source,
+    platform: Platform.OS,
+    ...getCommittedMapTraceCounts(),
+  }, { gestureSessionId });
+
   if (Platform.OS !== 'android' || isAndroidHotspotStartupFlowActive()) {
+    traceCompleted(
+      Platform.OS !== 'android' ? 'platform_not_reconciled' : 'hotspot_startup_active'
+    );
     return;
   }
 
@@ -8410,6 +8564,7 @@ const reconcileCameraStateFromMapRef = useCallback(async (source: 'map_idle' | '
     typeof mapView.getCenter !== 'function' ||
     typeof mapView.getZoom !== 'function'
   ) {
+    traceCompleted('native_camera_api_unavailable');
     return;
   }
 
@@ -8426,6 +8581,7 @@ const reconcileCameraStateFromMapRef = useCallback(async (source: 'map_idle' | '
     ]);
 
     if (cameraReconcileRequestIdRef.current !== requestId) {
+      traceCompleted('superseded', { requestId });
       return;
     }
 
@@ -8435,6 +8591,7 @@ const reconcileCameraStateFromMapRef = useCallback(async (source: 'map_idle' | '
       : undefined;
 
     if (!centerArr || typeof reportedZoom !== 'number') {
+      traceCompleted('invalid_native_camera_state', { requestId });
       return;
     }
 
@@ -8453,6 +8610,7 @@ const reconcileCameraStateFromMapRef = useCallback(async (source: 'map_idle' | '
       visibleBbox: nativeVisibleBbox,
       userGestureSeen: userGestureSeenRef.current,
     })) {
+      traceCompleted('startup_camera_payload_rejected', { requestId });
       return;
     }
 
@@ -8502,6 +8660,13 @@ const reconcileCameraStateFromMapRef = useCallback(async (source: 'map_idle' | '
     const finalZoomDelta = Math.abs(effectiveClusterZoom - storeZoom);
     const finalZoomBucketChanged = Math.floor(effectiveClusterZoom) !== Math.floor(storeZoom);
     if (finalZoomBucketChanged || finalZoomDelta >= 0.02) {
+      traceMapEvent('cluster_generation_requested', {
+        source: `camera_reconcile_${source}`,
+        zoom: effectiveClusterZoom,
+        finalZoomDelta,
+        finalZoomBucketChanged,
+        ...getCommittedMapTraceCounts(),
+      }, { gestureSessionId });
       setZoomLevel(effectiveClusterZoom);
     }
 
@@ -8537,7 +8702,16 @@ const reconcileCameraStateFromMapRef = useCallback(async (source: 'map_idle' | '
       lastViewportFetchTimeRef.current = Date.now();
       fetchViewportEvents(roundedBbox);
     }
-  } catch {
+    traceCompleted('completed', {
+      requestId,
+      bboxChanged,
+      onScreenEvents: onScreenEvents.length,
+    });
+  } catch (error) {
+    traceCompleted('native_camera_read_failed', {
+      requestId,
+      message: error instanceof Error ? error.message : String(error),
+    });
     // Native camera reads are best-effort; camera-change events still handle normal updates.
   }
 }, [
@@ -8589,7 +8763,37 @@ useEffect(() => {
  *  • Starts POST_SHOW_LOCKOUT_MS so tiny follow-up ticks can’t instantly hide.
  */
 const handleMapMovementEnd = useCallback(() => {
-
+  const gestureSessionId = gestureTraceSessionIdRef.current ?? getActiveMapTraceGestureSessionId();
+  const movementEndStartedAt = MAP_TRACE_ENABLED ? mapTraceNow() : 0;
+  const markerRenderStats = gestureTraceMarkerRenderStatsRef.current;
+  const markerRenderStatsMatchGesture = markerRenderStats.gestureSessionId === gestureSessionId;
+  traceMapEvent('handle_map_movement_end', {
+    meaningfulCameraTicks: gestureTraceMeaningfulTickCountRef.current,
+    movementEndDebounceCancellations: gestureTraceMovementEndCancellationCountRef.current,
+    viewportDebounceCancellations: gestureTraceViewportDebounceCancellationCountRef.current,
+    markerRenderCount: markerRenderStatsMatchGesture ? markerRenderStats.count : 0,
+    markerRenderCumulativeMs: markerRenderStatsMatchGesture ? markerRenderStats.cumulativeDurationMs : 0,
+    markerRenderMaxMs: markerRenderStatsMatchGesture ? markerRenderStats.maxDurationMs : 0,
+    markerViewEpoch: markerRenderStats.lastMarkerViewEpoch,
+    lastRenderedMarkerCount: markerRenderStats.lastRenderedCount,
+    firstMeaningfulCameraAtMonotonicMs: gestureTraceFirstMeaningfulAtRef.current,
+    lastMeaningfulCameraAtMonotonicMs: gestureTraceLastMeaningfulAtRef.current,
+    meaningfulCameraSpanMs:
+      gestureTraceFirstMeaningfulAtRef.current === null ||
+      gestureTraceLastMeaningfulAtRef.current === null
+        ? null
+        : gestureTraceLastMeaningfulAtRef.current - gestureTraceFirstMeaningfulAtRef.current,
+    sinceLastMeaningfulCameraMs: gestureTraceLastMeaningfulAtRef.current === null
+      ? null
+      : movementEndStartedAt - gestureTraceLastMeaningfulAtRef.current,
+    isMapMovingState: isMapMoving,
+    isMapMovingRef: isMapMovingRef.current,
+    isLoading,
+    clustersReadyForInteraction,
+    processingClusterId: clusterProcessingRef.current ?? 'none',
+    ignoreProgrammatic: ignoreProgrammaticCameraRef.current,
+    ...getCommittedMapTraceCounts(),
+  }, { gestureSessionId });
   console.log('[DEBUG] 🛑 handleMapMovementEnd called');
   isMapMovingRef.current = false;
   setIsMapMoving(false);
@@ -8597,11 +8801,16 @@ const handleMapMovementEnd = useCallback(() => {
   // analytics session
   if (mapInteractionStartTime.current) {
     const movementDuration = Date.now() - mapInteractionStartTime.current;
+    const analyticsStartedAt = MAP_TRACE_ENABLED ? mapTraceNow() : 0;
     analytics.trackMapInteraction('map_movement_session', {
       duration_ms: movementDuration,
       zoom_change: Math.abs(zoomLevel - lastZoomLevel.current),
       is_guest: isGuest
     });
+    traceMapEvent('movement_end_analytics_completed', {
+      durationMs: mapTraceNow() - analyticsStartedAt,
+      movementDurationMs: movementDuration,
+    }, { gestureSessionId });
     mapInteractionStartTime.current = null;
   }
 
@@ -8609,21 +8818,53 @@ const handleMapMovementEnd = useCallback(() => {
   if (showTimeoutRef.current) { clearTimeout(showTimeoutRef.current); }
   if (hideCapTimeoutRef.current) { clearTimeout(hideCapTimeoutRef.current); hideCapTimeoutRef.current = null; }
 
+  const schedulePillReturn = () => {
+    traceMapEvent('map_movement_end_sync_work_completed', {
+      durationMs: mapTraceNow() - movementEndStartedAt,
+      isMapMovingState: isMapMoving,
+      isMapMovingRef: isMapMovingRef.current,
+      ...getCommittedMapTraceCounts(),
+    }, { gestureSessionId });
+    const pillReturnExpectation = MAP_TRACE_ENABLED
+      ? createMapTraceTimerExpectation(
+          'filter_pills_return',
+          300,
+          gestureSessionId
+        )
+      : null;
+    if (pillReturnExpectation) {
+      traceMapTimerScheduled(pillReturnExpectation, getCommittedMapTraceCounts());
+    }
+    showTimeoutRef.current = setTimeout(() => {
+      if (pillReturnExpectation) {
+        traceMapTimerFired(pillReturnExpectation, {
+          isMapMovingState: isMapMoving,
+          isMapMovingRef: isMapMovingRef.current,
+          ...getCommittedMapTraceCounts(),
+        });
+      }
+      showPills('movement_end');
+      postShowLockoutUntilRef.current = Date.now() + POST_SHOW_LOCKOUT_MS;
+    }, 300);
+  };
+
   // Check if viewport changed during movement and fetch if needed
   const cameraState = currentCameraStateRef.current;
   console.log('[DEBUG] 📷 Camera state:', cameraState ? 'EXISTS' : 'NULL');
 
   if (Platform.OS === 'android') {
     void reconcileCameraStateFromMapRef('movement_end');
-
-    showTimeoutRef.current = setTimeout(() => {
-      showPills('movement_end');
-      postShowLockoutUntilRef.current = Date.now() + POST_SHOW_LOCKOUT_MS;
-    }, 300);
-
+    schedulePillReturn();
     return;
   }
 
+  const inlineReconcileStartedAt = MAP_TRACE_ENABLED ? mapTraceNow() : 0;
+  traceMapEvent('camera_reconcile_started', {
+    source: 'movement_end_cached_state',
+    platform: Platform.OS,
+    hasCameraState: Boolean(cameraState),
+    ...getCommittedMapTraceCounts(),
+  }, { gestureSessionId });
   if (cameraState) {
     const { width, height } = Dimensions.get('window');
     const center: GeoCoordinate = {
@@ -8638,6 +8879,13 @@ const handleMapMovementEnd = useCallback(() => {
 
     if (!ignoreProgrammaticCameraRef.current && (finalZoomBucketChanged || finalZoomDelta >= 0.02)) {
       lastZoomLevel.current = zoom;
+      traceMapEvent('cluster_generation_requested', {
+        source: 'movement_end_final_zoom',
+        zoom,
+        finalZoomDelta,
+        finalZoomBucketChanged,
+        ...getCommittedMapTraceCounts(),
+      }, { gestureSessionId });
       setZoomLevel(zoom);
     }
 
@@ -8656,19 +8904,34 @@ const handleMapMovementEnd = useCallback(() => {
       console.log('[Viewport] Movement ended - bbox changed, fetching:', roundedBbox);
       lastViewportBboxRef.current = roundedBbox;
       lastViewportFetchZoomRef.current = zoomLevel;
+      traceMapEvent('viewport_fetch_requested', {
+        source: 'movement_end',
+        zoom,
+        ...getCommittedMapTraceCounts(),
+      }, { gestureSessionId });
       fetchViewportEvents(roundedBbox);
     }
+    traceMapEvent('camera_reconcile_completed', {
+      source: 'movement_end_cached_state',
+      result: 'completed',
+      durationMs: mapTraceNow() - inlineReconcileStartedAt,
+      bboxChanged,
+      zoom,
+      ...getCommittedMapTraceCounts(),
+    }, { gestureSessionId });
   } else {
     console.log('[DEBUG] ⚠️ No camera state available for viewport check');
+    traceMapEvent('camera_reconcile_completed', {
+      source: 'movement_end_cached_state',
+      result: 'camera_state_unavailable',
+      durationMs: mapTraceNow() - inlineReconcileStartedAt,
+      ...getCommittedMapTraceCounts(),
+    }, { gestureSessionId });
   }
 
   // Re-show after a short idle delay (keeps UX snappy)
-  showTimeoutRef.current = setTimeout(() => {
-    showPills('movement_end');
-    // After showing, set a brief lockout so a tiny tick can't immediately hide again
-    postShowLockoutUntilRef.current = Date.now() + POST_SHOW_LOCKOUT_MS;
-  }, 300);
-}, [showPills, analytics, zoomLevel, isGuest, fetchViewportEvents, setZoomLevel, reconcileCameraStateFromMapRef]);
+  schedulePillReturn();
+}, [showPills, analytics, zoomLevel, isGuest, fetchViewportEvents, setZoomLevel, reconcileCameraStateFromMapRef, isLoading, clustersReadyForInteraction, processingClusterId, isMapMoving]);
 
 
   // Add this right before the return statement in the component
@@ -8801,6 +9064,28 @@ const pitch: number | undefined = props.pitch ?? props.tilt;
 // RNMapbox v10 supplies this outside `properties` at
 // `e.gestures.isGestureActive`, including on iOS.
 const isGesture = isMapCameraGestureActive(e);
+if (MAP_TRACE_ENABLED && isGesture && !gestureTraceNativeActiveRef.current) {
+  gestureTraceNativeActiveRef.current = true;
+  gestureTraceMeaningfulTickCountRef.current = 0;
+  gestureTraceFirstMeaningfulAtRef.current = null;
+  gestureTraceLastMeaningfulAtRef.current = null;
+  gestureTraceMovementEndCancellationCountRef.current = 0;
+  gestureTraceViewportDebounceCancellationCountRef.current = 0;
+  gestureTraceSessionIdRef.current = beginMapTraceGestureSession('native_camera_gesture', {
+    platform: Platform.OS,
+    zoom: typeof zoom === 'number' ? zoom : 'unknown',
+    ...getCommittedMapTraceCounts(),
+  });
+} else if (MAP_TRACE_ENABLED && !isGesture && gestureTraceNativeActiveRef.current) {
+  gestureTraceNativeActiveRef.current = false;
+  traceMapEvent('gesture_input_released', {
+    meaningfulCameraTicks: gestureTraceMeaningfulTickCountRef.current,
+    sinceLastMeaningfulCameraMs: gestureTraceLastMeaningfulAtRef.current === null
+      ? null
+      : mapTraceNow() - gestureTraceLastMeaningfulAtRef.current,
+    ...getCommittedMapTraceCounts(),
+  }, { gestureSessionId: gestureTraceSessionIdRef.current });
+}
 if (isGesture && !userGestureSeenRef.current) {
   userGestureSeenRef.current = true;
   setIgnoreProgrammaticTrace(false, 'first_user_gesture');
@@ -8919,6 +9204,34 @@ if (isGesture && !userGestureSeenRef.current) {
   const isPitchMeaningful = pitchDelta >= MIN_PITCH_DELTA_TO_HIDE;
 
   const meaningfulChange = isZoomMeaningful || isCenterMeaningful || isHeadingMeaningful || isPitchMeaningful;
+  if (MAP_TRACE_ENABLED && meaningfulChange && !isProgrammaticCameraMove) {
+    const meaningfulAt = mapTraceNow();
+    const previousMeaningfulAt = gestureTraceLastMeaningfulAtRef.current;
+    const inferredSequenceIsNew =
+      !gestureTraceSessionIdRef.current ||
+      previousMeaningfulAt === null ||
+      meaningfulAt - previousMeaningfulAt > 1000;
+    if (
+      !gestureTraceNativeActiveRef.current &&
+      !isMapMovingRef.current &&
+      inferredSequenceIsNew
+    ) {
+      gestureTraceMeaningfulTickCountRef.current = 0;
+      gestureTraceFirstMeaningfulAtRef.current = null;
+      gestureTraceLastMeaningfulAtRef.current = null;
+      gestureTraceMovementEndCancellationCountRef.current = 0;
+      gestureTraceViewportDebounceCancellationCountRef.current = 0;
+      gestureTraceSessionIdRef.current = beginMapTraceGestureSession('inferred_camera_movement', {
+        platform: Platform.OS,
+        zoom: typeof effectiveClusterZoom === 'number' ? effectiveClusterZoom : 'unknown',
+        ...getCommittedMapTraceCounts(),
+      });
+    }
+
+    gestureTraceMeaningfulTickCountRef.current += 1;
+    gestureTraceFirstMeaningfulAtRef.current ??= meaningfulAt;
+    gestureTraceLastMeaningfulAtRef.current = meaningfulAt;
+  }
   if (Platform.OS === 'android' && meaningfulChange) {
     const probe = androidZoomTapLatencyProbeRef.current;
     probe.cameraTickCount += 1;
@@ -8999,6 +9312,12 @@ Clustering refresh: keep zoom → store → recluster in sync
               shouldSyncProgrammaticZoom,
             });
           }
+          traceMapEvent('cluster_generation_requested', {
+            source: 'camera_zoom_threshold',
+            zoom: effectiveClusterZoom,
+            isProgrammaticCameraMove,
+            ...getCommittedMapTraceCounts(),
+          }, { gestureSessionId: gestureTraceSessionIdRef.current });
           setZoomLevel(effectiveClusterZoom); // triggers generateClusters(zoom) in the store
         } catch (e) {
           if (DEBUG_MAP_LOAD) console.log('[MapLoad] setZoomLevel error', e);
@@ -9198,6 +9517,9 @@ Clustering refresh: keep zoom → store → recluster in sync
       // Clear any pending debounced fetch
       if (viewportFetchTimeoutRef.current) {
         clearTimeout(viewportFetchTimeoutRef.current);
+        if (MAP_TRACE_ENABLED) {
+          gestureTraceViewportDebounceCancellationCountRef.current += 1;
+        }
       }
 
       // THROTTLE: If enough time has passed since last fetch, fetch immediately
@@ -9230,6 +9552,13 @@ Clustering refresh: keep zoom → store → recluster in sync
           typeof effectiveClusterZoom === 'number'
             ? effectiveClusterZoom
             : lastViewportFetchZoomRef.current;
+        traceMapEvent('viewport_fetch_requested', {
+          source: shouldUseAndroidPriorityFetch ? 'camera_priority_immediate' : 'camera_throttled_immediate',
+          timeSinceLastFetch,
+          zoom: effectiveClusterZoom,
+          viewportDebounceCancellations: gestureTraceViewportDebounceCancellationCountRef.current,
+          ...getCommittedMapTraceCounts(),
+        }, { gestureSessionId: gestureTraceSessionIdRef.current });
         fetchViewportEvents(roundedBbox);
       } else {
         // DEBOUNCE: Schedule a fetch after movement stops for final accuracy
@@ -9245,8 +9574,21 @@ Clustering refresh: keep zoom → store → recluster in sync
           });
         }
         const debounceScheduledAt = Date.now();
+        const viewportDebounceExpectation = MAP_TRACE_ENABLED
+          ? createMapTraceTimerExpectation(
+              'viewport_fetch_debounce',
+              DEBOUNCE_DELAY,
+              gestureTraceSessionIdRef.current
+            )
+          : null;
         viewportFetchTimeoutRef.current = setTimeout(() => {
           const debounceFiredAfterMs = Date.now() - debounceScheduledAt;
+          if (viewportDebounceExpectation) {
+            traceMapTimerFired(viewportDebounceExpectation, {
+              viewportDebounceCancellations: gestureTraceViewportDebounceCancellationCountRef.current,
+              ...getCommittedMapTraceCounts(),
+            });
+          }
           if (
             Platform.OS === 'android' &&
             isAndroidMinorViewportTail &&
@@ -9281,6 +9623,13 @@ Clustering refresh: keep zoom → store → recluster in sync
             typeof effectiveClusterZoom === 'number'
               ? effectiveClusterZoom
               : lastViewportFetchZoomRef.current;
+          traceMapEvent('viewport_fetch_requested', {
+            source: 'camera_debounced',
+            debounceFiredAfterMs,
+            zoom: effectiveClusterZoom,
+            viewportDebounceCancellations: gestureTraceViewportDebounceCancellationCountRef.current,
+            ...getCommittedMapTraceCounts(),
+          }, { gestureSessionId: gestureTraceSessionIdRef.current });
           fetchViewportEvents(roundedBbox);
         }, DEBOUNCE_DELAY);
       }
@@ -9304,8 +9653,28 @@ Clustering refresh: keep zoom → store → recluster in sync
   // Only reset the debounce when the tick itself is meaningful.
   // Tiny, non-meaningful drifts (especially at low zoom) won't extend the hidden period.
   if (meaningfulChange) {
-    if (hideTimeoutRef.current) clearTimeout(hideTimeoutRef.current);
+    if (hideTimeoutRef.current) {
+      clearTimeout(hideTimeoutRef.current);
+      if (MAP_TRACE_ENABLED) {
+        gestureTraceMovementEndCancellationCountRef.current += 1;
+      }
+    }
+    const movementEndExpectation = MAP_TRACE_ENABLED
+      ? createMapTraceTimerExpectation(
+          'movement_end_debounce',
+          250,
+          gestureTraceSessionIdRef.current
+        )
+      : null;
     hideTimeoutRef.current = setTimeout(() => {
+      if (movementEndExpectation) {
+        traceMapTimerFired(movementEndExpectation, {
+          meaningfulCameraTicks: gestureTraceMeaningfulTickCountRef.current,
+          movementEndDebounceCancellations: gestureTraceMovementEndCancellationCountRef.current,
+          lastMeaningfulCameraAtMonotonicMs: gestureTraceLastMeaningfulAtRef.current,
+          ...getCommittedMapTraceCounts(),
+        });
+      }
       if (isMapMovingRef.current) {
         handleMapMovementEnd();
       }
@@ -9313,7 +9682,22 @@ Clustering refresh: keep zoom → store → recluster in sync
 
     // Fallback: always ensure pills come back after prolonged movement
     if (showTimeoutRef.current) clearTimeout(showTimeoutRef.current);
+    const movementFallbackExpectation = MAP_TRACE_ENABLED
+      ? createMapTraceTimerExpectation(
+          'movement_end_fallback',
+          1000,
+          gestureTraceSessionIdRef.current
+        )
+      : null;
     showTimeoutRef.current = setTimeout(() => {
+      if (movementFallbackExpectation) {
+        traceMapTimerFired(movementFallbackExpectation, {
+          meaningfulCameraTicks: gestureTraceMeaningfulTickCountRef.current,
+          movementEndDebounceCancellations: gestureTraceMovementEndCancellationCountRef.current,
+          lastMeaningfulCameraAtMonotonicMs: gestureTraceLastMeaningfulAtRef.current,
+          ...getCommittedMapTraceCounts(),
+        });
+      }
       if (isMapMovingRef.current) {
         handleMapMovementEnd();
       }
@@ -9413,8 +9797,9 @@ Clustering refresh: keep zoom → store → recluster in sync
       return null;
     }
 
-    const markerRenderStartedAt =
-      __DEV__ && typeof performance !== 'undefined' && typeof performance.now === 'function'
+    const markerRenderStartedAt = MAP_TRACE_ENABLED
+      ? mapTraceNow()
+      : __DEV__ && typeof performance !== 'undefined' && typeof performance.now === 'function'
         ? performance.now()
         : null;
   // DEBUG T5 (first render call)
@@ -9603,6 +9988,33 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
       }));
     }
 
+    const markerRenderDurationMs = markerRenderStartedAt == null
+      ? null
+      : Math.max(0, mapTraceNow() - markerRenderStartedAt);
+    if (MAP_TRACE_ENABLED && markerRenderDurationMs !== null) {
+      const gestureSessionId = gestureTraceSessionIdRef.current ?? getActiveMapTraceGestureSessionId();
+      const previousStats = gestureTraceMarkerRenderStatsRef.current;
+      const nextCount = previousStats.gestureSessionId === gestureSessionId
+        ? previousStats.count + 1
+        : 1;
+      const nextCumulativeDurationMs = previousStats.gestureSessionId === gestureSessionId
+        ? previousStats.cumulativeDurationMs + markerRenderDurationMs
+        : markerRenderDurationMs;
+      const nextMaxDurationMs = previousStats.gestureSessionId === gestureSessionId
+        ? Math.max(previousStats.maxDurationMs, markerRenderDurationMs)
+        : markerRenderDurationMs;
+      gestureTraceMarkerRenderStatsRef.current = {
+        gestureSessionId,
+        count: nextCount,
+        cumulativeDurationMs: nextCumulativeDurationMs,
+        maxDurationMs: nextMaxDurationMs,
+        lastMarkerViewEpoch: markerViewEpoch,
+        lastClusterCount: clusters.length,
+        lastVisibleCount: visibleClustersForRender.length,
+        lastRenderedCount: orderedClustersForRender.length,
+      };
+    }
+
     markTabTracePhase('map', 'map_markers_render_start', {
       clusterCount: clusters.length,
       visibleCount: visibleClustersForRender.length,
@@ -9618,9 +10030,9 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
       fullMarkers: fullClusterMarkersEnabled,
       richMarkers: richClusterMarkersEnabled,
       richDetails: richClusterMarkerDetailsEnabled,
-      renderMs: markerRenderStartedAt == null
+      renderMs: markerRenderDurationMs == null
         ? null
-        : Math.round((performance.now() - markerRenderStartedAt) * 10) / 10,
+        : Math.round(markerRenderDurationMs * 10) / 10,
     });
 
     if (shouldAppendHotspotPreviewCluster && !startupHotspotPreviewMarkerLoggedRef.current) {
@@ -10320,7 +10732,40 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
              
           >
             <TouchableOpacity
+              onPressIn={() => {
+                traceMapEvent('cluster_touchable_press_in_received', {
+                  clusterId: cluster.id,
+                  clusterType: cluster.clusterType,
+                  venueCount: cluster.venues?.length ?? 0,
+                  sinceLastMeaningfulCameraMs: gestureTraceLastMeaningfulAtRef.current === null
+                    ? null
+                    : mapTraceNow() - gestureTraceLastMeaningfulAtRef.current,
+                  isMapMovingState: isMapMoving,
+                  isMapMovingRef: isMapMovingRef.current,
+                  isLoading,
+                  clustersReadyForInteraction,
+                  processingClusterId: processingClusterId ?? 'none',
+                  ignoreProgrammatic: ignoreProgrammaticCameraRef.current,
+                  touchBlockingOverlayVisible: !isLoading && !clustersReadyForInteraction && !hasZeroFilteredResults,
+                  ...getCommittedMapTraceCounts(),
+                }, { gestureSessionId: gestureTraceSessionIdRef.current });
+              }}
               onPress={() => {
+                traceMapEvent('cluster_touchable_press_received', {
+                  clusterId: cluster.id,
+                  clusterType: cluster.clusterType,
+                  venueCount: cluster.venues?.length ?? 0,
+                  sinceLastMeaningfulCameraMs: gestureTraceLastMeaningfulAtRef.current === null
+                    ? null
+                    : mapTraceNow() - gestureTraceLastMeaningfulAtRef.current,
+                  isMapMovingState: isMapMoving,
+                  isMapMovingRef: isMapMovingRef.current,
+                  isLoading,
+                  clustersReadyForInteraction,
+                  processingClusterId: processingClusterId ?? 'none',
+                  ignoreProgrammatic: ignoreProgrammaticCameraRef.current,
+                  ...getCommittedMapTraceCounts(),
+                }, { gestureSessionId: gestureTraceSessionIdRef.current });
                 if (Platform.OS === 'android') {
                   const probe = androidZoomTapLatencyProbeRef.current;
                   probe.markerTapCount += 1;
@@ -10562,6 +11007,20 @@ onLayout={(event) => {
 }}
 onMapIdle={() => {
   lastMapIdleAtRef.current = Date.now();
+  traceMapEvent('mapbox_on_map_idle', {
+    sinceLastMeaningfulCameraMs: gestureTraceLastMeaningfulAtRef.current === null
+      ? null
+      : mapTraceNow() - gestureTraceLastMeaningfulAtRef.current,
+    meaningfulCameraTicks: gestureTraceMeaningfulTickCountRef.current,
+    movementEndDebounceCancellations: gestureTraceMovementEndCancellationCountRef.current,
+    isMapMovingState: isMapMoving,
+    isMapMovingRef: isMapMovingRef.current,
+    isLoading,
+    clustersReadyForInteraction,
+    processingClusterId: processingClusterId ?? 'none',
+    ignoreProgrammatic: ignoreProgrammaticCameraRef.current,
+    ...getCommittedMapTraceCounts(),
+  }, { gestureSessionId: gestureTraceSessionIdRef.current });
   const tutorialResolverAtIdle = tutorialCameraIdleResolverRef.current;
   if (Platform.OS === 'android') {
     androidZoomTapLatencyProbeRef.current.lastMapIdleAt = Date.now();
@@ -10597,6 +11056,16 @@ onMapIdle={() => {
 }}
 
 onDidFinishRenderingFrameFully={() => {
+  if (MAP_TRACE_ENABLED && gestureTraceRenderedClusterArrayRef.current !== clusters) {
+    gestureTraceRenderedClusterArrayRef.current = clusters;
+    traceMapEvent('cluster_array_first_mapbox_frame_rendered', {
+      isMapMovingState: isMapMoving,
+      isMapMovingRef: isMapMovingRef.current,
+      isLoading,
+      clustersReadyForInteraction,
+      ...getCommittedMapTraceCounts(),
+    }, { gestureSessionId: gestureTraceSessionIdRef.current });
+  }
   markTabTracePhase('map', 'mapbox_frame_fully', {
     firstStartupFrameAlreadyRendered: mapFirstFrameRenderedRef.current,
     overlaysReady: mapTabOverlaysReady,
@@ -11210,7 +11679,19 @@ onDidFinishLoadingMap={() => {
       <FriendEventsMapToggle hidden={Boolean(isCalloutOpen)} />
       
       {shouldRenderBlockingLoadingOverlay && (
-        <View style={styles.loadingOverlay}>
+        <View
+          style={styles.loadingOverlay}
+          onTouchStart={() => {
+            traceMapEvent('loading_overlay_touch_received', {
+              isMapMovingState: isMapMoving,
+              isMapMovingRef: isMapMovingRef.current,
+              isLoading,
+              clustersReadyForInteraction,
+              processingClusterId: processingClusterId ?? 'none',
+              ...getCommittedMapTraceCounts(),
+            }, { gestureSessionId: gestureTraceSessionIdRef.current });
+          }}
+        >
           <Text>Loading map data...</Text>
         </View>
       )}
@@ -11225,14 +11706,31 @@ onDidFinishLoadingMap={() => {
           style={styles.clustersNotReadyOverlay}
           pointerEvents="box-only"
           onStartShouldSetResponder={() => true}
+          onResponderGrant={() => {
+            traceMapEvent('clusters_not_ready_overlay_touch_started', {
+              isMapMovingState: isMapMoving,
+              isMapMovingRef: isMapMovingRef.current,
+              isLoading,
+              clustersReadyForInteraction,
+              processingClusterId: processingClusterId ?? 'none',
+              ignoreProgrammatic: ignoreProgrammaticCameraRef.current,
+              ...getCommittedMapTraceCounts(),
+            }, { gestureSessionId: gestureTraceSessionIdRef.current });
+          }}
           onResponderRelease={() => {
             console.log('[map] Touch blocked: clusters not ready yet');
             logAndroidZoomTapLatencyProbe('clusters_not_ready_overlay_tap_blocked', {
               clusterCount: clusters.length,
             });
             traceMapEvent('clusters_not_ready_overlay_tap_blocked', {
-              clusterCount: clusters.length,
-            });
+              isMapMovingState: isMapMoving,
+              isMapMovingRef: isMapMovingRef.current,
+              isLoading,
+              clustersReadyForInteraction,
+              processingClusterId: processingClusterId ?? 'none',
+              ignoreProgrammatic: ignoreProgrammaticCameraRef.current,
+              ...getCommittedMapTraceCounts(),
+            }, { gestureSessionId: gestureTraceSessionIdRef.current });
           }}
         >
           <View
@@ -11376,6 +11874,12 @@ Owner: Map UX stability on Android • Last validated: 2025-09-04
                 );
               }}
               onPresentationReady={() => {
+                traceMapEvent('callout_presentation_callback_completed', {
+                  renderedClusterId: presentedCalloutClusterId ?? 'none',
+                  renderedVenueCount: presentedCalloutVenueCount,
+                  renderedCalloutPresentationKey: presentedCalloutPresentationKey,
+                  ...getCommittedMapTraceCounts(),
+                }, { gestureSessionId: gestureTraceSessionIdRef.current });
                 setCalloutPresentationReadyKey((currentKey) =>
                   currentKey === presentedCalloutPresentationKey
                     ? currentKey
@@ -11459,7 +11963,7 @@ Owner: Map UX stability on Android • Last validated: 2025-09-04
       {/* Deep link lightbox - renders when globalSelectedImageData is set from deep link */}
       <GlobalEventLightbox onShowRoute={showRouteOnMap} />
 
-      {MAP_TRACE_UI_ENABLED && (
+      {MAP_TRACE_UI_ENABLED && isTracePanelVisible && (
         <MapTracePanel
           visible={isTracePanelVisible}
           onClose={() => setIsTracePanelVisible(false)}

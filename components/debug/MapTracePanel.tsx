@@ -123,6 +123,8 @@ export default function MapTracePanel({ visible, onClose }: MapTracePanelProps) 
                     })}
                     {'.'}
                     {new Date(entry.timestamp).getMilliseconds().toString().padStart(3, '0')}{' '}
+                    +{entry.monotonicMs.toFixed(1)}ms{' '}
+                    [{entry.gestureSessionId?.split('-').pop() ?? 'no-gesture'}]{' '}
                     {entry.label}
                   </Text>
                   {entry.details ? (
