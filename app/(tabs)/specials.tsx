@@ -30,6 +30,7 @@ import EventActionLinkPill from '../../components/common/EventActionLinkPill';
 import FamilyFriendlyBadge from '../../components/common/FamilyFriendlyBadge';
 import { EventTimingBadge } from '../../components/common/EventTimingBadge';
 import { EventTimingSummaryText } from '../../components/common/EventTimingSummaryText';
+import { EventSeriesContextLine } from '../../components/common/EventSeriesContextLine';
 import { VenueFavoriteButton } from '../../components/common/VenueFavoriteButton';
 import Autolink from 'react-native-autolink';
 
@@ -53,6 +54,7 @@ import {
   getEventTimeStatus,
   getEventDisplayUntilDate,
 } from '../../utils/dateUtils';
+import { getEventSeriesContext } from '../../utils/eventSeries';
 import { addEventToCalendarWithTiming } from '../../utils/calendarUtils';
 import { buildGathrSharePayload } from '../../utils/shareUtils';
 import { getTicketUrl, normalizeTicketUrl } from '../../utils/ticketUrls';
@@ -1129,7 +1131,8 @@ const result = await userService.toggleSavedEvent(event.id, {
         <View style={styles.dateTimeRow}>
         <MaterialIcons name="access-time" size={14} color={BRAND.primaryDark} />
         {(() => {
-          const displayUntilDate = getEventDisplayUntilDate(event);
+          const seriesContext = getEventSeriesContext(event);
+          const displayUntilDate = seriesContext ? undefined : getEventDisplayUntilDate(event);
           const endDateSuffix =
             isFutureDate(displayUntilDate) ? ` • (Until ${formatEndDateLabel(displayUntilDate!)})` : '';
             return (
@@ -1147,6 +1150,8 @@ const result = await userService.toggleSavedEvent(event.id, {
             );
           })()}
         </View>
+
+        <EventSeriesContextLine event={event} containerStyle={styles.seriesContextLine} />
 
         <Text
           style={styles.cardTitle}
@@ -3417,6 +3422,10 @@ const styles = StyleSheet.create({
     marginLeft: 4,
     flex: 1,
     fontWeight: '600',
+  },
+  seriesContextLine: {
+    marginBottom: 4,
+    marginTop: -2,
   },
   mutedEventCard: {
     opacity: 0.68,

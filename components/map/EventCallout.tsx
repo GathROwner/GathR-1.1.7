@@ -155,6 +155,7 @@ import EventActionLinkPill from '../common/EventActionLinkPill';
 import FamilyFriendlyBadge from '../common/FamilyFriendlyBadge';
 import { EventTimingBadge } from '../common/EventTimingBadge';
 import { EventTimingSummaryText } from '../common/EventTimingSummaryText';
+import { EventSeriesContextLine } from '../common/EventSeriesContextLine';
 import { traceMapEvent } from '../../utils/mapTrace';
 import { doesEventMatchAnyInterest } from '../../utils/familyFriendly';
 import { getVenueFriendPresence } from '../../utils/friendPresence';
@@ -163,6 +164,7 @@ import {
   getEventTimeRangeParts,
   getEventTimingDisclosure,
 } from '../../utils/eventTiming';
+import { getEventSeriesContext } from '../../utils/eventSeries';
 import { useEventTimingMinute } from '../../hooks/useEventTimingMinute';
 
 const EVENT_CALLOUT_SHELL_ISOLATION_DEBUG = false;
@@ -1291,6 +1293,8 @@ const EventDetailsContent: React.FC<EventDetailsProps> = ({ event, onImagePress 
           <Text style={styles.timingDisclosure}>{timingDisclosure}</Text>
         )}
       </View>
+
+      <EventSeriesContextLine event={event} containerStyle={styles.seriesContextLine} />
       
       {hasDisplayableTicketPrice(event.ticketPrice) && (
         <View style={styles.priceContainer}>
@@ -2345,7 +2349,8 @@ useUserPrefsStore.getState().setAll({ savedEvents: next });
         <View style={styles.dateTimeRow}>
           <MaterialIcons name="access-time" size={14} color="#666666" />
           {(() => {
-            const displayUntilDate = getEventDisplayUntilDate(event);
+            const seriesContext = getEventSeriesContext(event);
+            const displayUntilDate = seriesContext ? undefined : getEventDisplayUntilDate(event);
             const endDateSuffix =
               isFutureDate(displayUntilDate) ? ` • (Until ${formatEndDateLabel(displayUntilDate!)})` : '';
 
@@ -2365,6 +2370,8 @@ return (
 
           })()}
         </View>
+
+        <EventSeriesContextLine event={event} containerStyle={styles.seriesContextLine} />
 
 
 
@@ -5608,6 +5615,10 @@ const styles = StyleSheet.create({
     color: '#666666',
     marginLeft: 4,
     flex: 1, // Allow text to take available space
+  },
+  seriesContextLine: {
+    marginBottom: 4,
+    marginTop: -1,
   },
   nowBannerTime: {
   marginLeft: 6,

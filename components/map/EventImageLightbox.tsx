@@ -35,6 +35,7 @@ import EventActionLinkPill from '../common/EventActionLinkPill';
 import FamilyFriendlyBadge from '../common/FamilyFriendlyBadge';
 import { EventTimingBadge } from '../common/EventTimingBadge';
 import { EventTimingSummaryText } from '../common/EventTimingSummaryText';
+import { EventSeriesContextLine } from '../common/EventSeriesContextLine';
 import { VenueFavoriteButton } from '../common/VenueFavoriteButton';
 import Autolink from 'react-native-autolink';
 
@@ -78,6 +79,7 @@ import {
   getEventTiming,
   getEventTimingDisclosure,
 } from '../../utils/eventTiming';
+import { getEventSeriesContext } from '../../utils/eventSeries';
 import { useEventTimingMinute } from '../../hooks/useEventTimingMinute';
 import {
   hasPhysicalEventDestination,
@@ -1226,10 +1228,14 @@ const handleNonTicketAction = () => {
 
   // One shared provenance-aware time sentence across every app surface.
   const baseDateText = formatEventTimingSummary(updatedEvent);
-  const displayUntilDate = getEventDisplayUntilDate(updatedEvent);
+  const seriesContext = getEventSeriesContext(updatedEvent);
+  const displayUntilDate = seriesContext ? undefined : getEventDisplayUntilDate(updatedEvent);
   const endDateSuffix =
     isFutureDate(displayUntilDate) ? ` • (Until ${formatEndDateLabel(displayUntilDate!)})` : '';
-  const dateTimeDisplay = `${baseDateText}${endDateSuffix}`;
+  const dateTimeDisplay = [
+    `${baseDateText}${endDateSuffix}`,
+    seriesContext?.label,
+  ].filter(Boolean).join(' · ');
   const timingDisclosure = getEventTimingDisclosure(updatedEvent);
   const timingContract = getEventTiming(updatedEvent);
   const timingState = getEventScheduleState(updatedEvent);
@@ -1855,6 +1861,12 @@ const handleNonTicketAction = () => {
               style={styles.timingBadge}
             />
           </View>
+
+          <EventSeriesContextLine
+            event={updatedEvent}
+            tone="dark"
+            containerStyle={styles.seriesContextLine}
+          />
 
           {timingDisclosure && (
             <View style={styles.timingDisclosureContainer}>
@@ -2952,6 +2964,10 @@ const styles = StyleSheet.create({
   },
   timingBadge: {
     marginLeft: 8,
+  },
+  seriesContextLine: {
+    marginLeft: 4,
+    marginTop: -2,
   },
   timingDisclosureContainer: {
     marginLeft: 26,
