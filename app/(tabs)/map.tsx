@@ -3453,6 +3453,7 @@ useEffect(() => {
   const [androidClusterHitTargets, setAndroidClusterHitTargets] = useState<AndroidClusterHitTarget[]>([]);
   const [androidAncillaryOverlaysReleasedForClose, setAndroidAncillaryOverlaysReleasedForClose] = useState(false);
   const [isTracePanelVisible, setIsTracePanelVisible] = useState(false);
+  const mapTraceLogoPressStartedAtRef = useRef<number | null>(null);
   const [renderedCalloutVenues, setRenderedCalloutVenues] = useState<Venue[]>([]);
   const [renderedCalloutCluster, setRenderedCalloutCluster] = useState<Cluster | null>(null);
   const [calloutLayoutReadyKey, setCalloutLayoutReadyKey] = useState<string | null>(null);
@@ -11606,13 +11607,26 @@ onDidFinishLoadingMap={() => {
             accessibilityLabel="Open map trace"
             delayLongPress={700}
             hitSlop={10}
+            onPressIn={() => {
+              mapTraceLogoPressStartedAtRef.current = Date.now();
+            }}
             onLongPress={() => {
+              mapTraceLogoPressStartedAtRef.current = null;
               traceMapEvent('trace_panel_opened', {
                 source: 'logo_long_press',
               });
               setIsTracePanelVisible(true);
             }}
-            onPress={() => undefined}
+            onPress={() => {
+              const startedAt = mapTraceLogoPressStartedAtRef.current;
+              mapTraceLogoPressStartedAtRef.current = null;
+              if (startedAt !== null && Date.now() - startedAt >= 650) {
+                traceMapEvent('trace_panel_opened', {
+                  source: 'logo_hold_fallback',
+                });
+                setIsTracePanelVisible(true);
+              }
+            }}
             style={styles.mapTraceLogoTouchable}
           >
             <Image
