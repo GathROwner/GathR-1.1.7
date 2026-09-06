@@ -55,4 +55,18 @@ describe('EventTimingBadge', () => {
 
     act(() => component!.unmount());
   });
+
+  it('claims the touch before a containing event card can open', () => {
+    let component: renderer.ReactTestRenderer;
+    act(() => {
+      component = renderer.create(<EventTimingBadge event={unknownEndEvent()} compact />);
+    });
+
+    const badge = component!.root.findByProps({ testID: 'event-timing-badge' });
+    const stopPropagation = jest.fn();
+    act(() => badge.props.onPressIn({ stopPropagation }));
+
+    expect(stopPropagation).toHaveBeenCalledTimes(1);
+    act(() => component!.unmount());
+  });
 });

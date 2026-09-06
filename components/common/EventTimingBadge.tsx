@@ -65,6 +65,8 @@ export function EventTimingBadge({ event, compact = false, onInfoPress, style }:
         accessibilityHint="Shows why this time is uncertain"
         accessibilityLabel={`${badge.accessibilityLabel}. More information`}
         accessibilityRole="button"
+        hitSlop={4}
+        onPressIn={(pressEvent) => pressEvent.stopPropagation?.()}
         onPress={handleInfoPress}
         style={({ pressed }) => [badgeStyle, pressed && styles.pressed]}
         testID="event-timing-badge"
