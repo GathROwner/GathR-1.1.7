@@ -43,12 +43,18 @@ export interface EventTimingPoint {
   localDate?: string | null;
   localTime?: string | null;
   timeZone?: string | null;
-  status: 'observed' | 'semantic' | 'until_close' | 'all_day' | 'unknown';
+  status: 'observed' | 'semantic' | 'until_close' | 'all_day' | 'estimated' | 'unknown';
   sourceType?: string | null;
   evidence?: string | null;
   sourceUrl?: string | null;
   observedAt?: string | null;
   sourceRevision?: string | null;
+  confidence?: EventTimingConfidence;
+  method?: string | null;
+  sampleSize?: number | null;
+  evidenceRefs?: string[];
+  computedAt?: string | null;
+  invalidatedAt?: string | null;
 }
 
 export interface EventScheduleEstimate {

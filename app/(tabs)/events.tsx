@@ -32,6 +32,7 @@ import TicketCtaPill from '../../components/common/TicketCtaPill';
 import EventActionLinkPill from '../../components/common/EventActionLinkPill';
 import FamilyFriendlyBadge from '../../components/common/FamilyFriendlyBadge';
 import { EventTimingBadge } from '../../components/common/EventTimingBadge';
+import { EventTimingSummaryText } from '../../components/common/EventTimingSummaryText';
 import { VenueFavoriteButton } from '../../components/common/VenueFavoriteButton';
 import Autolink from 'react-native-autolink';
 
@@ -51,7 +52,6 @@ import { AdColors } from '../../constants/AdTheme';
 
 // Import utilities
 import {
-  formatEventTimingSummary,
   getEventTimeStatus,
   getEventDisplayUntilDate,
 } from '../../utils/dateUtils';
@@ -832,10 +832,6 @@ const result = await userService.toggleSavedEvent(event.id, {
   
   const showBuyTicketsButton = hasTicketLink && paid;
   const showRegisterButton = hasTicketLink && !paid;
-  const formatFullDateTime = (): string => {
-    return formatEventTimingSummary(event);
-  };
-  
   const handleHeroLikePress = async (e: GestureResponderEvent) => {
     e.stopPropagation();
     analytics?.trackUserAction('like_attempt', {
@@ -925,7 +921,10 @@ const result = await userService.toggleSavedEvent(event.id, {
             <View style={styles.friendEventLock}><Ionicons name="lock-closed" size={10} color="#6941C6" /><Text style={styles.friendEventLockText}>{event.friendEvent.visibility === 'all_friends' ? 'FRIENDS' : 'INVITED'}</Text></View>
           </View>
           <Text numberOfLines={2} style={styles.friendEventTitle}>{event.title}</Text>
-          <Text numberOfLines={1} style={styles.friendEventMeta}>{formatFullDateTime()}</Text>
+          <View style={styles.friendEventTimingRow}>
+            <EventTimingSummaryText event={event} numberOfLines={1} style={styles.friendEventMeta} />
+            <EventTimingBadge event={event} compact />
+          </View>
           <View style={styles.friendEventLocationRow}>
             <Ionicons name="location-outline" size={14} color="#667085" />
             <Text numberOfLines={1} style={styles.friendEventLocation}>{event.friendEvent.addressRevealed ? `${event.venue}${event.address ? ` · ${event.address}` : ''}` : 'Exact address shared later'}</Text>
@@ -1128,22 +1127,19 @@ const result = await userService.toggleSavedEvent(event.id, {
         <View style={styles.dateTimeRow}>
           <MaterialIcons name="access-time" size={14} color={BRAND.primaryDark} />
           {(() => {
-            const base = formatEventTimingSummary(event);
             const displayUntilDate = getEventDisplayUntilDate(event);
             const endDateSuffix =
               isFutureDate(displayUntilDate) ? ` • (Until ${formatEndDateLabel(displayUntilDate!)})` : '';
-            const display = `${base}${endDateSuffix}`;
-
             return (
               <>
-                <Text
+                <EventTimingSummaryText
+                  event={event}
+                  suffix={endDateSuffix}
                   style={styles.dateTimeText}
                   numberOfLines={2}
                   adjustsFontSizeToFit={true}
                   minimumFontScale={0.75}
-                >
-                  {display}
-                </Text>
+                />
                 <EventTimingBadge event={event} compact style={styles.timingBadge} />
               </>
             );
@@ -3107,6 +3103,7 @@ const styles = StyleSheet.create({
   friendEventLock: { flexDirection: 'row', alignItems: 'center', gap: 2, paddingHorizontal: 5, paddingVertical: 3, borderRadius: 99, backgroundColor: '#F4EBFF' },
   friendEventLockText: { color: '#6941C6', fontSize: 8, fontWeight: '900' },
   friendEventTitle: { color: '#101828', fontSize: 17, fontWeight: '900', lineHeight: 20 },
+  friendEventTimingRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   friendEventMeta: { color: '#475467', fontSize: 11, fontWeight: '700' },
   friendEventLocationRow: { flexDirection: 'row', alignItems: 'center', gap: 3 },
   friendEventLocation: { flex: 1, color: '#667085', fontSize: 11 },

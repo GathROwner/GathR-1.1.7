@@ -1,8 +1,10 @@
 import type { Event, EventTiming } from '../../types/events';
+import { formatEventTimingSummary } from '../dateUtils';
 import {
   createLegacyTimingContract,
   getCalendarEndDecision,
   getEventScheduleState,
+  getEventTimeRangeParts,
   getEventTimeRangeText,
   getEventTimeStatusFromTiming,
   getEventTimingBadge,
@@ -63,11 +65,84 @@ describe('honest event timing state machine', () => {
     const event = baseEvent(timing);
 
     expect(getEventScheduleState(event, atHalifax(19, 30)).code).toBe('expected_happening');
-    expect(getEventTimingBadge(event, atHalifax(19, 30))?.text).toBe('EXPECTED\nNOW');
-    expect(getEventTimeRangeText(event, atHalifax(19, 30))).toBe('7:00 PM – around 8:00 PM');
+    expect(getEventTimingBadge(event, atHalifax(19, 30))?.text).toBe('END\nESTIMATED');
+    expect(getEventTimeRangeText(event, atHalifax(19, 30))).toBe('7:00 PM ~ 8:00 PM');
+    expect(getEventTimeRangeParts(event, atHalifax(19, 30))).toMatchObject({
+      startEstimated: false,
+      endEstimated: true,
+      separator: ' ~ ',
+    });
 
     expect(getEventScheduleState(event, atHalifax(20, 1)).code).toBe('estimate_passed');
-    expect(getEventTimingBadge(event, atHalifax(20, 1))?.text).toBe('MAY HAVE\nENDED');
+    expect(getEventTimingBadge(event, atHalifax(20, 1))?.text).toBe('END\nESTIMATED');
+
+    jest.useFakeTimers();
+    try {
+      jest.setSystemTime(atHalifax(19, 30));
+      expect(formatEventTimingSummary(event)).toBe('EXPECTED NOW • 7:00 PM ~ 8:00 PM');
+      jest.setSystemTime(atHalifax(20, 1));
+      expect(formatEventTimingSummary(event)).toBe('MAY HAVE ENDED • 7:00 PM ~ 8:00 PM');
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('marks only an estimated start when the ending is observed', () => {
+    const timing = createLegacyTimingContract(
+      { startDate: '2026-09-05', startTime: '7:00 PM', endDate: '2026-09-05', endTime: '9:00 PM' },
+      { endStatus: 'observed' }
+    );
+    timing.schedule.start = {
+      ...timing.schedule.start,
+      status: 'estimated',
+      confidence: 'medium',
+      method: 'official_schedule_context',
+    };
+    const event = baseEvent(timing);
+
+    expect(getEventScheduleState(event, atHalifax(19, 30))).toMatchObject({
+      code: 'expected_happening',
+      nowEligibility: 'expected',
+    });
+    expect(getEventTimeStatusFromTiming(event, atHalifax(19, 30))).toBe('today');
+    expect(getEventTimingBadge(event, atHalifax(19, 30))?.text).toBe('START\nESTIMATED');
+    expect(getEventTimeRangeParts(event, atHalifax(19, 30))).toMatchObject({
+      text: '7:00 PM ~ 9:00 PM',
+      startEstimated: true,
+      endEstimated: false,
+    });
+  });
+
+  it('marks both endpoint controls when both times are estimated', () => {
+    const timing = createLegacyTimingContract(
+      { startDate: '2026-09-05', startTime: '7:00 PM', endDate: '2026-09-05', endTime: '' },
+      { endStatus: 'unknown' }
+    );
+    timing.schedule.start = {
+      ...timing.schedule.start,
+      status: 'estimated',
+      confidence: 'high',
+      method: 'official_schedule_context',
+    };
+    timing.estimate = {
+      confidence: 'medium',
+      displayEndDate: '2026-09-05',
+      displayEndTime: '9:00 PM',
+      discoveryCutoffDate: '2026-09-05',
+      discoveryCutoffTime: '9:15 PM',
+      method: 'venue_subtype_duration',
+    };
+    const event = baseEvent(timing);
+
+    expect(getEventTimingBadge(event, atHalifax(18))).toMatchObject({
+      text: 'TIMES\nESTIMATED',
+      accessibilityLabel: 'Start and end times estimated by GathR',
+    });
+    expect(getEventTimeRangeParts(event, atHalifax(18))).toMatchObject({
+      text: '7:00 PM ~ 9:00 PM',
+      startEstimated: true,
+      endEstimated: true,
+    });
   });
 
   it('treats verified until-close semantics as supported current status', () => {

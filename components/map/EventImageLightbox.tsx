@@ -34,6 +34,7 @@ import TicketCtaPill from '../common/TicketCtaPill';
 import EventActionLinkPill from '../common/EventActionLinkPill';
 import FamilyFriendlyBadge from '../common/FamilyFriendlyBadge';
 import { EventTimingBadge } from '../common/EventTimingBadge';
+import { EventTimingSummaryText } from '../common/EventTimingSummaryText';
 import { VenueFavoriteButton } from '../common/VenueFavoriteButton';
 import Autolink from 'react-native-autolink';
 
@@ -1840,9 +1841,13 @@ const handleNonTicketAction = () => {
         <View style={styles.infoContainer}>
           <View style={styles.infoRow}>
             <MaterialIcons name="access-time" size={20} color="#FFFFFF" />
-            <Text style={styles.infoText}>
-              {dateTimeDisplay}
-            </Text>
+            <EventTimingSummaryText
+              event={updatedEvent}
+              suffix={endDateSuffix}
+              style={styles.infoText}
+              infoColor="#F4C542"
+              onInfoPress={() => setTimingDisclosureExpanded((value) => !value)}
+            />
             <EventTimingBadge event={updatedEvent} compact style={styles.timingBadge} />
           </View>
 

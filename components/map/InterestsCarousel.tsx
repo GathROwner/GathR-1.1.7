@@ -15,6 +15,7 @@ import { useMapStore } from '../../store';
 import { useInterestCarouselUiStore } from '../../store/interestCarouselUiStore';
 import { Event, Venue, Cluster } from '../../types/events';
 import { getEventTimeStatus } from '../../utils/dateUtils';
+import { EventTimingSummaryText } from '../common/EventTimingSummaryText';
 import FallbackImage from '../common/FallbackImage';
 import FamilyFriendlyBadge from '../common/FamilyFriendlyBadge';
 import { EventTimingBadge } from '../common/EventTimingBadge';
@@ -31,7 +32,12 @@ import {
 import { isAreaExperienceEvent } from '../../utils/locationScope';
 import { usePathname } from 'expo-router';
 import { isFriendEventDetailPath } from '../../utils/friendEventLightbox';
-import { getEventScheduleState, getEventTimeRangeText, isEventConfirmedNow } from '../../utils/eventTiming';
+import {
+  getEventScheduleState,
+  getEventTimeRangeParts,
+  getEventTimeRangeText,
+  isEventConfirmedNow,
+} from '../../utils/eventTiming';
 import { useEventTimingMinute } from '../../hooks/useEventTimingMinute';
 
 const readAnimatedValue = (value: Animated.Value): number | string =>
@@ -126,23 +132,12 @@ const getCategoryIconName = (category: string): string => {
   return 'category';
 };
 
-// Format time display
+// Preserve the carousel's compact date-only treatment for exact future events.
 const formatEventTime = (event: Event): string => {
-  const isNow = isEventConfirmedNow(event);
-
-  if (isNow) {
-    return `NOW · ${getEventTimeRangeText(event)}`;
-  }
-
-  const timeStatus = getEventTimeStatus(event);
-  if (timeStatus === 'today') {
-    return getEventTimeRangeText(event);
-  }
-
-  // Show date for future events
+  if (isEventConfirmedNow(event)) return `NOW · ${getEventTimeRangeText(event)}`;
+  if (getEventTimeStatus(event) === 'today') return getEventTimeRangeText(event);
   try {
-    const date = new Date(event.startDate);
-    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    return new Date(event.startDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
   } catch {
     return '';
   }
@@ -161,6 +156,8 @@ const EventCard = memo(({
   useEventTimingMinute();
   const isNow = isEventConfirmedNow(event);
   const timingState = getEventScheduleState(event);
+  const timingRangeParts = getEventTimeRangeParts(event);
+  const hasEstimatedEndpoint = timingRangeParts.startEstimated || timingRangeParts.endEstimated;
 
   const categoryBgColor = event.type === 'event' ? EVENT_COLOR : SPECIAL_COLOR;
 
@@ -246,9 +243,11 @@ const EventCard = memo(({
         </Text>
         <View style={styles.timeRow}>
           <MaterialIcons name="schedule" size={13} color="#1967D2" />
-          <Text style={styles.timeText} numberOfLines={1}>
-            {formatEventTime(event)}
-          </Text>
+          {hasEstimatedEndpoint ? (
+            <EventTimingSummaryText event={event} style={styles.timeText} numberOfLines={1} />
+          ) : (
+            <Text style={styles.timeText} numberOfLines={1}>{formatEventTime(event)}</Text>
+          )}
         </View>
       </View>
     </TouchableOpacity>

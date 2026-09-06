@@ -437,8 +437,11 @@ export const formatEventTimingSummary = (event: {
     endDate: event.endDate || event.startDate,
     endTime: event.endTime || '',
   };
+  const scheduleState = getEventScheduleState(normalized);
   const base = formatEventDateTime(event.startDate, event.startTime, normalized);
   const range = getEventTimeRangeText(normalized);
+  if (scheduleState.code === 'expected_happening') return `EXPECTED NOW • ${range}`;
+  if (scheduleState.code === 'estimate_passed') return `MAY HAVE ENDED • ${range}`;
   if (!base) return range;
   if (base === 'HAPPENING NOW') return `${base} • ${range}`;
 

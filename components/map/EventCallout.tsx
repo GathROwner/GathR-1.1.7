@@ -125,7 +125,6 @@ import { isFriendEventDetailPath } from '../../utils/friendEventLightbox';
 // Import the centralized date utilities
 import {
   formatEventDateTime,
-  formatEventTimingSummary,
   isEventNowWithTiming,
   getEventTimeStatus,
   sortEventsByTimeStatus,
@@ -155,10 +154,15 @@ import TicketCtaPill from '../common/TicketCtaPill';
 import EventActionLinkPill from '../common/EventActionLinkPill';
 import FamilyFriendlyBadge from '../common/FamilyFriendlyBadge';
 import { EventTimingBadge } from '../common/EventTimingBadge';
+import { EventTimingSummaryText } from '../common/EventTimingSummaryText';
 import { traceMapEvent } from '../../utils/mapTrace';
 import { doesEventMatchAnyInterest } from '../../utils/familyFriendly';
 import { getVenueFriendPresence } from '../../utils/friendPresence';
-import { getEventScheduleState, getEventTimingDisclosure } from '../../utils/eventTiming';
+import {
+  getEventScheduleState,
+  getEventTimeRangeParts,
+  getEventTimingDisclosure,
+} from '../../utils/eventTiming';
 import { useEventTimingMinute } from '../../hooks/useEventTimingMinute';
 
 const EVENT_CALLOUT_SHELL_ISOLATION_DEBUG = false;
@@ -1213,9 +1217,7 @@ const EventCard: React.FC<EventCardProps> = ({ event, isSelected, onPress }) => 
       </Text>
       
       <View style={styles.compactTimingRow}>
-        <Text style={styles.cardDateTime} numberOfLines={2}>
-          {formatEventTimingSummary(event)}
-        </Text>
+        <EventTimingSummaryText event={event} style={styles.cardDateTime} numberOfLines={2} />
         <EventTimingBadge event={event} compact />
       </View>
       
@@ -1243,6 +1245,8 @@ const EventDetailsContent: React.FC<EventDetailsProps> = ({ event, onImagePress 
   const needsReadMore = event.description.length > 120;
   const timeStatus = getEventTimeStatus(event);
   const timingDisclosure = getEventTimingDisclosure(event);
+  const timingRangeParts = getEventTimeRangeParts(event);
+  const hasEstimatedEndpoint = timingRangeParts.startEstimated || timingRangeParts.endEstimated;
   
   return (
     <View style={styles.detailsContainer}>
@@ -1280,12 +1284,10 @@ const EventDetailsContent: React.FC<EventDetailsProps> = ({ event, onImagePress 
         
         <View style={styles.timeContainer}>
           <MaterialIcons name="access-time" size={16} color="#666666" />
-          <Text style={styles.eventTime}>
-            {formatEventTimingSummary(event)}
-          </Text>
+          <EventTimingSummaryText event={event} style={styles.eventTime} />
           <EventTimingBadge event={event} compact style={styles.timingBadge} />
         </View>
-        {timingDisclosure && (
+        {timingDisclosure && !hasEstimatedEndpoint && (
           <Text style={styles.timingDisclosure}>{timingDisclosure}</Text>
         )}
       </View>
@@ -1710,9 +1712,11 @@ const VenueInfoContent: React.FC<VenueInfoProps> = ({ venue }) => {
                       { backgroundColor: getCategoryColor(event.category) }
                     ]} />
                     <View style={styles.venueEventDetails}>
-                      <Text style={styles.venueEventTime} numberOfLines={2}>
-                        {formatEventTimingSummary(event)}
-                      </Text>
+                      <EventTimingSummaryText
+                        event={event}
+                        style={styles.venueEventTime}
+                        numberOfLines={2}
+                      />
                       <Text
                         style={[
                           styles.venueEventTitle,
@@ -2341,23 +2345,20 @@ useUserPrefsStore.getState().setAll({ savedEvents: next });
         <View style={styles.dateTimeRow}>
           <MaterialIcons name="access-time" size={14} color="#666666" />
           {(() => {
-            const base = formatEventTimingSummary(event);
             const displayUntilDate = getEventDisplayUntilDate(event);
             const endDateSuffix =
               isFutureDate(displayUntilDate) ? ` • (Until ${formatEndDateLabel(displayUntilDate!)})` : '';
 
-const display = `${base}${endDateSuffix}`;
-
 return (
   <>
-    <Text
+    <EventTimingSummaryText
+      event={event}
+      suffix={endDateSuffix}
       style={styles.dateTimeText}
       numberOfLines={2}
       adjustsFontSizeToFit={true}
       minimumFontScale={0.75}
-    >
-      {display}
-    </Text>
+    />
     <EventTimingBadge event={event} compact style={styles.timingBadge} />
   </>
 );

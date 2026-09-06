@@ -41,6 +41,16 @@ export interface EventTimingBadge {
   tone: 'neutral' | 'positive' | 'caution' | 'muted';
 }
 
+export interface EventTimeRangeParts {
+  prefix: string;
+  start: string;
+  separator: ' – ' | ' ~ ' | '';
+  end: string;
+  startEstimated: boolean;
+  endEstimated: boolean;
+  text: string;
+}
+
 type LegacyTimingInput = Pick<Event, 'startDate' | 'startTime' | 'endDate' | 'endTime'>;
 
 const TIME_PATTERN = /^(\d{1,2})(?::(\d{2}))?(?::\d{2})?\s*(AM|PM)?$/i;
@@ -177,6 +187,20 @@ const hasDisplayableEstimate = (estimate?: EventScheduleEstimate | null): boolea
       (estimate.displayEndAt || (estimate.displayEndDate && estimate.displayEndTime))
   );
 
+const hasDisplayableEstimatedPoint = (point?: EventTimingPoint | null): boolean =>
+  Boolean(
+    point?.status === 'estimated' &&
+      !point.invalidatedAt &&
+      (point.confidence === 'high' || point.confidence === 'medium') &&
+      (point.at || (point.localDate && point.localTime))
+  );
+
+const isStartEstimated = (timing: EventTiming): boolean =>
+  hasDisplayableEstimatedPoint(timing.schedule.start);
+
+const isEndEstimated = (timing: EventTiming): boolean =>
+  hasDisplayableEstimatedPoint(timing.schedule.end) || hasDisplayableEstimate(timing.estimate);
+
 export const createLegacyTimingContract = (
   event: LegacyTimingInput,
   options: {
@@ -281,9 +305,14 @@ export const getEventScheduleState = (
     timing.schedule.end.localDate || event.endDate || startDate,
     timing.schedule.end.localTime || event.endTime
   );
+  const estimatedEndScalar = hasDisplayableEstimatedPoint(timing.schedule.end)
+    ? observedEndScalar
+    : displayEstimateScalar;
+  const startEstimated = isStartEstimated(timing);
+  const endEstimated = isEndEstimated(timing);
 
   if (nowScalar < startScalar) {
-    const code: EventScheduleStateCode = hasDisplayableEstimate(timing.estimate)
+    const code: EventScheduleStateCode = startEstimated || endEstimated
       ? 'upcoming_estimated'
       : timing.schedule.end.status === 'observed' || timing.schedule.end.status === 'until_close'
         ? 'upcoming_confirmed'
@@ -307,8 +336,12 @@ export const getEventScheduleState = (
   if (timing.schedule.end.status === 'observed' && observedEndScalar !== null) {
     if (nowScalar <= observedEndScalar + CONFIRMED_END_GRACE_MINUTES) {
       return {
-        code: timing.scheduleKind === 'multi_day' ? 'multi_day_today' : 'happening_confirmed',
-        nowEligibility: 'confirmed',
+        code: startEstimated
+          ? 'expected_happening'
+          : timing.scheduleKind === 'multi_day'
+            ? 'multi_day_today'
+            : 'happening_confirmed',
+        nowEligibility: startEstimated ? 'expected' : 'confirmed',
         defaultMapEligible: true,
         todayEligible: true,
         muted: false,
@@ -319,13 +352,19 @@ export const getEventScheduleState = (
 
   if (timing.schedule.end.status === 'until_close' && observedEndScalar !== null) {
     if (nowScalar <= observedEndScalar + CONFIRMED_END_GRACE_MINUTES) {
-      return { code: 'until_close_active', nowEligibility: 'confirmed', defaultMapEligible: true, todayEligible: true, muted: false };
+      return {
+        code: startEstimated ? 'expected_happening' : 'until_close_active',
+        nowEligibility: startEstimated ? 'expected' : 'confirmed',
+        defaultMapEligible: true,
+        todayEligible: true,
+        muted: false,
+      };
     }
     return { code: 'confirmed_ended', nowEligibility: 'none', defaultMapEligible: false, todayEligible: false, muted: true };
   }
 
-  if (hasDisplayableEstimate(timing.estimate) && displayEstimateScalar !== null) {
-    if (nowScalar <= displayEstimateScalar) {
+  if (endEstimated && estimatedEndScalar !== null) {
+    if (nowScalar <= estimatedEndScalar) {
       return { code: 'expected_happening', nowEligibility: 'expected', defaultMapEligible: true, todayEligible: true, muted: false };
     }
     if (zonedNow.dateKey === startDate) {
@@ -378,17 +417,23 @@ export const getEventTimingBadge = (
   event: LegacyTimingInput & { timing?: EventTiming | null },
   now = new Date()
 ): EventTimingBadge | null => {
+  const timing = getEventTiming(event);
+  const startEstimated = isStartEstimated(timing);
+  const endEstimated = isEndEstimated(timing);
+  if (startEstimated && endEstimated) {
+    return { text: 'TIMES\nESTIMATED', accessibilityLabel: 'Start and end times estimated by GathR', tone: 'neutral' };
+  }
+  if (startEstimated) {
+    return { text: 'START\nESTIMATED', accessibilityLabel: 'Start time estimated by GathR', tone: 'neutral' };
+  }
+  if (endEstimated) {
+    return { text: 'END\nESTIMATED', accessibilityLabel: 'End time estimated by GathR', tone: 'neutral' };
+  }
   const state = getEventScheduleState(event, now);
   switch (state.code) {
-    case 'upcoming_estimated':
-      return { text: 'ESTIMATED', accessibilityLabel: 'End time estimated by GathR', tone: 'neutral' };
-    case 'expected_happening':
-      return { text: 'EXPECTED\nNOW', accessibilityLabel: 'Expected to be happening', tone: 'positive' };
     case 'upcoming_unknown_end':
     case 'started_unknown_end':
       return { text: 'END\nUNKNOWN', accessibilityLabel: 'End time not provided', tone: 'caution' };
-    case 'estimate_passed':
-      return { text: 'MAY HAVE\nENDED', accessibilityLabel: 'May have ended based on an estimated end time', tone: 'muted' };
     case 'unknown_cutoff_passed':
       return { text: 'STATUS\nUNKNOWN', accessibilityLabel: 'Start time passed; current status unknown', tone: 'muted' };
     case 'until_close_active':
@@ -399,6 +444,20 @@ export const getEventTimingBadge = (
 };
 
 const getEstimateDisplayTime = (timing: EventTiming): string => {
+  if (hasDisplayableEstimatedPoint(timing.schedule.end)) {
+    if (timing.schedule.end.localTime) return formatClock(timing.schedule.end.localTime);
+    if (timing.schedule.end.at) {
+      try {
+        return new Intl.DateTimeFormat('en-US', {
+          timeZone: timing.timeZone,
+          hour: 'numeric',
+          minute: '2-digit',
+        }).format(new Date(timing.schedule.end.at));
+      } catch {
+        return '';
+      }
+    }
+  }
   if (timing.estimate?.displayEndTime) return formatClock(timing.estimate.displayEndTime);
   const instant = timing.estimate?.displayEndAt || timing.estimate?.endAt;
   if (!instant) return '';
@@ -413,26 +472,54 @@ const getEstimateDisplayTime = (timing: EventTiming): string => {
   }
 };
 
-export const getEventTimeRangeText = (
+export const getEventTimeRangeParts = (
   event: LegacyTimingInput & { timing?: EventTiming | null },
   now = new Date()
-): string => {
+): EventTimeRangeParts => {
   const timing = getEventTiming(event);
   const state = getEventScheduleState(event, now);
   const start = formatClock(timing.schedule.start.localTime || event.startTime);
   const observedEnd = formatClock(timing.schedule.end.localTime || '');
   const estimateEnd = getEstimateDisplayTime(timing);
+  const startEstimated = isStartEstimated(timing);
+  const endEstimated = isEndEstimated(timing) && Boolean(estimateEnd);
 
-  if (state.code === 'all_day_today' || timing.scheduleKind === 'all_day') return 'All day';
-  if (state.code === 'estimate_passed' && estimateEnd) return `Estimated end was around ${estimateEnd}`;
-  if (state.code === 'unknown_cutoff_passed') return start ? `Started ${start}` : 'Start time passed';
-  if (state.code === 'started_unknown_end') return start ? `Started ${start}` : 'Started';
-  if (state.code === 'expected_happening' && estimateEnd) return `${start} – around ${estimateEnd}`;
-  if (hasDisplayableEstimate(timing.estimate) && estimateEnd) return `${start} – around ${estimateEnd}`;
-  if ((timing.schedule.end.status === 'observed' || timing.schedule.end.status === 'until_close') && observedEnd) {
-    return `${start} – ${observedEnd}`;
+  let prefix = '';
+  let separator: EventTimeRangeParts['separator'] = '';
+  let end = '';
+
+  if (state.code === 'all_day_today' || timing.scheduleKind === 'all_day') {
+    return { prefix: 'All day', start: '', separator: '', end: '', startEstimated: false, endEstimated: false, text: 'All day' };
   }
-  return start ? `Starts ${start}` : 'Time not provided';
+
+  if (endEstimated && estimateEnd) {
+    end = estimateEnd;
+    separator = ' ~ ';
+  } else if (
+    (timing.schedule.end.status === 'observed' || timing.schedule.end.status === 'until_close') &&
+    observedEnd
+  ) {
+    end = observedEnd;
+    separator = startEstimated ? ' ~ ' : ' – ';
+  } else if (state.code === 'unknown_cutoff_passed') {
+    prefix = start ? 'Started ' : 'Start time passed';
+  } else if (state.code === 'started_unknown_end') {
+    prefix = start ? 'Started ' : 'Started';
+  } else {
+    prefix = start ? 'Starts ' : 'Time not provided';
+  }
+
+  const text = start
+    ? `${prefix}${start}${separator}${end}`
+    : prefix;
+  return { prefix, start, separator, end, startEstimated, endEstimated, text };
+};
+
+export const getEventTimeRangeText = (
+  event: LegacyTimingInput & { timing?: EventTiming | null },
+  now = new Date()
+): string => {
+  return getEventTimeRangeParts(event, now).text;
 };
 
 export const getEventTimingDisclosure = (
@@ -442,8 +529,18 @@ export const getEventTimingDisclosure = (
   const timing = getEventTiming(event);
   const state = getEventScheduleState(event, now);
   const estimateEnd = getEstimateDisplayTime(timing);
+  const start = formatClock(timing.schedule.start.localTime || event.startTime);
+  const startEstimated = isStartEstimated(timing);
+  const endEstimated = isEndEstimated(timing);
+  if (startEstimated && endEstimated) {
+    return `GathR estimates the start at ${start || 'the displayed time'} and the end at ${estimateEnd || 'the displayed time'} from supporting schedule evidence. Check the official source before travelling.`;
+  }
+  if (startEstimated) {
+    const endUnknown = timing.schedule.end.status === 'unknown';
+    return `The organizer did not provide a confirmed start time. GathR estimates ${start || 'the displayed start'} from supporting schedule evidence.${endUnknown ? ' No end time was provided.' : ''}`;
+  }
   if (state.code === 'estimate_passed' && estimateEnd) {
-    return `Estimated end was around ${estimateEnd}. Check the official source before travelling.`;
+    return `GathR estimated the end at ${estimateEnd} from supporting schedule evidence. That time has passed, so the event may have ended. Check the official source before travelling.`;
   }
   if (state.code === 'unknown_cutoff_passed') {
     return 'The organizer did not provide an end time, so the current status cannot be confirmed. Check the official source before travelling.';
@@ -451,9 +548,9 @@ export const getEventTimingDisclosure = (
   if (state.code === 'started_unknown_end' || state.code === 'upcoming_unknown_end') {
     return 'The organizer provided a start time but no end time. GathR will not guess an ending.';
   }
-  if (state.code === 'expected_happening' || state.code === 'upcoming_estimated') {
+  if (endEstimated || state.code === 'expected_happening' || state.code === 'upcoming_estimated') {
     return estimateEnd
-      ? `The organizer did not provide an end time. GathR estimates around ${estimateEnd} from supporting schedule evidence.`
+      ? `The organizer did not provide a confirmed end time. GathR estimates ${estimateEnd} from supporting schedule evidence.`
       : 'The organizer did not provide an end time. GathR is showing a supported estimate.';
   }
   if (state.code === 'until_close_active') {
@@ -480,6 +577,22 @@ export const getCalendarEndDecision = (
       endDate: timing.schedule.end.localDate || event.endDate || event.startDate,
       endTime: timing.schedule.end.localTime,
     };
+  }
+  if (hasDisplayableEstimatedPoint(timing.schedule.end)) {
+    const estimatedTime = getEstimateDisplayTime(timing);
+    const estimatedInstant = timing.schedule.end.at;
+    const estimatedLocal = estimatedInstant
+      ? getZonedNow(new Date(estimatedInstant), timing.timeZone)
+      : null;
+    const estimatedDate = timing.schedule.end.localDate || estimatedLocal?.dateKey;
+    if (estimatedTime && estimatedDate) {
+      return {
+        kind: 'estimated',
+        endDate: estimatedDate,
+        endTime: estimatedTime,
+        disclosure: 'End time estimated by GathR',
+      };
+    }
   }
   if (hasDisplayableEstimate(timing.estimate)) {
     const estimateTime = getEstimateDisplayTime(timing);

@@ -29,6 +29,7 @@ import TicketCtaPill from '../../components/common/TicketCtaPill';
 import EventActionLinkPill from '../../components/common/EventActionLinkPill';
 import FamilyFriendlyBadge from '../../components/common/FamilyFriendlyBadge';
 import { EventTimingBadge } from '../../components/common/EventTimingBadge';
+import { EventTimingSummaryText } from '../../components/common/EventTimingSummaryText';
 import { VenueFavoriteButton } from '../../components/common/VenueFavoriteButton';
 import Autolink from 'react-native-autolink';
 
@@ -49,7 +50,6 @@ import { AdColors } from '../../constants/AdTheme';
 
 // Import utilities
 import {
-  formatEventTimingSummary,
   getEventTimeStatus,
   getEventDisplayUntilDate,
 } from '../../utils/dateUtils';
@@ -939,10 +939,6 @@ const result = await userService.toggleSavedEvent(event.id, {
   const showHeroEngagementOverlay = true;
   const showBuyTicketsButton = hasTicketLink && paid;
   const showRegisterButton = hasTicketLink && !paid;
-  const formatFullDateTime = (): string => {
-    return formatEventTimingSummary(event);
-  };
-  
   return (
     <View>
       <TouchableOpacity 
@@ -1133,22 +1129,19 @@ const result = await userService.toggleSavedEvent(event.id, {
         <View style={styles.dateTimeRow}>
         <MaterialIcons name="access-time" size={14} color={BRAND.primaryDark} />
         {(() => {
-          const base = formatEventTimingSummary(event);
           const displayUntilDate = getEventDisplayUntilDate(event);
           const endDateSuffix =
             isFutureDate(displayUntilDate) ? ` • (Until ${formatEndDateLabel(displayUntilDate!)})` : '';
-          const display = `${base}${endDateSuffix}`;
-
             return (
               <>
-                <Text
+                <EventTimingSummaryText
+                  event={event}
+                  suffix={endDateSuffix}
                   style={styles.dateTimeText}
                   numberOfLines={2}
                   adjustsFontSizeToFit={true}
                   minimumFontScale={0.75}
-                >
-                  {display}
-                </Text>
+                />
                 <EventTimingBadge event={event} compact style={styles.timingBadge} />
               </>
             );
