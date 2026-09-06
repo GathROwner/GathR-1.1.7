@@ -52,13 +52,27 @@ interface TraceEventOptions {
 }
 
 const MAX_ENTRIES = 160;
-const NO_GESTURE_SESSION = '__no_gesture__';
+const EMPTY_SCHEDULE_METRIC: MapScheduleStateMetricSnapshot = {
+  count: 0,
+  cumulativeDurationMs: 0,
+};
+const createEmptyScheduleMetrics = (): Record<
+  MapScheduleStateCaller,
+  MapScheduleStateMetricSnapshot
+> => ({
+  default_map_eligibility: { ...EMPTY_SCHEDULE_METRIC },
+  cluster_now_today: { ...EMPTY_SCHEDULE_METRIC },
+  events_pill_counts: { ...EMPTY_SCHEDULE_METRIC },
+  specials_pill_counts: { ...EMPTY_SCHEDULE_METRIC },
+  map_filtering: { ...EMPTY_SCHEDULE_METRIC },
+});
 
 let nextEntryId = 1;
 let nextGestureSessionId = 1;
 let nextTimerId = 1;
 let activeGestureSessionId: string | null = null;
-const scheduleStateMetrics = new Map<string, MapScheduleStateMetricSnapshot>();
+let scheduleStateMetricsSessionId: string | null = null;
+let scheduleStateMetrics = createEmptyScheduleMetrics();
 let traceState: MapTraceState = {
   entries: [],
   snapshot: MAP_TRACE_ENABLED
@@ -141,9 +155,10 @@ export const beginMapTraceGestureSession = (
   // All per-caller totals needed for an earlier gesture are emitted into trace
   // entries before the next gesture begins. Reset here so this diagnostic map
   // cannot grow for the lifetime of a long-running Preview session.
-  scheduleStateMetrics.clear();
   const gestureSessionId = `${TRACE_RUN_ID}-g${nextGestureSessionId++}`;
   activeGestureSessionId = gestureSessionId;
+  scheduleStateMetricsSessionId = gestureSessionId;
+  scheduleStateMetrics = createEmptyScheduleMetrics();
   traceMapEvent(
     'gesture_sequence_started',
     {
@@ -177,18 +192,23 @@ export const traceMapEvent = (
     details: normalizeRecord(details),
   };
 
-  traceState = {
-    ...traceState,
-    entries: [...traceState.entries, entry].slice(-MAX_ENTRIES),
-  };
+  // Keep the idle recorder allocation-light. The panel subscribes only while
+  // visible; while it is closed, mutate the fixed-size buffer in place rather
+  // than copying up to 160 entries for every high-frequency camera milestone.
+  if (listeners.size > 0) {
+    traceState = {
+      ...traceState,
+      entries: [...traceState.entries, entry].slice(-MAX_ENTRIES),
+    };
+  } else {
+    traceState.entries.push(entry);
+    if (traceState.entries.length > MAX_ENTRIES) {
+      traceState.entries.splice(0, traceState.entries.length - MAX_ENTRIES);
+    }
+  }
 
   notifyListeners();
 };
-
-const getScheduleMetricKey = (
-  caller: MapScheduleStateCaller,
-  gestureSessionId: string | null
-) => `${gestureSessionId ?? NO_GESTURE_SESSION}:${caller}`;
 
 export const getMapScheduleStateMetricSnapshot = (
   caller: MapScheduleStateCaller,
@@ -198,10 +218,11 @@ export const getMapScheduleStateMetricSnapshot = (
     return { count: 0, cumulativeDurationMs: 0 };
   }
 
-  const current = scheduleStateMetrics.get(getScheduleMetricKey(caller, gestureSessionId));
-  return current
-    ? { ...current }
-    : { count: 0, cumulativeDurationMs: 0 };
+  if (gestureSessionId !== scheduleStateMetricsSessionId) {
+    return { ...EMPTY_SCHEDULE_METRIC };
+  }
+
+  return { ...scheduleStateMetrics[caller] };
 };
 
 export const diffMapScheduleStateMetrics = (
@@ -226,15 +247,13 @@ export const measureMapScheduleState = <T>(
     return evaluate();
   } finally {
     const durationMs = Math.max(0, mapTraceNow() - startedAt);
-    const key = getScheduleMetricKey(caller, gestureSessionId);
-    const current = scheduleStateMetrics.get(key) ?? {
-      count: 0,
-      cumulativeDurationMs: 0,
-    };
-    scheduleStateMetrics.set(key, {
-      count: current.count + 1,
-      cumulativeDurationMs: current.cumulativeDurationMs + durationMs,
-    });
+    if (gestureSessionId !== scheduleStateMetricsSessionId) {
+      scheduleStateMetricsSessionId = gestureSessionId;
+      scheduleStateMetrics = createEmptyScheduleMetrics();
+    }
+    const current = scheduleStateMetrics[caller];
+    current.count += 1;
+    current.cumulativeDurationMs += durationMs;
   }
 };
 
@@ -321,7 +340,8 @@ export const clearMapTrace = () => {
       traceClock: 'performance.now',
     },
   };
-  scheduleStateMetrics.clear();
+  scheduleStateMetricsSessionId = null;
+  scheduleStateMetrics = createEmptyScheduleMetrics();
   activeGestureSessionId = null;
 
   notifyListeners();

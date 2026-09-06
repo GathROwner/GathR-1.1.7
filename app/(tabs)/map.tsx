@@ -11974,12 +11974,22 @@ Owner: Map UX stability on Android • Last validated: 2025-09-04
       {MAP_TRACE_UI_ENABLED && (
         <View
           accessible
+          accessibilityActions={[{ name: 'activate', label: 'Open map trace' }]}
           accessibilityLabel="Open map trace"
           accessibilityRole="button"
           collapsable={false}
+          onAccessibilityAction={(event) => {
+            if (event.nativeEvent.actionName === 'activate') {
+              traceMapEvent('trace_panel_opened', {
+                source: 'logo_accessibility_action',
+              });
+              setIsTracePanelVisible(true);
+            }
+          }}
           onMoveShouldSetResponder={() => false}
           onResponderGrant={startMapTraceLogoHold}
           onResponderRelease={cancelMapTraceLogoHold}
+          onResponderTerminationRequest={() => false}
           onResponderTerminate={cancelMapTraceLogoHold}
           onStartShouldSetResponder={() => true}
           pointerEvents="auto"

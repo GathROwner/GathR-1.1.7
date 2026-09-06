@@ -130,4 +130,22 @@ describe('bounded map latency diagnostics', () => {
     expect(entries[0].label).toBe('entry_10');
     expect(entries[159].label).toBe('entry_169');
   });
+
+  it('keeps subscribed panel snapshots fresh while the bounded recorder advances', () => {
+    jest.spyOn(globalThis.performance, 'now').mockReturnValue(1);
+    const trace = loadEnabledTrace();
+    const observedStates: ReturnType<typeof trace.getMapTraceState>[] = [];
+    const unsubscribe = trace.subscribeToMapTrace(() => {
+      observedStates.push(trace.getMapTraceState());
+    });
+
+    trace.traceMapEvent('first');
+    trace.traceMapEvent('second');
+    unsubscribe();
+
+    expect(observedStates).toHaveLength(2);
+    expect(observedStates[0]).not.toBe(observedStates[1]);
+    expect(observedStates[0].entries.map((entry) => entry.label)).toEqual(['first']);
+    expect(observedStates[1].entries.map((entry) => entry.label)).toEqual(['first', 'second']);
+  });
 });
