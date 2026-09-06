@@ -4,6 +4,7 @@ import type { FriendActivityProjection } from '../types/social';
 import { doesEventMatchCategoryOrFacet } from './familyFriendly';
 import { getRecognizedVenueId, isFriendActivityActive } from './friendPresence';
 import { CITY_EVENTS_CATEGORY, isAreaExperienceEvent } from './locationScope';
+import { getEventScheduleState } from './eventTiming';
 
 const EARLY_EVENT_ASSOCIATION_MS = 90 * 60 * 1000;
 
@@ -67,14 +68,6 @@ const parseLocalEventTime = (dateValue: string, timeValue: string): number => {
 const eventStartsAt = (event: Event): number =>
   parseLocalEventTime(event.startDate, event.startTime);
 
-const eventEndsAt = (event: Event): number => {
-  const value = parseLocalEventTime(
-    event.endDate || event.startDate,
-    event.endTime || event.startTime
-  );
-  return Number.isFinite(value) ? value : eventStartsAt(event);
-};
-
 /**
  * Social destinations obey the active content/category/search/saved filters,
  * but deliberately ignore the time pill. A live check-in is current social
@@ -115,8 +108,8 @@ export const doesEventMatchFriendDestinationFilters = (
 const getEventAssociationCandidates = (events: Event[], nowMs: number): Event[] => {
   const candidates = events.filter((event) => {
     const startsAt = eventStartsAt(event);
-    const endsAt = eventEndsAt(event);
-    const happening = startsAt <= nowMs && endsAt >= nowMs;
+    const state = getEventScheduleState(event, new Date(nowMs));
+    const happening = startsAt <= nowMs && state.defaultMapEligible && state.code !== 'confirmed_ended';
     const startsSoon = startsAt > nowMs && startsAt - nowMs <= EARLY_EVENT_ASSOCIATION_MS;
     return happening || startsSoon;
   });
@@ -262,8 +255,15 @@ export const firstName = (displayName: string): string =>
 export function formatFriendDestinationTime(event: Event | null, nowMs = Date.now()): string {
   if (!event) return 'Checked in now';
   const startsAt = eventStartsAt(event);
-  const endsAt = eventEndsAt(event);
-  if (startsAt <= nowMs && endsAt >= nowMs) return 'Happening now';
+  const state = getEventScheduleState(event, new Date(nowMs));
+  if (state.nowEligibility === 'confirmed') return 'Happening now';
+  if (state.nowEligibility === 'expected') return 'Expected now';
+  if (state.code === 'started_unknown_end') {
+    const start = new Date(startsAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+    return `Started at ${start}`;
+  }
+  if (state.code === 'estimate_passed') return 'May have ended';
+  if (state.code === 'unknown_cutoff_passed') return 'Status unknown';
   const minutesUntil = Math.ceil((startsAt - nowMs) / 60_000);
   if (minutesUntil > 0 && minutesUntil <= 120) {
     return `Starts in ${minutesUntil} min`;

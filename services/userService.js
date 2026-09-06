@@ -5,6 +5,7 @@ import { doc, getDoc, updateDoc, arrayUnion, arrayRemove, runTransaction } from 
 import { amplitudeTrack } from '../lib/amplitudeAnalytics';
 import * as Notifications from 'expo-notifications';
 import { ensureNotificationPermissions, schedulePreEventNotification, cancelPreEventNotification, schedulePostEventSurveyNotification, cancelPostEventNotification } from './notificationService';
+import { getCalendarEndDecision } from '../utils/eventTiming';
 
 // In-memory cache for user data
 let cachedUserInterests = [];
@@ -221,12 +222,12 @@ if (granted && eventForScheduling) {
       else if (ap === 'PM') { if (h !== 12) h = (h % 12) + 12; }
       return { h: (isNaN(h) ? 0 : h), m, sec };
     };
-    const buildDate = (yyyyMMdd, timeStr, fallbackTime = '11:59 PM') => {
-      if (!yyyyMMdd) return null;
+    const buildDate = (yyyyMMdd, timeStr) => {
+      if (!yyyyMMdd || !timeStr) return null;
       try {
         const [y, mo, d] = (yyyyMMdd || '').split('-').map((x) => parseInt(x || '0', 10));
         if (!y || !mo || !d) return null;
-        const { h, m, sec } = parseHMS(timeStr || fallbackTime);
+        const { h, m, sec } = parseHMS(timeStr);
         return new Date(y, mo - 1, d, h, m, sec || 0);
       } catch {
         return null;
@@ -234,10 +235,10 @@ if (granted && eventForScheduling) {
     };
 
     const start = buildDate(eventForScheduling.startDate, eventForScheduling.startTime);
-    const end   = buildDate(
-      eventForScheduling.endDate || eventForScheduling.startDate,
-      eventForScheduling.endTime || '11:59 PM'
-    );
+    const calendarEndDecision = getCalendarEndDecision(eventForScheduling);
+    const end = calendarEndDecision.kind === 'confirmed'
+      ? buildDate(calendarEndDecision.endDate, calendarEndDecision.endTime)
+      : null;
     const now = new Date();
 
     // Always try to schedule the pre-event reminder if start is in the future
@@ -268,8 +269,9 @@ if (hasStarted && notEnded) {
     title: eventForScheduling.title,
     venue: eventForScheduling.venue,
     address: eventForScheduling.address,
-    endDate: eventForScheduling.endDate || eventForScheduling.startDate,
-    endTime: eventForScheduling.endTime, // may be undefined; handled in service
+    endDate: calendarEndDecision.kind === 'confirmed' ? calendarEndDecision.endDate : undefined,
+    endTime: calendarEndDecision.kind === 'confirmed' ? calendarEndDecision.endTime : undefined,
+    timing: eventForScheduling.timing,
   });
   try { console.log('[notifications] scheduled post_event_survey id =', postId); } catch {}
 } else {

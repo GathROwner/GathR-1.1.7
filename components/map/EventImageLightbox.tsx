@@ -33,19 +33,18 @@ import GathRShimmerPill from '../common/GathRShimmerPill';
 import TicketCtaPill from '../common/TicketCtaPill';
 import EventActionLinkPill from '../common/EventActionLinkPill';
 import FamilyFriendlyBadge from '../common/FamilyFriendlyBadge';
+import { EventTimingBadge } from '../common/EventTimingBadge';
 import { VenueFavoriteButton } from '../common/VenueFavoriteButton';
 import Autolink from 'react-native-autolink';
 
 import type { Event, Venue, Cluster } from '../../types/events';
 import { useMapStore } from '../../store/mapStore';
-import { addToCalendar } from '../../utils/calendarUtils';
+import { addEventToCalendarWithTiming } from '../../utils/calendarUtils';
 import { isValidImageUrl, getCategoryFallbackImage } from '../../utils/imageUtils';
 import {
-  formatEventDateTime,
-  combineDateAndTime,
+  formatEventTimingSummary,
   getEventTimeStatus,
-  getEventDisplayUntilDate,
-  formatTime
+  getEventDisplayUntilDate
 } from '../../utils/dateUtils';
 import { createLocationKeyFromEvent } from '../../utils/priorityUtils';
 import { buildGathrSharePayload } from '../../utils/shareUtils';
@@ -73,6 +72,12 @@ import {
   formatFriendEventGuestResponse,
   getFriendEventLightboxAction,
 } from '../../utils/friendEventLightbox';
+import {
+  getEventScheduleState,
+  getEventTiming,
+  getEventTimingDisclosure,
+} from '../../utils/eventTiming';
+import { useEventTimingMinute } from '../../hooks/useEventTimingMinute';
 import {
   hasPhysicalEventDestination,
   getAreaScopeBadgePresentation,
@@ -105,46 +110,6 @@ import { useGuestLimitationStore } from '../../store/guestLimitationStore';
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const APP_HEADER_HEIGHT = Platform.OS === 'ios' ? 44 : 56;
 const LIGHTBOX_HEADER_SEAM_OVERLAP = Platform.OS === 'ios' ? 5 : 0;
-
-// --- Local helper to derive label/start/end from already-formatted strings ---
-// Returns { label } (base without trailing " at <start>" if present),
-// { start }, { end }, and { labelWithTime } (original base).
-function partsFrom(base: string, range?: string) {
-  const result = {
-    label: base,
-    start: undefined as string | undefined,
-    end: undefined as string | undefined,
-    labelWithTime: base,
-  };
-  if (!range) return result;
-
-  // Detect common separators: en dash, spaced hyphen, plain hyphen, and " to "
-  const rLower = range.toLowerCase();
-  const sep =
-    range.includes(' – ') ? ' – ' :
-    range.includes('–')    ? '–'    :
-    rLower.includes(' to ') ? ' to ' :
-    range.includes(' - ')  ? ' - '  :
-    range.includes('-')    ? '-'    :
-    null;
-
-  if (sep) {
-    const [startRaw, endRaw] = range.split(sep).map(s => s?.trim());
-    result.start = startRaw || undefined;
-    result.end = endRaw || undefined;
-  }
-
-  // Trim trailing " at <start>" only if it matches, case-insensitively.
-  if (result.start) {
-    const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const tailRe = new RegExp(`\\s+at\\s+${esc(result.start)}$`, 'i');
-    if (tailRe.test(base)) {
-      result.label = base.replace(tailRe, '');
-    }
-  }
-  return result;
-}
-
 
 // Is the given YYYY-MM-DD strictly in the future (date-only)?
 function isFutureDate(dateStr?: string) {
@@ -258,6 +223,7 @@ const EventImageLightbox: React.FC<EventImageLightboxProps> = ({
   onShowRoute,
   onViewVenue,
 }) => {
+  useEventTimingMinute();
   const router = useRouter();
   const safeAreaInsets = useSafeAreaInsets();
   const tabBarHeight = useBottomTabBarHeight();
@@ -310,6 +276,7 @@ const EventImageLightbox: React.FC<EventImageLightboxProps> = ({
     : `${updatedEvent.venue}, ${updatedEvent.address}`;
   const friendPresence = getVenueFriendPresence(cluster || null, venue || null);
   const [friendListExpanded, setFriendListExpanded] = useState(false);
+  const [timingDisclosureExpanded, setTimingDisclosureExpanded] = useState(false);
   const [routeActionBusy, setRouteActionBusy] = useState(false);
   const routeActionInFlightRef = useRef(false);
 
@@ -937,13 +904,7 @@ useEffect(() => {
 
       // If marking interested (not unmarking), also open calendar
       if (result.interested) {
-        await addToCalendar({
-          title: updatedEvent.title,
-          startDate: combineDateAndTime(updatedEvent.startDate, updatedEvent.startTime),
-          endDate: combineDateAndTime(updatedEvent.endDate || updatedEvent.startDate, updatedEvent.endTime || '11:59 PM'),
-          location: publicCalendarLocation,
-          notes: updatedEvent.description
-        });
+        await addEventToCalendarWithTiming(updatedEvent, publicCalendarLocation);
       }
     } catch (error) {
       setUserPrefs({ interestedEvents: previousInterestedEvents });
@@ -964,13 +925,7 @@ useEffect(() => {
 
     if (isPrivateFriendEvent) {
       try {
-        await addToCalendar({
-          title: updatedEvent.title,
-          startDate: combineDateAndTime(updatedEvent.startDate, updatedEvent.startTime),
-          endDate: combineDateAndTime(updatedEvent.endDate || updatedEvent.startDate, updatedEvent.endTime || '11:59 PM'),
-          location: privateCalendarLocation,
-          notes: updatedEvent.description,
-        });
+        await addEventToCalendarWithTiming(updatedEvent, privateCalendarLocation);
       } catch (error) {
         console.error('Failed to add private friend event to calendar', error);
       }
@@ -985,13 +940,7 @@ useEffect(() => {
 
     // Already interested, just add to calendar again
     try {
-      await addToCalendar({
-        title: updatedEvent.title,
-        startDate: combineDateAndTime(updatedEvent.startDate, updatedEvent.startTime),
-        endDate: combineDateAndTime(updatedEvent.endDate || updatedEvent.startDate, updatedEvent.endTime || '11:59 PM'),
-        location: publicCalendarLocation,
-        notes: updatedEvent.description
-      });
+      await addEventToCalendarWithTiming(updatedEvent, publicCalendarLocation);
     } catch (error) {
       console.error('Failed to add event to calendar', error);
     }
@@ -1274,32 +1223,48 @@ const handleNonTicketAction = () => {
   const timeStatus = getEventTimeStatus(updatedEvent);
   const isHappeningNow = timeStatus === 'now';
 
-  // Build structured date/time line (mirror Specials card behavior)
-  const baseDateText = formatEventDateTime(updatedEvent.startDate, updatedEvent.startTime, updatedEvent);
-
-  const startRaw = updatedEvent?.startTime;
-  const endRaw   = updatedEvent?.endTime;
-
-  const start = startRaw && startRaw !== 'N/A' ? formatTime(startRaw) : null;
-  const end   = endRaw   && endRaw   !== 'N/A' ? formatTime(endRaw)   : null;
-
-  const range =
-    start && end ? `${start} – ${end}` :
-    start        ? `${start} – late`  :
-    end          ? `until ${end}`     :
-                  '';
-
-  const rangeOrUndefined = range && range.trim() ? range : undefined;
-  const { label, start: s, end: e, labelWithTime } = partsFrom(baseDateText, rangeOrUndefined);
-  const showRange = (timeStatus === 'now' || timeStatus === 'today' || timeStatus === 'future') && !!rangeOrUndefined;
+  // One shared provenance-aware time sentence across every app surface.
+  const baseDateText = formatEventTimingSummary(updatedEvent);
   const displayUntilDate = getEventDisplayUntilDate(updatedEvent);
   const endDateSuffix =
-    showRange && isFutureDate(displayUntilDate) ? ` • (Until ${formatEndDateLabel(displayUntilDate!)})` : '';
-  const dateTimeDisplay = isHappeningNow
-    ? `Now${showRange ? ` • ${s}${e ? ` – ${e}` : ''}${endDateSuffix}` : ''}`
-    : showRange
-      ? `${label} • ${s}${e ? ` – ${e}` : ''}${endDateSuffix}`
-      : labelWithTime;
+    isFutureDate(displayUntilDate) ? ` • (Until ${formatEndDateLabel(displayUntilDate!)})` : '';
+  const dateTimeDisplay = `${baseDateText}${endDateSuffix}`;
+  const timingDisclosure = getEventTimingDisclosure(updatedEvent);
+  const timingContract = getEventTiming(updatedEvent);
+  const timingState = getEventScheduleState(updatedEvent);
+  const timingSourceUrl =
+    timingContract.schedule.end.sourceUrl ||
+    timingContract.schedule.start.sourceUrl ||
+    updatedEvent.facebookUrl ||
+    updatedEvent.sharedEventProvenance?.sourceUrl ||
+    '';
+  const handleReportIncorrectTime = async () => {
+    const subject = `GathR time report: ${updatedEvent.title}`;
+    const body = [
+      'I believe this event time is incorrect.',
+      '',
+      `Event: ${updatedEvent.title}`,
+      `Event ID: ${String(updatedEvent.id)}`,
+      `Displayed time: ${dateTimeDisplay}`,
+      `Timing state: ${timingState.code}`,
+      timingSourceUrl ? `Official source: ${timingSourceUrl}` : '',
+      '',
+      'What should be corrected:',
+    ].filter(Boolean).join('\n');
+    const reportUrl = `mailto:craig@gathrapp.ca?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+    try {
+      const supported = await Linking.canOpenURL(reportUrl);
+      if (!supported) throw new Error('Mail is unavailable');
+      await Linking.openURL(reportUrl);
+      amplitudeTrack('event_time_report_started', {
+        event_id: String(updatedEvent.id),
+        timing_state: timingState.code,
+        source: 'lightbox',
+      });
+    } catch {
+      Alert.alert('Email unavailable', 'Please email craig@gathrapp.ca and include the event name.');
+    }
+  };
   const privateOwnRsvp = friendEventProjection?.ownRsvp
     || updatedEvent.friendEvent?.ownRsvp
     || 'invited';
@@ -1878,7 +1843,63 @@ const handleNonTicketAction = () => {
             <Text style={styles.infoText}>
               {dateTimeDisplay}
             </Text>
+            <EventTimingBadge event={updatedEvent} compact style={styles.timingBadge} />
           </View>
+
+          {timingDisclosure && (
+            <View style={styles.timingDisclosureContainer}>
+              <TouchableOpacity
+                accessibilityRole="button"
+                accessibilityLabel={timingDisclosureExpanded ? 'Hide time details' : 'Explain event time'}
+                onPress={() => setTimingDisclosureExpanded((value) => !value)}
+                style={styles.timingDisclosureToggle}
+              >
+                <MaterialIcons name="info-outline" size={16} color="#F4C542" />
+                <Text style={styles.timingDisclosureToggleText}>
+                  {timingDisclosureExpanded ? 'Hide time details' : 'Time details · Why?'}
+                </Text>
+              </TouchableOpacity>
+              {timingDisclosureExpanded && (
+                <View style={styles.timingDisclosureBody}>
+                  <Text style={styles.timingDisclosureText}>{timingDisclosure}</Text>
+                  {timingSourceUrl ? (
+                    <TouchableOpacity
+                      accessibilityRole="link"
+                      onPress={() => Linking.openURL(timingSourceUrl)}
+                    >
+                      <Text style={styles.timingSourceLink}>View official source</Text>
+                    </TouchableOpacity>
+                  ) : null}
+                  <TouchableOpacity
+                    accessibilityRole="button"
+                    accessibilityLabel="Report an incorrect event time"
+                    onPress={handleReportIncorrectTime}
+                  >
+                    <Text style={styles.timingReportLink}>Report incorrect time</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+            </View>
+          )}
+          {!timingDisclosure && !isPrivateFriendEvent && (
+            <View style={styles.timingConfirmedActions}>
+              {timingSourceUrl ? (
+                <TouchableOpacity
+                  accessibilityRole="link"
+                  onPress={() => Linking.openURL(timingSourceUrl)}
+                >
+                  <Text style={styles.timingSourceLink}>View official source</Text>
+                </TouchableOpacity>
+              ) : null}
+              <TouchableOpacity
+                accessibilityRole="button"
+                accessibilityLabel="Report an incorrect event time"
+                onPress={handleReportIncorrectTime}
+              >
+                <Text style={styles.timingReportLink}>Report incorrect time</Text>
+              </TouchableOpacity>
+            </View>
+          )}
 
           <View style={styles.infoRow}>
             <MaterialIcons name="place" size={20} color="#FFFFFF" />
@@ -2918,6 +2939,53 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     marginLeft: 6,
     flex: 1,
+  },
+  timingBadge: {
+    marginLeft: 8,
+  },
+  timingDisclosureContainer: {
+    marginLeft: 26,
+  },
+  timingDisclosureToggle: {
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    gap: 5,
+    paddingVertical: 2,
+  },
+  timingDisclosureToggleText: {
+    color: '#F4C542',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  timingDisclosureBody: {
+    backgroundColor: 'rgba(255,255,255,0.07)',
+    borderRadius: 8,
+    marginTop: 4,
+    padding: 9,
+  },
+  timingDisclosureText: {
+    color: '#E5E7EB',
+    fontSize: 12,
+    lineHeight: 17,
+  },
+  timingSourceLink: {
+    color: '#62B5FF',
+    fontSize: 12,
+    fontWeight: '700',
+    marginTop: 6,
+  },
+  timingReportLink: {
+    color: '#F4C542',
+    fontSize: 12,
+    fontWeight: '700',
+    marginTop: 7,
+  },
+  timingConfirmedActions: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 14,
+    marginLeft: 26,
   },
   descriptionContainer: {
     flex: 1,

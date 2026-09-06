@@ -28,6 +28,65 @@ export interface EventActionLink {
   evidence?: string;
 }
 
+export type EventScheduleKind =
+  | 'timed_session'
+  | 'availability_window'
+  | 'all_day'
+  | 'multi_day'
+  | 'until_close'
+  | 'unknown';
+
+export type EventTimingConfidence = 'high' | 'medium' | 'low' | 'unknown';
+
+export interface EventTimingPoint {
+  at?: string | null;
+  localDate?: string | null;
+  localTime?: string | null;
+  timeZone?: string | null;
+  status: 'observed' | 'semantic' | 'until_close' | 'all_day' | 'unknown';
+  sourceType?: string | null;
+  evidence?: string | null;
+  sourceUrl?: string | null;
+  observedAt?: string | null;
+  sourceRevision?: string | null;
+}
+
+export interface EventScheduleEstimate {
+  endAt?: string | null;
+  displayEndAt?: string | null;
+  discoveryCutoffAt?: string | null;
+  displayEndDate?: string | null;
+  displayEndTime?: string | null;
+  discoveryCutoffDate?: string | null;
+  discoveryCutoffTime?: string | null;
+  method?: string | null;
+  confidence: EventTimingConfidence;
+  sampleSize?: number | null;
+  medianDurationMinutes?: number | null;
+  upperDurationMinutes?: number | null;
+  estimateVersion?: string | null;
+  evidenceRefs?: string[];
+  computedAt?: string | null;
+  invalidatedAt?: string | null;
+  invalidationReason?: string | null;
+}
+
+/**
+ * Additive v2 timing contract. Legacy start/end fields remain on Event for old
+ * clients, but new UI and discovery logic must use this provenance-aware shape.
+ */
+export interface EventTiming {
+  version: 2;
+  timeZone: string;
+  scheduleKind: EventScheduleKind;
+  schedule: {
+    start: EventTimingPoint;
+    end: EventTimingPoint;
+  };
+  estimate?: EventScheduleEstimate | null;
+  policyVersion?: string | null;
+}
+
 // Firestore does not allow arrays nested directly in arrays, so persisted
 // coordinates use named fields and are converted to GeoJSON tuples in the app.
 export interface RouteCoordinate {
@@ -150,6 +209,7 @@ export interface Event {
   endDate: string;
   startTime: string;
   endTime: string;
+  timing?: EventTiming | null;
   ticketPrice: string;
   profileUrl: string;
   imageUrl: string;

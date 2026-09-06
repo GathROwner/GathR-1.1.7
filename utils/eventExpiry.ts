@@ -6,6 +6,8 @@
  * the backend's America/Halifax serve-time filter remains the authority.
  */
 
+import { isEventTimingPast } from './eventTiming';
+
 // Events stay visible this long past their listed end time before being hidden.
 export const EVENT_EXPIRY_GRACE_MINUTES = 5;
 
@@ -17,6 +19,7 @@ export type EventScheduleFields = {
   startTime?: string | null;
   endDate?: string | null;
   endTime?: string | null;
+  timing?: import('../types/events').EventTiming | null;
 };
 
 export type ExpiryTimeContext = {
@@ -99,7 +102,10 @@ export const createExpiryTimeContext = (now = new Date()): ExpiryTimeContext => 
  * True once the event's end (plus grace) is in the past.
  *
  * Rules:
- * - Missing endTime => the event runs until end of its end day (23:59).
+ * - Version 2 timing never treats a missing ending as 23:59. It follows the
+ *   uncertainty state machine and retains cutoff-passed items only under Today.
+ * - Legacy records without timing retain the historical end-of-day fallback
+ *   until normalization supplies a version 2 contract.
  * - endTime earlier than startTime => the event crosses midnight and ends the
  *   day after endDate (mirrors isEventNowFast's overnight handling).
  * - Unparseable dates => never past on the client; the backend excludes and
@@ -112,6 +118,27 @@ export const isEventPastFast = (
   context: ExpiryTimeContext,
   graceMinutes: number = EVENT_EXPIRY_GRACE_MINUTES
 ): boolean => {
+  if (event.timing?.version === 2) {
+    const [year, month, day] = context.todayKey.split('-').map(Number);
+    const localNow = new Date(
+      year,
+      Math.max(0, month - 1),
+      day,
+      Math.floor(context.nowMinutes / 60),
+      context.nowMinutes % 60
+    );
+    return isEventTimingPast(
+      {
+        startDate: event.startDate || '',
+        startTime: event.startTime || '',
+        endDate: event.endDate || event.startDate || '',
+        endTime: event.endTime || '',
+        timing: event.timing,
+      },
+      localNow
+    );
+  }
+
   const startKey = getEventDateKey(event.startDate);
   const endKey = getEventDateKey(event.endDate) || startKey;
   if (!endKey) return false;

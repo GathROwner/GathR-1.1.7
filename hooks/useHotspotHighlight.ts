@@ -22,7 +22,7 @@ import { useTutorial } from './useTutorial';
 import { useAuth } from '../contexts/AuthContext';
 import { Cluster, TimeStatus } from '../types/events';
 import { amplitudeTrack } from '../lib/amplitudeAnalytics';
-import { isEventNow, isEventHappeningToday } from '../utils/dateUtils';
+import { isEventHappeningToday, isEventNowWithTiming } from '../utils/dateUtils';
 import { getLocalDateKey } from '../utils/localDateKey';
 import { setMapTraceSnapshot, traceMapEvent } from '../utils/mapTrace';
 import { doesEventMatchAnyInterest } from '../utils/familyFriendly';
@@ -153,12 +153,7 @@ function getVenueHotness(venue: { events?: any[] }) {
 
   for (const event of (venue.events || [])) {
     // Use centralized date utilities that properly handle "H:MM:SS AM/PM" format
-    const eventIsNow = isEventNow(
-      event.startDate,
-      event.startTime,
-      event.endDate,
-      event.endTime
-    );
+    const eventIsNow = isEventNowWithTiming(event);
 
     if (eventIsNow) {
       nowCount++;
@@ -194,12 +189,7 @@ function calculateVenueRelevanceScore(
     const interestScore = doesEventMatchAnyInterest(event, userInterests) ? 100 : 0;
 
     let timeScore = 1; // Default: future
-    const eventIsNow = isEventNow(
-      event.startDate,
-      event.startTime,
-      event.endDate,
-      event.endTime
-    );
+    const eventIsNow = isEventNowWithTiming(event);
     if (eventIsNow) {
       timeScore = 10;
     } else if (isEventHappeningToday(event)) {
@@ -296,12 +286,7 @@ function generateTooltipText(cluster: Cluster): { text: string; subtext: string 
 
   for (const venue of (cluster.venues || [])) {
     for (const event of (venue.events || [])) {
-      const eventIsNow = isEventNow(
-        event.startDate,
-        event.startTime,
-        event.endDate,
-        event.endTime
-      );
+      const eventIsNow = isEventNowWithTiming(event);
 
       if (eventIsNow) {
         nowCount++;
@@ -955,7 +940,7 @@ export function useHotspotHighlight(
         hotspotDebugLog(`[Hotspot]   ${idx + 1}. ${v.venue}: fav=${vIsFav}, now=${vHot.nowCount}, today=${vHot.todayCount}, total=${vHot.total}`);
         // Log events at this venue
         (v.events || []).forEach((evt: any) => {
-          const evtIsNow = isEventNow(evt.startDate, evt.startTime, evt.endDate, evt.endTime);
+          const evtIsNow = isEventNowWithTiming(evt);
           hotspotDebugLog(`[Hotspot]      - "${evt.title}" (${evt.category}) | ${evt.startDate} ${evt.startTime}-${evt.endTime} | isNow=${evtIsNow}`);
         });
       });
@@ -974,7 +959,7 @@ export function useHotspotHighlight(
       // Find hottest event (NOW > TODAY > FUTURE)
       let hottestEvent: any = null;
       for (const evt of venueEvents) {
-        const evtIsNow = isEventNow(evt.startDate, evt.startTime, evt.endDate, evt.endTime);
+        const evtIsNow = isEventNowWithTiming(evt);
         if (evtIsNow) {
           hottestEvent = evt;
           break;
@@ -986,7 +971,7 @@ export function useHotspotHighlight(
         hotspotDebugLog(`[Hotspot] Hottest event: "${hottestEvent.title}" (${hottestEvent.category})`);
         hotspotDebugLog(`[Hotspot]   Venue: ${hottestVenue.venue}`);
         hotspotDebugLog(`[Hotspot]   Date: ${hottestEvent.startDate} ${hottestEvent.startTime}-${hottestEvent.endTime}`);
-        const evtIsNow = isEventNow(hottestEvent.startDate, hottestEvent.startTime, hottestEvent.endDate, hottestEvent.endTime);
+        const evtIsNow = isEventNowWithTiming(hottestEvent);
         hotspotDebugLog(`[Hotspot]   Is happening NOW: ${evtIsNow}`);
       }
     }

@@ -108,7 +108,7 @@ declare global {
     getCurrentSubStep?: () => number;
   } | undefined;
 }
-import { addToCalendar } from '../../utils/calendarUtils';
+import { addEventToCalendarWithTiming } from '../../utils/calendarUtils';
 import EventImageLightbox from './EventImageLightbox';
 
 import * as userService from '../../services/userService';
@@ -124,13 +124,11 @@ import { isFriendEventDetailPath } from '../../utils/friendEventLightbox';
 
 // Import the centralized date utilities
 import {
-  formatTime,
   formatEventDateTime,
-  isEventNow,
-  isEventHappeningToday,
+  formatEventTimingSummary,
+  isEventNowWithTiming,
   getEventTimeStatus,
   sortEventsByTimeStatus,
-  getRelativeTimeDescription,
   getEventDisplayUntilDate,
   combineDateAndTime
 } from '../../utils/dateUtils';
@@ -156,9 +154,12 @@ import CompactSdkAdCard from '../ads/CompactSdkAdCard';
 import TicketCtaPill from '../common/TicketCtaPill';
 import EventActionLinkPill from '../common/EventActionLinkPill';
 import FamilyFriendlyBadge from '../common/FamilyFriendlyBadge';
+import { EventTimingBadge } from '../common/EventTimingBadge';
 import { traceMapEvent } from '../../utils/mapTrace';
 import { doesEventMatchAnyInterest } from '../../utils/familyFriendly';
 import { getVenueFriendPresence } from '../../utils/friendPresence';
+import { getEventScheduleState, getEventTimingDisclosure } from '../../utils/eventTiming';
+import { useEventTimingMinute } from '../../hooks/useEventTimingMinute';
 
 const EVENT_CALLOUT_SHELL_ISOLATION_DEBUG = false;
 const EVENT_CALLOUT_DISABLE_NATIVE_ADS_DEBUG = false;
@@ -210,44 +211,6 @@ type UserPrefsState = {
   likedEvents: string[];
   interestedEvents: string[];
 };
-
-// --- Local helper to derive label/start/end from the already-formatted strings ---
-// Returns { label } (base without trailing " at <start>" if present), { start }, { end }, and { labelWithTime } (original base).
-function partsFrom(base: string, range?: string) {
-  const result = {
-    label: base,
-    start: undefined as string | undefined,
-    end: undefined as string | undefined,
-    labelWithTime: base,
-  };
-  if (!range) return result;
-
-  // Detect common separators: en dash, spaced hyphen, plain hyphen, and " to "
-  const rLower = range.toLowerCase();
-  const sep =
-    range.includes(' – ') ? ' – ' :
-    range.includes('–')    ? '–'    :
-    rLower.includes(' to ') ? ' to ' :
-    range.includes(' - ')  ? ' - '  :
-    range.includes('-')    ? '-'    :
-    null;
-
-  if (sep) {
-    const [startRaw, endRaw] = range.split(sep).map(s => s?.trim());
-    result.start = startRaw || undefined;
-    result.end = endRaw || undefined;
-  }
-
-  // Trim trailing " at <start>" only if it matches, case-insensitively.
-  if (result.start) {
-    const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const tailRe = new RegExp(`\\s+at\\s+${esc(result.start)}$`, 'i');
-    if (tailRe.test(base)) {
-      result.label = base.replace(tailRe, '');
-    }
-  }
-  return result;
-}
 
 function getEventStartDateSortKey(event: Event): number {
   const dateValue = String(event?.startDate || '').trim();
@@ -916,7 +879,7 @@ const VenueSelector: React.FC<VenueSelectorProps> = ({
             >
             <View style={styles.venueTopContent}>
   {/* NOW indicator - positioned in top-right corner of the card */}
-  {venue.events.some(event => isEventNow(event.startDate, event.startTime, event.endDate, event.endTime)) && (
+  {venue.events.some(event => isEventNowWithTiming(event)) && (
     <View style={styles.venueNowIndicator}>
       <Text style={styles.venueNowText}>NOW</Text>
     </View>
@@ -1117,13 +1080,7 @@ const EventActions: React.FC<EventActionsProps> = ({ event }) => {
 
   const addEventToCalendar = async () => {
     try {
-      await addToCalendar({
-        title: event.title,
-        startDate: combineDateAndTime(event.startDate, event.startTime),
-        endDate: combineDateAndTime(event.endDate || event.startDate, event.endTime || '11:59 PM'),
-        location: `${event.venue}, ${event.address}`,
-        notes: event.description
-      });
+      await addEventToCalendarWithTiming(event, `${event.venue}, ${event.address}`);
     } catch (error) {
       console.error('Failed to add event to calendar', error);
     }
@@ -1227,11 +1184,13 @@ interface EventCardProps {
 
 const EventCard: React.FC<EventCardProps> = ({ event, isSelected, onPress }) => {
   const timeStatus = getEventTimeStatus(event);
+  const timingState = getEventScheduleState(event);
   
   return (
     <TouchableOpacity 
       style={[
         styles.eventCard,
+        timingState.muted && styles.mutedTimingCard,
         isSelected && styles.selectedEventCard,
         timeStatus === 'now' && styles.nowEventCard
       ]} 
@@ -1253,9 +1212,12 @@ const EventCard: React.FC<EventCardProps> = ({ event, isSelected, onPress }) => 
         {event.title}
       </Text>
       
-      <Text style={styles.cardDateTime}>
-        {formatEventDateTime(event.startDate, event.startTime, event)}
-      </Text>
+      <View style={styles.compactTimingRow}>
+        <Text style={styles.cardDateTime} numberOfLines={2}>
+          {formatEventTimingSummary(event)}
+        </Text>
+        <EventTimingBadge event={event} compact />
+      </View>
       
       <GuestLimitedContent 
         contentType="description" 
@@ -1280,6 +1242,7 @@ const EventDetailsContent: React.FC<EventDetailsProps> = ({ event, onImagePress 
   const [expanded, setExpanded] = useState(false);
   const needsReadMore = event.description.length > 120;
   const timeStatus = getEventTimeStatus(event);
+  const timingDisclosure = getEventTimingDisclosure(event);
   
   return (
     <View style={styles.detailsContainer}>
@@ -1318,9 +1281,13 @@ const EventDetailsContent: React.FC<EventDetailsProps> = ({ event, onImagePress 
         <View style={styles.timeContainer}>
           <MaterialIcons name="access-time" size={16} color="#666666" />
           <Text style={styles.eventTime}>
-            {formatEventDateTime(event.startDate, event.startTime, event)}
+            {formatEventTimingSummary(event)}
           </Text>
+          <EventTimingBadge event={event} compact style={styles.timingBadge} />
         </View>
+        {timingDisclosure && (
+          <Text style={styles.timingDisclosure}>{timingDisclosure}</Text>
+        )}
       </View>
       
       {hasDisplayableTicketPrice(event.ticketPrice) && (
@@ -1743,7 +1710,9 @@ const VenueInfoContent: React.FC<VenueInfoProps> = ({ venue }) => {
                       { backgroundColor: getCategoryColor(event.category) }
                     ]} />
                     <View style={styles.venueEventDetails}>
-                      <Text style={styles.venueEventTime}>{formatTime(event.startTime)}</Text>
+                      <Text style={styles.venueEventTime} numberOfLines={2}>
+                        {formatEventTimingSummary(event)}
+                      </Text>
                       <Text
                         style={[
                           styles.venueEventTitle,
@@ -1758,6 +1727,7 @@ const VenueInfoContent: React.FC<VenueInfoProps> = ({ venue }) => {
                           <Text style={styles.venueEventNowText}>LIVE</Text>
                         </View>
                       )}
+                      <EventTimingBadge event={event} compact style={styles.timingBadge} />
                     </View>
                   </View>
                 );
@@ -2038,13 +2008,7 @@ const SpecialCard: React.FC<SpecialCardProps> = ({
 
       // If marking interested (not unmarking), also open calendar
       if (result.interested) {
-        await addToCalendar({
-          title: event.title,
-          startDate: combineDateAndTime(event.startDate, event.startTime),
-          endDate: combineDateAndTime(event.endDate || event.startDate, event.endTime || '11:59 PM'),
-          location: `${event.venue}, ${event.address}`,
-          notes: event.description
-        });
+        await addEventToCalendarWithTiming(event, `${event.venue}, ${event.address}`);
       }
     } catch (error) {
       setUserPrefs({ interestedEvents: previousInterestedEvents });
@@ -2061,13 +2025,7 @@ const SpecialCard: React.FC<SpecialCardProps> = ({
 
     if (event.friendEvent) {
       try {
-        await addToCalendar({
-          title: event.title,
-          startDate: combineDateAndTime(event.startDate, event.startTime),
-          endDate: combineDateAndTime(event.endDate || event.startDate, event.endTime || '11:59 PM'),
-          location: `${event.venue}, ${event.address}`,
-          notes: event.description
-        });
+        await addEventToCalendarWithTiming(event, `${event.venue}, ${event.address}`);
       } catch (error) {
         console.error('Failed to add private friend event to calendar', error);
       }
@@ -2082,13 +2040,7 @@ const SpecialCard: React.FC<SpecialCardProps> = ({
 
     // Already interested, just add to calendar again
     try {
-      await addToCalendar({
-        title: event.title,
-        startDate: combineDateAndTime(event.startDate, event.startTime),
-        endDate: combineDateAndTime(event.endDate || event.startDate, event.endTime || '11:59 PM'),
-        location: `${event.venue}, ${event.address}`,
-        notes: event.description
-      });
+      await addEventToCalendarWithTiming(event, `${event.venue}, ${event.address}`);
     } catch (error) {
       console.error('Failed to add event to calendar', error);
     }
@@ -2226,6 +2178,7 @@ useUserPrefsStore.getState().setAll({ savedEvents: next });
   
   const hasTicketLink = Boolean(getTicketUrl(event));
   const paid = isPaidEvent(event.ticketPrice);
+  const timingState = getEventScheduleState(event);
   
   return (
     <Animated.View
@@ -2235,6 +2188,7 @@ useUserPrefsStore.getState().setAll({ savedEvents: next });
       }}
       style={[
         styles.specialCard,
+        timingState.muted && styles.mutedTimingCard,
         isHighlighted && tutorialStyle, // Apply tutorial style when highlighted
         isHighlighted && { zIndex: 99999 } // Lift the card above the tutorial overlay
       ]}
@@ -2387,41 +2341,25 @@ useUserPrefsStore.getState().setAll({ savedEvents: next });
         <View style={styles.dateTimeRow}>
           <MaterialIcons name="access-time" size={14} color="#666666" />
           {(() => {
-            const base = formatEventDateTime(event.startDate, event.startTime, event);
-            const timeStatus = getEventTimeStatus(event);
-
-            const startRaw = event?.startTime;
-            const endRaw   = event?.endTime;
-
-            const start = startRaw && startRaw !== 'N/A' ? formatTime(startRaw) : null;
-            const end   = endRaw   && endRaw   !== 'N/A' ? formatTime(endRaw)   : null;
-
-            const range =
-              start && end ? `${start} – ${end}` :
-              start        ? `${start} – late`  :
-              end          ? `until ${end}`     :
-                            '';
-
-            const rangeOrUndefined = range && range.trim() ? range : undefined;
-            const { label, start: s, end: e, labelWithTime } = partsFrom(base, rangeOrUndefined);
-            const showRange = (timeStatus === 'now' || timeStatus === 'today' || timeStatus === 'future') && !!rangeOrUndefined;
-
-            const suffix = showRange ? ` • ${s}${e ? ` – ${e}` : ''}` : '';
+            const base = formatEventTimingSummary(event);
             const displayUntilDate = getEventDisplayUntilDate(event);
             const endDateSuffix =
-              showRange && isFutureDate(displayUntilDate) ? ` • (Until ${formatEndDateLabel(displayUntilDate!)})` : '';
+              isFutureDate(displayUntilDate) ? ` • (Until ${formatEndDateLabel(displayUntilDate!)})` : '';
 
-const display = showRange ? `${label}${suffix}${endDateSuffix}` : labelWithTime;
+const display = `${base}${endDateSuffix}`;
 
 return (
-  <Text
-    style={styles.dateTimeText}
-    numberOfLines={1}
-    adjustsFontSizeToFit={true}
-    minimumFontScale={0.7}
-  >
-    {display}
-  </Text>
+  <>
+    <Text
+      style={styles.dateTimeText}
+      numberOfLines={2}
+      adjustsFontSizeToFit={true}
+      minimumFontScale={0.75}
+    >
+      {display}
+    </Text>
+    <EventTimingBadge event={event} compact style={styles.timingBadge} />
+  </>
 );
 
           })()}
@@ -2621,6 +2559,7 @@ const EventCallout: React.FC<EventCalloutProps> = ({
   onPresentationReady,
   readinessEpoch,
 }) => {
+  useEventTimingMinute();
   const pathname = usePathname();
   const isFriendEventDetailRoute = isFriendEventDetailPath(pathname);
   // Add store subscription to get fresh event data
@@ -2857,7 +2796,7 @@ const [userLocation, setUserLocation] = useState<{ coords: { latitude: number; l
     const venueInfo = venues.map((venue, index) => {
       const isFavorite = userFavoriteVenues.includes(venue.locationKey);
       const hasNowEvents = venue.events.some(event =>
-        isEventNow(event.startDate, event.startTime, event.endDate, event.endTime)
+        isEventNowWithTiming(event)
       );
       return { index, isFavorite, hasNowEvents };
     });
@@ -2952,10 +2891,10 @@ const activeVenueFriendPresence = getVenueFriendPresence(cluster, activeVenue);
   
   const getInitialActiveTab = (): TabType => {
     const hasNowEvents = events.some(event => 
-      isEventNow(event.startDate, event.startTime, event.endDate, event.endTime)
+      isEventNowWithTiming(event)
     );
     const hasNowSpecials = specials.some(special => 
-      isEventNow(special.startDate, special.startTime, special.endDate, special.endTime)
+      isEventNowWithTiming(special)
     );
     
     if (hasNowSpecials) return 'specials';
@@ -5314,10 +5253,19 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   cardDateTime: {
+    flex: 1,
     fontSize: 12,
     color: '#666666',
     marginLeft: 8,
     marginBottom: 6,
+  },
+  mutedTimingCard: {
+    opacity: 0.68,
+  },
+  compactTimingRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    paddingRight: 8,
   },
   cardDescription: {
     fontSize: 14,
@@ -5957,9 +5905,20 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   eventTime: {
+    flex: 1,
     fontSize: 14,
     color: '#666666',
     marginLeft: 6,
+  },
+  timingBadge: {
+    marginLeft: 6,
+  },
+  timingDisclosure: {
+    color: '#6B7280',
+    fontSize: 12,
+    lineHeight: 17,
+    marginBottom: 8,
+    marginLeft: 22,
   },
   priceContainer: {
     flexDirection: 'row',

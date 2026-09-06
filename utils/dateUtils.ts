@@ -6,8 +6,6 @@
 
 import {
   format,
-  isToday as dateFnsIsToday,
-  isTomorrow as dateFnsIsTomorrow,
   parseISO,
   parse,
   isValid,
@@ -15,7 +13,12 @@ import {
   isSameDay
 } from 'date-fns';
 import type { TimeStatus } from '../types/events';
-import { isEventPast } from './eventExpiry';
+import {
+  getEventScheduleState,
+  getEventTimeRangeText,
+  getEventTimeStatusFromTiming,
+  isEventConfirmedNow,
+} from './eventTiming';
 
 // ===============================================================
 // NEW: TEMPORAL DISTANCE SYSTEM FOR PRIORITY CALCULATIONS
@@ -274,7 +277,7 @@ export const formatEventDateTime = (date: string, time: string, event?: any): st
     if (!date) return '';
     
     // If event is provided and we can check if it's happening now
-    if (event && isEventNow(event.startDate, event.startTime, event.endDate, event.endTime)) {
+    if (event && isEventConfirmedNow(event)) {
       return 'HAPPENING NOW';
     }
     
@@ -414,94 +417,48 @@ export const isEventNow = (
   endDate?: string,
   endTime?: string
 ): boolean => {
-  try {
-    if (!startDate) return false;
-    
-    const now = getNowInUserTimezone();
-    
-    // Always apply fallbacks internally to ensure consistency
-    const effectiveEndDate = endDate || startDate;
-    const effectiveEndTime = endTime || '11:59 PM';
-    
-    // MULTI-DAY EVENT HANDLING
-    // If this is a multi-day event (different start and end dates)
-    // For multi-day events, check if TODAY is within the date range AND
-    // if the current TIME is within the daily time window
-    if (effectiveEndDate !== startDate) {
-      // Step 1: Check if today falls within the date range
-      const todayStr = format(now, 'yyyy-MM-dd');
-      const startDateObj = parseISO(startDate);
-      const endDateObj = parseISO(effectiveEndDate);
-      const todayDateObj = parseISO(todayStr);
-
-      // Normalize to date-only comparison (strip time components)
-      const startDateOnly = new Date(startDateObj.getFullYear(), startDateObj.getMonth(), startDateObj.getDate());
-      const endDateOnly = new Date(endDateObj.getFullYear(), endDateObj.getMonth(), endDateObj.getDate());
-      const todayDateOnly = new Date(todayDateObj.getFullYear(), todayDateObj.getMonth(), todayDateObj.getDate());
-
-      // If today is outside the date range, event is not happening now
-      if (todayDateOnly < startDateOnly || todayDateOnly > endDateOnly) {
-        return false;
-      }
-
-      // Step 2: Check if current time is within the daily time window
-      // Use today's date with the event's start/end times
-      const todayStartDateTime = parseDateTime(todayStr, startTime);
-      const todayEndDateTime = parseDateTime(todayStr, effectiveEndTime);
-
-      if (!todayStartDateTime || !todayEndDateTime) {
-        return false;
-      }
-
-      // Handle time window crossing midnight (e.g., 10pm - 2am)
-      if (todayEndDateTime < todayStartDateTime) {
-        todayEndDateTime.setDate(todayEndDateTime.getDate() + 1);
-      }
-
-      return isWithinInterval(now, { start: todayStartDateTime, end: todayEndDateTime });
-    }
-    
-    // SINGLE-DAY EVENT HANDLING
-    
-    // Parse start date/time
-    const startDateTime = parseDateTime(startDate, startTime);
-    if (!startDateTime) {
-      console.warn(`Failed to parse start date/time: ${startDate} ${startTime}`);
-      return false;
-    }
-    
-    // Determine end time with appropriate fallbacks
-    let endDateTime;
-    
-    if (effectiveEndTime) {
-      // Use provided end time
-      endDateTime = parseDateTime(startDate, effectiveEndTime);
-    } else {
-      // Default to 2 hours after start time if no end time provided
-      endDateTime = new Date(startDateTime);
-      endDateTime.setHours(endDateTime.getHours() + 2);
-    }
-    
-    if (!endDateTime) {
-      console.warn(`Failed to determine end date/time from: ${startDate} ${effectiveEndTime || "(+2hrs)"}`);
-      return false;
-    }
-    
-    // Handle case where end time is earlier than start time (wraps to next day)
-    if (endDateTime < startDateTime) {
-      endDateTime.setDate(endDateTime.getDate() + 1);
-    }
-    
-    // Check if current time is within the event's timespan
-    return isWithinInterval(now, { start: startDateTime, end: endDateTime });
-    
-  } catch (error) {
-    console.error('Error in isEventNow:', error, {
-      startDate, startTime, endDate, endTime
-    });
-    return false;
-  }
+  return isEventConfirmedNow({ startDate, startTime, endDate: endDate || startDate, endTime: endTime || '' });
 };
+
+/**
+ * One provenance-aware time sentence for cards, callouts, and lightboxes.
+ * Qualification belongs in EventTimingBadge; this line keeps the date and
+ * useful clock fact compact.
+ */
+export const formatEventTimingSummary = (event: {
+  startDate: string;
+  startTime: string;
+  endDate?: string;
+  endTime?: string;
+  timing?: import('../types/events').EventTiming | null;
+}): string => {
+  const normalized = {
+    ...event,
+    endDate: event.endDate || event.startDate,
+    endTime: event.endTime || '',
+  };
+  const base = formatEventDateTime(event.startDate, event.startTime, normalized);
+  const range = getEventTimeRangeText(normalized);
+  if (!base) return range;
+  if (base === 'HAPPENING NOW') return `${base} • ${range}`;
+
+  const formattedStart = formatTime(event.startTime);
+  const suffix = formattedStart ? ` at ${formattedStart}` : '';
+  const dateLabel = suffix && base.endsWith(suffix) ? base.slice(0, -suffix.length) : base;
+  return range ? `${dateLabel} • ${range}` : base;
+};
+
+export const isEventNowWithTiming = (event: {
+  startDate: string;
+  startTime: string;
+  endDate?: string;
+  endTime?: string;
+  timing?: import('../types/events').EventTiming | null;
+}): boolean => isEventConfirmedNow({
+  ...event,
+  endDate: event.endDate || event.startDate,
+  endTime: event.endTime || '',
+});
 
 /**
  * Check if an event is happening today
@@ -513,59 +470,13 @@ export const isEventHappeningToday = (event: {
   startTime: string;
   endDate?: string;
   endTime?: string;
+  timing?: import('../types/events').EventTiming | null;
 }): boolean => {
-  try {
-    // First, check if it's happening right now
-    if (isEventNow(event.startDate, event.startTime, event.endDate, event.endTime)) {
-      return true;
-    }
-
-    // Ended events (past end time + grace) are never "today"
-    if (isEventPast(event)) {
-      return false;
-    }
-
-    const now = getNowInUserTimezone();
-    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const todayIso = format(today, 'yyyy-MM-dd');
-    
-    // For multi-day events
-    if (event.endDate && event.endDate !== event.startDate) {
-      const startDate = parseISO(event.startDate);
-      const endDate = parseISO(event.endDate);
-      
-      // Check if it starts today
-      const isStartToday = isToday(startDate);
-      
-      // Started before today and has not ended by date.
-      // If the event's final day is today, also respect endTime so overnight
-      // events (Fri 10pm -> Sat 1am) do not appear all Saturday.
-      const isOngoingByDate = startDate < today && endDate >= today;
-      if (isStartToday) {
-        return true;
-      }
-      if (isOngoingByDate) {
-        if (event.endDate === todayIso) {
-          const effectiveEndTime = event.endTime || '11:59 PM';
-          const endDateTime = parseDateTime(event.endDate, effectiveEndTime);
-          if (endDateTime) {
-            return now <= endDateTime;
-          }
-          return false;
-        }
-        return true;
-      }
-    }
-    
-    // For regular single-day events, check if startDate is today
-    const eventDate = parseISO(event.startDate);
-    const eventDay = new Date(eventDate.getFullYear(), eventDate.getMonth(), eventDate.getDate());
-    
-    return eventDay.getTime() === today.getTime();
-  } catch (error) {
-    console.warn(`Error checking if event is happening today: ${error}`);
-    return false;
-  }
+  return getEventScheduleState({
+    ...event,
+    endDate: event.endDate || event.startDate,
+    endTime: event.endTime || '',
+  }).todayEligible;
 };
 
 /**
@@ -578,29 +489,18 @@ export const getEventTimeStatus = (event: {
   startTime: string;
   endDate?: string;
   endTime?: string;
+  timing?: import('../types/events').EventTiming | null;
 }): TimeStatus => {
-  try {
-    if (isEventNow(event.startDate, event.startTime, event.endDate, event.endTime)) {
-      return 'now';
-    }
-
-    if (isEventPast(event)) {
-      return 'past';
-    }
-
-    if (isEventHappeningToday(event)) {
-      return 'today';
-    }
-
-    return 'future';
-  } catch (error) {
-    console.warn(`Error determining event time status: ${error}`);
-    return 'future';
-  }
+  return getEventTimeStatusFromTiming({
+    ...event,
+    endDate: event.endDate || event.startDate,
+    endTime: event.endTime || '',
+  });
 };
 
 /**
- * Sort events by time status (now → today → future)
+ * Sort events by honest time status (confirmed now → expected now → started
+ * with unknown end → later today → muted today → future)
  * and then by start time within each group
  * @param {Array} events - Array of event objects
  * @returns {Array} Sorted array of events
@@ -610,19 +510,27 @@ export const sortEventsByTimeStatus = <T extends {
   startTime: string;
   endDate?: string;
   endTime?: string;
+  timing?: import('../types/events').EventTiming | null;
 }>(events: T[]): T[] => {
+  const now = new Date();
+  const timingRank = (event: T): number => {
+    const state = getEventScheduleState({
+      ...event,
+      endDate: event.endDate || event.startDate,
+      endTime: event.endTime || '',
+    }, now);
+    if (state.nowEligibility === 'confirmed') return 0;
+    if (state.nowEligibility === 'expected') return 1;
+    if (state.code === 'started_unknown_end') return 2;
+    if (state.todayEligible && !state.muted) return 3;
+    if (state.todayEligible && state.muted) return 4;
+    if (state.code !== 'confirmed_ended') return 5;
+    return 6;
+  };
+
   return [...events].sort((a, b) => {
-    // Priority 1: Happening now
-    const aIsNow = isEventNow(a.startDate, a.startTime, a.endDate, a.endTime);
-    const bIsNow = isEventNow(b.startDate, b.startTime, b.endDate, b.endTime);
-    if (aIsNow && !bIsNow) return -1;
-    if (!aIsNow && bIsNow) return 1;
-    
-    // Priority 2: Happening today
-    const aIsToday = isEventHappeningToday(a);
-    const bIsToday = isEventHappeningToday(b);
-    if (aIsToday && !bIsToday) return -1;
-    if (!aIsToday && bIsToday) return 1;
+    const rankDifference = timingRank(a) - timingRank(b);
+    if (rankDifference !== 0) return rankDifference;
     
     // Priority 3: Start time (earliest first)
     try {
@@ -668,33 +576,25 @@ export const getRelativeTimeDescription = (
     const startDateTime = parseDateTime(startDate, startTime);
     if (!startDateTime) return '';
     
-    let endDateTime;
+    let endDateTime: Date | null = null;
     
     if (effectiveEndDate && effectiveEndTime) {
       endDateTime = parseDateTime(effectiveEndDate, effectiveEndTime);
-    } else if (effectiveEndDate && !effectiveEndTime) {
-      // End date without end time - use end of day
-      endDateTime = parseISO(effectiveEndDate);
-      endDateTime.setHours(23, 59, 59);
     } else if (!effectiveEndDate && effectiveEndTime) {
       // End time without end date - use start date
       endDateTime = parseDateTime(startDate, effectiveEndTime);
-    } else {
-      // No end date or time - default to 2 hours after start
-      endDateTime = new Date(startDateTime);
-      endDateTime.setHours(endDateTime.getHours() + 2);
     }
     
-    if (!endDateTime) return '';
-    
     // Handle case where end time is earlier than start time (wraps to next day)
-    if (endDateTime < startDateTime && !endDate) {
+    if (endDateTime && endDateTime < startDateTime && !endDate) {
       endDateTime.setDate(endDateTime.getDate() + 1);
     }
     
     // Calculate time differences
     const minutesToStart = Math.floor((startDateTime.getTime() - now.getTime()) / 60000);
-    const minutesToEnd = Math.floor((endDateTime.getTime() - now.getTime()) / 60000);
+    const minutesToEnd = endDateTime
+      ? Math.floor((endDateTime.getTime() - now.getTime()) / 60000)
+      : null;
     
     if (minutesToStart > 0) {
       if (minutesToStart < 60) {
@@ -703,18 +603,18 @@ export const getRelativeTimeDescription = (
         const hours = Math.floor(minutesToStart / 60);
         return `Starting in ${hours} hour${hours === 1 ? '' : 's'}`;
       }
-    } else if (minutesToEnd > 0) {
+    } else if (minutesToEnd !== null && minutesToEnd > 0) {
       if (minutesToEnd < 60) {
         return `Ending in ${minutesToEnd} minute${minutesToEnd === 1 ? '' : 's'}`;
       } else {
         const hours = Math.floor(minutesToEnd / 60);
         return `Ending in ${hours} hour${hours === 1 ? '' : 's'}`;
       }
-    } else if (minutesToEnd <= 0) {
+    } else if (minutesToEnd !== null && minutesToEnd <= 0) {
       return 'Event ended';
+    } else {
+      return `Started at ${formatTime(startTime)} · End time not provided`;
     }
-    
-    return '';
   } catch (error) {
     console.error(`Error in getRelativeTimeDescription: ${error}`);
     return '';
@@ -742,13 +642,12 @@ export const debugEventTimeStatus = (
   //console.log(`[DEBUG TIME] End: ${event.endDate || event.startDate} ${event.endTime || '(none)'}`);
   //console.log(`[DEBUG TIME] Is multi-day: ${isMultiDayEvent(event.startDate, event.endDate)}`);
   
-  // Apply fallbacks
   const effectiveEndDate = event.endDate || event.startDate;
-  const effectiveEndTime = event.endTime || '11:59 PM';
+  const effectiveEndTime = event.endTime || '';
   
   // Parse start and end times
   const startDateTime = parseDateTime(event.startDate, event.startTime);
-  const endDateTime = parseDateTime(effectiveEndDate, effectiveEndTime);
+  const endDateTime = effectiveEndTime ? parseDateTime(effectiveEndDate, effectiveEndTime) : null;
   
   if (startDateTime) {
     console.log(`[DEBUG TIME] Start parsed: ${startDateTime.toLocaleString()}`);

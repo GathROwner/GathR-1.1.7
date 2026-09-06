@@ -14,9 +14,10 @@ import { useIsFocused } from '@react-navigation/native';
 import { useMapStore } from '../../store';
 import { useInterestCarouselUiStore } from '../../store/interestCarouselUiStore';
 import { Event, Venue, Cluster } from '../../types/events';
-import { isEventNow, getEventTimeStatus } from '../../utils/dateUtils';
+import { getEventTimeStatus } from '../../utils/dateUtils';
 import FallbackImage from '../common/FallbackImage';
 import FamilyFriendlyBadge from '../common/FamilyFriendlyBadge';
+import { EventTimingBadge } from '../common/EventTimingBadge';
 import EventImageLightbox from './EventImageLightbox';
 import { useClusterInteractionStore } from '../../store/clusterInteractionStore';
 import { doesEventMatchInterestCarouselActiveCategory } from '../../utils/interestCarouselFilterUtils';
@@ -30,6 +31,8 @@ import {
 import { isAreaExperienceEvent } from '../../utils/locationScope';
 import { usePathname } from 'expo-router';
 import { isFriendEventDetailPath } from '../../utils/friendEventLightbox';
+import { getEventScheduleState, getEventTimeRangeText, isEventConfirmedNow } from '../../utils/eventTiming';
+import { useEventTimingMinute } from '../../hooks/useEventTimingMinute';
 
 const readAnimatedValue = (value: Animated.Value): number | string =>
   typeof (value as any).__getValue === 'function' ? (value as any).__getValue() : 'unknown';
@@ -123,66 +126,17 @@ const getCategoryIconName = (category: string): string => {
   return 'category';
 };
 
-// Parse time string and return formatted time
-const parseTimeString = (timeStr: string): string | null => {
-  // Match time format: "8:00:00 PM", "8:00 PM", or "20:00"
-  const timeParts = timeStr.match(/(\d+):(\d+):?(\d+)?\s*(AM|PM)?/i);
-  if (!timeParts) return null;
-
-  const hour = parseInt(timeParts[1], 10);
-  const minute = timeParts[2];
-  const existingAmPm = timeParts[4];
-
-  // Use existing AM/PM if present, otherwise derive from hour (for 24h format)
-  const ampm = existingAmPm
-    ? existingAmPm.toUpperCase()
-    : (hour >= 12 ? 'PM' : 'AM');
-
-  // Convert to 12-hour format if needed
-  const displayHour = existingAmPm
-    ? hour  // Already in 12-hour format
-    : (hour > 12 ? hour - 12 : (hour === 0 ? 12 : hour));
-
-  return `${displayHour}:${minute} ${ampm}`;
-};
-
 // Format time display
 const formatEventTime = (event: Event): string => {
-  const isNow = isEventNow(
-    event.startDate,
-    event.startTime,
-    event.endDate || event.startDate,
-    event.endTime || ''
-  );
+  const isNow = isEventConfirmedNow(event);
 
   if (isNow) {
-    // Show "NOW – end time" if end time is available
-    if (event.endTime && event.endTime !== 'N/A') {
-      const endFormatted = parseTimeString(event.endTime);
-      if (endFormatted) {
-        return `NOW – ${endFormatted}`;
-      }
-    }
-    return 'NOW';
+    return `NOW · ${getEventTimeRangeText(event)}`;
   }
 
   const timeStatus = getEventTimeStatus(event);
   if (timeStatus === 'today') {
-    if (event.startTime) {
-      const startFormatted = parseTimeString(event.startTime);
-      if (!startFormatted) return 'Today';
-
-      // Add end time if available
-      if (event.endTime && event.endTime !== 'N/A') {
-        const endFormatted = parseTimeString(event.endTime);
-        if (endFormatted) {
-          return `${startFormatted} – ${endFormatted}`;
-        }
-      }
-
-      return startFormatted;
-    }
-    return 'Today';
+    return getEventTimeRangeText(event);
   }
 
   // Show date for future events
@@ -204,18 +158,15 @@ const EventCard = memo(({
   onPress: () => void;
   hasNewContent?: boolean;
 }) => {
-  const isNow = isEventNow(
-    event.startDate,
-    event.startTime,
-    event.endDate || event.startDate,
-    event.endTime || ''
-  );
+  useEventTimingMinute();
+  const isNow = isEventConfirmedNow(event);
+  const timingState = getEventScheduleState(event);
 
   const categoryBgColor = event.type === 'event' ? EVENT_COLOR : SPECIAL_COLOR;
 
   return (
     <TouchableOpacity
-      style={styles.card}
+      style={[styles.card, timingState.muted && styles.mutedTimingCard]}
       onPress={onPress}
       activeOpacity={0.8}
     >
@@ -275,6 +226,9 @@ const EventCard = memo(({
           <View style={styles.nowBadge}>
             <Text style={styles.nowText}>NOW</Text>
           </View>
+        )}
+        {!isNow && (
+          <EventTimingBadge event={event} compact style={styles.carouselTimingBadge} />
         )}
 
         {/* New Content Indicator */}
@@ -961,6 +915,9 @@ const styles = StyleSheet.create({
     shadowRadius: 10,
     elevation: 8,
   },
+  mutedTimingCard: {
+    opacity: 0.68,
+  },
   imageContainer: {
     width: CARD_WIDTH,
     height: CARD_HEIGHT,
@@ -1012,6 +969,11 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#FFFFFF',
     letterSpacing: 0.5,
+  },
+  carouselTimingBadge: {
+    position: 'absolute',
+    right: 6,
+    top: 6,
   },
   cardContent: {
     paddingHorizontal: 8,

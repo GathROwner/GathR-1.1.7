@@ -93,6 +93,10 @@ export interface FirestoreEventMetadata {
   mapMode?: 'venue' | 'area' | 'route' | 'none' | null;
   routeData?: import('./events').EventRouteData | null;
   areaData?: import('./events').EventAreaData | null;
+  timing?: import('./events').EventTiming | null;
+  timingContractVersion?: number;
+  timeFlags?: unknown;
+  timeResolution?: unknown;
 }
 
 /**
@@ -152,6 +156,10 @@ export interface FirestoreEvent {
   mapMode?: 'venue' | 'area' | 'route' | 'none' | null;
   routeData?: import('./events').EventRouteData | null;
   areaData?: import('./events').EventAreaData | null;
+  timing?: import('./events').EventTiming | null;
+  timingContractVersion?: number;
+  timeFlags?: unknown;
+  timeResolution?: unknown;
   category: string | null;  // Can be null
   familyFriendlyScore?: number | null;
   familyFriendlyLevel?: 'unlikely' | 'possible' | 'likely' | 'high' | null;

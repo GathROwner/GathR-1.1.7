@@ -17,6 +17,7 @@ import {
 } from '../config/backend';
 import { convert24to12Hour } from './firestoreEvents';
 import { normalizeVenueIdentityText } from '../../utils/venueIdentity';
+import { createLegacyTimingContract } from '../../utils/eventTiming';
 import type {
   EventCategory,
   GathrCategory,
@@ -461,6 +462,20 @@ export const normalizePrivateSharedEventForRegression = (
     endDate: String(event.endDate || event.startDate || ''),
     startTime,
     endTime,
+    timing: createLegacyTimingContract(
+      {
+        startDate: String(event.startDate || ''),
+        startTime,
+        endDate: String(event.endDate || event.startDate || ''),
+        endTime,
+      },
+      {
+        timeZone: event.timezone || 'America/Halifax',
+        endStatus: 'unknown',
+        endResolutionMethod: 'private_shared_unproven',
+        sourceUrl: event.sourceUrl || null,
+      }
+    ),
     ticketPrice: firstText(event.price),
     profileUrl: firstText(resolvedVenue.profileImage),
     imageUrl,

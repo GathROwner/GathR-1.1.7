@@ -4,6 +4,8 @@ import { SchedulableTriggerInputTypes } from 'expo-notifications';
 import * as Device from 'expo-device';
 import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import type { EventTiming } from '../types/events';
+import { getCalendarEndDecision } from '../utils/eventTiming';
 
 const STORAGE_KEY = '@gathr/notifications/v1';
 
@@ -16,6 +18,7 @@ type AnyEvent = {
   startTime?: string; // e.g. "12:00:00 AM" or "5:30 PM"
   endDate?: string;   // "YYYY-MM-DD"
   endTime?: string;   // e.g. "11:59:59 PM"
+  timing?: EventTiming | null;
 };
 
 export async function ensureNotificationPermissions(): Promise<boolean> {
@@ -127,9 +130,20 @@ function buildStartDate(event: AnyEvent): Date | null {
 
 function buildEndDate(event: AnyEvent): Date | null {
   try {
-    const [y, mo, d] = (event.endDate || event.startDate || '').split('-').map(n => parseInt(n, 10));
+    const decision = getCalendarEndDecision({
+      startDate: event.startDate || '',
+      startTime: event.startTime || '',
+      endDate: event.endDate || event.startDate || '',
+      endTime: event.endTime || '',
+      timing: event.timing,
+    });
+    // End-based surveys are sent only when the organizer or a supported
+    // until-close source supplied the ending. Estimates and policy cutoffs are
+    // discovery aids, not proof that an attendee has finished an event.
+    if (decision.kind !== 'confirmed') return null;
+    const [y, mo, d] = decision.endDate.split('-').map(n => parseInt(n, 10));
     if (!y || !mo || !d) return null;
-    const { h, m, sec } = parseTimeToHMS(event.endTime || '11:59 PM');
+    const { h, m, sec } = parseTimeToHMS(decision.endTime);
     return new Date(y, mo - 1, d, h, m, sec || 0);
   } catch {
     return null;

@@ -31,6 +31,7 @@ import FallbackImage from '../../components/common/FallbackImage';
 import TicketCtaPill from '../../components/common/TicketCtaPill';
 import EventActionLinkPill from '../../components/common/EventActionLinkPill';
 import FamilyFriendlyBadge from '../../components/common/FamilyFriendlyBadge';
+import { EventTimingBadge } from '../../components/common/EventTimingBadge';
 import { VenueFavoriteButton } from '../../components/common/VenueFavoriteButton';
 import Autolink from 'react-native-autolink';
 
@@ -49,19 +50,12 @@ import FullSizeSdkAdCard, { FULL_SIZE_SDK_AD_ROW_HEIGHT } from '../../components
 import { AdColors } from '../../constants/AdTheme';
 
 // Import utilities
-import { 
-  formatEventDateTime, 
-  getEventTimeStatus, 
-  sortEventsByTimeStatus,
-  combineDateAndTime,
-  isEventNow,
-  isEventHappeningToday,
-  formatTime,
+import {
+  formatEventTimingSummary,
+  getEventTimeStatus,
   getEventDisplayUntilDate,
-  parseISO,
-  format
 } from '../../utils/dateUtils';
-import { addToCalendar } from '../../utils/calendarUtils';
+import { addEventToCalendarWithTiming } from '../../utils/calendarUtils';
 import { buildGathrSharePayload } from '../../utils/shareUtils';
 import { getTicketUrl, normalizeTicketUrl } from '../../utils/ticketUrls';
 import { getPrimaryNonTicketAction } from '../../utils/eventActionLinks';
@@ -89,6 +83,8 @@ import { useTutorialUiStore } from '../../store/tutorialUiStore';
 import { areEventIdsEquivalent } from '../../lib/api/firestoreEvents';
 import { doesEventMatchAnyInterest } from '../../utils/familyFriendly';
 import { isProvinceScopeEvent } from '../../utils/locationScope';
+import { useEventTimingMinute } from '../../hooks/useEventTimingMinute';
+import { getEventScheduleState } from '../../utils/eventTiming';
 
 // Import for loading native ads
 import useNativeAds from '../../hooks/useNativeAds';
@@ -144,46 +140,6 @@ type UserPrefsState = {
   likedEvents: string[];
   interestedEvents: string[];
 };
-
-// --- Local helper to derive label/start/end from the already-formatted strings ---
-// Returns { label } (base without trailing " at <start>" if present),
-// { start }, { end }, and { labelWithTime } (original base).
-function partsFrom(base: string, range?: string) {
-  const result = {
-    label: base,
-    start: undefined as string | undefined,
-    end: undefined as string | undefined,
-    labelWithTime: base,
-  };
-  if (!range) return result;
-
-  // Detect common separators: en dash, spaced hyphen, plain hyphen, and " to "
-  const rLower = range.toLowerCase();
-  const sep =
-    range.includes(' – ') ? ' – ' :
-    range.includes('–')    ? '–'    :
-    rLower.includes(' to ') ? ' to ' :
-    range.includes(' - ')  ? ' - '  :
-    range.includes('-')    ? '-'    :
-    null;
-
-  if (sep) {
-    const [startRaw, endRaw] = range.split(sep).map(s => s?.trim());
-    result.start = startRaw || undefined;
-    result.end = endRaw || undefined;
-  }
-
-  // Trim trailing " at <start>" only if it matches, case-insensitively.
-  if (result.start) {
-    const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const tailRe = new RegExp(`\\s+at\\s+${esc(result.start)}$`, 'i');
-    if (tailRe.test(base)) {
-      result.label = base.replace(tailRe, '');
-    }
-  }
-  return result;
-}
-
 
 function isFutureDate(dateStr?: string) {
   if (!dateStr) return false;
@@ -381,6 +337,8 @@ const EventListItem: React.FC<EventListItemProps> = ({
   analytics,
   isFirstItem = false
 }) => {
+  useEventTimingMinute();
+  const timingState = getEventScheduleState(event);
   const [expanded, setExpanded] = useState(false);
   const [bookmarked, setBookmarked] = useState(isSaved);
   const [isToggling, setIsToggling] = useState(false);
@@ -530,13 +488,8 @@ const EventListItem: React.FC<EventListItemProps> = ({
 
       // If marking interested (not unmarking), also open calendar
       if (result.interested) {
-        await addToCalendar({
-          title: event.title,
-          startDate: combineDateAndTime(event.startDate, event.startTime),
-          endDate: combineDateAndTime(event.endDate || event.startDate, event.endTime || '11:59 PM'),
-          location: `${event.venue}, ${event.address}`,
-          notes: event.description
-        });
+        const calendarAdded = await addEventToCalendarWithTiming(event, `${event.venue}, ${event.address}`);
+        if (!calendarAdded) return;
 
         // Track successful calendar addition
         analytics?.trackUserAction('calendar_add_success', {
@@ -580,13 +533,8 @@ const EventListItem: React.FC<EventListItemProps> = ({
     try {
       const startTime = Date.now();
 
-      await addToCalendar({
-        title: event.title,
-        startDate: combineDateAndTime(event.startDate, event.startTime),
-        endDate: combineDateAndTime(event.endDate || event.startDate, event.endTime || '11:59 PM'),
-        location: `${event.venue}, ${event.address}`,
-        notes: event.description
-      });
+      const calendarAdded = await addEventToCalendarWithTiming(event, `${event.venue}, ${event.address}`);
+      if (!calendarAdded) return;
 
       // Track successful calendar addition
       analytics?.trackUserAction('calendar_add_success', {
@@ -885,17 +833,7 @@ const result = await userService.toggleSavedEvent(event.id, {
   const showBuyTicketsButton = hasTicketLink && paid;
   const showRegisterButton = hasTicketLink && !paid;
   const formatFullDateTime = (): string => {
-    let dateTimeStr = formatEventDateTime(event.startDate, event.startTime, event);
-    
-    if (event.endTime && event.endTime !== event.startTime) {
-      dateTimeStr += ` to ${formatTime(event.endTime)}`;
-      
-      if (event.endDate && event.endDate !== event.startDate) {
-        dateTimeStr += `, ${format(parseISO(event.endDate), 'MMM d')}`;
-      }
-    }
-    
-    return dateTimeStr;
+    return formatEventTimingSummary(event);
   };
   
   const handleHeroLikePress = async (e: GestureResponderEvent) => {
@@ -1006,7 +944,7 @@ const result = await userService.toggleSavedEvent(event.id, {
     <View>
       <TouchableOpacity
         ref={tutorialRef}
-        style={styles.eventCard}
+        style={[styles.eventCard, timingState.muted && styles.mutedEventCard]}
         onPress={onPress}
         activeOpacity={0.7}
       >
@@ -1190,44 +1128,24 @@ const result = await userService.toggleSavedEvent(event.id, {
         <View style={styles.dateTimeRow}>
           <MaterialIcons name="access-time" size={14} color={BRAND.primaryDark} />
           {(() => {
-            const base = formatEventDateTime(event.startDate, event.startTime, event);
-            const timeStatus = getEventTimeStatus(event);
-
-            const startRaw = event?.startTime;
-            const endRaw   = event?.endTime;
-
-            const start = startRaw && startRaw !== 'N/A' ? formatTime(startRaw) : null;
-            const end   = endRaw   && endRaw   !== 'N/A' ? formatTime(endRaw)   : null;
-
-            const range =
-              start && end ? `${start} – ${end}` :
-              start        ? `${start} – late`  :
-              end          ? `until ${end}`     :
-                            '';
-
-            // Structured-ish build: derive parts and only append range for now/today
-            const rangeOrUndefined = range && range.trim() ? range : undefined;
-            const { label, start: s, end: e, labelWithTime } = partsFrom(base, rangeOrUndefined);
-            const showRange = (timeStatus === 'now' || timeStatus === 'today' || timeStatus === 'future') && !!rangeOrUndefined;
-
-            const suffix = showRange ? ` • ${s}${e ? ` – ${e}` : ''}` : '';
+            const base = formatEventTimingSummary(event);
             const displayUntilDate = getEventDisplayUntilDate(event);
             const endDateSuffix =
-              showRange && isFutureDate(displayUntilDate) ? ` • (Until ${formatEndDateLabel(displayUntilDate!)})` : '';
-
-            const display = showRange ? `${label}${suffix}${endDateSuffix}` : labelWithTime;
-
-
+              isFutureDate(displayUntilDate) ? ` • (Until ${formatEndDateLabel(displayUntilDate!)})` : '';
+            const display = `${base}${endDateSuffix}`;
 
             return (
-              <Text
-                style={styles.dateTimeText}
-                numberOfLines={1}
-                adjustsFontSizeToFit={true}
-                minimumFontScale={0.7}
-              >
-                {display}
-              </Text>
+              <>
+                <Text
+                  style={styles.dateTimeText}
+                  numberOfLines={2}
+                  adjustsFontSizeToFit={true}
+                  minimumFontScale={0.75}
+                >
+                  {display}
+                </Text>
+                <EventTimingBadge event={event} compact style={styles.timingBadge} />
+              </>
             );
           })()}
         </View>
@@ -3468,6 +3386,12 @@ const styles = StyleSheet.create({
     marginLeft: 4,
     flex: 1,
     fontWeight: '600',
+  },
+  mutedEventCard: {
+    opacity: 0.68,
+  },
+  timingBadge: {
+    marginLeft: 6,
   },
   cardDescription: {
     fontSize: 14,

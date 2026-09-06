@@ -14,6 +14,7 @@ import {
   isEventNow,
   sortEventsByTimeStatus,
 } from '../dateUtils';
+import { createLegacyTimingContract } from '../eventTiming';
 
 // Freeze "now" at 2026-07-10 20:00 local - inside a 7 PM-11 PM event window.
 const NOW = new Date(2026, 6, 10, 20, 0, 0);
@@ -116,6 +117,41 @@ describe('sortEventsByTimeStatus', () => {
     expect(sortEventsByTimeStatus(events).map((event) => event.id)).toEqual([
       'happening-now',
       'starts-soon',
+    ]);
+  });
+
+  it('orders expected-current ahead of unknown-current, later today, and muted today', () => {
+    jest.setSystemTime(new Date(2026, 7, 31, 20, 0, 0));
+    const unknownTiming = createLegacyTimingContract(
+      { startDate: '2026-08-31', startTime: '7:00 PM', endDate: '2026-08-31', endTime: '' },
+      { endStatus: 'unknown' }
+    );
+    const expectedTiming = createLegacyTimingContract(
+      { startDate: '2026-08-31', startTime: '7:00 PM', endDate: '2026-08-31', endTime: '' },
+      { endStatus: 'unknown' }
+    );
+    expectedTiming.estimate = {
+      confidence: 'high',
+      displayEndDate: '2026-08-31',
+      displayEndTime: '9:00 PM',
+      discoveryCutoffDate: '2026-08-31',
+      discoveryCutoffTime: '9:15 PM',
+    };
+    const mutedTiming = createLegacyTimingContract(
+      { startDate: '2026-08-31', startTime: '5:00 PM', endDate: '2026-08-31', endTime: '' },
+      { endStatus: 'unknown' }
+    );
+    const events = [
+      { id: 'later', startDate: '2026-08-31', startTime: '10:00 PM', endDate: '2026-08-31', endTime: '11:00 PM' },
+      { id: 'muted', startDate: '2026-08-31', startTime: '5:00 PM', endDate: '2026-08-31', endTime: '', timing: mutedTiming },
+      { id: 'unknown', startDate: '2026-08-31', startTime: '7:00 PM', endDate: '2026-08-31', endTime: '', timing: unknownTiming },
+      { id: 'expected', startDate: '2026-08-31', startTime: '7:00 PM', endDate: '2026-08-31', endTime: '', timing: expectedTiming },
+    ];
+    expect(sortEventsByTimeStatus(events).map((event) => event.id)).toEqual([
+      'expected',
+      'unknown',
+      'later',
+      'muted',
     ]);
   });
 });

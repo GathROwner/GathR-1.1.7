@@ -113,11 +113,16 @@ import {
 } from '../lib/config/backend';
 import { EVENTS_MINIMAL } from '../lib/queryKeys';
 import { normalizeVenueIdentityText } from '../utils/venueIdentity';
+import { createLegacyTimingContract } from '../utils/eventTiming';
 import {
   getEventDateKey,
   isEventPastFast,
-  parseTimeMinutes,
 } from '../utils/eventExpiry';
+import {
+  getEventScheduleState,
+  getEventTimeStatusFromTiming,
+  isEventDefaultMapEligible,
+} from '../utils/eventTiming';
 
 // Define zoom threshold bands and their corresponding clustering radii
 export interface ZoomThreshold {
@@ -491,9 +496,6 @@ export type EventTimeContext = {
   nowMinutes: number;
 };
 
-const NOON_MINUTES = 12 * 60;
-const END_OF_DAY_MINUTES = 23 * 60 + 59;
-
 const formatLocalDateKey = (date: Date): string => {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, '0');
@@ -507,6 +509,17 @@ const addDaysKey = (date: Date, days: number): string => {
   return formatLocalDateKey(next);
 };
 
+const eventTimeContextToDate = (context: EventTimeContext): Date => {
+  const [year, month, day] = context.todayKey.split('-').map(Number);
+  return new Date(
+    year,
+    Math.max(0, month - 1),
+    day,
+    Math.floor(context.nowMinutes / 60),
+    context.nowMinutes % 60
+  );
+};
+
 export const createEventTimeContext = (now = new Date()): EventTimeContext => ({
   todayKey: formatLocalDateKey(now),
   tomorrowKey: addDaysKey(now, 1),
@@ -514,96 +527,22 @@ export const createEventTimeContext = (now = new Date()): EventTimeContext => ({
   nowMinutes: now.getHours() * 60 + now.getMinutes(),
 });
 
-const isEventNowFast = (event: Pick<Event, 'startDate' | 'startTime' | 'endDate' | 'endTime'>, context: EventTimeContext): boolean => {
-  const startKey = getEventDateKey(event.startDate);
-  if (!startKey) return false;
-
-  const endKey = getEventDateKey(event.endDate) || startKey;
-  const startMinutes = parseTimeMinutes(event.startTime, NOON_MINUTES);
-  const endMinutes = parseTimeMinutes(event.endTime, END_OF_DAY_MINUTES);
-
-  if (startMinutes === null || endMinutes === null) return false;
-
-  const crossesMidnight = endMinutes < startMinutes;
-  const isMultiDay = endKey !== startKey;
-
-  if (isMultiDay) {
-    if (context.todayKey < startKey || context.todayKey > endKey) {
-      return false;
-    }
-
-    if (crossesMidnight) {
-      return context.nowMinutes >= startMinutes;
-    }
-
-    return context.nowMinutes >= startMinutes && context.nowMinutes <= endMinutes;
-  }
-
-  if (startKey === context.todayKey) {
-    if (crossesMidnight) {
-      return context.nowMinutes >= startMinutes;
-    }
-
-    return context.nowMinutes >= startMinutes && context.nowMinutes <= endMinutes;
-  }
-
-  if (startKey === context.yesterdayKey && crossesMidnight) {
-    return context.nowMinutes <= endMinutes;
-  }
-
-  return false;
-};
+const isEventNowFast = (
+  event: Pick<Event, 'startDate' | 'startTime' | 'endDate' | 'endTime' | 'timing'>,
+  context: EventTimeContext
+): boolean => getEventScheduleState(event, eventTimeContextToDate(context)).nowEligibility === 'confirmed';
 
 const isEventHappeningTodayFast = (
-  event: Pick<Event, 'startDate' | 'startTime' | 'endDate' | 'endTime'>,
+  event: Pick<Event, 'startDate' | 'startTime' | 'endDate' | 'endTime' | 'timing'>,
   context: EventTimeContext
 ): boolean => {
-  if (isEventNowFast(event, context)) {
-    return true;
-  }
-
-  if (isEventPastFast(event, context)) {
-    return false;
-  }
-
-  const startKey = getEventDateKey(event.startDate);
-  if (!startKey) return false;
-
-  const endKey = getEventDateKey(event.endDate) || startKey;
-
-  if (endKey !== startKey) {
-    if (context.todayKey < startKey || context.todayKey > endKey) {
-      return false;
-    }
-
-    if (startKey === context.todayKey) {
-      return true;
-    }
-
-    if (context.todayKey > startKey && context.todayKey < endKey) {
-      return true;
-    }
-
-    if (endKey === context.todayKey) {
-      const endMinutes = parseTimeMinutes(event.endTime, END_OF_DAY_MINUTES);
-      return endMinutes !== null && context.nowMinutes <= endMinutes;
-    }
-
-    return true;
-  }
-
-  return startKey === context.todayKey;
+  return getEventScheduleState(event, eventTimeContextToDate(context)).todayEligible;
 };
 
 export const getEventTimeStatusFast = (
-  event: Pick<Event, 'startDate' | 'startTime' | 'endDate' | 'endTime'>,
+  event: Pick<Event, 'startDate' | 'startTime' | 'endDate' | 'endTime' | 'timing'>,
   context: EventTimeContext
-): TimeStatus => {
-  if (isEventNowFast(event, context)) return 'now';
-  if (isEventPastFast(event, context)) return 'past';
-  if (isEventHappeningTodayFast(event, context)) return 'today';
-  return 'future';
-};
+): TimeStatus => getEventTimeStatusFromTiming(event, eventTimeContextToDate(context));
 
 /**
  * Determines if an event matches the given type-specific filters
@@ -1389,7 +1328,14 @@ export const useMapStore = create<MapState>((set, get) => ({
       selectedCluster !== state.selectedCluster ||
       selectedImageData !== state.selectedImageData;
 
-    if (!changed) return;
+    if (!changed) {
+      // A provenance-aware event can move from Expected/Unknown to
+      // map-ineligible without becoming terminally past until midnight.
+      // Rebuild clusters so those transitions occur while the app is open.
+      filtersChanged = true;
+      get().generateClusters(get().zoomLevel);
+      return;
+    }
 
     set({
       allEvents,
@@ -1431,7 +1377,9 @@ export const useMapStore = create<MapState>((set, get) => ({
   // Do ALL processing synchronously in one batch
   const categories = Array.from(new Set(events.map(event => event.category)));
   const filtered = filterEvents(events, filterCriteria);
-  const venues = groupEventsByVenue(filtered.filter(isMapRenderableEvent));
+  const venues = groupEventsByVenue(
+    filtered.filter(isMapRenderableEvent).filter((event) => isEventDefaultMapEligible(event))
+  );
   const clusters = clusterVenues(venues, zoomLevel);
   
   // Single store update - prevents render cascade
@@ -1506,7 +1454,9 @@ export const useMapStore = create<MapState>((set, get) => ({
     __ML_lastFilterOut = filtered.length;
 
     const clusterStartedAt = Date.now();
-    const venues = groupEventsByVenue(filtered.filter(isMapRenderableEvent));
+    const venues = groupEventsByVenue(
+      filtered.filter(isMapRenderableEvent).filter((event) => isEventDefaultMapEligible(event))
+    );
     const clusters = clusterVenues(venues, zoomLevel);
 
     __ML_lastVenueCount = venues.length;
@@ -2015,6 +1965,21 @@ fetchEventDetails: async (eventIds: (string | number)[]) => {
       endDate: detail?.endDate || detail?.startDate || '',
       startTime: detail?.startTime || '',
       endTime: detail?.endTime || '',
+      timing: detail?.timing?.version === 2
+        ? detail.timing
+        : createLegacyTimingContract(
+            {
+              startDate: detail?.startDate || '',
+              startTime: detail?.startTime || '',
+              endDate: detail?.endDate || detail?.startDate || '',
+              endTime: detail?.endTime || '',
+            },
+            {
+              endStatus: 'unknown',
+              endResolutionMethod: 'legacy_details_api_unproven',
+              sourceUrl: detail?.facebookUrl || detail?.sourceUrl || null,
+            }
+          ),
       ticketPrice: detail?.ticketPrice || detail?.price || '',
       profileUrl: detail?.profileUrl || '',
       imageUrl: detail?.imageUrl || '',
@@ -2246,7 +2211,9 @@ fetchEventDetails: async (eventIds: (string | number)[]) => {
 
     // Province-scope records participate in the Area pill and event lists but
     // have no physical destination, so every clustering path excludes them.
-    const mapRenderableEvents = filteredEvents.filter(isMapRenderableEvent);
+    const mapRenderableEvents = filteredEvents
+      .filter(isMapRenderableEvent)
+      .filter((event) => isEventDefaultMapEligible(event));
     const venues = groupEventsByVenue(mapRenderableEvents);
     const clusters = clusterVenues(venues, currentZoom);
 
@@ -2373,7 +2340,11 @@ logStartupDataTiming('generate_clusters_completed', {
 
   getClustersForZoom: (zoom) => {
     const { filteredEvents } = get();
-    const venues = groupEventsByVenue(filteredEvents.filter(isMapRenderableEvent));
+    const venues = groupEventsByVenue(
+      filteredEvents
+        .filter(isMapRenderableEvent)
+        .filter((event) => isEventDefaultMapEligible(event))
+    );
     return clusterVenues(venues, zoom);
   },
   

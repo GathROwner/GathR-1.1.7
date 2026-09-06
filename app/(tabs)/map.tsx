@@ -69,9 +69,8 @@ import FriendEventsMapToggle from '../../components/social/FriendEventsMapToggle
 
 // Import centralized date utilities
 import {
-  isEventNow, 
-  isEventHappeningToday, 
-  getEventTimeStatus 
+  isEventNowWithTiming,
+  isEventHappeningToday
 } from '../../utils/dateUtils';
 
 // Import user service for preferences
@@ -482,7 +481,7 @@ const prepareClusterCallout = (
         // lightbox: above interest matches, below saved events/favorites.
         const cityEventScore = CITY_EVENT_UI_ENABLED && isAreaExperienceEvent(event) ? 250 : 0;
 
-        const timeScore = isEventNow(event.startDate, event.startTime, event.endDate, event.endTime)
+        const timeScore = isEventNowWithTiming(event)
           ? 10
           : isEventHappeningToday(event)
           ? 5

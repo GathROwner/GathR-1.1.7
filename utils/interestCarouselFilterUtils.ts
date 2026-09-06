@@ -2,7 +2,7 @@ import type { Cluster, Event, TimeStatus, Venue } from '../types/events';
 import type { FilterCriteria, TypeFilterCriteria } from '../types/filter';
 import type { InterestCarouselFilter } from '../types/store';
 import { TimeFilterType } from '../types/filter';
-import { isEventNow, getEventTimeStatus, isEventHappeningToday } from './dateUtils';
+import { getEventTimeStatus, isEventHappeningToday, isEventNowWithTiming } from './dateUtils';
 import { isEventPast } from './eventExpiry';
 import { CITY_EVENTS_CATEGORY, isAreaExperienceEvent, isRouteEvent } from './locationScope';
 import {
@@ -39,12 +39,7 @@ export const doesEventMatchInterestCarouselBaseFilters = (
   const typeFilters = getTypeFiltersForEvent(event, criteria);
 
   if (typeFilters.timeFilter === TimeFilterType.NOW) {
-    const isNow = isEventNow(
-      event.startDate,
-      event.startTime,
-      event.endDate || event.startDate,
-      event.endTime || ''
-    );
+    const isNow = isEventNowWithTiming(event);
     if (!isNow) return false;
   } else if (typeFilters.timeFilter === TimeFilterType.TODAY) {
     if (!isEventHappeningToday(event)) return false;

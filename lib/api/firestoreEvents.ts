@@ -3,7 +3,7 @@
  * Handles fetching, filtering, and pagination for Firestore-sourced events.
  */
 
-import { Event } from '../../types/events';
+import { Event, EventTiming } from '../../types/events';
 import { FirestoreEvent, FirestoreEventsResponse } from '../../types/firestore';
 import { auth } from '../../config/firebaseConfig';
 import {
@@ -19,6 +19,7 @@ import {
   normalizeTicketPurchaseUrl,
   normalizeTicketUrl,
 } from '../../utils/ticketUrls';
+import { createLegacyTimingContract } from '../../utils/eventTiming';
 
 // Debug flag for logging
 const DEBUG_FIRESTORE = __DEV__ ?? true;
@@ -103,6 +104,85 @@ const firstText = (...values: Array<unknown>): string => {
 
 const isRecord = (value: unknown): value is Record<string, any> =>
   Boolean(value && typeof value === 'object' && !Array.isArray(value));
+
+const normalizeContractTime = (value: unknown): string | null => {
+  const raw = firstText(value);
+  return raw ? convert24to12Hour(raw) : null;
+};
+
+export const normalizeFirestoreTiming = (fsEvent: FirestoreEvent): EventTiming => {
+  const metadata = fsEvent.metadata || {};
+  const rawTiming = fsEvent.timing ?? metadata.timing;
+  if (rawTiming?.version === 2 && rawTiming.schedule?.start && rawTiming.schedule?.end) {
+    return {
+      ...rawTiming,
+      timeZone: rawTiming.timeZone || 'America/Halifax',
+      schedule: {
+        start: {
+          ...rawTiming.schedule.start,
+          localDate: rawTiming.schedule.start.localDate || fsEvent.startDate,
+          localTime: normalizeContractTime(rawTiming.schedule.start.localTime || fsEvent.startTime),
+          timeZone: rawTiming.schedule.start.timeZone || rawTiming.timeZone || 'America/Halifax',
+        },
+        end: {
+          ...rawTiming.schedule.end,
+          localDate: rawTiming.schedule.end.localDate || null,
+          localTime: normalizeContractTime(rawTiming.schedule.end.localTime),
+          timeZone: rawTiming.schedule.end.timeZone || rawTiming.timeZone || 'America/Halifax',
+        },
+      },
+      estimate: rawTiming.estimate
+        ? {
+            ...rawTiming.estimate,
+            displayEndTime: normalizeContractTime(rawTiming.estimate.displayEndTime),
+            discoveryCutoffTime: normalizeContractTime(rawTiming.estimate.discoveryCutoffTime),
+          }
+        : null,
+    };
+  }
+
+  const timeFlags = isRecord(fsEvent.timeFlags)
+    ? fsEvent.timeFlags
+    : isRecord(metadata.timeFlags)
+      ? metadata.timeFlags
+      : null;
+  const timeResolution = isRecord(fsEvent.timeResolution)
+    ? fsEvent.timeResolution
+    : isRecord(metadata.timeResolution)
+      ? metadata.timeResolution
+      : null;
+  const endFlags = isRecord(timeFlags?.end) ? timeFlags.end : null;
+  const endFlagSource = firstText(endFlags?.source).toLowerCase();
+  const endResolutionMethod = firstText(timeResolution?.endFromHours);
+  const inferredByLegacyResolver =
+    endResolutionMethod === 'category_default' || endResolutionMethod === 'duration_default';
+  const untilClose = endFlags?.toClose === true || endResolutionMethod === 'to_close';
+  const explicitEnd =
+    !inferredByLegacyResolver &&
+    (endFlagSource === 'explicit' || Boolean(timeResolution?.endFromFacebookEvent));
+  const endStatus = untilClose
+    ? 'until_close'
+    : explicitEnd
+      ? 'observed'
+      : 'unknown';
+
+  return createLegacyTimingContract(
+    {
+      startDate: fsEvent.startDate || '',
+      startTime: convert24to12Hour(fsEvent.startTime),
+      endDate: fsEvent.endDate || fsEvent.startDate || '',
+      endTime: fsEvent.endTime ? convert24to12Hour(fsEvent.endTime) : '',
+    },
+    {
+      endStatus,
+      scheduleKind: untilClose ? 'until_close' : undefined,
+      endResolutionMethod: endResolutionMethod || null,
+      endEvidence: firstText(endFlags?.evidence) || null,
+      sourceUrl: firstText(fsEvent.sourceUrl, metadata.sourceUrl, metadata.facebookUrl) || null,
+      estimateConfidence: 'low',
+    }
+  );
+};
 
 const normalizeSourcePlatform = (
   value: unknown
@@ -295,6 +375,7 @@ export function normalizeFirestoreEvent(fsEvent: FirestoreEvent): Event {
     startTime: convert24to12Hour(fsEvent.startTime),
     endDate: fsEvent.endDate || fsEvent.startDate || '',
     endTime: fsEvent.endTime ? convert24to12Hour(fsEvent.endTime) : '',
+    timing: normalizeFirestoreTiming(fsEvent),
 
     // Media
     imageUrl: eventImageUrl,
