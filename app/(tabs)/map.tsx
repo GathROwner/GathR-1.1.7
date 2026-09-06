@@ -11596,47 +11596,7 @@ onDidFinishLoadingMap={() => {
       )}
 
       {/* GathR logo above Mapbox logo */}
-      {MAP_TRACE_UI_ENABLED ? (
-        <View
-          collapsable={false}
-          pointerEvents="box-none"
-          style={styles.mapTraceLogoHost}
-        >
-          <TouchableOpacity
-            activeOpacity={1}
-            accessibilityLabel="Open map trace"
-            delayLongPress={700}
-            hitSlop={10}
-            onPressIn={() => {
-              mapTraceLogoPressStartedAtRef.current = Date.now();
-            }}
-            onLongPress={() => {
-              mapTraceLogoPressStartedAtRef.current = null;
-              traceMapEvent('trace_panel_opened', {
-                source: 'logo_long_press',
-              });
-              setIsTracePanelVisible(true);
-            }}
-            onPress={() => {
-              const startedAt = mapTraceLogoPressStartedAtRef.current;
-              mapTraceLogoPressStartedAtRef.current = null;
-              if (startedAt !== null && Date.now() - startedAt >= 650) {
-                traceMapEvent('trace_panel_opened', {
-                  source: 'logo_hold_fallback',
-                });
-                setIsTracePanelVisible(true);
-              }
-            }}
-            style={styles.mapTraceLogoTouchable}
-          >
-            <Image
-              source={require('../../assets/images/icon.png')}
-              style={styles.mapLogo}
-              resizeMode="contain"
-            />
-          </TouchableOpacity>
-        </View>
-      ) : (
+      {!MAP_TRACE_UI_ENABLED && (
         <View style={styles.mapLogoContainer} pointerEvents="none">
           <Image
             source={require('../../assets/images/icon.png')}
@@ -11992,6 +11952,48 @@ Owner: Map UX stability on Android • Last validated: 2025-09-04
 
       {/* Deep link lightbox - renders when globalSelectedImageData is set from deep link */}
       <GlobalEventLightbox onShowRoute={showRouteOnMap} />
+
+      {MAP_TRACE_UI_ENABLED && (
+        <View
+          collapsable={false}
+          pointerEvents="auto"
+          style={styles.mapTraceLogoHost}
+        >
+          <TouchableOpacity
+            activeOpacity={1}
+            accessibilityLabel="Open map trace"
+            delayLongPress={700}
+            hitSlop={10}
+            onPressIn={() => {
+              mapTraceLogoPressStartedAtRef.current = Date.now();
+            }}
+            onLongPress={() => {
+              mapTraceLogoPressStartedAtRef.current = null;
+              traceMapEvent('trace_panel_opened', {
+                source: 'logo_long_press',
+              });
+              setIsTracePanelVisible(true);
+            }}
+            onPress={() => {
+              const startedAt = mapTraceLogoPressStartedAtRef.current;
+              mapTraceLogoPressStartedAtRef.current = null;
+              if (startedAt !== null && Date.now() - startedAt >= 650) {
+                traceMapEvent('trace_panel_opened', {
+                  source: 'logo_hold_fallback',
+                });
+                setIsTracePanelVisible(true);
+              }
+            }}
+            style={styles.mapTraceLogoTouchable}
+          >
+            <Image
+              source={require('../../assets/images/icon.png')}
+              style={styles.mapLogo}
+              resizeMode="contain"
+            />
+          </TouchableOpacity>
+        </View>
+      )}
 
       {MAP_TRACE_UI_ENABLED && isTracePanelVisible && (
         <MapTracePanel
@@ -13039,8 +13041,8 @@ countText: {
     bottom: 24,
     width: 40,
     height: 40,
-    zIndex: 8,
-    elevation: 9,
+    zIndex: 40,
+    elevation: 40,
   },
   mapTraceLogoTouchable: {
     alignItems: 'center',
