@@ -5258,7 +5258,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#666666',
     marginLeft: 8,
-    marginBottom: 6,
   },
   mutedTimingCard: {
     opacity: 0.68,
@@ -5266,6 +5265,7 @@ const styles = StyleSheet.create({
   compactTimingRow: {
     alignItems: 'center',
     flexDirection: 'row',
+    marginBottom: 6,
     paddingRight: 8,
   },
   cardDescription: {

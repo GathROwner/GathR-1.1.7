@@ -120,6 +120,7 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     flexShrink: 1,
+    justifyContent: 'center',
   },
   infoMarker: {
     fontSize: 12,

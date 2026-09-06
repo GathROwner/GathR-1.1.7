@@ -1,36 +1,88 @@
 import React from 'react';
-import { StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
+import {
+  Alert,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+  type GestureResponderEvent,
+  type StyleProp,
+  type ViewStyle,
+} from 'react-native';
 
 import type { Event } from '../../types/events';
-import { getEventTimingBadge } from '../../utils/eventTiming';
+import { getEventTimingBadge, getEventTimingDisclosure } from '../../utils/eventTiming';
 
 interface EventTimingBadgeProps {
   event: Pick<Event, 'startDate' | 'startTime' | 'endDate' | 'endTime' | 'timing'>;
   compact?: boolean;
+  onInfoPress?: () => void;
   style?: StyleProp<ViewStyle>;
 }
 
-export function EventTimingBadge({ event, compact = false, style }: EventTimingBadgeProps) {
+export function EventTimingBadge({ event, compact = false, onInfoPress, style }: EventTimingBadgeProps) {
   const badge = getEventTimingBadge(event);
   if (!badge) return null;
+
+  const badgeStyle = [
+    styles.base,
+    compact ? styles.compact : styles.regular,
+    badge.tone === 'positive' && styles.positive,
+    badge.tone === 'caution' && styles.caution,
+    badge.tone === 'muted' && styles.muted,
+    badge.tone === 'neutral' && styles.neutral,
+    badge.infoTitle && styles.withInfo,
+    style,
+  ];
+
+  const content = (
+    <>
+      <Text style={[styles.text, compact && styles.compactText]}>{badge.text}</Text>
+      {badge.infoTitle ? (
+        <View pointerEvents="none" style={styles.infoCorner} testID="event-timing-badge-info">
+          <Text style={styles.infoCornerText}>i</Text>
+        </View>
+      ) : null}
+    </>
+  );
+
+  if (badge.infoTitle) {
+    const disclosure = getEventTimingDisclosure(event);
+    const handleInfoPress = (pressEvent: GestureResponderEvent) => {
+      pressEvent.stopPropagation?.();
+      if (onInfoPress) {
+        onInfoPress();
+        return;
+      }
+      Alert.alert(
+        badge.infoTitle!,
+        disclosure || 'The event source does not provide enough timing information to confirm its current status.'
+      );
+    };
+
+    return (
+      <Pressable
+        accessibilityHint="Shows why this time is uncertain"
+        accessibilityLabel={`${badge.accessibilityLabel}. More information`}
+        accessibilityRole="button"
+        onPress={handleInfoPress}
+        style={({ pressed }) => [badgeStyle, pressed && styles.pressed]}
+        testID="event-timing-badge"
+      >
+        {content}
+      </Pressable>
+    );
+  }
 
   return (
     <View
       accessible
       accessibilityRole="text"
       accessibilityLabel={badge.accessibilityLabel}
-      style={[
-        styles.base,
-        compact ? styles.compact : styles.regular,
-        badge.tone === 'positive' && styles.positive,
-        badge.tone === 'caution' && styles.caution,
-        badge.tone === 'muted' && styles.muted,
-        badge.tone === 'neutral' && styles.neutral,
-        style,
-      ]}
+      style={badgeStyle}
       testID="event-timing-badge"
     >
-      <Text style={[styles.text, compact && styles.compactText]}>{badge.text}</Text>
+      {content}
     </View>
   );
 }
@@ -43,6 +95,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     minWidth: 54,
     paddingHorizontal: 7,
+  },
+  withInfo: {
+    marginRight: 4,
   },
   regular: {
     minHeight: 28,
@@ -66,6 +121,29 @@ const styles = StyleSheet.create({
   compactText: {
     fontSize: 9,
     lineHeight: 9,
+  },
+  infoCorner: {
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderColor: 'rgba(107, 70, 0, 0.35)',
+    borderRadius: 6,
+    borderWidth: StyleSheet.hairlineWidth,
+    height: 12,
+    justifyContent: 'center',
+    position: 'absolute',
+    right: -4,
+    top: -4,
+    width: 12,
+  },
+  infoCornerText: {
+    color: '#7A4A00',
+    fontSize: 8,
+    fontWeight: '900',
+    lineHeight: 9,
+    textAlign: 'center',
+  },
+  pressed: {
+    opacity: 0.72,
   },
   positive: { backgroundColor: '#1F8F55' },
   caution: { backgroundColor: '#B87800' },

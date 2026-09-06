@@ -224,10 +224,6 @@ const EventCard = memo(({
             <Text style={styles.nowText}>NOW</Text>
           </View>
         )}
-        {!isNow && (
-          <EventTimingBadge event={event} compact style={styles.carouselTimingBadge} />
-        )}
-
         {/* New Content Indicator */}
         {hasNewContent && (
           <View style={[styles.newDotWrapper, isNow && styles.newDotWrapperWithNow]}>
@@ -247,6 +243,9 @@ const EventCard = memo(({
             <EventTimingSummaryText event={event} style={styles.timeText} numberOfLines={1} />
           ) : (
             <Text style={styles.timeText} numberOfLines={1}>{formatEventTime(event)}</Text>
+          )}
+          {!isNow && (
+            <EventTimingBadge event={event} compact style={styles.carouselTimingBadge} />
           )}
         </View>
       </View>
@@ -970,9 +969,7 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
   carouselTimingBadge: {
-    position: 'absolute',
-    right: 6,
-    top: 6,
+    marginLeft: 3,
   },
   cardContent: {
     paddingHorizontal: 8,

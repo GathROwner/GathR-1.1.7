@@ -1848,7 +1848,12 @@ const handleNonTicketAction = () => {
               infoColor="#F4C542"
               onInfoPress={() => setTimingDisclosureExpanded((value) => !value)}
             />
-            <EventTimingBadge event={updatedEvent} compact style={styles.timingBadge} />
+            <EventTimingBadge
+              event={updatedEvent}
+              compact
+              onInfoPress={() => setTimingDisclosureExpanded((value) => !value)}
+              style={styles.timingBadge}
+            />
           </View>
 
           {timingDisclosure && (
@@ -2935,7 +2940,7 @@ const styles = StyleSheet.create({
   },
   infoRow: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
+    alignItems: 'center',
   },
   infoText: {
     color: '#FFFFFF',

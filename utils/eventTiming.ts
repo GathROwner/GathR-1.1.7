@@ -39,6 +39,7 @@ export interface EventTimingBadge {
   text: string;
   accessibilityLabel: string;
   tone: 'neutral' | 'positive' | 'caution' | 'muted';
+  infoTitle?: string;
 }
 
 export interface EventTimeRangeParts {
@@ -433,9 +434,19 @@ export const getEventTimingBadge = (
   switch (state.code) {
     case 'upcoming_unknown_end':
     case 'started_unknown_end':
-      return { text: 'END\nUNKNOWN', accessibilityLabel: 'End time not provided', tone: 'caution' };
+      return {
+        text: 'END\nUNKNOWN',
+        accessibilityLabel: 'End time not provided',
+        tone: 'caution',
+        infoTitle: 'End time not provided',
+      };
     case 'unknown_cutoff_passed':
-      return { text: 'STATUS\nUNKNOWN', accessibilityLabel: 'Start time passed; current status unknown', tone: 'muted' };
+      return {
+        text: 'STATUS\nUNKNOWN',
+        accessibilityLabel: 'Start time passed; current status unknown',
+        tone: 'muted',
+        infoTitle: 'Current status unknown',
+      };
     case 'until_close_active':
       return { text: 'UNTIL\nCLOSE', accessibilityLabel: 'Scheduled until the venue closes', tone: 'neutral' };
     default:
