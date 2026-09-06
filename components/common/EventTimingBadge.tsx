@@ -16,17 +16,24 @@ import { getEventTimingBadge, getEventTimingDisclosure } from '../../utils/event
 interface EventTimingBadgeProps {
   event: Pick<Event, 'startDate' | 'startTime' | 'endDate' | 'endTime' | 'timing'>;
   compact?: boolean;
+  carousel?: boolean;
   onInfoPress?: () => void;
   style?: StyleProp<ViewStyle>;
 }
 
-export function EventTimingBadge({ event, compact = false, onInfoPress, style }: EventTimingBadgeProps) {
+export function EventTimingBadge({
+  event,
+  compact = false,
+  carousel = false,
+  onInfoPress,
+  style,
+}: EventTimingBadgeProps) {
   const badge = getEventTimingBadge(event);
   if (!badge) return null;
 
   const badgeStyle = [
     styles.base,
-    compact ? styles.compact : styles.regular,
+    carousel ? styles.carousel : compact ? styles.compact : styles.regular,
     badge.tone === 'positive' && styles.positive,
     badge.tone === 'caution' && styles.caution,
     badge.tone === 'muted' && styles.muted,
@@ -37,7 +44,9 @@ export function EventTimingBadge({ event, compact = false, onInfoPress, style }:
 
   const content = (
     <>
-      <Text style={[styles.text, compact && styles.compactText]}>{badge.text}</Text>
+      <Text style={[styles.text, compact && styles.compactText, carousel && styles.carouselText]}>
+        {badge.text}
+      </Text>
       {badge.infoTitle ? (
         <View pointerEvents="none" style={styles.infoCorner} testID="event-timing-badge-info">
           <Text style={styles.infoCornerText}>i</Text>
@@ -112,6 +121,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 6,
     paddingVertical: 3,
   },
+  carousel: {
+    borderRadius: 6,
+    minHeight: 20,
+    minWidth: 40,
+    paddingHorizontal: 4,
+    paddingVertical: 2,
+  },
   text: {
     color: '#FFFFFF',
     fontSize: 10,
@@ -123,6 +139,11 @@ const styles = StyleSheet.create({
   compactText: {
     fontSize: 9,
     lineHeight: 9,
+  },
+  carouselText: {
+    fontSize: 7.5,
+    letterSpacing: 0.15,
+    lineHeight: 8,
   },
   infoCorner: {
     alignItems: 'center',

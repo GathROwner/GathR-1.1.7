@@ -244,21 +244,17 @@ const EventCard = memo(({
               event={event}
               style={styles.timeText}
               numberOfLines={1}
-              adjustsFontSizeToFit
-              minimumFontScale={0.8}
             />
           ) : (
             <Text
               style={styles.timeText}
               numberOfLines={1}
-              adjustsFontSizeToFit
-              minimumFontScale={0.8}
             >
               {formatEventTime(event)}
             </Text>
           )}
           {!isNow && (
-            <EventTimingBadge event={event} compact style={styles.carouselTimingBadge} />
+            <EventTimingBadge event={event} carousel style={styles.carouselTimingBadge} />
           )}
         </View>
       </View>
