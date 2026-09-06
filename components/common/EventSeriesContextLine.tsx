@@ -3,7 +3,7 @@ import { StyleSheet, Text, View, type StyleProp, type TextStyle, type ViewStyle 
 import { MaterialIcons } from '@expo/vector-icons';
 
 import type { Event } from '../../types/events';
-import { getEventSeriesContext } from '../../utils/eventSeries';
+import { getEventScheduleContext } from '../../utils/eventSeries';
 
 type SeriesEvent = Pick<
   Event,
@@ -11,6 +11,8 @@ type SeriesEvent = Pick<
   | 'description'
   | 'startDate'
   | 'endDate'
+  | 'startTime'
+  | 'endTime'
   | 'isRecurring'
   | 'recurringPattern'
   | 'recurrenceUntilDate'
@@ -31,17 +33,21 @@ export function EventSeriesContextLine({
   containerStyle,
   numberOfLines = 1,
 }: EventSeriesContextLineProps) {
-  const context = getEventSeriesContext(event);
+  const context = getEventScheduleContext(event);
   if (!context) return null;
 
   const color = tone === 'dark' ? '#BFC5CD' : '#777777';
   return (
     <View
-      accessibilityLabel={`Recurring event. ${context.label}`}
+      accessibilityLabel={`Schedule details. ${context.label}`}
       style={[styles.container, containerStyle]}
       testID="event-series-context"
     >
-      <MaterialIcons name="repeat" size={12} color={color} />
+      <MaterialIcons
+        name={context.kind === 'overnight_end' || context.kind === 'multi_day_span' ? 'date-range' : 'repeat'}
+        size={12}
+        color={color}
+      />
       <Text numberOfLines={numberOfLines} style={[styles.text, { color }, style]}>
         {context.label}
       </Text>
@@ -63,4 +69,3 @@ const styles = StyleSheet.create({
     marginLeft: 4,
   },
 });
-

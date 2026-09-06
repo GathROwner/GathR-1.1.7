@@ -79,7 +79,7 @@ import {
   getEventTiming,
   getEventTimingDisclosure,
 } from '../../utils/eventTiming';
-import { getEventSeriesContext } from '../../utils/eventSeries';
+import { getEventScheduleContext } from '../../utils/eventSeries';
 import { useEventTimingMinute } from '../../hooks/useEventTimingMinute';
 import {
   hasPhysicalEventDestination,
@@ -1228,13 +1228,13 @@ const handleNonTicketAction = () => {
 
   // One shared provenance-aware time sentence across every app surface.
   const baseDateText = formatEventTimingSummary(updatedEvent);
-  const seriesContext = getEventSeriesContext(updatedEvent);
-  const displayUntilDate = seriesContext ? undefined : getEventDisplayUntilDate(updatedEvent);
+  const scheduleContext = getEventScheduleContext(updatedEvent);
+  const displayUntilDate = scheduleContext ? undefined : getEventDisplayUntilDate(updatedEvent);
   const endDateSuffix =
     isFutureDate(displayUntilDate) ? ` • (Until ${formatEndDateLabel(displayUntilDate!)})` : '';
   const dateTimeDisplay = [
     `${baseDateText}${endDateSuffix}`,
-    seriesContext?.label,
+    scheduleContext?.label,
   ].filter(Boolean).join(' · ');
   const timingDisclosure = getEventTimingDisclosure(updatedEvent);
   const timingContract = getEventTiming(updatedEvent);

@@ -54,7 +54,7 @@ import {
   getEventTimeStatus,
   getEventDisplayUntilDate,
 } from '../../utils/dateUtils';
-import { getEventSeriesContext } from '../../utils/eventSeries';
+import { getEventScheduleContext } from '../../utils/eventSeries';
 import { addEventToCalendarWithTiming } from '../../utils/calendarUtils';
 import { buildGathrSharePayload } from '../../utils/shareUtils';
 import { getTicketUrl, normalizeTicketUrl } from '../../utils/ticketUrls';
@@ -1131,8 +1131,8 @@ const result = await userService.toggleSavedEvent(event.id, {
         <View style={styles.dateTimeRow}>
         <MaterialIcons name="access-time" size={14} color={BRAND.primaryDark} />
         {(() => {
-          const seriesContext = getEventSeriesContext(event);
-          const displayUntilDate = seriesContext ? undefined : getEventDisplayUntilDate(event);
+          const scheduleContext = getEventScheduleContext(event);
+          const displayUntilDate = scheduleContext ? undefined : getEventDisplayUntilDate(event);
           const endDateSuffix =
             isFutureDate(displayUntilDate) ? ` • (Until ${formatEndDateLabel(displayUntilDate!)})` : '';
             return (

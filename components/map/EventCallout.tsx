@@ -164,7 +164,7 @@ import {
   getEventTimeRangeParts,
   getEventTimingDisclosure,
 } from '../../utils/eventTiming';
-import { getEventSeriesContext } from '../../utils/eventSeries';
+import { getEventScheduleContext } from '../../utils/eventSeries';
 import { useEventTimingMinute } from '../../hooks/useEventTimingMinute';
 
 const EVENT_CALLOUT_SHELL_ISOLATION_DEBUG = false;
@@ -2349,8 +2349,8 @@ useUserPrefsStore.getState().setAll({ savedEvents: next });
         <View style={styles.dateTimeRow}>
           <MaterialIcons name="access-time" size={14} color="#666666" />
           {(() => {
-            const seriesContext = getEventSeriesContext(event);
-            const displayUntilDate = seriesContext ? undefined : getEventDisplayUntilDate(event);
+            const scheduleContext = getEventScheduleContext(event);
+            const displayUntilDate = scheduleContext ? undefined : getEventDisplayUntilDate(event);
             const endDateSuffix =
               isFutureDate(displayUntilDate) ? ` • (Until ${formatEndDateLabel(displayUntilDate!)})` : '';
 
