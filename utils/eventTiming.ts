@@ -111,26 +111,66 @@ const localScalar = (dateKey: string, minutes: number): number => {
   return Math.floor(Date.UTC(year, month - 1, day) / 60000) + minutes;
 };
 
+const ZONED_MINUTE_CACHE_LIMIT = 256;
+const zonedDateTimeFormatters = new Map<string, Intl.DateTimeFormat>();
+const zonedMinuteCache = new Map<string, { dateKey: string; minutes: number }>();
+
+const getZonedDateTimeFormatter = (timeZone: string): Intl.DateTimeFormat => {
+  const cached = zonedDateTimeFormatters.get(timeZone);
+  if (cached) return cached;
+
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  });
+  zonedDateTimeFormatters.set(timeZone, formatter);
+  return formatter;
+};
+
+const cacheZonedMinute = (
+  key: string,
+  value: { dateKey: string; minutes: number }
+): { dateKey: string; minutes: number } => {
+  if (zonedMinuteCache.size >= ZONED_MINUTE_CACHE_LIMIT && !zonedMinuteCache.has(key)) {
+    const oldestKey = zonedMinuteCache.keys().next().value;
+    if (oldestKey !== undefined) zonedMinuteCache.delete(oldestKey);
+  }
+  zonedMinuteCache.set(key, value);
+  return value;
+};
+
+/** Resettable for deterministic tests; production callers normally never need it. */
+export const resetEventTimingIntlCache = (): void => {
+  zonedDateTimeFormatters.clear();
+  zonedMinuteCache.clear();
+};
+
 const getZonedNow = (now: Date, timeZone: string): { dateKey: string; minutes: number } => {
+  const instantMs = now.getTime();
+  const minuteKey = Number.isFinite(instantMs) ? Math.floor(instantMs / 60000) : NaN;
+  const cacheKey = `${timeZone}|${minuteKey}`;
+  const cached = zonedMinuteCache.get(cacheKey);
+  if (cached) return cached;
+
   try {
-    const parts = new Intl.DateTimeFormat('en-CA', {
-      timeZone,
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-      hourCycle: 'h23',
-    }).formatToParts(now);
+    const parts = getZonedDateTimeFormatter(timeZone).formatToParts(now);
     const value = (type: Intl.DateTimeFormatPartTypes) =>
       parts.find((part) => part.type === type)?.value || '';
     const dateKey = `${value('year')}-${value('month')}-${value('day')}`;
-    return { dateKey, minutes: Number(value('hour')) * 60 + Number(value('minute')) };
+    return cacheZonedMinute(cacheKey, {
+      dateKey,
+      minutes: Number(value('hour')) * 60 + Number(value('minute')),
+    });
   } catch {
-    return {
+    return cacheZonedMinute(cacheKey, {
       dateKey: `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`,
       minutes: now.getHours() * 60 + now.getMinutes(),
-    };
+    });
   }
 };
 

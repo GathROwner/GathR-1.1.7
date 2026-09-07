@@ -8,6 +8,7 @@ import {
   getEventTimeRangeText,
   getEventTimeStatusFromTiming,
   getEventTimingBadge,
+  resetEventTimingIntlCache,
 } from '../eventTiming';
 
 const baseEvent = (timing: EventTiming): Pick<Event, 'startDate' | 'startTime' | 'endDate' | 'endTime' | 'timing'> => ({
@@ -22,6 +23,49 @@ const atHalifax = (hour: number, minute = 0) =>
   new Date(Date.UTC(2026, 8, 5, hour + 3, minute));
 
 describe('honest event timing state machine', () => {
+  beforeEach(() => {
+    resetEventTimingIntlCache();
+  });
+
+  it('reuses timezone formatting across events and minute transitions', () => {
+    const formatterSpy = jest.spyOn(Intl, 'DateTimeFormat');
+    try {
+      const first = baseEvent(createLegacyTimingContract(baseEvent(null as never), { endStatus: 'observed' }));
+      const second = {
+        ...baseEvent(createLegacyTimingContract(baseEvent(null as never), { endStatus: 'observed' })),
+        startTime: '6:00 PM',
+      };
+
+      getEventScheduleState(first, atHalifax(19, 30));
+      getEventScheduleState(second, atHalifax(19, 30));
+      getEventScheduleState(first, atHalifax(19, 31));
+
+      expect(formatterSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      formatterSpy.mockRestore();
+    }
+  });
+
+  it('keeps separate reusable formatters for distinct timezones', () => {
+    const formatterSpy = jest.spyOn(Intl, 'DateTimeFormat');
+    try {
+      const halifax = baseEvent(createLegacyTimingContract(baseEvent(null as never), { endStatus: 'observed' }));
+      const torontoTiming = createLegacyTimingContract(baseEvent(null as never), {
+        endStatus: 'observed',
+        timeZone: 'America/Toronto',
+      });
+      const toronto = baseEvent(torontoTiming);
+
+      getEventScheduleState(halifax, atHalifax(19, 30));
+      getEventScheduleState(toronto, atHalifax(19, 30));
+      getEventScheduleState(toronto, atHalifax(19, 31));
+
+      expect(formatterSpy).toHaveBeenCalledTimes(2);
+    } finally {
+      formatterSpy.mockRestore();
+    }
+  });
+
   it('reserves Happening Now for an observed ending', () => {
     const event = baseEvent(createLegacyTimingContract(baseEvent(null as never), { endStatus: 'observed' }));
     expect(getEventScheduleState(event, atHalifax(19, 30)).code).toBe('happening_confirmed');
