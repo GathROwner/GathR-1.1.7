@@ -16,7 +16,7 @@ export default function CalloutModalTabBarTouchLayer({
 }: CalloutModalTabBarTouchLayerProps) {
   return (
     <View
-      pointerEvents="box-none"
+      pointerEvents="auto"
       style={[styles.container, { height }]}
       testID="callout-modal-tab-touch-layer"
     >
@@ -36,7 +36,9 @@ export default function CalloutModalTabBarTouchLayer({
 
 const styles = StyleSheet.create({
   container: {
+    backgroundColor: 'transparent',
     bottom: 0,
+    elevation: 40,
     flexDirection: 'row',
     left: 0,
     position: 'absolute',
@@ -45,5 +47,6 @@ const styles = StyleSheet.create({
   },
   target: {
     flex: 1,
+    height: '100%',
   },
 });

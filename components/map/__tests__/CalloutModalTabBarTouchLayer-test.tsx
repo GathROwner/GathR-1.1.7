@@ -22,5 +22,7 @@ describe('CalloutModalTabBarTouchLayer', () => {
     expect(component!.root.findByProps({ testID: 'callout-modal-tab-touch-layer' }).props.style).toEqual(
       expect.arrayContaining([expect.objectContaining({ height: 82 })])
     );
+    expect(component!.root.findByProps({ testID: 'callout-modal-tab-touch-layer' }).props.pointerEvents)
+      .toBe('auto');
   });
 });
