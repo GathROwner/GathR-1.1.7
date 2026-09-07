@@ -28,6 +28,11 @@ export type InterestCarouselFilter =
       status: 'cleared';
     };
 
+export type ViewportFetchOptions = {
+  requestId?: number;
+  source?: string;
+};
+
 /**
  * Map state interface for the application
  * Defines the structure of the map store
@@ -168,7 +173,10 @@ export interface MapState {
   fetchEventDetails: (eventIds: (string | number)[]) => Promise<void>;
 
   // Viewport-aware actions
-  fetchViewportEvents: (bbox: { west: number; south: number; east: number; north: number }) => Promise<void>;
+  fetchViewportEvents: (
+    bbox: { west: number; south: number; east: number; north: number },
+    options?: ViewportFetchOptions
+  ) => Promise<void>;
   setViewportBbox: (bbox: { west: number; south: number; east: number; north: number }) => void;
   setOnScreenEvents: (events: Event[]) => void;
 }

@@ -36,7 +36,12 @@ jest.mock('supercluster', () => ({
 import type { Event } from '../../types/events';
 import { DEFAULT_FILTER_CRITERIA } from '../../types/filter';
 import { createLegacyTimingContract } from '../../utils/eventTiming';
+import { resetEventScheduleStateCache } from '../../utils/eventScheduleStateCache';
 import type { MapScheduleStateCaller } from '../../utils/mapTrace';
+import {
+  reserveViewportRequestId,
+  resetViewportRequestCoordinator,
+} from '../../utils/viewportRequestCoordinator';
 
 process.env.EXPO_PUBLIC_MAP_LATENCY_TRACE = '1';
 process.env.EXPO_PUBLIC_MAP_LATENCY_VARIANT = 'baseline';
@@ -73,6 +78,8 @@ describe('map store latency caller attribution', () => {
     jest.useFakeTimers();
     jest.setSystemTime(new Date(2026, 8, 6, 12, 0, 0));
     trace.clearMapTrace();
+    resetEventScheduleStateCache();
+    resetViewportRequestCoordinator();
     useMapStore.setState({
       allEvents: [],
       events: [],
@@ -155,5 +162,78 @@ describe('map store latency caller attribution', () => {
       },
     });
     expect(Number(filteringEntry?.details?.scheduleCumulativeDurationMs)).toBeGreaterThanOrEqual(0);
+  });
+
+  it('preserves the on-screen array identity for an equivalent projection', () => {
+    const event = makeFutureEvent('stable-screen', 'event');
+    const original = [event];
+    useMapStore.setState({ onScreenEvents: original });
+    const listener = jest.fn();
+    const unsubscribe = useMapStore.subscribe(listener);
+
+    useMapStore.getState().setOnScreenEvents([event]);
+
+    expect(useMapStore.getState().onScreenEvents).toBe(original);
+    expect(listener).not.toHaveBeenCalled();
+    unsubscribe();
+  });
+
+  it('preserves cluster identity when regeneration produces the same projection', () => {
+    const event = makeFutureEvent('stable-cluster', 'event');
+    useMapStore.setState({ filteredEvents: [event], clusters: [] });
+    useMapStore.getState().generateClusters(12);
+    const original = useMapStore.getState().clusters;
+    const listener = jest.fn();
+    const unsubscribe = useMapStore.subscribe(listener);
+
+    useMapStore.getState().generateClusters(12);
+
+    expect(useMapStore.getState().clusters).toBe(original);
+    expect(listener).not.toHaveBeenCalled();
+    unsubscribe();
+  });
+
+  it('drops a delayed viewport request reserved before newer settled work', async () => {
+    const event = makeFutureEvent('viewport-event', 'event');
+    const originalEvents = [event];
+    useMapStore.setState({ allEvents: originalEvents, events: originalEvents });
+    const staleRequestId = reserveViewportRequestId();
+    reserveViewportRequestId();
+
+    await useMapStore.getState().fetchViewportEvents(
+      { west: -64, south: 46, east: -63, north: 47 },
+      { requestId: staleRequestId, source: 'test_delayed_camera' }
+    );
+
+    expect(useMapStore.getState().events).toBe(originalEvents);
+    expect(trace.getMapTraceState().entries.some((entry) =>
+      entry.label === 'viewport_fetch_stale_skipped' &&
+      entry.details?.stage === 'before_start'
+    )).toBe(true);
+  });
+
+  it('does not commit an equivalent viewport projection twice', async () => {
+    const event = makeFutureEvent('stable-viewport', 'event');
+    const bbox = { west: -64, south: 46, east: -63, north: 47 };
+    useMapStore.setState({ allEvents: [event] });
+
+    await useMapStore.getState().fetchViewportEvents(bbox, { source: 'first_test_fetch' });
+    const firstState = useMapStore.getState();
+    const listener = jest.fn();
+    const unsubscribe = useMapStore.subscribe(listener);
+
+    await useMapStore.getState().fetchViewportEvents(bbox, { source: 'repeat_test_fetch' });
+
+    const secondState = useMapStore.getState();
+    expect(secondState.events).toBe(firstState.events);
+    expect(secondState.viewportEvents).toBe(firstState.viewportEvents);
+    expect(secondState.onScreenEvents).toBe(firstState.onScreenEvents);
+    expect(secondState.filteredEvents).toBe(firstState.filteredEvents);
+    expect(listener).not.toHaveBeenCalled();
+    expect(trace.getMapTraceState().entries.some((entry) =>
+      entry.label === 'viewport_store_commit_skipped' &&
+      entry.details?.source === 'repeat_test_fetch'
+    )).toBe(true);
+    unsubscribe();
   });
 });

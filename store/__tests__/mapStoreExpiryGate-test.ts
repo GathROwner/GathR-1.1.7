@@ -280,6 +280,10 @@ describe('pruneExpiredEvents ticker action', () => {
       filteredEvents: [live],
     };
     useMapStore.setState(arrays);
+    useMapStore.getState().generateClusters(12);
+    const clusters = useMapStore.getState().clusters;
+    const listener = jest.fn();
+    const unsubscribe = useMapStore.subscribe(listener);
 
     useMapStore.getState().pruneExpiredEvents();
 
@@ -287,6 +291,9 @@ describe('pruneExpiredEvents ticker action', () => {
     expect(state.allEvents).toBe(arrays.allEvents);
     expect(state.viewportEvents).toBe(arrays.viewportEvents);
     expect(state.filteredEvents).toBe(arrays.filteredEvents);
+    expect(state.clusters).toBe(clusters);
+    expect(listener).not.toHaveBeenCalled();
+    unsubscribe();
   });
 
   it('removes expired events from selected callout and lightbox state', () => {

@@ -59,7 +59,7 @@ Last validated: 2025-09-04 • Owner: Map data/UX
 import { create } from 'zustand';
 import { Event, Venue, Cluster, TimeStatus, InterestLevel } from '../types/events';
 import { FilterCriteria, TimeFilterType, TypeFilterCriteria } from '../types/filter';
-import { MapState } from '../types/store';
+import { MapState, type ViewportFetchOptions } from '../types/store';
 import * as Location from 'expo-location';
 import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -124,6 +124,10 @@ import {
 import {
   getCachedEventScheduleState,
 } from '../utils/eventScheduleStateCache';
+import {
+  isLatestViewportRequest,
+  reserveViewportRequestId,
+} from '../utils/viewportRequestCoordinator';
 import {
   MAP_TRACE_ENABLED,
   diffMapScheduleStateMetrics,
@@ -221,6 +225,68 @@ export interface ZoomThreshold {
 let lastClusters: Cluster[] = [];         // Last generated clusters for potential reuse
 let currentThresholdIndex = 2;            // Default to Neighborhood level (index 2)
 let filtersChanged = true;                // Track if filters have changed
+let lastMapProjectionSignature: string | null = null;
+
+const areEventArraysShallowEqual = (left: Event[], right: Event[]): boolean =>
+  left === right || (
+    left.length === right.length &&
+    left.every((event, index) => event === right[index])
+  );
+
+const areStringArraysEqual = (left: string[], right: string[]): boolean =>
+  left === right || (
+    left.length === right.length &&
+    left.every((value, index) => value === right[index])
+  );
+
+const areVenueProjectionsEqual = (left: Venue, right: Venue): boolean =>
+  left.locationKey === right.locationKey &&
+  areEventArraysShallowEqual(left.events, right.events);
+
+const areClusterProjectionsEqual = (left: Cluster[], right: Cluster[]): boolean =>
+  left === right || (
+    left.length === right.length &&
+    left.every((cluster, clusterIndex) => {
+      const previous = right[clusterIndex];
+      return Boolean(previous) &&
+        cluster.id === previous.id &&
+        cluster.clusterType === previous.clusterType &&
+        cluster.timeStatus === previous.timeStatus &&
+        cluster.interestLevel === previous.interestLevel &&
+        cluster.isBroadcasting === previous.isBroadcasting &&
+        cluster.eventCount === previous.eventCount &&
+        cluster.specialCount === previous.specialCount &&
+        cluster.friendEventCount === previous.friendEventCount &&
+        cluster.hasNewContent === previous.hasNewContent &&
+        cluster.containsCityLevelEvent === previous.containsCityLevelEvent &&
+        cluster.containsRouteEvent === previous.containsRouteEvent &&
+        areStringArraysEqual(cluster.categories, previous.categories) &&
+        cluster.venues.length === previous.venues.length &&
+        cluster.venues.every((venue, venueIndex) =>
+          areVenueProjectionsEqual(venue, previous.venues[venueIndex])
+        );
+    })
+  );
+
+const areBoundingBoxesEqual = (
+  left: ViewportBoundingBox | null,
+  right: ViewportBoundingBox | null
+): boolean => left === right || Boolean(
+  left &&
+  right &&
+  left.west === right.west &&
+  left.south === right.south &&
+  left.east === right.east &&
+  left.north === right.north
+);
+
+const getMapStateTraceCounts = (state: MapState) => ({
+  events: state.events.length,
+  filteredEvents: state.filteredEvents.length,
+  viewportEvents: state.viewportEvents.length,
+  onScreenEvents: state.onScreenEvents.length,
+  clusters: state.clusters.length,
+});
 
 // Supercluster caches
 let __scIndex: any | null = null;
@@ -587,6 +653,46 @@ const isEventDefaultMapEligibleMeasured = (
   context,
   'default_map_eligibility'
 ).defaultMapEligible;
+
+const createMapProjectionSignature = (
+  events: Event[],
+  context: EventTimeContext
+): string => {
+  const signatureParts: string[] = [];
+
+  for (const event of events) {
+    if (!isMapRenderableEvent(event)) continue;
+    const state = getMeasuredEventScheduleState(
+      event,
+      context,
+      'default_map_eligibility'
+    );
+    if (!state.defaultMapEligible) continue;
+
+    const timeStatus: TimeStatus = state.nowEligibility === 'confirmed'
+      ? 'now'
+      : state.todayEligible
+        ? 'today'
+        : 'future';
+    signatureParts.push([
+      String(event.id),
+      timeStatus,
+      event.type,
+      event.category,
+      event.venue,
+      event.address,
+      String(event.latitude),
+      String(event.longitude),
+    ].join(':'));
+  }
+
+  return signatureParts.join('|');
+};
+
+const updateMapProjectionSignature = (nextSignature: string): void => {
+  if (nextSignature !== lastMapProjectionSignature) filtersChanged = true;
+  lastMapProjectionSignature = nextSignature;
+};
 
 const isEventPastMeasured = (
   event: Event,
@@ -1174,7 +1280,7 @@ export const useMapStore = create<MapState>((set, get) => ({
     // yesterday's from a stale AsyncStorage snapshot — never enter the store.
     const timeContext = createEventTimeContext();
     const liveEvents = Array.isArray(events)
-      ? events.filter((event) => !isEventPastFast(event, timeContext))
+      ? events.filter((event) => !isEventPastMeasured(event, timeContext, 'map_filtering'))
       : events;
 
     // DEBUG: summarize address/coords in incoming batch
@@ -1241,7 +1347,7 @@ export const useMapStore = create<MapState>((set, get) => ({
 
     const prune = (list: Event[]): Event[] => {
       if (!Array.isArray(list) || list.length === 0) return list;
-      const next = list.filter((event) => !isEventPastFast(event, timeContext));
+      const next = list.filter((event) => !isEventPastMeasured(event, timeContext, 'map_filtering'));
       return next.length === list.length ? list : next;
     };
 
@@ -1301,7 +1407,7 @@ export const useMapStore = create<MapState>((set, get) => ({
 
     const pruneSelectedImageData = (data: MapState['selectedImageData']) => {
       if (!data) return data;
-      if (isEventPastFast(data.event, timeContext)) return null;
+      if (isEventPastMeasured(data.event, timeContext, 'map_filtering')) return null;
       if (!data.events) return data;
 
       const events = prune(data.events);
@@ -1343,11 +1449,17 @@ export const useMapStore = create<MapState>((set, get) => ({
       selectedImageData !== state.selectedImageData;
 
     if (!changed) {
-      // A provenance-aware event can move from Expected/Unknown to
-      // map-ineligible without becoming terminally past until midnight.
-      // Rebuild clusters so those transitions occur while the app is open.
-      filtersChanged = true;
-      get().generateClusters(get().zoomLevel);
+      // A timing transition can change map eligibility or the Now/Today badge
+      // without removing an event. Recluster only when that visible projection
+      // actually changes; ordinary minute ticks remain true no-ops.
+      const projectionSignature = createMapProjectionSignature(
+        state.filteredEvents,
+        timeContext
+      );
+      if (projectionSignature !== lastMapProjectionSignature) {
+        filtersChanged = true;
+        get().generateClusters(get().zoomLevel);
+      }
       return;
     }
 
@@ -1397,6 +1509,7 @@ export const useMapStore = create<MapState>((set, get) => ({
       .filter(isMapRenderableEvent)
       .filter((event) => isEventDefaultMapEligibleMeasured(event, timeContext))
   );
+  updateMapProjectionSignature(createMapProjectionSignature(filtered, timeContext));
   const clusters = clusterVenues(venues, zoomLevel);
   
   // Single store update - prevents render cascade
@@ -1477,6 +1590,7 @@ export const useMapStore = create<MapState>((set, get) => ({
         .filter(isMapRenderableEvent)
         .filter((event) => isEventDefaultMapEligibleMeasured(event, timeContext))
     );
+    updateMapProjectionSignature(createMapProjectionSignature(filtered, timeContext));
     const clusters = clusterVenues(venues, zoomLevel);
 
     __ML_lastVenueCount = venues.length;
@@ -1754,7 +1868,11 @@ refreshPrivateSharedEventsFromServer: async (privateEventIds?: string[]) => {
    * Fetch and partition events for the current viewport.
    * Legacy viewport API is removed from the active path.
    */
-  fetchViewportEvents: async (bbox: { west: number; south: number; east: number; north: number }) => {
+  fetchViewportEvents: async (
+    bbox: { west: number; south: number; east: number; north: number },
+    options: ViewportFetchOptions = {}
+  ) => {
+    const requestId = options.requestId ?? reserveViewportRequestId();
     const startedAt = Date.now();
     const traceStartedAt = MAP_TRACE_ENABLED ? mapTraceNow() : 0;
     const traceGestureSessionId = getActiveMapTraceGestureSessionId();
@@ -1766,16 +1884,34 @@ refreshPrivateSharedEventsFromServer: async (privateEventIds?: string[]) => {
       filteredEvents: get().filteredEvents.length,
       clusters: get().clusters.length,
       bbox,
+      requestId,
+      source: options.source ?? 'unspecified',
     }, { gestureSessionId: traceGestureSessionId });
     logStartupDataTiming('viewport_fetch_called', {
       bbox,
       allEvents: get().allEvents.length,
       filteredEvents: get().filteredEvents.length,
       clusters: get().clusters.length,
+      requestId,
+      source: options.source ?? 'unspecified',
     });
 
+    const abortIfStale = (stage: string): boolean => {
+      if (isLatestViewportRequest(requestId)) return false;
+      traceMapEvent('viewport_fetch_stale_skipped', {
+        requestId,
+        source: options.source ?? 'unspecified',
+        stage,
+        durationMs: MAP_TRACE_ENABLED ? mapTraceNow() - traceStartedAt : 0,
+        ...getMapStateTraceCounts(get()),
+      }, { gestureSessionId: traceGestureSessionId });
+      return true;
+    };
+
+    if (abortIfStale('before_start')) return;
+
     try {
-      set({ error: null });
+      if (get().error !== null) set({ error: null });
 
       const filters = get().filterCriteria;
       const typeParam = filters.showEvents && filters.showSpecials
@@ -1816,6 +1952,7 @@ refreshPrivateSharedEventsFromServer: async (privateEventIds?: string[]) => {
           fetchOptions,
         });
         const result = await fetchMinimalEventsShared(fetchOptions);
+        if (abortIfStale('after_minimal_fetch')) return;
         const dedupedAll = dedupeEvents(result.combinedData);
         publicCandidateEvents = dedupedAll.filter(matchesTypeFilter);
         get().setAllEvents(dedupedAll);
@@ -1840,6 +1977,7 @@ refreshPrivateSharedEventsFromServer: async (privateEventIds?: string[]) => {
       // React Query cache. Their live per-user projections are composed only
       // for the current in-memory map/feed view.
       const candidateEvents = [...publicCandidateEvents, ...friendCandidateEvents];
+      if (abortIfStale('before_partition')) return;
 
       const partitionStartedAt = Date.now();
       const partitionTraceStartedAt = MAP_TRACE_ENABLED ? mapTraceNow() : 0;
@@ -1892,8 +2030,6 @@ refreshPrivateSharedEventsFromServer: async (privateEventIds?: string[]) => {
         filteredCount: filtered.length,
       });
 
-      filtersChanged = true;
-
       const onScreenEvents = viewportEvents;
 
       if (DEBUG_MAP_LOAD) {
@@ -1908,25 +2044,63 @@ refreshPrivateSharedEventsFromServer: async (privateEventIds?: string[]) => {
         });
       }
 
-      set({
-        events: clusterSourceEvents,
-        viewportEvents,
-        outsideViewportEvents,
-        onScreenEvents,
-        filteredEvents: filtered,
-        viewportBbox: bbox,
-        viewportMetadata: {
-          wasCapped: false,
-          viewportCount: viewportEvents.length,
-          outsideViewportCount: outsideViewportEvents.length,
-          lastFetchTimestamp: new Date().toISOString(),
-        },
-        isLoading: false,
-        lastFetchedAt: Date.now(),
-      });
+      if (abortIfStale('before_commit')) return;
+
+      const currentState = get();
+      const nextEvents = areEventArraysShallowEqual(currentState.events, clusterSourceEvents)
+        ? currentState.events
+        : clusterSourceEvents;
+      const nextViewportEvents = areEventArraysShallowEqual(currentState.viewportEvents, viewportEvents)
+        ? currentState.viewportEvents
+        : viewportEvents;
+      const nextOutsideViewportEvents = areEventArraysShallowEqual(
+        currentState.outsideViewportEvents,
+        outsideViewportEvents
+      ) ? currentState.outsideViewportEvents : outsideViewportEvents;
+      const nextOnScreenEvents = areEventArraysShallowEqual(currentState.onScreenEvents, onScreenEvents)
+        ? currentState.onScreenEvents
+        : onScreenEvents;
+      const nextFilteredEvents = areEventArraysShallowEqual(currentState.filteredEvents, filtered)
+        ? currentState.filteredEvents
+        : filtered;
+      const eventProjectionChanged =
+        nextEvents !== currentState.events ||
+        nextViewportEvents !== currentState.viewportEvents ||
+        nextOutsideViewportEvents !== currentState.outsideViewportEvents ||
+        nextOnScreenEvents !== currentState.onScreenEvents ||
+        nextFilteredEvents !== currentState.filteredEvents;
+      const bboxChanged = !areBoundingBoxesEqual(currentState.viewportBbox, bbox);
+      const storeCommitNeeded = eventProjectionChanged || bboxChanged || currentState.isLoading;
+
+      if (storeCommitNeeded) {
+        set({
+          events: nextEvents,
+          viewportEvents: nextViewportEvents,
+          outsideViewportEvents: nextOutsideViewportEvents,
+          onScreenEvents: nextOnScreenEvents,
+          filteredEvents: nextFilteredEvents,
+          viewportBbox: bbox,
+          viewportMetadata: {
+            wasCapped: false,
+            viewportCount: viewportEvents.length,
+            outsideViewportCount: outsideViewportEvents.length,
+            lastFetchTimestamp: new Date().toISOString(),
+          },
+          isLoading: false,
+          lastFetchedAt: Date.now(),
+        });
+      } else {
+        traceMapEvent('viewport_store_commit_skipped', {
+          requestId,
+          source: options.source ?? 'unspecified',
+          reason: 'equivalent_projection',
+          ...getMapStateTraceCounts(get()),
+        }, { gestureSessionId: traceGestureSessionId });
+      }
 
       traceMapEvent('viewport_store_committed', {
         elapsedMs: MAP_TRACE_ENABLED ? mapTraceNow() - traceStartedAt : 0,
+        committed: storeCommitNeeded,
         events: get().events.length,
         viewportEvents: get().viewportEvents.length,
         outsideViewportEvents: get().outsideViewportEvents.length,
@@ -1935,7 +2109,10 @@ refreshPrivateSharedEventsFromServer: async (privateEventIds?: string[]) => {
         clustersBeforeGeneration: get().clusters.length,
       }, { gestureSessionId: traceGestureSessionId });
 
-      get().generateClusters(get().zoomLevel);
+      if (nextFilteredEvents !== currentState.filteredEvents) {
+        filtersChanged = true;
+        get().generateClusters(get().zoomLevel);
+      }
       traceMapEvent('viewport_fetch_completed', {
         durationMs: MAP_TRACE_ENABLED ? mapTraceNow() - traceStartedAt : 0,
         events: get().events.length,
@@ -1949,6 +2126,7 @@ refreshPrivateSharedEventsFromServer: async (privateEventIds?: string[]) => {
         clusters: get().clusters.length,
       });
     } catch (error) {
+      if (abortIfStale('error')) return;
       const errorMsg = error instanceof Error ? error.message : 'Unknown viewport fetch error';
       console.error('[MapStore] Viewport fetch error:', errorMsg);
       set({
@@ -1975,10 +2153,12 @@ refreshPrivateSharedEventsFromServer: async (privateEventIds?: string[]) => {
    * Set viewport bounding box
    */
   setViewportBbox: (bbox: { west: number; south: number; east: number; north: number }) => {
+    if (areBoundingBoxesEqual(get().viewportBbox, bbox)) return;
     set({ viewportBbox: bbox });
   },
 
   setOnScreenEvents: (events: Event[]) => {
+    if (areEventArraysShallowEqual(get().onScreenEvents, events)) return;
     set({ onScreenEvents: events });
   },
 
@@ -2304,6 +2484,7 @@ fetchEventDetails: async (eventIds: (string | number)[]) => {
     const mapRenderableEvents = filteredEvents
       .filter(isMapRenderableEvent)
       .filter((event) => isEventDefaultMapEligibleMeasured(event, timeContext));
+    updateMapProjectionSignature(createMapProjectionSignature(filteredEvents, timeContext));
     const eligibilityDurationMs = MAP_TRACE_ENABLED ? mapTraceNow() - eligibilityStartedAt : 0;
 
     const groupingStartedAt = MAP_TRACE_ENABLED ? mapTraceNow() : 0;
@@ -2454,9 +2635,20 @@ if (DEBUG_MAP_LOAD) {
   }
 }
 
-set({ clusters });
+const previousClusters = get().clusters;
+const clusterCommitSkipped = areClusterProjectionsEqual(clusters, previousClusters);
+if (!clusterCommitSkipped) {
+  set({ clusters });
+} else {
+  traceMapEvent('cluster_store_commit_skipped', {
+    reason: 'equivalent_projection',
+    zoom: currentZoom,
+    clusters: previousClusters.length,
+  }, { gestureSessionId: traceGestureSessionId });
+}
 traceMapEvent('cluster_store_committed', {
   durationMs: MAP_TRACE_ENABLED ? mapTraceNow() - traceStartedAt : 0,
+  committed: !clusterCommitSkipped,
   zoom: currentZoom,
   events: get().events.length,
   viewportEvents: get().viewportEvents.length,

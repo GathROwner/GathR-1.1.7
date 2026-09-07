@@ -138,6 +138,10 @@ import {
   markTabTracePhase,
 } from '../../utils/tabSwitchTrace';
 import { registerTutorialAction, runTutorialAction } from '../../utils/tutorialActions';
+import {
+  isLatestViewportRequest,
+  reserveViewportRequestId,
+} from '../../utils/viewportRequestCoordinator';
 import { createTutorialBooleanGate } from '../../utils/tutorialBooleanGate';
 import { isTutorialCalloutPresentationReady as getTutorialCalloutPresentationReady } from '../../utils/tutorialCalloutReadiness';
 import {
@@ -5148,7 +5152,7 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
     lastViewportFetchTimeRef.current = Date.now();
     startupFallbackViewportUsedRef.current = source === 'fallback_center';
     startupViewportRecoveryAttemptedRef.current = false;
-    fetchViewportEvents(roundedBbox);
+    fetchViewportEvents(roundedBbox, { source: `startup_${source}` });
 
     if (startupViewportRecoveryTimerRef.current) {
       clearTimeout(startupViewportRecoveryTimerRef.current);
@@ -5171,7 +5175,7 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
         allEvents: state.allEvents.length,
         source,
       });
-      fetchViewportEvents(roundedBbox);
+      fetchViewportEvents(roundedBbox, { source: `startup_recovery_${source}` });
     }, 1200);
   };
 
@@ -8700,7 +8704,7 @@ const reconcileCameraStateFromMapRef = useCallback(async (source: 'map_idle' | '
       }
       lastViewportBboxRef.current = roundedBbox;
       lastViewportFetchTimeRef.current = Date.now();
-      fetchViewportEvents(roundedBbox);
+      fetchViewportEvents(roundedBbox, { source });
     }
     traceCompleted('completed', {
       requestId,
@@ -8817,6 +8821,18 @@ const handleMapMovementEnd = useCallback(() => {
   // Clear timers
   if (showTimeoutRef.current) { clearTimeout(showTimeoutRef.current); }
   if (hideCapTimeoutRef.current) { clearTimeout(hideCapTimeoutRef.current); hideCapTimeoutRef.current = null; }
+  if (viewportFetchTimeoutRef.current) {
+    clearTimeout(viewportFetchTimeoutRef.current);
+    viewportFetchTimeoutRef.current = null;
+    if (MAP_TRACE_ENABLED) {
+      gestureTraceViewportDebounceCancellationCountRef.current += 1;
+      traceMapEvent('viewport_fetch_debounce_cancelled', {
+        source: 'movement_end',
+        viewportDebounceCancellations: gestureTraceViewportDebounceCancellationCountRef.current,
+        ...getCommittedMapTraceCounts(),
+      }, { gestureSessionId });
+    }
+  }
 
   const schedulePillReturn = () => {
     traceMapEvent('map_movement_end_sync_work_completed', {
@@ -8909,7 +8925,7 @@ const handleMapMovementEnd = useCallback(() => {
         zoom,
         ...getCommittedMapTraceCounts(),
       }, { gestureSessionId });
-      fetchViewportEvents(roundedBbox);
+      fetchViewportEvents(roundedBbox, { source: 'movement_end' });
     }
     traceMapEvent('camera_reconcile_completed', {
       source: 'movement_end_cached_state',
@@ -9559,7 +9575,11 @@ Clustering refresh: keep zoom → store → recluster in sync
           viewportDebounceCancellations: gestureTraceViewportDebounceCancellationCountRef.current,
           ...getCommittedMapTraceCounts(),
         }, { gestureSessionId: gestureTraceSessionIdRef.current });
-        fetchViewportEvents(roundedBbox);
+        fetchViewportEvents(roundedBbox, {
+          source: shouldUseAndroidPriorityFetch
+            ? 'camera_priority_immediate'
+            : 'camera_throttled_immediate',
+        });
       } else {
         // DEBOUNCE: Schedule a fetch after movement stops for final accuracy
         if (Platform.OS === 'android') {
@@ -9581,6 +9601,7 @@ Clustering refresh: keep zoom → store → recluster in sync
               gestureTraceSessionIdRef.current
             )
           : null;
+        const viewportRequestId = reserveViewportRequestId();
         viewportFetchTimeoutRef.current = setTimeout(() => {
           const debounceFiredAfterMs = Date.now() - debounceScheduledAt;
           if (viewportDebounceExpectation) {
@@ -9588,6 +9609,17 @@ Clustering refresh: keep zoom → store → recluster in sync
               viewportDebounceCancellations: gestureTraceViewportDebounceCancellationCountRef.current,
               ...getCommittedMapTraceCounts(),
             });
+          }
+          if (!isLatestViewportRequest(viewportRequestId)) {
+            viewportFetchTimeoutRef.current = null;
+            traceMapEvent('viewport_fetch_stale_skipped', {
+              requestId: viewportRequestId,
+              source: 'camera_debounced',
+              stage: 'before_ref_update',
+              debounceFiredAfterMs,
+              ...getCommittedMapTraceCounts(),
+            }, { gestureSessionId: gestureTraceSessionIdRef.current });
+            return;
           }
           if (
             Platform.OS === 'android' &&
@@ -9630,7 +9662,10 @@ Clustering refresh: keep zoom → store → recluster in sync
             viewportDebounceCancellations: gestureTraceViewportDebounceCancellationCountRef.current,
             ...getCommittedMapTraceCounts(),
           }, { gestureSessionId: gestureTraceSessionIdRef.current });
-          fetchViewportEvents(roundedBbox);
+          fetchViewportEvents(roundedBbox, {
+            requestId: viewportRequestId,
+            source: 'camera_debounced',
+          });
         }, DEBOUNCE_DELAY);
       }
     }
