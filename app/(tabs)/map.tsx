@@ -139,7 +139,7 @@ import {
 } from '../../utils/tabSwitchTrace';
 import { registerTutorialAction, runTutorialAction } from '../../utils/tutorialActions';
 import {
-  isLatestViewportRequest,
+  isLatestReservedViewportRequest,
   reserveViewportRequestId,
 } from '../../utils/viewportRequestCoordinator';
 import { createTutorialBooleanGate } from '../../utils/tutorialBooleanGate';
@@ -9599,7 +9599,7 @@ Clustering refresh: keep zoom → store → recluster in sync
               ...getCommittedMapTraceCounts(),
             });
           }
-          if (!isLatestViewportRequest(viewportRequestId)) {
+          if (!isLatestReservedViewportRequest(viewportRequestId)) {
             viewportFetchTimeoutRef.current = null;
             traceMapEvent('viewport_fetch_stale_skipped', {
               requestId: viewportRequestId,

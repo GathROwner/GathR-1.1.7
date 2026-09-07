@@ -125,7 +125,8 @@ import {
   getCachedEventScheduleState,
 } from '../utils/eventScheduleStateCache';
 import {
-  isLatestViewportRequest,
+  isLatestStartedViewportRequest,
+  markViewportRequestStarted,
   reserveViewportRequestId,
 } from '../utils/viewportRequestCoordinator';
 import {
@@ -1897,7 +1898,7 @@ refreshPrivateSharedEventsFromServer: async (privateEventIds?: string[]) => {
     });
 
     const abortIfStale = (stage: string): boolean => {
-      if (isLatestViewportRequest(requestId)) return false;
+      if (isLatestStartedViewportRequest(requestId)) return false;
       traceMapEvent('viewport_fetch_stale_skipped', {
         requestId,
         source: options.source ?? 'unspecified',
@@ -1908,6 +1909,10 @@ refreshPrivateSharedEventsFromServer: async (privateEventIds?: string[]) => {
       return true;
     };
 
+    if (!markViewportRequestStarted(requestId)) {
+      abortIfStale('before_start');
+      return;
+    }
     if (abortIfStale('before_start')) return;
 
     try {

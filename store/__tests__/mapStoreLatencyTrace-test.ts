@@ -39,6 +39,7 @@ import { createLegacyTimingContract } from '../../utils/eventTiming';
 import { resetEventScheduleStateCache } from '../../utils/eventScheduleStateCache';
 import type { MapScheduleStateCaller } from '../../utils/mapTrace';
 import {
+  markViewportRequestStarted,
   reserveViewportRequestId,
   resetViewportRequestCoordinator,
 } from '../../utils/viewportRequestCoordinator';
@@ -198,7 +199,8 @@ describe('map store latency caller attribution', () => {
     const originalEvents = [event];
     useMapStore.setState({ allEvents: originalEvents, events: originalEvents });
     const staleRequestId = reserveViewportRequestId();
-    reserveViewportRequestId();
+    const replacementRequestId = reserveViewportRequestId();
+    markViewportRequestStarted(replacementRequestId);
 
     await useMapStore.getState().fetchViewportEvents(
       { west: -64, south: 46, east: -63, north: 47 },
