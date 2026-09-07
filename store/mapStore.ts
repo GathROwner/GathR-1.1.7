@@ -122,6 +122,9 @@ import {
   getEventScheduleState,
 } from '../utils/eventTiming';
 import {
+  getCachedEventScheduleState,
+} from '../utils/eventScheduleStateCache';
+import {
   MAP_TRACE_ENABLED,
   diffMapScheduleStateMetrics,
   getActiveMapTraceGestureSessionId,
@@ -541,13 +544,12 @@ const getMeasuredEventScheduleState = (
   traceCaller: MapScheduleStateCaller = 'map_filtering'
 ): ReturnType<typeof getEventScheduleState> => {
   const now = eventTimeContextToDate(context);
-  if (!MAP_TRACE_ENABLED) {
-    return getEventScheduleState(event, now);
-  }
-
-  return measureMapScheduleState(
-    traceCaller,
-    () => getEventScheduleState(event, now)
+  return getCachedEventScheduleState(
+    event,
+    now,
+    () => MAP_TRACE_ENABLED
+      ? measureMapScheduleState(traceCaller, () => getEventScheduleState(event, now))
+      : getEventScheduleState(event, now)
   );
 };
 
@@ -577,16 +579,14 @@ export const getEventTimeStatusFast = (
   return 'future';
 };
 
-const isEventDefaultMapEligibleMeasured = (event: Event): boolean => {
-  if (!MAP_TRACE_ENABLED) {
-    return getEventScheduleState(event).defaultMapEligible;
-  }
-
-  return measureMapScheduleState(
-    'default_map_eligibility',
-    () => getEventScheduleState(event)
-  ).defaultMapEligible;
-};
+const isEventDefaultMapEligibleMeasured = (
+  event: Event,
+  context: EventTimeContext = createEventTimeContext()
+): boolean => getMeasuredEventScheduleState(
+  event,
+  context,
+  'default_map_eligibility'
+).defaultMapEligible;
 
 const isEventPastMeasured = (
   event: Event,
@@ -761,138 +761,95 @@ const filterEvents = (events: Event[], criteria: FilterCriteria): Event[] => {
   return filteredEvents;
 };
 
+type TimeFilterCounts = { [key in TimeFilterType]: number };
+type CategoryFilterCounts = { [category: string]: number };
+type FilterCountBundle = Record<
+  'event' | 'special',
+  { time: TimeFilterCounts; category: CategoryFilterCounts }
+>;
+
+const createEmptyTimeFilterCounts = (): TimeFilterCounts => ({
+  [TimeFilterType.ALL]: 0,
+  [TimeFilterType.NOW]: 0,
+  [TimeFilterType.TODAY]: 0,
+  [TimeFilterType.TOMORROW]: 0,
+  [TimeFilterType.UPCOMING]: 0,
+});
+
+const eventMatchesSearch = (event: Event, searchTerm: string): boolean =>
+  !searchTerm ||
+  event.title.toLowerCase().includes(searchTerm) ||
+  event.description.toLowerCase().includes(searchTerm) ||
+  event.venue.toLowerCase().includes(searchTerm);
+
 /**
- * Calculate counts for time filter options
- * Returns counts for each time filter option given current criteria
+ * Calculate every filter-pill count in one pass. A schedule state is resolved
+ * at most once for each visible event and then shared by its time and category
+ * facets, instead of re-running the timing state machine for each pill family.
  */
-const calculateTimeFilterCounts = (
-  events: Event[], 
-  currentCriteria: FilterCriteria, 
-  eventType: 'event' | 'special'
-): { [key in TimeFilterType]: number } => {
+const calculateFilterCountBundle = (
+  events: Event[],
+  currentCriteria: FilterCriteria
+): FilterCountBundle => {
   const timeContext = createEventTimeContext();
-  const typeFilters = eventType === 'event'
-    ? currentCriteria.eventFilters
-    : currentCriteria.specialFilters;
-  const categoryFilter = typeFilters.category?.toLowerCase();
-  const searchTerm = typeFilters.search?.trim().toLowerCase();
-  const counts = {
-    [TimeFilterType.ALL]: 0,
-    [TimeFilterType.NOW]: 0,
-    [TimeFilterType.TODAY]: 0,
-    [TimeFilterType.TOMORROW]: 0,
-    [TimeFilterType.UPCOMING]: 0
+  const result: FilterCountBundle = {
+    event: { time: createEmptyTimeFilterCounts(), category: {} },
+    special: { time: createEmptyTimeFilterCounts(), category: {} },
   };
-  const traceCaller: MapScheduleStateCaller = eventType === 'event'
-    ? 'events_pill_counts'
-    : 'specials_pill_counts';
 
   for (const event of events) {
-    const isVisible =
-      (event.type === 'event' && currentCriteria.showEvents) ||
-      (event.type === 'special' && currentCriteria.showSpecials);
-
-    if (!isVisible || event.type !== eventType) continue;
-
-    if (categoryFilter && !doesEventMatchCategoryOrFacet(event, categoryFilter)) {
-      continue;
-    }
-
-    if (searchTerm) {
-      const matchesSearch =
-        event.title.toLowerCase().includes(searchTerm) ||
-        event.description.toLowerCase().includes(searchTerm) ||
-        event.venue.toLowerCase().includes(searchTerm);
-
-      if (!matchesSearch) continue;
-    }
-
-    if (isEventPastMeasured(event, timeContext, traceCaller)) continue;
-
-    counts[TimeFilterType.ALL] += 1;
-
-    const isNow = isEventNowFast(event, timeContext, traceCaller);
-    const isToday = isNow || isEventHappeningTodayFast(event, timeContext, traceCaller);
-
-    if (isNow) counts[TimeFilterType.NOW] += 1;
-    if (isToday) counts[TimeFilterType.TODAY] += 1;
-    if (getEventDateKey(event.startDate) === timeContext.tomorrowKey) {
-      counts[TimeFilterType.TOMORROW] += 1;
-    }
-    if (!isToday && !isNow) {
-      counts[TimeFilterType.UPCOMING] += 1;
-    }
-  }
-
-  
-  return counts;
-};
-
-/**
- * Calculate counts for category filter options
- * Returns counts for each category given current criteria
- */
-const calculateCategoryFilterCounts = (
-  events: Event[], 
-  currentCriteria: FilterCriteria, 
-  eventType: 'event' | 'special'
-): { [category: string]: number } => {
-  const timeContext = createEventTimeContext();
-  const typeFilters = eventType === 'event'
-    ? currentCriteria.eventFilters
-    : currentCriteria.specialFilters;
-  const searchTerm = typeFilters.search?.trim().toLowerCase();
-  
-  const counts: { [category: string]: number } = {};
-  const traceCaller: MapScheduleStateCaller = eventType === 'event'
-    ? 'events_pill_counts'
-    : 'specials_pill_counts';
-
-  for (const event of events) {
-    if (event.type !== eventType) continue;
-
+    const eventType = event.type === 'special' ? 'special' : 'event';
+    const typeResult = result[eventType];
+    const typeFilters = eventType === 'event'
+      ? currentCriteria.eventFilters
+      : currentCriteria.specialFilters;
     const facetKeys = getEventFacetKeys(event);
-    facetKeys.forEach((key) => {
-      if (counts[key] === undefined) counts[key] = 0;
-    });
 
-    const isVisible =
-      (event.type === 'event' && currentCriteria.showEvents) ||
-      (event.type === 'special' && currentCriteria.showSpecials);
+    for (const key of facetKeys) {
+      if (typeResult.category[key] === undefined) typeResult.category[key] = 0;
+    }
 
+    const isVisible = eventType === 'event'
+      ? currentCriteria.showEvents
+      : currentCriteria.showSpecials;
     if (!isVisible) continue;
 
+    const searchTerm = typeFilters.search?.trim().toLowerCase() || '';
+    if (!eventMatchesSearch(event, searchTerm)) continue;
+
+    const traceCaller: MapScheduleStateCaller = eventType === 'event'
+      ? 'events_pill_counts'
+      : 'specials_pill_counts';
     if (isEventPastMeasured(event, timeContext, traceCaller)) continue;
 
-    if (typeFilters.timeFilter === TimeFilterType.NOW) {
-      const isNow = isEventNowFast(event, timeContext, traceCaller);
-      if (!isNow) continue;
-    } else if (typeFilters.timeFilter === TimeFilterType.TODAY) {
-      const isToday = isEventHappeningTodayFast(event, timeContext, traceCaller);
-      if (!isToday) continue;
-    } else if (typeFilters.timeFilter === TimeFilterType.TOMORROW) {
-      const isTomorrow = getEventDateKey(event.startDate) === timeContext.tomorrowKey;
-      if (!isTomorrow) continue;
-    } else if (typeFilters.timeFilter === TimeFilterType.UPCOMING) {
-      const timeStatus = getEventTimeStatusFast(event, timeContext, traceCaller);
-      if (timeStatus !== 'future') continue;
+    const scheduleState = getMeasuredEventScheduleState(event, timeContext, traceCaller);
+    const isNow = scheduleState.nowEligibility === 'confirmed';
+    const isToday = scheduleState.todayEligible;
+    const isTomorrow = getEventDateKey(event.startDate) === timeContext.tomorrowKey;
+    const isUpcoming = scheduleState.code !== 'confirmed_ended' && !isToday && !isNow;
+
+    const categoryFilter = typeFilters.category?.toLowerCase();
+    if (!categoryFilter || doesEventMatchCategoryOrFacet(event, categoryFilter)) {
+      typeResult.time[TimeFilterType.ALL] += 1;
+      if (isNow) typeResult.time[TimeFilterType.NOW] += 1;
+      if (isToday) typeResult.time[TimeFilterType.TODAY] += 1;
+      if (isTomorrow) typeResult.time[TimeFilterType.TOMORROW] += 1;
+      if (isUpcoming) typeResult.time[TimeFilterType.UPCOMING] += 1;
     }
 
-    if (searchTerm) {
-      const matchesSearch =
-        event.title.toLowerCase().includes(searchTerm) ||
-        event.description.toLowerCase().includes(searchTerm) ||
-        event.venue.toLowerCase().includes(searchTerm);
+    const matchesSelectedTime =
+      typeFilters.timeFilter === TimeFilterType.ALL ||
+      (typeFilters.timeFilter === TimeFilterType.NOW && isNow) ||
+      (typeFilters.timeFilter === TimeFilterType.TODAY && isToday) ||
+      (typeFilters.timeFilter === TimeFilterType.TOMORROW && isTomorrow) ||
+      (typeFilters.timeFilter === TimeFilterType.UPCOMING && isUpcoming);
 
-      if (!matchesSearch) continue;
+    if (matchesSelectedTime) {
+      for (const key of facetKeys) typeResult.category[key] += 1;
     }
-
-    facetKeys.forEach((key) => {
-      counts[key] += 1;
-    });
   }
-  
-  return counts;
+
+  return result;
 };
 
 type FilterCountCacheEntry<T> = {
@@ -902,18 +859,16 @@ type FilterCountCacheEntry<T> = {
   result: T;
 };
 
-const timeFilterCountsCache: Partial<Record<'event' | 'special', FilterCountCacheEntry<{ [key in TimeFilterType]: number }>>> = {};
-const categoryFilterCountsCache: Partial<Record<'event' | 'special', FilterCountCacheEntry<{ [category: string]: number }>>> = {};
+let filterCountBundleCache: FilterCountCacheEntry<FilterCountBundle> | null = null;
 
 const getFilterCountMinuteKey = () => Math.floor(Date.now() / 60000);
 
-const getCachedTimeFilterCounts = (
+const getCachedFilterCountBundle = (
   events: Event[],
-  currentCriteria: FilterCriteria,
-  eventType: 'event' | 'special'
-): { [key in TimeFilterType]: number } => {
+  currentCriteria: FilterCriteria
+): FilterCountBundle => {
   const minuteKey = getFilterCountMinuteKey();
-  const cached = timeFilterCountsCache[eventType];
+  const cached = filterCountBundleCache;
 
   if (
     cached &&
@@ -924,30 +879,8 @@ const getCachedTimeFilterCounts = (
     return cached.result;
   }
 
-  const result = calculateTimeFilterCounts(events, currentCriteria, eventType);
-  timeFilterCountsCache[eventType] = { events, criteria: currentCriteria, minuteKey, result };
-  return result;
-};
-
-const getCachedCategoryFilterCounts = (
-  events: Event[],
-  currentCriteria: FilterCriteria,
-  eventType: 'event' | 'special'
-): { [category: string]: number } => {
-  const minuteKey = getFilterCountMinuteKey();
-  const cached = categoryFilterCountsCache[eventType];
-
-  if (
-    cached &&
-    cached.events === events &&
-    cached.criteria === currentCriteria &&
-    cached.minuteKey === minuteKey
-  ) {
-    return cached.result;
-  }
-
-  const result = calculateCategoryFilterCounts(events, currentCriteria, eventType);
-  categoryFilterCountsCache[eventType] = { events, criteria: currentCriteria, minuteKey, result };
+  const result = calculateFilterCountBundle(events, currentCriteria);
+  filterCountBundleCache = { events, criteria: currentCriteria, minuteKey, result };
   return result;
 };
 
@@ -1458,8 +1391,11 @@ export const useMapStore = create<MapState>((set, get) => ({
   // Do ALL processing synchronously in one batch
   const categories = Array.from(new Set(events.map(event => event.category)));
   const filtered = filterEvents(events, filterCriteria);
+  const timeContext = createEventTimeContext();
   const venues = groupEventsByVenue(
-    filtered.filter(isMapRenderableEvent).filter(isEventDefaultMapEligibleMeasured)
+    filtered
+      .filter(isMapRenderableEvent)
+      .filter((event) => isEventDefaultMapEligibleMeasured(event, timeContext))
   );
   const clusters = clusterVenues(venues, zoomLevel);
   
@@ -1535,8 +1471,11 @@ export const useMapStore = create<MapState>((set, get) => ({
     __ML_lastFilterOut = filtered.length;
 
     const clusterStartedAt = Date.now();
+    const timeContext = createEventTimeContext();
     const venues = groupEventsByVenue(
-      filtered.filter(isMapRenderableEvent).filter(isEventDefaultMapEligibleMeasured)
+      filtered
+        .filter(isMapRenderableEvent)
+        .filter((event) => isEventDefaultMapEligibleMeasured(event, timeContext))
     );
     const clusters = clusterVenues(venues, zoomLevel);
 
@@ -2361,9 +2300,10 @@ fetchEventDetails: async (eventIds: (string | number)[]) => {
     }, { gestureSessionId: traceGestureSessionId });
 
     const eligibilityStartedAt = MAP_TRACE_ENABLED ? mapTraceNow() : 0;
+    const timeContext = createEventTimeContext();
     const mapRenderableEvents = filteredEvents
       .filter(isMapRenderableEvent)
-      .filter(isEventDefaultMapEligibleMeasured);
+      .filter((event) => isEventDefaultMapEligibleMeasured(event, timeContext));
     const eligibilityDurationMs = MAP_TRACE_ENABLED ? mapTraceNow() - eligibilityStartedAt : 0;
 
     const groupingStartedAt = MAP_TRACE_ENABLED ? mapTraceNow() : 0;
@@ -2540,10 +2480,11 @@ logStartupDataTiming('generate_clusters_completed', {
 
   getClustersForZoom: (zoom) => {
     const { filteredEvents } = get();
+    const timeContext = createEventTimeContext();
     const venues = groupEventsByVenue(
       filteredEvents
         .filter(isMapRenderableEvent)
-        .filter(isEventDefaultMapEligibleMeasured)
+        .filter((event) => isEventDefaultMapEligibleMeasured(event, timeContext))
     );
     return clusterVenues(venues, zoom);
   },
@@ -2554,7 +2495,7 @@ logStartupDataTiming('generate_clusters_completed', {
   getTimeFilterCounts: (eventType: 'event' | 'special') => {
     const { onScreenEvents, filterCriteria } = get();
     // Use ONLY on-screen events - counts should reflect what's actually visible on screen
-    return getCachedTimeFilterCounts(onScreenEvents, filterCriteria, eventType);
+    return getCachedFilterCountBundle(onScreenEvents, filterCriteria)[eventType].time;
   },
 
   /**
@@ -2563,7 +2504,7 @@ logStartupDataTiming('generate_clusters_completed', {
   getCategoryFilterCounts: (eventType: 'event' | 'special') => {
     const { onScreenEvents, filterCriteria } = get();
     // Use ONLY on-screen events - counts should reflect what's actually visible on screen
-    return getCachedCategoryFilterCounts(onScreenEvents, filterCriteria, eventType);
+    return getCachedFilterCountBundle(onScreenEvents, filterCriteria)[eventType].category;
   }
 }))
 

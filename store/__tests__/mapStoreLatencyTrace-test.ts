@@ -36,6 +36,7 @@ jest.mock('supercluster', () => ({
 import type { Event } from '../../types/events';
 import { DEFAULT_FILTER_CRITERIA } from '../../types/filter';
 import { createLegacyTimingContract } from '../../utils/eventTiming';
+import type { MapScheduleStateCaller } from '../../utils/mapTrace';
 
 process.env.EXPO_PUBLIC_MAP_LATENCY_TRACE = '1';
 process.env.EXPO_PUBLIC_MAP_LATENCY_VARIANT = 'baseline';
@@ -90,7 +91,7 @@ describe('map store latency caller attribution', () => {
     jest.useRealTimers();
   });
 
-  it('attributes actual schedule-state calls to clustering and each pill type', () => {
+  it('evaluates each event once and reuses the result across clustering and pill counts', () => {
     const event = makeFutureEvent('event-one', 'event');
     const special = makeFutureEvent('special-one', 'special');
     const gestureSessionId = trace.beginMapTraceGestureSession('store_test');
@@ -108,12 +109,18 @@ describe('map store latency caller attribution', () => {
     useMapStore.getState().getTimeFilterCounts('special');
     useMapStore.getState().getCategoryFilterCounts('special');
 
-    expect(trace.getMapScheduleStateMetricSnapshot('default_map_eligibility', gestureSessionId).count).toBe(2);
-    expect(trace.getMapScheduleStateMetricSnapshot('cluster_now_today', gestureSessionId).count).toBe(4);
-    // DEFAULT_FILTER_CRITERIA is Today, so each category-count pass evaluates
-    // both expiry and today status after the three-call time-count pass.
-    expect(trace.getMapScheduleStateMetricSnapshot('events_pill_counts', gestureSessionId).count).toBe(5);
-    expect(trace.getMapScheduleStateMetricSnapshot('specials_pill_counts', gestureSessionId).count).toBe(5);
+    const evaluationCounts = [
+      'default_map_eligibility',
+      'cluster_now_today',
+      'events_pill_counts',
+      'specials_pill_counts',
+    ].map((caller) => trace.getMapScheduleStateMetricSnapshot(
+      caller as MapScheduleStateCaller,
+      gestureSessionId
+    ).count);
+
+    expect(evaluationCounts).toEqual([2, 0, 0, 0]);
+    expect(evaluationCounts.reduce((total, count) => total + count, 0)).toBe(2);
 
     const clusterCommit = trace.getMapTraceState().entries.find((entry) =>
       entry.label === 'cluster_store_committed'
@@ -123,7 +130,7 @@ describe('map store latency caller attribution', () => {
       mapRenderableEvents: 2,
       clusters: 2,
       defaultMapEligibilityCalls: 2,
-      clusterNowTodayCalls: 4,
+      clusterNowTodayCalls: 0,
     });
   });
 
@@ -133,7 +140,7 @@ describe('map store latency caller attribution', () => {
 
     useMapStore.getState().setEvents([event]);
 
-    expect(trace.getMapScheduleStateMetricSnapshot('map_filtering', gestureSessionId).count).toBe(2);
+    expect(trace.getMapScheduleStateMetricSnapshot('map_filtering', gestureSessionId).count).toBe(1);
     const filteringEntry = trace.getMapTraceState().entries.find((entry) =>
       entry.label === 'map_filtering_completed'
     );
@@ -142,7 +149,7 @@ describe('map store latency caller attribution', () => {
       details: {
         inputEvents: 1,
         outputEvents: 0,
-        scheduleCalls: 2,
+        scheduleCalls: 1,
         eventTimeFilter: 'today',
         specialTimeFilter: 'today',
       },

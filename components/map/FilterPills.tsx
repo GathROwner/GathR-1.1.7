@@ -166,9 +166,6 @@ const FilterPills = () => {
     events: getMapScheduleStateMetricSnapshot('events_pill_counts', traceGestureSessionId),
     specials: getMapScheduleStateMetricSnapshot('specials_pill_counts', traceGestureSessionId),
   });
-  // Use explicit selectors to ensure Zustand triggers re-renders when these change
-  const events = useMapStore((state) => state.events);
-  const filteredEvents = useMapStore((state) => state.filteredEvents);
   const filterCriteria = useMapStore((state) => state.filterCriteria);
   const setFilterCriteria = useMapStore((state) => state.setFilterCriteria);
   const setTypeFilters = useMapStore((state) => state.setTypeFilters);
@@ -1122,8 +1119,22 @@ React.useEffect(() => {
 
   // Calculate filtered counts from on-screen events only (using store's existing logic)
   // IMPORTANT: Recalculate when onScreenEvents or filterCriteria changes
-  const eventFilterCounts = useMemo(() => getTimeFilterCounts('event'), [onScreenEvents, filterCriteria]);
-  const specialFilterCounts = useMemo(() => getTimeFilterCounts('special'), [onScreenEvents, filterCriteria]);
+  const eventFilterCounts = useMemo(
+    () => getTimeFilterCounts('event'),
+    [filterCriteria, getTimeFilterCounts, onScreenEvents]
+  );
+  const specialFilterCounts = useMemo(
+    () => getTimeFilterCounts('special'),
+    [filterCriteria, getTimeFilterCounts, onScreenEvents]
+  );
+  const eventCategoryCounts = useMemo(
+    () => getCategoryFilterCounts('event'),
+    [filterCriteria, getCategoryFilterCounts, onScreenEvents]
+  );
+  const specialCategoryCounts = useMemo(
+    () => getCategoryFilterCounts('special'),
+    [filterCriteria, getCategoryFilterCounts, onScreenEvents]
+  );
 
   const visibleEvents = eventFilterCounts[filterCriteria.eventFilters.timeFilter];
   const visibleSpecials = specialFilterCounts[filterCriteria.specialFilters.timeFilter];
@@ -2118,7 +2129,7 @@ React.useEffect(() => {
               const newFilter = filterCriteria.eventFilters.timeFilter === timeFilter ? TimeFilterType.ALL : timeFilter;
               setTypeFilters('event', { timeFilter: newFilter });
             }}
-            counts={getTimeFilterCounts('event')}
+            counts={eventFilterCounts}
           />
         </View>
         <View style={[styles.filterSection, styles.lastFilterSection]}>
@@ -2130,7 +2141,7 @@ React.useEffect(() => {
               </TouchableOpacity>
             )}
           </View>
-          <CategoryFilterOptions type="event" counts={getCategoryFilterCounts('event')} />
+          <CategoryFilterOptions type="event" counts={eventCategoryCounts} />
         </View>
       </Animated.View>
       )}
@@ -2174,7 +2185,7 @@ React.useEffect(() => {
                   : timeFilter;
               setTypeFilters('special', { timeFilter: newFilter });
             }}
-            counts={getTimeFilterCounts('special')}
+            counts={specialFilterCounts}
           />
         </View>
         <View style={[styles.filterSection, styles.lastFilterSection]}>
@@ -2186,7 +2197,7 @@ React.useEffect(() => {
               </TouchableOpacity>
             )}
           </View>
-          <CategoryFilterOptions type="special" counts={getCategoryFilterCounts('special')} />
+          <CategoryFilterOptions type="special" counts={specialCategoryCounts} />
         </View>
       </Animated.View>
       )}
