@@ -1119,22 +1119,12 @@ React.useEffect(() => {
 
   // Calculate filtered counts from on-screen events only (using store's existing logic)
   // IMPORTANT: Recalculate when onScreenEvents or filterCriteria changes
-  const eventFilterCounts = useMemo(
-    () => getTimeFilterCounts('event'),
-    [filterCriteria, getTimeFilterCounts, onScreenEvents]
-  );
-  const specialFilterCounts = useMemo(
-    () => getTimeFilterCounts('special'),
-    [filterCriteria, getTimeFilterCounts, onScreenEvents]
-  );
-  const eventCategoryCounts = useMemo(
-    () => getCategoryFilterCounts('event'),
-    [filterCriteria, getCategoryFilterCounts, onScreenEvents]
-  );
-  const specialCategoryCounts = useMemo(
-    () => getCategoryFilterCounts('special'),
-    [filterCriteria, getCategoryFilterCounts, onScreenEvents]
-  );
+  // The store computes all four views in one cached pass. Calling the stable
+  // getters during render avoids four independent React memo lifecycles.
+  const eventFilterCounts = getTimeFilterCounts('event');
+  const specialFilterCounts = getTimeFilterCounts('special');
+  const eventCategoryCounts = getCategoryFilterCounts('event');
+  const specialCategoryCounts = getCategoryFilterCounts('special');
 
   const visibleEvents = eventFilterCounts[filterCriteria.eventFilters.timeFilter];
   const visibleSpecials = specialFilterCounts[filterCriteria.specialFilters.timeFilter];
