@@ -1,5 +1,6 @@
 import type { Event } from '../../types/events';
 import {
+  getEventScheduleLocalScalar,
   createLegacyTimingContract,
   type EventScheduleState,
 } from '../eventTiming';
@@ -42,22 +43,55 @@ const makeEvent = (): Event => {
 describe('event schedule state cache', () => {
   beforeEach(resetEventScheduleStateCache);
 
-  it('evaluates an unchanged event only once in the same minute', () => {
+  it('evaluates an unchanged event only once before its next transition', () => {
     const event = makeEvent();
-    const evaluate = jest.fn(() => scheduleState);
+    const transitionAt = getEventScheduleLocalScalar(
+      new Date('2026-09-07T23:00:00.000Z'),
+      'America/Halifax'
+    );
+    const evaluate = jest.fn(() => ({
+      ...scheduleState,
+      nextTransitionLocalScalar: transitionAt,
+    }));
     const now = new Date('2026-09-07T22:03:10.000Z');
 
-    expect(getCachedEventScheduleState(event, now, evaluate)).toBe(scheduleState);
-    expect(getCachedEventScheduleState(event, new Date('2026-09-07T22:03:59.000Z'), evaluate)).toBe(scheduleState);
+    const first = getCachedEventScheduleState(event, now, evaluate);
+    getCachedEventScheduleState(event, new Date('2026-09-07T22:59:59.000Z'), evaluate);
+    expect(first.nextTransitionLocalScalar).toBe(transitionAt);
     expect(evaluate).toHaveBeenCalledTimes(1);
   });
 
-  it('invalidates at a minute boundary', () => {
+  it('does not invalidate merely because the wall-clock minute changes', () => {
     const event = makeEvent();
     const evaluate = jest.fn(() => scheduleState);
 
     getCachedEventScheduleState(event, new Date('2026-09-07T22:03:59.000Z'), evaluate);
     getCachedEventScheduleState(event, new Date('2026-09-07T22:04:00.000Z'), evaluate);
+
+    expect(evaluate).toHaveBeenCalledTimes(1);
+  });
+
+  it('invalidates exactly when the cached state reaches its transition minute', () => {
+    const event = makeEvent();
+    const transitionTime = new Date('2026-09-07T23:00:00.000Z');
+    const transitionAt = getEventScheduleLocalScalar(transitionTime, 'America/Halifax');
+    const evaluate = jest.fn(() => ({
+      ...scheduleState,
+      nextTransitionLocalScalar: transitionAt,
+    }));
+
+    getCachedEventScheduleState(event, new Date('2026-09-07T22:59:59.000Z'), evaluate);
+    getCachedEventScheduleState(event, transitionTime, evaluate);
+
+    expect(evaluate).toHaveBeenCalledTimes(2);
+  });
+
+  it('invalidates when the local clock moves backwards', () => {
+    const event = makeEvent();
+    const evaluate = jest.fn(() => scheduleState);
+
+    getCachedEventScheduleState(event, new Date('2026-09-07T22:04:00.000Z'), evaluate);
+    getCachedEventScheduleState(event, new Date('2026-09-07T22:03:00.000Z'), evaluate);
 
     expect(evaluate).toHaveBeenCalledTimes(2);
   });

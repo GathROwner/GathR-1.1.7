@@ -1,5 +1,6 @@
 import type { Event, EventTiming } from '../types/events';
 import {
+  getEventScheduleLocalScalar,
   getEventScheduleState,
   type EventScheduleState,
 } from './eventTiming';
@@ -10,7 +11,7 @@ type ScheduleEvent = Pick<
 >;
 
 type ScheduleStateCacheEntry = {
-  minuteKey: number;
+  evaluatedLocalScalar: number;
   startDate: string;
   startTime: string;
   endDate: string;
@@ -21,24 +22,28 @@ type ScheduleStateCacheEntry = {
 
 let scheduleStateCache = new WeakMap<object, ScheduleStateCacheEntry>();
 
-const minuteKeyFor = (now: Date): number => Math.floor(now.getTime() / 60000);
-
 /**
- * Event schedule state has minute precision. Reuse one result per immutable
- * event object during that minute, while still invalidating if a caller
- * updates any legacy time scalar or replaces the v2 timing contract in place.
+ * Reuse one result per immutable event object until the event can actually
+ * cross a schedule boundary. This avoids invalidating every visible event at
+ * once on each wall-clock minute while retaining minute-accurate transitions.
  */
 export const getCachedEventScheduleState = (
   event: ScheduleEvent,
   now = new Date(),
   evaluate: () => EventScheduleState = () => getEventScheduleState(event, now)
 ): EventScheduleState => {
-  const minuteKey = minuteKeyFor(now);
+  const localScalar = getEventScheduleLocalScalar(
+    now,
+    event.timing?.timeZone || 'America/Halifax'
+  );
   const cached = scheduleStateCache.get(event);
+  const nextTransition = cached?.state.nextTransitionLocalScalar;
 
   if (
     cached &&
-    cached.minuteKey === minuteKey &&
+    Number.isFinite(localScalar) &&
+    localScalar >= cached.evaluatedLocalScalar &&
+    (!Number.isFinite(nextTransition) || localScalar < Number(nextTransition)) &&
     cached.startDate === event.startDate &&
     cached.startTime === event.startTime &&
     cached.endDate === event.endDate &&
@@ -50,7 +55,7 @@ export const getCachedEventScheduleState = (
 
   const state = evaluate();
   scheduleStateCache.set(event, {
-    minuteKey,
+    evaluatedLocalScalar: localScalar,
     startDate: event.startDate,
     startTime: event.startTime,
     endDate: event.endDate,

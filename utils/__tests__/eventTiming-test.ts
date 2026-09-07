@@ -3,6 +3,7 @@ import { formatEventTimingSummary } from '../dateUtils';
 import {
   createLegacyTimingContract,
   getCalendarEndDecision,
+  getEventScheduleLocalScalar,
   getEventScheduleState,
   getEventTimeRangeParts,
   getEventTimeRangeText,
@@ -71,6 +72,19 @@ describe('honest event timing state machine', () => {
     expect(getEventScheduleState(event, atHalifax(19, 30)).code).toBe('happening_confirmed');
     expect(getEventTimeStatusFromTiming(event, atHalifax(19, 30))).toBe('now');
     expect(getEventTimingBadge(event, atHalifax(19, 30))).toBeNull();
+  });
+
+  it('exposes only real schedule transitions as cache boundaries', () => {
+    const event = baseEvent(createLegacyTimingContract(baseEvent(null as never), { endStatus: 'observed' }));
+
+    expect(getEventScheduleState(event, atHalifax(18, 30)).nextTransitionLocalScalar).toBe(
+      getEventScheduleLocalScalar(atHalifax(19), 'America/Halifax')
+    );
+    expect(getEventScheduleState(event, atHalifax(19, 30)).nextTransitionLocalScalar).toBe(
+      getEventScheduleLocalScalar(atHalifax(20, 6), 'America/Halifax')
+    );
+    expect(getEventScheduleState(event, atHalifax(20, 6)).code).toBe('confirmed_ended');
+    expect(getEventScheduleState(event, atHalifax(20, 6)).nextTransitionLocalScalar).toBeUndefined();
   });
 
   it('uses a hidden cutoff but never displays it as an ending', () => {

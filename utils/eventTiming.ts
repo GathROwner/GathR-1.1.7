@@ -33,6 +33,11 @@ export interface EventScheduleState {
   todayEligible: boolean;
   muted: boolean;
   nextTransitionAt?: string;
+  /**
+   * Minute scalar in the event's local timezone at which this state first
+   * becomes stale. This is an internal cache boundary, not a displayed time.
+   */
+  nextTransitionLocalScalar?: number;
 }
 
 export interface EventTimingBadge {
@@ -172,6 +177,14 @@ const getZonedNow = (now: Date, timeZone: string): { dateKey: string; minutes: n
       minutes: now.getHours() * 60 + now.getMinutes(),
     });
   }
+};
+
+export const getEventScheduleLocalScalar = (
+  now: Date,
+  timeZone = 'America/Halifax'
+): number => {
+  const local = getZonedNow(now, timeZone);
+  return localScalar(local.dateKey, local.minutes);
 };
 
 const instantToLocalScalar = (instant: string, timeZone: string): number | null => {
@@ -358,18 +371,29 @@ export const getEventScheduleState = (
       : timing.schedule.end.status === 'observed' || timing.schedule.end.status === 'until_close'
         ? 'upcoming_confirmed'
         : 'upcoming_unknown_end';
+    const startDayScalar = localScalar(startDate, 0);
     return {
       code,
       nowEligibility: 'none',
       defaultMapEligible: true,
       todayEligible: zonedNow.dateKey === startDate,
       muted: false,
+      nextTransitionLocalScalar: startDayScalar > nowScalar
+        ? startDayScalar
+        : startScalar,
     };
   }
 
   if (timing.scheduleKind === 'all_day' || timing.schedule.end.status === 'all_day') {
     if (zonedNow.dateKey === displayEstimateDate) {
-      return { code: 'all_day_today', nowEligibility: 'none', defaultMapEligible: true, todayEligible: true, muted: false };
+      return {
+        code: 'all_day_today',
+        nowEligibility: 'none',
+        defaultMapEligible: true,
+        todayEligible: true,
+        muted: false,
+        nextTransitionLocalScalar: localScalar(addDays(displayEstimateDate, 1), 0),
+      };
     }
     return { code: 'confirmed_ended', nowEligibility: 'none', defaultMapEligible: false, todayEligible: false, muted: true };
   }
@@ -386,6 +410,7 @@ export const getEventScheduleState = (
         defaultMapEligible: true,
         todayEligible: true,
         muted: false,
+        nextTransitionLocalScalar: observedEndScalar + CONFIRMED_END_GRACE_MINUTES + 1,
       };
     }
     return { code: 'confirmed_ended', nowEligibility: 'none', defaultMapEligible: false, todayEligible: false, muted: true };
@@ -399,6 +424,7 @@ export const getEventScheduleState = (
         defaultMapEligible: true,
         todayEligible: true,
         muted: false,
+        nextTransitionLocalScalar: observedEndScalar + CONFIRMED_END_GRACE_MINUTES + 1,
       };
     }
     return { code: 'confirmed_ended', nowEligibility: 'none', defaultMapEligible: false, todayEligible: false, muted: true };
@@ -406,19 +432,47 @@ export const getEventScheduleState = (
 
   if (endEstimated && estimatedEndScalar !== null) {
     if (nowScalar <= estimatedEndScalar) {
-      return { code: 'expected_happening', nowEligibility: 'expected', defaultMapEligible: true, todayEligible: true, muted: false };
+      return {
+        code: 'expected_happening',
+        nowEligibility: 'expected',
+        defaultMapEligible: true,
+        todayEligible: true,
+        muted: false,
+        nextTransitionLocalScalar: estimatedEndScalar + 1,
+      };
     }
     if (zonedNow.dateKey === startDate) {
-      return { code: 'estimate_passed', nowEligibility: 'none', defaultMapEligible: false, todayEligible: true, muted: true };
+      return {
+        code: 'estimate_passed',
+        nowEligibility: 'none',
+        defaultMapEligible: false,
+        todayEligible: true,
+        muted: true,
+        nextTransitionLocalScalar: localScalar(addDays(startDate, 1), 0),
+      };
     }
     return { code: 'confirmed_ended', nowEligibility: 'none', defaultMapEligible: false, todayEligible: false, muted: true };
   }
 
   if (nowScalar <= cutoffScalar) {
-    return { code: 'started_unknown_end', nowEligibility: 'none', defaultMapEligible: true, todayEligible: true, muted: false };
+    return {
+      code: 'started_unknown_end',
+      nowEligibility: 'none',
+      defaultMapEligible: true,
+      todayEligible: true,
+      muted: false,
+      nextTransitionLocalScalar: cutoffScalar + 1,
+    };
   }
   if (zonedNow.dateKey === cutoffDate) {
-    return { code: 'unknown_cutoff_passed', nowEligibility: 'none', defaultMapEligible: false, todayEligible: true, muted: true };
+    return {
+      code: 'unknown_cutoff_passed',
+      nowEligibility: 'none',
+      defaultMapEligible: false,
+      todayEligible: true,
+      muted: true,
+      nextTransitionLocalScalar: localScalar(addDays(cutoffDate, 1), 0),
+    };
   }
   return { code: 'confirmed_ended', nowEligibility: 'none', defaultMapEligible: false, todayEligible: false, muted: true };
 };
