@@ -8763,7 +8763,7 @@ useEffect(() => {
  * Movement END:
  *  • Ends the analytics “movement session”.
  *  • Clears the hard cap timer.
- *  • Re-shows pills after a short idle delay (300ms) for a snappy feel.
+ *  • Dispatches the native pill-return animation as soon as movement ends.
  *  • Starts POST_SHOW_LOCKOUT_MS so tiny follow-up ticks can’t instantly hide.
  */
 const handleMapMovementEnd = useCallback(() => {
@@ -8819,7 +8819,10 @@ const handleMapMovementEnd = useCallback(() => {
   }
 
   // Clear timers
-  if (showTimeoutRef.current) { clearTimeout(showTimeoutRef.current); }
+  if (showTimeoutRef.current) {
+    clearTimeout(showTimeoutRef.current);
+    showTimeoutRef.current = null;
+  }
   if (hideCapTimeoutRef.current) { clearTimeout(hideCapTimeoutRef.current); hideCapTimeoutRef.current = null; }
   if (viewportFetchTimeoutRef.current) {
     clearTimeout(viewportFetchTimeoutRef.current);
@@ -8834,35 +8837,22 @@ const handleMapMovementEnd = useCallback(() => {
     }
   }
 
-  const schedulePillReturn = () => {
+  const traceMovementEndSyncWorkCompleted = () => {
     traceMapEvent('map_movement_end_sync_work_completed', {
       durationMs: mapTraceNow() - movementEndStartedAt,
       isMapMovingState: isMapMoving,
       isMapMovingRef: isMapMovingRef.current,
       ...getCommittedMapTraceCounts(),
     }, { gestureSessionId });
-    const pillReturnExpectation = MAP_TRACE_ENABLED
-      ? createMapTraceTimerExpectation(
-          'filter_pills_return',
-          300,
-          gestureSessionId
-        )
-      : null;
-    if (pillReturnExpectation) {
-      traceMapTimerScheduled(pillReturnExpectation, getCommittedMapTraceCounts());
-    }
-    showTimeoutRef.current = setTimeout(() => {
-      if (pillReturnExpectation) {
-        traceMapTimerFired(pillReturnExpectation, {
-          isMapMovingState: isMapMoving,
-          isMapMovingRef: isMapMovingRef.current,
-          ...getCommittedMapTraceCounts(),
-        });
-      }
-      showPills('movement_end');
-      postShowLockoutUntilRef.current = Date.now() + POST_SHOW_LOCKOUT_MS;
-    }, 300);
   };
+
+  traceMapEvent('filter_pills_return_immediate', {
+    isMapMovingState: isMapMoving,
+    isMapMovingRef: isMapMovingRef.current,
+    ...getCommittedMapTraceCounts(),
+  }, { gestureSessionId });
+  showPills('movement_end');
+  postShowLockoutUntilRef.current = Date.now() + POST_SHOW_LOCKOUT_MS;
 
   // Check if viewport changed during movement and fetch if needed
   const cameraState = currentCameraStateRef.current;
@@ -8870,7 +8860,7 @@ const handleMapMovementEnd = useCallback(() => {
 
   if (Platform.OS === 'android') {
     void reconcileCameraStateFromMapRef('movement_end');
-    schedulePillReturn();
+    traceMovementEndSyncWorkCompleted();
     return;
   }
 
@@ -8945,8 +8935,7 @@ const handleMapMovementEnd = useCallback(() => {
     }, { gestureSessionId });
   }
 
-  // Re-show after a short idle delay (keeps UX snappy)
-  schedulePillReturn();
+  traceMovementEndSyncWorkCompleted();
 }, [showPills, analytics, zoomLevel, isGuest, fetchViewportEvents, setZoomLevel, reconcileCameraStateFromMapRef, isLoading, clustersReadyForInteraction, processingClusterId, isMapMoving]);
 
 
