@@ -27,6 +27,7 @@ import { shouldRepublishTutorialCalloutReadiness } from '../../utils/tutorialCal
 import { createTutorialPresentationSettler } from '../../utils/tutorialPresentationSettler';
 import { runTutorialAction } from '../../utils/tutorialActions';
 import { shouldRouteTutorialCalloutBack } from '../../utils/tutorialCalloutClosing';
+import { settleCalloutCloseAttempt } from '../../utils/calloutInteractionSafety';
 import { useTutorialUiStore } from '../../store/tutorialUiStore';
 
 
@@ -2547,7 +2548,7 @@ type CalloutState = 'expanded' | 'normal' | 'minimized';
 interface EventCalloutProps {
   venues: Venue[];
   cluster: Cluster | null;
-  onClose: () => void;
+  onClose: () => boolean | void;
   onCloseStart?: () => void;
   onEventSelected?: (event: Event) => void;
   onShowRoute?: (event: Event) => void;
@@ -2921,8 +2922,6 @@ const [selectedEvent, setSelectedEvent] = useState<Event | null>(
 const lastDefaultIdRef = useRef<string | number | null>(selectedEvent?.id ?? null);
 const [calloutState, setCalloutState] = useState<CalloutState>('expanded');
 
-  const [scrollEnabled, setScrollEnabled] = useState(true);
-  
   // Track when current venue was activated for duration tracking
   const venueActivatedAtRef = useRef<number>(Date.now());
 
@@ -3938,9 +3937,32 @@ const setCalloutStateWithAnimation = (state: CalloutState) => {
   // Animated close function - slides callout down before unmounting
   const animateClose = useCallback(() => {
     if (closeAnimationStartedRef.current) {
+      traceMapEvent('event_callout_close_attempt_ignored', {
+        reason: 'close_already_started',
+        clusterId: cluster?.id ?? 'none',
+        venueCount: venues.length,
+      });
       return;
     }
     closeAnimationStartedRef.current = true;
+    traceMapEvent('event_callout_close_attempt_started', {
+      clusterId: cluster?.id ?? 'none',
+      venueCount: venues.length,
+      calloutState: currentStateRef.current,
+      staticIosPresentation: useStaticIosCalloutPresentation,
+    });
+
+    const settleCloseRequest = (result: boolean | void) => {
+      const accepted = settleCalloutCloseAttempt(result, () => {
+        closeAnimationStartedRef.current = false;
+      });
+      traceMapEvent('event_callout_close_request_settled', {
+        accepted,
+        clusterId: cluster?.id ?? 'none',
+        venueCount: venues.length,
+      });
+    };
+
     if (Platform.OS === 'android') {
       (calloutRootRef.current as any)?.setNativeProps?.({
         pointerEvents: 'none',
@@ -3955,7 +3977,7 @@ const setCalloutStateWithAnimation = (state: CalloutState) => {
     if (useStaticIosCalloutPresentation) {
       console.log('ANIMATE CLOSE - static iOS close path');
       setCompactTabRenderMode(null);
-      onClose();
+      settleCloseRequest(onClose());
       return;
     }
 
@@ -3964,7 +3986,7 @@ const setCalloutStateWithAnimation = (state: CalloutState) => {
       translateY.setValue(SCREEN_HEIGHT);
       backgroundOpacity.setValue(0);
       setCompactTabRenderMode(null);
-      onClose();
+      settleCloseRequest(onClose());
       return;
     }
 
@@ -3983,10 +4005,24 @@ const setCalloutStateWithAnimation = (state: CalloutState) => {
     ]).start(({ finished }) => {
       if (finished) {
         setCompactTabRenderMode(null);
-        onClose();
+        settleCloseRequest(onClose());
+      } else {
+        closeAnimationStartedRef.current = false;
+        traceMapEvent('event_callout_close_attempt_cancelled', {
+          clusterId: cluster?.id ?? 'none',
+          venueCount: venues.length,
+        });
       }
     });
-  }, [backgroundOpacity, onClose, onCloseStart, translateY, useStaticIosCalloutPresentation]);
+  }, [
+    backgroundOpacity,
+    cluster?.id,
+    onClose,
+    onCloseStart,
+    translateY,
+    useStaticIosCalloutPresentation,
+    venues.length,
+  ]);
 
   const isShellVerticalDrag = useCallback((gestureState: { dx: number; dy: number }) => {
     const { dx, dy } = gestureState;
@@ -4037,12 +4073,13 @@ const setCalloutStateWithAnimation = (state: CalloutState) => {
         return false;
       },
       onPanResponderGrant: () => {
-  // ⚠️ Do NOT toggle ScrollView enable/disable here.
-  // On Android, if a gesture terminates without 'release', the list can get stuck non-scrollable.
-
         translateY.stopAnimation();
         translateY.extractOffset();
-        setScrollEnabled(false);
+        traceMapEvent('event_callout_shell_pan_granted', {
+          clusterId: cluster?.id ?? 'none',
+          venueCount: venues.length,
+          calloutState: currentStateRef.current,
+        });
       },
       onPanResponderMove: (_, gestureState) => {
         // LOG: Pan gesture movement tracking
@@ -4061,11 +4098,15 @@ const setCalloutStateWithAnimation = (state: CalloutState) => {
         indicatorRotation.setValue(rotation);
       },
       onPanResponderRelease: (_, gestureState) => {
-  // Keep ScrollView state untouched; header pan shouldn't globally enable/disable inner scrolling
-
         translateY.flattenOffset();
-        setScrollEnabled(true);
         const { dy, vy } = gestureState;
+        traceMapEvent('event_callout_shell_pan_released', {
+          clusterId: cluster?.id ?? 'none',
+          venueCount: venues.length,
+          calloutState: currentStateRef.current,
+          dy,
+          vy,
+        });
         console.log('RELEASE - dy:', dy.toFixed(2), 'vy:', vy.toFixed(2), 'current state:', currentStateRef.current);
 
         // === LARGE SWIPE DOWN from ANY state → dismiss callout ===
@@ -4117,13 +4158,27 @@ const setCalloutStateWithAnimation = (state: CalloutState) => {
         }
         console.log('TARGET STATE decided:', targetState);
         setCalloutStateRef.current(targetState);
-      }
+      },
+      onPanResponderTerminationRequest: () => true,
+      onPanResponderTerminate: (_, gestureState) => {
+        translateY.flattenOffset();
+        traceMapEvent('event_callout_shell_pan_terminated', {
+          clusterId: cluster?.id ?? 'none',
+          venueCount: venues.length,
+          calloutState: currentStateRef.current,
+          dx: gestureState.dx,
+          dy: gestureState.dy,
+        });
+        setCalloutStateRef.current(currentStateRef.current);
+      },
     }),
     [
       backgroundOpacity,
+      cluster?.id,
       indicatorRotation,
       isShellVerticalDrag,
       translateY,
+      venues.length,
     ]
   );
   const panResponder = useMemo(
@@ -4677,9 +4732,27 @@ useEffect(() => {
             onTouchStart={handleTouchStart}
             onTouchEnd={handleTouchEnd}
             scrollEventThrottle={16}
-            scrollEnabled={scrollEnabled && calloutState !== 'minimized'}
+            scrollEnabled={calloutState !== 'minimized'}
             bounces={false}
             contentContainerStyle={[styles.scrollContentContainer, { paddingBottom: bottomInset }]}
+            onScrollBeginDrag={() => {
+              traceMapEvent('event_callout_content_scroll_started', {
+                clusterId: cluster?.id ?? 'none',
+                venueCount: venues.length,
+                activeTab,
+                calloutState,
+                scrollY: scrollYRef.current,
+              });
+            }}
+            onScrollEndDrag={() => {
+              traceMapEvent('event_callout_content_scroll_ended', {
+                clusterId: cluster?.id ?? 'none',
+                venueCount: venues.length,
+                activeTab,
+                calloutState,
+                scrollY: scrollYRef.current,
+              });
+            }}
             onScroll={handleContentScroll}
           >
             {activeTab === 'events' && (

@@ -51,6 +51,9 @@ describe('tutorial callout closing', () => {
   it('allows an explicit route handoff through the short callout-open guard', () => {
     expect(shouldBypassCalloutOpenGuard('route-handoff')).toBe(true);
     expect(shouldBypassCalloutOpenGuard('modal-request-close')).toBe(true);
+    expect(shouldBypassCalloutOpenGuard('callout-onClose-prop')).toBe(true);
+    expect(shouldBypassCalloutOpenGuard('bottom-tab-navigation')).toBe(true);
+    expect(shouldBypassCalloutOpenGuard('tab-repress-trigger')).toBe(true);
     expect(shouldBypassCalloutOpenGuard('tutorial-navigation')).toBe(true);
     expect(shouldBypassCalloutOpenGuard('map-press')).toBe(false);
   });

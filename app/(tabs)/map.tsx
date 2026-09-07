@@ -20,6 +20,7 @@ import * as Haptics from 'expo-haptics';
 import MapboxGL from '@rnmapbox/maps';
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import { useIsFocused } from '@react-navigation/native';
+import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import { Platform } from 'react-native';
 import { usePathname, useRouter } from 'expo-router';
 
@@ -60,6 +61,9 @@ import HotFlamePill from '../../components/map/HotFlamePill';
 
 import EventCallout from '../../components/map/EventCallout';
 import EventImageLightbox from '../../components/map/EventImageLightbox';
+import CalloutModalTabBarTouchLayer, {
+  type CalloutModalTabTarget,
+} from '../../components/map/CalloutModalTabBarTouchLayer';
 import HotspotHighlight from '../../components/map/HotspotHighlight';
 import MapTracePanel from '../../components/debug/MapTracePanel';
 import StaticDebugCallout from '../../components/map/StaticDebugCallout';
@@ -3300,6 +3304,7 @@ useEffect(() => {
   const { user } = useAuth(); // Adjust import path as needed
   const isGuest = !user;
   const router = useRouter();
+  const modalTabBarHeight = useBottomTabBarHeight();
 
   // Guest limitation hook - only for guests
   const { trackInteraction } = useGuestInteraction();
@@ -4392,6 +4397,11 @@ useEffect(() => {
       hasRenderedCallout,
       hasSelectedCalloutRendered,
       calloutLayoutReady: isRenderedCalloutLayoutReady,
+      hasPresentedCallout,
+      presentedCalloutVenueCount,
+      presentedCalloutClusterId,
+      calloutTouchCaptureMounted: hasPresentedCallout,
+      isCalloutClosingVisually,
       activeFilterPanel: activeFilterPanel ?? null,
       hasInitiallyPositioned,
       locationPermissionGranted,
@@ -4403,14 +4413,18 @@ useEffect(() => {
     clustersReady,
     clustersReadyForInteraction,
     hasSelectedCalloutRendered,
+    hasPresentedCallout,
     hasInitiallyPositioned,
     hasRenderedCallout,
     isRenderedCalloutLayoutReady,
+    isCalloutClosingVisually,
     isCalloutOpen,
     isGuest,
     isLoading,
     locationPermissionGranted,
     processingClusterId,
+    presentedCalloutClusterId,
+    presentedCalloutVenueCount,
     renderedCalloutClusterId,
     renderedCalloutVenueCount,
     selectedClusterId,
@@ -4514,6 +4528,30 @@ useEffect(() => {
       isCalloutOpen,
     });
   }, [isCalloutOpen, selectedClusterId, selectedVenueCount]);
+
+  useEffect(() => {
+    traceMapEvent(
+      hasPresentedCallout ? 'callout_modal_presented' : 'callout_modal_dismissed',
+      {
+        selectedVenueCount,
+        selectedClusterId: selectedClusterId ?? 'none',
+        renderedVenueCount: renderedCalloutVenueCount,
+        renderedClusterId: renderedCalloutClusterId ?? 'none',
+        presentedVenueCount: presentedCalloutVenueCount,
+        presentedClusterId: presentedCalloutClusterId ?? 'none',
+        isCalloutClosingVisually,
+      }
+    );
+  }, [
+    hasPresentedCallout,
+    isCalloutClosingVisually,
+    presentedCalloutClusterId,
+    presentedCalloutVenueCount,
+    renderedCalloutClusterId,
+    renderedCalloutVenueCount,
+    selectedClusterId,
+    selectedVenueCount,
+  ]);
 
   useEffect(() => {
     traceMapEvent('processing_cluster_state_changed', {
@@ -6341,13 +6379,23 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
     setAndroidAncillaryOverlaysNativeVisibility,
   ]);
 
-  const closeCallout = useCallback((reason: string) => {
+  const closeCallout = useCallback((reason: string): boolean => {
     const calloutOpenGuardRemainingMs = Math.max(0, calloutOpenTouchGuardUntilRef.current - Date.now());
     const sharedEventReturnGuardUntil = Math.max(
       sharedEventReturnGuardUntilRef.current,
       Number((globalThis as any).__gathrSharedEventReturnGuardUntil || 0)
     );
     const sharedEventReturnGuardRemainingMs = Math.max(0, sharedEventReturnGuardUntil - Date.now());
+    traceMapEvent('callout_close_request_received', {
+      reason,
+      calloutOpenGuardRemainingMs,
+      sharedEventReturnGuardRemainingMs,
+      selectedVenueCount,
+      selectedClusterId: selectedClusterId ?? 'none',
+      renderedVenueCount: renderedCalloutVenues.length,
+      renderedClusterId: renderedCalloutClusterId ?? 'none',
+      isCalloutClosingVisually: isCalloutClosingVisuallyRef.current,
+    });
     if (
       calloutOpenGuardRemainingMs > 0 &&
       !shouldBypassCalloutOpenGuard(reason)
@@ -6358,7 +6406,12 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
         selectedVenueCount,
         selectedClusterId: selectedClusterId ?? 'none',
       });
-      return;
+      traceMapEvent('callout_close_request_blocked', {
+        reason,
+        blocker: 'post_open_guard',
+        remainingMs: calloutOpenGuardRemainingMs,
+      });
+      return false;
     }
 
     if (
@@ -6375,7 +6428,12 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
         selectedVenueCount,
         selectedClusterId: selectedClusterId ?? 'none',
       });
-      return;
+      traceMapEvent('callout_close_request_blocked', {
+        reason,
+        blocker: 'shared_event_return_guard',
+        remainingMs: sharedEventReturnGuardRemainingMs,
+      });
+      return false;
     }
 
     logCalloutProbe('[CalloutProbe] closeCallout', {
@@ -6399,9 +6457,20 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
         deactivateAndroidRetapOverlay();
       }
       scheduleAndroidDeferredCalloutTeardown(reason);
-      return;
+      traceMapEvent('callout_close_request_accepted', {
+        reason,
+        platform: Platform.OS,
+        teardown: 'deferred',
+      });
+      return true;
     }
     selectVenue(null);
+    traceMapEvent('callout_close_request_accepted', {
+      reason,
+      platform: Platform.OS,
+      teardown: 'selection_cleared',
+    });
+    return true;
   }, [
     activateAndroidRetapOverlay,
     cancelPendingAndroidCalloutCameraMove,
@@ -6416,6 +6485,24 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
     selectVenue,
     trackClusterClosedOnce,
   ]);
+
+  const handleCalloutModalTabSelect = useCallback((target: CalloutModalTabTarget) => {
+    const closeAccepted = closeCallout('bottom-tab-navigation');
+    traceMapEvent('callout_modal_tab_pressed', {
+      target,
+      closeAccepted,
+      selectedVenueCount,
+      selectedClusterId: selectedClusterId ?? 'none',
+    });
+
+    if (!closeAccepted || target === 'map') {
+      return;
+    }
+
+    requestAnimationFrame(() => {
+      router.replace(target === 'events' ? '/(tabs)/events' : '/(tabs)/specials');
+    });
+  }, [closeCallout, router, selectedClusterId, selectedVenueCount]);
 
   const showRouteFromCallout = useCallback((event: Event) => {
     // Start rendering/fitting the route before hiding the nested surfaces.
@@ -10944,9 +11031,26 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
         statusBarTranslucent={true}
         hardwareAccelerated={true}
       >
-        <View style={styles.calloutModalContent}>
+        <View
+          onTouchStart={() => {
+            traceMapEvent('callout_modal_touch_received', {
+              selectedVenueCount,
+              selectedClusterId: selectedClusterId ?? 'none',
+              renderedVenueCount: renderedCalloutVenueCount,
+              renderedClusterId: renderedCalloutClusterId ?? 'none',
+              presentedVenueCount: presentedCalloutVenueCount,
+              presentedClusterId: presentedCalloutClusterId ?? 'none',
+              isCalloutClosingVisually: isCalloutClosingVisuallyRef.current,
+            });
+          }}
+          style={styles.calloutModalContent}
+        >
           {content}
           <CalloutTutorialOverlayHost />
+          <CalloutModalTabBarTouchLayer
+            height={modalTabBarHeight}
+            onSelect={handleCalloutModalTabSelect}
+          />
         </View>
       </Modal>
     );
@@ -11832,12 +11936,35 @@ Owner: Map UX stability on Android • Last validated: 2025-09-04
   style={[StyleSheet.absoluteFillObject, { zIndex: 4 }]}
   pointerEvents="auto"
   // Always capture touches so MapView doesn't receive them on Android
-  onStartShouldSetResponder={() =>
-    !isCalloutClosingVisuallyRef.current || androidRetapOverlayActiveRef.current
-  }
+  onStartShouldSetResponder={() => {
+    const shouldCapture =
+      !isCalloutClosingVisuallyRef.current || androidRetapOverlayActiveRef.current;
+    traceMapEvent('callout_touch_capture_start_decided', {
+      shouldCapture,
+      isCalloutClosingVisually: isCalloutClosingVisuallyRef.current,
+      androidRetapOverlayActive: androidRetapOverlayActiveRef.current,
+      selectedVenueCount: presentedCalloutVenueCount,
+      selectedClusterId: presentedCalloutClusterId ?? 'none',
+    });
+    return shouldCapture;
+  }}
   onMoveShouldSetResponder={() =>
     !isCalloutClosingVisuallyRef.current || androidRetapOverlayActiveRef.current
   }
+  onResponderGrant={() => {
+    traceMapEvent('callout_touch_capture_granted', {
+      selectedVenueCount: presentedCalloutVenueCount,
+      selectedClusterId: presentedCalloutClusterId ?? 'none',
+      isCalloutClosingVisually: isCalloutClosingVisuallyRef.current,
+    });
+  }}
+  onResponderTerminate={() => {
+    traceMapEvent('callout_touch_capture_terminated', {
+      selectedVenueCount: presentedCalloutVenueCount,
+      selectedClusterId: presentedCalloutClusterId ?? 'none',
+      isCalloutClosingVisually: isCalloutClosingVisuallyRef.current,
+    });
+  }}
   onResponderRelease={(event) => {
     const guardRemainingMs = Math.max(0, calloutOpenTouchGuardUntilRef.current - Date.now());
     const presentationDismissGuardRemainingMs = Math.max(
@@ -11849,6 +11976,14 @@ Owner: Map UX stability on Android • Last validated: 2025-09-04
       Number((globalThis as any).__gathrSharedEventReturnGuardUntil || 0)
     );
     const sharedEventReturnGuardRemainingMs = Math.max(0, sharedEventReturnGuardUntil - Date.now());
+    traceMapEvent('callout_touch_capture_released', {
+      guardRemainingMs,
+      presentationDismissGuardRemainingMs,
+      sharedEventReturnGuardRemainingMs,
+      selectedClusterId: presentedCalloutClusterId ?? 'none',
+      selectedVenueCount: presentedCalloutVenueCount,
+      isCalloutClosingVisually: isCalloutClosingVisuallyRef.current,
+    });
     if (
       guardRemainingMs > 0 ||
       presentationDismissGuardRemainingMs > 0 ||
@@ -11861,6 +11996,12 @@ Owner: Map UX stability on Android • Last validated: 2025-09-04
         selectedClusterId: presentedCalloutClusterId ?? 'none',
         selectedVenueCount: presentedCalloutVenueCount,
       });
+      traceMapEvent('callout_touch_capture_close_blocked', {
+        blocker: 'dismiss_guard',
+        guardRemainingMs,
+        presentationDismissGuardRemainingMs,
+        sharedEventReturnGuardRemainingMs,
+      });
       return;
     }
 
@@ -11868,6 +12009,9 @@ Owner: Map UX stability on Android • Last validated: 2025-09-04
       return;
     }
     if (isCalloutClosingVisuallyRef.current) {
+      traceMapEvent('callout_touch_capture_close_blocked', {
+        blocker: 'already_closing',
+      });
       return;
     }
     // Tapping outside the sheet intentionally closes it with animation
