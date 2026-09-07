@@ -356,6 +356,17 @@ export const subscribeToMapTrace = (listener: () => void) => {
   };
 };
 
+export const subscribeToMapTraceWhenEnabled = (
+  enabled: boolean,
+  listener: () => void
+) => {
+  if (!enabled) {
+    return () => undefined;
+  }
+
+  return subscribeToMapTrace(listener);
+};
+
 export const registerMapTraceSampler = (name: string, sampler: TraceSampler) => {
   traceSamplers.set(name, sampler);
   return () => {
@@ -427,16 +438,18 @@ export const formatMapTraceExport = (): string => {
   return lines.join('\n');
 };
 
-export const useMapTraceState = (): MapTraceState => {
+export const useMapTraceState = (enabled: boolean = true): MapTraceState => {
   const [state, setState] = useState<MapTraceState>(getMapTraceState());
 
   useEffect(() => {
-    const unsubscribe = subscribeToMapTrace(() => {
+    if (enabled) {
+      setState(getMapTraceState());
+    }
+
+    return subscribeToMapTraceWhenEnabled(enabled, () => {
       setState(getMapTraceState());
     });
-
-    return unsubscribe;
-  }, []);
+  }, [enabled]);
 
   return state;
 };

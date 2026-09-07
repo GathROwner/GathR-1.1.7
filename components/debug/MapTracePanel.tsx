@@ -32,7 +32,7 @@ const formatEntryDetails = (details?: Record<string, string | number | boolean |
 };
 
 export default function MapTracePanel({ visible, onClose }: MapTracePanelProps) {
-  const { entries, snapshot } = useMapTraceState();
+  const { entries, snapshot } = useMapTraceState(visible);
 
   if (!MAP_TRACE_UI_ENABLED) {
     return null;

@@ -119,6 +119,10 @@ import {
   traceMapTimerScheduled,
 } from '../../utils/mapTrace';
 import {
+  shouldReconcileAndroidMapIdle,
+  shouldRefreshBeaconProjection,
+} from '../../utils/mapIdleReconciliation';
+import {
   cacheStartupLocation,
   DEVICE_LAST_KNOWN_REQUIRED_ACCURACY_METERS,
   getPreloadedStartupLocationSnapshot,
@@ -4657,6 +4661,7 @@ const hideCapTimeoutRef = useRef<NodeJS.Timeout | null>(null); // force-show cap
 
 const lastCameraChangeRef = useRef<number>(0);
 const lastMapIdleAtRef = useRef<number>(0);
+const lastSuccessfulCameraReconcileChangeAtRef = useRef<number>(-1);
 const lastViewportFetchZoomRef = useRef<number | null>(null);
 const gestureTraceSessionIdRef = useRef<string | null>(null);
 const gestureTraceNativeActiveRef = useRef(false);
@@ -8562,6 +8567,22 @@ const reconcileCameraStateFromMapRef = useCallback(async (source: 'map_idle' | '
     return;
   }
 
+  const cameraChangeAtRequest = lastCameraChangeRef.current;
+  if (
+    source === 'map_idle' &&
+    !shouldReconcileAndroidMapIdle({
+      hasCurrentCameraState: currentCameraStateRef.current !== null,
+      lastCameraChangeAt: cameraChangeAtRequest,
+      lastSuccessfulReconcileCameraChangeAt: lastSuccessfulCameraReconcileChangeAtRef.current,
+    })
+  ) {
+    traceCompleted('no_new_camera_change', {
+      cameraChangeAtRequest,
+      lastSuccessfulCameraReconcileChangeAt: lastSuccessfulCameraReconcileChangeAtRef.current,
+    });
+    return;
+  }
+
   const mapView = mapRef.current as any;
   if (
     !mapView ||
@@ -8652,6 +8673,10 @@ const reconcileCameraStateFromMapRef = useCallback(async (source: 'map_idle' | '
       zoom: effectiveClusterZoom,
       visibleBbox: nativeVisibleBbox,
     };
+    lastSuccessfulCameraReconcileChangeAtRef.current = Math.max(
+      lastSuccessfulCameraReconcileChangeAtRef.current,
+      cameraChangeAtRequest
+    );
     previousCenterRef.current = centerArr;
     lastZoomLevel.current = effectiveClusterZoom;
 
@@ -8696,6 +8721,15 @@ const reconcileCameraStateFromMapRef = useCallback(async (source: 'map_idle' | '
 
     const bboxChanged = !lastViewportBboxRef.current ||
       JSON.stringify(roundedBbox) !== JSON.stringify(lastViewportBboxRef.current);
+
+    if (shouldRefreshBeaconProjection({ bboxChanged, cameraMovedMeaningfully })) {
+      setBeaconProjectionEpoch((epoch) => epoch + 1);
+      traceMapEvent('beacon_projection_refreshed', {
+        source,
+        bboxChanged,
+        cameraMovedMeaningfully,
+      }, { gestureSessionId });
+    }
 
     if (bboxChanged && (userGestureSeenRef.current || lastViewportBboxRef.current !== null)) {
       if (viewportFetchTimeoutRef.current) {
@@ -11058,7 +11092,6 @@ onMapIdle={() => {
     ) {
       tutorialResolverAtIdle();
     }
-    setBeaconProjectionEpoch((epoch) => epoch + 1);
   });
   if (DEBUG_MAP_LOAD) {
     const t1b = Date.now();

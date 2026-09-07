@@ -148,4 +148,31 @@ describe('bounded map latency diagnostics', () => {
     expect(observedStates[0].entries.map((entry) => entry.label)).toEqual(['first']);
     expect(observedStates[1].entries.map((entry) => entry.label)).toEqual(['first', 'second']);
   });
+
+  it('does not notify a hidden trace panel subscriber', () => {
+    jest.spyOn(globalThis.performance, 'now').mockReturnValue(1);
+    const trace = loadEnabledTrace();
+    const listener = jest.fn();
+    const unsubscribe = trace.subscribeToMapTraceWhenEnabled(false, listener);
+
+    trace.traceMapEvent('hidden_panel_event');
+    unsubscribe();
+
+    expect(listener).not.toHaveBeenCalled();
+    expect(trace.getMapTraceState().entries.map((entry) => entry.label)).toEqual([
+      'hidden_panel_event',
+    ]);
+  });
+
+  it('notifies an enabled trace panel subscriber', () => {
+    jest.spyOn(globalThis.performance, 'now').mockReturnValue(1);
+    const trace = loadEnabledTrace();
+    const listener = jest.fn();
+    const unsubscribe = trace.subscribeToMapTraceWhenEnabled(true, listener);
+
+    trace.traceMapEvent('visible_panel_event');
+    unsubscribe();
+
+    expect(listener).toHaveBeenCalledTimes(1);
+  });
 });
