@@ -332,28 +332,30 @@ export default function FriendsScreen() {
 
           <View style={styles.handleCard}>
             <ProfileAvatar profile={currentProfile} size={44} />
-            <View style={styles.handleSummary}>
-              <Text maxFontSizeMultiplier={1.15} style={styles.eyebrow}>YOUR HANDLE</Text>
-              <Text maxFontSizeMultiplier={1.15} numberOfLines={1} style={styles.claimedHandle}>
-                {claimedHandle ? `@${claimedHandle}` : 'Claim a searchable handle'}
-              </Text>
-            </View>
-            <View style={styles.handleActions}>
-              {claimedHandle && (
-                <TouchableOpacity accessibilityLabel="Show friend QR code" accessibilityRole="button" onPress={() => setShareModalVisible(true)} style={styles.compactButton}>
-                  <Ionicons name="qr-code-outline" size={18} color="#6941C6" />
-                  <Text maxFontSizeMultiplier={1.1} style={styles.shareActionText}>Share</Text>
+            <View style={styles.handleBody}>
+              <View style={styles.handleSummary}>
+                <Text maxFontSizeMultiplier={1.15} style={styles.eyebrow}>YOUR HANDLE</Text>
+                <Text maxFontSizeMultiplier={1.15} style={styles.claimedHandle}>
+                  {claimedHandle ? `@${claimedHandle}` : 'Claim a searchable handle'}
+                </Text>
+              </View>
+              <View style={styles.handleActions}>
+                {claimedHandle && (
+                  <TouchableOpacity accessibilityLabel="Show friend QR code" accessibilityRole="button" onPress={() => setShareModalVisible(true)} style={styles.compactButton}>
+                    <Ionicons name="qr-code-outline" size={18} color="#6941C6" />
+                    <Text maxFontSizeMultiplier={1.1} style={styles.shareActionText}>Share</Text>
+                  </TouchableOpacity>
+                )}
+                <TouchableOpacity
+                  accessibilityLabel={claimedHandle ? 'Edit GathR handle' : 'Claim GathR handle'}
+                  accessibilityRole="button"
+                  onPress={() => setHandleModalVisible(true)}
+                  style={styles.compactButton}
+                >
+                  <Ionicons name={claimedHandle ? 'pencil' : 'add'} size={17} color="#175CD3" />
+                  <Text maxFontSizeMultiplier={1.1} style={styles.actionText}>{claimedHandle ? 'Edit' : 'Claim'}</Text>
                 </TouchableOpacity>
-              )}
-              <TouchableOpacity
-                accessibilityLabel={claimedHandle ? 'Edit GathR handle' : 'Claim GathR handle'}
-                accessibilityRole="button"
-                onPress={() => setHandleModalVisible(true)}
-                style={styles.compactButton}
-              >
-                <Ionicons name={claimedHandle ? 'pencil' : 'add'} size={17} color="#175CD3" />
-                <Text maxFontSizeMultiplier={1.1} style={styles.actionText}>{claimedHandle ? 'Edit' : 'Claim'}</Text>
-              </TouchableOpacity>
+              </View>
             </View>
           </View>
 
@@ -610,9 +612,10 @@ const styles = StyleSheet.create({
   title: { fontSize: 24, fontWeight: '800', color: '#101828' },
   subtitle: { marginTop: 1, color: '#667085', lineHeight: 18 },
   content: { flex: 1, padding: 12, gap: 10, minHeight: 0 },
-  handleCard: { minHeight: 60, flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: '#FFF', borderRadius: 14, paddingHorizontal: 14, paddingVertical: 9, borderWidth: StyleSheet.hairlineWidth, borderColor: '#E4E7EC' },
-  handleSummary: { flex: 1, minWidth: 0 },
-  handleActions: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  handleCard: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, backgroundColor: '#FFF', borderRadius: 14, paddingHorizontal: 14, paddingVertical: 9, borderWidth: StyleSheet.hairlineWidth, borderColor: '#E4E7EC' },
+  handleBody: { flex: 1, minWidth: 0, gap: 7 },
+  handleSummary: { minWidth: 0 },
+  handleActions: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6 },
   eyebrow: { color: '#667085', fontSize: 11, fontWeight: '800', letterSpacing: 0.7 },
   claimedHandle: { color: '#101828', fontSize: 17, fontWeight: '700', marginTop: 1 },
   compactButton: { minHeight: 40, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, paddingHorizontal: 11, borderRadius: 10, backgroundColor: '#EFF8FF' },
