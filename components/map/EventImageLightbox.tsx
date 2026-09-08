@@ -91,6 +91,7 @@ import {
 import { useSocialStore } from '../../store/socialStore';
 import { inviteToFriendEvent, respondToFriendEvent } from '../../services/socialService';
 import type { FriendEventRsvp } from '../../types/social';
+import { getEventLightboxLayout } from '../../utils/eventLightboxLayout';
 
 // Store imports for like/share functionality
 import * as userService from '../../services/userService';
@@ -111,8 +112,6 @@ import { RegistrationPrompt } from '../RegistrationPrompt';
 import { useGuestLimitationStore } from '../../store/guestLimitationStore';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
-const APP_HEADER_HEIGHT = Platform.OS === 'ios' ? 44 : 56;
-const LIGHTBOX_HEADER_SEAM_OVERLAP = Platform.OS === 'ios' ? 5 : 0;
 
 // Is the given YYYY-MM-DD strictly in the future (date-only)?
 function isFutureDate(dateStr?: string) {
@@ -231,12 +230,14 @@ const EventImageLightbox: React.FC<EventImageLightboxProps> = ({
   const safeAreaInsets = useSafeAreaInsets();
   const tabBarHeight = useBottomTabBarHeight();
   const { height: windowHeight } = useWindowDimensions();
-  const lightboxTop = Math.max(
-    0,
-    safeAreaInsets.top + APP_HEADER_HEIGHT - LIGHTBOX_HEADER_SEAM_OVERLAP
-  );
-  const lightboxHeight = Math.max(0, windowHeight - lightboxTop - tabBarHeight);
-  const imageHeight = Math.min(windowHeight * 0.35, lightboxHeight * 0.45);
+  const {
+    panelTop: lightboxTop,
+    imageHeight,
+  } = getEventLightboxLayout({
+    windowHeight,
+    safeAreaTop: safeAreaInsets.top,
+    tabBarHeight,
+  });
   // Add store subscription to get fresh event data
   const storeEvents = useMapStore((state) => state.events);
   
