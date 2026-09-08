@@ -6,15 +6,14 @@ import {
   Pressable,
   ActivityIndicator,
   Alert,
-  SafeAreaView,
-  Animated,
-  Dimensions
+  SafeAreaView
 } from 'react-native';
-import { useRouter, useLocalSearchParams } from 'expo-router';
+import { Stack, useRouter, useLocalSearchParams } from 'expo-router';
 import { auth, firestore } from '../config/firebaseConfig';
 import { doc, getDoc, updateDoc } from 'firebase/firestore';
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import { EVENT_CATEGORIES, SPECIAL_CATEGORIES } from '../constants/eventCategories';
+import { normalizeUserInterests } from '../utils/interestSelectionUtils';
 
 // Define the interest categories (matching InterestFilterPills icon mapping)
 const CATEGORY_ICON: Record<string, { icon: string; iconLib: string }> = {
@@ -35,38 +34,23 @@ const CATEGORY_ICON: Record<string, { icon: string; iconLib: string }> = {
 const EVENT_INTERESTS = EVENT_CATEGORIES.map((name) => ({ name, ...CATEGORY_ICON[name] }));
 const SPECIAL_INTERESTS = SPECIAL_CATEGORIES.map((name) => ({ name, ...CATEGORY_ICON[name] }));
 
-// Get screen dimensions to calculate button sizes and optimize layout
-const { width } = Dimensions.get('window');
-const BUTTON_MARGIN = 4;
-const COLUMN_COUNT = 3;
-const BUTTON_WIDTH = (width - 40 - (COLUMN_COUNT * 2 * BUTTON_MARGIN)) / COLUMN_COUNT;
-
 export default function InterestSelection() {
   const [selectedInterests, setSelectedInterests] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [scaleAnim] = useState(new Animated.Value(1));
   const router = useRouter();
   const params = useLocalSearchParams();
   
   // Check if we came from profile using the URL parameter
   const isFromProfile = params.fromProfile === 'true';
 
-  // Animation when selecting interests
-  const animateSelection = () => {
-    Animated.sequence([
-      Animated.timing(scaleAnim, {
-        toValue: 1.03,
-        duration: 100,
-        useNativeDriver: true,
-      }),
-      Animated.timing(scaleAnim, {
-        toValue: 1,
-        duration: 100,
-        useNativeDriver: true,
-      })
-    ]).start();
-  };
+  const selectedEventCount = selectedInterests.filter((item) =>
+    EVENT_INTERESTS.some((event) => event.name === item)
+  ).length;
+  const selectedSpecialCount = selectedInterests.filter((item) =>
+    SPECIAL_INTERESTS.some((special) => special.name === item)
+  ).length;
+  const selectedInterestCount = selectedEventCount + selectedSpecialCount;
 
   // 🎯 TUTORIAL INTEGRATION: Function to trigger tutorial for new users
   const triggerTutorialIfNeeded = () => {
@@ -114,9 +98,7 @@ export default function InterestSelection() {
         
         if (userDoc.exists()) {
           const userData = userDoc.data();
-          if (userData.userInterests && Array.isArray(userData.userInterests)) {
-            setSelectedInterests(userData.userInterests);
-          }
+          setSelectedInterests(normalizeUserInterests(userData.userInterests));
         }
       } catch (error) {
         console.error('Error fetching user interests:', error);
@@ -129,7 +111,6 @@ export default function InterestSelection() {
   }, [router]);
 
   const toggleInterest = (interest: string) => {
-    animateSelection();
     setSelectedInterests(prev => 
       prev.includes(interest)
         ? prev.filter(item => item !== interest)
@@ -142,7 +123,9 @@ export default function InterestSelection() {
   };
 
   const saveInterests = async () => {
-    if (selectedInterests.length === 0) {
+    const normalizedInterests = normalizeUserInterests(selectedInterests);
+
+    if (normalizedInterests.length === 0) {
       Alert.alert(
         'Select Interests',
         'Please select at least one interest to continue.',
@@ -167,7 +150,7 @@ export default function InterestSelection() {
       
       if (userDoc.exists()) {
         await updateDoc(userRef, {
-          userInterests: selectedInterests,
+          userInterests: normalizedInterests,
           lastUpdated: new Date()
         });
         
@@ -213,44 +196,52 @@ export default function InterestSelection() {
 
   const renderInterestButton = (interestItem: { name: string, icon: string, iconLib: string }) => {
     const isSelected = isInterestSelected(interestItem.name);
-
     const IconComponent = interestItem.iconLib === 'Ionicons' ? Ionicons : MaterialIcons;
+    const isWide = [
+      'Workshops & Classes',
+      'Family Friendly',
+      'Gatherings & Parties',
+    ].includes(interestItem.name);
 
     return (
       <Pressable
         key={interestItem.name}
-        style={[
+        style={({ pressed }) => [
           styles.interestButton,
+          isWide && styles.wideInterestButton,
           isSelected && styles.selectedInterestButton,
-          { width: BUTTON_WIDTH }
+          pressed && styles.pressedInterestButton,
         ]}
         onPress={() => toggleInterest(interestItem.name)}
         accessibilityRole="checkbox"
-        accessibilityLabel={interestItem.name}
         accessibilityState={{ checked: isSelected }}
+        accessibilityLabel={interestItem.name}
       >
-        <IconComponent
-          name={interestItem.icon as any}
-          size={14}
-          color={isSelected ? '#FFFFFF' : '#4A90E2'}
-          style={styles.interestIcon}
-        />
-        <Text
-          maxFontSizeMultiplier={1.1}
-          style={[
-            styles.interestButtonText,
-            isSelected && styles.selectedInterestButtonText,
-          ]}
-          adjustsFontSizeToFit
-          minimumFontScale={0.72}
-          numberOfLines={2}
-        >
-          {interestItem.name}
-        </Text>
-        {isSelected && (
-          <View style={styles.checkmarkContainer}>
-            <Ionicons name="checkmark-circle" size={14} color="#FFFFFF" />
+        <View style={styles.interestContent}>
+          <View style={[styles.interestIconBadge, isSelected && styles.selectedInterestIconBadge]}>
+            <IconComponent
+              name={interestItem.icon as any}
+              size={18}
+              color={isSelected ? '#FFFFFF' : '#607A95'}
+            />
           </View>
+          <Text
+            style={[
+              styles.interestButtonText,
+              isSelected && styles.selectedInterestButtonText,
+            ]}
+            numberOfLines={2}
+          >
+            {interestItem.name}
+          </Text>
+        </View>
+        {isSelected && (
+          <Ionicons
+            name="checkmark-circle"
+            size={16}
+            color="#FFFFFF"
+            style={styles.interestCheck}
+          />
         )}
       </Pressable>
     );
@@ -266,89 +257,133 @@ export default function InterestSelection() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.screenContent}>
-        {/* Progress indicator */}
-        {!isFromProfile && <View style={styles.progressContainer}>
-          <View style={styles.progressStep}>
-            <View style={[styles.progressDot, styles.completedDot]} />
-            <Text style={styles.progressText}>Account</Text>
+      <Stack.Screen
+        options={{
+          title: isFromProfile ? 'Edit interests' : 'Choose interests',
+          headerBackTitle: 'Back',
+          headerShadowVisible: false,
+          headerStyle: { backgroundColor: '#FFFFFF' },
+          headerTitleStyle: {
+            color: '#172235',
+            fontSize: 18,
+            fontWeight: '700',
+          },
+        }}
+      />
+      <View style={styles.scrollContent}>
+        {!isFromProfile && (
+          <View style={styles.onboardingCard}>
+            <View style={styles.onboardingTopRow}>
+              <View>
+                <Text style={styles.eyebrow}>STEP 2 OF 3</Text>
+                <Text style={styles.onboardingTitle}>Your interests</Text>
+              </View>
+              <View style={styles.stepBadge}>
+                <Text style={styles.stepBadgeText}>2/3</Text>
+              </View>
+            </View>
+            <View style={styles.progressTrack}>
+              <View style={styles.progressFill} />
+            </View>
+            <View style={styles.progressLabels}>
+              <Text style={styles.progressLabelComplete}>Account complete</Text>
+              <Text style={styles.progressLabelNext}>Explore next</Text>
+            </View>
           </View>
-          <View style={styles.progressLine} />
-          <View style={styles.progressStep}>
-            <View style={[styles.progressDot, styles.activeDot]} />
-            <Text style={[styles.progressText, styles.activeText]}>Interests</Text>
-          </View>
-          <View style={styles.progressLine} />
-          <View style={styles.progressStep}>
-            <View style={styles.progressDot} />
-            <Text style={styles.progressText}>Explore</Text>
-          </View>
-        </View>}
+        )}
 
         <View style={styles.header}>
-          <View style={styles.titleRow}>
-            <Text maxFontSizeMultiplier={1.15} numberOfLines={1} style={styles.title}>{isFromProfile ? 'Your interests' : 'Personalize GathR'}</Text>
-            <Animated.View style={[styles.selectionBadge, { transform: [{ scale: scaleAnim }] }]}>
-              <Text maxFontSizeMultiplier={1.05} style={[styles.selectionBadgeText, selectedInterests.length > 0 && styles.activeSelectionCount]}>{selectedInterests.length} selected</Text>
-            </Animated.View>
+          <View style={styles.heroCopy}>
+            {!isFromProfile && <Text style={styles.heroEyebrow}>PERSONALIZE YOUR DISCOVERY</Text>}
+            <Text style={styles.title}>What are you into?</Text>
+            <Text style={styles.subtitle}>
+              Pick anything. GathR will tune what you see first.
+            </Text>
           </View>
-          <Text maxFontSizeMultiplier={1.1} numberOfLines={2} style={styles.subtitle}>
-            Choose what you want to see in events and specials.
+          <View style={styles.totalCountBlock}>
+            <Text style={styles.totalCountNumber}>{selectedInterestCount}</Text>
+            <Text style={styles.totalCountLabel}>selected</Text>
+          </View>
+        </View>
+
+        <View style={[styles.sectionCard, styles.eventsCanvas]}>
+          <View style={styles.sectionHeader}>
+            <View style={styles.sectionHeadingGroup}>
+              <Ionicons name="compass" size={18} color="#1479D3" />
+              <Text style={styles.sectionTitle}>Find something to do</Text>
+            </View>
+            <View style={[styles.sectionCountBadge, selectedEventCount > 0 && styles.activeSectionCountBadge]}>
+              <Text style={[styles.sectionCountText, selectedEventCount > 0 && styles.activeSectionCountText]}>
+                {selectedEventCount}/{EVENT_INTERESTS.length}
+              </Text>
+            </View>
+          </View>
+          <View style={styles.interestGrid}>
+            {EVENT_INTERESTS.map(renderInterestButton)}
+          </View>
+        </View>
+
+        <View style={[styles.sectionCard, styles.specialsCanvas]}>
+          <View style={styles.sectionHeader}>
+            <View style={styles.sectionHeadingGroup}>
+              <Ionicons name="pricetag" size={18} color="#A56717" />
+              <Text style={styles.sectionTitle}>Offers for you</Text>
+            </View>
+            <View style={[styles.sectionCountBadge, selectedSpecialCount > 0 && styles.activeSectionCountBadge]}>
+              <Text style={[styles.sectionCountText, selectedSpecialCount > 0 && styles.activeSectionCountText]}>
+                {selectedSpecialCount}/{SPECIAL_INTERESTS.length}
+              </Text>
+            </View>
+          </View>
+          <View style={styles.interestGrid}>
+            {SPECIAL_INTERESTS.map(renderInterestButton)}
+          </View>
+        </View>
+      </View>
+
+      <View style={styles.actionBar}>
+        <View style={styles.actionSummaryRow}>
+          <Text style={styles.actionSummaryLabel}>
+            {selectedInterestCount === 0 ? 'Choose at least one' : 'Change these anytime'}
+          </Text>
+          <Text style={styles.actionSummaryCount}>
+            {selectedInterestCount} selected
           </Text>
         </View>
-
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Ionicons name="calendar" size={20} color="#333333" />
-            <Text maxFontSizeMultiplier={1.1} style={styles.sectionTitle}>Event types</Text>
-            <Text maxFontSizeMultiplier={1.05} style={styles.categoryCount}>
-              {selectedInterests.filter(item => EVENT_INTERESTS.some(event => event.name === item)).length}/9
-            </Text>
-          </View>
-          <View style={styles.interestGrid}>
-            {EVENT_INTERESTS.map((interest) => renderInterestButton(interest))}
-          </View>
-        </View>
-
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Ionicons name="pricetag" size={20} color="#333333" />
-            <Text maxFontSizeMultiplier={1.1} style={styles.sectionTitle}>Special offers</Text>
-            <Text maxFontSizeMultiplier={1.05} style={styles.categoryCount}>
-              {selectedInterests.filter(item => SPECIAL_INTERESTS.some(special => special.name === item)).length}/3
-            </Text>
-          </View>
-          <View style={styles.interestGrid}>
-            {SPECIAL_INTERESTS.map((interest) => renderInterestButton(interest))}
-          </View>
-        </View>
-
-        <View style={styles.buttonContainer}>
-          <Pressable
-            style={styles.saveButton}
-            onPress={saveInterests}
-            disabled={saving}
-          >
-            {saving ? (
-              <ActivityIndicator color="#FFFFFF" />
-            ) : (
-              <>
-                <Text maxFontSizeMultiplier={1.1} style={styles.saveButtonText}>{isFromProfile ? 'Save' : 'Continue'}</Text>
-                <Ionicons name="arrow-forward" size={20} color="#FFFFFF" />
-              </>
-            )}
-          </Pressable>
-
-          <Pressable
-            style={styles.skipButton}
-            onPress={skipSelection}
-            disabled={saving}
-          >
-            <Text maxFontSizeMultiplier={1.1} style={styles.skipButtonText}>
-              {isFromProfile ? 'Cancel' : 'Skip for Now'}
-            </Text>
-          </Pressable>
-        </View>
+        <Pressable
+          style={({ pressed }) => [
+            styles.saveButton,
+            selectedInterestCount === 0 && styles.disabledSaveButton,
+            pressed && selectedInterestCount > 0 && styles.pressedSaveButton,
+          ]}
+          onPress={saveInterests}
+          disabled={saving || selectedInterestCount === 0}
+          accessibilityRole="button"
+        >
+          {saving ? (
+            <ActivityIndicator color="#FFFFFF" />
+          ) : (
+            <>
+              <Text style={styles.saveButtonText}>
+                {isFromProfile ? 'Save my interests' : 'Use these interests'}
+              </Text>
+              <Ionicons
+                name={isFromProfile ? 'checkmark' : 'arrow-forward'}
+                size={21}
+                color="#FFFFFF"
+              />
+            </>
+          )}
+        </Pressable>
+        <Pressable
+          style={({ pressed }) => [styles.skipButton, pressed && styles.pressedSkipButton]}
+          onPress={skipSelection}
+          disabled={saving}
+        >
+          <Text style={styles.skipButtonText}>
+            {isFromProfile ? 'Cancel' : 'Skip for now'}
+          </Text>
+        </Pressable>
       </View>
     </SafeAreaView>
   );
@@ -357,205 +392,317 @@ export default function InterestSelection() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F5F8FF', // Slightly cooler light blue
+    backgroundColor: '#F3F7FD',
   },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#F5F8FF',
+    backgroundColor: '#F3F7FD',
   },
-  screenContent: {
+  scrollContent: {
     flex: 1,
+    paddingHorizontal: 14,
+    paddingTop: 8,
+    paddingBottom: 4,
+  },
+  onboardingCard: {
+    backgroundColor: '#EAF4FE',
+    borderWidth: 1,
+    borderColor: '#D3E8FB',
+    borderRadius: 15,
     paddingHorizontal: 12,
-    paddingTop: 10,
-    paddingBottom: 10,
-    gap: 10,
+    paddingVertical: 9,
+    marginBottom: 10,
   },
-  progressContainer: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 2,
-  },
-  progressStep: {
-    alignItems: 'center',
-  },
-  progressDot: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    backgroundColor: '#E0E0E0',
-    borderWidth: 2,
-    borderColor: '#FFFFFF',
-    marginBottom: 2,
-  },
-  completedDot: {
-    backgroundColor: '#4CAF50',
-  },
-  activeDot: {
-    backgroundColor: '#4A90E2',
-  },
-  progressLine: {
-    height: 2,
-    width: 40,
-    backgroundColor: '#E0E0E0',
-    marginHorizontal: 8,
-  },
-  progressText: {
-    fontSize: 11,
-    color: '#888888',
-  },
-  activeText: {
-    color: '#4A90E2',
-    fontWeight: '600',
-  },
-  header: {
-    gap: 3,
-    marginBottom: 2,
-  },
-  titleRow: {
-    minHeight: 34,
+  onboardingTopRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    gap: 10,
+    marginBottom: 7,
   },
-  title: {
-    flex: 1,
-    fontSize: 22,
-    fontWeight: 'bold',
-    color: '#333333',
+  eyebrow: {
+    color: '#1479D3',
+    fontSize: 9,
+    fontWeight: '800',
+    letterSpacing: 0.8,
+    marginBottom: 1,
   },
-  subtitle: {
-    fontSize: 14,
-    color: '#666666',
-    lineHeight: 18,
-  },
-  selectionBadge: {
-    minHeight: 30,
-    justifyContent: 'center',
-    paddingHorizontal: 11,
-    borderRadius: 15,
-    backgroundColor: '#E8F0FE',
-  },
-  selectionBadgeText: {
-    color: '#667085',
-    fontSize: 12,
+  onboardingTitle: {
+    color: '#172235',
+    fontSize: 15,
     fontWeight: '700',
   },
-  section: {
-    gap: 4,
+  stepBadge: {
+    minWidth: 38,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderRadius: 12,
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+  },
+  stepBadgeText: {
+    color: '#1479D3',
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  progressTrack: {
+    height: 4,
+    backgroundColor: '#D4E1EF',
+    borderRadius: 2,
+    overflow: 'hidden',
+  },
+  progressFill: {
+    width: '66.666%',
+    height: '100%',
+    backgroundColor: '#1788EB',
+    borderRadius: 2,
+  },
+  progressLabels: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 5,
+  },
+  progressLabelComplete: {
+    color: '#39745E',
+    fontSize: 9,
+    fontWeight: '600',
+  },
+  progressLabelNext: {
+    color: '#728399',
+    fontSize: 9,
+    fontWeight: '600',
+  },
+  header: {
+    marginBottom: 10,
+    paddingHorizontal: 4,
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    justifyContent: 'space-between',
+  },
+  heroCopy: {
+    flex: 1,
+    paddingRight: 12,
+  },
+  heroEyebrow: {
+    color: '#1479D3',
+    fontSize: 9,
+    lineHeight: 12,
+    fontWeight: '800',
+    letterSpacing: 0.7,
+    marginBottom: 2,
+  },
+  title: {
+    fontSize: 25,
+    lineHeight: 29,
+    fontWeight: '800',
+    color: '#172235',
+    letterSpacing: -0.45,
+    marginBottom: 2,
+  },
+  subtitle: {
+    fontSize: 12.5,
+    color: '#5E6D80',
+    lineHeight: 16,
+  },
+  totalCountBlock: {
+    minWidth: 52,
+    alignItems: 'center',
+    paddingBottom: 1,
+  },
+  totalCountNumber: {
+    color: '#1479D3',
+    fontSize: 34,
+    lineHeight: 34,
+    fontWeight: '900',
+    letterSpacing: -1,
+  },
+  totalCountLabel: {
+    color: '#697A8E',
+    fontSize: 9,
+    lineHeight: 11,
+    fontWeight: '700',
+  },
+  sectionCard: {
+    borderRadius: 20,
+    padding: 11,
+    marginBottom: 10,
+  },
+  eventsCanvas: {
+    backgroundColor: '#EAF6FF',
+  },
+  specialsCanvas: {
+    backgroundColor: '#FFF3E4',
   },
   sectionHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    minHeight: 28,
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  sectionHeadingGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    flexShrink: 1,
   },
   sectionTitle: {
-    flex: 1,
-    fontSize: 17,
-    fontWeight: '600',
-    color: '#333333',
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#172235',
+  },
+  sectionCountBadge: {
+    minWidth: 38,
+    borderRadius: 12,
+    backgroundColor: '#FFFFFFB8',
+    paddingHorizontal: 7,
+    paddingVertical: 5,
+    alignItems: 'center',
     marginLeft: 8,
+  },
+  activeSectionCountBadge: {
+    backgroundColor: '#FFFFFFD9',
+  },
+  sectionCountText: {
+    color: '#7B8795',
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  activeSectionCountText: {
+    color: '#1479D3',
   },
   interestGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    marginHorizontal: -BUTTON_MARGIN,
+    justifyContent: 'space-between',
+    rowGap: 6,
   },
   interestButton: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 8,
-    paddingVertical: 5,
+    width: '32%',
+    minHeight: 48,
+    backgroundColor: '#FFFFFFDE',
+    borderRadius: 12,
+    paddingVertical: 6,
     paddingHorizontal: 6,
-    margin: BUTTON_MARGIN,
     borderWidth: 1,
-    borderColor: '#E0E0E0',
+    borderColor: '#FFFFFF',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     position: 'relative',
-    height: 48,
+  },
+  wideInterestButton: {
+    width: '66%',
   },
   selectedInterestButton: {
-    backgroundColor: '#4A90E2',
-    borderColor: '#3A80D2',
+    backgroundColor: '#1788EB',
+    borderColor: '#1788EB',
+    shadowColor: '#0E5F9F',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.14,
+    shadowRadius: 4,
+    elevation: 2,
   },
-  interestIcon: {
-    marginRight: 6,
+  pressedInterestButton: {
+    opacity: 0.72,
+  },
+  interestContent: {
+    maxWidth: '91%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+  },
+  interestIconBadge: {
+    width: 24,
+    height: 24,
+    borderRadius: 8,
+    backgroundColor: '#EDF1F6',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  selectedInterestIconBadge: {
+    backgroundColor: '#FFFFFF2B',
   },
   interestButtonText: {
-    fontSize: 13,
-    fontWeight: '500',
-    color: '#333333',
-    flexShrink: 1,
+    fontSize: 10.5,
+    lineHeight: 12,
+    fontWeight: '600',
+    color: '#344154',
     textAlign: 'center',
-    lineHeight: 15,
   },
   selectedInterestButtonText: {
     color: '#FFFFFF',
   },
-  checkmarkContainer: {
+  interestCheck: {
     position: 'absolute',
-    top: -6,
-    right: -6,
-    backgroundColor: '#4A90E2',
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#FFFFFF',
+    top: 3,
+    right: 3,
+    backgroundColor: '#1788EB',
+    borderRadius: 8,
   },
-  categoryCount: {
-    marginLeft: 'auto',
-    fontSize: 12,
-    color: '#888888',
+  actionBar: {
+    backgroundColor: '#FFFFFF',
+    borderTopWidth: 1,
+    borderTopColor: '#DEE6EF',
+    paddingHorizontal: 16,
+    paddingTop: 7,
+    paddingBottom: 4,
+    shadowColor: '#19324D',
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.06,
+    shadowRadius: 12,
+    elevation: 8,
   },
-  activeSelectionCount: {
-    color: '#4A90E2',
+  actionSummaryRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 5,
+    paddingHorizontal: 2,
+  },
+  actionSummaryLabel: {
+    color: '#667588',
+    fontSize: 10,
     fontWeight: '600',
   },
-  buttonContainer: {
-    marginTop: 'auto',
-    flexDirection: 'row-reverse',
-    alignItems: 'center',
-    gap: 8,
+  actionSummaryCount: {
+    color: '#1479D3',
+    fontSize: 10,
+    fontWeight: '800',
   },
   saveButton: {
-    flex: 1.5,
-    minHeight: 48,
-    backgroundColor: '#4A90E2',
-    borderRadius: 10,
-    paddingHorizontal: 14,
+    height: 44,
+    backgroundColor: '#1788EB',
+    borderRadius: 15,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    // Fixed shadow warning by ensuring solid background
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    gap: 8,
+  },
+  disabledSaveButton: {
+    backgroundColor: '#B9C8D8',
+  },
+  pressedSaveButton: {
+    opacity: 0.82,
   },
   saveButtonText: {
     color: '#FFFFFF',
     fontSize: 16,
-    fontWeight: '600',
-    marginRight: 8,
+    fontWeight: '700',
   },
   skipButton: {
-    flex: 1,
-    minHeight: 48,
-    paddingHorizontal: 12,
+    minHeight: 27,
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: '#D0D5DD',
-    borderRadius: 10,
-    backgroundColor: '#FFF',
+  },
+  pressedSkipButton: {
+    opacity: 0.55,
   },
   skipButtonText: {
-    color: '#666666',
-    fontSize: 15,
+    color: '#697789',
+    fontSize: 12,
+    fontWeight: '600',
   },
 });
 
