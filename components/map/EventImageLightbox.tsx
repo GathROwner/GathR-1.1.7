@@ -296,9 +296,7 @@ const EventImageLightbox: React.FC<EventImageLightboxProps> = ({
   const fetchEventDetails = useMapStore(s => s.fetchEventDetails);
 
   // Map actions for opening EventCallout from "View Venue" button
-  const selectVenues = useMapStore(s => s.selectVenues);
-  const selectCluster = useMapStore(s => s.selectCluster);
-  const selectVenue = useMapStore(s => s.selectVenue);
+  const selectCallout = useMapStore(s => s.selectCallout);
   const setSelectedImageData = useMapStore(s => s.setSelectedImageData);
   const setPendingRouteEvent = useMapStore(s => s.setPendingRouteEvent);
 
@@ -1150,9 +1148,9 @@ const handleDirections = () => {
     // Let the modal host dismiss before mutating the underlying callout tree.
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
-        selectVenues(sortedVenues);
-        selectCluster(cluster);
-        selectVenue(venue);
+        selectCallout(sortedVenues, cluster, {
+          preferredVenueLocationKey: venue.locationKey,
+        });
       });
     });
   };

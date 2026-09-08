@@ -1164,6 +1164,7 @@ export const useMapStore = create<MapState>((set, get) => ({
   selectedVenue: null,
   selectedVenues: [],
   selectedCluster: null,
+  preferredCalloutVenueLocationKey: null,
   isLoading: false,
   lastFetchedAt: null,
   error: null,
@@ -1618,7 +1619,10 @@ export const useMapStore = create<MapState>((set, get) => ({
    * Set selected venues (for multi-venue support)
    */
   selectVenues: (venues) => {
-    set({ selectedVenues: venues });
+    set({
+      selectedVenues: venues,
+      preferredCalloutVenueLocationKey: null,
+    });
   },
   
   /**
@@ -1634,11 +1638,22 @@ export const useMapStore = create<MapState>((set, get) => ({
    * Open a callout with one store update so Android does not pay three
    * selection render passes before the sheet can mount.
    */
-  selectCallout: (venues, cluster) => {
+  selectCallout: (venues, cluster, options) => {
+    const requestedVenueLocationKey = options?.preferredVenueLocationKey ?? null;
+    const preferredCalloutVenueLocationKey = requestedVenueLocationKey && venues.some(
+      (venue) => venue.locationKey === requestedVenueLocationKey
+    )
+      ? requestedVenueLocationKey
+      : null;
+    const selectedVenue = preferredCalloutVenueLocationKey
+      ? venues.find((venue) => venue.locationKey === preferredCalloutVenueLocationKey) ?? null
+      : venues[0] ?? null;
+
     set({
-      selectedVenue: venues[0] ?? null,
+      selectedVenue,
       selectedVenues: venues,
       selectedCluster: cluster,
+      preferredCalloutVenueLocationKey,
     });
     scheduleSelectedClusterEnhancement(get, set, cluster);
   },
@@ -1656,7 +1671,8 @@ export const useMapStore = create<MapState>((set, get) => ({
       set({
         selectedVenue: null,
         selectedVenues: [],
-        selectedCluster: null
+        selectedCluster: null,
+        preferredCalloutVenueLocationKey: null,
       });
 
       const refreshClustersAfterClose = () => {

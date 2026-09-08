@@ -33,6 +33,10 @@ export type ViewportFetchOptions = {
   source?: string;
 };
 
+export type SelectCalloutOptions = {
+  preferredVenueLocationKey?: string | null;
+};
+
 /**
  * Map state interface for the application
  * Defines the structure of the map store
@@ -65,6 +69,7 @@ export interface MapState {
   selectedVenue: Venue | null;
   selectedVenues: Venue[];
   selectedCluster: Cluster | null;
+  preferredCalloutVenueLocationKey: string | null;
   
   // Location data
   userLocation: Location.LocationObject | null;
@@ -136,7 +141,11 @@ export interface MapState {
   selectVenue: (venue: Venue | null) => void;
   selectVenues: (venues: Venue[]) => void;
   selectCluster: (cluster: Cluster | null) => void;
-  selectCallout: (venues: Venue[], cluster: Cluster | null) => void;
+  selectCallout: (
+    venues: Venue[],
+    cluster: Cluster | null,
+    options?: SelectCalloutOptions
+  ) => void;
   setZoomLevel: (zoom: number) => void;
   setUserLocation: (location: Location.LocationObject) => void;
   setActiveFilterPanel: (panel: 'events' | 'specials' | null) => void;

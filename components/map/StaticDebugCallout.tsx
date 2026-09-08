@@ -7,6 +7,7 @@ import { traceMapEvent } from '../../utils/mapTrace';
 interface StaticDebugCalloutProps {
   venues: Venue[];
   cluster: Cluster | null;
+  preferredVenueLocationKey?: string | null;
   onClose: () => void;
   onLayoutReady?: () => void;
   onPresentationReady?: () => void;

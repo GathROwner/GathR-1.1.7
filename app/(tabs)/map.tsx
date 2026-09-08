@@ -3377,6 +3377,9 @@ useEffect(() => {
   const selectedVenue = useMapStore((state) => state.selectedVenue);
   const selectedVenues = useMapStore((state) => state.selectedVenues);
   const selectedCluster = useMapStore((state) => state.selectedCluster);
+  const preferredCalloutVenueLocationKey = useMapStore(
+    (state) => state.preferredCalloutVenueLocationKey
+  );
   const isLoading = useMapStore((state) => state.isLoading);
   const error = useMapStore((state) => state.error);
   const fetchEvents = useMapStore((state) => state.fetchEvents);
@@ -12051,6 +12054,7 @@ Owner: Map UX stability on Android • Last validated: 2025-09-04
               key={presentedCalloutPresentationKey}
               venues={presentedCalloutVenues}
               cluster={livePresentedCalloutCluster}
+              preferredVenueLocationKey={preferredCalloutVenueLocationKey}
               onClose={() => closeCallout('callout-onClose-prop')}
               onCloseStart={handleCalloutCloseStart}
               onLayoutReady={() => {

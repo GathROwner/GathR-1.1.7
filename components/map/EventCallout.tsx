@@ -122,6 +122,7 @@ import { auth } from '../../config/firebaseConfig';
 import { useClusterInteractionStore } from '../../store/clusterInteractionStore';
 import { usePathname } from 'expo-router';
 import { isFriendEventDetailPath } from '../../utils/friendEventLightbox';
+import { prioritizeCalloutVenues } from '../../utils/calloutVenueSelection';
 
 // Import the centralized date utilities
 import {
@@ -2548,6 +2549,7 @@ type CalloutState = 'expanded' | 'normal' | 'minimized';
 interface EventCalloutProps {
   venues: Venue[];
   cluster: Cluster | null;
+  preferredVenueLocationKey?: string | null;
   onClose: () => boolean | void;
   onCloseStart?: () => void;
   onEventSelected?: (event: Event) => void;
@@ -2560,6 +2562,7 @@ interface EventCalloutProps {
 const EventCallout: React.FC<EventCalloutProps> = ({ 
   venues, 
   cluster,
+  preferredVenueLocationKey,
   onClose,
   onCloseStart,
   onEventSelected,
@@ -2855,19 +2858,15 @@ const [userLocation, setUserLocation] = useState<{ coords: { latitude: number; l
   
 const { reorderedVenues, initialVenueIndex } = useMemo(() => {
   const mostRelevantIndex = findMostRelevantVenueIndex(venues, favoriteVenues);
-
-  if (mostRelevantIndex === 0) {
-    // Most relevant venue is already first, no reordering needed
-    return { reorderedVenues: venues, initialVenueIndex: 0 };
-  }
-
-  // Move the most relevant venue to position 0
-  const reordered = [...venues];
-  const [mostRelevantVenue] = reordered.splice(mostRelevantIndex, 1);
-  reordered.unshift(mostRelevantVenue);
-
-  return { reorderedVenues: reordered, initialVenueIndex: 0 };
-}, [venues, favoriteVenues]);
+  return {
+    reorderedVenues: prioritizeCalloutVenues(
+      venues,
+      mostRelevantIndex,
+      preferredVenueLocationKey,
+    ),
+    initialVenueIndex: 0,
+  };
+}, [venues, favoriteVenues, preferredVenueLocationKey]);
 
 const [activeVenueIndex, setActiveVenueIndex] = useState(initialVenueIndex);
 const activeVenue = reorderedVenues[activeVenueIndex];
@@ -3496,7 +3495,7 @@ useEffect(() => {
   // Interaction is recorded when the user:
   // 1. Swipes to a different venue (handled in handleVenueSelect)
   // 2. Clicks on an event in the venue (handled in handleEventSelect)
-}, [venues]);
+}, [preferredVenueLocationKey, venues]);
   
   useEffect(() => {
   console.log("Venue change effect triggered - activeVenueIndex:", activeVenueIndex);
