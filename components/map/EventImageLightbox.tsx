@@ -36,6 +36,7 @@ import FamilyFriendlyBadge from '../common/FamilyFriendlyBadge';
 import { EventTimingBadge } from '../common/EventTimingBadge';
 import { EventTimingSummaryText } from '../common/EventTimingSummaryText';
 import { EventSeriesContextLine } from '../common/EventSeriesContextLine';
+import { EventTimingDisclosureActions } from './EventTimingDisclosureActions';
 import { VenueFavoriteButton } from '../common/VenueFavoriteButton';
 import Autolink from 'react-native-autolink';
 
@@ -1915,21 +1916,12 @@ const handleNonTicketAction = () => {
             <View style={styles.timingDisclosureContainer}>
               <View style={styles.timingDisclosureBody}>
                 <Text style={styles.timingDisclosureText}>{timingHelpText}</Text>
-                {originalSourceUrl ? (
-                  <TouchableOpacity
-                    accessibilityRole="link"
-                    onPress={() => Linking.openURL(originalSourceUrl)}
-                  >
-                    <Text style={styles.timingSourceLink}>View original post</Text>
-                  </TouchableOpacity>
-                ) : null}
-                <TouchableOpacity
-                  accessibilityRole="button"
-                  accessibilityLabel="Report an incorrect event time"
-                  onPress={handleReportIncorrectTime}
-                >
-                  <Text style={styles.timingReportLink}>Report incorrect time</Text>
-                </TouchableOpacity>
+                <EventTimingDisclosureActions
+                  onReportIncorrectTime={handleReportIncorrectTime}
+                  onViewOriginalPost={originalSourceUrl
+                    ? () => Linking.openURL(originalSourceUrl)
+                    : undefined}
+                />
               </View>
             </View>
           )}
@@ -3062,18 +3054,6 @@ const styles = StyleSheet.create({
     color: '#E5E7EB',
     fontSize: 12,
     lineHeight: 17,
-  },
-  timingSourceLink: {
-    color: '#62B5FF',
-    fontSize: 12,
-    fontWeight: '700',
-    marginTop: 6,
-  },
-  timingReportLink: {
-    color: '#F4C542',
-    fontSize: 12,
-    fontWeight: '700',
-    marginTop: 7,
   },
   descriptionContainer: {
     flex: 1,
