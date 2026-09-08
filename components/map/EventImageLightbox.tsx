@@ -251,6 +251,7 @@ const EventImageLightbox: React.FC<EventImageLightboxProps> = ({
 // Use updated event data with fallback to original prop (keep prop fields!)
   const updatedFromStore = getUpdatedEvent(event.id);
   const updatedEvent = { ...event, ...(updatedFromStore || {}) };
+  const originalSourceUrl = getEventOriginalSourceUrl(updatedEvent);
   const provinceScopeEvent = isProvinceScopeEvent(updatedEvent);
   const areaScopeBadge = getAreaScopeBadgePresentation(updatedEvent);
   const scopedLocationSummary = getScopedLocationSummary(updatedEvent);
@@ -289,7 +290,8 @@ const EventImageLightbox: React.FC<EventImageLightboxProps> = ({
   const [routeActionBusy, setRouteActionBusy] = useState(false);
   const routeActionInFlightRef = useRef(false);
 
-// If address is missing, fetch details for this id
+// Hydrate details when either the address or original-source identity is
+// missing. The latter also repairs older persisted Event objects after an OTA.
   const fetchEventDetails = useMapStore(s => s.fetchEventDetails);
 
   // Map actions for opening EventCallout from "View Venue" button
@@ -300,11 +302,11 @@ const EventImageLightbox: React.FC<EventImageLightboxProps> = ({
   const setPendingRouteEvent = useMapStore(s => s.setPendingRouteEvent);
 
   useEffect(() => {
-    if (!updatedEvent?.address) {
+    if (!updatedEvent?.address || !originalSourceUrl) {
       console.log('[AddressFlow][Lightbox] requestingDetails', { id: event.id });
       fetchEventDetails?.([event.id]);
     }
-  }, [event.id, updatedEvent?.address]);
+  }, [event.id, fetchEventDetails, originalSourceUrl, updatedEvent?.address]);
 
 
 // DEBUG: trace address flow into lightbox
@@ -1244,7 +1246,6 @@ const handleNonTicketAction = () => {
   ].filter(Boolean).join(' · ');
   const timingDisclosure = getEventTimingDisclosure(updatedEvent);
   const timingState = getEventScheduleState(updatedEvent);
-  const originalSourceUrl = getEventOriginalSourceUrl(updatedEvent);
   const timingHelpText = timingDisclosure
     ? `${timingDisclosure} Event times can change after GathR receives them. Check the original post for the latest details or report a correction if this listing no longer matches.`
     : 'Event times can change after GathR receives them. Check the original post for the latest details or report a correction if this listing no longer matches.';

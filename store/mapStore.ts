@@ -111,7 +111,7 @@ import {
   LEGACY_EVENTS_API_BASE,
   USE_FIRESTORE_EVENTS,
 } from '../lib/config/backend';
-import { EVENTS_MINIMAL } from '../lib/queryKeys';
+import { EVENT_DETAILS_SCHEMA_VERSION, EVENTS_MINIMAL } from '../lib/queryKeys';
 import { normalizeVenueIdentityText } from '../utils/venueIdentity';
 import { createLegacyTimingContract } from '../utils/eventTiming';
 import {
@@ -2191,7 +2191,11 @@ fetchEventDetails: async (eventIds: (string | number)[]) => {
   );
   if (normalizedIds.length === 0) return;
   const idsString = normalizedIds.join(',');
-  const key = ['event-details', [...normalizedIds].sort().join(',')];
+  const key = [
+    'event-details',
+    EVENT_DETAILS_SCHEMA_VERSION,
+    [...normalizedIds].sort().join(','),
+  ];
   const STALE_MS = 1000 * 60 * 5;
 
   const dedupeByEquivalentId = (items: Event[]): Event[] => {

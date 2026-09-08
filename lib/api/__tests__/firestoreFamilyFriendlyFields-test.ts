@@ -5,14 +5,15 @@ jest.mock('../../../config/firebaseConfig', () => ({
 
 import { normalizeFirestoreEvent } from '../firestoreEvents';
 import type { FirestoreEvent } from '../../../types/firestore';
-import { EVENTS_MINIMAL } from '../../queryKeys';
+import { EVENT_DETAILS_SCHEMA_VERSION, EVENTS_MINIMAL } from '../../queryKeys';
 
 describe('Firestore family-friendly field mapping', () => {
   it('uses the current persisted cache key so older event shapes are not restored', () => {
     expect(EVENTS_MINIMAL).toEqual([
       'events-minimal',
-      'honest-end-times-v2',
+      'original-source-v3',
     ]);
+    expect(EVENT_DETAILS_SCHEMA_VERSION).toBe('original-source-v2');
   });
 
   it('preserves score fields on the normalized event used by filters', () => {

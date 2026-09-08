@@ -20,6 +20,21 @@ describe('event original source URLs', () => {
     ).toBe('https://www.facebook.com/slaymakerandnichols/posts/1636582355145006');
   });
 
+  it.each([
+    [
+      'https://www.facebook.com/downstreetdance/',
+      '1714014287396138_0da1d25da28f7ee1',
+      'https://www.facebook.com/downstreetdance/posts/1714014287396138',
+    ],
+    [
+      'https://www.facebook.com/CityCinemaChtown',
+      '1611535574316691_86ecb4c0b73b4c8a',
+      'https://www.facebook.com/CityCinemaChtown/posts/1611535574316691',
+    ],
+  ])('resolves the pictured live event source %#', (pageUrl, uniqueId, expected) => {
+    expect(buildLegacyFacebookPostUrl(pageUrl, uniqueId)).toBe(expected);
+  });
+
   it('prefers a stored post permalink over a reconstructed fallback', () => {
     expect(getEventOriginalSourceUrl({
       sourceUrl: 'https://www.facebook.com/reel/1676272290104313/',
