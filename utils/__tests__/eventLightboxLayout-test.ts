@@ -10,6 +10,7 @@ describe('getEventLightboxLayout', () => {
       panelTop: 59,
       panelHeight: 732,
       imageHeight: 305.9,
+      descriptionMinHeight: 114,
     });
   });
 
@@ -27,6 +28,18 @@ describe('getEventLightboxLayout', () => {
 
     expect(taller.panelHeight - compact.panelHeight).toBe(39);
     expect(taller.imageHeight).toBe(compact.imageHeight);
+    expect(taller.descriptionMinHeight).toBe(114);
+    expect(compact.descriptionMinHeight).toBe(114);
+  });
+
+  it('reserves about five description lines on a typical phone viewport', () => {
+    const layout = getEventLightboxLayout({
+      windowHeight: 667,
+      safeAreaTop: 20,
+      tabBarHeight: 49,
+    });
+
+    expect(layout.descriptionMinHeight).toBeCloseTo(113.62, 2);
   });
 
   it('clamps impossible negative insets and short viewports', () => {
@@ -38,6 +51,7 @@ describe('getEventLightboxLayout', () => {
       panelTop: 0,
       panelHeight: 0,
       imageHeight: 0,
+      descriptionMinHeight: 0,
     });
   });
 });

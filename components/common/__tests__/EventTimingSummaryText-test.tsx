@@ -63,4 +63,19 @@ describe('EventTimingSummaryText', () => {
 
     act(() => component!.unmount());
   });
+
+  it('lets a parent surface own the single inline information control', () => {
+    let component: renderer.ReactTestRenderer;
+    act(() => {
+      component = renderer.create(
+        <EventTimingSummaryText event={estimatedEndEvent()} showInfoMarker={false} />
+      );
+    });
+
+    expect(component!.root.findAllByProps({ testID: 'estimated-start-info' })).toHaveLength(0);
+    expect(component!.root.findAllByProps({ testID: 'estimated-end-info' })).toHaveLength(0);
+    expect(component!.root.findAllByProps({ testID: 'estimated-time-disclosure' })).toHaveLength(0);
+
+    act(() => component!.unmount());
+  });
 });

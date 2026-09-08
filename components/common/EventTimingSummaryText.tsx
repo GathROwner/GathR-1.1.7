@@ -25,6 +25,7 @@ interface EventTimingSummaryTextProps {
   minimumFontScale?: number;
   onInfoPress?: () => void;
   infoColor?: string;
+  showInfoMarker?: boolean;
 }
 
 /**
@@ -42,6 +43,7 @@ export function EventTimingSummaryText({
   minimumFontScale,
   onInfoPress,
   infoColor = '#267DBD',
+  showInfoMarker = true,
 }: EventTimingSummaryTextProps) {
   const [expanded, setExpanded] = useState(false);
   const parts = getEventTimeRangeParts(event);
@@ -50,7 +52,7 @@ export function EventTimingSummaryText({
   const summaryPrefix = summary.endsWith(parts.text)
     ? summary.slice(0, -parts.text.length)
     : '';
-  const hasEstimateMarker = parts.startEstimated || parts.endEstimated;
+  const hasEstimateMarker = showInfoMarker && (parts.startEstimated || parts.endEstimated);
   const flattenedTextStyle = StyleSheet.flatten(style);
   const disclosureColor = typeof flattenedTextStyle?.color === 'string'
     ? flattenedTextStyle.color
@@ -80,7 +82,7 @@ export function EventTimingSummaryText({
         minimumFontScale={minimumFontScale}
       >
         {summaryPrefix}{parts.prefix}{parts.start}
-        {parts.startEstimated ? (
+        {showInfoMarker && parts.startEstimated ? (
           <Text
             accessibilityRole="button"
             accessibilityLabel={infoLabel}
@@ -93,7 +95,7 @@ export function EventTimingSummaryText({
           </Text>
         ) : null}
         {parts.separator}{parts.end}
-        {parts.endEstimated ? (
+        {showInfoMarker && parts.endEstimated ? (
           <Text
             accessibilityRole="button"
             accessibilityLabel={infoLabel}

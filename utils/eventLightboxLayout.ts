@@ -8,10 +8,13 @@ interface EventLightboxLayout {
   panelTop: number;
   panelHeight: number;
   imageHeight: number;
+  descriptionMinHeight: number;
 }
 
 const IMAGE_SCREEN_HEIGHT_RATIO = 0.35;
 const IMAGE_PANEL_HEIGHT_RATIO = 0.45;
+const DESCRIPTION_VISIBLE_HEIGHT = 114;
+const DESCRIPTION_PANEL_HEIGHT_RATIO = 0.19;
 
 export const getEventLightboxLayout = ({
   windowHeight,
@@ -26,10 +29,15 @@ export const getEventLightboxLayout = ({
     normalizedWindowHeight * IMAGE_SCREEN_HEIGHT_RATIO,
     panelHeight * IMAGE_PANEL_HEIGHT_RATIO
   );
+  const descriptionMinHeight = Math.min(
+    DESCRIPTION_VISIBLE_HEIGHT,
+    panelHeight * DESCRIPTION_PANEL_HEIGHT_RATIO
+  );
 
   return {
     panelTop,
     panelHeight,
     imageHeight,
+    descriptionMinHeight,
   };
 };

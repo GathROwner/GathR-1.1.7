@@ -233,6 +233,7 @@ const EventImageLightbox: React.FC<EventImageLightboxProps> = ({
   const {
     panelTop: lightboxTop,
     imageHeight,
+    descriptionMinHeight,
   } = getEventLightboxLayout({
     windowHeight,
     safeAreaTop: safeAreaInsets.top,
@@ -281,6 +282,10 @@ const EventImageLightbox: React.FC<EventImageLightboxProps> = ({
   const friendPresence = getVenueFriendPresence(cluster || null, venue || null);
   const [friendListExpanded, setFriendListExpanded] = useState(false);
   const [timingDisclosureExpanded, setTimingDisclosureExpanded] = useState(false);
+
+  useEffect(() => {
+    setTimingDisclosureExpanded(false);
+  }, [updatedEvent.id]);
   const [routeActionBusy, setRouteActionBusy] = useState(false);
   const routeActionInFlightRef = useRef(false);
 
@@ -1399,73 +1404,97 @@ const handleNonTicketAction = () => {
           { transform: [{ translateY: translateY }, { translateX: translateX }] }
         ]}
       >
-        {/* Header */}
-        <View style={styles.header}>
-          <View style={styles.headerVenueAvatarContainer}>
+        {/* Tappable Image */}
+        <View style={[styles.imageWrapper, { height: imageHeight }]}>
+          <TouchableOpacity
+            accessibilityLabel={`View full-screen image for ${updatedEvent.title}`}
+            accessibilityRole="imagebutton"
+            activeOpacity={0.9}
+            onPress={handleImagePress}
+            style={styles.imagePressSurface}
+          >
             <FallbackImage
-              imageUrl={updatedEvent.profileUrl}
+              imageUrl={imageUrl}
               category={updatedEvent.category}
               type={updatedEvent.type}
-              style={styles.headerVenueAvatar}
-              fallbackType="profile"
+              style={styles.image}
+              fallbackType="post"
               item={updatedEvent}
-              resizeMode="cover"
+              resizeMode="contain"
+              onFallback={setIsUsingFallbackImage as any}
             />
-            {!provinceScopeEvent && (!isPrivateFriendEvent || friendEventProjection?.locationType === 'recognized_venue') && (
-              <View style={styles.headerVenueFavoriteOverlay}>
-                <VenueFavoriteButton
-                  locationKey={createLocationKeyFromEvent(updatedEvent)}
-                  venueName={updatedEvent.venue}
-                  size={12}
-                  source="event_image_lightbox"
-                  style={styles.headerVenueFavoriteButton}
-                />
-              </View>
-            )}
-          </View>
-          <View style={styles.headerTextContainer}>
-            <GestureScrollView
-              ref={titleScrollRef}
-              horizontal
-              nestedScrollEnabled
-              bounces={false}
-              showsHorizontalScrollIndicator={false}
-              overScrollMode="never"
-              style={styles.titleScroll}
-              contentContainerStyle={styles.titleScrollContent}
-            >
-              <Text
-                style={styles.title}
-                numberOfLines={1}
-                accessibilityLabel={updatedEvent.title}
-              >
-                {updatedEvent.title}
-              </Text>
-            </GestureScrollView>
-            <Text style={styles.subtitle} numberOfLines={1}>
-              {scopedLocationSummary || updatedEvent.venue}
-            </Text>
-          </View>
-          <TouchableOpacity style={styles.closeButton} onPress={handleCloseButton}>
-            <MaterialIcons name="close" size={24} color="#FFFFFF" />
           </TouchableOpacity>
-        </View>
-        
-        {/* Tappable Image */}
-        <TouchableOpacity onPress={handleImagePress} activeOpacity={0.9} style={styles.imageWrapper}>
-          <FallbackImage
-            imageUrl={imageUrl}
-            category={updatedEvent.category}
-            type={updatedEvent.type}
-            style={[styles.image, { height: imageHeight }]}
-            fallbackType="post"
-            item={updatedEvent}
-            resizeMode="contain"
-            onFallback={setIsUsingFallbackImage as any}
+
+          <LinearGradient
+            colors={['rgba(0, 0, 0, 0.42)', 'rgba(0, 0, 0, 0.14)', 'rgba(0, 0, 0, 0)']}
+            locations={[0, 0.62, 1]}
+            pointerEvents="none"
+            style={styles.headerGradient}
           />
-          {/* Add a subtle zoom icon overlay */}
+
+          {/* Event and venue identity share the image plane, matching list cards. */}
+          <View style={styles.header}>
+            <View style={styles.headerIdentitySurface}>
+              <View style={styles.headerVenueAvatarContainer}>
+                <FallbackImage
+                  imageUrl={updatedEvent.profileUrl}
+                  category={updatedEvent.category}
+                  type={updatedEvent.type}
+                  style={styles.headerVenueAvatar}
+                  fallbackType="profile"
+                  item={updatedEvent}
+                  resizeMode="cover"
+                />
+                {!provinceScopeEvent && (!isPrivateFriendEvent || friendEventProjection?.locationType === 'recognized_venue') && (
+                  <View style={styles.headerVenueFavoriteOverlay}>
+                    <VenueFavoriteButton
+                      locationKey={createLocationKeyFromEvent(updatedEvent)}
+                      venueName={updatedEvent.venue}
+                      size={12}
+                      source="event_image_lightbox"
+                      style={styles.headerVenueFavoriteButton}
+                    />
+                  </View>
+                )}
+              </View>
+              <View style={styles.headerTextContainer}>
+                <GestureScrollView
+                  ref={titleScrollRef}
+                  horizontal
+                  nestedScrollEnabled
+                  bounces={false}
+                  showsHorizontalScrollIndicator={false}
+                  overScrollMode="never"
+                  style={styles.titleScroll}
+                  contentContainerStyle={styles.titleScrollContent}
+                >
+                  <Text
+                    style={styles.title}
+                    numberOfLines={1}
+                    accessibilityLabel={updatedEvent.title}
+                  >
+                    {updatedEvent.title}
+                  </Text>
+                </GestureScrollView>
+                <Text style={styles.subtitle} numberOfLines={1}>
+                  {scopedLocationSummary || updatedEvent.venue}
+                </Text>
+              </View>
+            </View>
+            <TouchableOpacity
+              accessibilityLabel="Close event details"
+              accessibilityRole="button"
+              hitSlop={4}
+              onPress={handleCloseButton}
+              style={styles.closeButton}
+            >
+              <MaterialIcons name="close" size={24} color="#FFFFFF" />
+            </TouchableOpacity>
+          </View>
+
+          {/* The whole image opens full-screen; this is only a visual affordance. */}
           <View style={styles.zoomIconOverlay}>
-            <MaterialIcons name="zoom-in" size={24} color="rgba(255, 255, 255, 0.8)" />
+            <MaterialIcons name="zoom-in" size={21} color="rgba(255, 255, 255, 0.9)" />
           </View>
 
           {showTrendingOverlay && (
@@ -1636,7 +1665,7 @@ const handleNonTicketAction = () => {
               </TouchableOpacity>
             </View>
           )}
-        </TouchableOpacity>
+        </View>
         
         {/* Status badges */}
         <View style={styles.badgeContainer}>
@@ -1848,17 +1877,32 @@ const handleNonTicketAction = () => {
         <View style={styles.infoContainer}>
           <View style={styles.infoRow}>
             <MaterialIcons name="access-time" size={20} color="#FFFFFF" />
-            <EventTimingSummaryText
-              event={updatedEvent}
-              suffix={endDateSuffix}
-              style={styles.infoText}
-              infoColor="#F4C542"
-              onInfoPress={() => setTimingDisclosureExpanded((value) => !value)}
-            />
+            <View style={styles.timingSummaryGroup}>
+              <EventTimingSummaryText
+                event={updatedEvent}
+                suffix={endDateSuffix}
+                style={[styles.infoText, styles.timingSummaryLabel]}
+                containerStyle={styles.timingSummaryText}
+                showInfoMarker={false}
+              />
+              {timingDisclosure ? (
+                <TouchableOpacity
+                  accessibilityLabel={timingDisclosureExpanded ? 'Hide time details' : 'Explain event time'}
+                  accessibilityRole="button"
+                  accessibilityState={{ expanded: timingDisclosureExpanded }}
+                  hitSlop={{ top: 8, right: 8, bottom: 8, left: 8 }}
+                  onPress={() => setTimingDisclosureExpanded((value) => !value)}
+                  style={styles.timingInfoButton}
+                  testID="event-time-info-button"
+                >
+                  <MaterialIcons name="info-outline" size={17} color="#F4C542" />
+                </TouchableOpacity>
+              ) : null}
+            </View>
             <EventTimingBadge
               event={updatedEvent}
               compact
-              onInfoPress={() => setTimingDisclosureExpanded((value) => !value)}
+              showInfoIndicator={false}
               style={styles.timingBadge}
             />
           </View>
@@ -1869,39 +1913,26 @@ const handleNonTicketAction = () => {
             containerStyle={styles.seriesContextLine}
           />
 
-          {timingDisclosure && (
+          {timingDisclosure && timingDisclosureExpanded && (
             <View style={styles.timingDisclosureContainer}>
-              <TouchableOpacity
-                accessibilityRole="button"
-                accessibilityLabel={timingDisclosureExpanded ? 'Hide time details' : 'Explain event time'}
-                onPress={() => setTimingDisclosureExpanded((value) => !value)}
-                style={styles.timingDisclosureToggle}
-              >
-                <MaterialIcons name="info-outline" size={16} color="#F4C542" />
-                <Text style={styles.timingDisclosureToggleText}>
-                  {timingDisclosureExpanded ? 'Hide time details' : 'Time details · Why?'}
-                </Text>
-              </TouchableOpacity>
-              {timingDisclosureExpanded && (
-                <View style={styles.timingDisclosureBody}>
-                  <Text style={styles.timingDisclosureText}>{timingDisclosure}</Text>
-                  {timingSourceUrl ? (
-                    <TouchableOpacity
-                      accessibilityRole="link"
-                      onPress={() => Linking.openURL(timingSourceUrl)}
-                    >
-                      <Text style={styles.timingSourceLink}>View official source</Text>
-                    </TouchableOpacity>
-                  ) : null}
+              <View style={styles.timingDisclosureBody}>
+                <Text style={styles.timingDisclosureText}>{timingDisclosure}</Text>
+                {timingSourceUrl ? (
                   <TouchableOpacity
-                    accessibilityRole="button"
-                    accessibilityLabel="Report an incorrect event time"
-                    onPress={handleReportIncorrectTime}
+                    accessibilityRole="link"
+                    onPress={() => Linking.openURL(timingSourceUrl)}
                   >
-                    <Text style={styles.timingReportLink}>Report incorrect time</Text>
+                    <Text style={styles.timingSourceLink}>View official source</Text>
                   </TouchableOpacity>
-                </View>
-              )}
+                ) : null}
+                <TouchableOpacity
+                  accessibilityRole="button"
+                  accessibilityLabel="Report an incorrect event time"
+                  onPress={handleReportIncorrectTime}
+                >
+                  <Text style={styles.timingReportLink}>Report incorrect time</Text>
+                </TouchableOpacity>
+              </View>
             </View>
           )}
           {!timingDisclosure && !isPrivateFriendEvent && (
@@ -1933,7 +1964,16 @@ const handleNonTicketAction = () => {
         </View>
 
         {/* Description — fixed flexible area; scrolls internally for long copy */}
-<View style={styles.descriptionContainer}>
+<View
+  style={[
+    styles.descriptionContainer,
+    {
+      minHeight: isPrivateFriendEvent || friendPresence
+        ? Math.min(descriptionMinHeight, 74)
+        : descriptionMinHeight,
+    },
+  ]}
+>
   <GestureScrollView
     ref={descriptionScrollRef}
     style={styles.descriptionScroll}
@@ -2353,12 +2393,39 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   header: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    backgroundColor: '#111111',
+    paddingHorizontal: 12,
+    paddingTop: 8,
+    paddingBottom: 8,
+    zIndex: 30,
+  },
+  headerGradient: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 82,
+    zIndex: 24,
+  },
+  headerIdentitySurface: {
+    flex: 1,
+    minWidth: 0,
+    minHeight: 50,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingLeft: 5,
+    paddingRight: 12,
+    paddingVertical: 5,
+    borderRadius: 27,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255, 255, 255, 0.18)',
+    backgroundColor: 'rgba(17, 17, 17, 0.74)',
   },
   headerTextContainer: {
     flex: 1,
@@ -2383,19 +2450,29 @@ const styles = StyleSheet.create({
     color: '#CCCCCC',
   },
   closeButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: 'rgba(17, 17, 17, 0.66)',
     justifyContent: 'center',
     alignItems: 'center',
+    marginLeft: 8,
   },
   image: {
     width: '100%',
+    height: '100%',
     backgroundColor: '#000000',
   },
   imageWrapper: {
     position: 'relative',
+    flexShrink: 1,
+    minHeight: 160,
+    overflow: 'hidden',
+    backgroundColor: '#000000',
+  },
+  imagePressSurface: {
+    width: '100%',
+    height: '100%',
   },
   headerVenueAvatarContainer: {
     width: 40,
@@ -2430,14 +2507,15 @@ const styles = StyleSheet.create({
   },
   zoomIconOverlay: {
     position: 'absolute',
-    top: 10,
-    right: 10,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    borderRadius: 15,
-    width: 30,
-    height: 30,
+    top: 70,
+    right: 12,
+    backgroundColor: 'rgba(0, 0, 0, 0.52)',
+    borderRadius: 14,
+    width: 28,
+    height: 28,
     justifyContent: 'center',
     alignItems: 'center',
+    zIndex: 26,
   },
   engagementOverlay: {
     position: 'absolute',
@@ -2964,7 +3042,30 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   timingBadge: {
-    marginLeft: 8,
+    marginLeft: 4,
+  },
+  timingSummaryGroup: {
+    flex: 1,
+    minWidth: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  timingSummaryText: {
+    flex: 0,
+    flexShrink: 1,
+    minWidth: 0,
+  },
+  timingSummaryLabel: {
+    flex: 0,
+    flexGrow: 0,
+    flexShrink: 1,
+  },
+  timingInfoButton: {
+    width: 28,
+    height: 28,
+    marginLeft: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   seriesContextLine: {
     marginLeft: 4,
@@ -2973,22 +3074,9 @@ const styles = StyleSheet.create({
   timingDisclosureContainer: {
     marginLeft: 26,
   },
-  timingDisclosureToggle: {
-    alignItems: 'center',
-    alignSelf: 'flex-start',
-    flexDirection: 'row',
-    gap: 5,
-    paddingVertical: 2,
-  },
-  timingDisclosureToggleText: {
-    color: '#F4C542',
-    fontSize: 12,
-    fontWeight: '700',
-  },
   timingDisclosureBody: {
     backgroundColor: 'rgba(255,255,255,0.07)',
     borderRadius: 8,
-    marginTop: 4,
     padding: 9,
   },
   timingDisclosureText: {
@@ -3069,21 +3157,26 @@ description: {
   flexDirection: 'row',
   justifyContent: 'space-around',
   alignItems: 'center',
-  paddingVertical: 4, // was 12
+  paddingVertical: 2,
   backgroundColor: '#111111',
 },
 
 
   actionButton: {
   alignItems: 'center',
-  padding: 8, // was 10
+  justifyContent: 'center',
+  minHeight: 48,
+  minWidth: 72,
+  paddingHorizontal: 8,
+  paddingVertical: 4,
   position: 'relative',
 },
 
   routeActionSlot: {
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 8,
+    minHeight: 48,
+    padding: 4,
   },
   routeActionPill: {
     minHeight: 44,

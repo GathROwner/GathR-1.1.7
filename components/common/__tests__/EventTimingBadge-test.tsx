@@ -69,4 +69,19 @@ describe('EventTimingBadge', () => {
     expect(stopPropagation).toHaveBeenCalledTimes(1);
     act(() => component!.unmount());
   });
+
+  it('renders as status text when another control owns the timing explanation', () => {
+    let component: renderer.ReactTestRenderer;
+    act(() => {
+      component = renderer.create(
+        <EventTimingBadge event={unknownEndEvent()} compact showInfoIndicator={false} />
+      );
+    });
+
+    const badge = component!.root.findByProps({ testID: 'event-timing-badge' });
+    expect(badge.props.accessibilityRole).toBe('text');
+    expect(component!.root.findAllByProps({ testID: 'event-timing-badge-info' })).toHaveLength(0);
+
+    act(() => component!.unmount());
+  });
 });

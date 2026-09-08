@@ -18,6 +18,7 @@ interface EventTimingBadgeProps {
   compact?: boolean;
   carousel?: boolean;
   onInfoPress?: () => void;
+  showInfoIndicator?: boolean;
   style?: StyleProp<ViewStyle>;
 }
 
@@ -26,10 +27,12 @@ export function EventTimingBadge({
   compact = false,
   carousel = false,
   onInfoPress,
+  showInfoIndicator = true,
   style,
 }: EventTimingBadgeProps) {
   const badge = getEventTimingBadge(event);
   if (!badge) return null;
+  const hasInfoIndicator = Boolean(badge.infoTitle && showInfoIndicator);
 
   const badgeStyle = [
     styles.base,
@@ -38,8 +41,8 @@ export function EventTimingBadge({
     badge.tone === 'caution' && styles.caution,
     badge.tone === 'muted' && styles.muted,
     badge.tone === 'neutral' && styles.neutral,
-    badge.infoTitle && styles.withInfo,
-    carousel && badge.infoTitle && styles.carouselWithInfo,
+    hasInfoIndicator && styles.withInfo,
+    carousel && hasInfoIndicator && styles.carouselWithInfo,
     style,
   ];
 
@@ -48,7 +51,7 @@ export function EventTimingBadge({
       <Text style={[styles.text, compact && styles.compactText, carousel && styles.carouselText]}>
         {badge.text}
       </Text>
-      {badge.infoTitle ? (
+      {hasInfoIndicator ? (
         <View
           pointerEvents="none"
           style={[styles.infoCorner, carousel && styles.carouselInfoCorner]}
@@ -60,7 +63,7 @@ export function EventTimingBadge({
     </>
   );
 
-  if (badge.infoTitle) {
+  if (hasInfoIndicator) {
     const disclosure = getEventTimingDisclosure(event);
     const handleInfoPress = (pressEvent: GestureResponderEvent) => {
       pressEvent.stopPropagation?.();
