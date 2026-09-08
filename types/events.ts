@@ -272,6 +272,8 @@ export interface Event {
   mediaUrls?: string[];
 
   // Event details (from Firestore metadata)
+  sourceUrl?: string;
+  sourceUniqueId?: string;
   facebookUrl?: string;
   eventType?: string;
   ageRestriction?: string;

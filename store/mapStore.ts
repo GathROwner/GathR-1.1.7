@@ -2236,7 +2236,8 @@ fetchEventDetails: async (eventIds: (string | number)[]) => {
             {
               endStatus: 'unknown',
               endResolutionMethod: 'legacy_details_api_unproven',
-              sourceUrl: detail?.facebookUrl || detail?.sourceUrl || null,
+              sourceUrl:
+                detail?.sourceUrl || detail?.metadata?.sourceUrl || detail?.facebookUrl || null,
             }
           ),
       ticketPrice: detail?.ticketPrice || detail?.price || '',
@@ -2267,6 +2268,8 @@ fetchEventDetails: async (eventIds: (string | number)[]) => {
       topReactionsCount: detail?.topReactionsCount,
       usersResponded: detail?.usersResponded,
       mediaUrls: detail?.mediaUrls,
+      sourceUrl: detail?.sourceUrl || detail?.metadata?.sourceUrl,
+      sourceUniqueId: detail?.sourceUniqueId || detail?.metadata?.uniqueId,
       facebookUrl: detail?.facebookUrl,
       eventType: detail?.eventType,
       ageRestriction: detail?.ageRestriction,

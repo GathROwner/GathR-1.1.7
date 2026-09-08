@@ -4,6 +4,7 @@ jest.mock('../../../config/firebaseConfig', () => ({
 }));
 
 import type { FirestoreEvent } from '../../../types/firestore';
+import { getEventOriginalSourceUrl } from '../../../utils/eventSourceUrl';
 import { normalizeFirestoreEvent, normalizeFirestoreTiming } from '../firestoreEvents';
 
 const event = (overrides: Partial<FirestoreEvent> = {}): FirestoreEvent => ({
@@ -67,5 +68,34 @@ describe('Firestore timing normalization', () => {
       confidence: 'low',
       discoveryCutoffTime: '11:00:00 PM',
     });
+  });
+
+  it('preserves post source fields separately from the venue Facebook page', () => {
+    const normalized = normalizeFirestoreEvent(event({
+      sourceUrl: 'https://www.facebook.com/reel/1676272290104313/',
+      metadata: {
+        uniqueId: '1636582355145006_94374787eb7abb39',
+        facebookUrl: 'https://www.facebook.com/slaymakerandnichols',
+      },
+    }));
+
+    expect(normalized).toMatchObject({
+      sourceUrl: 'https://www.facebook.com/reel/1676272290104313/',
+      sourceUniqueId: '1636582355145006_94374787eb7abb39',
+      facebookUrl: 'https://www.facebook.com/slaymakerandnichols',
+    });
+  });
+
+  it('resolves a legacy Firestore Facebook row to its post instead of its venue page', () => {
+    const normalized = normalizeFirestoreEvent(event({
+      metadata: {
+        uniqueId: '1636582355145006_94374787eb7abb39',
+        facebookUrl: 'https://www.facebook.com/slaymakerandnichols',
+      },
+    }));
+
+    expect(getEventOriginalSourceUrl(normalized)).toBe(
+      'https://www.facebook.com/slaymakerandnichols/posts/1636582355145006'
+    );
   });
 });

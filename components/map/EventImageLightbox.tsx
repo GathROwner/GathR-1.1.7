@@ -76,10 +76,10 @@ import {
 } from '../../utils/friendEventLightbox';
 import {
   getEventScheduleState,
-  getEventTiming,
   getEventTimingDisclosure,
 } from '../../utils/eventTiming';
 import { getEventScheduleContext } from '../../utils/eventSeries';
+import { getEventOriginalSourceUrl } from '../../utils/eventSourceUrl';
 import { useEventTimingMinute } from '../../hooks/useEventTimingMinute';
 import {
   hasPhysicalEventDestination,
@@ -1243,14 +1243,11 @@ const handleNonTicketAction = () => {
     scheduleContext?.label,
   ].filter(Boolean).join(' · ');
   const timingDisclosure = getEventTimingDisclosure(updatedEvent);
-  const timingContract = getEventTiming(updatedEvent);
   const timingState = getEventScheduleState(updatedEvent);
-  const timingSourceUrl =
-    timingContract.schedule.end.sourceUrl ||
-    timingContract.schedule.start.sourceUrl ||
-    updatedEvent.facebookUrl ||
-    updatedEvent.sharedEventProvenance?.sourceUrl ||
-    '';
+  const originalSourceUrl = getEventOriginalSourceUrl(updatedEvent);
+  const timingHelpText = timingDisclosure
+    ? `${timingDisclosure} Event times can change after GathR receives them. Check the original post for the latest details or report a correction if this listing no longer matches.`
+    : 'Event times can change after GathR receives them. Check the original post for the latest details or report a correction if this listing no longer matches.';
   const handleReportIncorrectTime = async () => {
     const subject = `GathR time report: ${updatedEvent.title}`;
     const body = [
@@ -1260,7 +1257,7 @@ const handleNonTicketAction = () => {
       `Event ID: ${String(updatedEvent.id)}`,
       `Displayed time: ${dateTimeDisplay}`,
       `Timing state: ${timingState.code}`,
-      timingSourceUrl ? `Official source: ${timingSourceUrl}` : '',
+      originalSourceUrl ? `Original post: ${originalSourceUrl}` : '',
       '',
       'What should be corrected:',
     ].filter(Boolean).join('\n');
@@ -1885,7 +1882,7 @@ const handleNonTicketAction = () => {
                 containerStyle={styles.timingSummaryText}
                 showInfoMarker={false}
               />
-              {timingDisclosure ? (
+              {!isPrivateFriendEvent ? (
                 <TouchableOpacity
                   accessibilityLabel={timingDisclosureExpanded ? 'Hide time details' : 'Explain event time'}
                   accessibilityRole="button"
@@ -1913,16 +1910,16 @@ const handleNonTicketAction = () => {
             containerStyle={styles.seriesContextLine}
           />
 
-          {timingDisclosure && timingDisclosureExpanded && (
+          {!isPrivateFriendEvent && timingDisclosureExpanded && (
             <View style={styles.timingDisclosureContainer}>
               <View style={styles.timingDisclosureBody}>
-                <Text style={styles.timingDisclosureText}>{timingDisclosure}</Text>
-                {timingSourceUrl ? (
+                <Text style={styles.timingDisclosureText}>{timingHelpText}</Text>
+                {originalSourceUrl ? (
                   <TouchableOpacity
                     accessibilityRole="link"
-                    onPress={() => Linking.openURL(timingSourceUrl)}
+                    onPress={() => Linking.openURL(originalSourceUrl)}
                   >
-                    <Text style={styles.timingSourceLink}>View official source</Text>
+                    <Text style={styles.timingSourceLink}>View original post</Text>
                   </TouchableOpacity>
                 ) : null}
                 <TouchableOpacity
@@ -1933,25 +1930,6 @@ const handleNonTicketAction = () => {
                   <Text style={styles.timingReportLink}>Report incorrect time</Text>
                 </TouchableOpacity>
               </View>
-            </View>
-          )}
-          {!timingDisclosure && !isPrivateFriendEvent && (
-            <View style={styles.timingConfirmedActions}>
-              {timingSourceUrl ? (
-                <TouchableOpacity
-                  accessibilityRole="link"
-                  onPress={() => Linking.openURL(timingSourceUrl)}
-                >
-                  <Text style={styles.timingSourceLink}>View official source</Text>
-                </TouchableOpacity>
-              ) : null}
-              <TouchableOpacity
-                accessibilityRole="button"
-                accessibilityLabel="Report an incorrect event time"
-                onPress={handleReportIncorrectTime}
-              >
-                <Text style={styles.timingReportLink}>Report incorrect time</Text>
-              </TouchableOpacity>
             </View>
           )}
 
@@ -2211,7 +2189,7 @@ const handleNonTicketAction = () => {
         imageIndex={0}
         visible={isImageViewerVisible}
         onRequestClose={handleImageViewerClose}
-        backgroundColor="rgba(0, 0, 0, 0.9)"
+        backgroundColor="#000000"
         swipeToCloseEnabled={true}
         doubleTapToZoomEnabled={true}
         presentationStyle="overFullScreen"
@@ -3095,12 +3073,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
     marginTop: 7,
-  },
-  timingConfirmedActions: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: 14,
-    marginLeft: 26,
   },
   descriptionContainer: {
     flex: 1,

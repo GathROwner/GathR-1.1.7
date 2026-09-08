@@ -64,6 +64,7 @@ export interface FirestoreEventMetadata {
   facebookUrl?: string;
   cleanedFacebookUrl?: string;
   sourceUrl?: string;
+  uniqueId?: string;
   eventType?: string;
   ageRestriction?: string;
   familyFriendlyScore?: number | null;

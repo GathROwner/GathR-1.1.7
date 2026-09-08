@@ -412,7 +412,12 @@ export function normalizeFirestoreEvent(fsEvent: FirestoreEvent): Event {
 
     // Additional media/details
     mediaUrls: fsEvent.metadata?.mediaUrls || [],
-    facebookUrl: fsEvent.metadata?.facebookUrl || '',
+    sourceUrl: firstText(fsEvent.sourceUrl, fsEvent.metadata?.sourceUrl) || undefined,
+    sourceUniqueId: firstText(fsEvent.metadata?.uniqueId) || undefined,
+    facebookUrl: firstText(
+      fsEvent.metadata?.facebookUrl,
+      fsEvent.metadata?.cleanedFacebookUrl
+    ),
     eventType: fsEvent.metadata?.eventType || '',
     ageRestriction: fsEvent.metadata?.ageRestriction || '',
 
