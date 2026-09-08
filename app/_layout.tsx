@@ -955,6 +955,7 @@ useEffect(() => {
       SOCIAL_FEATURE_ENABLED &&
       (
         segments[0] === 'friends' ||
+        segments[0] === 'social-profile' ||
         segments[0] === 'check-in' ||
         segments[0] === 'create-event' ||
         segments[0] === 'my-events' ||
@@ -1064,6 +1065,7 @@ useEffect(() => {
           presentation: 'modal'
         }} />
         <Stack.Screen name="friends" options={{ headerShown: false }} />
+        <Stack.Screen name="social-profile" options={{ headerShown: false }} />
         <Stack.Screen name="my-events" options={{ headerShown: false }} />
         <Stack.Screen name="friend-event/[id]" options={{ headerShown: false }} />
         <Stack.Screen name="create-event" options={{

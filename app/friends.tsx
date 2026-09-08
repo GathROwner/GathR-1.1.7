@@ -6,7 +6,6 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
-  Image,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -22,6 +21,7 @@ import QRCode from 'react-native-qrcode-svg';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { SocialDiagnosticsPanel } from '../components/social/SocialDiagnosticsPanel';
+import { ProfileAvatar } from '../components/social/ProfileAvatar';
 import { firestore } from '../config/firebaseConfig';
 import { useAuth } from '../contexts/AuthContext';
 import {
@@ -51,37 +51,33 @@ function displayError(error: unknown) {
     : 'The action could not be completed.';
 }
 
-function Avatar({ profile }: { profile: Pick<SocialProfile, 'displayName' | 'photoURL'> }) {
-  const initial = profile.displayName.trim().charAt(0).toUpperCase() || '?';
-  return profile.photoURL ? (
-    <Image source={{ uri: profile.photoURL }} style={styles.avatarImage} />
-  ) : (
-    <View style={[styles.avatar, styles.avatarFallback]}>
-      <Text style={styles.avatarInitial}>{initial}</Text>
-    </View>
-  );
-}
-
 function PersonRow({
   person,
   children,
+  onPress,
 }: {
   person: Pick<SocialProfile, 'uid' | 'displayName' | 'photoURL' | 'socialHandle'>;
   children?: React.ReactNode;
+  onPress?: () => void;
 }) {
   return (
     <View style={styles.personRow}>
-      <Avatar profile={person} />
-      <View
-        accessible
-        style={styles.personText}
-        accessibilityLabel={`${person.displayName}${person.socialHandle ? `, @${person.socialHandle}` : ''}`}
+      <TouchableOpacity
+        accessibilityLabel={`View ${person.displayName}'s profile${person.socialHandle ? `, @${person.socialHandle}` : ''}`}
+        accessibilityRole={onPress ? 'button' : undefined}
+        activeOpacity={onPress ? 0.72 : 1}
+        disabled={!onPress}
+        onPress={onPress}
+        style={styles.personIdentity}
       >
-        <Text numberOfLines={2} style={styles.personName}>{person.displayName}</Text>
-        <Text maxFontSizeMultiplier={1.1} numberOfLines={2} style={styles.handleText}>
-          {person.socialHandle ? `@${person.socialHandle}` : 'GathR member'}
-        </Text>
-      </View>
+        <ProfileAvatar profile={person} />
+        <View style={styles.personText}>
+          <Text numberOfLines={2} style={styles.personName}>{person.displayName}</Text>
+          <Text maxFontSizeMultiplier={1.1} numberOfLines={2} style={styles.handleText}>
+            {person.socialHandle ? `@${person.socialHandle}` : 'GathR member'}
+          </Text>
+        </View>
+      </TouchableOpacity>
       <View style={styles.rowActions}>{children}</View>
     </View>
   );
@@ -102,6 +98,12 @@ export default function FriendsScreen() {
   } = useSocialStore();
   const [handle, setHandle] = useState('');
   const [claimedHandle, setClaimedHandle] = useState('');
+  const [currentProfile, setCurrentProfile] = useState<SocialProfile>({
+    uid: currentUid,
+    displayName: user?.displayName || 'You',
+    photoURL: user?.photoURL || '',
+    socialHandle: '',
+  });
   const [search, setSearch] = useState('');
   const [searchResult, setSearchResult] = useState<SocialProfile | null>(null);
   const [searchComplete, setSearchComplete] = useState(false);
@@ -135,12 +137,37 @@ export default function FriendsScreen() {
 
   useEffect(() => {
     if (!user) return;
+    setCurrentProfile({
+      uid: user.uid,
+      displayName: user.displayName || 'You',
+      photoURL: user.photoURL || '',
+      socialHandle: '',
+    });
     void getDoc(doc(firestore, 'users', user.uid)).then((snapshot) => {
-      const current = String(snapshot.data()?.socialHandle || '');
+      const data = snapshot.data();
+      const current = String(data?.socialHandle || '');
       setClaimedHandle(current);
       setHandle(current);
+      setCurrentProfile({
+        uid: user.uid,
+        displayName: String(data?.displayName || user.displayName || 'You'),
+        photoURL: String(data?.photoURL || user.photoURL || ''),
+        socialHandle: current,
+      });
     }).catch(() => undefined);
   }, [user]);
+
+  const openProfile = (person: Pick<SocialProfile, 'uid' | 'displayName' | 'photoURL' | 'socialHandle'>) => {
+    router.push({
+      pathname: '/social-profile',
+      params: {
+        uid: person.uid,
+        displayName: person.displayName,
+        photoURL: person.photoURL,
+        socialHandle: person.socialHandle,
+      },
+    });
+  };
 
   const run = async (key: string, operation: () => Promise<unknown>, success?: string) => {
     setBusyKey(key);
@@ -287,6 +314,7 @@ export default function FriendsScreen() {
           <SocialDiagnosticsPanel />
 
           <View style={styles.handleCard}>
+            <ProfileAvatar profile={currentProfile} size={44} />
             <View style={styles.handleSummary}>
               <Text maxFontSizeMultiplier={1.15} style={styles.eyebrow}>YOUR HANDLE</Text>
               <Text maxFontSizeMultiplier={1.15} numberOfLines={1} style={styles.claimedHandle}>
@@ -336,7 +364,7 @@ export default function FriendsScreen() {
               </TouchableOpacity>
             </View>
             {searchResult && (
-              <PersonRow person={searchResult}>
+              <PersonRow person={searchResult} onPress={() => openProfile(searchResult)}>
                 {searchRelationship === 'available' && (
                   <TouchableOpacity
                     accessibilityLabel={`Send friend request to ${searchResult.displayName}`}
@@ -396,7 +424,7 @@ export default function FriendsScreen() {
                   <>
                     {incoming.length > 0 && <Text style={styles.groupLabel}>RECEIVED</Text>}
                     {incoming.map((request: FriendRequestProjection) => (
-                      <PersonRow key={request.uid} person={request}>
+                      <PersonRow key={request.uid} person={request} onPress={() => openProfile(request)}>
                         <TouchableOpacity accessibilityRole="button" accessibilityLabel={`Accept ${request.displayName}`} onPress={() => void run(`accept-${request.uid}`, () => acceptFriendRequest(request.uid))} style={styles.acceptButton}>
                           <Text maxFontSizeMultiplier={1.1} style={styles.acceptText}>Accept</Text>
                         </TouchableOpacity>
@@ -407,7 +435,7 @@ export default function FriendsScreen() {
                     ))}
                     {outgoing.length > 0 && <Text style={styles.groupLabel}>SENT</Text>}
                     {outgoing.map((request) => (
-                      <PersonRow key={request.uid} person={request}>
+                      <PersonRow key={request.uid} person={request} onPress={() => openProfile(request)}>
                         <TouchableOpacity accessibilityLabel={`Cancel request to ${request.displayName}`} onPress={() => void run(`cancel-${request.uid}`, () => cancelFriendRequest(request.uid))} style={styles.actionButton}>
                           <Text maxFontSizeMultiplier={1.1} style={styles.actionText}>Cancel</Text>
                         </TouchableOpacity>
@@ -425,7 +453,7 @@ export default function FriendsScreen() {
                 {activeSection === 'friends' && (
                   <>
                     {friends.map((friend) => (
-                      <PersonRow key={friend.uid} person={friend}>
+                      <PersonRow key={friend.uid} person={friend} onPress={() => openProfile(friend)}>
                         <TouchableOpacity accessibilityLabel={`More actions for ${friend.displayName}`} onPress={() => Alert.alert(friend.displayName, undefined, [
                           { text: 'Remove friend', style: 'destructive', onPress: () => confirmRemove(friend) },
                           { text: 'Block', style: 'destructive', onPress: () => confirmBlock(friend) },
@@ -560,10 +588,7 @@ const styles = StyleSheet.create({
   smallPrimaryButton: { minWidth: 54, minHeight: 44, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 12, borderRadius: 10, backgroundColor: BRAND },
   smallPrimaryText: { color: '#FFF', fontWeight: '700' },
   personRow: { flexDirection: 'row', alignItems: 'center', gap: 10, minHeight: 58, paddingVertical: 6, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#EAECF0' },
-  avatar: { width: 42, height: 42, borderRadius: 21 },
-  avatarImage: { width: 42, height: 42, borderRadius: 21 },
-  avatarFallback: { backgroundColor: '#DCEBFF', alignItems: 'center', justifyContent: 'center' },
-  avatarInitial: { fontSize: 17, fontWeight: '800', color: '#175CD3' },
+  personIdentity: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 2 },
   personText: { flex: 1, minWidth: 0 },
   personName: { fontWeight: '700', color: '#101828' },
   handleText: { color: '#667085', marginTop: 2 },
