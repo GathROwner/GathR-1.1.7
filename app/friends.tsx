@@ -21,6 +21,7 @@ import QRCode from 'react-native-qrcode-svg';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { SocialDiagnosticsPanel } from '../components/social/SocialDiagnosticsPanel';
+import { FriendsHandleCard } from '../components/social/FriendsHandleCard';
 import { ProfileAvatar } from '../components/social/ProfileAvatar';
 import { firestore } from '../config/firebaseConfig';
 import { useAuth } from '../contexts/AuthContext';
@@ -330,34 +331,12 @@ export default function FriendsScreen() {
           {!!error && <Text maxFontSizeMultiplier={1.15} numberOfLines={2} style={styles.errorBanner}>{error}</Text>}
           <SocialDiagnosticsPanel />
 
-          <View style={styles.handleCard}>
-            <ProfileAvatar profile={currentProfile} size={44} />
-            <View style={styles.handleBody}>
-              <View style={styles.handleSummary}>
-                <Text maxFontSizeMultiplier={1.15} style={styles.eyebrow}>YOUR HANDLE</Text>
-                <Text maxFontSizeMultiplier={1.15} style={styles.claimedHandle}>
-                  {claimedHandle ? `@${claimedHandle}` : 'Claim a searchable handle'}
-                </Text>
-              </View>
-              <View style={styles.handleActions}>
-                {claimedHandle && (
-                  <TouchableOpacity accessibilityLabel="Show friend QR code" accessibilityRole="button" onPress={() => setShareModalVisible(true)} style={styles.compactButton}>
-                    <Ionicons name="qr-code-outline" size={18} color="#6941C6" />
-                    <Text maxFontSizeMultiplier={1.1} style={styles.shareActionText}>Share</Text>
-                  </TouchableOpacity>
-                )}
-                <TouchableOpacity
-                  accessibilityLabel={claimedHandle ? 'Edit GathR handle' : 'Claim GathR handle'}
-                  accessibilityRole="button"
-                  onPress={() => setHandleModalVisible(true)}
-                  style={styles.compactButton}
-                >
-                  <Ionicons name={claimedHandle ? 'pencil' : 'add'} size={17} color="#175CD3" />
-                  <Text maxFontSizeMultiplier={1.1} style={styles.actionText}>{claimedHandle ? 'Edit' : 'Claim'}</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          </View>
+          <FriendsHandleCard
+            claimedHandle={claimedHandle}
+            onEdit={() => setHandleModalVisible(true)}
+            onShare={() => setShareModalVisible(true)}
+            profile={currentProfile}
+          />
 
           <View style={[styles.searchCard, isPeopleSearchActive && styles.searchCardActive]}>
             <View style={styles.inputRow}>
@@ -612,13 +591,6 @@ const styles = StyleSheet.create({
   title: { fontSize: 24, fontWeight: '800', color: '#101828' },
   subtitle: { marginTop: 1, color: '#667085', lineHeight: 18 },
   content: { flex: 1, padding: 12, gap: 10, minHeight: 0 },
-  handleCard: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, backgroundColor: '#FFF', borderRadius: 14, paddingHorizontal: 14, paddingVertical: 9, borderWidth: StyleSheet.hairlineWidth, borderColor: '#E4E7EC' },
-  handleBody: { flex: 1, minWidth: 0, gap: 7 },
-  handleSummary: { minWidth: 0 },
-  handleActions: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6 },
-  eyebrow: { color: '#667085', fontSize: 11, fontWeight: '800', letterSpacing: 0.7 },
-  claimedHandle: { color: '#101828', fontSize: 17, fontWeight: '700', marginTop: 1 },
-  compactButton: { minHeight: 40, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, paddingHorizontal: 11, borderRadius: 10, backgroundColor: '#EFF8FF' },
   searchCard: { backgroundColor: '#FFF', borderRadius: 14, padding: 10, gap: 4, borderWidth: StyleSheet.hairlineWidth, borderColor: '#E4E7EC' },
   searchCardActive: { flex: 1, minHeight: 0 },
   relationshipCard: { flex: 1, minHeight: 0, overflow: 'hidden', backgroundColor: '#FFF', borderRadius: 16, borderWidth: StyleSheet.hairlineWidth, borderColor: '#E4E7EC' },
@@ -668,7 +640,6 @@ const styles = StyleSheet.create({
   modalHeading: { flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
   handleInputRow: { minHeight: 52, flexDirection: 'row', alignItems: 'center', gap: 7, borderWidth: 1, borderColor: '#98A2B3', borderRadius: 11, paddingHorizontal: 12 },
   modalInput: { flex: 1, minHeight: 50, color: '#101828', fontSize: 17 },
-  shareActionText: { color: '#6941C6', fontWeight: '800' },
   qrCard: { alignItems: 'center', paddingTop: 24 },
   qrClose: { position: 'absolute', right: 10, top: 10, width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
   qrMark: { width: 48, height: 48, borderRadius: 18, alignItems: 'center', justifyContent: 'center', backgroundColor: '#6941C6' },
