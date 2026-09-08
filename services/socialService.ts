@@ -212,6 +212,10 @@ export function normalizeSocialHandle(value: string): string {
   return value.normalize('NFKC').trim().replace(/^@+/, '').toLowerCase();
 }
 
+export function normalizePeopleSearchQuery(value: string): string {
+  return value.normalize('NFKC').trim().replace(/\s+/g, ' ').slice(0, 40);
+}
+
 export function validateSocialHandle(value: string): string {
   const handle = normalizeSocialHandle(value);
   if (!/^[a-z0-9_]{3,24}$/.test(handle)) {
@@ -239,6 +243,16 @@ export async function searchUserByHandle(handle: string): Promise<SocialProfile 
     { handle: validateSocialHandle(handle) }
   );
   return result.user;
+}
+
+export async function searchUsers(query: string): Promise<SocialProfile[]> {
+  const normalizedQuery = normalizePeopleSearchQuery(query);
+  if (normalizedQuery.length < 2) return [];
+  const result = await callSocial<{ query: string }, { users: SocialProfile[] }>(
+    'searchUsersCallable',
+    { query: normalizedQuery }
+  );
+  return Array.isArray(result.users) ? result.users.slice(0, 5) : [];
 }
 
 export const sendFriendRequest = (targetUid: string) =>

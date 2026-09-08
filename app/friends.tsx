@@ -30,10 +30,11 @@ import {
   cancelFriendRequest,
   claimSocialHandle,
   declineFriendRequest,
+  normalizePeopleSearchQuery,
   normalizeSocialHandle,
   removeFriend,
   reportUser,
-  searchUserByHandle,
+  searchUsers,
   sendFriendRequest,
   SocialServiceError,
   unblockUser,
@@ -44,6 +45,7 @@ import { SOCIAL_FEATURE_ENABLED } from '../types/social';
 
 const BRAND = '#2F80ED';
 type RelationshipSection = 'requests' | 'friends' | 'blocked';
+type PeopleSearchStatus = 'idle' | 'loading' | 'complete' | 'error';
 
 function displayError(error: unknown) {
   return error instanceof SocialServiceError || error instanceof Error
@@ -105,13 +107,14 @@ export default function FriendsScreen() {
     socialHandle: '',
   });
   const [search, setSearch] = useState('');
-  const [searchResult, setSearchResult] = useState<SocialProfile | null>(null);
-  const [searchComplete, setSearchComplete] = useState(false);
+  const [searchResults, setSearchResults] = useState<SocialProfile[]>([]);
+  const [searchStatus, setSearchStatus] = useState<PeopleSearchStatus>('idle');
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [handleModalVisible, setHandleModalVisible] = useState(false);
   const [shareModalVisible, setShareModalVisible] = useState(false);
   const [activeSection, setActiveSection] = useState<RelationshipSection>('friends');
   const handledLinkRef = useRef('');
+  const searchRequestRef = useRef(0);
 
   const incoming = useMemo(
     () => requests.filter((request) => request.direction === 'incoming'),
@@ -122,18 +125,17 @@ export default function FriendsScreen() {
     [requests]
   );
   const normalizedHandle = normalizeSocialHandle(handle);
-  const normalizedSearch = normalizeSocialHandle(search);
+  const normalizedSearch = normalizePeopleSearchQuery(search);
   const canSaveHandle = /^[a-z0-9_]{3,24}$/.test(normalizedHandle)
     && normalizedHandle !== claimedHandle;
-  const canSearch = /^[a-z0-9_]{3,24}$/.test(normalizedSearch);
-  const searchRelationship = useMemo(() => {
-    if (!searchResult) return null;
-    if (searchResult.uid === currentUid) return 'self';
-    if (friends.some((friend) => friend.uid === searchResult.uid)) return 'friend';
-    if (incoming.some((request) => request.uid === searchResult.uid)) return 'incoming';
-    if (outgoing.some((request) => request.uid === searchResult.uid)) return 'outgoing';
+  const isPeopleSearchActive = normalizedSearch.length >= 2;
+  const relationshipFor = (person: SocialProfile) => {
+    if (person.uid === currentUid) return 'self';
+    if (friends.some((friend) => friend.uid === person.uid)) return 'friend';
+    if (incoming.some((request) => request.uid === person.uid)) return 'incoming';
+    if (outgoing.some((request) => request.uid === person.uid)) return 'outgoing';
     return 'available';
-  }, [currentUid, friends, incoming, outgoing, searchResult]);
+  };
 
   useEffect(() => {
     if (!user) return;
@@ -192,12 +194,32 @@ export default function FriendsScreen() {
     if (completed) setHandleModalVisible(false);
   };
 
-  const findPerson = () => run('search', async () => {
-    setSearchComplete(false);
-    const found = await searchUserByHandle(search);
-    setSearchResult(found);
-    setSearchComplete(true);
-  });
+  useEffect(() => {
+    const requestId = searchRequestRef.current + 1;
+    searchRequestRef.current = requestId;
+    if (!isPeopleSearchActive) {
+      setSearchResults([]);
+      setSearchStatus('idle');
+      return;
+    }
+
+    setSearchResults([]);
+    setSearchStatus('loading');
+    const timeout = setTimeout(() => {
+      void searchUsers(normalizedSearch)
+        .then((users) => {
+          if (searchRequestRef.current !== requestId) return;
+          setSearchResults(users);
+          setSearchStatus('complete');
+        })
+        .catch(() => {
+          if (searchRequestRef.current !== requestId) return;
+          setSearchResults([]);
+          setSearchStatus('error');
+        });
+    }, 300);
+    return () => clearTimeout(timeout);
+  }, [isPeopleSearchActive, normalizedSearch]);
 
   useEffect(() => {
     const linkedHandle = normalizeSocialHandle(params.handle || '');
@@ -205,11 +227,6 @@ export default function FriendsScreen() {
     handledLinkRef.current = linkedHandle;
     setSearch(linkedHandle);
     setActiveSection('requests');
-    void run('search', async () => {
-      const found = await searchUserByHandle(linkedHandle);
-      setSearchResult(found);
-      setSearchComplete(true);
-    });
   }, [params.handle]);
 
   const profileLink = claimedHandle
@@ -340,55 +357,79 @@ export default function FriendsScreen() {
             </View>
           </View>
 
-          <View style={styles.searchCard}>
+          <View style={[styles.searchCard, isPeopleSearchActive && styles.searchCardActive]}>
             <View style={styles.inputRow}>
               <Ionicons name="search" size={19} color="#667085" />
               <TextInput
                 value={search}
-                onChangeText={(value) => { setSearch(value); setSearchComplete(false); setSearchResult(null); }}
-                autoCapitalize="none"
+                onChangeText={setSearch}
+                autoCapitalize="words"
                 autoCorrect={false}
-                placeholder="Find exact @handle"
-                accessibilityLabel="Search exact GathR handle"
-                onSubmitEditing={() => { if (canSearch) void findPerson(); }}
+                maxLength={40}
+                placeholder="Search people by name or @handle"
+                accessibilityLabel="Search people by name or GathR handle"
+                returnKeyType="search"
                 style={[styles.input, styles.searchInput]}
               />
-              <TouchableOpacity
-                accessibilityLabel="Search for GathR handle"
-                accessibilityRole="button"
-                disabled={busyKey !== null || !canSearch}
-                onPress={() => void findPerson()}
-                style={[styles.smallPrimaryButton, (busyKey !== null || !canSearch) && styles.disabled]}
-              >
-                {busyKey === 'search' ? <ActivityIndicator color="#FFF" /> : <Text maxFontSizeMultiplier={1.1} style={styles.smallPrimaryText}>Find</Text>}
-              </TouchableOpacity>
+              {searchStatus === 'loading' && <ActivityIndicator color={BRAND} />}
+              {searchStatus !== 'loading' && search.length > 0 && (
+                <TouchableOpacity
+                  accessibilityLabel="Clear people search"
+                  accessibilityRole="button"
+                  onPress={() => setSearch('')}
+                  style={styles.clearSearchButton}
+                >
+                  <Ionicons name="close-circle" size={22} color="#98A2B3" />
+                </TouchableOpacity>
+              )}
             </View>
-            {searchResult && (
-              <PersonRow person={searchResult} onPress={() => openProfile(searchResult)}>
-                {searchRelationship === 'available' && (
-                  <TouchableOpacity
-                    accessibilityLabel={`Send friend request to ${searchResult.displayName}`}
-                    accessibilityRole="button"
-                    onPress={() => void sendRequest(searchResult)}
-                    style={styles.actionButton}
-                  >
-                    <Text style={styles.actionText}>Add</Text>
-                  </TouchableOpacity>
+            {isPeopleSearchActive && (
+              <ScrollView
+                contentContainerStyle={styles.searchResultsContent}
+                keyboardShouldPersistTaps="handled"
+                showsVerticalScrollIndicator={false}
+                style={styles.searchResults}
+              >
+                {searchResults.map((person) => {
+                  const relationship = relationshipFor(person);
+                  return (
+                    <PersonRow key={person.uid} person={person} onPress={() => openProfile(person)}>
+                      {relationship === 'available' && (
+                        <TouchableOpacity
+                          accessibilityLabel={`Send friend request to ${person.displayName}`}
+                          accessibilityRole="button"
+                          disabled={busyKey !== null}
+                          onPress={() => void sendRequest(person)}
+                          style={[styles.actionButton, busyKey !== null && styles.disabled]}
+                        >
+                          {busyKey === `add-${person.uid}`
+                            ? <ActivityIndicator color={BRAND} />
+                            : <Text style={styles.actionText}>Add</Text>}
+                        </TouchableOpacity>
+                      )}
+                      {relationship !== 'available' && (
+                        <Text maxFontSizeMultiplier={1.1} style={styles.relationshipLabel}>
+                          {relationship === 'self' && 'This is you'}
+                          {relationship === 'friend' && 'Friends'}
+                          {relationship === 'incoming' && 'Respond in Requests'}
+                          {relationship === 'outgoing' && 'Request sent'}
+                        </Text>
+                      )}
+                    </PersonRow>
+                  );
+                })}
+                {searchStatus === 'loading' && <Text style={styles.searchStatusText}>Searching…</Text>}
+                {searchStatus === 'complete' && searchResults.length === 0 && (
+                  <Text maxFontSizeMultiplier={1.15} style={styles.emptyText}>No people found. Try a name or @handle.</Text>
                 )}
-                {searchRelationship !== 'available' && (
-                  <Text maxFontSizeMultiplier={1.1} style={styles.relationshipLabel}>
-                    {searchRelationship === 'self' && 'This is you'}
-                    {searchRelationship === 'friend' && 'Friends'}
-                    {searchRelationship === 'incoming' && 'Respond in Requests'}
-                    {searchRelationship === 'outgoing' && 'Request sent'}
-                  </Text>
+                {searchStatus === 'error' && (
+                  <Text maxFontSizeMultiplier={1.15} style={styles.searchErrorText}>Search is unavailable right now. Please try again.</Text>
                 )}
-              </PersonRow>
+              </ScrollView>
             )}
-            {searchComplete && !searchResult && <Text maxFontSizeMultiplier={1.15} numberOfLines={2} style={styles.emptyText}>No account has that exact handle.</Text>}
           </View>
 
-          <View style={styles.relationshipCard}>
+          {!isPeopleSearchActive && <View style={styles.relationshipCard}>
             <View accessible={false} style={styles.tabRow}>
               {([
                 ['requests', 'Requests', incoming.length],
@@ -492,7 +533,7 @@ export default function FriendsScreen() {
                 )}
               </ScrollView>
             )}
-          </View>
+          </View>}
         </View>
       </KeyboardAvoidingView>
 
@@ -576,6 +617,7 @@ const styles = StyleSheet.create({
   claimedHandle: { color: '#101828', fontSize: 17, fontWeight: '700', marginTop: 1 },
   compactButton: { minHeight: 40, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, paddingHorizontal: 11, borderRadius: 10, backgroundColor: '#EFF8FF' },
   searchCard: { backgroundColor: '#FFF', borderRadius: 14, padding: 10, gap: 4, borderWidth: StyleSheet.hairlineWidth, borderColor: '#E4E7EC' },
+  searchCardActive: { flex: 1, minHeight: 0 },
   relationshipCard: { flex: 1, minHeight: 0, overflow: 'hidden', backgroundColor: '#FFF', borderRadius: 16, borderWidth: StyleSheet.hairlineWidth, borderColor: '#E4E7EC' },
   sectionTitle: { fontSize: 18, fontWeight: '700', color: '#101828' },
   muted: { color: '#667085', lineHeight: 19, textAlign: 'left' },
@@ -583,10 +625,13 @@ const styles = StyleSheet.create({
   atSign: { fontSize: 20, color: '#475467' },
   input: { flex: 1, minHeight: 44, borderWidth: 1, borderColor: '#D0D5DD', borderRadius: 10, paddingHorizontal: 12, color: '#101828', backgroundColor: '#FFF' },
   searchInput: { borderWidth: 0, paddingHorizontal: 0, minHeight: 42 },
+  clearSearchButton: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center', borderRadius: 18 },
+  searchResults: { flex: 1, minHeight: 0 },
+  searchResultsContent: { paddingTop: 3, paddingBottom: 6 },
+  searchStatusText: { color: '#667085', paddingVertical: 18, textAlign: 'center' },
+  searchErrorText: { color: '#B42318', paddingVertical: 18, textAlign: 'center' },
   primaryButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, backgroundColor: BRAND, paddingHorizontal: 22, paddingVertical: 13, borderRadius: 11 },
   primaryButtonText: { color: '#FFF', fontWeight: '700' },
-  smallPrimaryButton: { minWidth: 54, minHeight: 44, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 12, borderRadius: 10, backgroundColor: BRAND },
-  smallPrimaryText: { color: '#FFF', fontWeight: '700' },
   personRow: { flexDirection: 'row', alignItems: 'center', gap: 10, minHeight: 58, paddingVertical: 6, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#EAECF0' },
   personIdentity: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 2 },
   personText: { flex: 1, minWidth: 0 },
