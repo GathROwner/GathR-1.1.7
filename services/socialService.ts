@@ -213,7 +213,15 @@ export function normalizeSocialHandle(value: string): string {
 }
 
 export function normalizePeopleSearchQuery(value: string): string {
-  return value.normalize('NFKC').trim().replace(/\s+/g, ' ').slice(0, 40);
+  return value
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLocaleLowerCase('en-CA')
+    .replace(/^@+/, '')
+    .replace(/[^\p{Letter}\p{Number}_]+/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 40);
 }
 
 export function validateSocialHandle(value: string): string {
