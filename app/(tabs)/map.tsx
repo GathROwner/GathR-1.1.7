@@ -123,8 +123,12 @@ import {
   traceMapTimerScheduled,
 } from '../../utils/mapTrace';
 import {
+  type MapCameraReconciliationSource,
   shouldReconcileAndroidMapIdle,
+  shouldCompleteRecenterOnMapIdle,
+  shouldFetchReconciledViewport,
   shouldRefreshBeaconProjection,
+  shouldUseNativeCameraReconciliation,
 } from '../../utils/mapIdleReconciliation';
 import {
   cacheStartupLocation,
@@ -321,6 +325,9 @@ const ANDROID_CONTROLS_RELEASE_AFTER_CLOSE_MS = 150;
 const TUTORIAL_CALLOUT_READY_TIMEOUT_MS = 2500;
 const TUTORIAL_CALLOUT_CLOSE_TIMEOUT_MS = 1800;
 const TUTORIAL_CLUSTER_OPEN_READY_TIMEOUT_MS = 1200;
+const RECENTER_CAMERA_ANIMATION_MS = 500;
+const RECENTER_CAMERA_IDLE_MIN_ELAPSED_MS = 350;
+const RECENTER_VIEWPORT_REFRESH_FALLBACK_MS = 800;
 
 const logCalloutProbe = (...args: unknown[]): void => {
   if (DEBUG_CALLOUT_PROBE) {
@@ -4786,6 +4793,9 @@ const logPills = (msg: string, ctx?: Record<string, any>) => {
     visibleBbox: BoundingBox | null;
   } | null>(null);
   const cameraReconcileRequestIdRef = useRef<number>(0);
+  const recenterViewportRefreshPendingRef = useRef(false);
+  const recenterViewportRefreshStartedAtRef = useRef(0);
+  const recenterViewportRefreshTimerRef = useRef<NodeJS.Timeout | null>(null);
   const startupFallbackViewportUsedRef = useRef(false);
 
 
@@ -7064,25 +7074,36 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
   // Re-center the map on user location
   const handleRecenterPress = () => {
     if (location && cameraRef.current) {
-        setIgnoreProgrammaticTrace(true, 'recenter');
-    logPills('PROGRAMMATIC MOVE START (recenter) — suppress hides 800ms');
-    setTimeout(() => {
-      setIgnoreProgrammaticTrace(false, 'recenter_complete');
-      logPills('PROGRAMMATIC MOVE END (recenter)');
-    }, 800);
+      if (recenterViewportRefreshTimerRef.current) {
+        clearTimeout(recenterViewportRefreshTimerRef.current);
+      }
+      recenterViewportRefreshPendingRef.current = true;
+      recenterViewportRefreshStartedAtRef.current = Date.now();
+      setIgnoreProgrammaticTrace(true, 'recenter');
+      logPills('PROGRAMMATIC MOVE START (recenter) — suppress until settled');
+      recenterViewportRefreshTimerRef.current = setTimeout(() => {
+        recenterViewportRefreshTimerRef.current = null;
+        if (!recenterViewportRefreshPendingRef.current) {
+          return;
+        }
+        recenterViewportRefreshPendingRef.current = false;
+        setIgnoreProgrammaticTrace(false, 'recenter_complete_fallback');
+        logPills('PROGRAMMATIC MOVE END (recenter fallback)');
+        void reconcileCameraStateFromMapRef('recenter');
+      }, RECENTER_VIEWPORT_REFRESH_FALLBACK_MS);
 
-    traceMapEvent('recenter_pressed', {
-      latitude: location.coords.latitude,
-      longitude: location.coords.longitude,
-    });
+      traceMapEvent('recenter_pressed', {
+        latitude: location.coords.latitude,
+        longitude: location.coords.longitude,
+      });
 
 
-    cameraRef.current.setCamera({
-      centerCoordinate: [location.coords.longitude, location.coords.latitude],
+      cameraRef.current.setCamera({
+        centerCoordinate: [location.coords.longitude, location.coords.latitude],
 
-      zoomLevel: 12,
-      animationDuration: 500,
-    });
+        zoomLevel: 12,
+        animationDuration: RECENTER_CAMERA_ANIMATION_MS,
+      });
 
 
       // 🔥 ANALYTICS: Track re-center actions
@@ -8632,7 +8653,7 @@ const handleMapMovementStart = useCallback(() => {
 }, [activeFilterPanel, hidePills, hasInitiallyPositioned, isMapMoving]);
 
 
-const reconcileCameraStateFromMapRef = useCallback(async (source: 'map_idle' | 'movement_end' | 'hotspot_return' = 'map_idle') => {
+const reconcileCameraStateFromMapRef = useCallback(async (source: MapCameraReconciliationSource = 'map_idle') => {
   const gestureSessionId = gestureTraceSessionIdRef.current ?? getActiveMapTraceGestureSessionId();
   const startedAt = MAP_TRACE_ENABLED ? mapTraceNow() : 0;
   const traceCompleted = (result: string, extra: Record<string, unknown> = {}) => {
@@ -8650,9 +8671,17 @@ const reconcileCameraStateFromMapRef = useCallback(async (source: 'map_idle' | '
     ...getCommittedMapTraceCounts(),
   }, { gestureSessionId });
 
-  if (Platform.OS !== 'android' || isAndroidHotspotStartupFlowActive()) {
+  const androidHotspotStartupActive =
+    Platform.OS === 'android' && isAndroidHotspotStartupFlowActive();
+  if (!shouldUseNativeCameraReconciliation({
+    platform: Platform.OS,
+    source,
+    androidHotspotStartupActive,
+  })) {
     traceCompleted(
-      Platform.OS !== 'android' ? 'platform_not_reconciled' : 'hotspot_startup_active'
+      Platform.OS === 'android' && androidHotspotStartupActive
+        ? 'hotspot_startup_active'
+        : 'platform_not_reconciled'
     );
     return;
   }
@@ -8716,11 +8745,11 @@ const reconcileCameraStateFromMapRef = useCallback(async (source: 'map_idle' | '
     const height = mapDimensions?.height ?? windowHeight;
     const effectiveClusterZoom = getEffectiveZoomFromVisibleBounds(
       reportedZoom,
-      nativeVisibleBbox,
+      Platform.OS === 'android' ? nativeVisibleBbox : null,
       width * PixelRatio.get()
     );
 
-    if (isAndroidStartupCameraPayloadInvalid({
+    if (Platform.OS === 'android' && isAndroidStartupCameraPayloadInvalid({
       zoom: effectiveClusterZoom,
       visibleBbox: nativeVisibleBbox,
       userGestureSeen: userGestureSeenRef.current,
@@ -8744,6 +8773,7 @@ const reconcileCameraStateFromMapRef = useCallback(async (source: 'map_idle' | '
     const cameraMovedMeaningfully = previousZoomDelta >= 0.02 || previousCenterDelta >= 10;
 
     if (
+      Platform.OS === 'android' &&
       !userGestureSeenRef.current &&
       !ignoreProgrammaticCameraRef.current &&
       lastViewportBboxRef.current !== null &&
@@ -8770,10 +8800,12 @@ const reconcileCameraStateFromMapRef = useCallback(async (source: 'map_idle' | '
     previousCenterRef.current = centerArr;
     lastZoomLevel.current = effectiveClusterZoom;
 
-    setAndroidRichMarkerZoomAllowed((previous) => {
-      const next = effectiveClusterZoom >= ANDROID_RICH_CLUSTER_MARKER_MIN_ZOOM;
-      return previous === next ? previous : next;
-    });
+    if (Platform.OS === 'android') {
+      setAndroidRichMarkerZoomAllowed((previous) => {
+        const next = effectiveClusterZoom >= ANDROID_RICH_CLUSTER_MARKER_MIN_ZOOM;
+        return previous === next ? previous : next;
+      });
+    }
 
     const storeZoom = useMapStore.getState().zoomLevel;
     const finalZoomDelta = Math.abs(effectiveClusterZoom - storeZoom);
@@ -8821,13 +8853,19 @@ const reconcileCameraStateFromMapRef = useCallback(async (source: 'map_idle' | '
       }, { gestureSessionId });
     }
 
-    if (bboxChanged && (userGestureSeenRef.current || lastViewportBboxRef.current !== null)) {
+    if (shouldFetchReconciledViewport({
+      bboxChanged,
+      source,
+      userGestureSeen: userGestureSeenRef.current,
+      hasPreviousViewportBbox: lastViewportBboxRef.current !== null,
+    })) {
       if (viewportFetchTimeoutRef.current) {
         clearTimeout(viewportFetchTimeoutRef.current);
         viewportFetchTimeoutRef.current = null;
       }
       lastViewportBboxRef.current = roundedBbox;
       lastViewportFetchTimeRef.current = Date.now();
+      lastViewportFetchZoomRef.current = effectiveClusterZoom;
       fetchViewportEvents(roundedBbox, { source });
     }
     traceCompleted('completed', {
@@ -9896,6 +9934,9 @@ Clustering refresh: keep zoom → store → recluster in sync
       }
       if (startupViewportRecoveryTimerRef.current) {
         clearTimeout(startupViewportRecoveryTimerRef.current);
+      }
+      if (recenterViewportRefreshTimerRef.current) {
+        clearTimeout(recenterViewportRefreshTimerRef.current);
       }
     };
   }, []);
@@ -11192,7 +11233,21 @@ onMapIdle={() => {
     logAndroidZoomTapLatencyProbe('map_idle');
   }
   notifyHotspotCameraReady('map_idle');
-  void reconcileCameraStateFromMapRef('map_idle').finally(() => {
+  const shouldCompleteRecenter = shouldCompleteRecenterOnMapIdle({
+    pending: recenterViewportRefreshPendingRef.current,
+    elapsedMs: Date.now() - recenterViewportRefreshStartedAtRef.current,
+    minimumElapsedMs: RECENTER_CAMERA_IDLE_MIN_ELAPSED_MS,
+  });
+  if (shouldCompleteRecenter) {
+    recenterViewportRefreshPendingRef.current = false;
+    if (recenterViewportRefreshTimerRef.current) {
+      clearTimeout(recenterViewportRefreshTimerRef.current);
+      recenterViewportRefreshTimerRef.current = null;
+    }
+    setIgnoreProgrammaticTrace(false, 'recenter_complete_map_idle');
+    logPills('PROGRAMMATIC MOVE END (recenter map idle)');
+  }
+  void reconcileCameraStateFromMapRef(shouldCompleteRecenter ? 'recenter' : 'map_idle').finally(() => {
     if (
       tutorialResolverAtIdle &&
       tutorialCameraIdleResolverRef.current === tutorialResolverAtIdle
