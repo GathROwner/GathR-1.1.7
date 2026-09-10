@@ -349,7 +349,9 @@ const styles = StyleSheet.create({
   control: {
     position: 'absolute',
     right: 12,
-    bottom: 104,
+    // Keep the contextual banner clear of the 36pt recenter control
+    // (bottom: 80) with a 12pt visual gap.
+    bottom: 128,
     minHeight: 54,
     maxWidth: 260,
     flexDirection: 'row',
