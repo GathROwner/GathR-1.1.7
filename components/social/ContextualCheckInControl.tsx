@@ -2,7 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
 import { useRouter } from 'expo-router';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, AppState, Modal, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, AppState, Modal, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 import { useAuth } from '../../contexts/AuthContext';
 import { recordCheckInEligibilitySample } from '../../services/socialService';
@@ -231,7 +231,25 @@ export default function ContextualCheckInControl({ enabled }: Props) {
     );
   }
 
-  if (!candidate || !eligibility) return null;
+  if (!candidate || !eligibility) {
+    return (
+      <TouchableOpacity
+        accessibilityLabel="Check in at a nearby GathR venue"
+        accessibilityRole="button"
+        activeOpacity={0.88}
+        onPress={() => Alert.alert(
+          'Check in when you arrive',
+          'GathR unlocks check-in after your phone remains near a recognized venue for about 90 seconds. Keep precise location enabled. Your location is never shared continuously.'
+        )}
+        style={[styles.control, styles.idleControl]}
+        testID="contextual-check-in-idle"
+      >
+        <View style={[styles.iconCircle, styles.idleIconCircle]}>
+          <Ionicons name="location-outline" size={21} color="#0F766E" />
+        </View>
+      </TouchableOpacity>
+    );
+  }
 
   if (eligibility.eligible && sessionRef.current) {
     const sessionId = sessionRef.current.sessionId;
@@ -337,9 +355,26 @@ const styles = StyleSheet.create({
   readyControl: { backgroundColor: '#2F80ED' },
   activeControl: { backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#B2DDFF' },
   progressControl: { backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#D6BBFB' },
+  idleControl: {
+    right: 10,
+    bottom: 34,
+    width: 36,
+    height: 36,
+    minHeight: 36,
+    maxWidth: 36,
+    justifyContent: 'center',
+    gap: 0,
+    paddingHorizontal: 0,
+    paddingVertical: 0,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: '#99D6CF',
+    backgroundColor: '#FFFFFF',
+  },
   iconCircle: { width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.18)' },
   activeIconCircle: { backgroundColor: '#EFF8FF' },
   progressIconCircle: { backgroundColor: '#F4EBFF' },
+  idleIconCircle: { width: 34, height: 34, borderRadius: 17, backgroundColor: '#ECFDF3' },
   copy: { flex: 1, minWidth: 0 },
   eyebrow: { color: '#175CD3', fontSize: 10, fontWeight: '900', letterSpacing: 0.7 },
   activeVenue: { color: '#101828', fontWeight: '800', marginTop: 1 },

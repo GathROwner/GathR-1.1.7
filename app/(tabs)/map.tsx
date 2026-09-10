@@ -11882,7 +11882,7 @@ onDidFinishLoadingMap={() => {
       )}
 
       <ContextualCheckInControl
-        enabled={Boolean(locationPermissionGranted && !isCalloutOpen)}
+        enabled={Boolean(!isCalloutOpen)}
       />
       <FriendEventsMapToggle hidden={Boolean(isCalloutOpen)} />
       
