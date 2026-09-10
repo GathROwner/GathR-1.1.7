@@ -115,7 +115,13 @@ const DestinationCard = memo(({
 });
 DestinationCard.displayName = 'DestinationCard';
 
-export default function FriendEventsMapToggle({ hidden = false }: { hidden?: boolean }) {
+export default function FriendEventsMapToggle({
+  hidden = false,
+  onOpenExternal,
+}: {
+  hidden?: boolean;
+  onOpenExternal?: (activity: FriendActivityProjection) => void;
+}) {
   const isFocused = useIsFocused();
   const activity = useSocialStore((state) => state.activity);
   const onScreenEvents = useMapStore((state) => state.onScreenEvents);
@@ -175,6 +181,10 @@ export default function FriendEventsMapToggle({ hidden = false }: { hidden?: boo
         [destination.venue, ...otherVenues],
         destination.cluster
       );
+      return;
+    }
+    if (destination.friends[0]?.locationType === 'external_place') {
+      onOpenExternal?.(destination.friends[0]);
     }
   };
 

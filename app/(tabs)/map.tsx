@@ -70,6 +70,11 @@ import StaticDebugCallout from '../../components/map/StaticDebugCallout';
 import RouteFeatureCallout from '../../components/map/RouteFeatureCallout';
 import ContextualCheckInControl from '../../components/social/ContextualCheckInControl';
 import FriendEventsMapToggle from '../../components/social/FriendEventsMapToggle';
+import ExternalFriendCheckInMarkers, {
+  buildExternalFriendPlaceGroups,
+  ExternalFriendCheckInPanel,
+  type ExternalFriendPlaceGroup,
+} from '../../components/social/ExternalFriendCheckInMarkers';
 
 // Import centralized date utilities
 import {
@@ -3363,6 +3368,11 @@ useEffect(() => {
   // (Combined object selectors with shallow cause getSnapshot caching issues)
   const baseClusters = useMapStore((state) => state.clusters);
   const friendActivity = useSocialStore((state) => state.activity);
+  const [selectedExternalFriendPlace, setSelectedExternalFriendPlace] = useState<ExternalFriendPlaceGroup | null>(null);
+  const externalFriendPlaces = useMemo(
+    () => buildExternalFriendPlaceGroups(friendActivity),
+    [friendActivity]
+  );
   const events = useMapStore((state) => state.events);
   const allEvents = useMapStore((state) => state.allEvents);
   const friendVenueSourceEvents = allEvents.length > 0 ? allEvents : events;
@@ -11705,6 +11715,14 @@ onDidFinishLoadingMap={() => {
         {locationPermissionGranted && (
           <UserLocationMarker visible={locationPermissionGranted} zoomLevel={zoomLevel} />
         )}
+
+        {SOCIAL_FEATURE_ENABLED && (
+          <ExternalFriendCheckInMarkers
+            activities={friendActivity}
+            hidden={Boolean(isCalloutOpen)}
+            onPress={setSelectedExternalFriendPlace}
+          />
+        )}
         
         {/* Render event markers */}
         {!isLoading && !ANDROID_CLUSTER_MARKERVIEW_ISOLATION_DEBUG && renderClusterMarkers()}
@@ -11884,7 +11902,19 @@ onDidFinishLoadingMap={() => {
       <ContextualCheckInControl
         enabled={Boolean(!isCalloutOpen)}
       />
-      <FriendEventsMapToggle hidden={Boolean(isCalloutOpen)} />
+      <FriendEventsMapToggle
+        hidden={Boolean(isCalloutOpen)}
+        onOpenExternal={(activity) => {
+          const group = externalFriendPlaces.find(
+            (candidate) => candidate.locationKey === activity.venueLocationKey
+          );
+          if (group) setSelectedExternalFriendPlace(group);
+        }}
+      />
+      <ExternalFriendCheckInPanel
+        group={selectedExternalFriendPlace}
+        onClose={() => setSelectedExternalFriendPlace(null)}
+      />
       
       {shouldRenderBlockingLoadingOverlay && (
         <View

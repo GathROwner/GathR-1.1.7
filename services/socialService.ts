@@ -32,6 +32,7 @@ import type {
   FriendEventRsvp,
   FriendProjection,
   FriendRequestProjection,
+  NearbyCheckInPlacesResult,
   OwnCheckIn,
   ResolvedFriendEventLocationSuggestion,
   SocialProfile,
@@ -89,6 +90,7 @@ function normalizeCallableError(error: unknown): SocialServiceError {
 }
 
 const APP_CHECKED_CALLABLES = new Set([
+  'discoverNearbyCheckInPlacesCallable',
   'recordCheckInEligibilitySampleCallable',
   'createFriendEventCallable',
   'geocodeFriendEventAddressCallable',
@@ -306,6 +308,16 @@ export const recordCheckInEligibilitySample = (input: CheckInEligibilitySampleIn
     'recordCheckInEligibilitySampleCallable',
     input
   );
+
+export const discoverNearbyCheckInPlaces = (input: {
+  latitude: number;
+  longitude: number;
+  accuracyMeters: number;
+  capturedAtMs: number;
+}) => callSocial<typeof input, NearbyCheckInPlacesResult>(
+  'discoverNearbyCheckInPlacesCallable',
+  input
+);
 
 export const checkOut = () =>
   callSocial<Record<string, never>, { checkedOut: true; removedViewerCount: number }>(

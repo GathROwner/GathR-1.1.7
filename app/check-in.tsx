@@ -39,11 +39,14 @@ import {
   getRecognizedVenueId,
 } from '../utils/friendPresence';
 
-interface RecognizedVenueOption {
-  venueId: string;
+interface CheckInPlaceOption {
+  venueId?: string;
+  placeCandidateId?: string;
+  locationType: 'gathr_venue' | 'external_place';
   locationKey: string;
   venueName: string;
   address: string;
+  category: string;
 }
 
 const BRAND = '#2F80ED';
@@ -63,6 +66,10 @@ export default function CheckInScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{
     venueId?: string;
+    placeCandidateId?: string;
+    placeName?: string;
+    placeAddress?: string;
+    placeCategory?: string;
     eligibilitySessionId?: string;
     eligibleVenueIds?: string | string[];
   }>();
@@ -71,7 +78,7 @@ export default function CheckInScreen() {
   const selectedVenues = useMapStore((state) => state.selectedVenues);
   const { friends, ownCheckIn, fromCache } = useSocialStore();
   const options = useMemo(() => {
-    const byId = new Map<string, RecognizedVenueOption>();
+    const byId = new Map<string, CheckInPlaceOption>();
     for (const event of allEvents) {
       const venueId = String(event.venueId || '').trim();
       if (
@@ -84,9 +91,11 @@ export default function CheckInScreen() {
       ) continue;
       byId.set(venueId, {
         venueId,
+        locationType: 'gathr_venue',
         locationKey: `venue:${venueId}`,
         venueName: event.venue || event.title || 'GathR venue',
         address: event.address || '',
+        category: 'GathR venue',
       });
     }
     return [...byId.values()].sort((a, b) => a.venueName.localeCompare(b.venueName));
@@ -132,7 +141,20 @@ export default function CheckInScreen() {
     activeRevisionRef.current = revision;
   }, [ownCheckIn?.revision]);
 
-  const selectedVenue = options.find((option) => option.venueId === venueId) ?? null;
+  const externalPlace = useMemo<CheckInPlaceOption | null>(() => {
+    const placeCandidateId = String(params.placeCandidateId || '').trim();
+    const venueName = String(params.placeName || '').trim();
+    if (!placeCandidateId || !venueName) return null;
+    return {
+      placeCandidateId,
+      locationType: 'external_place',
+      locationKey: `candidate:${placeCandidateId}`,
+      venueName,
+      address: String(params.placeAddress || '').trim(),
+      category: String(params.placeCategory || '').trim() || 'Public place',
+    };
+  }, [params.placeAddress, params.placeCandidateId, params.placeCategory, params.placeName]);
+  const selectedVenue = externalPlace ?? options.find((option) => option.venueId === venueId) ?? null;
   const eligibilitySessionId = String(params.eligibilitySessionId || '').trim();
   const contextualEligibleVenueIds = useMemo(() => {
     const serialized = Array.isArray(params.eligibleVenueIds)
@@ -147,10 +169,17 @@ export default function CheckInScreen() {
     if (!eligibilitySessionId || contextualEligibleVenueIds.size === 0) return options;
     return [...contextualEligibleVenueIds]
       .map((candidateVenueId) => options.find((option) => option.venueId === candidateVenueId))
-      .filter((option): option is RecognizedVenueOption => Boolean(option));
+      .filter((option): option is CheckInPlaceOption => Boolean(option));
   }, [contextualEligibleVenueIds, eligibilitySessionId, options]);
-  const canReuseActiveVenue = Boolean(ownCheckIn && ownCheckIn.venueId === venueId);
-  const hasContextualEligibility = Boolean(eligibilitySessionId && contextualEligibleVenueIds.has(venueId));
+  const canReuseActiveVenue = Boolean(
+    ownCheckIn
+    && selectedVenue?.locationType === 'gathr_venue'
+    && ownCheckIn.venueId === selectedVenue.venueId
+  );
+  const hasContextualEligibility = Boolean(
+    eligibilitySessionId
+    && (externalPlace || contextualEligibleVenueIds.has(venueId))
+  );
   const filteredOptions = useMemo(() => {
     const query = venueQuery.trim().toLowerCase();
     if (!query) return selectableOptions.slice(0, 8);
@@ -191,7 +220,7 @@ export default function CheckInScreen() {
 
   const beginEditing = () => {
     if (ownCheckIn) {
-      setVenueId(ownCheckIn.venueId);
+      setVenueId(ownCheckIn.venueId || '');
       setDurationMinutes(ownCheckIn.durationMinutes);
       setAudienceMode(ownCheckIn.audienceMode);
       setSelectedUids(ownCheckIn.selectedUids.filter((uid) =>
@@ -204,7 +233,7 @@ export default function CheckInScreen() {
 
   const submit = async () => {
     if (!selectedVenue) {
-      Alert.alert('Choose a venue', 'Check-ins are available only at recognized GathR venues.');
+      Alert.alert('Choose a place', 'Return to the map and choose a nearby public place.');
       return;
     }
     if (audienceMode === 'selected_friends' && selectedUids.length === 0) {
@@ -216,7 +245,9 @@ export default function CheckInScreen() {
       setBusy(true);
       try {
         const input = {
-          venueId: selectedVenue.venueId,
+          ...(selectedVenue.locationType === 'external_place'
+            ? { placeCandidateId: selectedVenue.placeCandidateId }
+            : { venueId: selectedVenue.venueId }),
           eligibilitySessionId: canReuseActiveVenue ? undefined : eligibilitySessionId,
           durationMinutes,
           audienceMode,
@@ -313,7 +344,7 @@ export default function CheckInScreen() {
           </TouchableOpacity>
           <View style={styles.headerText}>
             <Text style={styles.title}>{ownCheckIn && !isEditing ? 'Your check-in' : ownCheckIn ? 'Update check-in' : 'Check in'}</Text>
-            <Text style={styles.muted}>Share a venue, never continuous location.</Text>
+            <Text style={styles.muted}>Share a place, never continuous location.</Text>
           </View>
         </View>
 
@@ -342,10 +373,12 @@ export default function CheckInScreen() {
                   <Ionicons name="map-outline" size={18} color="#175CD3" />
                   <Text maxFontSizeMultiplier={1.1} style={styles.secondaryText}>View map</Text>
                 </TouchableOpacity>
-                <TouchableOpacity accessibilityRole="button" accessibilityLabel="Change active check-in" onPress={beginEditing} style={styles.secondaryButton}>
-                  <Ionicons name="create-outline" size={18} color="#175CD3" />
-                  <Text maxFontSizeMultiplier={1.1} style={styles.secondaryText}>Change</Text>
-                </TouchableOpacity>
+                {ownCheckIn.locationType !== 'external_place' && (
+                  <TouchableOpacity accessibilityRole="button" accessibilityLabel="Change active check-in" onPress={beginEditing} style={styles.secondaryButton}>
+                    <Ionicons name="create-outline" size={18} color="#175CD3" />
+                    <Text maxFontSizeMultiplier={1.1} style={styles.secondaryText}>Change</Text>
+                  </TouchableOpacity>
+                )}
                 <TouchableOpacity accessibilityRole="button" accessibilityLabel="Check out now" disabled={busy} onPress={checkout} style={styles.checkoutButton}>
                   <Text maxFontSizeMultiplier={1.1} style={styles.checkoutText}>Check out</Text>
                 </TouchableOpacity>
@@ -369,10 +402,10 @@ export default function CheckInScreen() {
               )}
 
               <TouchableOpacity
-                accessibilityLabel={selectableOptions.length > 1 ? `Selected venue ${selectedVenue?.venueName}. Choose another nearby venue` : `Selected venue ${selectedVenue?.venueName || 'none'}`}
-                accessibilityRole={selectableOptions.length > 1 ? 'button' : undefined}
-                activeOpacity={selectableOptions.length > 1 ? 0.9 : 1}
-                disabled={selectableOptions.length <= 1}
+                accessibilityLabel={!externalPlace && selectableOptions.length > 1 ? `Selected place ${selectedVenue?.venueName}. Choose another nearby place` : `Selected place ${selectedVenue?.venueName || 'none'}`}
+                accessibilityRole={!externalPlace && selectableOptions.length > 1 ? 'button' : undefined}
+                activeOpacity={!externalPlace && selectableOptions.length > 1 ? 0.9 : 1}
+                disabled={Boolean(externalPlace) || selectableOptions.length <= 1}
                 onPress={() => setVenuePickerVisible(true)}
               >
                 <LinearGradient
@@ -394,7 +427,7 @@ export default function CheckInScreen() {
                       {selectedVenue?.venueName || 'Return to the map'}
                     </Text>
                     <Text maxFontSizeMultiplier={1.1} numberOfLines={1} style={styles.heroAddress}>
-                      {selectedVenue?.address || 'Check-in appears after you remain at a recognized location.'}
+                      {selectedVenue?.address || 'Check-in appears after you remain at a verified nearby place.'}
                     </Text>
                   </View>
                   {(hasContextualEligibility || canReuseActiveVenue) && (
@@ -403,7 +436,7 @@ export default function CheckInScreen() {
                       <Text style={styles.verifiedText}>Verified</Text>
                     </View>
                   )}
-                  {selectableOptions.length > 1 && (
+                  {!externalPlace && selectableOptions.length > 1 && (
                     <View style={styles.changeVenuePill}>
                       <Text style={styles.changeVenueText}>Change</Text>
                       <Ionicons name="chevron-down" size={13} color="#FFFFFF" />
@@ -535,7 +568,7 @@ export default function CheckInScreen() {
             </View>
             <ScrollView contentContainerStyle={styles.pickerList} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} style={styles.pickerScroller}>
               {filteredOptions.map((option) => (
-                <TouchableOpacity accessibilityRole="radio" accessibilityState={{ selected: option.venueId === venueId }} accessibilityLabel={`Choose ${option.venueName}`} key={option.venueId} onPress={() => chooseVenue(option.venueId)} style={styles.venueOption}>
+                <TouchableOpacity accessibilityRole="radio" accessibilityState={{ selected: option.venueId === venueId }} accessibilityLabel={`Choose ${option.venueName}`} key={option.locationKey} onPress={() => option.venueId && chooseVenue(option.venueId)} style={styles.venueOption}>
                   <View style={styles.selectorIcon}><Ionicons name="business-outline" size={19} color="#475467" /></View>
                   <View style={styles.flex}>
                     <Text maxFontSizeMultiplier={1.15} numberOfLines={1} style={styles.venueName}>{option.venueName}</Text>

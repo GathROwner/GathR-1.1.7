@@ -16,7 +16,8 @@ export type FriendDestinationKind =
 
 export interface FriendDestination {
   id: string;
-  venueId: string;
+  venueId?: string;
+  locationKey: string;
   venueName: string;
   friends: FriendActivityProjection[];
   friendCount: number;
@@ -168,11 +169,23 @@ export function buildFriendDestinations({
   savedEventIds = new Set(),
   nowMs = Date.now(),
 }: BuildFriendDestinationsInput): FriendDestination[] {
-  if (!filterCriteria.showEvents && !filterCriteria.showSpecials) return [];
-
   const activeByVenue = new Map<string, Map<string, FriendActivityProjection>>();
+  const activeExternal = new Map<string, Map<string, FriendActivityProjection>>();
   for (const activity of activities) {
     const venueId = String(activity.venueId || '').trim();
+    if (
+      activity.locationType === 'external_place'
+      && activity.venueLocationKey
+      && Number.isFinite(activity.latitude)
+      && Number.isFinite(activity.longitude)
+      && isFriendActivityActive(activity, nowMs)
+    ) {
+      const byFriend = activeExternal.get(activity.venueLocationKey)
+        ?? new Map<string, FriendActivityProjection>();
+      byFriend.set(activity.ownerUid, activity);
+      activeExternal.set(activity.venueLocationKey, byFriend);
+      continue;
+    }
     if (!venueId || !isFriendActivityActive(activity, nowMs)) continue;
     const byFriend = activeByVenue.get(venueId) ?? new Map<string, FriendActivityProjection>();
     byFriend.set(activity.ownerUid, activity);
@@ -201,6 +214,35 @@ export function buildFriendDestinations({
   );
 
   const destinations: FriendDestination[] = [];
+  for (const [locationKey, byFriend] of activeExternal) {
+    const friends = [...byFriend.values()].sort((first, second) =>
+      first.displayName.localeCompare(second.displayName)
+    );
+    const representative = friends[0];
+    const venueName = representative.venueName || 'Nearby place';
+    destinations.push({
+      id: `friend-destination:${locationKey}`,
+      locationKey,
+      venueName,
+      friends,
+      friendCount: friends.length,
+      event: null,
+      venue: {
+        locationKey,
+        venue: venueName,
+        address: representative.placeAddress || '',
+        latitude: Number(representative.latitude),
+        longitude: Number(representative.longitude),
+        events: [],
+      },
+      kind: 'venue',
+    });
+  }
+
+  if (!filterCriteria.showEvents && !filterCriteria.showSpecials) {
+    return destinations;
+  }
+
   for (const [venueId, byFriend] of activeByVenue) {
     const allVenueEvents = eventsByVenue.get(venueId) ?? [];
     // Requiring an on-screen event is the privacy-safe screen-boundary test:
@@ -230,6 +272,7 @@ export function buildFriendDestinations({
     destinations.push({
       id: `friend-destination:${venueId}`,
       venueId,
+      locationKey: `venue:${venueId}`,
       venueName,
       friends,
       friendCount: friends.length,

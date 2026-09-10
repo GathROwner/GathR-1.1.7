@@ -28,9 +28,14 @@ export interface BlockProjection extends SocialProfile {
 
 export interface FriendActivityProjection extends SocialProfile {
   ownerUid: string;
-  venueId: string;
+  venueId?: string;
+  locationType?: 'gathr_venue' | 'external_place';
   venueLocationKey: string;
   venueName: string;
+  placeAddress?: string;
+  placeCategory?: string;
+  latitude?: number;
+  longitude?: number;
   message: string;
   createdAt?: SocialTimestamp;
   expiresAt?: SocialTimestamp;
@@ -42,9 +47,14 @@ export type CheckInDurationMinutes = 30 | 60 | 120;
 
 export interface OwnCheckIn {
   ownerUid: string;
-  venueId: string;
+  venueId?: string;
+  locationType?: 'gathr_venue' | 'external_place';
   venueLocationKey: string;
   venueNameSnapshot: string;
+  placeAddress?: string;
+  placeCategory?: string;
+  latitude?: number;
+  longitude?: number;
   audienceMode: CheckInAudienceMode;
   selectedUids: string[];
   viewerUids: string[];
@@ -73,7 +83,8 @@ export interface ClusterFriendPresence {
 export interface CheckInInput {
   operationId?: string;
   eligibilitySessionId?: string;
-  venueId: string;
+  venueId?: string;
+  placeCandidateId?: string;
   durationMinutes: CheckInDurationMinutes;
   audienceMode: CheckInAudienceMode;
   selectedUids?: string[];
@@ -89,7 +100,9 @@ export type CheckInEligibilityReason =
 
 export interface CheckInEligibilityResult {
   sessionId: string;
-  venueId: string;
+  venueId?: string;
+  placeCandidateId?: string;
+  locationKey: string;
   eligibleVenueIds: string[];
   eligible: boolean;
   qualifyingMs: number;
@@ -102,12 +115,30 @@ export interface CheckInEligibilityResult {
 
 export interface CheckInEligibilitySampleInput {
   sessionId: string;
-  venueId: string;
+  venueId?: string;
+  placeCandidateId?: string;
   candidateVenueIds?: string[];
   latitude: number;
   longitude: number;
   accuracyMeters: number;
   speedMetersPerSecond?: number | null;
+}
+
+export interface NearbyCheckInPlaceCandidate {
+  id: string;
+  type: 'gathr_venue' | 'external_place';
+  venueId?: string;
+  name: string;
+  address: string;
+  category: string;
+  latitude: number;
+  longitude: number;
+  distanceMetres: number;
+}
+
+export interface NearbyCheckInPlacesResult {
+  candidates: NearbyCheckInPlaceCandidate[];
+  expiresAt?: SocialTimestamp;
 }
 
 export type FriendEventVisibility = 'all_friends' | 'selected_friends';

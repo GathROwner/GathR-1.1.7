@@ -1,5 +1,5 @@
 import React from 'react';
-import { Alert, Image, StyleSheet } from 'react-native';
+import { Image, Modal, StyleSheet } from 'react-native';
 import renderer, { act } from 'react-test-renderer';
 
 import ContextualCheckInControl, {
@@ -42,7 +42,9 @@ jest.mock('../../../types/social', () => ({
 }));
 
 jest.mock('../../../services/socialService', () => ({
+  discoverNearbyCheckInPlaces: jest.fn().mockResolvedValue({ candidates: [] }),
   recordCheckInEligibilitySample: jest.fn(),
+  SocialServiceError: class SocialServiceError extends Error {},
 }));
 
 describe('ContextualCheckInControl', () => {
@@ -52,7 +54,6 @@ describe('ContextualCheckInControl', () => {
   });
 
   it('keeps check-in discoverable before a nearby venue becomes eligible', () => {
-    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => undefined);
     let component: renderer.ReactTestRenderer;
 
     act(() => {
@@ -70,10 +71,7 @@ describe('ContextualCheckInControl', () => {
 
     act(() => idleControl.props.onPress());
 
-    expect(alert).toHaveBeenCalledWith(
-      'Check in when you arrive',
-      expect.stringContaining('about 90 seconds')
-    );
+    expect(component!.root.findByType(Modal).props.visible).toBe(true);
     expect(mockPush).not.toHaveBeenCalled();
     act(() => component!.unmount());
   });
@@ -91,19 +89,27 @@ describe('ContextualCheckInControl', () => {
 
   it('uses the detected venue avatar and preserves every server-approved nearby option', () => {
     const hunters: VenueCandidate = {
+      id: 'venue:hunters',
+      type: 'gathr_venue',
       venueId: 'hunters',
       venueName: "Hunter's Ale House",
       address: '185 Kent St',
       latitude: 46.235,
       longitude: -63.129,
+      category: 'GathR venue',
+      distanceMetres: 8,
       imageUrl: 'https://example.com/hunters.jpg',
     };
     const cityCinema: VenueCandidate = {
+      id: 'venue:city-cinema',
+      type: 'gathr_venue',
       venueId: 'city-cinema',
       venueName: 'City Cinema',
       address: '64 King St',
       latitude: 46.2351,
       longitude: -63.129,
+      category: 'GathR venue',
+      distanceMetres: 22,
       imageUrl: 'https://example.com/city-cinema.jpg',
     };
     let avatar: renderer.ReactTestRenderer;
@@ -121,5 +127,31 @@ describe('ContextualCheckInControl', () => {
       },
     });
     act(() => avatar!.unmount());
+  });
+
+  it('passes only the opaque external candidate and display snapshot to check-in', () => {
+    const oak: VenueCandidate = {
+      id: 'opaque-candidate',
+      type: 'external_place',
+      placeCandidateId: 'opaque-candidate',
+      venueName: 'The Oak Downtown',
+      address: '161 Kent St',
+      category: 'Pub',
+      latitude: 46.235,
+      longitude: -63.129,
+      distanceMetres: 12,
+      imageUrl: '',
+    };
+
+    expect(buildNearbyCheckInRoute(oak, 'dwell-session', [oak])).toEqual({
+      pathname: '/check-in',
+      params: {
+        placeCandidateId: 'opaque-candidate',
+        placeName: 'The Oak Downtown',
+        placeAddress: '161 Kent St',
+        placeCategory: 'Pub',
+        eligibilitySessionId: 'dwell-session',
+      },
+    });
   });
 });

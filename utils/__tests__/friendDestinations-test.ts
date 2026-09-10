@@ -210,4 +210,34 @@ describe('friend destination carousel model', () => {
       activity('Taylor R', 'one'),
     ])).toBe('Jen, Mike, Sarah +2');
   });
+
+  it('keeps an external public-place check-in as a standalone social destination', () => {
+    const result = buildFriendDestinations({
+      activities: [{
+        ...activity('Jen B', 'unused'),
+        venueId: undefined,
+        locationType: 'external_place',
+        venueLocationKey: 'external:oak',
+        venueName: 'The Oak Downtown',
+        placeAddress: '161 Kent St',
+        placeCategory: 'Pub',
+        latitude: 46.235,
+        longitude: -63.129,
+      }],
+      onScreenEvents: [],
+      clusters: [],
+      filterCriteria: criteria({ showEvents: false, showSpecials: false }),
+      nowMs: now,
+    });
+
+    expect(result).toHaveLength(1);
+    expect(result[0]).toEqual(expect.objectContaining({
+      id: 'friend-destination:external:oak',
+      locationKey: 'external:oak',
+      venueName: 'The Oak Downtown',
+      event: null,
+      kind: 'venue',
+    }));
+    expect(result[0].venue.events).toEqual([]);
+  });
 });
