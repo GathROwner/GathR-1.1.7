@@ -1,8 +1,12 @@
 import React from 'react';
-import { Alert, StyleSheet } from 'react-native';
+import { Alert, Image, StyleSheet } from 'react-native';
 import renderer, { act } from 'react-test-renderer';
 
-import ContextualCheckInControl from '../ContextualCheckInControl';
+import ContextualCheckInControl, {
+  buildNearbyCheckInRoute,
+  VenueAvatar,
+  type VenueCandidate,
+} from '../ContextualCheckInControl';
 
 const mockPush = jest.fn();
 
@@ -71,6 +75,7 @@ describe('ContextualCheckInControl', () => {
       expect.stringContaining('about 90 seconds')
     );
     expect(mockPush).not.toHaveBeenCalled();
+    act(() => component!.unmount());
   });
 
   it('stays hidden while a map callout owns the interaction surface', () => {
@@ -81,5 +86,40 @@ describe('ContextualCheckInControl', () => {
     });
 
     expect(component!.toJSON()).toBeNull();
+    act(() => component!.unmount());
+  });
+
+  it('uses the detected venue avatar and preserves every server-approved nearby option', () => {
+    const hunters: VenueCandidate = {
+      venueId: 'hunters',
+      venueName: "Hunter's Ale House",
+      address: '185 Kent St',
+      latitude: 46.235,
+      longitude: -63.129,
+      imageUrl: 'https://example.com/hunters.jpg',
+    };
+    const cityCinema: VenueCandidate = {
+      venueId: 'city-cinema',
+      venueName: 'City Cinema',
+      address: '64 King St',
+      latitude: 46.2351,
+      longitude: -63.129,
+      imageUrl: 'https://example.com/city-cinema.jpg',
+    };
+    let avatar: renderer.ReactTestRenderer;
+    act(() => {
+      avatar = renderer.create(<VenueAvatar venue={hunters} />);
+    });
+
+    expect(avatar!.root.findByType(Image).props.source).toEqual({ uri: 'https://example.com/hunters.jpg' });
+    expect(buildNearbyCheckInRoute(hunters, 'dwell-session', [hunters, cityCinema])).toEqual({
+      pathname: '/check-in',
+      params: {
+        venueId: 'hunters',
+        eligibilitySessionId: 'dwell-session',
+        eligibleVenueIds: 'hunters,city-cinema',
+      },
+    });
+    act(() => avatar!.unmount());
   });
 });

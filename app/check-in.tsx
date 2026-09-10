@@ -61,7 +61,11 @@ function audienceCount(mode: CheckInAudienceMode, friends: FriendProjection[], s
 
 export default function CheckInScreen() {
   const router = useRouter();
-  const params = useLocalSearchParams<{ venueId?: string; eligibilitySessionId?: string }>();
+  const params = useLocalSearchParams<{
+    venueId?: string;
+    eligibilitySessionId?: string;
+    eligibleVenueIds?: string | string[];
+  }>();
   const { user } = useAuth();
   const allEvents = useMapStore((state) => state.allEvents);
   const selectedVenues = useMapStore((state) => state.selectedVenues);
@@ -130,15 +134,30 @@ export default function CheckInScreen() {
 
   const selectedVenue = options.find((option) => option.venueId === venueId) ?? null;
   const eligibilitySessionId = String(params.eligibilitySessionId || '').trim();
+  const contextualEligibleVenueIds = useMemo(() => {
+    const serialized = Array.isArray(params.eligibleVenueIds)
+      ? params.eligibleVenueIds.join(',')
+      : String(params.eligibleVenueIds || '');
+    const ids = serialized.split(',').map((item) => item.trim()).filter(Boolean);
+    const requestedVenueId = String(params.venueId || '').trim();
+    if (requestedVenueId && !ids.includes(requestedVenueId)) ids.unshift(requestedVenueId);
+    return new Set(ids);
+  }, [params.eligibleVenueIds, params.venueId]);
+  const selectableOptions = useMemo(() => {
+    if (!eligibilitySessionId || contextualEligibleVenueIds.size === 0) return options;
+    return [...contextualEligibleVenueIds]
+      .map((candidateVenueId) => options.find((option) => option.venueId === candidateVenueId))
+      .filter((option): option is RecognizedVenueOption => Boolean(option));
+  }, [contextualEligibleVenueIds, eligibilitySessionId, options]);
   const canReuseActiveVenue = Boolean(ownCheckIn && ownCheckIn.venueId === venueId);
-  const hasContextualEligibility = Boolean(eligibilitySessionId && String(params.venueId || '') === venueId);
+  const hasContextualEligibility = Boolean(eligibilitySessionId && contextualEligibleVenueIds.has(venueId));
   const filteredOptions = useMemo(() => {
     const query = venueQuery.trim().toLowerCase();
-    if (!query) return options.slice(0, 8);
-    return options.filter((option) =>
+    if (!query) return selectableOptions.slice(0, 8);
+    return selectableOptions.filter((option) =>
       `${option.venueName} ${option.address}`.toLowerCase().includes(query)
     ).slice(0, 25);
-  }, [options, venueQuery]);
+  }, [selectableOptions, venueQuery]);
   const currentAudienceCount = audienceCount(audienceMode, friends, selectedUids);
   const estimatedExpiry = Date.now() + durationMinutes * 60_000;
   const hasAudience = audienceMode === 'all_friends'
@@ -349,35 +368,49 @@ export default function CheckInScreen() {
                 </View>
               )}
 
-              <LinearGradient
-                colors={['#175CD3', '#2F80ED', '#53B1FD']}
-                end={{ x: 1, y: 1 }}
-                start={{ x: 0, y: 0 }}
-                style={styles.venueHero}
+              <TouchableOpacity
+                accessibilityLabel={selectableOptions.length > 1 ? `Selected venue ${selectedVenue?.venueName}. Choose another nearby venue` : `Selected venue ${selectedVenue?.venueName || 'none'}`}
+                accessibilityRole={selectableOptions.length > 1 ? 'button' : undefined}
+                activeOpacity={selectableOptions.length > 1 ? 0.9 : 1}
+                disabled={selectableOptions.length <= 1}
+                onPress={() => setVenuePickerVisible(true)}
               >
-                <View pointerEvents="none" style={styles.canopyLarge} />
-                <View pointerEvents="none" style={styles.canopySmall} />
-                <View style={styles.heroIcon}>
-                  <Ionicons name="location" size={22} color="#175CD3" />
-                </View>
-                <View style={styles.flex}>
-                  <Text maxFontSizeMultiplier={1.1} style={styles.heroEyebrow}>
-                    {selectedVenue ? "YOU'RE AT" : 'LOCATION REQUIRED'}
-                  </Text>
-                  <Text maxFontSizeMultiplier={1.2} numberOfLines={1} style={styles.heroVenue}>
-                    {selectedVenue?.venueName || 'Return to the map'}
-                  </Text>
-                  <Text maxFontSizeMultiplier={1.1} numberOfLines={1} style={styles.heroAddress}>
-                    {selectedVenue?.address || 'Check-in appears after you remain at a recognized location.'}
-                  </Text>
-                </View>
-                {(hasContextualEligibility || canReuseActiveVenue) && (
-                  <View style={styles.verifiedPill}>
-                    <Ionicons name="checkmark" size={13} color="#175CD3" />
-                    <Text style={styles.verifiedText}>Verified</Text>
+                <LinearGradient
+                  colors={['#175CD3', '#2F80ED', '#53B1FD']}
+                  end={{ x: 1, y: 1 }}
+                  start={{ x: 0, y: 0 }}
+                  style={styles.venueHero}
+                >
+                  <View pointerEvents="none" style={styles.canopyLarge} />
+                  <View pointerEvents="none" style={styles.canopySmall} />
+                  <View style={styles.heroIcon}>
+                    <Ionicons name="location" size={22} color="#175CD3" />
                   </View>
-                )}
-              </LinearGradient>
+                  <View style={styles.flex}>
+                    <Text maxFontSizeMultiplier={1.1} style={styles.heroEyebrow}>
+                      {selectedVenue ? "YOU'RE AT" : 'LOCATION REQUIRED'}
+                    </Text>
+                    <Text maxFontSizeMultiplier={1.2} numberOfLines={1} style={styles.heroVenue}>
+                      {selectedVenue?.venueName || 'Return to the map'}
+                    </Text>
+                    <Text maxFontSizeMultiplier={1.1} numberOfLines={1} style={styles.heroAddress}>
+                      {selectedVenue?.address || 'Check-in appears after you remain at a recognized location.'}
+                    </Text>
+                  </View>
+                  {(hasContextualEligibility || canReuseActiveVenue) && (
+                    <View style={styles.verifiedPill}>
+                      <Ionicons name="checkmark" size={13} color="#175CD3" />
+                      <Text style={styles.verifiedText}>Verified</Text>
+                    </View>
+                  )}
+                  {selectableOptions.length > 1 && (
+                    <View style={styles.changeVenuePill}>
+                      <Text style={styles.changeVenueText}>Change</Text>
+                      <Ionicons name="chevron-down" size={13} color="#FFFFFF" />
+                    </View>
+                  )}
+                </LinearGradient>
+              </TouchableOpacity>
 
               {!canReuseActiveVenue && !hasContextualEligibility && (
                 <View style={styles.contextWarning}>
@@ -479,8 +512,10 @@ export default function CheckInScreen() {
           <View accessibilityViewIsModal style={styles.pickerCard}>
             <View style={styles.pickerHeader}>
               <View style={styles.flex}>
-                <Text style={styles.pickerTitle}>Choose a venue</Text>
-                <Text maxFontSizeMultiplier={1.1} numberOfLines={1} style={styles.muted}>Loaded from your current map</Text>
+                <Text style={styles.pickerTitle}>{eligibilitySessionId ? 'Choose a nearby venue' : 'Choose a venue'}</Text>
+                <Text maxFontSizeMultiplier={1.1} numberOfLines={1} style={styles.muted}>
+                  {eligibilitySessionId ? 'Verified for this check-in' : 'Loaded from your current map'}
+                </Text>
               </View>
               <TouchableOpacity accessibilityLabel="Close venue picker" onPress={() => { setVenueQuery(''); setVenuePickerVisible(false); }} style={styles.compactIconButton}>
                 <Ionicons name="close" size={23} color="#344054" />
@@ -509,9 +544,9 @@ export default function CheckInScreen() {
                   <Ionicons name={option.venueId === venueId ? 'checkmark-circle' : 'chevron-forward'} size={21} color={option.venueId === venueId ? BRAND : '#98A2B3'} />
                 </TouchableOpacity>
               ))}
-              {options.length === 0 && <Text style={styles.emptyText}>Move the map to load recognized venues, then try again.</Text>}
-              {options.length > 0 && filteredOptions.length === 0 && <Text style={styles.emptyText}>No loaded venue matches that search.</Text>}
-              {!venueQuery.trim() && options.length > filteredOptions.length && <Text style={styles.helperText}>Search to see the rest of the loaded venues.</Text>}
+              {selectableOptions.length === 0 && <Text style={styles.emptyText}>Move the map to load recognized venues, then try again.</Text>}
+              {selectableOptions.length > 0 && filteredOptions.length === 0 && <Text style={styles.emptyText}>No nearby venue matches that search.</Text>}
+              {!venueQuery.trim() && selectableOptions.length > filteredOptions.length && <Text style={styles.helperText}>Search to see the rest of the loaded venues.</Text>}
             </ScrollView>
           </View>
         </KeyboardAvoidingView>
@@ -588,6 +623,8 @@ const styles = StyleSheet.create({
   heroAddress: { color: '#EAF2FF', fontSize: 12, marginTop: 2 },
   verifiedPill: { position: 'absolute', right: 10, top: 9, flexDirection: 'row', alignItems: 'center', gap: 3, paddingHorizontal: 7, paddingVertical: 4, borderRadius: 999, backgroundColor: '#FFFFFF' },
   verifiedText: { color: '#175CD3', fontSize: 10, fontWeight: '800' },
+  changeVenuePill: { position: 'absolute', right: 10, bottom: 9, flexDirection: 'row', alignItems: 'center', gap: 2, paddingHorizontal: 7, paddingVertical: 4, borderRadius: 999, backgroundColor: 'rgba(16,24,40,0.32)' },
+  changeVenueText: { color: '#FFFFFF', fontSize: 10, fontWeight: '800' },
   contextWarning: { minHeight: 42, flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 10, paddingVertical: 7, borderRadius: 11, backgroundColor: '#FFFAEB' },
   contextWarningText: { flex: 1, color: '#B54708', fontSize: 12, lineHeight: 16, fontWeight: '600' },
   fieldGroup: { gap: 5 },
