@@ -79,15 +79,17 @@ export default function CheckInReadinessObserver() {
           nextDelayMs = CHECK_IN_READINESS.resumeRetryMs;
           return;
         }
-        const evidence = advanceReadiness(
-          before.evidence,
-          sample,
-          nowMs,
-          true,
-          resuming && resumeDecision === 'accept'
-            ? CHECK_IN_READINESS.maxResumeGapMs
-            : CHECK_IN_READINESS.maxSampleGapMs
-        );
+        const evidence = resuming && resumeDecision === 'retry'
+          ? pauseReadiness(before.evidence)
+          : advanceReadiness(
+            before.evidence,
+            sample,
+            nowMs,
+            true,
+            resuming && resumeDecision === 'accept'
+              ? CHECK_IN_READINESS.maxResumeGapMs
+              : CHECK_IN_READINESS.maxSampleGapMs
+          );
         // A reset changes the server session too. A stale response cannot restore old readiness.
         const sessionId = !before.sessionId || evidence.revision !== before.evidence.revision
           ? createSocialOperationId() : before.sessionId;

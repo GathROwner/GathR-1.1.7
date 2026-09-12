@@ -54,6 +54,7 @@ describe('real check-in readiness evidence', () => {
   it('accepts a matching return fix, retries noisy drift, and expires old interruptions', () => {
     const state = dwell(10);
     expect(readinessResumeDecision(state, fix(100), start + 100_000)).toBe('accept');
+    expect(readinessResumeDecision(state, fix(10), start + 10_100)).toBe('retry');
     expect(readinessResumeDecision(state, fix(100, { latitude: 46.236 }), start + 100_000)).toBe('retry');
     expect(readinessResumeDecision(state, fix(100, { accuracyMeters: 40 }), start + 100_000)).toBe('retry');
     expect(readinessResumeDecision(state, fix(100, { speedMetersPerSecond: 8 }), start + 100_000)).toBe('reset');

@@ -119,9 +119,13 @@ export function readinessResumeDecision(
 ): ReadinessResumeDecision {
   if (!state.anchor || !state.previous || state.reason !== 'qualifying') return 'reset';
   const gapMs = sample.capturedAtMs - state.previous.capturedAtMs;
-  if (!Number.isFinite(gapMs) || gapMs <= 0 || gapMs > CHECK_IN_READINESS.maxResumeGapMs
-    || !Number.isFinite(sample.capturedAtMs) || sample.capturedAtMs > nowMs
-    || nowMs - sample.capturedAtMs > CHECK_IN_READINESS.maxSampleAgeMs) return 'reset';
+  if (!Number.isFinite(gapMs) || !Number.isFinite(sample.capturedAtMs)) return 'reset';
+  if (gapMs > CHECK_IN_READINESS.maxResumeGapMs) return 'reset';
+  // A very short iOS interruption (including a screenshot) can initially return
+  // the cached pre-interruption fix. Give Location a chance to produce a fresh
+  // sample; never credit the duplicate sample itself.
+  if (gapMs <= 0 || sample.capturedAtMs > nowMs
+    || nowMs - sample.capturedAtMs > CHECK_IN_READINESS.maxSampleAgeMs) return 'retry';
   const speed = sample.speedMetersPerSecond;
   if (speed !== null && Number.isFinite(speed) && speed >= CHECK_IN_READINESS.drivingSpeedMps) return 'reset';
   const priorFixSupportedPlace = state.previous.accuracyMeters !== null

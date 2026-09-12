@@ -114,6 +114,30 @@ describe('foreground readiness observer lifecycle', () => {
       evidence: { hereMs: 15_000 },
     });
   });
+  it('retries a cached return fix after a screenshot-sized interruption instead of resetting progress', async () => {
+    await mount();
+    await advance(10_000);
+    const before = useCheckInReadinessStore.getState();
+    act(() => { AppState.currentState = 'inactive'; mockChangeState('inactive'); });
+    (Location.getCurrentPositionAsync as jest.Mock).mockResolvedValueOnce({
+      timestamp: before.evidence.previous!.capturedAtMs,
+      coords: { latitude: 46.235, longitude: -63.129, accuracy: 10, speed: 0 },
+    });
+
+    await act(async () => { AppState.currentState = 'active'; mockChangeState('active'); });
+    expect(useCheckInReadinessStore.getState()).toMatchObject({
+      sessionId: before.sessionId,
+      interruptedAtMs: expect.any(Number),
+      evidence: { hereMs: 10_000 },
+    });
+
+    await advance(CHECK_IN_READINESS.resumeRetryMs);
+    expect(useCheckInReadinessStore.getState()).toMatchObject({
+      sessionId: before.sessionId,
+      interruptedAtMs: null,
+      evidence: { hereMs: 11_000 },
+    });
+  });
   it('credits a longer interruption only after a fresh return fix matches the same anchor', async () => {
     await mount();
     await advance(10_000);
