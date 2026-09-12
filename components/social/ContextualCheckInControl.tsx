@@ -12,12 +12,14 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
 
 import { useAuth } from '../../contexts/AuthContext';
 import {
+  createPrivateCheckInPlaceCandidate,
   discoverNearbyCheckInPlaces,
   recordCheckInEligibilitySample,
   SocialServiceError,
@@ -36,7 +38,7 @@ const SAMPLE_INTERVAL_MS = 10_000;
 
 export interface VenueCandidate {
   id: string;
-  type: 'gathr_venue' | 'external_place';
+  type: 'gathr_venue' | 'external_place' | 'private_place';
   venueId?: string;
   placeCandidateId?: string;
   venueName: string;
@@ -88,6 +90,8 @@ function placeIcon(category: string) {
   return 'business-outline';
 }
 
+const PRIVATE_PLACE_LABELS = ['Home', "Friend's place", 'Private gathering'] as const;
+
 function targetKey(candidate: Pick<VenueCandidate, 'venueId' | 'placeCandidateId'>) {
   return candidate.venueId
     ? `venue:${candidate.venueId}`
@@ -113,6 +117,15 @@ export function VenueAvatar({ venue, active = false }: { venue: VenueCandidate |
     );
   }
 
+
+  if (venue?.type === 'private_place') {
+    return (
+      <View style={[styles.venueAvatar, styles.privateAvatar, active && styles.activeVenueAvatar]}>
+        <Ionicons name="home-outline" size={19} color="#6941C6" />
+      </View>
+    );
+  }
+
   const initial = venue?.venueName.trim().charAt(0).toUpperCase();
   return (
     <View style={[styles.venueAvatar, styles.venueAvatarFallback, active && styles.activeVenueAvatar]}>
@@ -128,13 +141,14 @@ export function buildNearbyCheckInRoute(
   eligibilitySessionId: string,
   eligibleCandidates: VenueCandidate[]
 ) {
-  if (venue.type === 'external_place') {
+  if (venue.type !== 'gathr_venue') {
     return {
       pathname: '/check-in' as const,
       params: {
         placeCandidateId: venue.placeCandidateId || venue.id,
+        placeType: venue.type,
         placeName: venue.venueName,
-        placeAddress: venue.address,
+        ...(venue.type === 'external_place' ? { placeAddress: venue.address } : {}),
         placeCategory: venue.category,
         eligibilitySessionId,
       },
@@ -199,6 +213,11 @@ export default function ContextualCheckInControl({ enabled }: Props) {
   const [discoveryError, setDiscoveryError] = useState('');
   const [nearbyPlaces, setNearbyPlaces] = useState<VenueCandidate[]>([]);
   const [selectedPlaceId, setSelectedPlaceId] = useState('');
+  const [privateSetupVisible, setPrivateSetupVisible] = useState(false);
+  const [privateLabelChoice, setPrivateLabelChoice] = useState<string>('Home');
+  const [privateCustomLabel, setPrivateCustomLabel] = useState('');
+  const [creatingPrivatePlace, setCreatingPrivatePlace] = useState(false);
+  const [privatePlaceError, setPrivatePlaceError] = useState('');
   const [sampleRevision, setSampleRevision] = useState(0);
   const sessionRef = useRef<{
     targetKey: string;
@@ -351,6 +370,7 @@ export default function ContextualCheckInControl({ enabled }: Props) {
 
   const loadNearbyPlaces = async () => {
     setPickerVisible(true);
+    setPrivateSetupVisible(false);
     setDiscovering(true);
     setDiscoveryError('');
     try {
@@ -403,22 +423,78 @@ export default function ContextualCheckInControl({ enabled }: Props) {
   };
 
   const selectedPlace = nearbyPlaces.find((place) => place.id === selectedPlaceId) || null;
-  const startDwell = () => {
-    if (!selectedPlace) return;
-    const nextKey = targetKey(selectedPlace);
+  const startDwell = (place: VenueCandidate | null = selectedPlace) => {
+    if (!place) return;
+    const nextKey = targetKey(place);
     if (sessionRef.current?.targetKey !== nextKey) {
       sessionRef.current = {
         targetKey: nextKey,
         sessionId: createSessionId(),
-        venueId: selectedPlace.venueId,
-        placeCandidateId: selectedPlace.placeCandidateId,
+        venueId: place.venueId,
+        placeCandidateId: place.placeCandidateId,
       };
       setEligibility(null);
     }
-    setCandidate(selectedPlace);
+    setCandidate(place);
     setPickerVisible(false);
+    setPrivateSetupVisible(false);
     setSampleRevision((value) => value + 1);
     void Haptics.selectionAsync().catch(() => undefined);
+  };
+
+  const openPrivateSetup = () => {
+    setPrivatePlaceError('');
+    setPrivateSetupVisible(true);
+  };
+
+  const createPrivatePlace = async () => {
+    const label = privateLabelChoice === 'Custom'
+      ? privateCustomLabel.trim()
+      : privateLabelChoice;
+    if (label.length < 2) {
+      setPrivatePlaceError('Add a short private-place label. Do not enter an address.');
+      return;
+    }
+    setCreatingPrivatePlace(true);
+    setPrivatePlaceError('');
+    try {
+      let permission = await Location.getForegroundPermissionsAsync();
+      if (permission.status !== 'granted') permission = await Location.requestForegroundPermissionsAsync();
+      if (permission.status !== 'granted') {
+        setPrivatePlaceError('Allow precise location to verify that you remain at this private place.');
+        return;
+      }
+      const location = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
+      const accuracyMeters = Number(location.coords.accuracy);
+      if (!Number.isFinite(accuracyMeters) || accuracyMeters > 100) {
+        setPrivatePlaceError('Your location is not precise enough yet. Wait a moment, then retry.');
+        return;
+      }
+      const result = await createPrivateCheckInPlaceCandidate({
+        label,
+        latitude: location.coords.latitude,
+        longitude: location.coords.longitude,
+        accuracyMeters,
+        capturedAtMs: location.timestamp || Date.now(),
+      });
+      const place = result.candidate;
+      startDwell({
+        id: place.id,
+        type: 'private_place',
+        placeCandidateId: place.id,
+        venueName: place.name,
+        address: '',
+        category: 'Private location',
+        latitude: place.latitude,
+        longitude: place.longitude,
+        distanceMetres: 0,
+        imageUrl: '',
+      });
+    } catch (error) {
+      setPrivatePlaceError(messageForError(error));
+    } finally {
+      setCreatingPrivatePlace(false);
+    }
   };
 
   let control: React.ReactNode;
@@ -427,7 +503,7 @@ export default function ContextualCheckInControl({ enabled }: Props) {
       ? venues.find((venue) => venue.venueId === ownCheckIn.venueId) ?? null
       : ({
           id: ownCheckIn.venueLocationKey,
-          type: 'external_place',
+          type: ownCheckIn.locationType === 'private_place' ? 'private_place' : 'external_place',
           placeCandidateId: '',
           venueName: ownCheckIn.venueNameSnapshot,
           address: ownCheckIn.placeAddress || '',
@@ -472,7 +548,7 @@ export default function ContextualCheckInControl({ enabled }: Props) {
     const sessionId = sessionRef.current.sessionId;
     const eligibleVenueIds = [...new Set([candidate.venueId, ...(eligibility.eligibleVenueIds || [])])]
       .filter((venueId): venueId is string => Boolean(venueId));
-    const eligibleCandidates = candidate.type === 'external_place'
+    const eligibleCandidates = candidate.type !== 'gathr_venue'
       ? [candidate]
       : eligibleVenueIds
           .map((venueId) => venues.find((venue) => venue.venueId === venueId))
@@ -533,14 +609,75 @@ export default function ContextualCheckInControl({ enabled }: Props) {
               <View style={styles.copy}>
                 <Text style={styles.pickerEyebrow}>CHECK IN</Text>
                 <Text style={styles.pickerTitle}>Where are you?</Text>
-                <Text style={styles.pickerSubtitle}>Choose a public place close to your phone.</Text>
+                <Text style={styles.pickerSubtitle}>
+                  {privateSetupVisible
+                    ? 'Use a private label. Never enter a home address.'
+                    : 'Choose a public place close to your phone.'}
+                </Text>
               </View>
               <TouchableOpacity accessibilityLabel="Close nearby places" onPress={() => setPickerVisible(false)} style={styles.closeButton}>
                 <Ionicons name="close" size={22} color="#344054" />
               </TouchableOpacity>
             </View>
 
-            {discovering ? (
+            {privateSetupVisible ? (
+              <View style={styles.privateSetup}>
+                <TouchableOpacity accessibilityRole="button" onPress={() => setPrivateSetupVisible(false)} style={styles.privateBackRow}>
+                  <Ionicons name="arrow-back" size={18} color="#175CD3" />
+                  <Text style={styles.privateBackText}>Nearby public places</Text>
+                </TouchableOpacity>
+                <View style={styles.privateHero}>
+                  <View style={styles.privateHeroIcon}><Ionicons name="home-outline" size={24} color="#6941C6" /></View>
+                  <View style={styles.copy}>
+                    <Text style={styles.privateTitle}>Keep this place private</Text>
+                    <Text style={styles.privateSubtitle}>Give friends context without saving or showing your address.</Text>
+                  </View>
+                </View>
+                <Text style={styles.privateFieldLabel}>What should friends call it?</Text>
+                <View style={styles.privateChoices}>
+                  {[...PRIVATE_PLACE_LABELS, 'Custom'].map((label) => {
+                    const selected = privateLabelChoice === label;
+                    return (
+                      <TouchableOpacity
+                        accessibilityRole="radio"
+                        accessibilityState={{ selected }}
+                        key={label}
+                        onPress={() => { setPrivateLabelChoice(label); setPrivatePlaceError(''); }}
+                        style={[styles.privateChoice, selected && styles.privateChoiceSelected]}
+                      >
+                        <Text style={[styles.privateChoiceText, selected && styles.privateChoiceTextSelected]}>{label}</Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+                {privateLabelChoice === 'Custom' && (
+                  <TextInput
+                    accessibilityLabel="Private place label"
+                    autoCapitalize="sentences"
+                    maxLength={40}
+                    onChangeText={(value) => { setPrivateCustomLabel(value); setPrivatePlaceError(''); }}
+                    placeholder="e.g. Game night"
+                    style={styles.privateInput}
+                    value={privateCustomLabel}
+                  />
+                )}
+                <View style={styles.privatePrivacyCard}>
+                  <Ionicons name="shield-checkmark-outline" size={21} color="#0F766E" />
+                  <Text style={styles.privatePrivacyCopy}>By default, friends see only a neighbourhood-sized approximate area. On the next screen, an exact pin can be shared only with friends you explicitly select.</Text>
+                </View>
+                {!!privatePlaceError && <Text style={styles.privateError}>{privatePlaceError}</Text>}
+                <TouchableOpacity
+                  accessibilityRole="button"
+                  disabled={creatingPrivatePlace}
+                  onPress={() => void createPrivatePlace()}
+                  style={[styles.usePrivateButton, creatingPrivatePlace && styles.disabled]}
+                >
+                  {creatingPrivatePlace
+                    ? <ActivityIndicator color="#FFFFFF" />
+                    : <><Text style={styles.usePlaceText}>Verify this private place</Text><Ionicons name="arrow-forward" size={19} color="#FFFFFF" /></>}
+                </TouchableOpacity>
+              </View>
+            ) : discovering ? (
               <View style={styles.pickerState}>
                 <ActivityIndicator color="#2F80ED" />
                 <Text style={styles.pickerStateTitle}>Finding nearby places…</Text>
@@ -596,12 +733,24 @@ export default function ContextualCheckInControl({ enabled }: Props) {
                   >
                     <Text style={styles.attributionText}>Place data © OpenStreetMap contributors</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity accessibilityRole="button" disabled={!selectedPlace} onPress={startDwell} style={[styles.usePlaceButton, !selectedPlace && styles.disabled]}>
+                  <TouchableOpacity accessibilityRole="button" disabled={!selectedPlace} onPress={() => startDwell()} style={[styles.usePlaceButton, !selectedPlace && styles.disabled]}>
                     <Text style={styles.usePlaceText}>Use this place</Text>
                     <Ionicons name="arrow-forward" size={19} color="#FFFFFF" />
                   </TouchableOpacity>
                 </View>
               </>
+            )}
+            {!privateSetupVisible && (
+              <View style={styles.privateEntryBar}>
+                <TouchableOpacity accessibilityRole="button" onPress={openPrivateSetup} style={styles.privateEntryButton} testID="private-place-entry">
+                  <View style={styles.privateEntryIcon}><Ionicons name="home-outline" size={20} color="#6941C6" /></View>
+                  <View style={styles.copy}>
+                    <Text style={styles.privateEntryTitle}>Check in at a private place</Text>
+                    <Text style={styles.privateEntryCopy}>Home or somewhere that should not become a public venue</Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={20} color="#6941C6" />
+                </TouchableOpacity>
+              </View>
             )}
           </View>
         </View>
@@ -632,6 +781,7 @@ const styles = StyleSheet.create({
   activeVenueAvatar: { borderColor: '#B2DDFF' },
   venueAvatarFallback: { alignItems: 'center', justifyContent: 'center' },
   externalAvatar: { alignItems: 'center', justifyContent: 'center', borderColor: '#FEDF89', backgroundColor: '#FFFAEB' },
+  privateAvatar: { alignItems: 'center', justifyContent: 'center', borderColor: '#D6BBFB', backgroundColor: '#F4EBFF' },
   venueAvatarInitial: { color: '#175CD3', fontSize: 16, fontWeight: '900' },
   copy: { flex: 1, minWidth: 0 },
   eyebrow: { color: '#175CD3', fontSize: 10, fontWeight: '900', letterSpacing: 0.7 },
@@ -669,5 +819,28 @@ const styles = StyleSheet.create({
   attributionText: { color: '#667085', fontSize: 10.5, textDecorationLine: 'underline' },
   usePlaceButton: { minHeight: 52, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderRadius: 17, backgroundColor: '#2F80ED' },
   usePlaceText: { color: '#FFFFFF', fontSize: 16, fontWeight: '900' },
+  privateEntryBar: { paddingHorizontal: 14, paddingTop: 10, paddingBottom: 20, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#D0D5DD', backgroundColor: '#F8FAFC' },
+  privateEntryButton: { minHeight: 68, flexDirection: 'row', alignItems: 'center', gap: 11, paddingHorizontal: 13, paddingVertical: 10, borderRadius: 18, borderWidth: 1.5, borderColor: '#D6BBFB', backgroundColor: '#F4EBFF' },
+  privateEntryIcon: { width: 38, height: 38, alignItems: 'center', justifyContent: 'center', borderRadius: 13, backgroundColor: '#FFFFFF' },
+  privateEntryTitle: { color: '#53389E', fontSize: 14, fontWeight: '900' },
+  privateEntryCopy: { marginTop: 2, color: '#6941C6', fontSize: 10.5, lineHeight: 14 },
+  privateSetup: { paddingHorizontal: 18, paddingBottom: 24, gap: 13 },
+  privateBackRow: { alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 4 },
+  privateBackText: { color: '#175CD3', fontSize: 12.5, fontWeight: '800' },
+  privateHero: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14, borderRadius: 18, backgroundColor: '#F4EBFF' },
+  privateHeroIcon: { width: 46, height: 46, alignItems: 'center', justifyContent: 'center', borderRadius: 16, backgroundColor: '#FFFFFF' },
+  privateTitle: { color: '#42307D', fontSize: 18, fontWeight: '900' },
+  privateSubtitle: { marginTop: 2, color: '#6941C6', fontSize: 11.5, lineHeight: 16 },
+  privateFieldLabel: { color: '#344054', fontSize: 12, fontWeight: '800' },
+  privateChoices: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  privateChoice: { minHeight: 38, justifyContent: 'center', paddingHorizontal: 12, borderRadius: 13, borderWidth: 1, borderColor: '#D0D5DD', backgroundColor: '#FFFFFF' },
+  privateChoiceSelected: { borderColor: '#7F56D9', backgroundColor: '#F4EBFF' },
+  privateChoiceText: { color: '#475467', fontSize: 12, fontWeight: '700' },
+  privateChoiceTextSelected: { color: '#53389E' },
+  privateInput: { minHeight: 46, paddingHorizontal: 13, borderRadius: 13, borderWidth: 1, borderColor: '#D6BBFB', backgroundColor: '#FFFFFF', color: '#101828' },
+  privatePrivacyCard: { flexDirection: 'row', alignItems: 'flex-start', gap: 9, padding: 12, borderRadius: 15, backgroundColor: '#ECFDF3' },
+  privatePrivacyCopy: { flex: 1, color: '#475467', fontSize: 11.5, lineHeight: 17 },
+  privateError: { color: '#B42318', fontSize: 11.5, fontWeight: '700' },
+  usePrivateButton: { minHeight: 52, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderRadius: 17, backgroundColor: '#6941C6' },
   disabled: { opacity: 0.45 },
 });

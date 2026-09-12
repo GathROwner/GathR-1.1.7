@@ -183,7 +183,10 @@ export default function FriendEventsMapToggle({
       );
       return;
     }
-    if (destination.friends[0]?.locationType === 'external_place') {
+    if (
+      destination.friends[0]?.locationType === 'external_place'
+      || destination.friends[0]?.locationType === 'private_place'
+    ) {
       onOpenExternal?.(destination.friends[0]);
     }
   };

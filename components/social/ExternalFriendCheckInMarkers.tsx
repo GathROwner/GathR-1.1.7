@@ -17,6 +17,8 @@ import { isFriendActivityActive, socialTimestampToMillis } from '../../utils/fri
 
 export interface ExternalFriendPlaceGroup {
   locationKey: string;
+  locationType: 'external_place' | 'private_place';
+  locationPrecision: 'exact' | 'approximate';
   venueName: string;
   address: string;
   category: string;
@@ -34,7 +36,7 @@ export function buildExternalFriendPlaceGroups(
     const latitude = Number(activity.latitude);
     const longitude = Number(activity.longitude);
     if (
-      activity.locationType !== 'external_place'
+      (activity.locationType !== 'external_place' && activity.locationType !== 'private_place')
       || !activity.venueLocationKey
       || !Number.isFinite(latitude)
       || !Number.isFinite(longitude)
@@ -49,6 +51,8 @@ export function buildExternalFriendPlaceGroups(
     }
     groups.set(activity.venueLocationKey, {
       locationKey: activity.venueLocationKey,
+      locationType: activity.locationType,
+      locationPrecision: activity.locationPrecision === 'approximate' ? 'approximate' : 'exact',
       venueName: activity.venueName || 'Nearby place',
       address: activity.placeAddress || '',
       category: activity.placeCategory || 'Public place',
@@ -93,11 +97,13 @@ export default function ExternalFriendCheckInMarkers({
           allowOverlapWithPuck
           anchor={{ x: 0.5, y: 1 }}
           coordinate={[group.longitude, group.latitude]}
-          id={`external-friend-${group.locationKey}`}
+          id={`${group.locationType}-friend-${group.locationKey}`}
           key={group.locationKey}
         >
           <TouchableOpacity
-            accessibilityLabel={`${group.friends.length} ${group.friends.length === 1 ? 'friend' : 'friends'} checked in at ${group.venueName}`}
+            accessibilityLabel={group.locationType === 'private_place'
+              ? `${group.friends[0]?.displayName || 'Friend'} is at ${group.venueName}, ${group.locationPrecision} location`
+              : `${group.friends.length} ${group.friends.length === 1 ? 'friend' : 'friends'} checked in at ${group.venueName}`}
             accessibilityRole="button"
             activeOpacity={0.86}
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
@@ -105,14 +111,22 @@ export default function ExternalFriendCheckInMarkers({
               void Haptics.selectionAsync().catch(() => undefined);
               onPress(group);
             }}
-            style={styles.marker}
+            style={[styles.marker, group.locationType === 'private_place' && styles.privateMarker]}
           >
-            <View style={styles.markerAvatarShell}><Avatar friend={group.friends[0]} /></View>
+            {group.locationType === 'private_place' && group.locationPrecision === 'approximate' && (
+              <View pointerEvents="none" style={styles.approximateHalo} />
+            )}
+            <View style={[styles.markerAvatarShell, group.locationType === 'private_place' && styles.privateMarkerAvatarShell]}>
+              <Avatar friend={group.friends[0]} />
+            </View>
             {group.friends.length > 1 && (
               <View style={styles.countBadge}><Text style={styles.countText}>{group.friends.length}</Text></View>
             )}
-            <View style={styles.liveDot} />
-            <View style={styles.markerTip} />
+            <View style={[styles.liveDot, group.locationType === 'private_place' && styles.privateLiveDot]} />
+            {group.locationType === 'private_place' && (
+              <View style={styles.houseBadge}><Ionicons name="home" size={10} color="#FFFFFF" /></View>
+            )}
+            <View style={[styles.markerTip, group.locationType === 'private_place' && styles.privateMarkerTip]} />
           </TouchableOpacity>
         </MapboxGL.MarkerView>
       ))}
@@ -135,6 +149,9 @@ export function ExternalFriendCheckInPanel({
   onClose: () => void;
 }) {
   if (!group) return null;
+  const isPrivate = group.locationType === 'private_place';
+  const canOpenDirections = !isPrivate || group.locationPrecision === 'exact';
+  const friendFirstName = (group.friends[0]?.displayName || 'Friend').trim().split(/\s+/)[0];
   const openDirections = () => {
     const destination = encodeURIComponent(`${group.latitude},${group.longitude}`);
     void Linking.openURL(`https://www.google.com/maps/dir/?api=1&destination=${destination}`);
@@ -145,17 +162,27 @@ export function ExternalFriendCheckInPanel({
         <TouchableOpacity activeOpacity={1} onPress={() => undefined} style={styles.panel}>
           <View style={styles.dragHandle} />
           <View style={styles.panelHeader}>
-            <View style={styles.placeIcon}><Ionicons name="business-outline" size={22} color="#B54708" /></View>
+            <View style={[styles.placeIcon, isPrivate && styles.privatePlaceIcon]}>
+              <Ionicons name={isPrivate ? 'home-outline' : 'business-outline'} size={22} color={isPrivate ? '#6941C6' : '#B54708'} />
+            </View>
             <View style={styles.copy}>
-              <Text style={styles.panelEyebrow}>FRIENDS HERE NOW</Text>
-              <Text numberOfLines={2} style={styles.panelTitle}>{group.venueName}</Text>
-              <Text numberOfLines={1} style={styles.panelMeta}>{group.category}</Text>
+              <Text style={styles.panelEyebrow}>{isPrivate ? 'PRIVATE CHECK-IN' : 'FRIENDS HERE NOW'}</Text>
+              <Text numberOfLines={2} style={styles.panelTitle}>
+                {isPrivate ? `${friendFirstName} is at ${group.venueName}` : group.venueName}
+              </Text>
+              <Text numberOfLines={1} style={[styles.panelMeta, isPrivate && styles.privatePanelMeta]}>
+                {isPrivate
+                  ? group.locationPrecision === 'exact'
+                    ? 'Private location · Exact pin shared with you'
+                    : 'Private location · Approximate area'
+                  : group.category}
+              </Text>
             </View>
             <TouchableOpacity accessibilityLabel="Close friend check-in" onPress={onClose} style={styles.closeButton}>
               <Ionicons name="close" size={22} color="#344054" />
             </TouchableOpacity>
           </View>
-          {!!group.address && (
+          {!isPrivate && !!group.address && (
             <View style={styles.addressRow}>
               <Ionicons name="location-outline" size={18} color="#667085" />
               <Text style={styles.address}>{group.address}</Text>
@@ -174,17 +201,26 @@ export function ExternalFriendCheckInPanel({
               </View>
             ))}
           </View>
-          <TouchableOpacity accessibilityRole="button" onPress={openDirections} style={styles.directionsButton}>
-            <Ionicons name="navigate" size={19} color="#FFFFFF" />
-            <Text style={styles.directionsText}>Directions</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            accessibilityRole="link"
-            onPress={() => void Linking.openURL('https://www.openstreetmap.org/copyright')}
-            style={styles.attributionRow}
-          >
-            <Text style={styles.attributionText}>Place data © OpenStreetMap contributors</Text>
-          </TouchableOpacity>
+          {canOpenDirections ? (
+            <TouchableOpacity accessibilityRole="button" onPress={openDirections} style={styles.directionsButton}>
+              <Ionicons name="navigate" size={19} color="#FFFFFF" />
+              <Text style={styles.directionsText}>Directions</Text>
+            </TouchableOpacity>
+          ) : (
+            <View style={styles.approximateNotice}>
+              <Ionicons name="shield-checkmark-outline" size={18} color="#0F766E" />
+              <Text style={styles.approximateNoticeText}>The exact address and directions are hidden.</Text>
+            </View>
+          )}
+          {!isPrivate && (
+            <TouchableOpacity
+              accessibilityRole="link"
+              onPress={() => void Linking.openURL('https://www.openstreetmap.org/copyright')}
+              style={styles.attributionRow}
+            >
+              <Text style={styles.attributionText}>Place data © OpenStreetMap contributors</Text>
+            </TouchableOpacity>
+          )}
         </TouchableOpacity>
       </TouchableOpacity>
     </Modal>
@@ -193,23 +229,31 @@ export function ExternalFriendCheckInPanel({
 
 const styles = StyleSheet.create({
   marker: { width: 52, height: 60, alignItems: 'center', justifyContent: 'flex-start' },
+  privateMarker: { width: 70, height: 72 },
+  approximateHalo: { position: 'absolute', top: -8, width: 66, height: 66, borderRadius: 33, borderWidth: 1, borderColor: 'rgba(127,86,217,0.35)', backgroundColor: 'rgba(182,146,246,0.18)' },
   markerAvatarShell: { zIndex: 2, width: 48, height: 48, padding: 3, borderRadius: 24, borderWidth: 3, borderColor: '#7F56D9', backgroundColor: '#FFFFFF', shadowColor: '#101828', shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.25, shadowRadius: 5, elevation: 7 },
+  privateMarkerAvatarShell: { borderColor: '#6941C6' },
   avatar: { width: 40, height: 40, borderRadius: 20 },
   avatarFallback: { alignItems: 'center', justifyContent: 'center', backgroundColor: '#E9D7FE' },
   avatarInitial: { color: '#6941C6', fontSize: 16, fontWeight: '900' },
   countBadge: { position: 'absolute', right: -3, top: -3, zIndex: 5, minWidth: 21, height: 21, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4, borderRadius: 11, borderWidth: 2, borderColor: '#FFFFFF', backgroundColor: '#6941C6' },
   countText: { color: '#FFFFFF', fontSize: 9, fontWeight: '900' },
   liveDot: { position: 'absolute', left: 1, top: 3, zIndex: 5, width: 12, height: 12, borderRadius: 6, borderWidth: 2, borderColor: '#FFFFFF', backgroundColor: '#12B76A' },
+  privateLiveDot: { left: 11 },
+  houseBadge: { position: 'absolute', right: 4, top: 35, zIndex: 6, width: 20, height: 20, alignItems: 'center', justifyContent: 'center', borderRadius: 10, borderWidth: 2, borderColor: '#FFFFFF', backgroundColor: '#6941C6' },
   markerTip: { marginTop: -2, width: 0, height: 0, borderLeftWidth: 8, borderRightWidth: 8, borderTopWidth: 11, borderLeftColor: 'transparent', borderRightColor: 'transparent', borderTopColor: '#7F56D9' },
+  privateMarkerTip: { borderTopColor: '#6941C6' },
   backdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(16,24,40,0.45)' },
   panel: { paddingHorizontal: 18, paddingTop: 10, paddingBottom: 25, borderTopLeftRadius: 28, borderTopRightRadius: 28, backgroundColor: '#FFFFFF' },
   dragHandle: { alignSelf: 'center', width: 42, height: 5, marginBottom: 14, borderRadius: 3, backgroundColor: '#D0D5DD' },
   panelHeader: { flexDirection: 'row', alignItems: 'center', gap: 11 },
   placeIcon: { width: 46, height: 46, alignItems: 'center', justifyContent: 'center', borderRadius: 16, backgroundColor: '#FFFAEB' },
+  privatePlaceIcon: { backgroundColor: '#F4EBFF' },
   copy: { flex: 1, minWidth: 0 },
   panelEyebrow: { color: '#6941C6', fontSize: 9.5, fontWeight: '900', letterSpacing: 0.8 },
   panelTitle: { marginTop: 2, color: '#101828', fontSize: 21, lineHeight: 25, fontWeight: '900' },
   panelMeta: { marginTop: 1, color: '#B54708', fontSize: 11.5, fontWeight: '700' },
+  privatePanelMeta: { color: '#6941C6' },
   closeButton: { width: 38, height: 38, alignItems: 'center', justifyContent: 'center', borderRadius: 19, backgroundColor: '#F2F4F7' },
   addressRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 7, marginTop: 14, padding: 11, borderRadius: 14, backgroundColor: '#F9FAFB' },
   address: { flex: 1, color: '#475467', fontSize: 12.5, lineHeight: 18 },
@@ -223,6 +267,8 @@ const styles = StyleSheet.create({
   hereText: { color: '#067647', fontSize: 8.5, fontWeight: '900', letterSpacing: 0.5 },
   directionsButton: { minHeight: 50, marginTop: 15, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderRadius: 17, backgroundColor: '#6941C6' },
   directionsText: { color: '#FFFFFF', fontSize: 15, fontWeight: '900' },
+  approximateNotice: { minHeight: 48, marginTop: 15, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingHorizontal: 12, borderRadius: 16, backgroundColor: '#ECFDF3' },
+  approximateNoticeText: { color: '#0F766E', fontSize: 12, fontWeight: '800' },
   attributionRow: { alignSelf: 'center', marginTop: 10, paddingHorizontal: 8, paddingVertical: 3 },
   attributionText: { color: '#667085', fontSize: 10.5, textDecorationLine: 'underline' },
 });

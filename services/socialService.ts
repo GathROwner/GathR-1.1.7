@@ -34,6 +34,7 @@ import type {
   FriendRequestProjection,
   NearbyCheckInPlacesResult,
   OwnCheckIn,
+  PrivateCheckInPlaceCandidateResult,
   ResolvedFriendEventLocationSuggestion,
   SocialProfile,
 } from '../types/social';
@@ -90,6 +91,7 @@ function normalizeCallableError(error: unknown): SocialServiceError {
 }
 
 const APP_CHECKED_CALLABLES = new Set([
+  'createPrivateCheckInPlaceCandidateCallable',
   'discoverNearbyCheckInPlacesCallable',
   'recordCheckInEligibilitySampleCallable',
   'createFriendEventCallable',
@@ -316,6 +318,17 @@ export const discoverNearbyCheckInPlaces = (input: {
   capturedAtMs: number;
 }) => callSocial<typeof input, NearbyCheckInPlacesResult>(
   'discoverNearbyCheckInPlacesCallable',
+  input
+);
+
+export const createPrivateCheckInPlaceCandidate = (input: {
+  label: string;
+  latitude: number;
+  longitude: number;
+  accuracyMeters: number;
+  capturedAtMs: number;
+}) => callSocial<typeof input, PrivateCheckInPlaceCandidateResult>(
+  'createPrivateCheckInPlaceCandidateCallable',
   input
 );
 

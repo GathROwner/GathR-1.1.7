@@ -67,6 +67,8 @@ describe('external friend check-in markers', () => {
     expect(groups).toHaveLength(1);
     expect(groups[0]).toEqual(expect.objectContaining({
       locationKey: 'external:abc',
+      locationType: 'external_place',
+      locationPrecision: 'exact',
       venueName: 'The Oak Downtown',
       address: '161 Kent St',
       category: 'Pub',
@@ -74,5 +76,35 @@ describe('external friend check-in markers', () => {
       longitude: -63.129,
     }));
     expect(groups[0].friends.map((friend) => friend.displayName)).toEqual(['Emma Brooks', 'Jen B']);
+  });
+
+  it('keeps a private approximate projection distinct and address-free', () => {
+    const now = Date.now();
+    const groups = buildExternalFriendPlaceGroups([{
+      ownerUid: 'friend-a',
+      uid: 'friend-a',
+      displayName: 'Craig Burgoyne',
+      photoURL: '',
+      socialHandle: 'craig',
+      locationType: 'private_place',
+      locationPrecision: 'approximate',
+      venueLocationKey: 'private:abc',
+      venueName: 'Home',
+      placeCategory: 'Private location',
+      latitude: 46.25,
+      longitude: -63.14,
+      message: 'Watching the game',
+      expiresAt: now + 60_000,
+      revision: 'private-one',
+    }], now);
+
+    expect(groups).toEqual([expect.objectContaining({
+      locationKey: 'private:abc',
+      locationType: 'private_place',
+      locationPrecision: 'approximate',
+      venueName: 'Home',
+      address: '',
+      category: 'Private location',
+    })]);
   });
 });

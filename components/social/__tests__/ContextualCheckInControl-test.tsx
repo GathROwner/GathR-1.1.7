@@ -43,6 +43,7 @@ jest.mock('../../../types/social', () => ({
 }));
 
 jest.mock('../../../services/socialService', () => ({
+  createPrivateCheckInPlaceCandidate: jest.fn(),
   discoverNearbyCheckInPlaces: jest.fn().mockResolvedValue({ candidates: [] }),
   recordCheckInEligibilitySample: jest.fn(),
   SocialServiceError: class SocialServiceError extends Error {},
@@ -73,6 +74,7 @@ describe('ContextualCheckInControl', () => {
     act(() => idleControl.props.onPress());
 
     expect(component!.root.findByType(Modal).props.visible).toBe(true);
+    expect(component!.root.findByProps({ testID: 'private-place-entry' })).toBeTruthy();
     expect(mockPush).not.toHaveBeenCalled();
     act(() => component!.unmount());
   });
@@ -148,10 +150,37 @@ describe('ContextualCheckInControl', () => {
       pathname: '/check-in',
       params: {
         placeCandidateId: 'opaque-candidate',
+        placeType: 'external_place',
         placeName: 'The Oak Downtown',
         placeAddress: '161 Kent St',
         placeCategory: 'Pub',
         eligibilitySessionId: 'dwell-session',
+      },
+    });
+  });
+
+  it('routes a private candidate without an address snapshot', () => {
+    const home: VenueCandidate = {
+      id: 'opaque-private-candidate',
+      type: 'private_place',
+      placeCandidateId: 'opaque-private-candidate',
+      venueName: 'Home',
+      address: '',
+      category: 'Private location',
+      latitude: 46.25,
+      longitude: -63.14,
+      distanceMetres: 0,
+      imageUrl: '',
+    };
+
+    expect(buildNearbyCheckInRoute(home, 'private-dwell', [home])).toEqual({
+      pathname: '/check-in',
+      params: {
+        placeCandidateId: 'opaque-private-candidate',
+        placeType: 'private_place',
+        placeName: 'Home',
+        placeCategory: 'Private location',
+        eligibilitySessionId: 'private-dwell',
       },
     });
   });

@@ -174,7 +174,7 @@ export function buildFriendDestinations({
   for (const activity of activities) {
     const venueId = String(activity.venueId || '').trim();
     if (
-      activity.locationType === 'external_place'
+      (activity.locationType === 'external_place' || activity.locationType === 'private_place')
       && activity.venueLocationKey
       && Number.isFinite(activity.latitude)
       && Number.isFinite(activity.longitude)

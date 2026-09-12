@@ -29,13 +29,14 @@ export interface BlockProjection extends SocialProfile {
 export interface FriendActivityProjection extends SocialProfile {
   ownerUid: string;
   venueId?: string;
-  locationType?: 'gathr_venue' | 'external_place';
+  locationType?: 'gathr_venue' | 'external_place' | 'private_place';
   venueLocationKey: string;
   venueName: string;
   placeAddress?: string;
   placeCategory?: string;
   latitude?: number;
   longitude?: number;
+  locationPrecision?: 'exact' | 'approximate';
   message: string;
   createdAt?: SocialTimestamp;
   expiresAt?: SocialTimestamp;
@@ -48,15 +49,17 @@ export type CheckInDurationMinutes = 30 | 60 | 120;
 export interface OwnCheckIn {
   ownerUid: string;
   venueId?: string;
-  locationType?: 'gathr_venue' | 'external_place';
+  locationType?: 'gathr_venue' | 'external_place' | 'private_place';
   venueLocationKey: string;
   venueNameSnapshot: string;
   placeAddress?: string;
   placeCategory?: string;
   latitude?: number;
   longitude?: number;
+  locationPrecision?: 'exact' | 'approximate';
   audienceMode: CheckInAudienceMode;
   selectedUids: string[];
+  shareExactLocation?: boolean;
   viewerUids: string[];
   viewerCount: number;
   message: string;
@@ -88,6 +91,7 @@ export interface CheckInInput {
   durationMinutes: CheckInDurationMinutes;
   audienceMode: CheckInAudienceMode;
   selectedUids?: string[];
+  shareExactLocation?: boolean;
   message?: string;
 }
 
@@ -126,7 +130,7 @@ export interface CheckInEligibilitySampleInput {
 
 export interface NearbyCheckInPlaceCandidate {
   id: string;
-  type: 'gathr_venue' | 'external_place';
+  type: 'gathr_venue' | 'external_place' | 'private_place';
   venueId?: string;
   name: string;
   address: string;
@@ -138,6 +142,11 @@ export interface NearbyCheckInPlaceCandidate {
 
 export interface NearbyCheckInPlacesResult {
   candidates: NearbyCheckInPlaceCandidate[];
+  expiresAt?: SocialTimestamp;
+}
+
+export interface PrivateCheckInPlaceCandidateResult {
+  candidate: NearbyCheckInPlaceCandidate & { type: 'private_place' };
   expiresAt?: SocialTimestamp;
 }
 
