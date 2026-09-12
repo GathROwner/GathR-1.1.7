@@ -111,9 +111,13 @@ describe('server and privacy contracts', () => {
     expect(validReadinessReceipt(receipt, 'readiness-session', 10, start + 90_000)).toBe(true);
     expect(validReadinessReceipt(receipt, 'readiness-session', 9, start + 90_000)).toBe(false);
     expect(validReadinessReceipt({ ...receipt, hereQualifyingMs: NaN }, 'readiness-session', 10, start + 90_000)).toBe(false);
+    expect(validReadinessReceipt({ ...receipt, expiresAtMs: start + 119_999 }, 'readiness-session', 10, start + 90_000)).toBe(true);
+    expect(validReadinessReceipt({ ...receipt, expiresAtMs: start + 120_001 }, 'readiness-session', 10, start + 90_000)).toBe(false);
   });
   it('binds only the requested target and rejects missing/expired/wrong-owner-session grants', () => {
     expect(validBoundReadiness(grant, target, 'readiness-session', start + 90_000)).toBe(true);
+    expect(validBoundReadiness({ ...grant, expiresAtMs: start + 399_999 }, target, 'readiness-session', start + 90_000)).toBe(true);
+    expect(validBoundReadiness({ ...grant, expiresAtMs: start + 400_001 }, target, 'readiness-session', start + 90_000)).toBe(false);
     expect(validBoundReadiness(null, target, 'readiness-session', start + 90_000)).toBe(false);
     expect(validBoundReadiness(grant, { ...target, placeCandidateId: 'other' }, 'readiness-session', start + 90_000)).toBe(false);
     expect(validBoundReadiness(grant, target, 'other-session', start + 90_000)).toBe(false);

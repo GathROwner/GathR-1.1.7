@@ -6,7 +6,7 @@ export function validReadinessReceipt(value: CheckInReadinessReceipt | null, ses
     && Number.isFinite(value.hereQualifyingMs) && value.hereQualifyingMs >= 0 && value.hereQualifyingMs <= CHECK_IN_READINESS.hereMs
     && Number.isFinite(value.placeQualifyingMs) && value.placeQualifyingMs >= 0 && value.placeQualifyingMs <= CHECK_IN_READINESS.placeMs
     && Number.isFinite(value.expiresAtMs) && value.expiresAtMs > nowMs
-    && value.expiresAtMs <= nowMs + CHECK_IN_READINESS.maxSampleGapMs;
+    && value.expiresAtMs <= nowMs + CHECK_IN_READINESS.maxSampleGapMs + CHECK_IN_READINESS.receiptClockSkewMs;
 }
 
 export function readinessLevels(evidence: ReadinessState, receipt: CheckInReadinessReceipt | null, sessionId: string, nowMs: number) {
@@ -28,5 +28,6 @@ export function validBoundReadiness(grant: BoundCheckInReadiness | null, target:
       ? !!target.venueId && grant.venueId === target.venueId && !grant.placeCandidateId
       : !!target.placeCandidateId && grant.placeCandidateId === target.placeCandidateId && !grant.venueId)
     && (!grant.exactPrivateAllowed || target.type === 'private_place')
-    && Number.isFinite(grant.expiresAtMs) && grant.expiresAtMs > nowMs && grant.expiresAtMs <= nowMs + 5 * 60_000;
+    && Number.isFinite(grant.expiresAtMs) && grant.expiresAtMs > nowMs
+    && grant.expiresAtMs <= nowMs + 5 * 60_000 + CHECK_IN_READINESS.receiptClockSkewMs;
 }

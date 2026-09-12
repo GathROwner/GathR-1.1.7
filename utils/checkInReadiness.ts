@@ -5,6 +5,9 @@ export const CHECK_IN_READINESS = {
   sampleIntervalMs: 10_000,
   maxSampleGapMs: 20_000,
   maxSampleAgeMs: 15_000,
+  // Server-issued expiries use server time. Permit small real-world device clock drift
+  // without extending the server-side session or proximity checks.
+  receiptClockSkewMs: 10_000,
   hereAccuracyMetres: 50,
   placeAccuracyMetres: 25,
   stationarySpeedMps: 0.7,
