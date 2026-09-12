@@ -67,6 +67,7 @@ describe('private shared event normalization', () => {
   });
 
   it('materializes a finite multi-day weekly share into the normal recurrence shape', () => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-08-22T12:00:00Z'));
     const source = {
       ...unknownVenueEvent,
       startDate: '2026-09-01',

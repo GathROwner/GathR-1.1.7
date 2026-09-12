@@ -26,7 +26,6 @@ import { EVENT_CATEGORIES } from '../constants/eventCategories';
 import {
   createFriendEvent,
   createSocialOperationId,
-  geocodeFriendEventAddress,
   retrieveFriendEventLocationSuggestion,
   suggestFriendEventLocations,
   updateFriendEvent,
@@ -150,7 +149,6 @@ export default function CreateEventScreen() {
   const [step, setStep] = useState(0);
   const [draft, setDraft] = useState<Draft>(initialDraft);
   const [busy, setBusy] = useState(false);
-  const [geocoding, setGeocoding] = useState(false);
   const [locationFocused, setLocationFocused] = useState(false);
   const [locationSuggestions, setLocationSuggestions] = useState<UnifiedFriendEventLocationSuggestion[]>([]);
   const [locationSuggestionsLoading, setLocationSuggestionsLoading] = useState(false);
@@ -406,26 +404,20 @@ export default function CreateEventScreen() {
       Alert.alert('Enter a location', 'Search for a venue, business, or complete street address.');
       return;
     }
-    setGeocoding(true);
-    try {
-      const result = await geocodeFriendEventAddress(address);
-      patchDraft({
-        locationType: 'custom_address',
-        venueId: '',
-        customPlaceName: '',
-        customAddress: address,
-        customCoordinates: result,
-      });
-      setLocationSuggestions([]);
-      setLocationFocused(false);
-      resetLocationSearchSession();
-      Keyboard.dismiss();
-      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => undefined);
-    } catch (error) {
-      Alert.alert('Location not confirmed', errorMessage(error));
-    } finally {
-      setGeocoding(false);
-    }
+    patchDraft({
+      locationType: 'custom_address',
+      venueId: '',
+      customPlaceName: '',
+      customAddress: address,
+      // The server resolves this user-entered address once, at save time.
+      // These placeholder coordinates are never published or rendered.
+      customCoordinates: { latitude: 0, longitude: 0 },
+    });
+    setLocationSuggestions([]);
+    setLocationFocused(false);
+    resetLocationSearchSession();
+    Keyboard.dismiss();
+    await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => undefined);
   };
 
   const selectLocationSuggestion = async (suggestion: UnifiedFriendEventLocationSuggestion) => {
@@ -752,8 +744,8 @@ export default function CreateEventScreen() {
                       </TouchableOpacity>
                     </View>
                   ) : draft.locationQuery.trim().length >= 5 ? (
-                    <TouchableOpacity disabled={geocoding} onPress={() => void confirmTypedLocation()} style={[styles.confirmAddress, geocoding && styles.disabled]}>
-                      {geocoding ? <ActivityIndicator color={PURPLE} /> : <Ionicons name="locate-outline" size={19} color={PURPLE} />}
+                    <TouchableOpacity onPress={() => void confirmTypedLocation()} style={styles.confirmAddress}>
+                      <Ionicons name="locate-outline" size={19} color={PURPLE} />
                       <Text style={styles.confirmAddressText}>Use typed address</Text>
                     </TouchableOpacity>
                   ) : null}

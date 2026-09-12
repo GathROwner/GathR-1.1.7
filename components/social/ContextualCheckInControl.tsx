@@ -7,6 +7,7 @@ import {
   ActivityIndicator,
   AppState,
   Image,
+  Linking,
   Modal,
   ScrollView,
   StyleSheet,
@@ -584,6 +585,13 @@ export default function ContextualCheckInControl({ enabled }: Props) {
                     <Ionicons name="shield-checkmark-outline" size={18} color="#0F766E" />
                     <Text style={styles.privacyCopy}>You’ll confirm who can see it after GathR verifies you stayed nearby.</Text>
                   </View>
+                  <TouchableOpacity
+                    accessibilityRole="link"
+                    onPress={() => void Linking.openURL('https://www.openstreetmap.org/copyright')}
+                    style={styles.attributionRow}
+                  >
+                    <Text style={styles.attributionText}>Place data © OpenStreetMap contributors</Text>
+                  </TouchableOpacity>
                   <TouchableOpacity accessibilityRole="button" disabled={!selectedPlace} onPress={startDwell} style={[styles.usePlaceButton, !selectedPlace && styles.disabled]}>
                     <Text style={styles.usePlaceText}>Use this place</Text>
                     <Ionicons name="arrow-forward" size={19} color="#FFFFFF" />
@@ -653,6 +661,8 @@ const styles = StyleSheet.create({
   pickerFooter: { paddingHorizontal: 18, paddingTop: 12, paddingBottom: 22, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#D0D5DD', backgroundColor: '#FFFFFF' },
   privacyRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 },
   privacyCopy: { flex: 1, color: '#475467', fontSize: 11.5, lineHeight: 16 },
+  attributionRow: { alignSelf: 'center', marginBottom: 11, paddingHorizontal: 8, paddingVertical: 3 },
+  attributionText: { color: '#667085', fontSize: 10.5, textDecorationLine: 'underline' },
   usePlaceButton: { minHeight: 52, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderRadius: 17, backgroundColor: '#2F80ED' },
   usePlaceText: { color: '#FFFFFF', fontSize: 16, fontWeight: '900' },
   disabled: { opacity: 0.45 },

@@ -178,6 +178,13 @@ export function ExternalFriendCheckInPanel({
             <Ionicons name="navigate" size={19} color="#FFFFFF" />
             <Text style={styles.directionsText}>Directions</Text>
           </TouchableOpacity>
+          <TouchableOpacity
+            accessibilityRole="link"
+            onPress={() => void Linking.openURL('https://www.openstreetmap.org/copyright')}
+            style={styles.attributionRow}
+          >
+            <Text style={styles.attributionText}>Place data © OpenStreetMap contributors</Text>
+          </TouchableOpacity>
         </TouchableOpacity>
       </TouchableOpacity>
     </Modal>
@@ -216,4 +223,6 @@ const styles = StyleSheet.create({
   hereText: { color: '#067647', fontSize: 8.5, fontWeight: '900', letterSpacing: 0.5 },
   directionsButton: { minHeight: 50, marginTop: 15, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderRadius: 17, backgroundColor: '#6941C6' },
   directionsText: { color: '#FFFFFF', fontSize: 15, fontWeight: '900' },
+  attributionRow: { alignSelf: 'center', marginTop: 10, paddingHorizontal: 8, paddingVertical: 3 },
+  attributionText: { color: '#667085', fontSize: 10.5, textDecorationLine: 'underline' },
 });
