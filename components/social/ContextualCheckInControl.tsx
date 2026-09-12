@@ -153,6 +153,12 @@ export function buildNearbyCheckInRoute(
   };
 }
 
+export function closestNearbyPlaceId(candidates: VenueCandidate[]): string {
+  return candidates.reduce<VenueCandidate | null>((closest, current) => (
+    !closest || current.distanceMetres < closest.distanceMetres ? current : closest
+  ), null)?.id || '';
+}
+
 function findCandidates(venues: VenueCandidate[], location: Location.LocationObject): VenueCandidate[] {
   const accuracy = Number(location.coords.accuracy);
   if (!Number.isFinite(accuracy) || accuracy < 0 || accuracy > MAX_ACCURACY_METRES) return [];
@@ -385,9 +391,7 @@ export default function ContextualCheckInControl({ enabled }: Props) {
         };
       }).sort((first, second) => first.distanceMetres - second.distanceMetres);
       setNearbyPlaces(decorated);
-      const currentKey = candidate ? targetKey(candidate) : '';
-      const matching = decorated.find((place) => targetKey(place) === currentKey);
-      setSelectedPlaceId((matching || decorated[0])?.id || '');
+      setSelectedPlaceId(closestNearbyPlaceId(decorated));
       if (decorated.length === 0) {
         setDiscoveryError('No eligible public places were found close enough to your current location.');
       }

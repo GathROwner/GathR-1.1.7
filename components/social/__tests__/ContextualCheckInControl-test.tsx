@@ -4,6 +4,7 @@ import renderer, { act } from 'react-test-renderer';
 
 import ContextualCheckInControl, {
   buildNearbyCheckInRoute,
+  closestNearbyPlaceId,
   VenueAvatar,
   type VenueCandidate,
 } from '../ContextualCheckInControl';
@@ -153,5 +154,34 @@ describe('ContextualCheckInControl', () => {
         eligibilitySessionId: 'dwell-session',
       },
     });
+  });
+
+  it('defaults the picker to the closest result instead of a stale detected venue', () => {
+    const hopYard = {
+      id: 'venue:hopyard',
+      type: 'gathr_venue',
+      venueId: 'hopyard',
+      venueName: 'HopYard',
+      address: '151 Kent St',
+      category: 'GathR venue',
+      latitude: 46.236,
+      longitude: -63.128,
+      distanceMetres: 24,
+      imageUrl: '',
+    } satisfies VenueCandidate;
+    const oak = {
+      id: 'opaque-oak-candidate',
+      type: 'external_place',
+      placeCandidateId: 'opaque-oak-candidate',
+      venueName: 'The Oak Downtown',
+      address: '156 Great George Street',
+      category: 'bar',
+      latitude: 46.2364,
+      longitude: -63.1276,
+      distanceMetres: 0,
+      imageUrl: '',
+    } satisfies VenueCandidate;
+
+    expect(closestNearbyPlaceId([hopYard, oak])).toBe(oak.id);
   });
 });
