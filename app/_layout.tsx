@@ -51,6 +51,7 @@ import CheckInReadinessObserver from '../components/social/CheckInReadinessObser
 import { preloadStartupLocation } from '../utils/startupLocationCache';
 import { GATHR_MAPBOX_STYLE_URL, initializeMapboxAccessToken } from '../utils/mapboxAccessToken';
 import { SOCIAL_FEATURE_ENABLED } from '../types/social';
+import { isAuthenticatedSocialRoute } from '../utils/authenticatedAppRoute';
 import {
   EVENTS_PERSIST_MAX_AGE_MS,
   EVENTS_QUERY_GC_MS,
@@ -952,16 +953,10 @@ useEffect(() => {
     const onInterestSelection = segments[0] === 'interest-selection';
     const inAuthFlow = onLoginScreen || onInterestSelection;
     const inProfileScreen = segments[0] === 'profile';
-    const inAuthenticatedSocialFlow =
-      SOCIAL_FEATURE_ENABLED &&
-      (
-        segments[0] === 'friends' ||
-        segments[0] === 'social-profile' ||
-        segments[0] === 'check-in' ||
-        segments[0] === 'create-event' ||
-        segments[0] === 'my-events' ||
-        segments[0] === 'friend-event'
-      );
+    const inAuthenticatedSocialFlow = isAuthenticatedSocialRoute(
+      segments[0],
+      SOCIAL_FEATURE_ENABLED,
+    );
     const onSharedEventScreen = segments[0] === 'shared-event';
     const inSharedEventFlow = onSharedEventScreen || isRoutingShareIntent;
 
@@ -1079,6 +1074,7 @@ useEffect(() => {
           presentation: 'modal',
           animation: 'slide_from_bottom'
         }} />
+        <Stack.Screen name="check-in-settings" options={{ headerShown: false }} />
         <Stack.Screen name="attendance-survey" options={{ 
           presentation: 'modal',
           animation: 'slide_from_bottom',
