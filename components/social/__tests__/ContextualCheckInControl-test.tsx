@@ -142,6 +142,24 @@ describe('ContextualCheckInControl', () => {
     act(() => component!.unmount());
   });
 
+  it('enables private check-in at Here readiness while public check-in waits for Place readiness', async () => {
+    makeReady(30);
+    (discoverNearbyCheckInPlaces as jest.Mock).mockResolvedValueOnce({ candidates: [{
+      id: 'public-candidate', type: 'external_place', name: 'Nearby place', address: 'Public address',
+      category: 'Pub', latitude: 46.235, longitude: -63.129, distanceMetres: 0,
+    }] });
+    let component: renderer.ReactTestRenderer;
+    await act(async () => { component = renderer.create(<ContextualCheckInControl enabled />); });
+    await act(async () => { component!.root.findByProps({ testID: 'contextual-check-in-ready' }).props.onPress(); });
+
+    expect(component!.root.findByProps({ testID: 'private-place-entry' }).props.disabled).not.toBe(true);
+    expect(component!.root.findByProps({ testID: 'continue-public-check-in' }).props.disabled).toBe(true);
+
+    act(() => component!.root.findByProps({ testID: 'private-place-entry' }).props.onPress());
+    expect(component!.root.findByProps({ testID: 'continue-private-check-in' }).props.disabled).toBe(false);
+    act(() => component!.unmount());
+  });
+
   it('shows elapsed ring progress but keeps check-in locked until return validation finishes', async () => {
     makeReady(90);
     useCheckInReadinessStore.setState({ interruptedAtMs: Date.now() - 1_000 });

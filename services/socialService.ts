@@ -129,10 +129,25 @@ async function callAppCheckedSocial<Request, Response>(
 ): Promise<Response> {
   const user = auth.currentUser;
   if (!user) throw new SocialServiceError('unauthenticated', 'Sign in to use this feature.');
-  const [idToken, appCheckToken] = await Promise.all([
-    user.getIdToken(),
-    getSocialAppCheckToken(),
-  ]);
+  const appCheckToken = await getSocialAppCheckToken();
+
+  // Internal Preview OTAs can intentionally use the Production web Firebase
+  // project from a staging-registered native shell. In that configuration an
+  // App Check token must not be attached because it belongs to a different
+  // Firebase app. Let the Firebase callable SDK carry the matching web Auth
+  // context instead of hand-building an unattested request.
+  if (!appCheckToken) {
+    if (options.signal?.aborted) {
+      const error = new Error('The operation was aborted.');
+      error.name = 'AbortError';
+      throw error;
+    }
+    return (await httpsCallable<Request, Response>(functions, name, {
+      timeout: options.timeoutMs ?? 30_000,
+    })(data)).data;
+  }
+
+  const idToken = await user.getIdToken();
   const controller = new AbortController();
   const abortFromCaller = () => controller.abort();
   if (options.signal?.aborted) {
