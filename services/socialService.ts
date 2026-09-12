@@ -337,27 +337,38 @@ export const recordCheckInEligibilitySample = (input: CheckInEligibilitySampleIn
   );
 
 // Deliberately no fallback to a target-bound dwell session or client-fabricated grant.
-export const recordCheckInReadinessSample = (input: CheckInReadinessSampleInput, options: { signal?: AbortSignal } = {}) =>
+function normalizeLocationCaptureTime<T extends { capturedAtMs: number }>(input: T): T {
+  // Core Location exports seconds * 1000, which can contain fractional milliseconds.
+  // The callable protocol uses integer epoch milliseconds. Floor the original fix
+  // time (never Date.now()) so serialization cannot make an old fix appear newer.
+  const capturedAtMs = Math.floor(input.capturedAtMs);
+  if (!Number.isFinite(input.capturedAtMs) || input.capturedAtMs < 0 || !Number.isSafeInteger(capturedAtMs)) {
+    throw new SocialServiceError('invalid-argument', 'Refresh your location and try again.');
+  }
+  return { ...input, capturedAtMs };
+}
+
+export const recordCheckInReadinessSample = async (input: CheckInReadinessSampleInput, options: { signal?: AbortSignal } = {}) =>
   callSocial<CheckInReadinessSampleInput, CheckInReadinessReceipt>(
-    'recordCheckInReadinessSampleCallable', input, { ...options, timeoutMs: 8_000 }
+    'recordCheckInReadinessSampleCallable', normalizeLocationCaptureTime(input), { ...options, timeoutMs: 8_000 }
   );
 
-export const bindCheckInReadiness = (input: BindCheckInReadinessInput) =>
+export const bindCheckInReadiness = async (input: BindCheckInReadinessInput) =>
   callSocial<BindCheckInReadinessInput, BoundCheckInReadiness>(
-    'bindCheckInReadinessCallable', input
+    'bindCheckInReadinessCallable', normalizeLocationCaptureTime(input)
   );
 
-export const discoverNearbyCheckInPlaces = (input: {
+export const discoverNearbyCheckInPlaces = async (input: {
   latitude: number;
   longitude: number;
   accuracyMeters: number;
   capturedAtMs: number;
 }) => callSocial<typeof input, NearbyCheckInPlacesResult>(
   'discoverNearbyCheckInPlacesCallable',
-  input
+  normalizeLocationCaptureTime(input)
 );
 
-export const createPrivateCheckInPlaceCandidate = (input: {
+export const createPrivateCheckInPlaceCandidate = async (input: {
   label: string;
   latitude: number;
   longitude: number;
@@ -365,7 +376,7 @@ export const createPrivateCheckInPlaceCandidate = (input: {
   capturedAtMs: number;
 }) => callSocial<typeof input, PrivateCheckInPlaceCandidateResult>(
   'createPrivateCheckInPlaceCandidateCallable',
-  input
+  normalizeLocationCaptureTime(input)
 );
 
 export const checkOut = () =>
