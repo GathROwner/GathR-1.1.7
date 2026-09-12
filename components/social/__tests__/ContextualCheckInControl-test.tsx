@@ -160,14 +160,62 @@ describe('ContextualCheckInControl', () => {
     act(() => component!.unmount());
   });
 
-  it('shows elapsed ring progress but keeps check-in locked until return validation finishes', async () => {
+  it('keeps the projected full Here ring open until the server confirms, then updates the hint and opens immediately', async () => {
+    makeReady(30);
+    const receipt = useCheckInReadinessStore.getState().receipt!;
+    useCheckInReadinessStore.setState({ receipt: { ...receipt, hereQualifyingMs: 20_000, placeQualifyingMs: 20_000 } });
+    let component: renderer.ReactTestRenderer;
+    await act(async () => { component = renderer.create(<ContextualCheckInControl enabled />); });
+    const idle = component!.root.findByProps({ testID: 'contextual-check-in-idle' });
+    expect(component!.root.findByProps({ testID: 'check-in-here-ring' }).props.strokeDashoffset).toBeGreaterThan(0);
+    expect(component!.root.findAllByProps({ testID: 'check-in-ready-mark' })).toHaveLength(0);
+    await act(async () => idle.props.onPress());
+    expect(JSON.stringify(component!.toJSON())).toContain('Finishing location verification.');
+    expect(JSON.stringify(component!.toJSON())).toContain('Checking');
+    expect(component!.root.findByType(Modal).props.visible).toBe(false);
+
+    await act(async () => useCheckInReadinessStore.setState({ receipt }));
+    expect(component!.root.findByProps({ testID: 'check-in-here-ring' }).props).toMatchObject({
+      strokeDashoffset: 0, stroke: '#6D28D9', strokeWidth: 4.5,
+    });
+    expect(component!.root.findByProps({ testID: 'check-in-ready-mark' })).toBeTruthy();
+    expect(JSON.stringify(component!.toJSON())).toContain('Private check-in is ready.');
+    expect(mockPush).not.toHaveBeenCalled();
+    await act(async () => component!.root.findByProps({ testID: 'contextual-check-in-ready' }).props.onPress());
+    expect(component!.root.findByType(Modal).props.visible).toBe(true);
+    expect(component!.root.findByProps({ testID: 'private-place-entry' }).props.disabled).not.toBe(true);
+    act(() => component!.unmount());
+  });
+
+  it('completes the blue ring independently at server-backed Place readiness and removes completion when the receipt is lost', async () => {
+    makeReady(90);
+    const receipt = useCheckInReadinessStore.getState().receipt!;
+    useCheckInReadinessStore.setState({ receipt: { ...receipt, placeQualifyingMs: 80_000 } });
+    let component: renderer.ReactTestRenderer;
+    await act(async () => { component = renderer.create(<ContextualCheckInControl enabled />); });
+    expect(component!.root.findByProps({ testID: 'check-in-here-ring' }).props.strokeDashoffset).toBe(0);
+    expect(component!.root.findByProps({ testID: 'check-in-place-ring' }).props.strokeDashoffset).toBeGreaterThan(0);
+    await act(async () => useCheckInReadinessStore.setState({ receipt }));
+    expect(component!.root.findByProps({ testID: 'check-in-place-ring' }).props).toMatchObject({
+      strokeDashoffset: 0, stroke: '#175CD3', strokeWidth: 4.5,
+    });
+    await act(async () => useCheckInReadinessStore.setState({ receipt: null }));
+    expect(component!.root.findByProps({ testID: 'check-in-here-ring' }).props.strokeDashoffset).toBeGreaterThan(0);
+    expect(component!.root.findByProps({ testID: 'check-in-place-ring' }).props.strokeDashoffset).toBeGreaterThan(0);
+    expect(component!.root.findAllByProps({ testID: 'check-in-ready-mark' })).toHaveLength(0);
+    expect(component!.root.findByProps({ testID: 'contextual-check-in-idle' })).toBeTruthy();
+    act(() => component!.unmount());
+  });
+
+  it('keeps a visible gap and check-in locked until return validation finishes', async () => {
     makeReady(90);
     useCheckInReadinessStore.setState({ interruptedAtMs: Date.now() - 1_000 });
     let component: renderer.ReactTestRenderer;
     await act(async () => { component = renderer.create(<ContextualCheckInControl enabled />); });
 
     const control = component!.root.findByProps({ testID: 'contextual-check-in-idle' });
-    expect(control.props.accessibilityLabel).toContain('Here 100 percent. Place 100 percent.');
+    expect(control.props.accessibilityLabel).toContain('Here 90 percent. Place 90 percent.');
+    expect(component!.root.findAllByProps({ testID: 'check-in-ready-mark' })).toHaveLength(0);
     await act(async () => control.props.onPress());
 
     expect(component!.root.findByType(Modal).props.visible).toBe(false);

@@ -167,19 +167,26 @@ export function closestNearbyPlaceId(candidates: VenueCandidate[]): string {
   ), null)?.id || '';
 }
 
-export function ReadinessRings({ here, place, children }: { here: number; place: number; children: React.ReactNode }) {
-  const ring = (radius: number, progress: number, color: string) => {
+export function ReadinessRings({ here, place, hereReady, placeReady, children }: {
+  here: number; place: number; hereReady: boolean; placeReady: boolean; children: React.ReactNode;
+}) {
+  const ring = (name: string, radius: number, progress: number, ready: boolean, color: string, readyColor: string) => {
     const circumference = 2 * Math.PI * radius;
+    // Leave a visible gap, including rounded stroke caps, until the same server
+    // receipt that enables the action confirms readiness. Projection is not completion.
+    const displayedProgress = ready ? 1 : Math.min(0.9, Math.max(0, progress));
     return <React.Fragment key={radius}>
       <Circle cx={24} cy={24} r={radius} stroke={color} strokeOpacity={0.16} strokeWidth={3.5} fill="none" />
-      {progress > 0 && <Circle cx={24} cy={24} r={radius} stroke={color} strokeWidth={3.5} fill="none"
+      {displayedProgress > 0 && <Circle testID={`check-in-${name}-ring`} cx={24} cy={24} r={radius}
+        stroke={ready ? readyColor : color} strokeWidth={ready ? 4.5 : 3.5} fill="none"
         strokeLinecap="round" strokeDasharray={`${circumference} ${circumference}`}
-        strokeDashoffset={circumference * (1 - Math.min(1, Math.max(0, progress)))} rotation={-90} origin="24, 24" />}
+        strokeDashoffset={circumference * (1 - displayedProgress)} rotation={-90} origin="24, 24" />}
     </React.Fragment>;
   };
   return <View style={styles.rings} pointerEvents="none">
     <Svg width={48} height={48} style={StyleSheet.absoluteFill}>
-      {ring(21.5, place, '#2F80ED')}{ring(16, here, '#8B5CF6')}
+      {ring('place', 21.5, place, placeReady, '#2F80ED', '#175CD3')}
+      {ring('here', 16, here, hereReady, '#8B5CF6', '#6D28D9')}
     </Svg>
     {children}
   </View>;
@@ -297,8 +304,7 @@ export default function ContextualCheckInControl({ enabled }: Props) {
 
   const presentedReadiness = usePresentedReadiness(readiness.evidence, readiness.interruptedAtMs !== null);
   const recordedLevels = readinessLevels(readiness.evidence, readiness.receipt, readiness.sessionId, Date.now());
-  // The rings may finish visually while the app is interrupted, but readiness is
-  // never actionable until a fresh return fix has validated the original anchor.
+  // Both the completion cue and action wait for a fresh return fix after an interruption.
   const levels = readiness.interruptedAtMs === null ? recordedLevels : { here: false, place: false };
   visibleRef.current = enabled && readiness.appActive && !pickerVisible;
   const nearby = readiness.evidence.previous
@@ -529,19 +535,27 @@ export default function ContextualCheckInControl({ enabled }: Props) {
           ? 'Waiting for fresh, accurate location fixes. You can keep browsing while the rings prepare.'
         : readiness.serviceError
           ? 'Check-in verification is unavailable right now. You can keep browsing.'
+          : presentedReadiness.hereMs >= CHECK_IN_READINESS.hereMs
+            ? 'Finishing location verification. The purple ring will brighten and show a checkmark when you can check in.'
           : 'Here prepares an approximate private check-in. Place prepares a public place or optional exact pin. Nothing is shared.';
-  const hereProgress = presentedReadiness.hereMs / CHECK_IN_READINESS.hereMs;
-  const placeProgress = presentedReadiness.placeMs / CHECK_IN_READINESS.placeMs;
+  const hereProgress = levels.here ? 1 : Math.min(0.9, presentedReadiness.hereMs / CHECK_IN_READINESS.hereMs);
+  const placeProgress = levels.place ? 1 : Math.min(0.9, presentedReadiness.placeMs / CHECK_IN_READINESS.placeMs);
+  const explanation = autoBubbleRef.current ? bubble : levels.here
+    ? levels.place ? 'Ready for a private or public-place check-in. Tap the checkmark to choose.'
+      : 'Private check-in is ready. Tap the checkmark to choose. Public places need the blue ring too.'
+    : earlyCopy;
+  const ringStatus = (ready: boolean, elapsed: number, required: number) => ready ? 'Ready'
+    : elapsed >= required ? 'Checking' : `${Math.floor(elapsed / 1000)}/${required / 1000}s`;
   const control = <>
     {!!bubble && <View style={styles.bubble} testID="check-in-readiness-explanation" accessibilityLiveRegion="polite">
       <View style={styles.bubbleHeading}>
-        <Text style={styles.bubbleCopy}>{bubble}</Text>
+        <Text style={styles.bubbleCopy}>{explanation}</Text>
         <TouchableOpacity accessibilityRole="button" accessibilityLabel="Dismiss check-in hint"
           onPress={() => setBubble('')} style={styles.bubbleClose}><Ionicons name="close" size={19} color="#475467" /></TouchableOpacity>
       </View>
       <View style={styles.legend}>
-        <Text style={styles.hereLegend}>Here · {Math.floor(presentedReadiness.hereMs / 1000)}/30s</Text>
-        <Text style={styles.placeLegend}>Place · {Math.floor(presentedReadiness.placeMs / 1000)}/90s</Text>
+        <Text style={styles.hereLegend}>Here · {ringStatus(levels.here, presentedReadiness.hereMs, CHECK_IN_READINESS.hereMs)}</Text>
+        <Text style={styles.placeLegend}>Place · {ringStatus(levels.place, presentedReadiness.placeMs, CHECK_IN_READINESS.placeMs)}</Text>
       </View>
       <TouchableOpacity accessibilityRole="button" onPress={() => { setBubble(''); router.push('/check-in-settings'); }} style={styles.settingsLink}>
         <Text style={styles.settingsText}>Location &amp; arrival reminders</Text>
@@ -557,11 +571,13 @@ export default function ContextualCheckInControl({ enabled }: Props) {
       }}
       style={[styles.control, (levels.here || !!ownCheckIn) && styles.readyControl]}
       testID={ownCheckIn ? 'contextual-check-in-active' : levels.here ? 'contextual-check-in-ready' : 'contextual-check-in-idle'}>
-      {ownCheckIn ? <Ionicons name="checkmark-circle" size={26} color="#175CD3" /> : <ReadinessRings here={hereProgress} place={placeProgress}>
-        {candidate ? <View style={styles.smallAvatar}><VenueAvatar venue={candidate} /></View>
+      {ownCheckIn ? <Ionicons name="checkmark-circle" size={26} color="#175CD3" /> : <ReadinessRings
+        here={hereProgress} place={placeProgress} hereReady={levels.here} placeReady={levels.place}>
+        {levels.here ? <View testID="check-in-ready-mark" style={[styles.readyMark, levels.place && styles.placeReadyMark]}>
+          <Ionicons name="checkmark" color="#FFFFFF" size={19} />
+        </View> : candidate ? <View style={styles.smallAvatar}><VenueAvatar venue={candidate} /></View>
           : <Ionicons name="location-outline" size={21} color={levels.here ? '#175CD3' : '#667085'} />}
       </ReadinessRings>}
-      {!ownCheckIn && levels.here && <View style={styles.readyBadge}><Ionicons name="checkmark" color="#FFFFFF" size={10} /></View>}
     </TouchableOpacity>
   </>;
 
@@ -738,7 +754,8 @@ const styles = StyleSheet.create({
   readyControl: { backgroundColor: '#F0F7FF' },
   rings: { width: 48, height: 48, alignItems: 'center', justifyContent: 'center' },
   smallAvatar: { transform: [{ scale: 0.62 }] },
-  readyBadge: { position: 'absolute', bottom: -1, right: -1, borderRadius: 8, width: 16, height: 16, alignItems: 'center', justifyContent: 'center', backgroundColor: '#175CD3', borderWidth: 2, borderColor: '#FFFFFF' },
+  readyMark: { width: 24, height: 24, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: '#6D28D9' },
+  placeReadyMark: { backgroundColor: '#175CD3' },
   bubble: { position: 'absolute', right: 60, bottom: 20, width: 254, maxWidth: '76%', backgroundColor: '#FFFFFF', borderRadius: 16, padding: 12, elevation: 7, zIndex: 33, shadowColor: '#101828', shadowOpacity: 0.14, shadowRadius: 8, shadowOffset: { width: 0, height: 3 } },
   bubbleHeading: { flexDirection: 'row', alignItems: 'flex-start' },
   bubbleCopy: { flex: 1, color: '#344054', fontSize: 13, lineHeight: 19, fontWeight: '600' },
