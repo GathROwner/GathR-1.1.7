@@ -24,6 +24,10 @@ import type {
   CheckInInput,
   CheckInEligibilityResult,
   CheckInEligibilitySampleInput,
+  CheckInReadinessSampleInput,
+  CheckInReadinessReceipt,
+  BindCheckInReadinessInput,
+  BoundCheckInReadiness,
   FriendActivityProjection,
   FriendEventInput,
   FriendEventLocationSuggestion,
@@ -94,6 +98,8 @@ const APP_CHECKED_CALLABLES = new Set([
   'createPrivateCheckInPlaceCandidateCallable',
   'discoverNearbyCheckInPlacesCallable',
   'recordCheckInEligibilitySampleCallable',
+  'recordCheckInReadinessSampleCallable',
+  'bindCheckInReadinessCallable',
   'createFriendEventCallable',
   'geocodeFriendEventAddressCallable',
   'suggestFriendEventAddressesCallable',
@@ -177,37 +183,41 @@ async function callSocial<Request, Response>(
     const result = APP_CHECKED_CALLABLES.has(name)
       ? await callAppCheckedSocial<Request, Response>(name, data, options)
       : (await httpsCallable<Request, Response>(functions, name)(data)).data;
-    amplitudeTrack('social_callable_completed', {
-      operation,
-      success: true,
-      firebase_target: firebaseTarget,
-      duration_ms: Date.now() - startedAt,
-    });
-    publishCallableDiagnostic({
-      operation,
-      requestId,
-      durationMs: Date.now() - startedAt,
-      success: true,
-      errorCode: null,
-    });
+    if (name !== 'recordCheckInReadinessSampleCallable') {
+      amplitudeTrack('social_callable_completed', {
+        operation,
+        success: true,
+        firebase_target: firebaseTarget,
+        duration_ms: Date.now() - startedAt,
+      });
+      publishCallableDiagnostic({
+        operation,
+        requestId,
+        durationMs: Date.now() - startedAt,
+        success: true,
+        errorCode: null,
+      });
+    }
     return result;
   } catch (error) {
     if (error instanceof Error && error.name === 'AbortError') throw error;
     const normalized = normalizeCallableError(error);
-    amplitudeTrack('social_callable_completed', {
-      operation,
-      success: false,
-      firebase_target: firebaseTarget,
-      error_code: normalized.code,
-      duration_ms: Date.now() - startedAt,
-    });
-    publishCallableDiagnostic({
-      operation,
-      requestId,
-      durationMs: Date.now() - startedAt,
-      success: false,
-      errorCode: normalized.code,
-    });
+    if (name !== 'recordCheckInReadinessSampleCallable') {
+      amplitudeTrack('social_callable_completed', {
+        operation,
+        success: false,
+        firebase_target: firebaseTarget,
+        error_code: normalized.code,
+        duration_ms: Date.now() - startedAt,
+      });
+      publishCallableDiagnostic({
+        operation,
+        requestId,
+        durationMs: Date.now() - startedAt,
+        success: false,
+        errorCode: normalized.code,
+      });
+    }
     throw normalized;
   }
 }
@@ -309,6 +319,17 @@ export const recordCheckInEligibilitySample = (input: CheckInEligibilitySampleIn
   callSocial<CheckInEligibilitySampleInput, CheckInEligibilityResult>(
     'recordCheckInEligibilitySampleCallable',
     input
+  );
+
+// Deliberately no fallback to a target-bound dwell session or client-fabricated grant.
+export const recordCheckInReadinessSample = (input: CheckInReadinessSampleInput, options: { signal?: AbortSignal } = {}) =>
+  callSocial<CheckInReadinessSampleInput, CheckInReadinessReceipt>(
+    'recordCheckInReadinessSampleCallable', input, { ...options, timeoutMs: 8_000 }
+  );
+
+export const bindCheckInReadiness = (input: BindCheckInReadinessInput) =>
+  callSocial<BindCheckInReadinessInput, BoundCheckInReadiness>(
+    'bindCheckInReadinessCallable', input
   );
 
 export const discoverNearbyCheckInPlaces = (input: {

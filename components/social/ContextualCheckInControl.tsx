@@ -2,10 +2,10 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import * as Location from 'expo-location';
 import { useRouter } from 'expo-router';
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import Svg, { Circle } from 'react-native-svg';
 import {
   ActivityIndicator,
-  AppState,
   Image,
   Linking,
   Modal,
@@ -21,20 +21,24 @@ import { useAuth } from '../../contexts/AuthContext';
 import {
   createPrivateCheckInPlaceCandidate,
   discoverNearbyCheckInPlaces,
-  recordCheckInEligibilitySample,
+  bindCheckInReadiness,
+  createSocialOperationId,
   SocialServiceError,
 } from '../../services/socialService';
 import { useMapStore } from '../../store';
 import { useSocialStore } from '../../store/socialStore';
 import type {
-  CheckInEligibilityResult,
   NearbyCheckInPlaceCandidate,
 } from '../../types/social';
 import { SOCIAL_FEATURE_ENABLED, SOCIAL_RELEASE_TWO_ENABLED } from '../../types/social';
+import { useCheckInReadinessStore } from '../../store/checkInReadinessStore';
+import { claimReadinessPrompt } from '../../services/checkInReadinessPreferences';
+import { advanceReadiness, CHECK_IN_READINESS, mayPromptReadiness } from '../../utils/checkInReadiness';
+import { readinessLevels, validBoundReadiness } from '../../utils/checkInReadinessContract';
 
 const MAX_ACCURACY_METRES = 75;
 const BASE_RADIUS_METRES = 50;
-const SAMPLE_INTERVAL_MS = 10_000;
+
 
 export interface VenueCandidate {
   id: string;
@@ -72,10 +76,6 @@ function distanceMetres(
   return 2 * 6_371_000 * Math.asin(Math.sqrt(haversine));
 }
 
-function createSessionId() {
-  return `dwell-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
-}
-
 function remoteImageUrl(value: unknown): string {
   const imageUrl = String(value || '').trim();
   return /^https?:\/\//i.test(imageUrl) ? imageUrl : '';
@@ -91,12 +91,6 @@ function placeIcon(category: string) {
 }
 
 const PRIVATE_PLACE_LABELS = ['Home', "Friend's place", 'Private gathering'] as const;
-
-function targetKey(candidate: Pick<VenueCandidate, 'venueId' | 'placeCandidateId'>) {
-  return candidate.venueId
-    ? `venue:${candidate.venueId}`
-    : `external:${candidate.placeCandidateId || ''}`;
-}
 
 export function VenueAvatar({ venue, active = false }: { venue: VenueCandidate | null; active?: boolean }) {
   if (venue?.imageUrl) {
@@ -173,6 +167,24 @@ export function closestNearbyPlaceId(candidates: VenueCandidate[]): string {
   ), null)?.id || '';
 }
 
+export function ReadinessRings({ here, place, children }: { here: number; place: number; children: React.ReactNode }) {
+  const ring = (radius: number, progress: number, color: string) => {
+    const circumference = 2 * Math.PI * radius;
+    return <React.Fragment key={radius}>
+      <Circle cx={24} cy={24} r={radius} stroke={color} strokeOpacity={0.16} strokeWidth={3.5} fill="none" />
+      {progress > 0 && <Circle cx={24} cy={24} r={radius} stroke={color} strokeWidth={3.5} fill="none"
+        strokeLinecap="round" strokeDasharray={`${circumference} ${circumference}`}
+        strokeDashoffset={circumference * (1 - Math.min(1, Math.max(0, progress)))} rotation={-90} origin="24, 24" />}
+    </React.Fragment>;
+  };
+  return <View style={styles.rings} pointerEvents="none">
+    <Svg width={48} height={48} style={StyleSheet.absoluteFill}>
+      {ring(21.5, place, '#2F80ED')}{ring(16, here, '#8B5CF6')}
+    </Svg>
+    {children}
+  </View>;
+}
+
 function findCandidates(venues: VenueCandidate[], location: Location.LocationObject): VenueCandidate[] {
   const accuracy = Number(location.coords.accuracy);
   if (!Number.isFinite(accuracy) || accuracy < 0 || accuracy > MAX_ACCURACY_METRES) return [];
@@ -204,10 +216,21 @@ export default function ContextualCheckInControl({ enabled }: Props) {
   const { user } = useAuth();
   const allEvents = useMapStore((state) => state.allEvents);
   const ownCheckIn = useSocialStore((state) => state.ownCheckIn);
-  const [candidate, setCandidate] = useState<VenueCandidate | null>(null);
-  const [eligibility, setEligibility] = useState<CheckInEligibilityResult | null>(null);
-  const [sampling, setSampling] = useState(false);
-  const [sampleError, setSampleError] = useState(false);
+  const readiness = useCheckInReadinessStore();
+  const [bubble, setBubble] = useState('');
+  const [binding, setBinding] = useState(false);
+  const bindingRef = useRef(false);
+  const bindOperationRef = useRef<{ key: string; operationId: string } | null>(null);
+  const privateCreationRef = useRef(false);
+  const flowGenerationRef = useRef(0);
+  const mountedRef = useRef(true);
+  const bubbleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const autoBubbleRef = useRef(false);
+  const visibleRef = useRef(false);
+
+
+
+
   const [pickerVisible, setPickerVisible] = useState(false);
   const [discovering, setDiscovering] = useState(false);
   const [discoveryError, setDiscoveryError] = useState('');
@@ -218,15 +241,6 @@ export default function ContextualCheckInControl({ enabled }: Props) {
   const [privateCustomLabel, setPrivateCustomLabel] = useState('');
   const [creatingPrivatePlace, setCreatingPrivatePlace] = useState(false);
   const [privatePlaceError, setPrivatePlaceError] = useState('');
-  const [sampleRevision, setSampleRevision] = useState(0);
-  const sessionRef = useRef<{
-    targetKey: string;
-    sessionId: string;
-    venueId?: string;
-    placeCandidateId?: string;
-  } | null>(null);
-  const outsideSinceRef = useRef<number | null>(null);
-
   const venues = useMemo(() => {
     const byId = new Map<string, VenueCandidate>();
     for (const event of allEvents) {
@@ -262,113 +276,100 @@ export default function ContextualCheckInControl({ enabled }: Props) {
     return [...byId.values()];
   }, [allEvents]);
 
+  const levels = readinessLevels(readiness.evidence, readiness.receipt, readiness.sessionId, Date.now());
+  visibleRef.current = enabled && readiness.appActive && !pickerVisible;
+  const nearby = readiness.evidence.previous
+    ? findCandidates(venues, { coords: {
+      ...readiness.evidence.previous, accuracy: readiness.evidence.previous.accuracyMeters,
+    } } as unknown as Location.LocationObject) : [];
+  // GPS cannot identify one business among overlapping venues. Keep the generic icon when ambiguous.
+  const candidate = nearby.length === 1 && nearby[0].distanceMetres <= 25 && levels.place ? nearby[0] : null;
+  const showBubble = useCallback((message: string, automatic = false) => {
+    if (bubbleTimer.current) clearTimeout(bubbleTimer.current);
+    autoBubbleRef.current = automatic;
+    setBubble(message);
+    bubbleTimer.current = setTimeout(() => setBubble(''), 8_000);
+  }, []);
   useEffect(() => {
-    if (!enabled || !SOCIAL_FEATURE_ENABLED || !SOCIAL_RELEASE_TWO_ENABLED || !user || ownCheckIn) {
-      setCandidate(null);
-      setEligibility(null);
-      sessionRef.current = null;
-      outsideSinceRef.current = null;
-      return;
+    if (!readiness.appActive || (autoBubbleRef.current && (!levels.place || !enabled || pickerVisible))) setBubble('');
+  }, [enabled, levels.place, pickerVisible, readiness.appActive]);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; if (bubbleTimer.current) clearTimeout(bubbleTimer.current); };
+  }, []);
+  useEffect(() => {
+    const now = Date.now();
+    if (!ownCheckIn && readiness.uid === user?.uid && readiness.preferencesLoaded
+      && mayPromptReadiness(readiness.evidence, now, readiness.lastPromptAtMs,
+        enabled && readiness.appActive && !pickerVisible, levels.place)) {
+      void claimReadinessPrompt(now).then((claimed) => {
+        const current = useCheckInReadinessStore.getState();
+        if (claimed && mountedRef.current && visibleRef.current && current.uid === user?.uid && current.appActive
+          && readinessLevels(current.evidence, current.receipt, current.sessionId, Date.now()).place) {
+          showBubble(candidate ? `You can check in at ${candidate.venueName}` : 'You can check in here.', true);
+        }
+      });
     }
-
-    let active = true;
-    let timer: ReturnType<typeof setTimeout> | null = null;
-    let requestInFlight = false;
-
-    const schedule = () => {
-      if (active) timer = setTimeout(() => void sample(), SAMPLE_INTERVAL_MS);
-    };
-    const sample = async () => {
-      if (!active || requestInFlight || AppState.currentState !== 'active') {
-        schedule();
-        return;
-      }
-      requestInFlight = true;
-      setSampling(true);
-      try {
-        const permission = await Location.getForegroundPermissionsAsync();
-        if (permission.status !== 'granted') {
-          setCandidate(null);
-          setEligibility(null);
-          return;
-        }
-        const location = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
-        if (!active) return;
-        const nearbyCandidates = findCandidates(venues, location);
-        const nearbyCandidate = nearbyCandidates[0] || null;
-        const tracked = sessionRef.current;
-        const trackedCandidate = tracked?.placeCandidateId
-          ? candidate
-          : tracked?.venueId
-            ? venues.find((venue) => venue.venueId === tracked.venueId) || null
-            : null;
-        const nextCandidate = trackedCandidate || nearbyCandidate;
-        if (!nextCandidate) {
-          setCandidate(null);
-          setEligibility(null);
-          sessionRef.current = null;
-          outsideSinceRef.current = null;
-          setSampleError(false);
-          return;
-        }
-        const nextTargetKey = targetKey(nextCandidate);
-        if (sessionRef.current?.targetKey !== nextTargetKey) {
-          sessionRef.current = {
-            targetKey: nextTargetKey,
-            sessionId: createSessionId(),
-            venueId: nextCandidate.venueId,
-            placeCandidateId: nextCandidate.placeCandidateId,
-          };
-          setEligibility(null);
-        }
-        setCandidate(nextCandidate);
-        const result = await recordCheckInEligibilitySample({
-          sessionId: sessionRef.current.sessionId,
-          ...(nextCandidate.venueId
-            ? {
-                venueId: nextCandidate.venueId,
-                candidateVenueIds: nearbyCandidates
-                  .map((venue) => venue.venueId)
-                  .filter((venueId): venueId is string => Boolean(venueId)),
-              }
-            : { placeCandidateId: nextCandidate.placeCandidateId }),
-          latitude: location.coords.latitude,
-          longitude: location.coords.longitude,
-          accuracyMeters: location.coords.accuracy ?? MAX_ACCURACY_METRES + 1,
-          speedMetersPerSecond: location.coords.speed,
-        });
-        if (!active) return;
-        setEligibility(result);
-        setSampleError(false);
-        if (result.reason === 'outside') outsideSinceRef.current ||= Date.now();
-        else outsideSinceRef.current = null;
-        if (result.reason === 'outside' && outsideSinceRef.current && Date.now() - outsideSinceRef.current >= 30_000) {
-          setCandidate(null);
-          setEligibility(null);
-          sessionRef.current = null;
-          outsideSinceRef.current = null;
-        }
-      } catch {
-        if (active) setSampleError(true);
-      } finally {
-        requestInFlight = false;
-        if (active) {
-          setSampling(false);
-          schedule();
-        }
-      }
-    };
-
-    void sample();
-    return () => {
-      active = false;
-      if (timer) clearTimeout(timer);
-    };
-  }, [candidate, enabled, ownCheckIn, sampleRevision, user, venues]);
+  }, [candidate, enabled, levels.place, ownCheckIn, pickerVisible, readiness, showBubble, user?.uid]);
 
   if (!enabled || !SOCIAL_FEATURE_ENABLED || !SOCIAL_RELEASE_TWO_ENABLED || !user) return null;
 
+  const choosePlace = async (place: VenueCandidate | null) => {
+    if (!place || bindingRef.current) return;
+    const initial = useCheckInReadinessStore.getState();
+    const initialLevels = readinessLevels(initial.evidence, initial.receipt, initial.sessionId, Date.now());
+    const report = (message: string) => place.type === 'private_place' ? setPrivatePlaceError(message) : setDiscoveryError(message);
+    if (initial.uid !== user.uid || !initial.appActive || (place.type === 'private_place' ? !initialLevels.here : !initialLevels.place)) {
+      report('Readiness changed. Return to the map; the rings will update as your location settles.');
+      return;
+    }
+    bindingRef.current = true;
+    const flowGeneration = flowGenerationRef.current;
+    const operationKey = `${initial.sessionId}:${place.type}:${place.venueId || place.placeCandidateId}`;
+    if (bindOperationRef.current?.key !== operationKey) bindOperationRef.current = { key: operationKey, operationId: createSocialOperationId() };
+    const operationId = bindOperationRef.current.operationId;
+    setBinding(true);
+    try {
+      const location = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
+      const sample = { latitude: location.coords.latitude, longitude: location.coords.longitude,
+        accuracyMeters: location.coords.accuracy, speedMetersPerSecond: location.coords.speed, capturedAtMs: location.timestamp };
+      const current = useCheckInReadinessStore.getState();
+      const fresh = advanceReadiness(current.evidence, sample, Date.now());
+      if (!mountedRef.current || flowGenerationRef.current !== flowGeneration) return;
+      const freshLevels = readinessLevels(fresh, current.receipt, current.sessionId, Date.now());
+      if (current.uid !== user.uid || !current.appActive || current.sessionId !== initial.sessionId
+        || fresh.revision !== current.evidence.revision || (place.type === 'private_place' ? !freshLevels.here : !freshLevels.place)) {
+        if (current.uid === user.uid) useCheckInReadinessStore.setState({ evidence: fresh, receipt: null, sessionId: '' });
+        throw new Error('Readiness changed. Return to the map to check your location.');
+      }
+      const grant = await bindCheckInReadiness({ protocolVersion: 1, readinessSessionId: current.sessionId,
+        operationId,
+        ...(place.type === 'gathr_venue' ? { venueId: place.venueId } : { placeCandidateId: place.placeCandidateId }), ...sample });
+      const after = useCheckInReadinessStore.getState();
+      if (!mountedRef.current || flowGenerationRef.current !== flowGeneration || after.uid !== user.uid || !after.appActive || after.sessionId !== initial.sessionId) return;
+      if (!validBoundReadiness(grant, place, current.sessionId, Date.now()) || (grant.exactPrivateAllowed && !freshLevels.place)) {
+        throw new Error('Check-in verification is unavailable. Please try again from the map.');
+      }
+      useCheckInReadinessStore.setState({ grant });
+      setPickerVisible(false);
+      setPrivateSetupVisible(false);
+      const route = buildNearbyCheckInRoute(place, grant.eligibilitySessionId, [place]);
+      router.push({ ...route, params: { ...route.params, readinessVersion: '1',
+        ...(place.type === 'gathr_venue' ? { placeType: 'gathr_venue', placeName: place.venueName, placeAddress: place.address } : {}),
+      } });
+      void Haptics.selectionAsync().catch(() => undefined);
+    } catch (error) {
+      if (mountedRef.current) report(messageForError(error));
+    } finally {
+      bindingRef.current = false;
+      if (mountedRef.current) setBinding(false);
+    }
+  };
+
   const loadNearbyPlaces = async () => {
+    flowGenerationRef.current += 1;
+    const flowGeneration = flowGenerationRef.current;
+    setBubble('');
     setPickerVisible(true);
     setPrivateSetupVisible(false);
     setDiscovering(true);
@@ -381,8 +382,8 @@ export default function ContextualCheckInControl({ enabled }: Props) {
         return;
       }
       const location = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
-      const accuracyMeters = Number(location.coords.accuracy);
-      if (!Number.isFinite(accuracyMeters) || accuracyMeters > 100) {
+      const accuracyMeters = location.coords.accuracy;
+      if (accuracyMeters === null || !Number.isFinite(accuracyMeters) || accuracyMeters < 0 || accuracyMeters > CHECK_IN_READINESS.hereAccuracyMetres) {
         setDiscoveryError('Your location is not precise enough yet. Step outdoors or wait a moment, then retry.');
         return;
       }
@@ -390,8 +391,9 @@ export default function ContextualCheckInControl({ enabled }: Props) {
         latitude: location.coords.latitude,
         longitude: location.coords.longitude,
         accuracyMeters,
-        capturedAtMs: location.timestamp || Date.now(),
+        capturedAtMs: location.timestamp,
       });
+      if (!mountedRef.current || flowGenerationRef.current !== flowGeneration) return;
       const decorated = result.candidates.map((place: NearbyCheckInPlaceCandidate): VenueCandidate => {
         const recognized = place.venueId
           ? venues.find((venue) => venue.venueId === place.venueId)
@@ -423,31 +425,19 @@ export default function ContextualCheckInControl({ enabled }: Props) {
   };
 
   const selectedPlace = nearbyPlaces.find((place) => place.id === selectedPlaceId) || null;
-  const startDwell = (place: VenueCandidate | null = selectedPlace) => {
-    if (!place) return;
-    const nextKey = targetKey(place);
-    if (sessionRef.current?.targetKey !== nextKey) {
-      sessionRef.current = {
-        targetKey: nextKey,
-        sessionId: createSessionId(),
-        venueId: place.venueId,
-        placeCandidateId: place.placeCandidateId,
-      };
-      setEligibility(null);
-    }
-    setCandidate(place);
-    setPickerVisible(false);
-    setPrivateSetupVisible(false);
-    setSampleRevision((value) => value + 1);
-    void Haptics.selectionAsync().catch(() => undefined);
-  };
-
   const openPrivateSetup = () => {
     setPrivatePlaceError('');
     setPrivateSetupVisible(true);
   };
 
   const createPrivatePlace = async () => {
+    if (privateCreationRef.current || bindingRef.current) return;
+    const current = useCheckInReadinessStore.getState();
+    if (current.uid !== user.uid || !current.appActive
+      || !readinessLevels(current.evidence, current.receipt, current.sessionId, Date.now()).here) {
+      setPrivatePlaceError('Readiness changed. Return to the map to check your location.');
+      return;
+    }
     const label = privateLabelChoice === 'Custom'
       ? privateCustomLabel.trim()
       : privateLabelChoice;
@@ -456,6 +446,8 @@ export default function ContextualCheckInControl({ enabled }: Props) {
       return;
     }
     setCreatingPrivatePlace(true);
+    privateCreationRef.current = true;
+    const flowGeneration = flowGenerationRef.current;
     setPrivatePlaceError('');
     try {
       let permission = await Location.getForegroundPermissionsAsync();
@@ -465,8 +457,8 @@ export default function ContextualCheckInControl({ enabled }: Props) {
         return;
       }
       const location = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
-      const accuracyMeters = Number(location.coords.accuracy);
-      if (!Number.isFinite(accuracyMeters) || accuracyMeters > 100) {
+      const accuracyMeters = location.coords.accuracy;
+      if (accuracyMeters === null || !Number.isFinite(accuracyMeters) || accuracyMeters < 0 || accuracyMeters > CHECK_IN_READINESS.hereAccuracyMetres) {
         setPrivatePlaceError('Your location is not precise enough yet. Wait a moment, then retry.');
         return;
       }
@@ -475,10 +467,11 @@ export default function ContextualCheckInControl({ enabled }: Props) {
         latitude: location.coords.latitude,
         longitude: location.coords.longitude,
         accuracyMeters,
-        capturedAtMs: location.timestamp || Date.now(),
+        capturedAtMs: location.timestamp,
       });
       const place = result.candidate;
-      startDwell({
+      if (!mountedRef.current || flowGenerationRef.current !== flowGeneration) return;
+      await choosePlace({
         id: place.id,
         type: 'private_place',
         placeCandidateId: place.id,
@@ -493,115 +486,62 @@ export default function ContextualCheckInControl({ enabled }: Props) {
     } catch (error) {
       setPrivatePlaceError(messageForError(error));
     } finally {
+      privateCreationRef.current = false;
       setCreatingPrivatePlace(false);
     }
   };
+  const closePicker = () => { flowGenerationRef.current += 1; setPickerVisible(false); };
 
-  let control: React.ReactNode;
-  if (ownCheckIn) {
-    const activeVenue = ownCheckIn.venueId
-      ? venues.find((venue) => venue.venueId === ownCheckIn.venueId) ?? null
-      : ({
-          id: ownCheckIn.venueLocationKey,
-          type: ownCheckIn.locationType === 'private_place' ? 'private_place' : 'external_place',
-          placeCandidateId: '',
-          venueName: ownCheckIn.venueNameSnapshot,
-          address: ownCheckIn.placeAddress || '',
-          category: ownCheckIn.placeCategory || 'Place',
-          latitude: ownCheckIn.latitude || 0,
-          longitude: ownCheckIn.longitude || 0,
-          distanceMetres: 0,
-          imageUrl: '',
-        } satisfies VenueCandidate);
-    control = (
-      <TouchableOpacity
-        accessibilityLabel={`Manage active check-in at ${ownCheckIn.venueNameSnapshot}`}
-        accessibilityRole="button"
-        activeOpacity={0.88}
-        onPress={() => router.push('/check-in')}
-        style={[styles.control, styles.activeControl]}
-      >
-        <VenueAvatar active venue={activeVenue} />
-        <View style={styles.copy}>
-          <Text numberOfLines={1} style={styles.eyebrow}>CHECKED IN</Text>
-          <Text numberOfLines={1} style={styles.activeVenue}>{ownCheckIn.venueNameSnapshot}</Text>
-        </View>
-        <Ionicons name="chevron-forward" size={20} color="#175CD3" />
+  const earlyCopy = readiness.mode === 'basic' || !readiness.foregroundGranted
+    ? 'Browse without location. Enable While Using GathR to prepare a nearby check-in.'
+    : readiness.evidence.reason === 'driving'
+      ? 'Check-in readiness is paused after driving. It will resume once you have settled.'
+      : readiness.evidence.reason === 'moving'
+        ? 'The rings reset when you move. They build once your location settles.'
+        : readiness.evidence.reason === 'low_accuracy' || readiness.evidence.reason === 'stale'
+          ? 'Waiting for fresh, accurate location fixes. You can keep browsing while the rings prepare.'
+        : readiness.serviceError
+          ? 'Check-in verification is unavailable right now. You can keep browsing.'
+          : 'Here prepares an approximate private check-in. Place prepares a public place or optional exact pin. Nothing is shared.';
+  const hereProgress = readiness.evidence.hereMs / CHECK_IN_READINESS.hereMs;
+  const placeProgress = readiness.evidence.placeMs / CHECK_IN_READINESS.placeMs;
+  const control = <>
+    {!!bubble && <View style={styles.bubble} testID="check-in-readiness-explanation" accessibilityLiveRegion="polite">
+      <View style={styles.bubbleHeading}>
+        <Text style={styles.bubbleCopy}>{bubble}</Text>
+        <TouchableOpacity accessibilityRole="button" accessibilityLabel="Dismiss check-in hint"
+          onPress={() => setBubble('')} style={styles.bubbleClose}><Ionicons name="close" size={19} color="#475467" /></TouchableOpacity>
+      </View>
+      <View style={styles.legend}>
+        <Text style={styles.hereLegend}>Here · {Math.floor(readiness.evidence.hereMs / 1000)}/30s</Text>
+        <Text style={styles.placeLegend}>Place · {Math.floor(readiness.evidence.placeMs / 1000)}/90s</Text>
+      </View>
+      <TouchableOpacity accessibilityRole="button" onPress={() => { setBubble(''); router.push('/check-in-settings'); }} style={styles.settingsLink}>
+        <Text style={styles.settingsText}>Location &amp; arrival reminders</Text>
       </TouchableOpacity>
-    );
-  } else if (!candidate || !eligibility) {
-    control = (
-      <TouchableOpacity
-        accessibilityLabel="Choose a nearby place to check in"
-        accessibilityRole="button"
-        activeOpacity={0.88}
-        onPress={() => void loadNearbyPlaces()}
-        style={[styles.control, styles.idleControl]}
-        testID="contextual-check-in-idle"
-      >
-        <View style={[styles.iconCircle, styles.idleIconCircle]}>
-          <Ionicons name="location-outline" size={21} color="#0F766E" />
-        </View>
-      </TouchableOpacity>
-    );
-  } else if (eligibility.eligible && sessionRef.current) {
-    const sessionId = sessionRef.current.sessionId;
-    const eligibleVenueIds = [...new Set([candidate.venueId, ...(eligibility.eligibleVenueIds || [])])]
-      .filter((venueId): venueId is string => Boolean(venueId));
-    const eligibleCandidates = candidate.type !== 'gathr_venue'
-      ? [candidate]
-      : eligibleVenueIds
-          .map((venueId) => venues.find((venue) => venue.venueId === venueId))
-          .filter((venue): venue is VenueCandidate => Boolean(venue));
-    control = (
-      <TouchableOpacity
-        accessibilityLabel={`Check in at ${candidate.venueName}`}
-        accessibilityRole="button"
-        activeOpacity={0.88}
-        onLongPress={() => void loadNearbyPlaces()}
-        onPress={() => router.push(buildNearbyCheckInRoute(candidate, sessionId, eligibleCandidates))}
-        style={[styles.control, styles.readyControl]}
-        testID="contextual-check-in-ready"
-      >
-        <VenueAvatar venue={candidate} />
-        <View style={styles.copy}>
-          <Text numberOfLines={1} style={styles.readyEyebrow}>YOU'RE HERE</Text>
-          <Text numberOfLines={1} style={styles.readyVenue}>Check in · {candidate.venueName}</Text>
-        </View>
-        <Ionicons name="arrow-forward" size={19} color="#FFFFFF" />
-      </TouchableOpacity>
-    );
-  } else {
-    const secondsRemaining = Math.max(1, Math.ceil(eligibility.remainingMs / 1_000));
-    const status = eligibility.reason === 'moving_too_fast'
-      ? 'Waiting until you stop'
-      : eligibility.reason === 'low_accuracy'
-        ? 'Finding your exact location'
-        : eligibility.reason === 'outside'
-          ? 'Move a little closer'
-          : `Stay nearby · ${secondsRemaining}s`;
-    control = (
-      <TouchableOpacity
-        accessibilityLabel={`${candidate.venueName}. ${status}. Choose another nearby place`}
-        accessibilityRole="button"
-        activeOpacity={0.88}
-        onPress={() => void loadNearbyPlaces()}
-        style={[styles.control, styles.progressControl]}
-      >
-        <VenueAvatar venue={candidate} />
-        <View style={styles.copy}>
-          <Text numberOfLines={1} style={styles.progressVenue}>{candidate.venueName}</Text>
-          <Text numberOfLines={1} style={styles.progressText}>{sampleError ? 'Detection will retry' : sampling ? 'Confirming your location' : status}</Text>
-        </View>
-        <Ionicons name="chevron-down" size={18} color="#6941C6" />
-      </TouchableOpacity>
-    );
-  }
+    </View>}
+    <TouchableOpacity accessibilityRole="button" activeOpacity={0.85}
+      accessibilityLabel={ownCheckIn ? `Manage active check-in at ${ownCheckIn.venueNameSnapshot}`
+        : `${levels.here ? 'Check-in ready' : 'Check-in readiness'}. Here ${Math.floor(hereProgress * 100)} percent. Place ${Math.floor(placeProgress * 100)} percent.`}
+      onPress={() => {
+        if (ownCheckIn) router.push('/check-in');
+        else if (levels.here && readiness.uid === user.uid) void loadNearbyPlaces();
+        else showBubble(earlyCopy);
+      }}
+      style={[styles.control, (levels.here || !!ownCheckIn) && styles.readyControl]}
+      testID={ownCheckIn ? 'contextual-check-in-active' : levels.here ? 'contextual-check-in-ready' : 'contextual-check-in-idle'}>
+      {ownCheckIn ? <Ionicons name="checkmark-circle" size={26} color="#175CD3" /> : <ReadinessRings here={hereProgress} place={placeProgress}>
+        {candidate ? <View style={styles.smallAvatar}><VenueAvatar venue={candidate} /></View>
+          : <Ionicons name="location-outline" size={21} color={levels.here ? '#175CD3' : '#667085'} />}
+      </ReadinessRings>}
+      {!ownCheckIn && levels.here && <View style={styles.readyBadge}><Ionicons name="checkmark" color="#FFFFFF" size={10} /></View>}
+    </TouchableOpacity>
+  </>;
 
   return (
     <>
       {control}
-      <Modal animationType="slide" onRequestClose={() => setPickerVisible(false)} transparent visible={pickerVisible}>
+      <Modal animationType="slide" onRequestClose={closePicker} transparent visible={pickerVisible}>
         <View style={styles.modalBackdrop}>
           <View accessibilityViewIsModal style={styles.pickerCard}>
             <View style={styles.dragHandle} />
@@ -615,7 +555,7 @@ export default function ContextualCheckInControl({ enabled }: Props) {
                     : 'Choose a public place close to your phone.'}
                 </Text>
               </View>
-              <TouchableOpacity accessibilityLabel="Close nearby places" onPress={() => setPickerVisible(false)} style={styles.closeButton}>
+              <TouchableOpacity accessibilityLabel="Close nearby places" onPress={closePicker} style={styles.closeButton}>
                 <Ionicons name="close" size={22} color="#344054" />
               </TouchableOpacity>
             </View>
@@ -668,20 +608,21 @@ export default function ContextualCheckInControl({ enabled }: Props) {
                 {!!privatePlaceError && <Text style={styles.privateError}>{privatePlaceError}</Text>}
                 <TouchableOpacity
                   accessibilityRole="button"
-                  disabled={creatingPrivatePlace}
+                  testID="continue-private-check-in"
+                  disabled={creatingPrivatePlace || binding || !levels.here}
                   onPress={() => void createPrivatePlace()}
-                  style={[styles.usePrivateButton, creatingPrivatePlace && styles.disabled]}
+                  style={[styles.usePrivateButton, (creatingPrivatePlace || binding || !levels.here) && styles.disabled]}
                 >
                   {creatingPrivatePlace
                     ? <ActivityIndicator color="#FFFFFF" />
-                    : <><Text style={styles.usePlaceText}>Verify this private place</Text><Ionicons name="arrow-forward" size={19} color="#FFFFFF" /></>}
+                    : <><Text style={styles.usePlaceText}>Continue to privacy</Text><Ionicons name="arrow-forward" size={19} color="#FFFFFF" /></>}
                 </TouchableOpacity>
               </View>
             ) : discovering ? (
               <View style={styles.pickerState}>
                 <ActivityIndicator color="#2F80ED" />
                 <Text style={styles.pickerStateTitle}>Finding nearby places…</Text>
-                <Text style={styles.pickerStateCopy}>Only this one location check is used.</Text>
+                <Text style={styles.pickerStateCopy}>Your location finds nearby options. Nothing is shared with friends.</Text>
               </View>
             ) : discoveryError ? (
               <View style={styles.pickerState}>
@@ -724,7 +665,7 @@ export default function ContextualCheckInControl({ enabled }: Props) {
                 <View style={styles.pickerFooter}>
                   <View style={styles.privacyRow}>
                     <Ionicons name="shield-checkmark-outline" size={18} color="#0F766E" />
-                    <Text style={styles.privacyCopy}>You’ll confirm who can see it after GathR verifies you stayed nearby.</Text>
+                    <Text style={styles.privacyCopy}>{levels.place ? 'Choose who can see your check-in next. Nothing is shared yet.' : 'Public places need the blue Place ring. An approximate private check-in is ready now.'}</Text>
                   </View>
                   <TouchableOpacity
                     accessibilityRole="link"
@@ -733,8 +674,8 @@ export default function ContextualCheckInControl({ enabled }: Props) {
                   >
                     <Text style={styles.attributionText}>Place data © OpenStreetMap contributors</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity accessibilityRole="button" disabled={!selectedPlace} onPress={() => startDwell()} style={[styles.usePlaceButton, !selectedPlace && styles.disabled]}>
-                    <Text style={styles.usePlaceText}>Use this place</Text>
+                  <TouchableOpacity testID="continue-public-check-in" accessibilityRole="button" disabled={!selectedPlace || binding || !levels.place} onPress={() => void choosePlace(selectedPlace)} style={[styles.usePlaceButton, (!selectedPlace || binding || !levels.place) && styles.disabled]}>
+                    <Text style={styles.usePlaceText}>{binding ? 'Preparing privacy options…' : 'Continue to privacy'}</Text>
                     <Ionicons name="arrow-forward" size={19} color="#FFFFFF" />
                   </TouchableOpacity>
                 </View>
@@ -761,13 +702,25 @@ export default function ContextualCheckInControl({ enabled }: Props) {
 
 const styles = StyleSheet.create({
   control: {
-    position: 'absolute', right: 12, bottom: 128, minHeight: 54, maxWidth: 280,
-    flexDirection: 'row', alignItems: 'center', gap: 9, paddingHorizontal: 11,
-    paddingVertical: 8, borderRadius: 18, shadowColor: '#101828',
-    shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.18, shadowRadius: 10,
+    position: 'absolute', right: 4, bottom: 20, width: 48, height: 48,
+    alignItems: 'center', justifyContent: 'center', borderRadius: 24,
+    backgroundColor: '#FFFFFF', shadowColor: '#101828',
+    shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.16, shadowRadius: 5,
     elevation: 6, zIndex: 32,
   },
-  readyControl: { backgroundColor: '#2F80ED' },
+  readyControl: { backgroundColor: '#F0F7FF' },
+  rings: { width: 48, height: 48, alignItems: 'center', justifyContent: 'center' },
+  smallAvatar: { transform: [{ scale: 0.62 }] },
+  readyBadge: { position: 'absolute', bottom: -1, right: -1, borderRadius: 8, width: 16, height: 16, alignItems: 'center', justifyContent: 'center', backgroundColor: '#175CD3', borderWidth: 2, borderColor: '#FFFFFF' },
+  bubble: { position: 'absolute', right: 60, bottom: 20, width: 254, maxWidth: '76%', backgroundColor: '#FFFFFF', borderRadius: 16, padding: 12, elevation: 7, zIndex: 33, shadowColor: '#101828', shadowOpacity: 0.14, shadowRadius: 8, shadowOffset: { width: 0, height: 3 } },
+  bubbleHeading: { flexDirection: 'row', alignItems: 'flex-start' },
+  bubbleCopy: { flex: 1, color: '#344054', fontSize: 13, lineHeight: 19, fontWeight: '600' },
+  bubbleClose: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center', marginRight: -8, marginTop: -8 },
+  legend: { flexDirection: 'row', gap: 12, marginTop: 8 },
+  hereLegend: { color: '#6941C6', fontSize: 12, fontWeight: '700' },
+  placeLegend: { color: '#175CD3', fontSize: 12, fontWeight: '700' },
+  settingsLink: { minHeight: 44, justifyContent: 'center' },
+  settingsText: { color: '#175CD3', fontSize: 12, fontWeight: '700' },
   activeControl: { backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#B2DDFF' },
   progressControl: { backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#D6BBFB' },
   idleControl: {

@@ -47,6 +47,7 @@ import { useSharedEventIntentRouter } from '../hooks/useSharedEventIntentRouter'
 import SharedEventProcessingBanner from '../components/sharedEvent/SharedEventProcessingBanner';
 import SharedEventPushRegistration from '../components/sharedEvent/SharedEventPushRegistration';
 import SharedEventUploadManager from '../components/sharedEvent/SharedEventUploadManager';
+import CheckInReadinessObserver from '../components/social/CheckInReadinessObserver';
 import { preloadStartupLocation } from '../utils/startupLocationCache';
 import { GATHR_MAPBOX_STYLE_URL, initializeMapboxAccessToken } from '../utils/mapboxAccessToken';
 import { SOCIAL_FEATURE_ENABLED } from '../types/social';
@@ -1086,6 +1087,7 @@ useEffect(() => {
       </Stack>
       <SharedEventPushRegistration />
       <SharedEventUploadManager />
+      <CheckInReadinessObserver />
       <SharedEventProcessingBanner />
     </TutorialManager>
   );

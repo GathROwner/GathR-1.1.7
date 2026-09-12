@@ -1,6 +1,10 @@
 import React from 'react';
 import { Image, Modal, StyleSheet } from 'react-native';
 import renderer, { act } from 'react-test-renderer';
+import * as Location from 'expo-location';
+import { createPrivateCheckInPlaceCandidate, bindCheckInReadiness, discoverNearbyCheckInPlaces } from '../../../services/socialService';
+import { resetCheckInReadinessOwner, useCheckInReadinessStore } from '../../../store/checkInReadinessStore';
+import { advanceReadiness, emptyReadiness } from '../../../utils/checkInReadiness';
 
 import ContextualCheckInControl, {
   buildNearbyCheckInRoute,
@@ -10,6 +14,8 @@ import ContextualCheckInControl, {
 } from '../ContextualCheckInControl';
 
 const mockPush = jest.fn();
+jest.mock('@react-native-async-storage/async-storage', () => ({ getItem: jest.fn(), setItem: jest.fn().mockResolvedValue(undefined) }));
+jest.mock('expo-haptics', () => ({ selectionAsync: jest.fn().mockResolvedValue(undefined) }));
 
 jest.mock('@expo/vector-icons', () => ({
   Ionicons: () => null,
@@ -19,6 +25,7 @@ jest.mock('expo-location', () => ({
   Accuracy: { High: 4 },
   getForegroundPermissionsAsync: jest.fn(),
   getCurrentPositionAsync: jest.fn(),
+  requestForegroundPermissionsAsync: jest.fn(),
 }));
 
 jest.mock('expo-router', () => ({
@@ -46,12 +53,34 @@ jest.mock('../../../services/socialService', () => ({
   createPrivateCheckInPlaceCandidate: jest.fn(),
   discoverNearbyCheckInPlaces: jest.fn().mockResolvedValue({ candidates: [] }),
   recordCheckInEligibilitySample: jest.fn(),
+  bindCheckInReadiness: jest.fn(),
+  createSocialOperationId: jest.fn(() => 'operation-test-id'),
   SocialServiceError: class SocialServiceError extends Error {},
 }));
 
 describe('ContextualCheckInControl', () => {
+  beforeEach(() => {
+    jest.useFakeTimers();
+    jest.setSystemTime(2_000_000_100_000);
+    resetCheckInReadinessOwner('check-in-test-user');
+    useCheckInReadinessStore.setState({ preferencesLoaded: true, appActive: true, foregroundGranted: true });
+    (Location.getForegroundPermissionsAsync as jest.Mock).mockResolvedValue({ status: 'granted' });
+    (Location.getCurrentPositionAsync as jest.Mock).mockResolvedValue({
+      timestamp: Date.now(), coords: { latitude: 46.235, longitude: -63.129, accuracy: 10, speed: 0 },
+    });
+    (discoverNearbyCheckInPlaces as jest.Mock).mockResolvedValue({ candidates: [] });
+    (createPrivateCheckInPlaceCandidate as jest.Mock).mockResolvedValue({ candidate: {
+      id: 'private-candidate', type: 'private_place', name: 'Home', address: '', category: 'Private location',
+      latitude: 46.235, longitude: -63.129, distanceMetres: 0,
+    } });
+    (bindCheckInReadiness as jest.Mock).mockResolvedValue({ protocolVersion: 1, readinessSessionId: 'readiness-session',
+      eligibilitySessionId: 'bound-session', locationType: 'private_place', placeCandidateId: 'private-candidate',
+      exactPrivateAllowed: false, expiresAtMs: Date.now() + 60_000 });
+  });
   afterEach(() => {
+    jest.useRealTimers();
     jest.restoreAllMocks();
+    jest.clearAllMocks();
     mockPush.mockClear();
   });
 
@@ -64,18 +93,118 @@ describe('ContextualCheckInControl', () => {
 
     const idleControl = component!.root.findByProps({ testID: 'contextual-check-in-idle' });
     expect(StyleSheet.flatten(idleControl.props.style)).toEqual(expect.objectContaining({
-      bottom: 34,
-      right: 10,
-      width: 36,
-      height: 36,
-      borderRadius: 18,
+      bottom: 20,
+      right: 4,
+      width: 48,
+      height: 48,
+      borderRadius: 24,
     }));
 
     act(() => idleControl.props.onPress());
 
-    expect(component!.root.findByType(Modal).props.visible).toBe(true);
-    expect(component!.root.findByProps({ testID: 'private-place-entry' })).toBeTruthy();
+    expect(component!.root.findByType(Modal).props.visible).toBe(false);
+    expect(component!.root.findByProps({ testID: 'check-in-readiness-explanation' })).toBeTruthy();
+    expect(bindCheckInReadiness).not.toHaveBeenCalled();
+    expect(Location.requestForegroundPermissionsAsync).not.toHaveBeenCalled();
     expect(mockPush).not.toHaveBeenCalled();
+    act(() => component!.unmount());
+  });
+
+  function makeReady(seconds: number) {
+    let evidence = emptyReadiness();
+    for (let elapsed = 0; elapsed <= seconds; elapsed += 10) {
+      const capturedAtMs = Date.now() - (seconds - elapsed) * 1000;
+      evidence = advanceReadiness(evidence, { latitude: 46.235, longitude: -63.129,
+        accuracyMeters: 10, speedMetersPerSecond: 0, capturedAtMs }, capturedAtMs);
+    }
+    useCheckInReadinessStore.setState({ evidence, sessionId: 'readiness-session', lastPromptAtMs: Date.now(),
+      receipt: { protocolVersion: 1, sessionId: 'readiness-session', sequence: seconds / 10 + 1,
+        hereQualifyingMs: Math.min(30_000, seconds * 1000), placeQualifyingMs: seconds * 1000,
+        expiresAtMs: Date.now() + 20_000 } });
+  }
+
+  it('binds prequalified Here evidence and opens private privacy confirmation immediately, without a second dwell', async () => {
+    makeReady(30);
+    let component: renderer.ReactTestRenderer;
+    await act(async () => { component = renderer.create(<ContextualCheckInControl enabled />); });
+    expect(mockPush).not.toHaveBeenCalled();
+    await act(async () => { component!.root.findByProps({ testID: 'contextual-check-in-ready' }).props.onPress(); });
+    act(() => component!.root.findByProps({ testID: 'private-place-entry' }).props.onPress());
+    await act(async () => { component!.root.findByProps({ testID: 'continue-private-check-in' }).props.onPress(); });
+    expect(bindCheckInReadiness).toHaveBeenCalledWith(expect.objectContaining({ readinessSessionId: 'readiness-session', placeCandidateId: 'private-candidate' }));
+    expect(mockPush).toHaveBeenCalledWith({ pathname: '/check-in', params: {
+      eligibilitySessionId: 'bound-session', readinessVersion: '1', placeCandidateId: 'private-candidate',
+      placeType: 'private_place', placeName: 'Home', placeCategory: 'Private location',
+    } });
+    expect(useCheckInReadinessStore.getState().grant?.exactPrivateAllowed).toBe(false);
+    expect(JSON.stringify(mockPush.mock.calls)).not.toMatch(/latitude|longitude|placeAddress/);
+    expect(createPrivateCheckInPlaceCandidate).toHaveBeenCalledWith(expect.objectContaining({ label: 'Home' }));
+    act(() => component!.unmount());
+  });
+
+  it('fails closed if the bind endpoint is absent and does not manufacture eligibility', async () => {
+    makeReady(30);
+    (bindCheckInReadiness as jest.Mock).mockRejectedValueOnce(new Error('Verification unavailable'));
+    let component: renderer.ReactTestRenderer;
+    await act(async () => { component = renderer.create(<ContextualCheckInControl enabled />); });
+    await act(async () => { component!.root.findByProps({ testID: 'contextual-check-in-ready' }).props.onPress(); });
+    act(() => component!.root.findByProps({ testID: 'private-place-entry' }).props.onPress());
+    await act(async () => { component!.root.findByProps({ testID: 'continue-private-check-in' }).props.onPress(); });
+    expect(mockPush).not.toHaveBeenCalled();
+    expect(useCheckInReadinessStore.getState().grant).toBeNull();
+    expect(component!.root.findByType(Modal).props.visible).toBe(true);
+    act(() => component!.unmount());
+  });
+
+  it.each(['gathr_venue', 'external_place'] as const)('preserves %s selection and binds before audience confirmation', async (type) => {
+    makeReady(90);
+    const isVenue = type === 'gathr_venue';
+    (discoverNearbyCheckInPlaces as jest.Mock).mockResolvedValueOnce({ candidates: [{
+      id: 'public-candidate', type, ...(isVenue ? { venueId: 'known-venue' } : {}),
+      name: 'Nearby place', address: 'Public address', category: 'Pub', latitude: 46.235, longitude: -63.129, distanceMetres: 0,
+    }] });
+    (bindCheckInReadiness as jest.Mock).mockResolvedValueOnce({ protocolVersion: 1, readinessSessionId: 'readiness-session',
+      eligibilitySessionId: 'bound-public-session', locationType: type,
+      ...(isVenue ? { venueId: 'known-venue' } : { placeCandidateId: 'public-candidate' }),
+      exactPrivateAllowed: false, expiresAtMs: Date.now() + 60_000 });
+    let component: renderer.ReactTestRenderer;
+    await act(async () => { component = renderer.create(<ContextualCheckInControl enabled />); });
+    await act(async () => { component!.root.findByProps({ testID: 'contextual-check-in-ready' }).props.onPress(); });
+    await act(async () => { component!.root.findByProps({ testID: 'continue-public-check-in' }).props.onPress(); });
+    expect(bindCheckInReadiness).toHaveBeenCalledWith(expect.objectContaining(isVenue ? { venueId: 'known-venue' } : { placeCandidateId: 'public-candidate' }));
+    expect(mockPush).toHaveBeenCalledWith(expect.objectContaining({ pathname: '/check-in', params: expect.objectContaining({ eligibilitySessionId: 'bound-public-session', readinessVersion: '1' }) }));
+    act(() => component!.unmount());
+  });
+
+  it('does not open a modal or navigate when the outer ring automatically becomes ready', async () => {
+    makeReady(90);
+    useCheckInReadinessStore.setState({ lastPromptAtMs: 0 });
+    let component: renderer.ReactTestRenderer;
+    await act(async () => { component = renderer.create(<ContextualCheckInControl enabled />); });
+    expect(component!.root.findByProps({ testID: 'check-in-readiness-explanation' })).toBeTruthy();
+    expect(component!.root.findByType(Modal).props.visible).toBe(false);
+    expect(mockPush).not.toHaveBeenCalled();
+    expect(bindCheckInReadiness).not.toHaveBeenCalled();
+    act(() => component!.root.findByProps({ accessibilityLabel: 'Dismiss check-in hint' }).props.onPress());
+    await act(async () => component!.update(<ContextualCheckInControl enabled />));
+    expect(component!.root.findAllByProps({ testID: 'check-in-readiness-explanation' })).toHaveLength(0);
+    act(() => component!.unmount());
+  });
+
+  it('ignores a late bind result after the user dismisses the flow', async () => {
+    makeReady(30);
+    let resolveBind: (value: unknown) => void = () => undefined;
+    (bindCheckInReadiness as jest.Mock).mockImplementationOnce(() => new Promise((resolve) => { resolveBind = resolve; }));
+    let component: renderer.ReactTestRenderer;
+    await act(async () => { component = renderer.create(<ContextualCheckInControl enabled />); });
+    await act(async () => { component!.root.findByProps({ testID: 'contextual-check-in-ready' }).props.onPress(); });
+    act(() => component!.root.findByProps({ testID: 'private-place-entry' }).props.onPress());
+    await act(async () => { component!.root.findByProps({ testID: 'continue-private-check-in' }).props.onPress(); });
+    act(() => component!.root.findByType(Modal).props.onRequestClose());
+    await act(async () => resolveBind({ protocolVersion: 1, readinessSessionId: 'readiness-session', eligibilitySessionId: 'bound-session',
+      locationType: 'private_place', placeCandidateId: 'private-candidate', exactPrivateAllowed: false, expiresAtMs: Date.now() + 60_000 }));
+    expect(mockPush).not.toHaveBeenCalled();
+    expect(useCheckInReadinessStore.getState().grant).toBeNull();
     act(() => component!.unmount());
   });
 

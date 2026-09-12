@@ -1763,6 +1763,18 @@ const handleLogout = async () => {
 
               <View style={styles.preferencesCard}>
                 <Text style={styles.sectionHeading}>Preferences</Text>
+                {SOCIAL_FEATURE_ENABLED && <>
+                  <TouchableOpacity style={styles.compactPreferenceRow} accessibilityRole="button"
+                    accessibilityLabel="Location and check-in preferences" onPress={() => router.push('/check-in-settings')}>
+                    <View style={styles.featureIcon}><Ionicons name="location-outline" size={20} color={BRAND.primary} /></View>
+                    <View style={styles.featureCopy}>
+                      <Text style={styles.featureTitle}>Location &amp; check-ins</Text>
+                      <Text style={styles.featureSubtitle}>Readiness and arrival reminders</Text>
+                    </View>
+                    <Ionicons name="chevron-forward" size={18} color={BRAND.primary} />
+                  </TouchableOpacity>
+                  <View style={styles.featureDivider} />
+                </>}
                 <View style={styles.compactPreferenceRow}>
                   <View style={[styles.featureIcon, styles.hotspotFeatureIcon]}>
                     <HotspotCircleIcon isActive={showDailyHotspot} />

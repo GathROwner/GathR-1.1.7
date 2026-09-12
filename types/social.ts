@@ -128,6 +128,54 @@ export interface CheckInEligibilitySampleInput {
   speedMetersPerSecond?: number | null;
 }
 
+/** V1 is server-timed, target-free evidence. Client elapsed times are never submitted. */
+export interface CheckInReadinessSampleInput {
+  protocolVersion: 1;
+  /** Explicit reset can only remove evidence, never create eligibility. */
+  reset: boolean;
+  sessionId: string;
+  sequence: number;
+  latitude: number;
+  longitude: number;
+  accuracyMeters: number | null;
+  speedMetersPerSecond: number | null;
+  capturedAtMs: number;
+}
+
+export interface CheckInReadinessReceipt {
+  protocolVersion: 1;
+  sessionId: string;
+  sequence: number;
+  hereQualifyingMs: number;
+  placeQualifyingMs: number;
+  expiresAtMs: number;
+}
+
+export interface BindCheckInReadinessInput {
+  protocolVersion: 1;
+  readinessSessionId: string;
+  /** Stable per selection; server must make retries idempotent. */
+  operationId: string;
+  venueId?: string;
+  placeCandidateId?: string;
+  latitude: number;
+  longitude: number;
+  accuracyMeters: number | null;
+  speedMetersPerSecond: number | null;
+  capturedAtMs: number;
+}
+
+export interface BoundCheckInReadiness {
+  protocolVersion: 1;
+  eligibilitySessionId: string;
+  readinessSessionId: string;
+  venueId?: string;
+  placeCandidateId?: string;
+  locationType: 'gathr_venue' | 'external_place' | 'private_place';
+  exactPrivateAllowed: boolean;
+  expiresAtMs: number;
+}
+
 export interface NearbyCheckInPlaceCandidate {
   id: string;
   type: 'gathr_venue' | 'external_place' | 'private_place';

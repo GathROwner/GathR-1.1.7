@@ -29,6 +29,9 @@ import {
 } from '../services/socialService';
 import { useMapStore } from '../store';
 import { useSocialStore } from '../store/socialStore';
+import { useCheckInReadinessStore } from '../store/checkInReadinessStore';
+import { mayShareExactPrivateLocation } from '../utils/checkInReadiness';
+import { validBoundReadiness } from '../utils/checkInReadinessContract';
 import type {
   CheckInAudienceMode,
   CheckInDurationMinutes,
@@ -73,12 +76,20 @@ export default function CheckInScreen() {
     placeAddress?: string;
     placeCategory?: string;
     eligibilitySessionId?: string;
+    readinessVersion?: string;
     eligibleVenueIds?: string | string[];
   }>();
   const { user } = useAuth();
   const allEvents = useMapStore((state) => state.allEvents);
   const selectedVenues = useMapStore((state) => state.selectedVenues);
   const { friends, ownCheckIn, fromCache } = useSocialStore();
+  const readiness = useCheckInReadinessStore();
+  const [nowMs, setNowMs] = useState(Date.now());
+  useEffect(() => {
+    if (params.readinessVersion !== '1') return;
+    const timer = setInterval(() => setNowMs(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [params.readinessVersion]);
   const options = useMemo(() => {
     const byId = new Map<string, CheckInPlaceOption>();
     for (const event of allEvents) {
@@ -151,6 +162,12 @@ export default function CheckInScreen() {
   const contextualPlace = useMemo<CheckInPlaceOption | null>(() => {
     const placeCandidateId = String(params.placeCandidateId || '').trim();
     const venueName = String(params.placeName || '').trim();
+    // Discovery may return a recognized venue with no event in the current viewport.
+    // Its bound grant, not the route's display snapshot, authorizes the check-in below.
+    if (params.readinessVersion === '1' && params.placeType === 'gathr_venue' && params.venueId && venueName) {
+      return { venueId: String(params.venueId), locationType: 'gathr_venue', locationKey: `venue:${params.venueId}`,
+        venueName, address: String(params.placeAddress || ''), category: 'GathR venue' };
+    }
     if (!placeCandidateId || !venueName) return null;
     const locationType = params.placeType === 'private_place'
       ? 'private_place'
@@ -166,7 +183,7 @@ export default function CheckInScreen() {
       category: String(params.placeCategory || '').trim()
         || (locationType === 'private_place' ? 'Private location' : 'Public place'),
     };
-  }, [params.placeAddress, params.placeCandidateId, params.placeCategory, params.placeName, params.placeType]);
+  }, [params.placeAddress, params.placeCandidateId, params.placeCategory, params.placeName, params.placeType, params.readinessVersion, params.venueId]);
   const selectedVenue = contextualPlace ?? options.find((option) => option.venueId === venueId) ?? null;
   const isPrivatePlace = selectedVenue?.locationType === 'private_place';
   const eligibilitySessionId = String(params.eligibilitySessionId || '').trim();
@@ -193,7 +210,20 @@ export default function CheckInScreen() {
   const hasContextualEligibility = Boolean(
     eligibilitySessionId
     && (contextualPlace || contextualEligibleVenueIds.has(venueId))
+    && (params.readinessVersion !== '1' || (
+      readiness.uid === user?.uid && readiness.grant?.eligibilitySessionId === eligibilitySessionId
+      && selectedVenue && validBoundReadiness(readiness.grant, {
+        type: selectedVenue.locationType, venueId: selectedVenue.venueId, placeCandidateId: selectedVenue.placeCandidateId,
+      }, readiness.grant.readinessSessionId, nowMs)
+    ))
   );
+  // Existing legacy sessions required 90 seconds. V1 grants explicitly distinguish Here from Place.
+  const exactAllowed = hasContextualEligibility && (params.readinessVersion !== '1' || readiness.grant?.exactPrivateAllowed === true);
+  const exactSharing = mayShareExactPrivateLocation({ isPrivatePlace, audienceMode,
+    selectedFriendCount: selectedUids.length, exactAllowed, explicitlyEnabled: shareExactLocation });
+  useEffect(() => {
+    if (!exactAllowed || selectedUids.length === 0) setShareExactLocation(false);
+  }, [exactAllowed, selectedUids.length]);
   const filteredOptions = useMemo(() => {
     const query = venueQuery.trim().toLowerCase();
     if (!query) return selectableOptions.slice(0, 8);
@@ -222,7 +252,7 @@ export default function CheckInScreen() {
         ? selectedFriendNames.join(', ')
         : `${selectedFriendNames.slice(0, 2).join(', ')} +${selectedFriendNames.length - 2}`;
   const confirmationCopy = isPrivatePlace
-    ? shareExactLocation && audienceMode === 'selected_friends'
+    ? exactSharing
       ? `Only ${currentAudienceCount} selected friend${currentAudienceCount === 1 ? '' : 's'} will see the exact pin. It expires automatically.`
       : `${currentAudienceCount} friend${currentAudienceCount === 1 ? '' : 's'} will see only an approximate area. It expires automatically.`
     : formatCheckInVisibilityCopy(currentAudienceCount, estimatedExpiry);
@@ -252,6 +282,7 @@ export default function CheckInScreen() {
   };
 
   const submit = async () => {
+    if (!canSubmit) return;
     if (!selectedVenue) {
       Alert.alert('Choose a place', 'Return to the map and choose a nearby public place.');
       return;
@@ -272,8 +303,8 @@ export default function CheckInScreen() {
           durationMinutes,
           audienceMode,
           selectedUids: audienceMode === 'selected_friends' ? [...selectedUids].sort() : undefined,
-          shareExactLocation: isPrivatePlace && audienceMode === 'selected_friends'
-            ? shareExactLocation
+          shareExactLocation: isPrivatePlace
+            ? exactSharing
             : undefined,
           message,
         };
@@ -549,14 +580,16 @@ export default function CheckInScreen() {
                 <View style={styles.privateLocationCard}>
                   <View style={styles.privateLocationHeading}>
                     <View style={styles.privateLocationIcon}>
-                      <Ionicons name={shareExactLocation ? 'navigate' : 'home-outline'} size={20} color="#6941C6" />
+                      <Ionicons name={exactSharing ? 'navigate' : 'home-outline'} size={20} color="#6941C6" />
                     </View>
                     <View style={styles.flex}>
                       <Text style={styles.privateLocationTitle}>
-                        {shareExactLocation ? 'Exact pin for selected friends' : 'Approximate area'}
+                        {exactSharing ? 'Exact pin for selected friends' : 'Approximate area'}
                       </Text>
                       <Text style={styles.privateLocationCopy}>
-                        {audienceMode === 'selected_friends'
+                        {!exactAllowed
+                          ? 'Approximate sharing is ready. An exact pin needs the blue Place ring before choosing this place.'
+                          : audienceMode === 'selected_friends'
                           ? 'Exact sharing is optional and applies only to the friends you chose.'
                           : 'All friends see a neighbourhood-sized area. Your address is never shown.'}
                       </Text>
@@ -565,10 +598,11 @@ export default function CheckInScreen() {
                       <Switch
                         accessibilityLabel="Share exact private location with selected friends"
                         accessibilityRole="switch"
+                        disabled={!exactAllowed || selectedUids.length === 0}
                         onValueChange={setShareExactLocation}
                         trackColor={{ false: '#D0D5DD', true: '#B692F6' }}
                         thumbColor={shareExactLocation ? '#6941C6' : '#FFFFFF'}
-                        value={shareExactLocation}
+                        value={exactSharing}
                       />
                     )}
                   </View>
