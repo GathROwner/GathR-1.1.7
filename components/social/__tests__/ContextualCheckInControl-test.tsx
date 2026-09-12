@@ -142,6 +142,22 @@ describe('ContextualCheckInControl', () => {
     act(() => component!.unmount());
   });
 
+  it('shows elapsed ring progress but keeps check-in locked until return validation finishes', async () => {
+    makeReady(90);
+    useCheckInReadinessStore.setState({ interruptedAtMs: Date.now() - 1_000 });
+    let component: renderer.ReactTestRenderer;
+    await act(async () => { component = renderer.create(<ContextualCheckInControl enabled />); });
+
+    const control = component!.root.findByProps({ testID: 'contextual-check-in-idle' });
+    expect(control.props.accessibilityLabel).toContain('Here 100 percent. Place 100 percent.');
+    await act(async () => control.props.onPress());
+
+    expect(component!.root.findByType(Modal).props.visible).toBe(false);
+    expect(component!.root.findByProps({ testID: 'check-in-readiness-explanation' })).toBeTruthy();
+    expect(bindCheckInReadiness).not.toHaveBeenCalled();
+    act(() => component!.unmount());
+  });
+
   it('fails closed if the bind endpoint is absent and does not manufacture eligibility', async () => {
     makeReady(30);
     (bindCheckInReadiness as jest.Mock).mockRejectedValueOnce(new Error('Verification unavailable'));

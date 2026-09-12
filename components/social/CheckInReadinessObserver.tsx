@@ -120,8 +120,8 @@ export default function CheckInReadinessObserver() {
       });
       // iOS briefly reports `inactive` while taking a screenshot and during other
       // system interruptions. Preserve the evidence/session, then let the next
-      // fresh fix verify the elapsed gap. advanceReadiness resets it if the gap
-      // exceeded maxSampleGapMs, so unobserved time can never unlock check-in.
+      // fresh fix verify the elapsed gap. The interruption marker also keeps
+      // check-in locked until that return validation accepts or resets it.
       if (active && mode !== 'basic' && !ownCheckIn) {
         resumeValidationStartedAtMs = Date.now();
         void run(generation);

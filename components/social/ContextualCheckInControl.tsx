@@ -296,7 +296,10 @@ export default function ContextualCheckInControl({ enabled }: Props) {
   }, [allEvents]);
 
   const presentedReadiness = usePresentedReadiness(readiness.evidence, readiness.interruptedAtMs !== null);
-  const levels = readinessLevels(readiness.evidence, readiness.receipt, readiness.sessionId, Date.now());
+  const recordedLevels = readinessLevels(readiness.evidence, readiness.receipt, readiness.sessionId, Date.now());
+  // The rings may finish visually while the app is interrupted, but readiness is
+  // never actionable until a fresh return fix has validated the original anchor.
+  const levels = readiness.interruptedAtMs === null ? recordedLevels : { here: false, place: false };
   visibleRef.current = enabled && readiness.appActive && !pickerVisible;
   const nearby = readiness.evidence.previous
     ? findCandidates(venues, { coords: {
@@ -325,6 +328,7 @@ export default function ContextualCheckInControl({ enabled }: Props) {
       void claimReadinessPrompt(now).then((claimed) => {
         const current = useCheckInReadinessStore.getState();
         if (claimed && mountedRef.current && visibleRef.current && current.uid === user?.uid && current.appActive
+          && current.interruptedAtMs === null
           && readinessLevels(current.evidence, current.receipt, current.sessionId, Date.now()).place) {
           showBubble(candidate ? `You can check in at ${candidate.venueName}` : 'You can check in here.', true);
         }
@@ -339,7 +343,8 @@ export default function ContextualCheckInControl({ enabled }: Props) {
     const initial = useCheckInReadinessStore.getState();
     const initialLevels = readinessLevels(initial.evidence, initial.receipt, initial.sessionId, Date.now());
     const report = (message: string) => place.type === 'private_place' ? setPrivatePlaceError(message) : setDiscoveryError(message);
-    if (initial.uid !== user.uid || !initial.appActive || (place.type === 'private_place' ? !initialLevels.here : !initialLevels.place)) {
+    if (initial.uid !== user.uid || !initial.appActive || initial.interruptedAtMs !== null
+      || (place.type === 'private_place' ? !initialLevels.here : !initialLevels.place)) {
       report('Readiness changed. Return to the map; the rings will update as your location settles.');
       return;
     }
@@ -357,7 +362,8 @@ export default function ContextualCheckInControl({ enabled }: Props) {
       const fresh = advanceReadiness(current.evidence, sample, Date.now());
       if (!mountedRef.current || flowGenerationRef.current !== flowGeneration) return;
       const freshLevels = readinessLevels(fresh, current.receipt, current.sessionId, Date.now());
-      if (current.uid !== user.uid || !current.appActive || current.sessionId !== initial.sessionId
+      if (current.uid !== user.uid || !current.appActive || current.interruptedAtMs !== null
+        || current.sessionId !== initial.sessionId
         || fresh.revision !== current.evidence.revision || (place.type === 'private_place' ? !freshLevels.here : !freshLevels.place)) {
         if (current.uid === user.uid) useCheckInReadinessStore.setState({ evidence: fresh, receipt: null, sessionId: '' });
         throw new Error('Readiness changed. Return to the map to check your location.');
@@ -366,7 +372,8 @@ export default function ContextualCheckInControl({ enabled }: Props) {
         operationId,
         ...(place.type === 'gathr_venue' ? { venueId: place.venueId } : { placeCandidateId: place.placeCandidateId }), ...sample });
       const after = useCheckInReadinessStore.getState();
-      if (!mountedRef.current || flowGenerationRef.current !== flowGeneration || after.uid !== user.uid || !after.appActive || after.sessionId !== initial.sessionId) return;
+      if (!mountedRef.current || flowGenerationRef.current !== flowGeneration || after.uid !== user.uid
+        || !after.appActive || after.interruptedAtMs !== null || after.sessionId !== initial.sessionId) return;
       if (!validBoundReadiness(grant, place, current.sessionId, Date.now()) || (grant.exactPrivateAllowed && !freshLevels.place)) {
         throw new Error('Check-in verification is unavailable. Please try again from the map.');
       }
@@ -453,7 +460,7 @@ export default function ContextualCheckInControl({ enabled }: Props) {
   const createPrivatePlace = async () => {
     if (privateCreationRef.current || bindingRef.current) return;
     const current = useCheckInReadinessStore.getState();
-    if (current.uid !== user.uid || !current.appActive
+    if (current.uid !== user.uid || !current.appActive || current.interruptedAtMs !== null
       || !readinessLevels(current.evidence, current.receipt, current.sessionId, Date.now()).here) {
       setPrivatePlaceError('Readiness changed. Return to the map to check your location.');
       return;
