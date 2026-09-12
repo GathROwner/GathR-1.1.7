@@ -9,6 +9,7 @@ interface CheckInReadinessStore {
   preferencesLoaded: boolean;
   foregroundGranted: boolean;
   appActive: boolean;
+  interruptedAtMs: number | null;
   evidence: ReadinessState;
   sessionId: string;
   receipt: CheckInReadinessReceipt | null;
@@ -20,14 +21,14 @@ interface CheckInReadinessStore {
 // Sensitive evidence and bound grants stay in memory only. Never persist raw fixes, place IDs or labels.
 export const useCheckInReadinessStore = create<CheckInReadinessStore>(() => ({
   uid: null, mode: 'standard', preferencesLoaded: false, foregroundGranted: false,
-  appActive: false, evidence: emptyReadiness(), sessionId: '', receipt: null,
+  appActive: false, interruptedAtMs: null, evidence: emptyReadiness(), sessionId: '', receipt: null,
   serviceError: false, lastPromptAtMs: 0, grant: null,
 }));
 
 export function resetCheckInReadinessOwner(uid: string | null) {
   useCheckInReadinessStore.setState({
     uid, mode: 'standard', preferencesLoaded: false, foregroundGranted: false,
-    evidence: emptyReadiness(), sessionId: '', receipt: null, serviceError: false,
+    interruptedAtMs: null, evidence: emptyReadiness(), sessionId: '', receipt: null, serviceError: false,
     lastPromptAtMs: 0, grant: null,
   });
 }

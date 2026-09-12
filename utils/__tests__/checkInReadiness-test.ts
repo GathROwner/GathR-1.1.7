@@ -1,6 +1,7 @@
 import {
   advanceReadiness, canCollectReadiness, canDeliverArrivalNotification, CHECK_IN_READINESS,
   emptyReadiness, isFreshReadiness, mayPromptReadiness, mayShareExactPrivateLocation, pauseReadiness,
+  projectedReadinessMs, readinessResumeDecision,
   type ReadinessPermissions, type ReadinessSample,
 } from '../checkInReadiness';
 import { readinessLevels, validBoundReadiness, validReadinessReceipt } from '../checkInReadinessContract';
@@ -35,6 +36,28 @@ describe('real check-in readiness evidence', () => {
     expect(advanceReadiness(state, fix(60), start + 60_000).hereMs).toBe(0);
     expect(advanceReadiness(state, fix(60), start + 30_000).hereMs).toBe(0);
     expect(isFreshReadiness(dwell(90), start + 111_000)).toBe(false);
+  });
+  it('projects smooth ring presentation only inside the accepted evidence gap', () => {
+    const state = dwell(10);
+    expect(projectedReadinessMs(state, start + 10_250)).toEqual({ hereMs: 10_250, placeMs: 10_250 });
+    expect(projectedReadinessMs(state, start + 15_000)).toEqual({ hereMs: 15_000, placeMs: 15_000 });
+    expect(projectedReadinessMs(state, start + 40_000)).toEqual({ hereMs: 30_000, placeMs: 30_000 });
+    expect(projectedReadinessMs(state, start + 100_000, CHECK_IN_READINESS.maxResumeGapMs))
+      .toEqual({ hereMs: 30_000, placeMs: 90_000 });
+    expect(state).toMatchObject({ hereMs: 10_000, placeMs: 10_000 });
+    expect(projectedReadinessMs({ ...state, reason: 'paused' }, start + 15_000))
+      .toEqual({ hereMs: 10_000, placeMs: 10_000 });
+    expect(projectedReadinessMs({ ...state, placeMs: 0,
+      previous: { ...state.previous!, accuracyMeters: 40 } }, start + 15_000))
+      .toEqual({ hereMs: 15_000, placeMs: 0 });
+  });
+  it('accepts a matching return fix, retries noisy drift, and expires old interruptions', () => {
+    const state = dwell(10);
+    expect(readinessResumeDecision(state, fix(100), start + 100_000)).toBe('accept');
+    expect(readinessResumeDecision(state, fix(100, { latitude: 46.236 }), start + 100_000)).toBe('retry');
+    expect(readinessResumeDecision(state, fix(100, { accuracyMeters: 40 }), start + 100_000)).toBe('retry');
+    expect(readinessResumeDecision(state, fix(100, { speedMetersPerSecond: 8 }), start + 100_000)).toBe('reset');
+    expect(readinessResumeDecision(state, fix(311), start + 311_000)).toBe('reset');
   });
   it('uses different accuracy thresholds and never treats unknown accuracy as zero', () => {
     expect(dwell(90, 40)).toMatchObject({ hereMs: 30_000, placeMs: 0 });

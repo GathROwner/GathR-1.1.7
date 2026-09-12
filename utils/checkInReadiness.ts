@@ -4,6 +4,9 @@ export const CHECK_IN_READINESS = {
   placeMs: 90_000,
   sampleIntervalMs: 10_000,
   maxSampleGapMs: 20_000,
+  maxResumeGapMs: 5 * 60_000,
+  resumeValidationGraceMs: 8_000,
+  resumeRetryMs: 1_000,
   maxSampleAgeMs: 15_000,
   // Server-issued expiries use server time. Permit small real-world device clock drift
   // without extending the server-side session or proximity checks.
@@ -74,7 +77,78 @@ export function isFreshReadiness(state: ReadinessState, nowMs: number): boolean 
     && nowMs >= state.suppressedUntilMs;
 }
 
-export function advanceReadiness(state: ReadinessState, sample: ReadinessSample, nowMs: number, allowed = true): ReadinessState {
+/**
+ * Smooth presentation between verified samples. This never grants readiness:
+ * readinessLevels still requires fresh local evidence and a server receipt.
+ */
+export function projectedReadinessMs(
+  state: ReadinessState,
+  nowMs: number,
+  maxProjectionMs: number = CHECK_IN_READINESS.maxSampleGapMs
+): Pick<ReadinessState, 'hereMs' | 'placeMs'> {
+  const previous = state.previous;
+  if (!previous || state.reason !== 'qualifying' || nowMs < state.suppressedUntilMs) {
+    return { hereMs: state.hereMs, placeMs: state.placeMs };
+  }
+  const elapsedSinceFix = nowMs - previous.capturedAtMs;
+  if (!Number.isFinite(elapsedSinceFix) || elapsedSinceFix <= 0) {
+    return { hereMs: state.hereMs, placeMs: state.placeMs };
+  }
+  // A short screenshot/app-switch interruption may be credited by the next fix.
+  // Never visually project farther than the same gap the evidence model accepts.
+  const projectedMs = Math.min(elapsedSinceFix, maxProjectionMs);
+  const strongPlaceFix = previous.accuracyMeters !== null
+    && Number.isFinite(previous.accuracyMeters)
+    && previous.accuracyMeters >= 0
+    && previous.accuracyMeters <= CHECK_IN_READINESS.placeAccuracyMetres;
+  return {
+    hereMs: Math.min(CHECK_IN_READINESS.hereMs, state.hereMs + projectedMs),
+    placeMs: strongPlaceFix
+      ? Math.min(CHECK_IN_READINESS.placeMs, state.placeMs + projectedMs)
+      : state.placeMs,
+  };
+}
+
+export type ReadinessResumeDecision = 'accept' | 'retry' | 'reset';
+
+/** A return fix must independently match the in-memory anchor before interrupted time can count. */
+export function readinessResumeDecision(
+  state: ReadinessState,
+  sample: ReadinessSample,
+  nowMs: number
+): ReadinessResumeDecision {
+  if (!state.anchor || !state.previous || state.reason !== 'qualifying') return 'reset';
+  const gapMs = sample.capturedAtMs - state.previous.capturedAtMs;
+  if (!Number.isFinite(gapMs) || gapMs <= 0 || gapMs > CHECK_IN_READINESS.maxResumeGapMs
+    || !Number.isFinite(sample.capturedAtMs) || sample.capturedAtMs > nowMs
+    || nowMs - sample.capturedAtMs > CHECK_IN_READINESS.maxSampleAgeMs) return 'reset';
+  const speed = sample.speedMetersPerSecond;
+  if (speed !== null && Number.isFinite(speed) && speed >= CHECK_IN_READINESS.drivingSpeedMps) return 'reset';
+  const priorFixSupportedPlace = state.previous.accuracyMeters !== null
+    && Number.isFinite(state.previous.accuracyMeters)
+    && state.previous.accuracyMeters >= 0
+    && state.previous.accuracyMeters <= CHECK_IN_READINESS.placeAccuracyMetres;
+  const requiredAccuracy = priorFixSupportedPlace
+    ? CHECK_IN_READINESS.placeAccuracyMetres
+    : CHECK_IN_READINESS.hereAccuracyMetres;
+  const accurate = sample.accuracyMeters !== null
+    && Number.isFinite(sample.accuracyMeters)
+    && sample.accuracyMeters >= 0
+    && sample.accuracyMeters <= requiredAccuracy;
+  const stationary = speed === null || (Number.isFinite(speed) && speed <= CHECK_IN_READINESS.stationarySpeedMps);
+  const nearAnchor = Number.isFinite(sample.latitude) && Math.abs(sample.latitude) <= 90
+    && Number.isFinite(sample.longitude) && Math.abs(sample.longitude) <= 180
+    && readinessDistance(state.anchor, sample) <= CHECK_IN_READINESS.stationaryRadiusMetres;
+  return accurate && stationary && nearAnchor ? 'accept' : 'retry';
+}
+
+export function advanceReadiness(
+  state: ReadinessState,
+  sample: ReadinessSample,
+  nowMs: number,
+  allowed = true,
+  maxGapMs: number = CHECK_IN_READINESS.maxSampleGapMs
+): ReadinessState {
   if (!allowed) return pauseReadiness(state);
   const reset = (reason: ReadinessState['reason'], suppression = state.suppressedUntilMs): ReadinessState => ({
     ...emptyReadiness(state.revision + 1, suppression), reason,
@@ -104,7 +178,7 @@ export function advanceReadiness(state: ReadinessState, sample: ReadinessSample,
     && readinessDistance(state.previous, sample) > CHECK_IN_READINESS.stationaryRadiusMetres) return reset('moving');
   if (state.anchor && readinessDistance(state.anchor, sample) > CHECK_IN_READINESS.stationaryRadiusMetres) return reset('moving');
   const gap = state.previous ? sample.capturedAtMs - state.previous.capturedAtMs : 0;
-  if (gap > CHECK_IN_READINESS.maxSampleGapMs) {
+  if (gap > maxGapMs) {
     return { ...reset('qualifying'), anchor: sample, previous: sample };
   }
   // Both endpoints must meet the stronger accuracy threshold to earn Place evidence.

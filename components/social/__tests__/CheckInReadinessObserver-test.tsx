@@ -7,6 +7,7 @@ import { loadReadinessPreferences } from '../../../services/checkInReadinessPref
 import { recordCheckInReadinessSample } from '../../../services/socialService';
 import { resetCheckInReadinessOwner, useCheckInReadinessStore } from '../../../store/checkInReadinessStore';
 import type { CheckInReadinessSampleInput } from '../../../types/social';
+import { CHECK_IN_READINESS } from '../../../utils/checkInReadiness';
 import CheckInReadinessObserver from '../CheckInReadinessObserver';
 
 let mockUid: string | null = 'observer-user';
@@ -92,16 +93,60 @@ describe('foreground readiness observer lifecycle', () => {
     expect(Location.getCurrentPositionAsync).not.toHaveBeenCalled();
     expect(Location.requestForegroundPermissionsAsync).not.toHaveBeenCalled();
   });
-  it('removes readiness immediately on backgrounding, without counting time away', async () => {
+  it('preserves readiness through a short background interruption and verifies the elapsed gap on return', async () => {
     await mount();
     await advance(10_000);
+    const before = useCheckInReadinessStore.getState();
     act(() => { AppState.currentState = 'background'; mockChangeState('background'); });
-    expect(useCheckInReadinessStore.getState()).toMatchObject({ receipt: null, appActive: false, evidence: { hereMs: 0 } });
+    expect(useCheckInReadinessStore.getState()).toMatchObject({
+      receipt: before.receipt,
+      sessionId: before.sessionId,
+      appActive: false,
+      evidence: { hereMs: 10_000 },
+    });
     const calls = (recordCheckInReadinessSample as jest.Mock).mock.calls.length;
-    await advance(60_000);
+    await advance(5_000);
     expect(recordCheckInReadinessSample).toHaveBeenCalledTimes(calls);
     await act(async () => { AppState.currentState = 'active'; mockChangeState('active'); });
-    expect(useCheckInReadinessStore.getState().evidence.hereMs).toBe(0);
+    expect(useCheckInReadinessStore.getState()).toMatchObject({
+      sessionId: before.sessionId,
+      appActive: true,
+      evidence: { hereMs: 15_000 },
+    });
+  });
+  it('credits a longer interruption only after a fresh return fix matches the same anchor', async () => {
+    await mount();
+    await advance(10_000);
+    const sessionId = useCheckInReadinessStore.getState().sessionId;
+    act(() => { AppState.currentState = 'background'; mockChangeState('background'); });
+    await advance(91_000);
+    expect(useCheckInReadinessStore.getState().evidence.hereMs).toBe(10_000);
+    await act(async () => { AppState.currentState = 'active'; mockChangeState('active'); });
+    expect(useCheckInReadinessStore.getState()).toMatchObject({
+      appActive: true,
+      interruptedAtMs: null,
+      evidence: { hereMs: 30_000, placeMs: 90_000 },
+    });
+    expect(useCheckInReadinessStore.getState().sessionId).toBe(sessionId);
+  });
+  it('waits through transient return drift, then resets a sustained displacement', async () => {
+    await mount();
+    await advance(10_000);
+    const sessionId = useCheckInReadinessStore.getState().sessionId;
+    act(() => { AppState.currentState = 'background'; mockChangeState('background'); });
+    await advance(30_000);
+    (Location.getCurrentPositionAsync as jest.Mock).mockImplementation(async () => ({
+      timestamp: Date.now(), coords: { latitude: 46.24, longitude: -63.129, accuracy: 10, speed: 0 },
+    }));
+    await act(async () => { AppState.currentState = 'active'; mockChangeState('active'); });
+    expect(useCheckInReadinessStore.getState()).toMatchObject({
+      sessionId,
+      interruptedAtMs: expect.any(Number),
+      evidence: { hereMs: 10_000 },
+    });
+    await advance(CHECK_IN_READINESS.resumeValidationGraceMs);
+    expect(useCheckInReadinessStore.getState()).toMatchObject({ interruptedAtMs: null, evidence: { hereMs: 0 } });
+    expect(useCheckInReadinessStore.getState().sessionId).not.toBe(sessionId);
   });
   it('ignores a location result delivered after sign-out', async () => {
     let resolveFix: (value: unknown) => void = () => undefined;

@@ -8,10 +8,17 @@ import { createSocialOperationId, recordCheckInReadinessSample } from '../../ser
 import { resetCheckInReadinessOwner, useCheckInReadinessStore } from '../../store/checkInReadinessStore';
 import { useSocialStore } from '../../store/socialStore';
 import { SOCIAL_FEATURE_ENABLED, SOCIAL_RELEASE_TWO_ENABLED } from '../../types/social';
-import { advanceReadiness, canCollectReadiness, CHECK_IN_READINESS, isFreshReadiness, pauseReadiness } from '../../utils/checkInReadiness';
+import {
+  advanceReadiness,
+  canCollectReadiness,
+  CHECK_IN_READINESS,
+  isFreshReadiness,
+  pauseReadiness,
+  readinessResumeDecision,
+} from '../../utils/checkInReadiness';
 import { validReadinessReceipt } from '../../utils/checkInReadinessContract';
 
-/** One foreground-only observer for the whole authenticated app, independent of map/modals. */
+/** One foreground observer for the whole authenticated app, independent of map/modals. */
 export default function CheckInReadinessObserver() {
   const { user } = useAuth();
   const uid = user?.uid || null;
@@ -32,11 +39,15 @@ export default function CheckInReadinessObserver() {
     let timer: ReturnType<typeof setTimeout> | undefined;
     let sequence = 0;
     let pendingRequest: AbortController | null = null;
+    let resumeValidationStartedAtMs = 0;
     const invalidate = () => {
       const current = useCheckInReadinessStore.getState();
-      useCheckInReadinessStore.setState({ evidence: pauseReadiness(current.evidence), receipt: null, sessionId: '' });
+      useCheckInReadinessStore.setState({
+        evidence: pauseReadiness(current.evidence), receipt: null, sessionId: '', interruptedAtMs: null,
+      });
     };
     const run = async (epoch: number) => {
+      let nextDelayMs: number = CHECK_IN_READINESS.sampleIntervalMs;
       const currentRun = () => !disposed && epoch === generation && AppState.currentState === 'active'
         && useCheckInReadinessStore.getState().uid === uid;
       if (!currentRun()) return;
@@ -58,12 +69,30 @@ export default function CheckInReadinessObserver() {
           capturedAtMs: location.timestamp,
         };
         const before = useCheckInReadinessStore.getState();
-        const evidence = advanceReadiness(before.evidence, sample, Date.now());
+        const nowMs = Date.now();
+        const resuming = before.interruptedAtMs !== null;
+        const resumeDecision = resuming
+          ? readinessResumeDecision(before.evidence, sample, nowMs)
+          : 'reset';
+        if (resuming && resumeDecision === 'retry'
+          && nowMs - resumeValidationStartedAtMs < CHECK_IN_READINESS.resumeValidationGraceMs) {
+          nextDelayMs = CHECK_IN_READINESS.resumeRetryMs;
+          return;
+        }
+        const evidence = advanceReadiness(
+          before.evidence,
+          sample,
+          nowMs,
+          true,
+          resuming && resumeDecision === 'accept'
+            ? CHECK_IN_READINESS.maxResumeGapMs
+            : CHECK_IN_READINESS.maxSampleGapMs
+        );
         // A reset changes the server session too. A stale response cannot restore old readiness.
         const sessionId = !before.sessionId || evidence.revision !== before.evidence.revision
           ? createSocialOperationId() : before.sessionId;
         if (sessionId !== before.sessionId) sequence = 0;
-        useCheckInReadinessStore.setState({ evidence, sessionId,
+        useCheckInReadinessStore.setState({ evidence, sessionId, interruptedAtMs: null,
           ...(sessionId !== before.sessionId ? { receipt: null } : {}) });
         if (evidence.reason === 'stale') return;
         const sentSequence = ++sequence;
@@ -76,23 +105,35 @@ export default function CheckInReadinessObserver() {
       } catch {
         if (currentRun()) useCheckInReadinessStore.setState({ receipt: null, serviceError: true });
       } finally {
-        if (currentRun()) timer = setTimeout(() => void run(epoch), CHECK_IN_READINESS.sampleIntervalMs);
+        if (currentRun()) timer = setTimeout(() => void run(epoch), nextDelayMs);
       }
     };
     const changeState = (state: string) => {
       generation += 1;
       pendingRequest?.abort();
       if (timer) clearTimeout(timer);
-      useCheckInReadinessStore.setState({ appActive: state === 'active' });
-      invalidate();
-      if (state === 'active' && mode !== 'basic' && !ownCheckIn) void run(generation);
+      const current = useCheckInReadinessStore.getState();
+      const active = state === 'active';
+      useCheckInReadinessStore.setState({
+        appActive: active,
+        ...(!active && current.interruptedAtMs === null ? { interruptedAtMs: Date.now() } : {}),
+      });
+      // iOS briefly reports `inactive` while taking a screenshot and during other
+      // system interruptions. Preserve the evidence/session, then let the next
+      // fresh fix verify the elapsed gap. advanceReadiness resets it if the gap
+      // exceeded maxSampleGapMs, so unobserved time can never unlock check-in.
+      if (active && mode !== 'basic' && !ownCheckIn) {
+        resumeValidationStartedAtMs = Date.now();
+        void run(generation);
+      }
     };
     const subscription = AppState.addEventListener('change', changeState);
     // Expiration only: this interval can remove readiness, never add progress.
     const expiryTimer = setInterval(() => {
       const state = useCheckInReadinessStore.getState();
       const now = Date.now();
-      if (state.evidence.previous && !isFreshReadiness(state.evidence, now)) invalidate();
+      if (state.appActive && state.interruptedAtMs === null
+        && state.evidence.previous && !isFreshReadiness(state.evidence, now)) invalidate();
       else if (state.receipt && state.receipt.expiresAtMs <= now) useCheckInReadinessStore.setState({ receipt: null });
     }, 1_000);
     changeState(AppState.currentState);

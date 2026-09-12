@@ -33,7 +33,7 @@ import type {
 import { SOCIAL_FEATURE_ENABLED, SOCIAL_RELEASE_TWO_ENABLED } from '../../types/social';
 import { useCheckInReadinessStore } from '../../store/checkInReadinessStore';
 import { claimReadinessPrompt } from '../../services/checkInReadinessPreferences';
-import { advanceReadiness, CHECK_IN_READINESS, mayPromptReadiness } from '../../utils/checkInReadiness';
+import { advanceReadiness, CHECK_IN_READINESS, mayPromptReadiness, projectedReadinessMs } from '../../utils/checkInReadiness';
 import { readinessLevels, validBoundReadiness } from '../../utils/checkInReadinessContract';
 
 const MAX_ACCURACY_METRES = 75;
@@ -185,6 +185,25 @@ export function ReadinessRings({ here, place, children }: { here: number; place:
   </View>;
 }
 
+function usePresentedReadiness(
+  evidence: ReturnType<typeof useCheckInReadinessStore.getState>['evidence'],
+  interrupted: boolean
+) {
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  useEffect(() => {
+    setNowMs(Date.now());
+    if (evidence.reason !== 'qualifying'
+      || (evidence.hereMs >= CHECK_IN_READINESS.hereMs && evidence.placeMs >= CHECK_IN_READINESS.placeMs)) return;
+    const timer = setInterval(() => setNowMs(Date.now()), 100);
+    return () => clearInterval(timer);
+  }, [evidence.hereMs, evidence.placeMs, evidence.previous?.capturedAtMs, evidence.reason]);
+  return projectedReadinessMs(
+    evidence,
+    nowMs,
+    interrupted ? CHECK_IN_READINESS.maxResumeGapMs : CHECK_IN_READINESS.maxSampleGapMs
+  );
+}
+
 function findCandidates(venues: VenueCandidate[], location: Location.LocationObject): VenueCandidate[] {
   const accuracy = Number(location.coords.accuracy);
   if (!Number.isFinite(accuracy) || accuracy < 0 || accuracy > MAX_ACCURACY_METRES) return [];
@@ -276,6 +295,7 @@ export default function ContextualCheckInControl({ enabled }: Props) {
     return [...byId.values()];
   }, [allEvents]);
 
+  const presentedReadiness = usePresentedReadiness(readiness.evidence, readiness.interruptedAtMs !== null);
   const levels = readinessLevels(readiness.evidence, readiness.receipt, readiness.sessionId, Date.now());
   visibleRef.current = enabled && readiness.appActive && !pickerVisible;
   const nearby = readiness.evidence.previous
@@ -503,8 +523,8 @@ export default function ContextualCheckInControl({ enabled }: Props) {
         : readiness.serviceError
           ? 'Check-in verification is unavailable right now. You can keep browsing.'
           : 'Here prepares an approximate private check-in. Place prepares a public place or optional exact pin. Nothing is shared.';
-  const hereProgress = readiness.evidence.hereMs / CHECK_IN_READINESS.hereMs;
-  const placeProgress = readiness.evidence.placeMs / CHECK_IN_READINESS.placeMs;
+  const hereProgress = presentedReadiness.hereMs / CHECK_IN_READINESS.hereMs;
+  const placeProgress = presentedReadiness.placeMs / CHECK_IN_READINESS.placeMs;
   const control = <>
     {!!bubble && <View style={styles.bubble} testID="check-in-readiness-explanation" accessibilityLiveRegion="polite">
       <View style={styles.bubbleHeading}>
@@ -513,8 +533,8 @@ export default function ContextualCheckInControl({ enabled }: Props) {
           onPress={() => setBubble('')} style={styles.bubbleClose}><Ionicons name="close" size={19} color="#475467" /></TouchableOpacity>
       </View>
       <View style={styles.legend}>
-        <Text style={styles.hereLegend}>Here · {Math.floor(readiness.evidence.hereMs / 1000)}/30s</Text>
-        <Text style={styles.placeLegend}>Place · {Math.floor(readiness.evidence.placeMs / 1000)}/90s</Text>
+        <Text style={styles.hereLegend}>Here · {Math.floor(presentedReadiness.hereMs / 1000)}/30s</Text>
+        <Text style={styles.placeLegend}>Place · {Math.floor(presentedReadiness.placeMs / 1000)}/90s</Text>
       </View>
       <TouchableOpacity accessibilityRole="button" onPress={() => { setBubble(''); router.push('/check-in-settings'); }} style={styles.settingsLink}>
         <Text style={styles.settingsText}>Location &amp; arrival reminders</Text>
