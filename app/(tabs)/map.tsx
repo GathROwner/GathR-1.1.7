@@ -2458,7 +2458,7 @@ const ClusterSummaryBeacon: React.FC<ClusterSummaryBeaconProps> = ({
         )}
 
         {cluster.hasNewContent && <View style={styles.clusterSummaryNewDot} />}
-        {cluster.friendPresence && <FriendCheckInBadge count={cluster.friendPresence.friendCount} style={{ position: 'absolute', left: -18, top: -10 }} />}
+        {cluster.friendPresence && <FriendCheckInBadge count={cluster.friendPresence.friendCount} style={{ position: 'absolute', left: -12, top: -6 }} />}
       </View>
 
       <View
@@ -2874,7 +2874,7 @@ const TreeMarker: React.FC<TreeMarkerProps> = React.memo(({ cluster, isSelected,
         )}
 
         {friendPresence && (
-          <FriendCheckInBadge count={friendPresence.friendCount} style={{ position: 'absolute', top: -10, right: adjustedSize * 1.05 }} />
+          <FriendCheckInBadge count={friendPresence.friendCount} style={{ position: 'absolute', top: -6, right: adjustedSize * 0.95 }} />
         )}
         {friendEventCount > 0 && (
           <View
@@ -10668,12 +10668,12 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
           <MapboxGL.SymbolLayer
             id="android-cluster-layer-friend-attached-capsule"
             filter={['all', ['==', ['get', 'hasFriendPresence'], true], ['==', ['get', 'friendOnly'], false]] as any}
-            style={{ iconAllowOverlap: true, iconIgnorePlacement: true, iconImage: 'gathr-friend-attached', iconSize: 0.5, iconTranslate: [-22, -12], iconTranslateAnchor: 'viewport', symbolSortKey: ['get', 'markerSortKey'] as any }}
+            style={{ iconAllowOverlap: true, iconIgnorePlacement: true, iconImage: 'gathr-friend-attached', iconSize: 0.35, iconTranslate: [-17, -9], iconTranslateAnchor: 'viewport', symbolSortKey: ['get', 'markerSortKey'] as any }}
           />
           <MapboxGL.SymbolLayer
             id="android-cluster-layer-friend-attached-count"
             filter={['all', ['==', ['get', 'hasFriendPresence'], true], ['==', ['get', 'friendOnly'], false]] as any}
-            style={{ textAllowOverlap: true, textIgnorePlacement: true, textField: ['get', 'friendCountLabel'] as any, textColor: '#FFFFFF', textSize: 10, textTranslate: [-16, -12], textTranslateAnchor: 'viewport', symbolSortKey: ['get', 'markerSortKey'] as any }}
+            style={{ textAllowOverlap: true, textIgnorePlacement: true, textField: ['get', 'friendCountLabel'] as any, textColor: '#FFFFFF', textSize: 8, textTranslate: [-12.8, -9], textTranslateAnchor: 'viewport', symbolSortKey: ['get', 'markerSortKey'] as any }}
           />
           <MapboxGL.SymbolLayer
             id="android-cluster-layer-friend-only-capsule"
