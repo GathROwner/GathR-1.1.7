@@ -69,6 +69,7 @@ import MapTracePanel from '../../components/debug/MapTracePanel';
 import StaticDebugCallout from '../../components/map/StaticDebugCallout';
 import RouteFeatureCallout from '../../components/map/RouteFeatureCallout';
 import ContextualCheckInControl from '../../components/social/ContextualCheckInControl';
+import FriendCheckInBadge from '../../components/social/FriendCheckInBadge';
 import FriendEventsMapToggle from '../../components/social/FriendEventsMapToggle';
 import ExternalFriendCheckInMarkers, {
   buildExternalFriendPlaceGroups,
@@ -303,7 +304,6 @@ type ClusterMarkerDetailMode = 'overview' | 'label' | 'media';
 // events degrade to plain markers when false.
 const CITY_EVENT_UI_ENABLED = true;
 const CITY_EVENT_GOLD = '#FFC400';
-const DEBUG_TREE_MARKER_EVENTS = false;
 const ANDROID_CLUSTER_TOUCH_OVERLAY_SIZE = 144;
 const ANDROID_CLUSTER_TOUCH_OVERLAY_DURATION_MS = 4500;
 const ANDROID_CLUSTER_TOUCH_OVERLAY_LIMIT = 80;
@@ -690,14 +690,13 @@ type AndroidClusterMarkerFeatureProperties = {
   clusterId: string;
   eventLabel: string;
   friendCountLabel: string;
-  friendHaloRadius: number;
   friendBadgeRadius: number;
   friendEventCountLabel: string;
   friendEventHaloRadius: number;
   hasFriendEvents: boolean;
   hasCategory: boolean;
   hasEvents: boolean;
-  hasFirestoreEvents: boolean;
+  friendOnly: boolean;
   hasFriendPresence: boolean;
   hasNewContent: boolean;
   hasSpecials: boolean;
@@ -774,6 +773,8 @@ const ANDROID_CLUSTER_MARKER_VENUE_DARK_ICON_ID = 'gathr-marker-venue-dark';
 const ANDROID_CLUSTER_MARKER_VENUE_LIGHT_ICON_ID = 'gathr-marker-venue-light';
 const ANDROID_CLUSTER_MARKER_CITY_FESTIVAL_ICON_ID = 'gathr-marker-city-festival';
 const ANDROID_CLUSTER_MARKER_IMAGES = {
+  'gathr-friend-only': require('../../assets/map-markers/friend-only.png'),
+  'gathr-friend-attached': require('../../assets/map-markers/friend-attached.png'),
   [ANDROID_CLUSTER_MARKER_CATEGORY_PILL_ID]: require('../../assets/map-markers/marker-category-pill.png'),
   [ANDROID_CLUSTER_CATEGORY_ICON_IDS.bar]: require('../../assets/map-markers/category-bar.png'),
   [ANDROID_CLUSTER_CATEGORY_ICON_IDS.church]: require('../../assets/map-markers/category-church.png'),
@@ -1174,9 +1175,6 @@ const buildAndroidClusterMarkerShape = (
           Math.PI
       );
       const usesDarkText = ANDROID_CLUSTER_DARK_TEXT_COLORS.has(color);
-      const hasFirestoreEvents = detailsEnabled && cluster.venues.some(venue =>
-        venue.events.some(event => event.source === 'firestore')
-      );
       const hasFriendPresence = !!cluster.friendPresence;
       const hasFriendEvents = (cluster.friendEventCount || 0) > 0;
       const categoryItems = detailsEnabled
@@ -1214,14 +1212,13 @@ const buildAndroidClusterMarkerShape = (
           categoryTextColor: categoryItem?.isUserInterest ? '#4A90E2' : '#333333',
           clusterId: cluster.id,
           eventLabel: detailsEnabled && cluster.eventCount > 0 ? String(cluster.eventCount) : '',
-          friendCountLabel: hasFriendPresence ? `F${cluster.friendPresence?.displayCount || ''}` : '',
-          friendHaloRadius: markerRadius + 8,
+          friendCountLabel: hasFriendPresence ? String(cluster.friendPresence!.friendCount > 9 ? '9+' : cluster.friendPresence!.friendCount) : '',
           friendBadgeRadius: 8.5,
           friendEventCountLabel: hasFriendEvents ? `E${cluster.friendEventCount}` : '',
           friendEventHaloRadius: markerRadius + (hasFriendPresence ? 13 : 8),
           hasCategory: detailsEnabled && categoryItem != null,
           hasEvents: detailsEnabled && cluster.eventCount > 0,
-          hasFirestoreEvents,
+          friendOnly: hasFriendPresence && cluster.eventCount === 0 && cluster.specialCount === 0,
           hasFriendPresence,
           hasFriendEvents,
           hasNewContent: detailsEnabled && !!cluster.hasNewContent,
@@ -2461,6 +2458,7 @@ const ClusterSummaryBeacon: React.FC<ClusterSummaryBeaconProps> = ({
         )}
 
         {cluster.hasNewContent && <View style={styles.clusterSummaryNewDot} />}
+        {cluster.friendPresence && <FriendCheckInBadge count={cluster.friendPresence.friendCount} style={{ position: 'absolute', left: -18, top: -10 }} />}
       </View>
 
       <View
@@ -2656,21 +2654,13 @@ const TreeMarker: React.FC<TreeMarkerProps> = React.memo(({ cluster, isSelected,
       ? 'home'
       : 'storefront'
   ) as React.ComponentProps<typeof MaterialIcons>['name'];
-  const friendPresence = detailsEnabled ? cluster.friendPresence : undefined;
+  const friendPresence = cluster.friendPresence;
   const friendEventCount = detailsEnabled ? (cluster.friendEventCount || 0) : 0;
 
-  // Check if cluster contains Firestore-sourced events
-  const hasFirestoreEvents = detailsEnabled
-    ? cluster.venues.some(venue =>
-        venue.events.some(event => event.source === 'firestore')
-      )
-    : false;
-
-  // DEBUG: Log clusters with Firestore events
-  if (DEBUG_TREE_MARKER_EVENTS && hasFirestoreEvents) {
-    const fsEventCount = cluster.venues.reduce((count, venue) =>
-      count + venue.events.filter(e => e.source === 'firestore').length, 0);
-    console.log(`[TreeMarker] Cluster ${cluster.id} has ${fsEventCount} Firestore events`);
+  if (friendPresence && cluster.eventCount === 0 && cluster.specialCount === 0) {
+    return (
+      <View style={[styles.markerWrapper, { opacity: !isReady ? 0.4 : isProcessing ? 0.6 : 1 }]}><FriendCheckInBadge count={friendPresence.friendCount} standalone /></View>
+    );
   }
 
   if (isBeacon && presentation === 'summary') {
@@ -2728,22 +2718,6 @@ const TreeMarker: React.FC<TreeMarkerProps> = React.memo(({ cluster, isSelected,
       {/* Gold fireworks for city-level (festival) events */}
       {detailsEnabled && CITY_EVENT_UI_ENABLED && cluster.containsCityLevelEvent && (
         <CityEventEffect size={adjustedSize} isActive={isActive} />
-      )}
-
-      {/* Friend presence is an outer teal bloom. Inner canopy size still
-          represents event interest and the existing rings still mean "now". */}
-      {friendPresence && (
-        <View
-          pointerEvents="none"
-          style={[
-            styles.friendPresenceHalo,
-            {
-              width: adjustedSize * 2.05,
-              height: adjustedSize * 2.05,
-              borderRadius: adjustedSize * 1.025,
-            },
-          ]}
-        />
       )}
 
       {friendEventCount > 0 && (
@@ -2876,31 +2850,6 @@ const TreeMarker: React.FC<TreeMarkerProps> = React.memo(({ cluster, isSelected,
           />
         )}
 
-        {/* Firestore source indicator - subtle "F" badge in top-left */}
-        {hasFirestoreEvents && (
-          <View
-            style={[
-              styles.firestoreIndicator,
-              {
-                width: adjustedSize * 0.45,
-                height: adjustedSize * 0.45,
-                borderRadius: adjustedSize * 0.225,
-                top: -(adjustedSize * 0.15),
-                left: -(adjustedSize * 0.15),
-              }
-            ]}
-          >
-            <Text
-              style={[
-                styles.firestoreIndicatorText,
-                { fontSize: adjustedSize * 0.25 }
-              ]}
-            >
-              F
-            </Text>
-          </View>
-        )}
-
         {/* Festival badge for city-level events - bottom-left, static so it
             reads with animations paused or reduce-motion on */}
         {CITY_EVENT_UI_ENABLED && cluster.containsCityLevelEvent && (
@@ -2925,30 +2874,7 @@ const TreeMarker: React.FC<TreeMarkerProps> = React.memo(({ cluster, isSelected,
         )}
 
         {friendPresence && (
-          <View
-            accessible
-            accessibilityLabel={`${friendPresence.friendCount} friend${friendPresence.friendCount === 1 ? '' : 's'} checked in within this map cluster`}
-            style={[
-              styles.friendPresenceBadge,
-              {
-                width: adjustedSize * 0.72,
-                height: adjustedSize * 0.72,
-                borderRadius: adjustedSize * 0.36,
-                bottom: -(adjustedSize * 0.2),
-                right: -(adjustedSize * 0.2),
-              },
-            ]}
-          >
-            {friendPresence.previewFriends[0]?.photoURL ? (
-              <Image
-                source={{ uri: friendPresence.previewFriends[0].photoURL }}
-                style={styles.friendPresenceAvatar}
-              />
-            ) : (
-              <Ionicons name="people" size={Math.max(adjustedSize * 0.32, 8)} color="#FFFFFF" />
-            )}
-            <Text style={styles.friendPresenceBadgeText}>{friendPresence.displayCount}</Text>
-          </View>
+          <FriendCheckInBadge count={friendPresence.friendCount} style={{ position: 'absolute', top: -10, right: adjustedSize * 1.05 }} />
         )}
         {friendEventCount > 0 && (
           <View
@@ -2992,7 +2918,7 @@ const TreeMarker: React.FC<TreeMarkerProps> = React.memo(({ cluster, isSelected,
       )}
       
       {/* Label area with category icons */}
-      {detailsEnabled && !isBeacon && (
+      {detailsEnabled && !isBeacon && (cluster.eventCount > 0 || cluster.specialCount > 0) && (
         <View
           style={[
             styles.markerLabel,
@@ -3061,6 +2987,8 @@ const TreeMarker: React.FC<TreeMarkerProps> = React.memo(({ cluster, isSelected,
     prevProps.cluster.interestLevel === nextProps.cluster.interestLevel &&
     prevProps.cluster.eventCount === nextProps.cluster.eventCount &&
     prevProps.cluster.specialCount === nextProps.cluster.specialCount &&
+    prevProps.cluster.friendPresence === nextProps.cluster.friendPresence &&
+    prevProps.cluster.friendEventCount === nextProps.cluster.friendEventCount &&
     prevProps.cluster.containsCityLevelEvent === nextProps.cluster.containsCityLevelEvent &&
     prevProps.cluster.containsRouteEvent === nextProps.cluster.containsRouteEvent &&
     prevProps.isSelected === nextProps.isSelected &&
@@ -10409,19 +10337,6 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
             }}
           />
           <MapboxGL.CircleLayer
-            id="android-cluster-layer-friend-halos"
-            filter={['==', ['get', 'hasFriendPresence'], true] as any}
-            style={{
-              circleColor: '#2DD4BF',
-              circleOpacity: 0.18,
-              circleRadius: ['get', 'friendHaloRadius'] as any,
-              circleSortKey: ['get', 'markerSortKey'] as any,
-              circleStrokeColor: '#0F766E',
-              circleStrokeOpacity: 0.95,
-              circleStrokeWidth: 3.5,
-            }}
-          />
-          <MapboxGL.CircleLayer
             id="android-cluster-layer-friend-event-halos"
             filter={['==', ['get', 'hasFriendEvents'], true] as any}
             style={{
@@ -10435,6 +10350,7 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
           />
           <MapboxGL.SymbolLayer
             id="android-cluster-layer-trunks"
+            filter={['!=', ['get', 'friendOnly'], true] as any}
             style={{
               textAllowOverlap: true,
               textAnchor: 'center',
@@ -10451,6 +10367,7 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
           />
           <MapboxGL.CircleLayer
             id="android-cluster-layer-tree-tops"
+            filter={['!=', ['get', 'friendOnly'], true] as any}
             style={{
               circleColor: ['get', 'markerColor'] as any,
               circleOpacity: ['get', 'markerOpacity'] as any,
@@ -10498,19 +10415,6 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
               circleStrokeColor: '#FFFFFF',
               circleStrokeWidth: 1,
               circleTranslate: [9, -9],
-              circleTranslateAnchor: 'viewport',
-            }}
-          />
-          <MapboxGL.CircleLayer
-            id="android-cluster-layer-firestore-badges"
-            filter={['==', ['get', 'hasFirestoreEvents'], true] as any}
-            style={{
-              circleColor: '#E3F2FD',
-              circleRadius: ['get', 'markerStatusDotRadius'] as any,
-              circleSortKey: ['get', 'markerSortKey'] as any,
-              circleStrokeColor: '#1565C0',
-              circleStrokeWidth: 1,
-              circleTranslate: [-9, -9],
               circleTranslateAnchor: 'viewport',
             }}
           />
@@ -10716,23 +10620,8 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
             }}
           />
           <MapboxGL.SymbolLayer
-            id="android-cluster-layer-firestore-labels"
-            filter={['==', ['get', 'hasFirestoreEvents'], true] as any}
-            style={{
-              textAllowOverlap: true,
-              textAnchor: 'center',
-              textColor: '#1565C0',
-              textField: 'F',
-              textIgnorePlacement: true,
-              symbolSortKey: ['get', 'markerSortKey'] as any,
-              textSize: 7,
-              textTranslate: [-9, -9],
-              textTranslateAnchor: 'viewport',
-            }}
-          />
-          <MapboxGL.SymbolLayer
             id="android-cluster-layer-venue-icon-outlines"
-            filter={['==', ['get', 'hasVenueIconOutline'], true] as any}
+            filter={['all', ['==', ['get', 'hasVenueIconOutline'], true], ['!=', ['get', 'friendOnly'], true]] as any}
             style={{
               iconAllowOverlap: true,
               iconAnchor: 'center',
@@ -10747,6 +10636,7 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
           />
           <MapboxGL.SymbolLayer
             id="android-cluster-layer-venue-icons"
+            filter={['!=', ['get', 'friendOnly'], true] as any}
             style={{
               iconAllowOverlap: true,
               iconAnchor: 'center',
@@ -10760,6 +10650,7 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
           />
           <MapboxGL.SymbolLayer
             id="android-cluster-layer-venue-labels"
+            filter={['!=', ['get', 'friendOnly'], true] as any}
             style={{
               textAllowOverlap: true,
               textAnchor: 'center',
@@ -10774,35 +10665,25 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
               textTranslateAnchor: 'viewport',
             }}
           />
-          <MapboxGL.CircleLayer
-            id="android-cluster-layer-friend-badges"
-            filter={['==', ['get', 'hasFriendPresence'], true] as any}
-            style={{
-              circleColor: '#0F766E',
-              circleRadius: ['get', 'friendBadgeRadius'] as any,
-              circleSortKey: ['get', 'markerSortKey'] as any,
-              circleStrokeColor: '#FFFFFF',
-              circleStrokeWidth: 1.5,
-              circleTranslate: [-30, -24],
-              circleTranslateAnchor: 'viewport',
-            }}
+          <MapboxGL.SymbolLayer
+            id="android-cluster-layer-friend-attached-capsule"
+            filter={['all', ['==', ['get', 'hasFriendPresence'], true], ['==', ['get', 'friendOnly'], false]] as any}
+            style={{ iconAllowOverlap: true, iconIgnorePlacement: true, iconImage: 'gathr-friend-attached', iconSize: 0.5, iconTranslate: [-22, -12], iconTranslateAnchor: 'viewport', symbolSortKey: ['get', 'markerSortKey'] as any }}
           />
           <MapboxGL.SymbolLayer
-            id="android-cluster-layer-friend-labels"
-            filter={['==', ['get', 'hasFriendPresence'], true] as any}
-            style={{
-              textAllowOverlap: true,
-              textAnchor: 'center',
-              textColor: '#FFFFFF',
-              textField: ['get', 'friendCountLabel'] as any,
-              textHaloColor: '#0F766E',
-              textHaloWidth: 0.5,
-              textIgnorePlacement: true,
-              symbolSortKey: ['get', 'markerSortKey'] as any,
-              textSize: 8,
-              textTranslate: [-30, -24],
-              textTranslateAnchor: 'viewport',
-            }}
+            id="android-cluster-layer-friend-attached-count"
+            filter={['all', ['==', ['get', 'hasFriendPresence'], true], ['==', ['get', 'friendOnly'], false]] as any}
+            style={{ textAllowOverlap: true, textIgnorePlacement: true, textField: ['get', 'friendCountLabel'] as any, textColor: '#FFFFFF', textSize: 10, textTranslate: [-16, -12], textTranslateAnchor: 'viewport', symbolSortKey: ['get', 'markerSortKey'] as any }}
+          />
+          <MapboxGL.SymbolLayer
+            id="android-cluster-layer-friend-only-capsule"
+            filter={['all', ['==', ['get', 'hasFriendPresence'], true], ['==', ['get', 'friendOnly'], true]] as any}
+            style={{ iconAllowOverlap: true, iconIgnorePlacement: true, iconImage: 'gathr-friend-only', iconSize: 0.5, iconTranslate: [0, 0], iconTranslateAnchor: 'viewport', symbolSortKey: ['get', 'markerSortKey'] as any }}
+          />
+          <MapboxGL.SymbolLayer
+            id="android-cluster-layer-friend-only-count"
+            filter={['all', ['==', ['get', 'hasFriendPresence'], true], ['==', ['get', 'friendOnly'], true]] as any}
+            style={{ textAllowOverlap: true, textIgnorePlacement: true, textField: ['get', 'friendCountLabel'] as any, textColor: '#FFFFFF', textSize: 12, textTranslate: [8, -3], textTranslateAnchor: 'viewport', symbolSortKey: ['get', 'markerSortKey'] as any }}
           />
           <MapboxGL.CircleLayer
             id="android-cluster-layer-friend-event-badges"
@@ -12689,18 +12570,6 @@ const styles = StyleSheet.create({
     height: '100%',
     minWidth: 4,
   },
-  friendPresenceHalo: {
-    position: 'absolute',
-    borderWidth: 4,
-    borderColor: 'rgba(13, 148, 136, 0.88)',
-    backgroundColor: 'rgba(45, 212, 191, 0.16)',
-    shadowColor: '#0F766E',
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.5,
-    shadowRadius: 7,
-    elevation: 4,
-    zIndex: 1,
-  },
   friendEventHalo: {
     position: 'absolute',
     borderWidth: 3,
@@ -12729,33 +12598,6 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 8,
     fontWeight: '900',
-  },
-  friendPresenceBadge: {
-    position: 'absolute',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 1,
-    paddingHorizontal: 2,
-    overflow: 'hidden',
-    backgroundColor: '#0F766E',
-    borderWidth: 1.5,
-    borderColor: '#FFFFFF',
-    zIndex: 7,
-  },
-  friendPresenceAvatar: {
-    position: 'absolute',
-    width: '100%',
-    height: '100%',
-    opacity: 0.42,
-  },
-  friendPresenceBadgeText: {
-    color: '#FFFFFF',
-    fontSize: 8,
-    fontWeight: '800',
-    textShadowColor: 'rgba(0,0,0,0.45)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 1,
   },
 venueCountContainer: {
   position: 'absolute',
@@ -12861,27 +12703,6 @@ countText: {
     borderWidth: 1.5,
     borderColor: 'rgba(255, 255, 255, 0.9)',
     zIndex: 5,
-  },
-  // Firestore source indicator - subtle badge in top-left
-  firestoreIndicator: {
-    position: 'absolute',
-    top: -3,
-    left: -3,
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: '#E3F2FD', // Light blue
-    borderWidth: 1,
-    borderColor: '#2196F3', // Blue border
-    zIndex: 5,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  firestoreIndicatorText: {
-    fontSize: 6,
-    fontWeight: 'bold',
-    color: '#1565C0', // Dark blue text
-    textAlign: 'center',
   },
   // Processing ring indicator - shown when cluster is being tapped/processed
   processingRing: {
@@ -13293,7 +13114,7 @@ countText: {
     position: 'absolute',
     right: 10,
     top: 182, // Legend button ends at ~170 (80+54+36), add 12px spacing
-    bottom: 128, // Recenter button starts at ~116 from bottom (80 + 36), add 12px spacing
+    bottom: 172, // Reserve the compact Friends shortcut above recenter.
     justifyContent: 'center',
     alignItems: 'flex-end',
     zIndex: 11,
@@ -13345,4 +13166,3 @@ countText: {
 // Explicitly mark the default export for Expo Router
 const MapPage = MapScreen;
 export default MapPage;
-

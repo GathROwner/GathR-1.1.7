@@ -14,6 +14,7 @@ import {
 
 import type { FriendActivityProjection } from '../../types/social';
 import { isFriendActivityActive, socialTimestampToMillis } from '../../utils/friendPresence';
+import FriendCheckInBadge from './FriendCheckInBadge';
 
 export interface ExternalFriendPlaceGroup {
   locationKey: string;
@@ -67,11 +68,11 @@ export function buildExternalFriendPlaceGroups(
   }));
 }
 
-function Avatar({ friend }: { friend: FriendActivityProjection }) {
+function Avatar({ friend, small = false }: { friend: FriendActivityProjection; small?: boolean }) {
   const initial = (friend.displayName || 'F').trim().slice(0, 1).toUpperCase();
-  if (friend.photoURL) return <Image source={{ uri: friend.photoURL }} style={styles.avatar} />;
+  if (friend.photoURL) return <Image source={{ uri: friend.photoURL }} style={[styles.avatar, small && styles.smallAvatar]} />;
   return (
-    <View style={[styles.avatar, styles.avatarFallback]}>
+    <View style={[styles.avatar, styles.avatarFallback, small && styles.smallAvatar]}>
       <Text style={styles.avatarInitial}>{initial}</Text>
     </View>
   );
@@ -95,7 +96,7 @@ export default function ExternalFriendCheckInMarkers({
         <MapboxGL.MarkerView
           allowOverlap
           allowOverlapWithPuck
-          anchor={{ x: 0.5, y: 1 }}
+          anchor={{ x: 0.5, y: group.locationPrecision === 'approximate' ? 0.5 : 1 }}
           coordinate={[group.longitude, group.latitude]}
           id={`${group.locationType}-friend-${group.locationKey}`}
           key={group.locationKey}
@@ -116,17 +117,20 @@ export default function ExternalFriendCheckInMarkers({
             {group.locationType === 'private_place' && group.locationPrecision === 'approximate' && (
               <View pointerEvents="none" style={styles.approximateHalo} />
             )}
-            <View style={[styles.markerAvatarShell, group.locationType === 'private_place' && styles.privateMarkerAvatarShell]}>
-              <Avatar friend={group.friends[0]} />
-            </View>
-            {group.friends.length > 1 && (
+            {group.locationType === 'private_place' ? (
+              <View style={[styles.markerAvatarShell, styles.privateMarkerAvatarShell]}>
+                <Avatar friend={group.friends[0]} small />
+              </View>
+            ) : <FriendCheckInBadge count={group.friends.length} standalone />}
+            {group.locationType === 'private_place' && group.friends.length > 1 && (
               <View style={styles.countBadge}><Text style={styles.countText}>{group.friends.length}</Text></View>
             )}
-            <View style={[styles.liveDot, group.locationType === 'private_place' && styles.privateLiveDot]} />
             {group.locationType === 'private_place' && (
               <View style={styles.houseBadge}><Ionicons name="home" size={10} color="#FFFFFF" /></View>
             )}
-            <View style={[styles.markerTip, group.locationType === 'private_place' && styles.privateMarkerTip]} />
+            {group.locationType === 'private_place' && group.locationPrecision === 'exact' && (
+              <View style={[styles.markerTip, styles.privateMarkerTip]} />
+            )}
           </TouchableOpacity>
         </MapboxGL.MarkerView>
       ))}
@@ -228,19 +232,18 @@ export function ExternalFriendCheckInPanel({
 }
 
 const styles = StyleSheet.create({
-  marker: { width: 52, height: 60, alignItems: 'center', justifyContent: 'flex-start' },
-  privateMarker: { width: 70, height: 72 },
-  approximateHalo: { position: 'absolute', top: -8, width: 66, height: 66, borderRadius: 33, borderWidth: 1, borderColor: 'rgba(127,86,217,0.35)', backgroundColor: 'rgba(182,146,246,0.18)' },
+  marker: { width: 54, height: 40, alignItems: 'center', justifyContent: 'flex-start' },
+  privateMarker: { width: 54, height: 54, paddingTop: 5 },
+  approximateHalo: { position: 'absolute', top: 0, width: 54, height: 54, borderRadius: 27, borderWidth: 1, borderColor: 'rgba(127,86,217,0.25)', backgroundColor: 'rgba(182,146,246,0.14)' },
   markerAvatarShell: { zIndex: 2, width: 48, height: 48, padding: 3, borderRadius: 24, borderWidth: 3, borderColor: '#7F56D9', backgroundColor: '#FFFFFF', shadowColor: '#101828', shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.25, shadowRadius: 5, elevation: 7 },
-  privateMarkerAvatarShell: { borderColor: '#6941C6' },
+  privateMarkerAvatarShell: { width: 38, height: 38, padding: 2, borderWidth: 2, borderRadius: 19, borderColor: '#6941C6' },
+  smallAvatar: { width: 30, height: 30, borderRadius: 15 },
   avatar: { width: 40, height: 40, borderRadius: 20 },
   avatarFallback: { alignItems: 'center', justifyContent: 'center', backgroundColor: '#E9D7FE' },
   avatarInitial: { color: '#6941C6', fontSize: 16, fontWeight: '900' },
   countBadge: { position: 'absolute', right: -3, top: -3, zIndex: 5, minWidth: 21, height: 21, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4, borderRadius: 11, borderWidth: 2, borderColor: '#FFFFFF', backgroundColor: '#6941C6' },
   countText: { color: '#FFFFFF', fontSize: 9, fontWeight: '900' },
-  liveDot: { position: 'absolute', left: 1, top: 3, zIndex: 5, width: 12, height: 12, borderRadius: 6, borderWidth: 2, borderColor: '#FFFFFF', backgroundColor: '#12B76A' },
-  privateLiveDot: { left: 11 },
-  houseBadge: { position: 'absolute', right: 4, top: 35, zIndex: 6, width: 20, height: 20, alignItems: 'center', justifyContent: 'center', borderRadius: 10, borderWidth: 2, borderColor: '#FFFFFF', backgroundColor: '#6941C6' },
+  houseBadge: { position: 'absolute', right: 3, top: 30, zIndex: 6, width: 18, height: 18, alignItems: 'center', justifyContent: 'center', borderRadius: 9, borderWidth: 2, borderColor: '#FFFFFF', backgroundColor: '#6941C6' },
   markerTip: { marginTop: -2, width: 0, height: 0, borderLeftWidth: 8, borderRightWidth: 8, borderTopWidth: 11, borderLeftColor: 'transparent', borderRightColor: 'transparent', borderTopColor: '#7F56D9' },
   privateMarkerTip: { borderTopColor: '#6941C6' },
   backdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(16,24,40,0.45)' },

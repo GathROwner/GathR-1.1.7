@@ -921,9 +921,9 @@ const styles = StyleSheet.create({
     borderRadius: 9,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#0F766E',
+    backgroundColor: '#6941C6',
     borderWidth: 2,
-    borderColor: '#5EEAD4',
+    borderColor: '#FFFFFF',
   },
 });
 

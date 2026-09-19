@@ -196,6 +196,8 @@ export default function FriendEventsMapToggle({
       {!open && (
         <TouchableOpacity
           accessibilityLabel={`Open ${destinations.length} live friend ${destinations.length === 1 ? 'destination' : 'destinations'}`}
+          accessibilityHint="Opens the list of places where friends are checked in"
+          hitSlop={7}
           accessibilityRole="button"
           activeOpacity={0.88}
           onPress={() => {
@@ -205,13 +207,7 @@ export default function FriendEventsMapToggle({
           style={styles.pill}
         >
           <Ionicons name="people" size={18} color="#FFFFFF" />
-          <Text style={styles.pillLabel}>Friends</Text>
-          <View style={styles.placeBadge}>
-            <View style={styles.placeLiveDot} />
-            <Text style={styles.placeBadgeText}>
-              {destinations.length} {destinations.length === 1 ? 'place' : 'places'}
-            </Text>
-          </View>
+          <Text maxFontSizeMultiplier={1.3} style={styles.placeBadgeText}>{destinations.length > 99 ? '99+' : destinations.length}</Text>
         </TouchableOpacity>
       )}
 
@@ -223,7 +219,7 @@ export default function FriendEventsMapToggle({
               <View>
                 <Text style={styles.headerTitle}>Friends here now</Text>
                 <Text style={styles.headerSubtitle}>
-                  {destinations.length} live {destinations.length === 1 ? 'destination' : 'destinations'} on this map
+                  {destinations.length} {destinations.length === 1 ? 'place' : 'places'} with friends checked in
                 </Text>
               </View>
             </View>
@@ -259,14 +255,16 @@ export default function FriendEventsMapToggle({
 const styles = StyleSheet.create({
   pill: {
     position: 'absolute',
-    right: 12,
-    bottom: 168,
-    minHeight: 44,
+    right: 10,
+    bottom: 128,
+    height: 30,
+    minWidth: 60,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 7,
-    paddingHorizontal: 12,
-    borderRadius: 18,
+    gap: 8,
+    justifyContent: 'center',
+    paddingHorizontal: 10,
+    borderRadius: 15,
     borderWidth: 1,
     borderColor: '#7F56D9',
     backgroundColor: '#6941C6',
@@ -277,18 +275,7 @@ const styles = StyleSheet.create({
     elevation: 6,
     zIndex: 24,
   },
-  pillLabel: { color: '#FFFFFF', fontSize: 14, fontWeight: '900' },
-  placeBadge: {
-    minHeight: 23,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    paddingHorizontal: 7,
-    borderRadius: 12,
-    backgroundColor: 'rgba(255,255,255,0.18)',
-  },
-  placeLiveDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: '#6CE9A6' },
-  placeBadgeText: { color: '#FFFFFF', fontSize: 10.5, fontWeight: '900' },
+  placeBadgeText: { color: '#FFFFFF', fontSize: 11, fontWeight: '900' },
   carouselShell: {
     position: 'absolute',
     left: 0,
