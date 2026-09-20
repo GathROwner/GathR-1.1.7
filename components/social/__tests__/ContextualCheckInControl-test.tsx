@@ -258,6 +258,33 @@ describe('ContextualCheckInControl', () => {
     act(() => component!.unmount());
   });
 
+
+  it('keeps the selected public place after a bind failure and retries without rediscovery', async () => {
+    makeReady(90);
+    (discoverNearbyCheckInPlaces as jest.Mock).mockResolvedValueOnce({ candidates: [{
+      id: 'grounds-candidate', type: 'external_place', name: 'Charlottetown Event Grounds',
+      address: 'Address not listed', category: 'festival grounds', latitude: 46.235, longitude: -63.129, distanceMetres: 0,
+    }] });
+    (bindCheckInReadiness as jest.Mock).mockRejectedValueOnce(new Error('Your GPS accuracy changed. Wait for a clearer location, then try this place again.'));
+    let component: renderer.ReactTestRenderer;
+    await act(async () => { component = renderer.create(<ContextualCheckInControl enabled />); });
+    await act(async () => component!.root.findByProps({ testID: 'contextual-check-in-ready' }).props.onPress());
+    await act(async () => component!.root.findByProps({ testID: 'continue-public-check-in' }).props.onPress());
+    expect(component!.root.findByProps({ testID: 'check-in-selection-error' })).toBeTruthy();
+    expect(component!.root.findByProps({ accessibilityLabel: 'Charlottetown Event Grounds, 0 metres away' }).props.accessibilityState.selected).toBe(true);
+    expect(component!.root.findByProps({ testID: 'refresh-check-in-places' })).toBeTruthy();
+    expect(discoverNearbyCheckInPlaces).toHaveBeenCalledTimes(1);
+    expect(mockPush).not.toHaveBeenCalled();
+    (bindCheckInReadiness as jest.Mock).mockResolvedValueOnce({ protocolVersion: 1,
+      readinessSessionId: 'readiness-session', eligibilitySessionId: 'grounds-bound', locationType: 'external_place',
+      placeCandidateId: 'grounds-candidate', exactPrivateAllowed: false, expiresAtMs: Date.now() + 60000 });
+    await act(async () => component!.root.findByProps({ testID: 'continue-public-check-in' }).props.onPress());
+    expect(discoverNearbyCheckInPlaces).toHaveBeenCalledTimes(1);
+    expect(component!.root.findAllByProps({ testID: 'check-in-selection-error' })).toHaveLength(0);
+    expect(mockPush).toHaveBeenCalledWith(expect.objectContaining({ pathname: '/check-in' }));
+    act(() => component!.unmount());
+  });
+
   it('does not open a modal or navigate when the outer ring automatically becomes ready', async () => {
     makeReady(90);
     useCheckInReadinessStore.setState({ lastPromptAtMs: 0 });

@@ -90,6 +90,15 @@ export default function CheckInScreen() {
     const timer = setInterval(() => setNowMs(Date.now()), 1000);
     return () => clearInterval(timer);
   }, [params.readinessVersion]);
+  useEffect(() => {
+    if (params.readinessVersion !== '1') return;
+    return () => {
+      const current = useCheckInReadinessStore.getState();
+      if (current.grant?.eligibilitySessionId === params.eligibilitySessionId) {
+        useCheckInReadinessStore.setState({ grant: null });
+      }
+    };
+  }, [params.eligibilitySessionId, params.readinessVersion]);
   const options = useMemo(() => {
     const byId = new Map<string, CheckInPlaceOption>();
     for (const event of allEvents) {

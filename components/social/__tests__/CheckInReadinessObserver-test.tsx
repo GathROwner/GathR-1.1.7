@@ -81,6 +81,38 @@ describe('foreground readiness observer lifecycle', () => {
     expect(useCheckInReadinessStore.getState().evidence.hereMs).toBe(10_000);
     expect(useCheckInReadinessStore.getState().grant).toBeNull();
   });
+  it('pauses GPS and readiness calls while privacy has a bound place, including short inactive pauses', async () => {
+    await mount();
+    const grant = { protocolVersion: 1 as const, readinessSessionId: 'bound-session',
+      eligibilitySessionId: 'bound-session', venueId: 'venue-1', locationType: 'gathr_venue' as const,
+      exactPrivateAllowed: false, expiresAtMs: Date.now() + 300000 };
+    await act(async () => useCheckInReadinessStore.setState({ grant }));
+    const calls = (Location.getCurrentPositionAsync as jest.Mock).mock.calls.length;
+    const posts = (recordCheckInReadinessSample as jest.Mock).mock.calls.length;
+    await advance(30000);
+    act(() => { AppState.currentState = 'inactive'; mockChangeState('inactive'); });
+    await advance(10000);
+    await act(async () => { AppState.currentState = 'active'; mockChangeState('active'); });
+    await advance(30000);
+    expect(Location.getCurrentPositionAsync).toHaveBeenCalledTimes(calls);
+    expect(recordCheckInReadinessSample).toHaveBeenCalledTimes(posts);
+    expect(useCheckInReadinessStore.getState().grant).toEqual(grant);
+    await act(async () => useCheckInReadinessStore.setState({ grant: null }));
+    expect(Location.getCurrentPositionAsync).toHaveBeenCalledTimes(calls + 1);
+  });
+  it('requires a fresh location after returning from a long pause with an expired bound place', async () => {
+    await mount();
+    await act(async () => useCheckInReadinessStore.setState({ grant: { protocolVersion: 1,
+      readinessSessionId: 'bound-session', eligibilitySessionId: 'bound-session', venueId: 'venue-1',
+      locationType: 'gathr_venue', exactPrivateAllowed: false, expiresAtMs: Date.now() + 300000 } }));
+    const calls = (Location.getCurrentPositionAsync as jest.Mock).mock.calls.length;
+    act(() => { AppState.currentState = 'background'; mockChangeState('background'); });
+    await advance(301000);
+    expect(Location.getCurrentPositionAsync).toHaveBeenCalledTimes(calls);
+    await act(async () => { AppState.currentState = 'active'; mockChangeState('active'); });
+    expect(useCheckInReadinessStore.getState().grant).toBeNull();
+    expect(Location.getCurrentPositionAsync).toHaveBeenCalledTimes(calls + 1);
+  });
   it('does not collect in basic mode or when foreground permission is denied', async () => {
     mockMode = 'basic';
     await mount();

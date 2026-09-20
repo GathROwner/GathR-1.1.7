@@ -260,6 +260,7 @@ export default function ContextualCheckInControl({ enabled }: Props) {
   const [pickerVisible, setPickerVisible] = useState(false);
   const [discovering, setDiscovering] = useState(false);
   const [discoveryError, setDiscoveryError] = useState('');
+  const [selectionError, setSelectionError] = useState('');
   const [nearbyPlaces, setNearbyPlaces] = useState<VenueCandidate[]>([]);
   const [selectedPlaceId, setSelectedPlaceId] = useState('');
   const [privateSetupVisible, setPrivateSetupVisible] = useState(false);
@@ -348,7 +349,7 @@ export default function ContextualCheckInControl({ enabled }: Props) {
     if (!place || bindingRef.current) return;
     const initial = useCheckInReadinessStore.getState();
     const initialLevels = readinessLevels(initial.evidence, initial.receipt, initial.sessionId, Date.now());
-    const report = (message: string) => place.type === 'private_place' ? setPrivatePlaceError(message) : setDiscoveryError(message);
+    const report = (message: string) => place.type === 'private_place' ? setPrivatePlaceError(message) : setSelectionError(message);
     if (initial.uid !== user.uid || !initial.appActive || initial.interruptedAtMs !== null
       || (place.type === 'private_place' ? !initialLevels.here : !initialLevels.place)) {
       report('Readiness changed. Return to the map; the rings will update as your location settles.');
@@ -360,6 +361,7 @@ export default function ContextualCheckInControl({ enabled }: Props) {
     if (bindOperationRef.current?.key !== operationKey) bindOperationRef.current = { key: operationKey, operationId: createSocialOperationId() };
     const operationId = bindOperationRef.current.operationId;
     setBinding(true);
+    setSelectionError('');
     try {
       const location = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
       const sample = { latitude: location.coords.latitude, longitude: location.coords.longitude,
@@ -407,6 +409,7 @@ export default function ContextualCheckInControl({ enabled }: Props) {
     setPrivateSetupVisible(false);
     setDiscovering(true);
     setDiscoveryError('');
+    setSelectionError('');
     try {
       let permission = await Location.getForegroundPermissionsAsync();
       if (permission.status !== 'granted') permission = await Location.requestForegroundPermissionsAsync();
@@ -686,7 +689,7 @@ export default function ContextualCheckInControl({ enabled }: Props) {
                         accessibilityRole="radio"
                         accessibilityState={{ selected }}
                         key={place.id}
-                        onPress={() => setSelectedPlaceId(place.id)}
+                        onPress={() => { setSelectedPlaceId(place.id); setSelectionError(''); }}
                         style={[styles.placeRow, selected && styles.placeRowSelected]}
                       >
                         <VenueAvatar venue={place} />
@@ -706,6 +709,17 @@ export default function ContextualCheckInControl({ enabled }: Props) {
                   })}
                 </ScrollView>
                 <View style={styles.pickerFooter}>
+                  {!!selectionError && <View testID="check-in-selection-error" style={styles.selectionErrorCard} accessibilityLiveRegion="polite">
+                    <Text style={styles.selectionErrorText}>{selectionError}</Text>
+                    <View style={styles.selectionErrorActions}>
+                      <TouchableOpacity accessibilityRole="button" onPress={() => void loadNearbyPlaces()} testID="refresh-check-in-places">
+                        <Text style={styles.retryText}>Refresh places</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity accessibilityRole="button" onPress={closePicker}>
+                        <Text style={styles.retryText}>Back to map</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>}
                   <View style={styles.privacyRow}>
                     <Ionicons name="shield-checkmark-outline" size={18} color="#0F766E" />
                     <Text style={styles.privacyCopy}>{levels.place ? 'Choose who can see your check-in next. Nothing is shared yet.' : 'Public places need the blue Place ring. An approximate private check-in is ready now.'}</Text>
@@ -718,7 +732,7 @@ export default function ContextualCheckInControl({ enabled }: Props) {
                     <Text style={styles.attributionText}>Place data © OpenStreetMap contributors</Text>
                   </TouchableOpacity>
                   <TouchableOpacity testID="continue-public-check-in" accessibilityRole="button" disabled={!selectedPlace || binding || !levels.place} onPress={() => void choosePlace(selectedPlace)} style={[styles.usePlaceButton, (!selectedPlace || binding || !levels.place) && styles.disabled]}>
-                    <Text style={styles.usePlaceText}>{binding ? 'Preparing privacy options…' : 'Continue to privacy'}</Text>
+                    <Text style={styles.usePlaceText}>{binding ? 'Preparing privacy options…' : selectionError ? 'Try this place again' : 'Continue to privacy'}</Text>
                     <Ionicons name="arrow-forward" size={19} color="#FFFFFF" />
                   </TouchableOpacity>
                 </View>
@@ -744,6 +758,9 @@ export default function ContextualCheckInControl({ enabled }: Props) {
 }
 
 const styles = StyleSheet.create({
+  selectionErrorCard: { backgroundColor: '#FFFAEB', borderRadius: 12, padding: 12, gap: 10, marginBottom: 10 },
+  selectionErrorText: { color: '#93370D', fontSize: 14, lineHeight: 20 },
+  selectionErrorActions: { flexDirection: 'row', justifyContent: 'space-between', gap: 12 },
   control: {
     position: 'absolute', right: 4, bottom: 20, width: 48, height: 48,
     alignItems: 'center', justifyContent: 'center', borderRadius: 24,

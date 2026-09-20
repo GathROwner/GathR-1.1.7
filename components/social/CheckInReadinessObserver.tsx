@@ -25,6 +25,7 @@ export default function CheckInReadinessObserver() {
   const ownCheckIn = useSocialStore((state) => state.ownCheckIn);
   const mode = useCheckInReadinessStore((state) => state.mode);
   const loaded = useCheckInReadinessStore((state) => state.preferencesLoaded);
+  const hasGrant = useCheckInReadinessStore((state) => state.grant !== null);
 
   useEffect(() => {
     resetCheckInReadinessOwner(uid);
@@ -49,7 +50,8 @@ export default function CheckInReadinessObserver() {
     const run = async (epoch: number) => {
       let nextDelayMs: number = CHECK_IN_READINESS.sampleIntervalMs;
       const currentRun = () => !disposed && epoch === generation && AppState.currentState === 'active'
-        && useCheckInReadinessStore.getState().uid === uid;
+        && useCheckInReadinessStore.getState().uid === uid
+        && !useCheckInReadinessStore.getState().grant;
       if (!currentRun()) return;
       try {
         const permission = await Location.getForegroundPermissionsAsync();
@@ -120,6 +122,17 @@ export default function CheckInReadinessObserver() {
         appActive: active,
         ...(!active && current.interruptedAtMs === null ? { interruptedAtMs: Date.now() } : {}),
       });
+      // The privacy screen owns a one-time bound grant. Do not request another
+      // GPS fix or mutate its evidence during ordinary form entry/short pauses.
+      if (current.grant) {
+        if (active && (current.grant.expiresAtMs <= Date.now()
+          || (current.interruptedAtMs !== null && Date.now() - current.interruptedAtMs >= CHECK_IN_READINESS.maxResumeGapMs))) {
+          useCheckInReadinessStore.setState({ grant: null });
+        } else if (active) {
+          useCheckInReadinessStore.setState({ interruptedAtMs: null });
+        }
+        return;
+      }
       // iOS briefly reports `inactive` while taking a screenshot and during other
       // system interruptions. Preserve the evidence/session, then let the next
       // fresh fix verify the elapsed gap. The interruption marker also keeps
@@ -134,6 +147,7 @@ export default function CheckInReadinessObserver() {
     const expiryTimer = setInterval(() => {
       const state = useCheckInReadinessStore.getState();
       const now = Date.now();
+      if (state.grant) return;
       if (state.appActive && state.interruptedAtMs === null
         && state.evidence.previous && !isFreshReadiness(state.evidence, now)) invalidate();
       else if (state.receipt && state.receipt.expiresAtMs <= now) useCheckInReadinessStore.setState({ receipt: null });
@@ -148,6 +162,6 @@ export default function CheckInReadinessObserver() {
       subscription.remove();
       invalidate();
     };
-  }, [loaded, mode, ownCheckIn, uid]);
+  }, [hasGrant, loaded, mode, ownCheckIn, uid]);
   return null;
 }
