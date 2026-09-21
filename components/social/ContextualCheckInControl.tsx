@@ -237,6 +237,13 @@ function messageForError(error: unknown) {
     : 'Nearby places could not be loaded right now.';
 }
 
+function isNearbyPublicPlacesLookupUnavailable(error: unknown) {
+  return error instanceof SocialServiceError
+    && error.code === 'unavailable'
+    && error.details?.condition === 'nearby_public_places_external_lookup_unavailable'
+    && error.details.retryable === true;
+}
+
 export default function ContextualCheckInControl({ enabled }: Props) {
   const router = useRouter();
   const { user } = useAuth();
@@ -260,6 +267,7 @@ export default function ContextualCheckInControl({ enabled }: Props) {
   const [pickerVisible, setPickerVisible] = useState(false);
   const [discovering, setDiscovering] = useState(false);
   const [discoveryError, setDiscoveryError] = useState('');
+  const [partialDiscoveryNotice, setPartialDiscoveryNotice] = useState('');
   const [selectionError, setSelectionError] = useState('');
   const [nearbyPlaces, setNearbyPlaces] = useState<VenueCandidate[]>([]);
   const [selectedPlaceId, setSelectedPlaceId] = useState('');
@@ -409,6 +417,7 @@ export default function ContextualCheckInControl({ enabled }: Props) {
     setPrivateSetupVisible(false);
     setDiscovering(true);
     setDiscoveryError('');
+    setPartialDiscoveryNotice('');
     setSelectionError('');
     try {
       let permission = await Location.getForegroundPermissionsAsync();
@@ -450,11 +459,15 @@ export default function ContextualCheckInControl({ enabled }: Props) {
       }).sort((first, second) => first.distanceMetres - second.distanceMetres);
       setNearbyPlaces(decorated);
       setSelectedPlaceId(closestNearbyPlaceId(decorated));
-      if (decorated.length === 0) {
+      if (result.externalLookupStatus === 'partial_unavailable') {
+        setPartialDiscoveryNotice('Additional nearby public places could not be loaded. You can choose from the places shown or try again.');
+      } else if (decorated.length === 0) {
         setDiscoveryError('No eligible public places were found close enough to your current location.');
       }
     } catch (error) {
-      setDiscoveryError(messageForError(error));
+      setDiscoveryError(isNearbyPublicPlacesLookupUnavailable(error)
+        ? 'Nearby public places could not be loaded right now.'
+        : messageForError(error));
     } finally {
       setDiscovering(false);
     }
@@ -680,6 +693,15 @@ export default function ContextualCheckInControl({ enabled }: Props) {
               </View>
             ) : (
               <>
+                {!!partialDiscoveryNotice && <View testID="nearby-public-places-partial-notice" style={styles.partialDiscoveryNotice} accessibilityLiveRegion="polite">
+                  <View style={styles.partialDiscoveryNoticeCopy}>
+                    <Text style={styles.partialDiscoveryTitle}>Some nearby public places are unavailable</Text>
+                    <Text style={styles.partialDiscoveryCopy}>{partialDiscoveryNotice}</Text>
+                  </View>
+                  <TouchableOpacity accessibilityRole="button" onPress={() => void loadNearbyPlaces()} testID="retry-nearby-public-places" style={styles.partialDiscoveryRetry}>
+                    <Text style={styles.retryText}>Retry</Text>
+                  </TouchableOpacity>
+                </View>}
                 <ScrollView contentContainerStyle={styles.placeList} showsVerticalScrollIndicator={false}>
                   {nearbyPlaces.map((place, index) => {
                     const selected = place.id === selectedPlaceId;
@@ -818,6 +840,11 @@ const styles = StyleSheet.create({
   stateIcon: { width: 48, height: 48, alignItems: 'center', justifyContent: 'center', borderRadius: 24, backgroundColor: '#FFFAEB' },
   retryButton: { minHeight: 42, marginTop: 4, justifyContent: 'center', paddingHorizontal: 20, borderRadius: 14, backgroundColor: '#EFF8FF' },
   retryText: { color: '#175CD3', fontWeight: '900' },
+  partialDiscoveryNotice: { flexDirection: 'row', alignItems: 'center', gap: 10, marginHorizontal: 14, marginBottom: 8, padding: 12, borderRadius: 14, backgroundColor: '#FFFAEB', borderWidth: 1, borderColor: '#FEDF89' },
+  partialDiscoveryNoticeCopy: { flex: 1, minWidth: 0 },
+  partialDiscoveryTitle: { color: '#93370D', fontSize: 12.5, fontWeight: '900' },
+  partialDiscoveryCopy: { marginTop: 2, color: '#7A2E0E', fontSize: 11.5, lineHeight: 16 },
+  partialDiscoveryRetry: { minHeight: 40, justifyContent: 'center', paddingHorizontal: 8 },
   placeList: { paddingHorizontal: 14, paddingBottom: 4, gap: 8 },
   placeRow: { minHeight: 74, flexDirection: 'row', alignItems: 'center', gap: 11, padding: 11, borderRadius: 18, borderWidth: 1.5, borderColor: '#EAECF0', backgroundColor: '#FFFFFF' },
   placeRowSelected: { borderColor: '#2F80ED', backgroundColor: '#EFF8FF' },

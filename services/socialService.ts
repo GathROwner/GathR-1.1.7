@@ -43,13 +43,33 @@ import type {
   SocialProfile,
 } from '../types/social';
 
+export interface SocialCallableErrorDetails {
+  condition?: string;
+  retryable?: boolean;
+}
+
+function safeCallableErrorDetails(value: unknown): SocialCallableErrorDetails | undefined {
+  if (!value || typeof value !== 'object') return undefined;
+  const candidate = value as { condition?: unknown; retryable?: unknown };
+  const details: SocialCallableErrorDetails = {};
+  // Callable details are server-owned. Keep only the small, non-sensitive
+  // control-plane shape used for client recovery; never surface raw payloads.
+  if (typeof candidate.condition === 'string' && /^[a-z0-9_]{1,120}$/.test(candidate.condition)) {
+    details.condition = candidate.condition;
+  }
+  if (typeof candidate.retryable === 'boolean') details.retryable = candidate.retryable;
+  return Object.keys(details).length > 0 ? details : undefined;
+}
+
 export class SocialServiceError extends Error {
   code: string;
+  details?: SocialCallableErrorDetails;
 
-  constructor(code: string, message: string) {
+  constructor(code: string, message: string, details?: SocialCallableErrorDetails) {
     super(message);
     this.name = 'SocialServiceError';
     this.code = code;
+    this.details = details;
   }
 }
 
@@ -80,7 +100,7 @@ function publishCallableDiagnostic(diagnostic: SocialCallableDiagnostic) {
 }
 
 function normalizeCallableError(error: unknown): SocialServiceError {
-  const candidate = error as { code?: string; message?: string };
+  const candidate = error as { code?: string; message?: string; details?: unknown };
   const code = String(candidate?.code || 'unknown').replace(/^functions\//, '');
   const fallback: Record<string, string> = {
     unauthenticated: 'Sign in to use friends and check-ins.',
@@ -90,7 +110,8 @@ function normalizeCallableError(error: unknown): SocialServiceError {
   };
   return new SocialServiceError(
     code,
-    fallback[code] || candidate?.message || 'The social request could not be completed.'
+    fallback[code] || candidate?.message || 'The social request could not be completed.',
+    safeCallableErrorDetails(candidate?.details)
   );
 }
 
@@ -170,12 +191,13 @@ async function callAppCheckedSocial<Request, Response>(
     const payload = await response.json() as {
       result?: Response;
       data?: Response;
-      error?: { status?: string; message?: string };
+      error?: { status?: string; message?: string; details?: unknown };
     };
     if (!response.ok || payload.error) {
       throw new SocialServiceError(
         String(payload.error?.status || `http-${response.status}`).toLowerCase().replace(/_/g, '-'),
-        payload.error?.message || 'The social request could not be completed.'
+        payload.error?.message || 'The social request could not be completed.',
+        safeCallableErrorDetails(payload.error?.details)
       );
     }
     return (payload.result ?? payload.data) as Response;

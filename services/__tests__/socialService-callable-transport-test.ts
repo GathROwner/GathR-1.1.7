@@ -135,4 +135,49 @@ describe('social callable transport', () => {
     );
     expect(mockHttpsCallable).not.toHaveBeenCalled();
   });
+
+  it('preserves complete-empty and partial canonical discovery responses', async () => {
+    mockGetSocialAppCheckToken.mockResolvedValue(null);
+    const completeEmpty = { candidates: [], externalLookupStatus: 'complete' };
+    const partialCanonical = {
+      candidates: [{ id: 'venue-1', type: 'gathr_venue', venueId: 'venue-1', name: 'Known venue', address: '1 Main St',
+        category: 'GathR venue', latitude: 46.235, longitude: -63.129, distanceMetres: 0 }],
+      externalLookupStatus: 'partial_unavailable',
+    };
+    mockHttpsCallable
+      .mockReturnValueOnce(jest.fn().mockResolvedValue({ data: completeEmpty }))
+      .mockReturnValueOnce(jest.fn().mockResolvedValue({ data: partialCanonical }));
+
+    await expect(discoverNearbyCheckInPlaces(input)).resolves.toEqual(completeEmpty);
+    await expect(discoverNearbyCheckInPlaces(input)).resolves.toEqual(partialCanonical);
+  });
+
+  it('preserves the typed retryable nearby-public-place outage from the callable SDK', async () => {
+    mockGetSocialAppCheckToken.mockResolvedValue(null);
+    mockHttpsCallable.mockReturnValue(jest.fn().mockRejectedValue({
+      code: 'functions/unavailable',
+      message: 'GathR social is temporarily unavailable. Try again when you are online.',
+      details: { condition: 'nearby_public_places_external_lookup_unavailable', retryable: true },
+    }));
+
+    await expect(discoverNearbyCheckInPlaces(input)).rejects.toMatchObject({
+      code: 'unavailable',
+      details: { condition: 'nearby_public_places_external_lookup_unavailable', retryable: true },
+    });
+  });
+
+  it('keeps an ordinary transport outage generic when no typed condition is provided', async () => {
+    mockGetSocialAppCheckToken.mockResolvedValue('native-app-check-token');
+    jest.spyOn(global, 'fetch').mockResolvedValue({
+      ok: false,
+      status: 503,
+      json: jest.fn().mockResolvedValue({ error: { status: 'UNAVAILABLE', message: 'Provider transport failed.' } }),
+    } as unknown as Response);
+
+    await expect(discoverNearbyCheckInPlaces(input)).rejects.toMatchObject({
+      code: 'unavailable',
+      message: 'GathR social is temporarily unavailable. Try again when you are online.',
+      details: undefined,
+    });
+  });
 });

@@ -190,6 +190,13 @@ export interface NearbyCheckInPlaceCandidate {
 
 export interface NearbyCheckInPlacesResult {
   candidates: NearbyCheckInPlaceCandidate[];
+  /**
+   * `complete` includes a successful empty provider result. When the backend
+   * can still return canonical GathR venues but its public-place lookup is
+   * unavailable, it returns `partial_unavailable` instead of hiding them.
+   * Optional while older callable deployments remain in circulation.
+   */
+  externalLookupStatus?: 'complete' | 'partial_unavailable';
   expiresAt?: SocialTimestamp;
 }
 
