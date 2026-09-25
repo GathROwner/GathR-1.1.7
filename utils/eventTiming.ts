@@ -334,6 +334,21 @@ export const createLegacyTimingContract = (
 export const getEventTiming = (event: LegacyTimingInput & { timing?: EventTiming | null }): EventTiming =>
   event.timing?.version === 2 ? event.timing : createLegacyTimingContract(event);
 
+const scheduleStartLocalScalar = (event: LegacyTimingInput, timing: EventTiming): number => {
+  const startDate = normalizeDateKey(timing.schedule.start.localDate || event.startDate);
+  const startMinutes = parseEventTimeMinutes(timing.schedule.start.localTime || event.startTime) ?? 0;
+  return pointScalar(timing.schedule.start, startDate, event.startTime) ?? localScalar(startDate, startMinutes);
+};
+
+/**
+ * The occurrence's start in event-local schedule minutes, using the same v2 /
+ * legacy resolution and date-only fallback as eligibility. Not a UTC instant;
+ * an unresolved date returns NaN. Recurrence boundaries are not start dates.
+ */
+export const getEventScheduleStartLocalScalar = (
+  event: LegacyTimingInput & { timing?: EventTiming | null }
+): number => scheduleStartLocalScalar(event, getEventTiming(event));
+
 export const getEventScheduleState = (
   event: LegacyTimingInput & { timing?: EventTiming | null },
   now = new Date()
@@ -343,7 +358,7 @@ export const getEventScheduleState = (
   const nowScalar = localScalar(zonedNow.dateKey, zonedNow.minutes);
   const startDate = normalizeDateKey(timing.schedule.start.localDate || event.startDate);
   const startMinutes = parseEventTimeMinutes(timing.schedule.start.localTime || event.startTime) ?? 0;
-  const startScalar = pointScalar(timing.schedule.start, startDate, event.startTime) ?? localScalar(startDate, startMinutes);
+  const startScalar = scheduleStartLocalScalar(event, timing);
   const displayEstimateScalar = estimatePointScalar(timing.estimate, 'display', timing.timeZone);
   const displayEstimateDate = estimateLocalDate(timing.estimate, 'display', timing.timeZone, startDate);
   const cutoffScalar =

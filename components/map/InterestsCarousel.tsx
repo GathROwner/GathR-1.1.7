@@ -21,7 +21,7 @@ import FamilyFriendlyBadge from '../common/FamilyFriendlyBadge';
 import { EventTimingBadge } from '../common/EventTimingBadge';
 import EventImageLightbox from './EventImageLightbox';
 import { useClusterInteractionStore } from '../../store/clusterInteractionStore';
-import { doesEventMatchInterestCarouselActiveCategory } from '../../utils/interestCarouselFilterUtils';
+import { getInterestCarouselEvents } from '../../utils/interestCarouselOrder';
 import { isFamilyFriendlyInterest } from '../../utils/familyFriendly';
 import { registerMapTraceSampler, traceMapEvent } from '../../utils/mapTrace';
 import {
@@ -434,9 +434,7 @@ const InterestsCarousel: React.FC = () => {
   }, [filterCriteria, interestCarouselFilter]);
 
   const categoryCarouselEvents = useMemo(() => {
-    return onScreenEvents.filter((event) =>
-      doesEventMatchInterestCarouselActiveCategory(event, carouselFilterCriteria)
-    );
+    return getInterestCarouselEvents(onScreenEvents, carouselFilterCriteria);
   }, [onScreenEvents, carouselFilterCriteria]);
 
   // Only activate carousel for interest-pills filters, not filter-pills
