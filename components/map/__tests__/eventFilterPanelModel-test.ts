@@ -1,8 +1,8 @@
-import { EVENT_CATEGORIES } from '../../../constants/eventCategories';
 import { TimeFilterType } from '../../../types/filter';
 import {
   EVENT_TIME_OPTIONS, formatFilterCount, getEventCategoryOptions,
   getEventFilterReset, getEventTimeColumns, isUpcomingDatesVisible,
+  shouldShowEventCategoryScrollCue,
 } from '../eventFilterPanelModel';
 
 describe('Events filter panel choices', () => {
@@ -22,12 +22,24 @@ describe('Events filter panel choices', () => {
     expect(formatFilterCount('Live Music', 28)).toBe('Live Music (28)');
   });
 
-  it('keeps the full event taxonomy, plus current data and selected categories', () => {
-    const options = getEventCategoryOptions({ 'Live Music': 18, 'Local Festival': 0 }, 'Retired Festival');
-    expect(options.slice(0, EVENT_CATEGORIES.length)).toEqual(EVENT_CATEGORIES);
-    expect(options).toContain('Local Festival');
-    expect(options).toContain('Retired Festival');
+  it('orders available categories by count and hides unselected zero-count options', () => {
+    const options = getEventCategoryOptions({
+      'Live Music': 18, Sports: 24, 'Local Festival': 7, Comedy: 0,
+    });
+    expect(options).toEqual(['Sports', 'Live Music', 'Local Festival']);
+    expect(options).not.toContain('Comedy');
+    expect(options).not.toContain('Trivia Night');
     expect(options.filter(option => option === 'Live Music')).toHaveLength(1);
+  });
+
+  it('keeps a selected zero-count category visible and first', () => {
+    expect(getEventCategoryOptions({ 'Live Music': 18, Comedy: 0 }, 'Comedy'))
+      .toEqual(['Comedy', 'Live Music']);
+  });
+
+  it('shows the category scroll cue only beyond three two-column rows', () => {
+    expect(shouldShowEventCategoryScrollCue(6)).toBe(false);
+    expect(shouldShowEventCategoryScrollCue(7)).toBe(true);
   });
 
   it('resets Today, category and Upcoming refinement together', () => {
