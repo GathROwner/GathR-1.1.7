@@ -349,6 +349,30 @@ export const getEventScheduleStartLocalScalar = (
   event: LegacyTimingInput & { timing?: EventTiming | null }
 ): number => scheduleStartLocalScalar(event, getEventTiming(event));
 
+/** Active span of this resolved occurrence, using the same endpoint authority as
+ * schedule eligibility. Recurrence metadata never extends an occurrence. */
+export const getEventScheduleSpanLocalScalars = (
+  event: LegacyTimingInput & { timing?: EventTiming | null }
+): { start: number; end: number } => {
+  const timing = getEventTiming(event);
+  const start = scheduleStartLocalScalar(event, timing);
+  const point = timing.schedule.end;
+  let end: number | null = null;
+  if (timing.scheduleKind === 'all_day' || point.status === 'all_day') {
+    const date = estimateLocalDate(timing.estimate, 'display', timing.timeZone,
+      timing.schedule.start.localDate || event.startDate);
+    end = localScalar(date, 1439);
+  } else if (point.status === 'observed' || point.status === 'until_close' || hasDisplayableEstimatedPoint(point)) {
+    end = pointScalar(point, point.localDate || event.endDate || event.startDate, point.localTime || event.endTime);
+  }
+  if (end === null && hasDisplayableEstimate(timing.estimate)) {
+    end = estimatePointScalar(timing.estimate, 'display', timing.timeZone);
+  }
+  // Unknown endings only retain their established discovery window.
+  if (end === null) end = estimatePointScalar(timing.estimate, 'cutoff', timing.timeZone);
+  return { start, end: Math.max(start, end ?? start + DEFAULT_UNKNOWN_END_CUTOFF_MINUTES) };
+};
+
 export const getEventScheduleState = (
   event: LegacyTimingInput & { timing?: EventTiming | null },
   now = new Date()

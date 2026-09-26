@@ -1,3 +1,4 @@
+import { createEventTimeContext } from '../../utils/mapEventFilters';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Animated, FlatList, StyleSheet, Text, TouchableOpacity, View, PanResponder } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -191,10 +192,11 @@ const InterestFilterPills: React.FC = () => {
   }, [clusters]);
 
   const newContentCountByInterestKey = useMemo(() => {
+    const timeContext = createEventTimeContext();
     const counts: Record<string, number> = {};
 
     const eligibleOnScreenEvents = onScreenEvents.filter((event) =>
-      doesEventMatchInterestCarouselBaseFilters(event, filterCriteria)
+      doesEventMatchInterestCarouselBaseFilters(event, filterCriteria, timeContext)
     );
 
     eligibleOnScreenEvents.forEach((event) => {

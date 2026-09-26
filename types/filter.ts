@@ -17,6 +17,13 @@ export enum TimeFilterType {
   ALL = 'all'
 }
 
+/** Device-local calendar dates. Custom endpoints are inclusive. */
+export type UpcomingDateFilter =
+  | { kind: 'any' }
+  | { kind: 'weekend' }
+  | { kind: 'next7' }
+  | { kind: 'custom'; startDate: string; endDate: string };
+
 /**
  * Type-specific filter criteria
  * Contains filter settings specific to a content type (events or specials)
@@ -24,6 +31,9 @@ export enum TimeFilterType {
 export interface TypeFilterCriteria {
   // Filter by time window
   timeFilter: TimeFilterType;
+
+  // Events only; meaningful only while Upcoming is selected.
+  upcomingDate?: UpcomingDateFilter;
 
   // Filter by category
   category?: string;

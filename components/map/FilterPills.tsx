@@ -1,3 +1,5 @@
+import UpcomingDateOptions from './UpcomingDateOptions';
+import { formatUpcomingDateLabel } from '../../utils/upcomingDateWindow';
 import React, { useState, useRef, useMemo } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Animated, Platform, PanResponder, PanResponderGestureState, Easing } from 'react-native';
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
@@ -166,6 +168,7 @@ const FilterPills = () => {
     events: getMapScheduleStateMetricSnapshot('events_pill_counts', traceGestureSessionId),
     specials: getMapScheduleStateMetricSnapshot('specials_pill_counts', traceGestureSessionId),
   });
+  const [upcomingCategoryExpanded, setUpcomingCategoryExpanded] = React.useState(false);
   const filterCriteria = useMapStore((state) => state.filterCriteria);
   const setFilterCriteria = useMapStore((state) => state.setFilterCriteria);
   const setTypeFilters = useMapStore((state) => state.setTypeFilters);
@@ -1440,14 +1443,6 @@ React.useEffect(() => {
     }
   };
 
-  const getPillDisplayText = (type: 'events' | 'specials'): string => {
-    const timeFilter = type === 'events' 
-      ? filterCriteria.eventFilters.timeFilter
-      : filterCriteria.specialFilters.timeFilter;
-    const timeText = getTimeFilterDisplayText(timeFilter);
-    return timeText || (type === 'events' ? 'Events' : 'Specials');
-  };
-
   const HIDE_SENTINEL = '__FILTER_PILLS_HIDE__';
 
   const isVisibleCategory = (category?: string): category is string =>
@@ -1723,7 +1718,7 @@ React.useEffect(() => {
                 </Text>
                 <View style={[styles.stackedLabelDivider, !filterCriteria.showEvents && styles.inactiveDivider]} />
                 <Text numberOfLines={1} style={[styles.stackedLabelBottom, !filterCriteria.showEvents && styles.inactiveText]}>
-                  {getTimeFilterDisplayText(filterCriteria.eventFilters.timeFilter) || 'All'}
+                  {filterCriteria.eventFilters.timeFilter === TimeFilterType.UPCOMING ? formatUpcomingDateLabel(filterCriteria.eventFilters.upcomingDate) : getTimeFilterDisplayText(filterCriteria.eventFilters.timeFilter) || 'All'}
                 </Text>
               </View>
               {isVisibleCategory(filterCriteria.eventFilters.category) && (
@@ -2117,21 +2112,37 @@ React.useEffect(() => {
             selected={filterCriteria.eventFilters.timeFilter}
             onSelect={(timeFilter) => {
               const newFilter = filterCriteria.eventFilters.timeFilter === timeFilter ? TimeFilterType.ALL : timeFilter;
+              setUpcomingCategoryExpanded(false);
               setTypeFilters('event', { timeFilter: newFilter });
             }}
             counts={eventFilterCounts}
           />
         </View>
+        {filterCriteria.eventFilters.timeFilter === TimeFilterType.UPCOMING && (
+          <UpcomingDateOptions events={onScreenEvents} criteria={filterCriteria}
+            onSelect={upcomingDate => { setUpcomingCategoryExpanded(false); setTypeFilters('event', { upcomingDate }); }} />
+        )}
         <View style={[styles.filterSection, styles.lastFilterSection]}>
           <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Category</Text>
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel="Expand or collapse event categories"
+              onPress={() => setUpcomingCategoryExpanded(value => !value)}
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1, paddingVertical: 4 }}>
+              <Text style={styles.sectionTitle}>Category</Text>
+              {filterCriteria.eventFilters.timeFilter === TimeFilterType.UPCOMING && <>
+                <Text numberOfLines={1} style={{ fontSize: 11, color: '#526880', flexShrink: 1 }}>
+                  {isVisibleCategory(filterCriteria.eventFilters.category) ? filterCriteria.eventFilters.category : 'All categories'}
+                </Text>
+                <Ionicons name={upcomingCategoryExpanded ? 'chevron-up' : 'chevron-down'} size={15} color="#526880" />
+              </>}
+            </TouchableOpacity>
             {filterCriteria.eventFilters.category && (
               <TouchableOpacity onPress={() => setTypeFilters('event', { category: undefined })}>
                 <Text style={styles.clearText}>Clear</Text>
               </TouchableOpacity>
             )}
           </View>
-          <CategoryFilterOptions type="event" counts={eventCategoryCounts} />
+          {(filterCriteria.eventFilters.timeFilter !== TimeFilterType.UPCOMING || upcomingCategoryExpanded) &&
+            <CategoryFilterOptions type="event" counts={eventCategoryCounts} />}
         </View>
       </Animated.View>
       )}

@@ -1,9 +1,8 @@
 import type { Cluster, Event, TimeStatus, Venue } from '../types/events';
 import type { FilterCriteria, TypeFilterCriteria } from '../types/filter';
 import type { InterestCarouselFilter } from '../types/store';
-import { TimeFilterType } from '../types/filter';
-import { getEventTimeStatus, isEventHappeningToday, isEventNowWithTiming } from './dateUtils';
-import { isEventPast } from './eventExpiry';
+import { createEventTimeContext, doesEventMatchTypeFilters, eventMatchesSearch, type EventTimeContext } from './mapEventFilters';
+import { getEventTimeStatus } from './dateUtils';
 import { CITY_EVENTS_CATEGORY, isAreaExperienceEvent, isRouteEvent } from './locationScope';
 import {
   doesEventMatchCategoryOrFacet,
@@ -25,52 +24,18 @@ const isEventTypeVisible = (event: Event, criteria: FilterCriteria): boolean => 
 
 export const doesEventMatchInterestCarouselBaseFilters = (
   event: Event,
-  criteria: FilterCriteria
-): boolean => {
-  // Ended events never match, regardless of the active time filter
-  if (isEventPast(event)) {
-    return false;
-  }
-
-  if (!isEventTypeVisible(event, criteria)) {
-    return false;
-  }
-
-  const typeFilters = getTypeFiltersForEvent(event, criteria);
-
-  if (typeFilters.timeFilter === TimeFilterType.NOW) {
-    const isNow = isEventNowWithTiming(event);
-    if (!isNow) return false;
-  } else if (typeFilters.timeFilter === TimeFilterType.TODAY) {
-    if (!isEventHappeningToday(event)) return false;
-  } else if (typeFilters.timeFilter === TimeFilterType.TOMORROW) {
-    const eventDate = new Date(`${event.startDate}T00:00:00`);
-    const tomorrow = new Date();
-    tomorrow.setHours(0, 0, 0, 0);
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    if (eventDate.getTime() !== tomorrow.getTime()) return false;
-  } else if (typeFilters.timeFilter === TimeFilterType.UPCOMING) {
-    if (getEventTimeStatus(event) !== 'future') return false;
-  }
-
-  if (typeFilters.search && typeFilters.search.trim() !== '') {
-    const searchTerm = typeFilters.search.toLowerCase().trim();
-    const matchesSearch =
-      event.title.toLowerCase().includes(searchTerm) ||
-      event.description.toLowerCase().includes(searchTerm) ||
-      event.venue.toLowerCase().includes(searchTerm);
-
-    if (!matchesSearch) return false;
-  }
-
-  return true;
-};
+  criteria: FilterCriteria,
+  context: EventTimeContext = createEventTimeContext()
+): boolean => isEventTypeVisible(event, criteria) &&
+  doesEventMatchTypeFilters(event, { ...getTypeFiltersForEvent(event, criteria), category: undefined }, context) &&
+  eventMatchesSearch(event, criteria.search);
 
 export const doesEventMatchInterestCarouselActiveCategory = (
   event: Event,
-  criteria: FilterCriteria
+  criteria: FilterCriteria,
+  context: EventTimeContext = createEventTimeContext()
 ): boolean => {
-  if (!doesEventMatchInterestCarouselBaseFilters(event, criteria)) {
+  if (!doesEventMatchInterestCarouselBaseFilters(event, criteria, context)) {
     return false;
   }
 

@@ -1,3 +1,4 @@
+import { createEventTimeContext } from './mapEventFilters';
 import type { Event } from '../types/events';
 import { TimeFilterType, type FilterCriteria } from '../types/filter';
 import { getEventScheduleStartLocalScalar } from './eventTiming';
@@ -8,8 +9,9 @@ export const getInterestCarouselEvents = (
   onScreenEvents: Event[],
   criteria: FilterCriteria
 ): Event[] => {
+  const context = createEventTimeContext();
   const cards = onScreenEvents.filter((event) =>
-    doesEventMatchInterestCarouselActiveCategory(event, criteria)
+    doesEventMatchInterestCarouselActiveCategory(event, criteria, context)
   );
   if (criteria.eventFilters.timeFilter !== TimeFilterType.UPCOMING) return cards;
 
