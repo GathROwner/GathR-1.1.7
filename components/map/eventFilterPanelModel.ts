@@ -48,6 +48,15 @@ export const getFilterCategoryOptions = (
 export const getEventCategoryOptions = (counts: Record<string, number>, selected?: string) =>
   getFilterCategoryOptions('event', counts, selected);
 
+export const getAvailableFilterCategoryCount = (
+  type: 'event' | 'special', counts: Record<string, number>
+) => getFilterCategoryOptions(type, counts).length;
+
+export const formatCategoryAvailability = (availableCount: number, selected?: string) => {
+  const availability = `${availableCount} ${availableCount === 1 ? 'category' : 'categories'} available`;
+  return selected ? `${selected} selected · ${availability}` : `${availability} · Tap to expand`;
+};
+
 export const shouldShowEventCategoryScrollCue = (optionCount: number) =>
   Math.ceil(optionCount / EVENT_CATEGORY_COLUMNS) > EVENT_CATEGORY_VISIBLE_ROWS;
 

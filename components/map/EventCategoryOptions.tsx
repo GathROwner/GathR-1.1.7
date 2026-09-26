@@ -37,7 +37,7 @@ export default function EventCategoryOptions({ counts, allCount, maxHeight, type
   const categories = getFilterCategoryOptions(type, counts, activeCategory);
   const isSpecial = type === 'special';
   const selectedColor = isSpecial ? '#248542' : '#0874D5';
-  const options = [{ label: 'All categories', count: allCount, category: undefined },
+  const options = [{ label: 'All', count: allCount, category: undefined },
     ...categories.map(category => ({ label: category, count: counts[category] ?? 0, category }))];
   const hasOverflow = shouldShowEventCategoryScrollCue(options.length);
   const [contentHeight, setContentHeight] = useState(maxHeight);

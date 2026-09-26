@@ -7,8 +7,11 @@ import * as Haptics from 'expo-haptics';
 import { useMapStore } from '../../store';
 import { TimeFilterType } from '../../types';
 import EventTimeOptions from './EventTimeOptions';
-import EventCategoryOptions, { getEventCategoryIcon } from './EventCategoryOptions';
-import { formatFilterCount, getEventFilterReset, getEventTimeColumns, isUpcomingDatesVisible } from './eventFilterPanelModel';
+import EventCategoryOptions from './EventCategoryOptions';
+import {
+  formatCategoryAvailability, getAvailableFilterCategoryCount, getEventFilterReset,
+  getEventTimeColumns, isUpcomingDatesVisible,
+} from './eventFilterPanelModel';
 import { createEventTimeContext, doesEventMatchTypeFilters, eventMatchesSearch } from '../../utils/mapEventFilters';
 import {
   MAP_TRACE_ENABLED,
@@ -1130,6 +1133,8 @@ React.useEffect(() => {
   const specialFilterCounts = getTimeFilterCounts('special');
   const eventCategoryCounts = getCategoryFilterCounts('event');
   const specialCategoryCounts = getCategoryFilterCounts('special');
+  const availableEventCategoryCount = getAvailableFilterCategoryCount('event', eventCategoryCounts);
+  const availableSpecialCategoryCount = getAvailableFilterCategoryCount('special', specialCategoryCounts);
 
   const visibleEvents = eventFilterCounts[filterCriteria.eventFilters.timeFilter];
   const allEventCategoryCount = useMemo(() => {
@@ -2012,19 +2017,22 @@ React.useEffect(() => {
             onSelect={upcomingDate => setTypeFilters('event', { upcomingDate })} />
         )}
         <View style={styles.eventCategorySection}>
-          <TouchableOpacity accessibilityRole="button" accessibilityLabel="Expand or collapse event categories"
+          <TouchableOpacity accessibilityRole="button"
+              accessibilityLabel={`Category, ${formatCategoryAvailability(
+                availableEventCategoryCount,
+                isVisibleCategory(filterCriteria.eventFilters.category)
+                  ? filterCriteria.eventFilters.category : undefined
+              )}`}
               accessibilityState={{ expanded: upcomingCategoryExpanded }}
               onPress={() => setUpcomingCategoryExpanded(value => !value)}
               style={styles.eventCategoryHeader}>
             <Text style={styles.eventSectionTitle}>Category</Text>
             {!upcomingCategoryExpanded && <View style={styles.eventCategorySummary}>
-              {isVisibleCategory(filterCriteria.eventFilters.category) &&
-                <MaterialIcons name={getEventCategoryIcon(filterCriteria.eventFilters.category)} size={17} color="#263F68" />}
               <Text numberOfLines={1} style={styles.eventCategorySummaryText}>
-                {formatFilterCount(
-                  isVisibleCategory(filterCriteria.eventFilters.category) ? filterCriteria.eventFilters.category : 'All categories',
+                {formatCategoryAvailability(
+                  availableEventCategoryCount,
                   isVisibleCategory(filterCriteria.eventFilters.category)
-                    ? eventCategoryCounts[filterCriteria.eventFilters.category] ?? 0 : allEventCategoryCount
+                    ? filterCriteria.eventFilters.category : undefined
                 )}
               </Text>
             </View>}
@@ -2075,20 +2083,22 @@ React.useEffect(() => {
           />
         </View>
         <View style={styles.eventCategorySection}>
-          <TouchableOpacity accessibilityRole="button" accessibilityLabel="Expand or collapse special categories"
+          <TouchableOpacity accessibilityRole="button"
+              accessibilityLabel={`Category, ${formatCategoryAvailability(
+                availableSpecialCategoryCount,
+                isVisibleCategory(filterCriteria.specialFilters.category)
+                  ? filterCriteria.specialFilters.category : undefined
+              )}`}
               accessibilityState={{ expanded: specialCategoryExpanded }}
               onPress={() => setSpecialCategoryExpanded(value => !value)}
               style={styles.eventCategoryHeader}>
             <Text style={styles.eventSectionTitle}>Category</Text>
             {!specialCategoryExpanded && <View style={styles.eventCategorySummary}>
-              {isVisibleCategory(filterCriteria.specialFilters.category) &&
-                <MaterialIcons name={getEventCategoryIcon(filterCriteria.specialFilters.category)} size={17} color="#263F68" />}
               <Text numberOfLines={1} style={styles.eventCategorySummaryText}>
-                {formatFilterCount(
+                {formatCategoryAvailability(
+                  availableSpecialCategoryCount,
                   isVisibleCategory(filterCriteria.specialFilters.category)
-                    ? filterCriteria.specialFilters.category : 'All categories',
-                  isVisibleCategory(filterCriteria.specialFilters.category)
-                    ? specialCategoryCounts[filterCriteria.specialFilters.category] ?? 0 : allSpecialCategoryCount
+                    ? filterCriteria.specialFilters.category : undefined
                 )}
               </Text>
             </View>}
@@ -2290,7 +2300,7 @@ const styles = StyleSheet.create({
   eventCategorySection: { borderTopWidth: 1, borderTopColor: '#D9E3EF', paddingTop: 5 },
   eventCategoryHeader: { minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 8 },
   eventCategorySummary: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 5 },
-  eventCategorySummaryText: { color: '#34496C', fontSize: 12, flexShrink: 1 },
+  eventCategorySummaryText: { color: '#526880', fontSize: 12, fontWeight: '500', flexShrink: 1 },
   eventSelectedHint: { color: '#62749A', fontSize: 11, flex: 1 },
   eventCategoryChevron: { marginLeft: 'auto' },
   filterSection: {

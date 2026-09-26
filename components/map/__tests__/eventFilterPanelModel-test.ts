@@ -1,7 +1,8 @@
 import { TimeFilterType } from '../../../types/filter';
 import {
-  EVENT_TIME_OPTIONS, formatFilterCount, getEventCategoryOptions, getFilterCategoryOptions,
-  getEventFilterReset, getEventTimeColumns, isUpcomingDatesVisible,
+  EVENT_TIME_OPTIONS, formatCategoryAvailability, formatFilterCount, getAvailableFilterCategoryCount,
+  getEventCategoryOptions, getFilterCategoryOptions, getEventFilterReset, getEventTimeColumns,
+  isUpcomingDatesVisible,
   shouldShowEventCategoryScrollCue,
 } from '../eventFilterPanelModel';
 
@@ -43,6 +44,16 @@ describe('Events filter panel choices', () => {
     })).toEqual(['Drink Special', 'Happy Hour']);
     expect(getFilterCategoryOptions('special', { 'Happy Hour': 3, 'Food Special': 0 }, 'Food Special'))
       .toEqual(['Food Special', 'Happy Hour']);
+  });
+
+  it('summarizes real available categories without repeating result counts', () => {
+    expect(getAvailableFilterCategoryCount('special', {
+      'Happy Hour': 3, 'Food Special': 10, 'Drink Special': 0,
+    })).toBe(2);
+    expect(formatCategoryAvailability(2)).toBe('2 categories available · Tap to expand');
+    expect(formatCategoryAvailability(2, 'Happy Hour'))
+      .toBe('Happy Hour selected · 2 categories available');
+    expect(formatCategoryAvailability(1)).toBe('1 category available · Tap to expand');
   });
 
   it('shows the category scroll cue only beyond three two-column rows', () => {
