@@ -723,13 +723,19 @@ let lastUpcomingEvaluationDay = '';
 // A callout holds a snapshot of its cluster. Close that snapshot when its date
 // window changes so it cannot retain unrelated occurrences from the previous filter.
 const dateSelectionReset = (previous: FilterCriteria, next: FilterCriteria): Partial<MapState> => {
-  const before = previous.eventFilters;
-  const after = next.eventFilters;
-  const upcomingInvolved = before.timeFilter === TimeFilterType.UPCOMING || after.timeFilter === TimeFilterType.UPCOMING;
-  const changed = before.timeFilter !== after.timeFilter ||
-    JSON.stringify(before.upcomingDate) !== JSON.stringify(after.upcomingDate) ||
-    lastUpcomingEvaluationDay !== createEventTimeContext().todayKey;
-  return upcomingInvolved && changed ? {
+  const currentDay = createEventTimeContext().todayKey;
+  const changed = ([before, after]: [TypeFilterCriteria, TypeFilterCriteria]) => {
+    const upcomingInvolved = before.timeFilter === TimeFilterType.UPCOMING ||
+      after.timeFilter === TimeFilterType.UPCOMING;
+    return upcomingInvolved && (before.timeFilter !== after.timeFilter ||
+      JSON.stringify(before.upcomingDate) !== JSON.stringify(after.upcomingDate) ||
+      lastUpcomingEvaluationDay !== currentDay);
+  };
+  const filterPairs: [TypeFilterCriteria, TypeFilterCriteria][] = [
+    [previous.eventFilters, next.eventFilters],
+    [previous.specialFilters, next.specialFilters],
+  ];
+  return filterPairs.some(changed) ? {
     selectedVenue: null, selectedVenues: [], selectedCluster: null, preferredCalloutVenueLocationKey: null,
   } : {};
 };
@@ -834,8 +840,8 @@ const calculateFilterCountBundle = (
     const facts = getEventFilterTimeFacts(event, timeContext, traceCaller);
     if (facts.past) continue;
     const { now: isNow, today: isToday, tomorrow: isTomorrow } = facts;
-    const isUpcoming = facts.upcoming && (eventType !== 'event' ||
-      matchesUpcomingDate(event, typeFilters.upcomingDate, timeContext));
+    const isUpcoming = facts.upcoming &&
+      matchesUpcomingDate(event, typeFilters.upcomingDate, timeContext);
 
     const categoryFilter = typeFilters.category?.toLowerCase();
     if (!categoryFilter || doesEventMatchCategoryOrFacet(event, categoryFilter)) {
@@ -1243,10 +1249,14 @@ export const useMapStore = create<MapState>((set, get) => ({
   pruneExpiredEvents: () => {
     const timeContext = createEventTimeContext();
     const criteria = get().filterCriteria;
-    const normalized = normalizeUpcomingTypeFilters(criteria.eventFilters, timeContext.todayKey);
-    if (normalized !== criteria.eventFilters ||
-        (criteria.eventFilters.timeFilter === TimeFilterType.UPCOMING && lastUpcomingEvaluationDay !== timeContext.todayKey)) {
-      get().setFilterCriteria({ eventFilters: normalized });
+    const normalizedEvents = normalizeUpcomingTypeFilters(criteria.eventFilters, timeContext.todayKey);
+    const normalizedSpecials = normalizeUpcomingTypeFilters(criteria.specialFilters, timeContext.todayKey);
+    const upcomingDayChanged = lastUpcomingEvaluationDay !== timeContext.todayKey &&
+      (criteria.eventFilters.timeFilter === TimeFilterType.UPCOMING ||
+        criteria.specialFilters.timeFilter === TimeFilterType.UPCOMING);
+    if (normalizedEvents !== criteria.eventFilters || normalizedSpecials !== criteria.specialFilters ||
+        upcomingDayChanged) {
+      get().setFilterCriteria({ eventFilters: normalizedEvents, specialFilters: normalizedSpecials });
     }
     const state = get();
 
@@ -1436,6 +1446,7 @@ export const useMapStore = create<MapState>((set, get) => ({
     };
     
     updatedCriteria.eventFilters = normalizeUpcomingTypeFilters(updatedCriteria.eventFilters);
+    updatedCriteria.specialFilters = normalizeUpcomingTypeFilters(updatedCriteria.specialFilters);
     // Set the filters changed flag to true
     filtersChanged = true;
 
@@ -1475,7 +1486,11 @@ export const useMapStore = create<MapState>((set, get) => ({
       };
     });
 
-    updatedCriteria = { ...updatedCriteria, eventFilters: normalizeUpcomingTypeFilters(updatedCriteria.eventFilters) };
+    updatedCriteria = {
+      ...updatedCriteria,
+      eventFilters: normalizeUpcomingTypeFilters(updatedCriteria.eventFilters),
+      specialFilters: normalizeUpcomingTypeFilters(updatedCriteria.specialFilters),
+    };
 
     if (JSON.stringify(updatedCriteria) === JSON.stringify(currentCriteria)) {
       return;

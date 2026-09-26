@@ -1,7 +1,7 @@
 import { useMapStore, createEventTimeContext, doesEventMatchTypeFilters } from '../mapStore';
 import type { Event } from '../../types/events';
 import { DEFAULT_FILTER_CRITERIA, TimeFilterType, type UpcomingDateFilter } from '../../types/filter';
-import { countUpcomingDateEvents } from '../../utils/mapEventFilters';
+import { countUpcomingDateEvents, countUpcomingDateItems } from '../../utils/mapEventFilters';
 import { getInterestCarouselEvents } from '../../utils/interestCarouselOrder';
 import { doesEventMatchInterestCarouselBaseFilters } from '../../utils/interestCarouselFilterUtils';
 import { createLegacyTimingContract } from '../../utils/eventTiming';
@@ -145,8 +145,37 @@ describe('one Upcoming filtering contract', () => {
     expect(ids(useMapStore.getState().filteredEvents)).toEqual(['next']);
   });
 
-  it('ignores an event-only date refinement on Specials', () => {
-    const special = makeEvent('special', '2026-10-05', { type: 'special' });
-    expect(doesEventMatchTypeFilters(special, { timeFilter: TimeFilterType.UPCOMING, upcomingDate: custom })).toBe(true);
+  it('applies the same Upcoming date refinement and counts to Specials', () => {
+    const specials = [
+      makeEvent('special-in', '2026-09-28', { type: 'special', category: 'Food Special' }),
+      makeEvent('special-out', '2026-10-05', { type: 'special', category: 'Food Special' }),
+      makeEvent('special-today', '2026-09-25', { type: 'special', category: 'Food Special' }),
+    ];
+    useMapStore.setState({
+      allEvents: specials,
+      events: specials,
+      onScreenEvents: specials,
+      filteredEvents: [],
+      viewportEvents: specials,
+      outsideViewportEvents: [],
+      filterCriteria: {
+        ...DEFAULT_FILTER_CRITERIA,
+        showEvents: false,
+        showSpecials: true,
+        eventFilters: { ...DEFAULT_FILTER_CRITERIA.eventFilters },
+        specialFilters: { timeFilter: TimeFilterType.UPCOMING, category: 'Food Special' },
+      },
+    });
+
+    useMapStore.getState().setTypeFilters('special', { upcomingDate: custom });
+    const state = useMapStore.getState();
+    expect(ids(state.filteredEvents)).toEqual(['special-in']);
+    expect(state.getTimeFilterCounts('special').upcoming).toBe(1);
+    expect(countUpcomingDateItems(specials, state.filterCriteria, { kind: 'any' }, 'special')).toBe(2);
+    expect(countUpcomingDateItems(specials, state.filterCriteria, custom, 'special')).toBe(1);
+
+    useMapStore.getState().setTypeFilters('special', { timeFilter: TimeFilterType.TODAY });
+    expect(useMapStore.getState().filterCriteria.specialFilters.upcomingDate).toBeUndefined();
+    expect(ids(useMapStore.getState().filteredEvents)).toEqual(['special-today']);
   });
 });

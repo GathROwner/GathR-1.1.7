@@ -1,6 +1,6 @@
 # Upcoming date refinement
 
-The Events panel owns this refinement; no extra map pill or native dependency is required.
+The Events and Specials panels share this refinement; no extra map pill or native dependency is required.
 
 ## Calendar rules
 
@@ -14,13 +14,13 @@ The Events panel owns this refinement; no extra map pill or native dependency is
 
 `utils/mapEventFilters.ts` supplies schedule context, time/category/search matching, and pending date counts. Map store filtering, cached time/category counts, interest side-pill counts, carousel filtering, and Area lightboxes use it. Schedule evaluations are shared through the existing schedule cache; window resolution is cached within each evaluation context.
 
-The selected Upcoming chip and Events numerator reflect the applied refinement. Other When chips show the results of switching to that time filter. Date choices ignore the currently applied window while retaining category, search, and type visibility. Choose date initially counts tomorrow, or the applied custom selection, matching the calendar's initial pending selection. The existing Events denominator remains the viewport total.
+The selected Upcoming chip and the corresponding Events or Specials numerator reflect the applied refinement. Other When chips show the results of switching to that time filter. Date choices ignore the currently applied window while retaining category, search, and type visibility. Choose date initially counts tomorrow, or the applied custom selection, matching the calendar's initial pending selection. The existing denominator remains the viewport total.
 
 Category counts retain their existing faceted behavior: selected time/date and search apply, while the current category is excluded so users can switch categories. Interest carousel contents retain the accepted chronological ordering. Clusters are built from the filtered event set, so callouts do not inherit out-of-range events from nearby venues. Date changes close a prior callout snapshot.
 
 ## Interaction
 
-Upcoming reveals a compact two-column date-choice section. Category is initially collapsed and can be expanded. The custom-date sheet applies only on **Show N events**; closing it discards pending changes. Its count updates against the same viewport and other filters. Single-day/range modes and month navigation use plain React Native components.
+Upcoming reveals a compact two-column date-choice section in either panel. Category is initially collapsed and can be expanded. The custom-date sheet applies only on **Show N events** or **Show N specials**; closing it discards pending changes. Its count updates against the same viewport and other filters. Single-day/range modes and month navigation use plain React Native components. Events use blue selection styling and Specials use green.
 
 ## Verification
 

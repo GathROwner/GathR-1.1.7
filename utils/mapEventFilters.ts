@@ -65,7 +65,7 @@ export const matchesTimeFacts = (
     case TimeFilterType.TODAY: return facts.today;
     case TimeFilterType.TOMORROW: return facts.tomorrow;
     case TimeFilterType.UPCOMING: return facts.upcoming &&
-      (event.type !== 'event' || matchesUpcomingDate(event, filters.upcomingDate, context));
+      matchesUpcomingDate(event, filters.upcomingDate, context);
     default: return true;
   }
 };
@@ -85,9 +85,16 @@ export const doesEventMatchTypeFilters = (
 export const countUpcomingDateEvents = (
   events: Event[], criteria: FilterCriteria, selection: UpcomingDateFilter,
   context = createEventTimeContext()
+): number => countUpcomingDateItems(events, criteria, selection, 'event', context);
+
+export const countUpcomingDateItems = (
+  events: Event[], criteria: FilterCriteria, selection: UpcomingDateFilter,
+  type: 'event' | 'special', context = createEventTimeContext()
 ): number => {
-  if (!criteria.showEvents) return 0;
-  const filters = { ...criteria.eventFilters, timeFilter: TimeFilterType.UPCOMING, upcomingDate: selection };
-  return events.reduce((count, event) => count + Number(event.type === 'event' &&
+  const visible = type === 'event' ? criteria.showEvents : criteria.showSpecials;
+  if (!visible) return 0;
+  const currentFilters = type === 'event' ? criteria.eventFilters : criteria.specialFilters;
+  const filters = { ...currentFilters, timeFilter: TimeFilterType.UPCOMING, upcomingDate: selection };
+  return events.reduce((count, event) => count + Number(event.type === type &&
     doesEventMatchTypeFilters(event, filters, context) && eventMatchesSearch(event, criteria.search)), 0);
 };

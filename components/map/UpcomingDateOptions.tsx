@@ -5,20 +5,29 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { Event } from '../../types/events';
 import type { FilterCriteria, UpcomingDateFilter } from '../../types/filter';
 import { addDaysToDateKey } from '../../utils/eventExpiry';
-import { countUpcomingDateEvents, createEventTimeContext } from '../../utils/mapEventFilters';
+import { countUpcomingDateItems, createEventTimeContext } from '../../utils/mapEventFilters';
 import { formatLocalDateKey, formatUpcomingDateLabel, localDateFromKey, normalizeUpcomingDate } from '../../utils/upcomingDateWindow';
 
 type CustomDate = Extract<UpcomingDateFilter, { kind: 'custom' }>;
-type Props = { events: Event[]; criteria: FilterCriteria; onSelect: (selection: UpcomingDateFilter) => void };
+type ContentType = 'event' | 'special';
+type Props = {
+  type?: ContentType;
+  events: Event[];
+  criteria: FilterCriteria;
+  onSelect: (selection: UpcomingDateFilter) => void;
+};
 
 const defaultCustomDate = (today: string): CustomDate => {
   const tomorrow = addDaysToDateKey(today, 1);
   return { kind: 'custom', startDate: tomorrow, endDate: tomorrow };
 };
 
-const CalendarSheet = ({ events, criteria, initial, onApply, onClose }: Omit<Props, 'onSelect'> & {
+const CalendarSheet = ({ type, events, criteria, initial, onApply, onClose }: Omit<Props, 'onSelect'> & {
+  type: ContentType;
   initial: CustomDate; onApply: (selection: CustomDate) => void; onClose: () => void;
 }) => {
+  const isSpecial = type === 'special';
+  const accent = isSpecial ? '#248542' : '#1976D2';
   const insets = useSafeAreaInsets();
   const today = formatLocalDateKey(new Date());
   const [mode, setMode] = useState<'day' | 'range'>(initial.startDate === initial.endDate ? 'day' : 'range');
@@ -30,8 +39,9 @@ const CalendarSheet = ({ events, criteria, initial, onApply, onClose }: Omit<Pro
   });
   const pending: CustomDate = { kind: 'custom', startDate: start, endDate: end || start };
   const valid = start > today && !!end && end >= start;
-  const count = useMemo(() => valid ? countUpcomingDateEvents(events, criteria,
-    { kind: 'custom', startDate: start, endDate: end! }) : 0, [events, criteria, start, end, valid]);
+  const count = useMemo(() => valid ? countUpcomingDateItems(events, criteria,
+    { kind: 'custom', startDate: start, endDate: end! }, type) : 0,
+    [events, criteria, start, end, type, valid]);
   const daysInMonth = new Date(month.getFullYear(), month.getMonth() + 1, 0).getDate();
   const cells = Array.from({ length: Math.ceil((month.getDay() + daysInMonth) / 7) * 7 }, (_, index) => {
     const day = index - month.getDay() + 1;
@@ -53,7 +63,7 @@ const CalendarSheet = ({ events, criteria, initial, onApply, onClose }: Omit<Pro
           <View style={styles.sheetHeader}>
             <View>
               <Text style={styles.title}>Choose a date</Text>
-              <Text style={styles.subtitle}>Find your next outing</Text>
+              <Text style={styles.subtitle}>{isSpecial ? 'Find your next special' : 'Find your next outing'}</Text>
             </View>
             <Pressable accessibilityRole="button" accessibilityLabel="Close date picker" onPress={onClose} style={styles.iconButton}>
               <Ionicons name="close" size={22} color="#334155" />
@@ -65,7 +75,9 @@ const CalendarSheet = ({ events, criteria, initial, onApply, onClose }: Omit<Pro
                 <Pressable key={value} accessibilityRole="button" accessibilityState={{ selected: mode === value }}
                   onPress={() => { setMode(value); setEnd(value === 'day' ? start : null); }}
                   style={[styles.segmentButton, mode === value && styles.segmentActive]}>
-                  <Text style={[styles.segmentText, mode === value && styles.blue]}>{value === 'day' ? 'Single day' : 'Date range'}</Text>
+                  <Text style={[styles.segmentText, mode === value && (isSpecial ? styles.green : styles.blue)]}>
+                    {value === 'day' ? 'Single day' : 'Date range'}
+                  </Text>
                 </Pressable>
               ))}
             </View>
@@ -88,24 +100,26 @@ const CalendarSheet = ({ events, criteria, initial, onApply, onClose }: Omit<Pro
                 const selected = key === start || key === end;
                 const inside = !!key && !!end && key > start && key < end;
                 const disabled = !key || key <= today;
-                return <View key={key || `blank-${index}`} style={[styles.cell, inside && styles.rangeCell]}>
+                return <View key={key || `blank-${index}`}
+                  style={[styles.cell, inside && styles.rangeCell, inside && isSpecial && styles.specialRangeCell]}>
                   {key && <Pressable accessibilityRole="button" accessibilityState={{ selected: selected || inside, disabled }}
                     accessibilityLabel={localDateFromKey(key).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}
-                    disabled={disabled} onPress={() => selectDay(key)} style={[styles.day, selected && styles.selectedDay]}>
+                    disabled={disabled} onPress={() => selectDay(key)}
+                    style={[styles.day, selected && styles.selectedDay, selected && isSpecial && styles.specialSelectedDay]}>
                     <Text style={[styles.dayText, disabled && styles.disabledText, selected && styles.white]}>{Number(key.slice(-2))}</Text>
                   </Pressable>}
                 </View>;
               })}
             </View>
-            <View style={styles.selectionSummary}>
-              <Ionicons name="calendar-outline" size={19} color="#1976D2" />
+            <View style={[styles.selectionSummary, isSpecial && styles.specialSelectionSummary]}>
+              <Ionicons name="calendar-outline" size={19} color={accent} />
               <Text style={styles.selectionText}>{!end ? 'Choose an end date' : formatUpcomingDateLabel(pending)}</Text>
             </View>
-            <Text style={styles.note}>Upcoming starts tomorrow. Your other event filters still apply.</Text>
+            <Text style={styles.note}>Upcoming starts tomorrow. Your other {type} filters still apply.</Text>
           </ScrollView>
           <Pressable accessibilityRole="button" disabled={!valid} onPress={() => onApply(pending)}
-            style={[styles.apply, !valid && styles.disabledButton]}>
-            <Text style={styles.applyText}>{!valid ? 'Choose an end date' : `Show ${count} events`}</Text>
+            style={[styles.apply, isSpecial && styles.specialApply, !valid && styles.disabledButton]}>
+            <Text style={styles.applyText}>{!valid ? 'Choose an end date' : `Show ${count} ${isSpecial ? 'specials' : 'events'}`}</Text>
             <Ionicons name="arrow-forward" size={20} color="white" />
           </Pressable>
         </View>
@@ -114,10 +128,12 @@ const CalendarSheet = ({ events, criteria, initial, onApply, onClose }: Omit<Pro
   );
 };
 
-export default function UpcomingDateOptions({ events, criteria, onSelect }: Props) {
+export default function UpcomingDateOptions({ type = 'event', events, criteria, onSelect }: Props) {
   const [calendarOpen, setCalendarOpen] = useState(false);
+  const isSpecial = type === 'special';
   const today = formatLocalDateKey(new Date());
-  const selection = normalizeUpcomingDate(criteria.eventFilters.upcomingDate, today);
+  const typeFilters = type === 'event' ? criteria.eventFilters : criteria.specialFilters;
+  const selection = normalizeUpcomingDate(typeFilters.upcomingDate, today);
   const custom = selection.kind === 'custom' ? selection : defaultCustomDate(today);
   const options: { label: string; icon: keyof typeof Ionicons.glyphMap; selection: UpcomingDateFilter }[] = [
     { label: 'Any date', icon: 'calendar-outline', selection: { kind: 'any' } },
@@ -131,18 +147,20 @@ export default function UpcomingDateOptions({ events, criteria, onSelect }: Prop
     <View style={styles.options}>
       {options.map(option => {
         const active = selection.kind === option.selection.kind;
-        const count = countUpcomingDateEvents(events, criteria, option.selection, context);
+        const count = countUpcomingDateItems(events, criteria, option.selection, type, context);
         return <Pressable key={option.selection.kind} accessibilityRole="button" accessibilityState={{ selected: active }}
-          accessibilityLabel={`${option.label}, ${count} events`}
+          accessibilityLabel={`${option.label}, ${count} ${isSpecial ? 'specials' : 'events'}`}
           onPress={() => option.selection.kind === 'custom' ? setCalendarOpen(true) : onSelect(option.selection)}
-          style={[styles.option, active && styles.activeOption]}>
-          <Ionicons name={option.icon} size={17} color={active ? '#0874D5' : '#263F68'} />
+          style={[styles.option, active && styles.activeOption, active && isSpecial && styles.activeSpecialOption]}>
+          <Ionicons name={option.icon} size={17} color={active ? (isSpecial ? '#248542' : '#0874D5') : '#263F68'} />
           <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}
-            style={[styles.optionText, active && styles.selectedText]}>{`${option.label} (${count})`}</Text>
+            style={[styles.optionText, active && styles.selectedText, active && isSpecial && styles.selectedSpecialText]}>
+            {`${option.label} (${count})`}
+          </Text>
         </Pressable>;
       })}
     </View>
-    {calendarOpen && <CalendarSheet events={events} criteria={criteria} initial={custom}
+    {calendarOpen && <CalendarSheet type={type} events={events} criteria={criteria} initial={custom}
       onClose={() => setCalendarOpen(false)} onApply={value => { onSelect(value); setCalendarOpen(false); }} />}
   </View>;
 }
@@ -156,8 +174,10 @@ const styles = StyleSheet.create({
     borderColor: '#DAE3EE', elevation: 1, shadowColor: '#273E60', shadowOpacity: 0.07,
     shadowRadius: 3, shadowOffset: { width: 0, height: 2 } },
   activeOption: { backgroundColor: '#E7F3FF', borderColor: '#1681E2' },
+  activeSpecialOption: { backgroundColor: '#EAF7EE', borderColor: '#34A853' },
   optionText: { color: '#263F68', fontSize: 12, fontWeight: '500', flexShrink: 1 },
   selectedText: { color: '#0874D5', fontWeight: '700' },
+  selectedSpecialText: { color: '#248542' },
   white: { color: 'white' },
   modal: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(15, 30, 50, 0.42)' },
   sheet: { backgroundColor: '#FFFFFF', borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingHorizontal: 22, paddingTop: 10 },
@@ -171,6 +191,7 @@ const styles = StyleSheet.create({
   segmentActive: { backgroundColor: 'white', elevation: 1, shadowColor: '#183B56', shadowOpacity: 0.08, shadowRadius: 3, shadowOffset: { width: 0, height: 1 } },
   segmentText: { fontSize: 14, fontWeight: '600', color: '#64748B' },
   blue: { color: '#1976D2' },
+  green: { color: '#248542' },
   monthHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 17, marginBottom: 8 },
   month: { fontSize: 17, fontWeight: '600', color: '#253C55' },
   week: { flexDirection: 'row', marginBottom: 8 },
@@ -178,14 +199,18 @@ const styles = StyleSheet.create({
   grid: { flexDirection: 'row', flexWrap: 'wrap' },
   cell: { width: '14.2857%', height: 44, alignItems: 'center', justifyContent: 'center', marginBottom: 4 },
   rangeCell: { backgroundColor: '#E4F2FF' },
+  specialRangeCell: { backgroundColor: '#EAF7EE' },
   day: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
   selectedDay: { backgroundColor: '#2196F3' },
+  specialSelectedDay: { backgroundColor: '#34A853' },
   dayText: { fontSize: 15, color: '#334155', fontWeight: '500' },
   disabledText: { color: '#B9C3CF' },
   selectionSummary: { flexDirection: 'row', alignItems: 'center', gap: 9, backgroundColor: '#F1F7FD', borderRadius: 12, padding: 13, marginTop: 15 },
+  specialSelectionSummary: { backgroundColor: '#F0F8F2' },
   selectionText: { fontSize: 14, fontWeight: '600', color: '#253C55' },
   note: { fontSize: 12, lineHeight: 18, color: '#64748B', marginVertical: 12 },
   apply: { backgroundColor: '#2196F3', borderRadius: 15, minHeight: 52, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 12, marginTop: 6 },
+  specialApply: { backgroundColor: '#34A853' },
   disabledButton: { backgroundColor: '#93ABC0' },
   applyText: { color: 'white', fontSize: 16, fontWeight: '700' },
 });

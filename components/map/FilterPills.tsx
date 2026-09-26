@@ -1766,7 +1766,9 @@ React.useEffect(() => {
                 </Text>
                 <View style={[styles.stackedLabelDivider, !filterCriteria.showSpecials && styles.inactiveDivider]} />
                 <Text numberOfLines={1} style={[styles.stackedLabelBottom, !filterCriteria.showSpecials && styles.inactiveText]}>
-                  {getTimeFilterDisplayText(filterCriteria.specialFilters.timeFilter) || 'All'}
+                  {filterCriteria.specialFilters.timeFilter === TimeFilterType.UPCOMING
+                    ? formatUpcomingDateLabel(filterCriteria.specialFilters.upcomingDate)
+                    : getTimeFilterDisplayText(filterCriteria.specialFilters.timeFilter) || 'All'}
                 </Text>
               </View>
               {isVisibleCategory(filterCriteria.specialFilters.category) && (
@@ -2061,7 +2063,11 @@ React.useEffect(() => {
               style={styles.eventResetButton}
               onPress={() => {
                 setSpecialCategoryExpanded(false);
-                setTypeFilters('special', { timeFilter: TimeFilterType.TODAY, category: undefined }, 'filter-pills');
+                setTypeFilters('special', {
+                  timeFilter: TimeFilterType.TODAY,
+                  category: undefined,
+                  upcomingDate: undefined,
+                }, 'filter-pills');
               }}>
               <Text style={styles.specialResetText}>Reset</Text>
             </TouchableOpacity>
@@ -2081,6 +2087,10 @@ React.useEffect(() => {
             counts={specialFilterCounts}
           />
         </View>
+        {isUpcomingDatesVisible(filterCriteria.specialFilters.timeFilter) && (
+          <UpcomingDateOptions type="special" events={onScreenEvents} criteria={filterCriteria}
+            onSelect={upcomingDate => setTypeFilters('special', { upcomingDate })} />
+        )}
         <View style={styles.eventCategorySection}>
           <TouchableOpacity accessibilityRole="button"
               accessibilityLabel={`Category, ${formatCategoryAvailability(

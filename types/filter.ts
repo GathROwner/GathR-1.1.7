@@ -32,7 +32,7 @@ export interface TypeFilterCriteria {
   // Filter by time window
   timeFilter: TimeFilterType;
 
-  // Events only; meaningful only while Upcoming is selected.
+  // Meaningful only while Upcoming is selected for this content type.
   upcomingDate?: UpcomingDateFilter;
 
   // Filter by category
