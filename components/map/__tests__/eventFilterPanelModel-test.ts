@@ -46,14 +46,13 @@ describe('Events filter panel choices', () => {
       .toEqual(['Food Special', 'Happy Hour']);
   });
 
-  it('summarizes real available categories without repeating result counts', () => {
+  it('summarizes available categories compactly and names an active selection', () => {
     expect(getAvailableFilterCategoryCount('special', {
       'Happy Hour': 3, 'Food Special': 10, 'Drink Special': 0,
     })).toBe(2);
-    expect(formatCategoryAvailability(2)).toBe('2 categories available · Tap to expand');
-    expect(formatCategoryAvailability(2, 'Happy Hour'))
-      .toBe('Happy Hour selected · 2 categories available');
-    expect(formatCategoryAvailability(1)).toBe('1 category available · Tap to expand');
+    expect(formatCategoryAvailability(2)).toBe('2 available');
+    expect(formatCategoryAvailability(2, 'Happy Hour')).toBe('Happy Hour selected');
+    expect(formatCategoryAvailability(1)).toBe('1 available');
   });
 
   it('shows the category scroll cue only beyond three two-column rows', () => {

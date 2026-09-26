@@ -30,6 +30,28 @@ type Props = {
   type?: 'event' | 'special';
 };
 
+type SelectedCategoryPillProps = {
+  category: string;
+  count: number;
+  type?: 'event' | 'special';
+};
+
+export function SelectedCategoryPill({
+  category, count, type = 'event',
+}: SelectedCategoryPillProps) {
+  const isSpecial = type === 'special';
+  const selectedColor = isSpecial ? '#248542' : '#0874D5';
+
+  return <View accessible={false} pointerEvents="none"
+    style={[styles.option, styles.selected, isSpecial && styles.specialSelected, styles.selectedSummaryOption]}>
+    <MaterialIcons name={getEventCategoryIcon(category)} size={18} color={selectedColor} />
+    <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}
+      style={[styles.label, styles.selectedLabel, isSpecial && styles.specialSelectedLabel]}>
+      {formatFilterCount(category, count)}
+    </Text>
+  </View>;
+}
+
 export default function EventCategoryOptions({ counts, allCount, maxHeight, type = 'event' }: Props) {
   const activeCategory = useMapStore(state => type === 'event'
     ? state.filterCriteria.eventFilters.category : state.filterCriteria.specialFilters.category);
@@ -118,6 +140,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF', elevation: 1, shadowColor: '#273E60', shadowOpacity: 0.07,
     shadowRadius: 3, shadowOffset: { width: 0, height: 2 } },
   selected: { backgroundColor: '#E7F3FF', borderColor: '#1681E2' },
+  selectedSummaryOption: { width: 'auto', maxWidth: '100%', alignSelf: 'center', flexShrink: 1 },
   specialSelected: { backgroundColor: '#EAF7EE', borderColor: '#34A853' },
   label: { flexShrink: 1, fontSize: 12, color: '#263F68', fontWeight: '500' },
   selectedLabel: { color: '#0874D5', fontWeight: '700' },

@@ -7,7 +7,7 @@ import * as Haptics from 'expo-haptics';
 import { useMapStore } from '../../store';
 import { TimeFilterType } from '../../types';
 import EventTimeOptions from './EventTimeOptions';
-import EventCategoryOptions from './EventCategoryOptions';
+import EventCategoryOptions, { SelectedCategoryPill } from './EventCategoryOptions';
 import {
   formatCategoryAvailability, getAvailableFilterCategoryCount, getEventFilterReset,
   getEventTimeColumns, isUpcomingDatesVisible,
@@ -2028,13 +2028,12 @@ React.useEffect(() => {
               style={styles.eventCategoryHeader}>
             <Text style={styles.eventSectionTitle}>Category</Text>
             {!upcomingCategoryExpanded && <View style={styles.eventCategorySummary}>
-              <Text numberOfLines={1} style={styles.eventCategorySummaryText}>
-                {formatCategoryAvailability(
-                  availableEventCategoryCount,
-                  isVisibleCategory(filterCriteria.eventFilters.category)
-                    ? filterCriteria.eventFilters.category : undefined
-                )}
-              </Text>
+              {isVisibleCategory(filterCriteria.eventFilters.category)
+                ? <SelectedCategoryPill category={filterCriteria.eventFilters.category}
+                    count={eventCategoryCounts[filterCriteria.eventFilters.category] ?? 0} />
+                : <Text numberOfLines={1} style={styles.eventCategorySummaryText}>
+                    {formatCategoryAvailability(availableEventCategoryCount)}
+                  </Text>}
             </View>}
             {upcomingCategoryExpanded && isVisibleCategory(filterCriteria.eventFilters.category) &&
               <Text style={styles.eventSelectedHint}>1 selected</Text>}
@@ -2094,13 +2093,12 @@ React.useEffect(() => {
               style={styles.eventCategoryHeader}>
             <Text style={styles.eventSectionTitle}>Category</Text>
             {!specialCategoryExpanded && <View style={styles.eventCategorySummary}>
-              <Text numberOfLines={1} style={styles.eventCategorySummaryText}>
-                {formatCategoryAvailability(
-                  availableSpecialCategoryCount,
-                  isVisibleCategory(filterCriteria.specialFilters.category)
-                    ? filterCriteria.specialFilters.category : undefined
-                )}
-              </Text>
+              {isVisibleCategory(filterCriteria.specialFilters.category)
+                ? <SelectedCategoryPill type="special" category={filterCriteria.specialFilters.category}
+                    count={specialCategoryCounts[filterCriteria.specialFilters.category] ?? 0} />
+                : <Text numberOfLines={1} style={styles.eventCategorySummaryText}>
+                    {formatCategoryAvailability(availableSpecialCategoryCount)}
+                  </Text>}
             </View>}
             {specialCategoryExpanded && isVisibleCategory(filterCriteria.specialFilters.category) &&
               <Text style={styles.eventSelectedHint}>1 selected</Text>}
@@ -2299,8 +2297,9 @@ const styles = StyleSheet.create({
   eventSectionTitle: { fontSize: 14, color: '#182B55', fontWeight: '700', marginBottom: 7 },
   eventCategorySection: { borderTopWidth: 1, borderTopColor: '#D9E3EF', paddingTop: 5 },
   eventCategoryHeader: { minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 8 },
-  eventCategorySummary: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 5 },
-  eventCategorySummaryText: { color: '#526880', fontSize: 12, fontWeight: '500', flexShrink: 1 },
+  eventCategorySummary: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center',
+    justifyContent: 'center' },
+  eventCategorySummaryText: { color: '#526880', fontSize: 12, fontWeight: '500', textAlign: 'center' },
   eventSelectedHint: { color: '#62749A', fontSize: 11, flex: 1 },
   eventCategoryChevron: { marginLeft: 'auto' },
   filterSection: {

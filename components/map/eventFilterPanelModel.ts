@@ -53,8 +53,7 @@ export const getAvailableFilterCategoryCount = (
 ) => getFilterCategoryOptions(type, counts).length;
 
 export const formatCategoryAvailability = (availableCount: number, selected?: string) => {
-  const availability = `${availableCount} ${availableCount === 1 ? 'category' : 'categories'} available`;
-  return selected ? `${selected} selected · ${availability}` : `${availability} · Tap to expand`;
+  return selected ? `${selected} selected` : `${availableCount} available`;
 };
 
 export const shouldShowEventCategoryScrollCue = (optionCount: number) =>
