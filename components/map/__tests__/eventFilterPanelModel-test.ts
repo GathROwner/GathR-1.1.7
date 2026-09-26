@@ -1,6 +1,6 @@
 import { TimeFilterType } from '../../../types/filter';
 import {
-  EVENT_TIME_OPTIONS, formatFilterCount, getEventCategoryOptions,
+  EVENT_TIME_OPTIONS, formatFilterCount, getEventCategoryOptions, getFilterCategoryOptions,
   getEventFilterReset, getEventTimeColumns, isUpcomingDatesVisible,
   shouldShowEventCategoryScrollCue,
 } from '../eventFilterPanelModel';
@@ -35,6 +35,14 @@ describe('Events filter panel choices', () => {
   it('keeps a selected zero-count category visible and first', () => {
     expect(getEventCategoryOptions({ 'Live Music': 18, Comedy: 0 }, 'Comedy'))
       .toEqual(['Comedy', 'Live Music']);
+  });
+
+  it('applies the same non-zero category contract to specials', () => {
+    expect(getFilterCategoryOptions('special', {
+      'Happy Hour': 3, 'Food Special': 0, 'Drink Special': 7,
+    })).toEqual(['Drink Special', 'Happy Hour']);
+    expect(getFilterCategoryOptions('special', { 'Happy Hour': 3, 'Food Special': 0 }, 'Food Special'))
+      .toEqual(['Food Special', 'Happy Hour']);
   });
 
   it('shows the category scroll cue only beyond three two-column rows', () => {

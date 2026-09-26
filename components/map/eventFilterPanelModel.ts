@@ -1,4 +1,4 @@
-import { EVENT_CATEGORIES } from '../../constants/eventCategories';
+import { EVENT_CATEGORIES, SPECIAL_CATEGORIES } from '../../constants/eventCategories';
 import { TimeFilterType, type TypeFilterCriteria } from '../../types/filter';
 
 export const EVENT_TIME_OPTIONS = [
@@ -12,16 +12,22 @@ export const getEventTimeColumns = (width: number) => width >= 400 ? 4 : 2;
 
 export const formatFilterCount = (label: string, count: number) => `${label} (${count})`;
 
-const EVENT_CATEGORY_ORDER = new Map<string, number>(
-  EVENT_CATEGORIES.map((category, index) => [category, index])
-);
+const CATEGORY_ORDER = {
+  event: new Map<string, number>(EVENT_CATEGORIES.map((category, index) => [category, index])),
+  special: new Map<string, number>(SPECIAL_CATEGORIES.map((category, index) => [category, index])),
+};
 
 export const EVENT_CATEGORY_COLUMNS = 2;
 export const EVENT_CATEGORY_VISIBLE_ROWS = 3;
 
-export const getEventCategoryOptions = (counts: Record<string, number>, selected?: string) =>
-  Array.from(new Set<string>([
-    ...EVENT_CATEGORIES,
+export const getFilterCategoryOptions = (
+  type: 'event' | 'special', counts: Record<string, number>, selected?: string
+) => {
+  const configuredCategories = type === 'event' ? EVENT_CATEGORIES : SPECIAL_CATEGORIES;
+  const categoryOrder = CATEGORY_ORDER[type];
+
+  return Array.from(new Set<string>([
+    ...configuredCategories,
     ...Object.keys(counts).filter(category => category.trim().length > 0),
     ...(selected ? [selected] : []),
   ]))
@@ -33,10 +39,14 @@ export const getEventCategoryOptions = (counts: Record<string, number>, selected
       const countDifference = (counts[right] ?? 0) - (counts[left] ?? 0);
       if (countDifference !== 0) return countDifference;
 
-      const orderDifference = (EVENT_CATEGORY_ORDER.get(left) ?? Number.MAX_SAFE_INTEGER)
-        - (EVENT_CATEGORY_ORDER.get(right) ?? Number.MAX_SAFE_INTEGER);
+      const orderDifference = (categoryOrder.get(left) ?? Number.MAX_SAFE_INTEGER)
+        - (categoryOrder.get(right) ?? Number.MAX_SAFE_INTEGER);
       return orderDifference || left.localeCompare(right);
     });
+};
+
+export const getEventCategoryOptions = (counts: Record<string, number>, selected?: string) =>
+  getFilterCategoryOptions('event', counts, selected);
 
 export const shouldShowEventCategoryScrollCue = (optionCount: number) =>
   Math.ceil(optionCount / EVENT_CATEGORY_COLUMNS) > EVENT_CATEGORY_VISIBLE_ROWS;

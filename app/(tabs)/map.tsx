@@ -11009,6 +11009,15 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
           style={[StyleSheet.absoluteFillObject, { zIndex: 9999 }]}
         />
       )}
+      {activeFilterPanel && shouldRenderAncillaryOverlays && (
+        <Pressable
+          testID="filter-panel-map-dismiss-target"
+          accessibilityRole="button"
+          accessibilityLabel="Close filters"
+          onPress={() => setActiveFilterPanel(null)}
+          style={[StyleSheet.absoluteFillObject, { zIndex: 30, elevation: 30 }]}
+        />
+      )}
       {/* Add Filter Bar at the top */}
       {/* Filter pills overlay (floating) anchored under safe-area */}
       {shouldMountAncillaryOverlays && (
@@ -11020,8 +11029,8 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
             left: 0,
             right: 0,
             top: TOP_OFFSET, // baseline + per-platform nudge
-            zIndex: activeFilterPanel === 'events' ? 40 : 12,
-            elevation: activeFilterPanel === 'events' ? 40 : 12,
+            zIndex: activeFilterPanel ? 40 : 12,
+            elevation: activeFilterPanel ? 40 : 12,
             transform: [{ translateY: pillsAnimation }],
             opacity: shouldRenderAncillaryOverlays ? pillsOpacity : 0,
           }}
@@ -11029,7 +11038,7 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
           <View
             ref={filterPillsContentRef}
             testID="filter-pills"
-            pointerEvents={shouldRenderAncillaryOverlays ? 'auto' : 'none'}
+            pointerEvents={shouldRenderAncillaryOverlays ? 'box-none' : 'none'}
             onLayout={(e) => {
               const h = e.nativeEvent.layout.height || 0;
               if (h && Math.abs(h - pillsHeight) > 1) setPillsHeight(h);

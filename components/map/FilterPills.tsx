@@ -3,12 +3,9 @@ import { formatUpcomingDateLabel } from '../../utils/upcomingDateWindow';
 import React, { useState, useRef, useMemo } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Animated, Platform, PanResponder, PanResponderGestureState, Easing, useWindowDimensions } from 'react-native';
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import { useMapStore } from '../../store';
 import { TimeFilterType } from '../../types';
-import TimeFilterOptions from './TimeFilterOptions';
-import CategoryFilterOptions from './CategoryFilterOptions';
 import EventTimeOptions from './EventTimeOptions';
 import EventCategoryOptions, { getEventCategoryIcon } from './EventCategoryOptions';
 import { formatFilterCount, getEventFilterReset, getEventTimeColumns, isUpcomingDatesVisible } from './eventFilterPanelModel';
@@ -172,6 +169,7 @@ const FilterPills = () => {
     specials: getMapScheduleStateMetricSnapshot('specials_pill_counts', traceGestureSessionId),
   });
   const [upcomingCategoryExpanded, setUpcomingCategoryExpanded] = React.useState(false);
+  const [specialCategoryExpanded, setSpecialCategoryExpanded] = React.useState(false);
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const filterCriteria = useMapStore((state) => state.filterCriteria);
   const setFilterCriteria = useMapStore((state) => state.setFilterCriteria);
@@ -1142,6 +1140,14 @@ React.useEffect(() => {
       doesEventMatchTypeFilters(event, filters, context) && eventMatchesSearch(event, filterCriteria.search)
     ), 0);
   }, [eventsData, filterCriteria]);
+  const allSpecialCategoryCount = useMemo(() => {
+    if (!filterCriteria.showSpecials) return 0;
+    const context = createEventTimeContext();
+    const filters = { ...filterCriteria.specialFilters, category: undefined };
+    return specialsData.reduce((count, event) => count + Number(
+      doesEventMatchTypeFilters(event, filters, context) && eventMatchesSearch(event, filterCriteria.search)
+    ), 0);
+  }, [specialsData, filterCriteria]);
   const visibleSpecials = specialFilterCounts[filterCriteria.specialFilters.timeFilter];
 
   React.useLayoutEffect(() => {
@@ -1201,16 +1207,11 @@ React.useEffect(() => {
   //   specialFilterCounts
   // });
   
-  // Ref to prevent map from closing during panel transitions
-  const isSwitchingPanels = useRef(false);
-  const switchingToPanel = useRef<'events' | 'specials' | null>(null);
-
-  // During a transition, treat the "target" panel as active for pointerEvents/zIndex logic
-  const effectivePanel =
-    isSwitchingPanels.current && switchingToPanel.current ? switchingToPanel.current : activePanel;
-  const showFilterOverlay = !!effectivePanel;
-  const showEventsPanel = effectivePanel === 'events';
-  const showSpecialsPanel = effectivePanel === 'specials';
+  // The selected panel is the visual source of truth. Panel-to-panel switches are
+  // atomic so an incoming card can never inherit a stale zero-opacity animation.
+  const effectivePanel = activePanel;
+  const showEventsPanel = activePanel === 'events';
+  const showSpecialsPanel = activePanel === 'specials';
 
   const armMapSurfaceTouchGuard = (reason: string) => {
     const guard = (globalThis as any).__gathrArmMapSurfaceTouchGuard;
@@ -1283,136 +1284,37 @@ React.useEffect(() => {
     specialsPanelOpacity,
   ]);
 
-  // Main toggle function - handles ALL scenarios
+  // Main toggle function. Opening and switching set final opacity values before
+  // changing the mounted panel, avoiding the translucent cross-fade race.
   const togglePanel = (panel: 'events' | 'specials' | null) => {
+    const currentPanel = useMapStore.getState().activeFilterPanel;
+    const nextPanel = panel === currentPanel ? null : panel;
     traceMapEvent('filter_panel_toggle_requested', {
       requestedPanel: panel ?? 'none',
-      currentActivePanel: activePanel ?? 'none',
+      currentActivePanel: currentPanel ?? 'none',
+      nextPanel: nextPanel ?? 'none',
     });
-    if (panel !== null) {
-      armMapSurfaceTouchGuard(`filter-panel-${panel}`);
+    if (nextPanel !== null) {
+      armMapSurfaceTouchGuard(`filter-panel-${nextPanel}`);
     }
-    console.log('🎯 togglePanel called:', { 
-      requestedPanel: panel, 
-      currentActivePanel: activePanel,
-      timestamp: Date.now()
-    });
 
-    if (panel !== null && (eventsClearArmedRef.current || eventsClearHoldInProgressRef.current)) {
+    if (nextPanel !== null && (eventsClearArmedRef.current || eventsClearHoldInProgressRef.current)) {
       console.log('🧯 togglePanel invoked while Events clear is armed/holding → cancelling first');
       cancelEventsClearArmed('open-panel');
     }
 
-    if (panel === null) {
-      // CLOSE ALL - from X button or background click
-      console.log('❌ CLOSE ALL - Setting activePanel to null');
-      setActivePanel(null);
-      Animated.parallel([
-        Animated.timing(eventsPanelOpacity, { toValue: 0, duration: 150, useNativeDriver: true }),
-        Animated.timing(specialsPanelOpacity, { toValue: 0, duration: 150, useNativeDriver: true }),
-        Animated.timing(overlayOpacity, { toValue: 0, duration: 150, useNativeDriver: true })
-      ]).start(() => {
-        console.log('✅ CLOSE ALL animation complete');
-      });
-    } else if (panel === 'events') {
-      if (activePanel === 'events') {
-        // CLOSE Events (clicking same chevron)
-        console.log('❌ CLOSE Events - Same chevron clicked');
-        setActivePanel(null);
-        Animated.parallel([
-          Animated.timing(eventsPanelOpacity, { toValue: 0, duration: 150, useNativeDriver: true }),
-          Animated.timing(overlayOpacity, { toValue: 0, duration: 150, useNativeDriver: true })
-        ]).start(() => {
-          console.log('✅ CLOSE Events animation complete');
-        });
-      } else if (activePanel === 'specials') {
-        // SWITCH from Specials to Events (overlay stays visible)
-        console.log('🔄 SWITCH from Specials to Events - Setting state immediately, then cross-fading');
-        isSwitchingPanels.current = true;
-        switchingToPanel.current = 'events';
-
-        setActivePanel('events');
-        Animated.sequence([
-          Animated.timing(specialsPanelOpacity, { toValue: 0, duration: 150, useNativeDriver: true }),
-          Animated.timing(eventsPanelOpacity, { toValue: 1, duration: 150, useNativeDriver: true })
-        ]).start(() => {
-          console.log('✅ SWITCH to Events complete');
-
-          // Ensure state is still correct (map might have changed it during transition)
-          const currentPanel = useMapStore.getState().activeFilterPanel;
-          if (currentPanel !== 'events') {
-            console.log('⚠️ State was changed during transition, restoring to events');
-            setActivePanel('events');
-          }
-
-          switchingToPanel.current = null;
-          isSwitchingPanels.current = false;
-        });
-
-      } else {
-        // OPEN Events (no panel currently open)
-        console.log('✅ OPEN Events - No panel was open');
-
-        // Cancel curtain animation if active
-        if (curtainPeekAnimActive.current || curtainPeekState.isActive || curtainIsInteractiveRef.current) {
-          hideCurtain();
-        }
-
-        setActivePanel('events');
-        Animated.parallel([
-          Animated.timing(eventsPanelOpacity, { toValue: 1, duration: 150, useNativeDriver: true }),
-          Animated.timing(overlayOpacity, { toValue: 1, duration: 150, useNativeDriver: true })
-        ]).start(() => {
-          console.log('✅ OPEN Events animation complete');
-        });
-      }
-    } else if (panel === 'specials') {
-      if (activePanel === 'specials') {
-        // CLOSE Specials (clicking same chevron)
-        console.log('❌ CLOSE Specials - Same chevron clicked');
-        setActivePanel(null);
-        Animated.parallel([
-          Animated.timing(specialsPanelOpacity, { toValue: 0, duration: 150, useNativeDriver: true }),
-          Animated.timing(overlayOpacity, { toValue: 0, duration: 150, useNativeDriver: true })
-        ]).start(() => {
-          console.log('✅ CLOSE Specials animation complete');
-        });
-      } else if (activePanel === 'events') {
-        // SWITCH from Events to Specials (overlay stays visible)
-        console.log('🔄 SWITCH from Events to Specials - Setting state immediately, then cross-fading');
-        isSwitchingPanels.current = true;
-        switchingToPanel.current = 'specials';
-
-        setActivePanel('specials');
-        Animated.sequence([
-          Animated.timing(eventsPanelOpacity, { toValue: 0, duration: 150, useNativeDriver: true }),
-          Animated.timing(specialsPanelOpacity, { toValue: 1, duration: 150, useNativeDriver: true })
-        ]).start(() => {
-          console.log('✅ SWITCH to Specials complete');
-
-          // Ensure state is still correct (map might have changed it during transition)
-          const currentPanel = useMapStore.getState().activeFilterPanel;
-          if (currentPanel !== 'specials') {
-            console.log('⚠️ State was changed during transition, restoring to specials');
-            setActivePanel('specials');
-          }
-
-          switchingToPanel.current = null;
-          isSwitchingPanels.current = false;
-        });
-
-      } else {
-        // OPEN Specials (no panel currently open)
-        console.log('✅ OPEN Specials - No panel was open');
-        setActivePanel('specials');
-        Animated.parallel([
-          Animated.timing(specialsPanelOpacity, { toValue: 1, duration: 150, useNativeDriver: true }),
-          Animated.timing(overlayOpacity, { toValue: 1, duration: 150, useNativeDriver: true })
-        ]).start(() => {
-          console.log('✅ OPEN Specials animation complete');
-        });
-      }
+    if (nextPanel === 'events' &&
+        (curtainPeekAnimActive.current || curtainPeekState.isActive || curtainIsInteractiveRef.current)) {
+      hideCurtain();
     }
+
+    eventsPanelOpacity.stopAnimation();
+    specialsPanelOpacity.stopAnimation();
+    overlayOpacity.stopAnimation();
+    eventsPanelOpacity.setValue(nextPanel === 'events' ? 1 : 0);
+    specialsPanelOpacity.setValue(nextPanel === 'specials' ? 1 : 0);
+    overlayOpacity.setValue(nextPanel ? 1 : 0);
+    setActivePanel(nextPanel);
   };
   
   // Debug: Track activePanel changes
@@ -1420,17 +1322,13 @@ React.useEffect(() => {
     console.log('📊 activePanel changed to:', activePanel);
   }, [activePanel]);
   
-  // Sync animations when activePanel changes externally, but not during switches
+  // Keep visual values deterministic when the map-level outside target closes
+  // the panel or another store consumer changes the active panel.
   React.useEffect(() => {
-    if (activePanel === null && !isSwitchingPanels.current) {
-      console.log('🔄 activePanel set to null externally, closing animations');
-      Animated.parallel([
-        Animated.timing(eventsPanelOpacity, { toValue: 0, duration: 150, useNativeDriver: true }),
-        Animated.timing(specialsPanelOpacity, { toValue: 0, duration: 150, useNativeDriver: true }),
-        Animated.timing(overlayOpacity, { toValue: 0, duration: 150, useNativeDriver: true })
-      ]).start();
-    }
-  }, [activePanel]);
+    eventsPanelOpacity.setValue(activePanel === 'events' ? 1 : 0);
+    specialsPanelOpacity.setValue(activePanel === 'specials' ? 1 : 0);
+    overlayOpacity.setValue(activePanel ? 1 : 0);
+  }, [activePanel, eventsPanelOpacity, overlayOpacity, specialsPanelOpacity]);
   
   const toggleEvents = () => {
     setFilterCriteria({ showEvents: !filterCriteria.showEvents });
@@ -1650,8 +1548,8 @@ React.useEffect(() => {
   });
 
   return (
-    <View style={[styles.container,
-      activePanel === 'events' && {
+    <View pointerEvents="box-none" style={[styles.container,
+      activePanel && {
         minHeight: 50 + Math.max(320, Math.min(windowHeight * 0.68, windowHeight - 230)),
       },
       tutorialHighlight && { zIndex: 99999 }]}>
@@ -2078,22 +1976,6 @@ React.useEffect(() => {
         </Animated.View>
       )}
 
-      {showFilterOverlay && (
-      <Animated.View
-        pointerEvents="auto"
-        style={[styles.filterBackgroundOverlay, { opacity: overlayOpacity }]}
-      >
-        <TouchableOpacity 
-          style={{ flex: 1 }} 
-          activeOpacity={1} 
-          onPress={() => {
-            console.log('🖱️ Background overlay pressed');
-            togglePanel(null);
-          }} 
-        />
-      </Animated.View>
-      )}
-
       {showEventsPanel && (
       <Animated.View
         pointerEvents="auto"
@@ -2160,55 +2042,63 @@ React.useEffect(() => {
       {showSpecialsPanel && (
       <Animated.View
         pointerEvents="auto"
-        style={[styles.filterPanel, { opacity: specialsPanelOpacity }]}
+        style={[styles.filterPanel, styles.eventFilterPanel, styles.specialFilterPanel, {
+          opacity: specialsPanelOpacity,
+          maxHeight: Math.max(320, Math.min(windowHeight * 0.68, windowHeight - 230)),
+        }]}
       >
-        <LinearGradient
-          pointerEvents="none"
-          colors={['rgba(230, 240, 255, 0.92)', 'rgba(200, 220, 250, 0.75)', 'rgba(180, 210, 245, 0.65)']}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 0, y: 1 }}
-          style={styles.filterPanelGradient}
-        />
-        <View style={styles.panelHeader} pointerEvents="box-none">
-          <Text style={styles.panelTitle}>Special Filters</Text>
-          <TouchableOpacity onPress={() => {
-            console.log('❎ Specials X button pressed');
-            togglePanel(null);
-          }}>
-            <Ionicons name="close" size={24} color="#333" />
-          </TouchableOpacity>
-        </View>
-        <View style={styles.filterSection}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>When</Text>
-            {filterCriteria.specialFilters.timeFilter !== TimeFilterType.TODAY && (
-              <TouchableOpacity onPress={() => setTypeFilters('special', { timeFilter: TimeFilterType.TODAY })}>
-                <Text style={styles.clearText}>Clear</Text>
-              </TouchableOpacity>
-            )}
+        <View style={styles.eventPanelHeader}>
+          <Text style={styles.eventPanelTitle}>Special filters</Text>
+          <View style={styles.eventHeaderActions}>
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel="Reset special filters"
+              style={styles.eventResetButton}
+              onPress={() => {
+                setSpecialCategoryExpanded(false);
+                setTypeFilters('special', { timeFilter: TimeFilterType.TODAY, category: undefined }, 'filter-pills');
+              }}>
+              <Text style={styles.specialResetText}>Reset</Text>
+            </TouchableOpacity>
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel="Close special filters"
+              style={styles.eventCloseButton} onPress={() => togglePanel(null)}>
+              <Ionicons name="close" size={22} color="#4F6280" />
+            </TouchableOpacity>
           </View>
-          <TimeFilterOptions 
+        </View>
+        <View style={styles.eventSection}>
+          <Text style={styles.eventSectionTitle}>When</Text>
+          <EventTimeOptions
+            type="special"
             selected={filterCriteria.specialFilters.timeFilter}
-            onSelect={(timeFilter) => {
-              const newFilter =
-                filterCriteria.specialFilters.timeFilter === timeFilter
-                  ? TimeFilterType.TODAY
-                  : timeFilter;
-              setTypeFilters('special', { timeFilter: newFilter });
-            }}
+            columns={getEventTimeColumns(windowWidth)}
+            onSelect={(timeFilter) => setTypeFilters('special', { timeFilter })}
             counts={specialFilterCounts}
           />
         </View>
-        <View style={[styles.filterSection, styles.lastFilterSection]}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Category</Text>
-            {filterCriteria.specialFilters.category && (
-              <TouchableOpacity onPress={() => setTypeFilters('special', { category: undefined })}>
-                <Text style={styles.clearText}>Clear</Text>
-              </TouchableOpacity>
-            )}
-          </View>
-          <CategoryFilterOptions type="special" counts={specialCategoryCounts} />
+        <View style={styles.eventCategorySection}>
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel="Expand or collapse special categories"
+              accessibilityState={{ expanded: specialCategoryExpanded }}
+              onPress={() => setSpecialCategoryExpanded(value => !value)}
+              style={styles.eventCategoryHeader}>
+            <Text style={styles.eventSectionTitle}>Category</Text>
+            {!specialCategoryExpanded && <View style={styles.eventCategorySummary}>
+              {isVisibleCategory(filterCriteria.specialFilters.category) &&
+                <MaterialIcons name={getEventCategoryIcon(filterCriteria.specialFilters.category)} size={17} color="#263F68" />}
+              <Text numberOfLines={1} style={styles.eventCategorySummaryText}>
+                {formatFilterCount(
+                  isVisibleCategory(filterCriteria.specialFilters.category)
+                    ? filterCriteria.specialFilters.category : 'All categories',
+                  isVisibleCategory(filterCriteria.specialFilters.category)
+                    ? specialCategoryCounts[filterCriteria.specialFilters.category] ?? 0 : allSpecialCategoryCount
+                )}
+              </Text>
+            </View>}
+            {specialCategoryExpanded && isVisibleCategory(filterCriteria.specialFilters.category) &&
+              <Text style={styles.eventSelectedHint}>1 selected</Text>}
+            <Ionicons name={specialCategoryExpanded ? 'chevron-up' : 'chevron-forward'}
+              size={20} color="#526880" style={styles.eventCategoryChevron} />
+          </TouchableOpacity>
+          {specialCategoryExpanded && <EventCategoryOptions type="special" counts={specialCategoryCounts}
+            allCount={allSpecialCategoryCount} maxHeight={Math.min(150, windowHeight * 0.2)} />}
         </View>
       </Animated.View>
       )}
@@ -2377,6 +2267,9 @@ const styles = StyleSheet.create({
     shadowRadius: 12,
     elevation: 10,
   },
+  specialFilterPanel: {
+    borderColor: '#B9D9C3',
+  },
   eventPanelHeader: {
     minHeight: 43,
     flexDirection: 'row',
@@ -2390,6 +2283,7 @@ const styles = StyleSheet.create({
   eventHeaderActions: { flexDirection: 'row', alignItems: 'center', gap: 2 },
   eventResetButton: { minHeight: 44, minWidth: 54, alignItems: 'center', justifyContent: 'center' },
   eventResetText: { color: '#0874D5', fontSize: 13, fontWeight: '600' },
+  specialResetText: { color: '#248542', fontSize: 13, fontWeight: '600' },
   eventCloseButton: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
   eventSection: { marginBottom: 12 },
   eventSectionTitle: { fontSize: 14, color: '#182B55', fontWeight: '700', marginBottom: 7 },
@@ -2399,36 +2293,6 @@ const styles = StyleSheet.create({
   eventCategorySummaryText: { color: '#34496C', fontSize: 12, flexShrink: 1 },
   eventSelectedHint: { color: '#62749A', fontSize: 11, flex: 1 },
   eventCategoryChevron: { marginLeft: 'auto' },
-  filterPanelGradient: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    borderRadius: 12,
-  },
-  panelHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 6,
-    paddingBottom: 6,
-    borderBottomWidth: 1,
-    borderBottomColor: '#eee',
-  },
-  filterBackgroundOverlay: {
-    position: 'absolute',
-    top: -10,
-    left: 0,
-    right: 0,
-    bottom: 2000,
-    backgroundColor: 'rgba(0, 0, 0, 0.2)',
-    zIndex: 9,
-  },
-  panelTitle: {
-    fontSize: 13,
-    fontWeight: '600',
-  },
   filterSection: {
     marginBottom: 4,
   },
