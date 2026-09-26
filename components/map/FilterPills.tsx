@@ -1,7 +1,7 @@
 import UpcomingDateOptions from './UpcomingDateOptions';
 import { formatUpcomingDateLabel } from '../../utils/upcomingDateWindow';
 import React, { useState, useRef, useMemo } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Animated, Platform, PanResponder, PanResponderGestureState, Easing } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Animated, Platform, PanResponder, PanResponderGestureState, Easing, useWindowDimensions } from 'react-native';
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
@@ -9,7 +9,10 @@ import { useMapStore } from '../../store';
 import { TimeFilterType } from '../../types';
 import TimeFilterOptions from './TimeFilterOptions';
 import CategoryFilterOptions from './CategoryFilterOptions';
-import { isEventNow, isEventHappeningToday } from '../../utils/dateUtils';
+import EventTimeOptions from './EventTimeOptions';
+import EventCategoryOptions, { getEventCategoryIcon } from './EventCategoryOptions';
+import { formatFilterCount, getEventFilterReset, getEventTimeColumns, isUpcomingDatesVisible } from './eventFilterPanelModel';
+import { createEventTimeContext, doesEventMatchTypeFilters, eventMatchesSearch } from '../../utils/mapEventFilters';
 import {
   MAP_TRACE_ENABLED,
   diffMapScheduleStateMetrics,
@@ -169,6 +172,7 @@ const FilterPills = () => {
     specials: getMapScheduleStateMetricSnapshot('specials_pill_counts', traceGestureSessionId),
   });
   const [upcomingCategoryExpanded, setUpcomingCategoryExpanded] = React.useState(false);
+  const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const filterCriteria = useMapStore((state) => state.filterCriteria);
   const setFilterCriteria = useMapStore((state) => state.setFilterCriteria);
   const setTypeFilters = useMapStore((state) => state.setTypeFilters);
@@ -1130,6 +1134,14 @@ React.useEffect(() => {
   const specialCategoryCounts = getCategoryFilterCounts('special');
 
   const visibleEvents = eventFilterCounts[filterCriteria.eventFilters.timeFilter];
+  const allEventCategoryCount = useMemo(() => {
+    if (!filterCriteria.showEvents) return 0;
+    const context = createEventTimeContext();
+    const filters = { ...filterCriteria.eventFilters, category: undefined };
+    return eventsData.reduce((count, event) => count + Number(
+      doesEventMatchTypeFilters(event, filters, context) && eventMatchesSearch(event, filterCriteria.search)
+    ), 0);
+  }, [eventsData, filterCriteria]);
   const visibleSpecials = specialFilterCounts[filterCriteria.specialFilters.timeFilter];
 
   React.useLayoutEffect(() => {
@@ -1638,7 +1650,11 @@ React.useEffect(() => {
   });
 
   return (
-    <View style={[styles.container, tutorialHighlight && { zIndex: 99999 }]}>
+    <View style={[styles.container,
+      activePanel === 'events' && {
+        minHeight: 50 + Math.max(320, Math.min(windowHeight * 0.68, windowHeight - 230)),
+      },
+      tutorialHighlight && { zIndex: 99999 }]}>
       {(eventsClearArmed || specialsClearArmed) && (
         <TouchableOpacity
           style={styles.eventsClearArmedOverlay}
@@ -2081,68 +2097,62 @@ React.useEffect(() => {
       {showEventsPanel && (
       <Animated.View
         pointerEvents="auto"
-        style={[styles.filterPanel, { opacity: eventsPanelOpacity }]}
+        style={[styles.filterPanel, styles.eventFilterPanel, {
+          opacity: eventsPanelOpacity,
+          maxHeight: Math.max(320, Math.min(windowHeight * 0.68, windowHeight - 230)),
+        }]}
       >
-        <LinearGradient
-          pointerEvents="none"
-          colors={['rgba(230, 240, 255, 0.92)', 'rgba(200, 220, 250, 0.75)', 'rgba(180, 210, 245, 0.65)']}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 0, y: 1 }}
-          style={styles.filterPanelGradient}
-        />
-        <View style={styles.panelHeader} pointerEvents="box-none">
-          <Text style={styles.panelTitle}>Event Filters</Text>
-          <TouchableOpacity onPress={() => {
-            console.log('❎ Events X button pressed');
-            togglePanel(null);
-          }}>
-            <Ionicons name="close" size={20} color="#333" />
-          </TouchableOpacity>
-        </View>
-        <View style={styles.filterSection}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>When</Text>
-            {filterCriteria.eventFilters.timeFilter !== TimeFilterType.ALL && (
-              <TouchableOpacity onPress={() => setTypeFilters('event', { timeFilter: TimeFilterType.ALL })}>
-                <Text style={styles.clearText}>Clear</Text>
-              </TouchableOpacity>
-            )}
+        <View style={styles.eventPanelHeader}>
+          <Text style={styles.eventPanelTitle}>Event filters</Text>
+          <View style={styles.eventHeaderActions}>
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel="Reset event filters"
+              style={styles.eventResetButton}
+              onPress={() => { setUpcomingCategoryExpanded(false); setTypeFilters('event', getEventFilterReset(), 'filter-pills'); }}>
+              <Text style={styles.eventResetText}>Reset</Text>
+            </TouchableOpacity>
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel="Close event filters"
+              style={styles.eventCloseButton} onPress={() => togglePanel(null)}>
+              <Ionicons name="close" size={22} color="#4F6280" />
+            </TouchableOpacity>
           </View>
-          <TimeFilterOptions 
+        </View>
+        <View style={styles.eventSection}>
+          <Text style={styles.eventSectionTitle}>When</Text>
+          <EventTimeOptions
             selected={filterCriteria.eventFilters.timeFilter}
-            onSelect={(timeFilter) => {
-              const newFilter = filterCriteria.eventFilters.timeFilter === timeFilter ? TimeFilterType.ALL : timeFilter;
-              setUpcomingCategoryExpanded(false);
-              setTypeFilters('event', { timeFilter: newFilter });
-            }}
+            columns={getEventTimeColumns(windowWidth)}
+            onSelect={(timeFilter) => setTypeFilters('event', { timeFilter })}
             counts={eventFilterCounts}
           />
         </View>
-        {filterCriteria.eventFilters.timeFilter === TimeFilterType.UPCOMING && (
+        {isUpcomingDatesVisible(filterCriteria.eventFilters.timeFilter) && (
           <UpcomingDateOptions events={onScreenEvents} criteria={filterCriteria}
-            onSelect={upcomingDate => { setUpcomingCategoryExpanded(false); setTypeFilters('event', { upcomingDate }); }} />
+            onSelect={upcomingDate => setTypeFilters('event', { upcomingDate })} />
         )}
-        <View style={[styles.filterSection, styles.lastFilterSection]}>
-          <View style={styles.sectionHeader}>
-            <TouchableOpacity accessibilityRole="button" accessibilityLabel="Expand or collapse event categories"
+        <View style={styles.eventCategorySection}>
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel="Expand or collapse event categories"
+              accessibilityState={{ expanded: upcomingCategoryExpanded }}
               onPress={() => setUpcomingCategoryExpanded(value => !value)}
-              style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1, paddingVertical: 4 }}>
-              <Text style={styles.sectionTitle}>Category</Text>
-              {filterCriteria.eventFilters.timeFilter === TimeFilterType.UPCOMING && <>
-                <Text numberOfLines={1} style={{ fontSize: 11, color: '#526880', flexShrink: 1 }}>
-                  {isVisibleCategory(filterCriteria.eventFilters.category) ? filterCriteria.eventFilters.category : 'All categories'}
-                </Text>
-                <Ionicons name={upcomingCategoryExpanded ? 'chevron-up' : 'chevron-down'} size={15} color="#526880" />
-              </>}
-            </TouchableOpacity>
-            {filterCriteria.eventFilters.category && (
-              <TouchableOpacity onPress={() => setTypeFilters('event', { category: undefined })}>
-                <Text style={styles.clearText}>Clear</Text>
-              </TouchableOpacity>
-            )}
-          </View>
-          {(filterCriteria.eventFilters.timeFilter !== TimeFilterType.UPCOMING || upcomingCategoryExpanded) &&
-            <CategoryFilterOptions type="event" counts={eventCategoryCounts} />}
+              style={styles.eventCategoryHeader}>
+            <Text style={styles.eventSectionTitle}>Category</Text>
+            {!upcomingCategoryExpanded && <View style={styles.eventCategorySummary}>
+              {isVisibleCategory(filterCriteria.eventFilters.category) &&
+                <MaterialIcons name={getEventCategoryIcon(filterCriteria.eventFilters.category)} size={17} color="#263F68" />}
+              <Text numberOfLines={1} style={styles.eventCategorySummaryText}>
+                {formatFilterCount(
+                  isVisibleCategory(filterCriteria.eventFilters.category) ? filterCriteria.eventFilters.category : 'All categories',
+                  isVisibleCategory(filterCriteria.eventFilters.category)
+                    ? eventCategoryCounts[filterCriteria.eventFilters.category] ?? 0 : allEventCategoryCount
+                )}
+              </Text>
+            </View>}
+            {upcomingCategoryExpanded && isVisibleCategory(filterCriteria.eventFilters.category) &&
+              <Text style={styles.eventSelectedHint}>1 selected</Text>}
+            <Ionicons name={upcomingCategoryExpanded ? 'chevron-up' : 'chevron-forward'}
+              size={20} color="#526880" style={styles.eventCategoryChevron} />
+          </TouchableOpacity>
+          {upcomingCategoryExpanded && <EventCategoryOptions counts={eventCategoryCounts}
+            allCount={allEventCategoryCount} maxHeight={Math.min(150, windowHeight * 0.2)} />}
         </View>
       </Animated.View>
       )}
@@ -2354,6 +2364,41 @@ const styles = StyleSheet.create({
       backgroundColor: 'rgba(255, 255, 255, 0.1)',
     }),
   },
+  eventFilterPanel: {
+    backgroundColor: 'rgba(250, 252, 255, 0.995)',
+    borderRadius: 20,
+    borderColor: '#AFC9E4',
+    paddingTop: 10,
+    paddingBottom: 11,
+    paddingHorizontal: 12,
+    shadowColor: '#233F62',
+    shadowOffset: { width: 0, height: 5 },
+    shadowOpacity: 0.2,
+    shadowRadius: 12,
+    elevation: 10,
+  },
+  eventPanelHeader: {
+    minHeight: 43,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderBottomWidth: 1,
+    borderBottomColor: '#D9E3EF',
+    marginBottom: 10,
+  },
+  eventPanelTitle: { fontSize: 19, fontWeight: '700', color: '#182B55' },
+  eventHeaderActions: { flexDirection: 'row', alignItems: 'center', gap: 2 },
+  eventResetButton: { minHeight: 44, minWidth: 54, alignItems: 'center', justifyContent: 'center' },
+  eventResetText: { color: '#0874D5', fontSize: 13, fontWeight: '600' },
+  eventCloseButton: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
+  eventSection: { marginBottom: 12 },
+  eventSectionTitle: { fontSize: 14, color: '#182B55', fontWeight: '700', marginBottom: 7 },
+  eventCategorySection: { borderTopWidth: 1, borderTopColor: '#D9E3EF', paddingTop: 5 },
+  eventCategoryHeader: { minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 8 },
+  eventCategorySummary: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 5 },
+  eventCategorySummaryText: { color: '#34496C', fontSize: 12, flexShrink: 1 },
+  eventSelectedHint: { color: '#62749A', fontSize: 11, flex: 1 },
+  eventCategoryChevron: { marginLeft: 'auto' },
   filterPanelGradient: {
     position: 'absolute',
     top: 0,

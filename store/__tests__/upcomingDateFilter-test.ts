@@ -5,6 +5,7 @@ import { countUpcomingDateEvents } from '../../utils/mapEventFilters';
 import { getInterestCarouselEvents } from '../../utils/interestCarouselOrder';
 import { doesEventMatchInterestCarouselBaseFilters } from '../../utils/interestCarouselFilterUtils';
 import { createLegacyTimingContract } from '../../utils/eventTiming';
+import { getEventFilterReset } from '../../components/map/eventFilterPanelModel';
 
 jest.mock('../../config/firebaseConfig', () => ({ auth: {}, firestore: {}, app: {} }));
 jest.mock('firebase/firestore', () => ({ collection: jest.fn(), getDocs: jest.fn(), query: jest.fn(), where: jest.fn() }));
@@ -88,6 +89,17 @@ describe('one Upcoming filtering contract', () => {
     useMapStore.getState().setTypeFilters('event', { upcomingDate: custom });
     expect(useMapStore.getState().selectedCluster).toBeNull();
     expect(useMapStore.getState().selectedVenues).toEqual([]);
+  });
+
+  it('resets the panel to Today and clears the category source and custom dates', () => {
+    useMapStore.getState().setTypeFilters('event', { upcomingDate: custom });
+    useMapStore.getState().setTypeFilters('event', getEventFilterReset(), 'filter-pills');
+    const filters = useMapStore.getState().filterCriteria.eventFilters;
+    expect(filters).toMatchObject({ timeFilter: TimeFilterType.TODAY });
+    expect(filters.category).toBeUndefined();
+    expect(filters.categoryFilterSource).toBeUndefined();
+    expect(filters.upcomingDate).toBeUndefined();
+    expect(ids(useMapStore.getState().filteredEvents)).toEqual(['today']);
   });
 
   it.each([TimeFilterType.NOW, TimeFilterType.TODAY, TimeFilterType.TOMORROW, TimeFilterType.ALL])(

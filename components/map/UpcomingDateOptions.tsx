@@ -127,8 +127,7 @@ export default function UpcomingDateOptions({ events, criteria, onSelect }: Prop
   ];
   const context = createEventTimeContext();
   return <View style={styles.refinement}>
-    <Text style={styles.refinementTitle}>Narrow upcoming</Text>
-    <Text style={styles.helper}>Choose when you want to go</Text>
+    <Text style={styles.refinementTitle}>Upcoming dates</Text>
     <View style={styles.options}>
       {options.map(option => {
         const active = selection.kind === option.selection.kind;
@@ -137,9 +136,9 @@ export default function UpcomingDateOptions({ events, criteria, onSelect }: Prop
           accessibilityLabel={`${option.label}, ${count} events`}
           onPress={() => option.selection.kind === 'custom' ? setCalendarOpen(true) : onSelect(option.selection)}
           style={[styles.option, active && styles.activeOption]}>
-          <Ionicons name={option.icon} size={16} color={active ? 'white' : '#1976D2'} />
-          <Text style={[styles.optionText, active && styles.white]}>{option.label}</Text>
-          <Text style={[styles.count, active && styles.white]}>({count})</Text>
+          <Ionicons name={option.icon} size={17} color={active ? '#0874D5' : '#263F68'} />
+          <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}
+            style={[styles.optionText, active && styles.selectedText]}>{`${option.label} (${count})`}</Text>
         </Pressable>;
       })}
     </View>
@@ -149,14 +148,16 @@ export default function UpcomingDateOptions({ events, criteria, onSelect }: Prop
 }
 
 const styles = StyleSheet.create({
-  refinement: { marginBottom: 8 },
-  refinementTitle: { fontSize: 13, fontWeight: '600', color: '#253C55' },
-  helper: { fontSize: 11, color: '#526880', marginTop: 2, marginBottom: 8 },
-  options: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
-  option: { width: '48%', flexGrow: 1, flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 9, paddingVertical: 9, borderRadius: 12, backgroundColor: 'white', borderWidth: 1, borderColor: '#D5E4F3' },
-  activeOption: { backgroundColor: '#2196F3', borderColor: '#2196F3' },
-  optionText: { color: '#334155', fontSize: 12, flexShrink: 1 },
-  count: { color: '#64748B', fontSize: 11, marginLeft: 'auto' },
+  refinement: { marginBottom: 12 },
+  refinementTitle: { fontSize: 14, fontWeight: '700', color: '#182B55', marginBottom: 7 },
+  options: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', rowGap: 7 },
+  option: { width: '48.5%', minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 6,
+    paddingHorizontal: 9, borderRadius: 12, backgroundColor: 'white', borderWidth: 1,
+    borderColor: '#DAE3EE', elevation: 1, shadowColor: '#273E60', shadowOpacity: 0.07,
+    shadowRadius: 3, shadowOffset: { width: 0, height: 2 } },
+  activeOption: { backgroundColor: '#E7F3FF', borderColor: '#1681E2' },
+  optionText: { color: '#263F68', fontSize: 12, fontWeight: '500', flexShrink: 1 },
+  selectedText: { color: '#0874D5', fontWeight: '700' },
   white: { color: 'white' },
   modal: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(15, 30, 50, 0.42)' },
   sheet: { backgroundColor: '#FFFFFF', borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingHorizontal: 22, paddingTop: 10 },

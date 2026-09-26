@@ -11020,8 +11020,8 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
             left: 0,
             right: 0,
             top: TOP_OFFSET, // baseline + per-platform nudge
-            zIndex: 12,
-            elevation: 12,
+            zIndex: activeFilterPanel === 'events' ? 40 : 12,
+            elevation: activeFilterPanel === 'events' ? 40 : 12,
             transform: [{ translateY: pillsAnimation }],
             opacity: shouldRenderAncillaryOverlays ? pillsOpacity : 0,
           }}
