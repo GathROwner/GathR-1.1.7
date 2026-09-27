@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -43,7 +43,8 @@ import Autolink from 'react-native-autolink';
 import type { Event, Venue, Cluster } from '../../types/events';
 import { useMapStore } from '../../store/mapStore';
 import { addEventToCalendarWithTiming } from '../../utils/calendarUtils';
-import { isValidImageUrl, getCategoryFallbackImage } from '../../utils/imageUtils';
+import { getCategoryFallbackImage } from '../../utils/imageUtils';
+import { buildEventImageGallery } from '../../utils/eventImageGallery';
 import {
   formatEventTimingSummary,
   getEventTimeStatus,
@@ -252,6 +253,10 @@ const EventImageLightbox: React.FC<EventImageLightboxProps> = ({
 // Use updated event data with fallback to original prop (keep prop fields!)
   const updatedFromStore = getUpdatedEvent(event.id);
   const updatedEvent = { ...event, ...(updatedFromStore || {}) };
+  const galleryImageUrls = useMemo(
+    () => buildEventImageGallery(imageUrl, updatedEvent.mediaUrls),
+    [imageUrl, updatedEvent.mediaUrls]
+  );
   const originalSourceUrl = getEventOriginalSourceUrl(updatedEvent);
   const provinceScopeEvent = isProvinceScopeEvent(updatedEvent);
   const areaScopeBadge = getAreaScopeBadgePresentation(updatedEvent);
@@ -392,12 +397,10 @@ try {
 
   // State for full-screen image viewer
   const [isImageViewerVisible, setIsImageViewerVisible] = useState(false);
+  const [selectedGalleryImageIndex, setSelectedGalleryImageIndex] = useState(0);
 
   // State to prevent gesture conflicts when image viewer closes
   const [justClosedImageViewer, setJustClosedImageViewer] = useState(false);
-
-  // Track if the thumbnail is using a fallback image (URL failed to load or was missing)
-  const [isUsingFallbackImage, setIsUsingFallbackImage] = useState(false);
 
   const isReduceMotionEnabled = useReduceMotion();
 
@@ -435,10 +438,16 @@ try {
     eventsLengthRef.current = events?.length ?? 0;
   }, [currentIndex, onNavigate, events?.length]);
 
-  // Reset fallback state when imageUrl changes (navigating between events)
+  // Reset the selected page when navigating between events.
   useEffect(() => {
-    setIsUsingFallbackImage(false);
-  }, [imageUrl]);
+    setSelectedGalleryImageIndex(0);
+  }, [imageUrl, updatedEvent.id]);
+
+  useEffect(() => {
+    setSelectedGalleryImageIndex((current) =>
+      Math.min(current, Math.max(galleryImageUrls.length - 1, 0))
+    );
+  }, [galleryImageUrls]);
 
   useEffect(() => {
     const resetTrendingAnimation = () => {
@@ -1314,14 +1323,18 @@ const handleNonTicketAction = () => {
     (friend) => !invitedPrivateGuestUids.has(friend.uid)
   );
 
-  // Prepare images array for the image viewer
-  // Use fallback if: URL is invalid OR the thumbnail reported a load error
+  // Prepare images for the full-screen viewer. The visible image component
+  // still provides its category fallback when an individual remote image fails.
+  const displayImageUrl = galleryImageUrls[selectedGalleryImageIndex] || imageUrl;
+  const galleryThumbnailIndexes = galleryImageUrls
+    .map((_, index) => index)
+    .filter((index) => index !== selectedGalleryImageIndex);
+
   const getImagesForViewer = () => {
-    // If URL looks valid AND the thumbnail didn't error, use the remote URL
-    if (isValidImageUrl(imageUrl) && !isUsingFallbackImage) {
-      return [{ uri: imageUrl }];
+    if (galleryImageUrls.length > 0) {
+      return galleryImageUrls.map((url) => ({ uri: url }));
     }
-    // Otherwise use the local fallback asset
+    // Otherwise use the local fallback asset.
     return [getCategoryFallbackImage(updatedEvent.category, updatedEvent.type, 'post', updatedEvent)];
   };
   const images = getImagesForViewer();
@@ -1404,21 +1417,24 @@ const handleNonTicketAction = () => {
         {/* Tappable Image */}
         <View style={[styles.imageWrapper, { height: imageHeight }]}>
           <TouchableOpacity
-            accessibilityLabel={`View full-screen image for ${updatedEvent.title}`}
+            accessibilityLabel={
+              galleryImageUrls.length > 1
+                ? `View image ${selectedGalleryImageIndex + 1} of ${galleryImageUrls.length} for ${updatedEvent.title}`
+                : `View full-screen image for ${updatedEvent.title}`
+            }
             accessibilityRole="imagebutton"
             activeOpacity={0.9}
             onPress={handleImagePress}
             style={styles.imagePressSurface}
           >
             <FallbackImage
-              imageUrl={imageUrl}
+              imageUrl={displayImageUrl}
               category={updatedEvent.category}
               type={updatedEvent.type}
               style={styles.image}
               fallbackType="post"
               item={updatedEvent}
               resizeMode="contain"
-              onFallback={setIsUsingFallbackImage as any}
             />
           </TouchableOpacity>
 
@@ -1493,6 +1509,42 @@ const handleNonTicketAction = () => {
           <View style={styles.zoomIconOverlay}>
             <MaterialIcons name="zoom-in" size={21} color="rgba(255, 255, 255, 0.9)" />
           </View>
+
+          {galleryThumbnailIndexes.length > 0 && (
+            <GestureScrollView
+              accessibilityLabel={`More images for ${updatedEvent.title}`}
+              contentContainerStyle={styles.imageGalleryRailContent}
+              nestedScrollEnabled
+              showsVerticalScrollIndicator={false}
+              style={[styles.imageGalleryRail, { maxHeight: Math.max(92, imageHeight - 104) }]}
+            >
+              {galleryThumbnailIndexes.map((index) => {
+                const url = galleryImageUrls[index];
+                return (
+                  <TouchableOpacity
+                    key={url}
+                    accessibilityLabel={`Show image ${index + 1} of ${galleryImageUrls.length} for ${updatedEvent.title}`}
+                    accessibilityRole="button"
+                    activeOpacity={0.88}
+                    onPress={() => {
+                      setSelectedGalleryImageIndex(index);
+                    }}
+                    style={styles.imageGalleryThumbnailButton}
+                  >
+                    <FallbackImage
+                      imageUrl={url}
+                      category={updatedEvent.category}
+                      type={updatedEvent.type}
+                      style={styles.imageGalleryThumbnail}
+                      fallbackType="post"
+                      item={updatedEvent}
+                      resizeMode="cover"
+                    />
+                  </TouchableOpacity>
+                );
+              })}
+            </GestureScrollView>
+          )}
 
           {showTrendingOverlay && (
             <View style={styles.trendingOverlay} pointerEvents="none">
@@ -2177,7 +2229,7 @@ const handleNonTicketAction = () => {
       {/* Full-Screen Image Viewer */}
       <ImageView
         images={images}
-        imageIndex={0}
+        imageIndex={galleryImageUrls.length > 0 ? selectedGalleryImageIndex : 0}
         visible={isImageViewerVisible}
         onRequestClose={handleImageViewerClose}
         backgroundColor="#000000"
@@ -2485,6 +2537,35 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     zIndex: 26,
+  },
+  imageGalleryRail: {
+    position: 'absolute',
+    top: 104,
+    right: 12,
+    width: 58,
+    zIndex: 27,
+  },
+  imageGalleryRailContent: {
+    gap: 8,
+    paddingBottom: 4,
+  },
+  imageGalleryThumbnailButton: {
+    width: 58,
+    height: 58,
+    borderRadius: 10,
+    overflow: 'hidden',
+    borderWidth: 2,
+    borderColor: 'rgba(255, 255, 255, 0.92)',
+    backgroundColor: 'rgba(0, 0, 0, 0.56)',
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.32,
+    shadowRadius: 3,
+    elevation: 5,
+  },
+  imageGalleryThumbnail: {
+    width: '100%',
+    height: '100%',
   },
   engagementOverlay: {
     position: 'absolute',

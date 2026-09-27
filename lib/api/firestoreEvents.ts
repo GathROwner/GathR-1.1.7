@@ -411,7 +411,9 @@ export function normalizeFirestoreEvent(fsEvent: FirestoreEvent): Event {
         : [],
 
     // Additional media/details
-    mediaUrls: fsEvent.metadata?.mediaUrls || [],
+    mediaUrls: Array.isArray(fsEvent.mediaUrls)
+      ? fsEvent.mediaUrls
+      : fsEvent.metadata?.mediaUrls || [],
     sourceUrl: firstText(fsEvent.sourceUrl, fsEvent.metadata?.sourceUrl) || undefined,
     sourceUniqueId: firstText(fsEvent.metadata?.uniqueId) || undefined,
     facebookUrl: firstText(

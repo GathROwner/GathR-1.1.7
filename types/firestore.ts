@@ -183,6 +183,7 @@ export interface FirestoreEvent {
   profileUrl?: string;
   imageUrl?: string;
   relevantImageUrl?: string;
+  mediaUrls?: string[];
   SharedPostThumbnail?: string | null;
   sourceUrl?: string;
   sharedEventCandidateId?: string;
