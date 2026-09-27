@@ -21,3 +21,15 @@ export const buildEventImageGallery = (
 
   return gallery;
 };
+
+/**
+ * The detail grid reserves its hero for the selected event image and shows at
+ * most three additional source pages beside it.
+ */
+export const getEventImageGallerySideTileIndexes = (
+  gallery: readonly string[]
+): number[] => gallery.slice(1, 4).map((_, index) => index + 1);
+
+export const getEventImageGalleryHiddenCount = (
+  gallery: readonly string[]
+): number => Math.max(gallery.length - 4, 0);

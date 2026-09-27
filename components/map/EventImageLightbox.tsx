@@ -44,7 +44,11 @@ import type { Event, Venue, Cluster } from '../../types/events';
 import { useMapStore } from '../../store/mapStore';
 import { addEventToCalendarWithTiming } from '../../utils/calendarUtils';
 import { getCategoryFallbackImage } from '../../utils/imageUtils';
-import { buildEventImageGallery } from '../../utils/eventImageGallery';
+import {
+  buildEventImageGallery,
+  getEventImageGalleryHiddenCount,
+  getEventImageGallerySideTileIndexes,
+} from '../../utils/eventImageGallery';
 import {
   formatEventTimingSummary,
   getEventTimeStatus,
@@ -257,6 +261,11 @@ const EventImageLightbox: React.FC<EventImageLightboxProps> = ({
     () => buildEventImageGallery(imageUrl, updatedEvent.mediaUrls),
     [imageUrl, updatedEvent.mediaUrls]
   );
+  const gallerySideTileIndexes = useMemo(
+    () => getEventImageGallerySideTileIndexes(galleryImageUrls),
+    [galleryImageUrls]
+  );
+  const galleryHiddenImageCount = getEventImageGalleryHiddenCount(galleryImageUrls);
   const originalSourceUrl = getEventOriginalSourceUrl(updatedEvent);
   const provinceScopeEvent = isProvinceScopeEvent(updatedEvent);
   const areaScopeBadge = getAreaScopeBadgePresentation(updatedEvent);
@@ -780,6 +789,11 @@ useEffect(() => {
 
     // Proceed with opening full-screen viewer
     setIsImageViewerVisible(true);
+  };
+
+  const handleGalleryTilePress = (index: number) => {
+    setSelectedGalleryImageIndex(index);
+    handleImagePress();
   };
 
   /**
@@ -1326,9 +1340,6 @@ const handleNonTicketAction = () => {
   // Prepare images for the full-screen viewer. The visible image component
   // still provides its category fallback when an individual remote image fails.
   const displayImageUrl = galleryImageUrls[selectedGalleryImageIndex] || imageUrl;
-  const galleryThumbnailIndexes = galleryImageUrls
-    .map((_, index) => index)
-    .filter((index) => index !== selectedGalleryImageIndex);
 
   const getImagesForViewer = () => {
     if (galleryImageUrls.length > 0) {
@@ -1416,27 +1427,62 @@ const handleNonTicketAction = () => {
       >
         {/* Tappable Image */}
         <View style={[styles.imageWrapper, { height: imageHeight }]}>
-          <TouchableOpacity
-            accessibilityLabel={
-              galleryImageUrls.length > 1
-                ? `View image ${selectedGalleryImageIndex + 1} of ${galleryImageUrls.length} for ${updatedEvent.title}`
-                : `View full-screen image for ${updatedEvent.title}`
-            }
-            accessibilityRole="imagebutton"
-            activeOpacity={0.9}
-            onPress={handleImagePress}
-            style={styles.imagePressSurface}
-          >
-            <FallbackImage
-              imageUrl={displayImageUrl}
-              category={updatedEvent.category}
-              type={updatedEvent.type}
-              style={styles.image}
-              fallbackType="post"
-              item={updatedEvent}
-              resizeMode="contain"
-            />
-          </TouchableOpacity>
+          <View style={styles.imageGrid}>
+            <TouchableOpacity
+              accessibilityLabel={`Open photos for ${updatedEvent.title}`}
+              accessibilityRole="imagebutton"
+              activeOpacity={0.9}
+              onPress={() => handleGalleryTilePress(0)}
+              style={[
+                styles.imagePressSurface,
+                gallerySideTileIndexes.length > 0 && styles.imageGridHero,
+              ]}
+            >
+              <FallbackImage
+                imageUrl={galleryImageUrls[0] || displayImageUrl}
+                category={updatedEvent.category}
+                type={updatedEvent.type}
+                style={styles.image}
+                fallbackType="post"
+                item={updatedEvent}
+                resizeMode="contain"
+              />
+            </TouchableOpacity>
+
+            {gallerySideTileIndexes.length > 0 && (
+              <View style={styles.imageGridSideColumn}>
+                {gallerySideTileIndexes.map((index) => {
+                  const hasHiddenImages = index === gallerySideTileIndexes[gallerySideTileIndexes.length - 1]
+                    && galleryHiddenImageCount > 0;
+                  return (
+                    <TouchableOpacity
+                      key={galleryImageUrls[index]}
+                      accessibilityLabel={`Open additional photo for ${updatedEvent.title}`}
+                      accessibilityRole="imagebutton"
+                      activeOpacity={0.9}
+                      onPress={() => handleGalleryTilePress(index)}
+                      style={styles.imageGridSideTile}
+                    >
+                      <FallbackImage
+                        imageUrl={galleryImageUrls[index]}
+                        category={updatedEvent.category}
+                        type={updatedEvent.type}
+                        style={styles.imageGalleryThumbnail}
+                        fallbackType="post"
+                        item={updatedEvent}
+                        resizeMode="cover"
+                      />
+                      {hasHiddenImages && (
+                        <View style={styles.imageGridMoreOverlay} pointerEvents="none">
+                          <Text style={styles.imageGridMoreText}>{`+${galleryHiddenImageCount}`}</Text>
+                        </View>
+                      )}
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            )}
+          </View>
 
           <LinearGradient
             colors={['rgba(0, 0, 0, 0.42)', 'rgba(0, 0, 0, 0.14)', 'rgba(0, 0, 0, 0)']}
@@ -1447,7 +1493,10 @@ const handleNonTicketAction = () => {
 
           {/* Event and venue identity share the image plane, matching list cards. */}
           <View style={styles.header}>
-            <View style={styles.headerIdentitySurface}>
+            <View style={[
+              styles.headerIdentitySurface,
+              gallerySideTileIndexes.length > 0 && styles.headerIdentitySurfaceWithGallery,
+            ]}>
               <View style={styles.headerVenueAvatarContainer}>
                 <FallbackImage
                   imageUrl={updatedEvent.profileUrl}
@@ -1509,42 +1558,6 @@ const handleNonTicketAction = () => {
           <View style={styles.zoomIconOverlay}>
             <MaterialIcons name="zoom-in" size={21} color="rgba(255, 255, 255, 0.9)" />
           </View>
-
-          {galleryThumbnailIndexes.length > 0 && (
-            <GestureScrollView
-              accessibilityLabel={`More images for ${updatedEvent.title}`}
-              contentContainerStyle={styles.imageGalleryRailContent}
-              nestedScrollEnabled
-              showsVerticalScrollIndicator={false}
-              style={[styles.imageGalleryRail, { maxHeight: Math.max(92, imageHeight - 104) }]}
-            >
-              {galleryThumbnailIndexes.map((index) => {
-                const url = galleryImageUrls[index];
-                return (
-                  <TouchableOpacity
-                    key={url}
-                    accessibilityLabel={`Show image ${index + 1} of ${galleryImageUrls.length} for ${updatedEvent.title}`}
-                    accessibilityRole="button"
-                    activeOpacity={0.88}
-                    onPress={() => {
-                      setSelectedGalleryImageIndex(index);
-                    }}
-                    style={styles.imageGalleryThumbnailButton}
-                  >
-                    <FallbackImage
-                      imageUrl={url}
-                      category={updatedEvent.category}
-                      type={updatedEvent.type}
-                      style={styles.imageGalleryThumbnail}
-                      fallbackType="post"
-                      item={updatedEvent}
-                      resizeMode="cover"
-                    />
-                  </TouchableOpacity>
-                );
-              })}
-            </GestureScrollView>
-          )}
 
           {showTrendingOverlay && (
             <View style={styles.trendingOverlay} pointerEvents="none">
@@ -2448,6 +2461,10 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255, 255, 255, 0.18)',
     backgroundColor: 'rgba(17, 17, 17, 0.74)',
   },
+  headerIdentitySurfaceWithGallery: {
+    flexGrow: 0,
+    flexBasis: '68%',
+  },
   headerTextContainer: {
     flex: 1,
     marginRight: 10,
@@ -2495,6 +2512,37 @@ const styles = StyleSheet.create({
     width: '100%',
     height: '100%',
   },
+  imageGrid: {
+    flex: 1,
+    flexDirection: 'row',
+  },
+  imageGridHero: {
+    flex: 2.15,
+    width: 'auto',
+  },
+  imageGridSideColumn: {
+    flex: 1,
+    overflow: 'hidden',
+    borderLeftWidth: 2,
+    borderLeftColor: '#111111',
+  },
+  imageGridSideTile: {
+    flex: 1,
+    overflow: 'hidden',
+    borderBottomWidth: 2,
+    borderBottomColor: '#111111',
+  },
+  imageGridMoreOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.55)',
+  },
+  imageGridMoreText: {
+    color: '#FFFFFF',
+    fontSize: 25,
+    fontWeight: '800',
+  },
   headerVenueAvatarContainer: {
     width: 40,
     height: 40,
@@ -2537,31 +2585,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     zIndex: 26,
-  },
-  imageGalleryRail: {
-    position: 'absolute',
-    top: 104,
-    right: 12,
-    width: 58,
-    zIndex: 27,
-  },
-  imageGalleryRailContent: {
-    gap: 8,
-    paddingBottom: 4,
-  },
-  imageGalleryThumbnailButton: {
-    width: 58,
-    height: 58,
-    borderRadius: 10,
-    overflow: 'hidden',
-    borderWidth: 2,
-    borderColor: 'rgba(255, 255, 255, 0.92)',
-    backgroundColor: 'rgba(0, 0, 0, 0.56)',
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.32,
-    shadowRadius: 3,
-    elevation: 5,
   },
   imageGalleryThumbnail: {
     width: '100%',
