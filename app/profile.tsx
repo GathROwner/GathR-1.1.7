@@ -10,6 +10,7 @@ import {
   Image, 
   TextInput,
   ScrollView,
+  Keyboard,
   KeyboardAvoidingView,
   Platform,
   Modal,
@@ -250,6 +251,19 @@ const FacebookPageSubmission = React.forwardRef<View, FacebookPageSubmissionProp
   const [isExpanded, setIsExpanded] = useState(false);
   const [isResolving, setIsResolving] = useState(false);
   const [dailyCount, setDailyCount] = useState(0);
+  const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
+
+  useEffect(() => {
+    if (Platform.OS !== 'android' || !isExpanded) return;
+
+    setIsKeyboardVisible(Keyboard.isVisible());
+    const showSubscription = Keyboard.addListener('keyboardDidShow', () => setIsKeyboardVisible(true));
+    const hideSubscription = Keyboard.addListener('keyboardDidHide', () => setIsKeyboardVisible(false));
+    return () => {
+      showSubscription.remove();
+      hideSubscription.remove();
+    };
+  }, [isExpanded]);
   
   // Load daily count on component mount
   useEffect(() => {
@@ -638,9 +652,11 @@ const FacebookPageSubmission = React.forwardRef<View, FacebookPageSubmissionProp
         animationType="slide"
         onRequestClose={() => setIsExpanded(false)}
       >
+        {/* Android hide-event coordinates can leave a stale inset in a full-screen modal. */}
         <KeyboardAvoidingView
           style={submissionStyles.modalKeyboardAvoider}
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          behavior="padding"
+          enabled={Platform.OS === 'ios' || isKeyboardVisible}
         >
           <TouchableWithoutFeedback onPress={() => setIsExpanded(false)}>
             <View style={submissionStyles.modalOverlay}>
@@ -1509,6 +1525,7 @@ const handleLogout = async () => {
       ref={profileContainerRef}
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      enabled={isEditing}
       keyboardVerticalOffset={Platform.OS === 'ios' ? 64 : 0}
     >
       <StatusBar barStyle="light-content" />
