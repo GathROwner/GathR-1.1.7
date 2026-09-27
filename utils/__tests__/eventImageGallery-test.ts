@@ -24,4 +24,10 @@ describe('buildEventImageGallery', () => {
       'https://images.example/schedule.jpg',
     ]);
   });
+
+  it('keeps a generated fallback as a single hero when the source supplied no media', () => {
+    expect(buildEventImageGallery('https://images.example/fallback-live-music.jpg', undefined)).toEqual([
+      'https://images.example/fallback-live-music.jpg',
+    ]);
+  });
 });
