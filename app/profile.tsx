@@ -638,67 +638,74 @@ const FacebookPageSubmission = React.forwardRef<View, FacebookPageSubmissionProp
         animationType="slide"
         onRequestClose={() => setIsExpanded(false)}
       >
-        <TouchableWithoutFeedback onPress={() => setIsExpanded(false)}>
-          <View style={submissionStyles.modalOverlay}>
-            <TouchableWithoutFeedback onPress={(event) => event.stopPropagation()}>
-              <View style={submissionStyles.modalSheet}>
-                <View style={submissionStyles.modalHandle} />
-                <View style={submissionStyles.modalHeader}>
-                  <View>
-                    <Text style={submissionStyles.modalTitle}>Suggest a Facebook page</Text>
-                    <Text style={submissionStyles.modalSubtitle}>{dailyCount} of 5 submissions today</Text>
+        <KeyboardAvoidingView
+          style={submissionStyles.modalKeyboardAvoider}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        >
+          <TouchableWithoutFeedback onPress={() => setIsExpanded(false)}>
+            <View style={submissionStyles.modalOverlay}>
+              <TouchableWithoutFeedback onPress={(event) => event.stopPropagation()}>
+                <View style={submissionStyles.modalSheet}>
+                  <View style={submissionStyles.modalHandle} />
+                  <View style={submissionStyles.modalHeader}>
+                    <View>
+                      <Text style={submissionStyles.modalTitle}>Suggest a Facebook page</Text>
+                      <Text style={submissionStyles.modalSubtitle}>{dailyCount} of 5 submissions today</Text>
+                    </View>
+                    <TouchableOpacity
+                      style={submissionStyles.modalClose}
+                      onPress={() => setIsExpanded(false)}
+                      accessibilityRole="button"
+                      accessibilityLabel="Close page suggestion"
+                    >
+                      <Ionicons name="close" size={21} color={BRAND.text} />
+                    </TouchableOpacity>
+                  </View>
+                  <Text style={submissionStyles.description}>
+                    Know a local business or venue that should be included? Send us its Facebook page.
+                  </Text>
+                  <View style={submissionStyles.inputContainer}>
+                    <Ionicons name="logo-facebook" size={20} color={BRAND.primary} style={submissionStyles.inputIcon} />
+                    <TextInput
+                      style={submissionStyles.input}
+                      placeholder="facebook.com/pagename"
+                      value={facebookUrl}
+                      onChangeText={handleUrlChange}
+                      autoCapitalize="none"
+                      autoCorrect={false}
+                      keyboardType="url"
+                      returnKeyType="done"
+                      blurOnSubmit
+                      placeholderTextColor={BRAND.textLight}
+                    />
+                    {isResolving && (
+                      <ActivityIndicator size="small" color={BRAND.primary} style={submissionStyles.resolvingIcon} />
+                    )}
                   </View>
                   <TouchableOpacity
-                    style={submissionStyles.modalClose}
-                    onPress={() => setIsExpanded(false)}
-                    accessibilityRole="button"
-                    accessibilityLabel="Close page suggestion"
+                    style={[
+                      submissionStyles.submitButton,
+                      (isSubmitting || dailyCount >= 5) && submissionStyles.submitButtonDisabled,
+                    ]}
+                    onPress={handleSubmit}
+                    disabled={isSubmitting || dailyCount >= 5}
                   >
-                    <Ionicons name="close" size={21} color={BRAND.text} />
+                    {isSubmitting ? (
+                      <ActivityIndicator color={BRAND.white} size="small" />
+                    ) : (
+                      <>
+                        <Ionicons name="paper-plane-outline" size={18} color={BRAND.white} style={submissionStyles.buttonIcon} />
+                        <Text style={submissionStyles.submitButtonText}>
+                          {dailyCount >= 5 ? 'Daily Limit Reached' : 'Submit Page'}
+                        </Text>
+                      </>
+                    )}
                   </TouchableOpacity>
                 </View>
-                <Text style={submissionStyles.description}>
-                  Know a local business or venue that should be included? Send us its Facebook page.
-                </Text>
-                <View style={submissionStyles.inputContainer}>
-                  <Ionicons name="logo-facebook" size={20} color={BRAND.primary} style={submissionStyles.inputIcon} />
-                  <TextInput
-                    style={submissionStyles.input}
-                    placeholder="facebook.com/pagename"
-                    value={facebookUrl}
-                    onChangeText={handleUrlChange}
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                    keyboardType="url"
-                    placeholderTextColor={BRAND.textLight}
-                  />
-                  {isResolving && (
-                    <ActivityIndicator size="small" color={BRAND.primary} style={submissionStyles.resolvingIcon} />
-                  )}
-                </View>
-                <TouchableOpacity
-                  style={[
-                    submissionStyles.submitButton,
-                    (isSubmitting || dailyCount >= 5) && submissionStyles.submitButtonDisabled,
-                  ]}
-                  onPress={handleSubmit}
-                  disabled={isSubmitting || dailyCount >= 5}
-                >
-                  {isSubmitting ? (
-                    <ActivityIndicator color={BRAND.white} size="small" />
-                  ) : (
-                    <>
-                      <Ionicons name="paper-plane-outline" size={18} color={BRAND.white} style={submissionStyles.buttonIcon} />
-                      <Text style={submissionStyles.submitButtonText}>
-                        {dailyCount >= 5 ? 'Daily Limit Reached' : 'Submit Page'}
-                      </Text>
-                    </>
-                  )}
-                </TouchableOpacity>
-              </View>
-            </TouchableWithoutFeedback>
-          </View>
-        </TouchableWithoutFeedback>
+              </TouchableWithoutFeedback>
+            </View>
+          </TouchableWithoutFeedback>
+        </KeyboardAvoidingView>
       </Modal>
     </View>
   );
@@ -2164,6 +2171,9 @@ const submissionStyles = StyleSheet.create({
     flex: 1,
     justifyContent: 'flex-end',
     backgroundColor: 'rgba(7, 24, 45, 0.45)',
+  },
+  modalKeyboardAvoider: {
+    flex: 1,
   },
   modalSheet: {
     backgroundColor: BRAND.white,
