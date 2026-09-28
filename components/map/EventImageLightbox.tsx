@@ -2539,11 +2539,16 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
   },
   imageGridHero: {
-    flex: 2.15,
-    width: 'auto',
+    // A percentage width prevents React Native from letting the hero's
+    // intrinsic image size collapse a one-tile side column.
+    flexGrow: 0,
+    flexShrink: 0,
+    width: '67%',
   },
   imageGridSideColumn: {
-    flex: 1,
+    flexGrow: 0,
+    flexShrink: 0,
+    width: '33%',
     overflow: 'hidden',
     borderLeftWidth: 2,
     borderLeftColor: '#111111',
