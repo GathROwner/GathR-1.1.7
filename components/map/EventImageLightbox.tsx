@@ -305,8 +305,10 @@ const EventImageLightbox: React.FC<EventImageLightboxProps> = ({
   const [routeActionBusy, setRouteActionBusy] = useState(false);
   const routeActionInFlightRef = useRef(false);
 
-// Hydrate details when either the address or original-source identity is
-// missing. The latter also repairs older persisted Event objects after an OTA.
+// Hydrate details when either the address, original-source identity, or media
+// field is missing. The last condition repairs an older persisted Trending
+// payload after an OTA: a missing field is not the same as a confirmed empty
+// source-media array, so only the former needs the detail request.
   const fetchEventDetails = useMapStore(s => s.fetchEventDetails);
 
   // Map actions for opening EventCallout from "View Venue" button
@@ -315,11 +317,18 @@ const EventImageLightbox: React.FC<EventImageLightboxProps> = ({
   const setPendingRouteEvent = useMapStore(s => s.setPendingRouteEvent);
 
   useEffect(() => {
-    if (!updatedEvent?.address || !originalSourceUrl) {
+    const hasKnownMediaUrls = Array.isArray(updatedEvent?.mediaUrls);
+    if (!updatedEvent?.address || !originalSourceUrl || !hasKnownMediaUrls) {
       console.log('[AddressFlow][Lightbox] requestingDetails', { id: event.id });
       fetchEventDetails?.([event.id]);
     }
-  }, [event.id, fetchEventDetails, originalSourceUrl, updatedEvent?.address]);
+  }, [
+    event.id,
+    fetchEventDetails,
+    originalSourceUrl,
+    updatedEvent?.address,
+    updatedEvent?.mediaUrls,
+  ]);
 
 
 // DEBUG: trace address flow into lightbox
