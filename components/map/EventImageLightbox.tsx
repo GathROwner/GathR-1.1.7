@@ -304,6 +304,7 @@ const EventImageLightbox: React.FC<EventImageLightboxProps> = ({
   }, [updatedEvent.id]);
   const [routeActionBusy, setRouteActionBusy] = useState(false);
   const routeActionInFlightRef = useRef(false);
+  const trendingGalleryRefreshIdsRef = useRef<Set<string>>(new Set());
 
 // Hydrate details when either the address, original-source identity, or media
 // field is missing. The last condition repairs an older persisted Trending
@@ -318,13 +319,25 @@ const EventImageLightbox: React.FC<EventImageLightboxProps> = ({
 
   useEffect(() => {
     const hasKnownMediaUrls = Array.isArray(updatedEvent?.mediaUrls);
-    if (!updatedEvent?.address || !originalSourceUrl || !hasKnownMediaUrls) {
+    const shouldRefreshTrendingGallery =
+      isTrending &&
+      galleryImageUrls.length <= 1 &&
+      !trendingGalleryRefreshIdsRef.current.has(String(event.id));
+
+    if (!updatedEvent?.address || !originalSourceUrl || !hasKnownMediaUrls || shouldRefreshTrendingGallery) {
+      if (shouldRefreshTrendingGallery) {
+        trendingGalleryRefreshIdsRef.current.add(String(event.id));
+      }
       console.log('[AddressFlow][Lightbox] requestingDetails', { id: event.id });
-      fetchEventDetails?.([event.id]);
+      fetchEventDetails?.([event.id], {
+        forceRefresh: shouldRefreshTrendingGallery,
+      });
     }
   }, [
     event.id,
     fetchEventDetails,
+    galleryImageUrls.length,
+    isTrending,
     originalSourceUrl,
     updatedEvent?.address,
     updatedEvent?.mediaUrls,

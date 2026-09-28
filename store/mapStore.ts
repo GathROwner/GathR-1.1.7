@@ -2109,9 +2109,13 @@ refreshPrivateSharedEventsFromServer: async (privateEventIds?: string[]) => {
   /**
    * Fetch detailed event data for lazy loading callouts
    */
-fetchEventDetails: async (eventIds: (string | number)[]) => {
+fetchEventDetails: async (
+  eventIds: (string | number)[],
+  options: { forceRefresh?: boolean } = {}
+) => {
   if (!eventIds || eventIds.length === 0) return;
 
+  const forceRefresh = options.forceRefresh === true;
   const qc: any = (global as any)?.__RQ_CLIENT ?? null;
   const locallyConfirmedEventIds = new Set(
     get().events
@@ -2338,7 +2342,7 @@ fetchEventDetails: async (eventIds: (string | number)[]) => {
   };
 
   const cached = qc?.getQueryData(key) as any[] | undefined;
-  if (cached?.length) {
+  if (cached?.length && !forceRefresh) {
     if (DEBUG_MAP_LOAD) {
       console.log('[MapStore] Using cached event details for', idsString);
     }
@@ -2361,7 +2365,9 @@ fetchEventDetails: async (eventIds: (string | number)[]) => {
   }
 
   try {
-    const fresh = qc
+    const fresh = forceRefresh
+      ? await fetchFresh()
+      : qc
       ? await qc.fetchQuery({
           queryKey: key,
           queryFn: fetchFresh,
@@ -2369,6 +2375,9 @@ fetchEventDetails: async (eventIds: (string | number)[]) => {
           gcTime: 1000 * 60 * 10,
         })
       : await fetchFresh();
+    if (forceRefresh && qc) {
+      qc.setQueryData(key, fresh);
+    }
     mergeIntoStore(fresh);
   } catch (error) {
     console.error('Error fetching event details:', error);

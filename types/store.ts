@@ -179,7 +179,10 @@ export interface MapState {
   getClustersForZoom: (zoom: number) => Cluster[];
   getTimeFilterCounts: (eventType: 'event' | 'special') => { [key in TimeFilterType]: number };
   getCategoryFilterCounts: (eventType: 'event' | 'special') => { [category: string]: number };
-  fetchEventDetails: (eventIds: (string | number)[]) => Promise<void>;
+  fetchEventDetails: (
+    eventIds: (string | number)[],
+    options?: { forceRefresh?: boolean }
+  ) => Promise<void>;
 
   // Viewport-aware actions
   fetchViewportEvents: (
