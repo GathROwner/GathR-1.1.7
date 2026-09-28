@@ -1,5 +1,6 @@
 import {
   buildEventImageGallery,
+  dedupeEventImageGalleryByContent,
   getEventImageGalleryHiddenCount,
   getEventImageGallerySideTileIndexes,
 } from '../eventImageGallery';
@@ -47,5 +48,45 @@ describe('buildEventImageGallery', () => {
 
     expect(getEventImageGallerySideTileIndexes(gallery)).toEqual([1, 2, 3]);
     expect(getEventImageGalleryHiddenCount(gallery)).toBe(2);
+  });
+});
+
+describe('dedupeEventImageGalleryByContent', () => {
+  it('keeps the hero and removes a later managed URL with the same object hash', async () => {
+    const requests: string[] = [];
+    const request = async (url: string) => {
+      requests.push(url);
+      return {
+        ok: true,
+        json: async () => ({
+          md5Hash:
+            url.includes('hero.webp') || url.includes('reupload.webp')
+              ? 'same-image'
+              : 'different-image',
+        }),
+      };
+    };
+
+    await expect(dedupeEventImageGalleryByContent([
+      'https://storage.googleapis.com/gathr-uploaded-images/postimages/hero.webp',
+      'https://storage.googleapis.com/gathr-uploaded-images/postimages/reupload.webp',
+      'https://storage.googleapis.com/gathr-uploaded-images/postimages/schedule.webp',
+    ], request)).resolves.toEqual([
+      'https://storage.googleapis.com/gathr-uploaded-images/postimages/hero.webp',
+      'https://storage.googleapis.com/gathr-uploaded-images/postimages/schedule.webp',
+    ]);
+    expect(requests).toHaveLength(3);
+  });
+
+  it('keeps non-managed media when object metadata cannot identify it', async () => {
+    await expect(dedupeEventImageGalleryByContent([
+      'https://images.example/flyer.jpg',
+      'https://images.example/schedule.jpg',
+    ], async () => {
+      throw new Error('A non-managed URL must not be fetched');
+    })).resolves.toEqual([
+      'https://images.example/flyer.jpg',
+      'https://images.example/schedule.jpg',
+    ]);
   });
 });
