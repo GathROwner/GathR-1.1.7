@@ -46,7 +46,6 @@ import { addEventToCalendarWithTiming } from '../../utils/calendarUtils';
 import { getCategoryFallbackImage } from '../../utils/imageUtils';
 import {
   buildEventImageGallery,
-  dedupeEventImageGalleryByContent,
   getEventImageGalleryHiddenCount,
   getEventImageGallerySideTileIndexes,
 } from '../../utils/eventImageGallery';
@@ -262,23 +261,11 @@ const EventImageLightbox: React.FC<EventImageLightboxProps> = ({
     () => buildEventImageGallery(imageUrl, updatedEvent.mediaUrls),
     [imageUrl, updatedEvent.mediaUrls]
   );
-  const [displayGalleryImageUrls, setDisplayGalleryImageUrls] = useState(galleryImageUrls);
-
-  useEffect(() => {
-    let cancelled = false;
-    setDisplayGalleryImageUrls(galleryImageUrls);
-    void dedupeEventImageGalleryByContent(galleryImageUrls).then((deduped) => {
-      if (!cancelled) setDisplayGalleryImageUrls(deduped);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [galleryImageUrls]);
   const gallerySideTileIndexes = useMemo(
-    () => getEventImageGallerySideTileIndexes(displayGalleryImageUrls),
-    [displayGalleryImageUrls]
+    () => getEventImageGallerySideTileIndexes(galleryImageUrls),
+    [galleryImageUrls]
   );
-  const galleryHiddenImageCount = getEventImageGalleryHiddenCount(displayGalleryImageUrls);
+  const galleryHiddenImageCount = getEventImageGalleryHiddenCount(galleryImageUrls);
   const originalSourceUrl = getEventOriginalSourceUrl(updatedEvent);
   const provinceScopeEvent = isProvinceScopeEvent(updatedEvent);
   const areaScopeBadge = getAreaScopeBadgePresentation(updatedEvent);
@@ -489,9 +476,9 @@ try {
 
   useEffect(() => {
     setSelectedGalleryImageIndex((current) =>
-      Math.min(current, Math.max(displayGalleryImageUrls.length - 1, 0))
+      Math.min(current, Math.max(galleryImageUrls.length - 1, 0))
     );
-  }, [displayGalleryImageUrls]);
+  }, [galleryImageUrls]);
 
   useEffect(() => {
     const resetTrendingAnimation = () => {
@@ -1374,11 +1361,11 @@ const handleNonTicketAction = () => {
 
   // Prepare images for the full-screen viewer. The visible image component
   // still provides its category fallback when an individual remote image fails.
-  const displayImageUrl = displayGalleryImageUrls[selectedGalleryImageIndex] || imageUrl;
+  const displayImageUrl = galleryImageUrls[selectedGalleryImageIndex] || imageUrl;
 
   const getImagesForViewer = () => {
-    if (displayGalleryImageUrls.length > 0) {
-      return displayGalleryImageUrls.map((url) => ({ uri: url }));
+    if (galleryImageUrls.length > 0) {
+      return galleryImageUrls.map((url) => ({ uri: url }));
     }
     // Otherwise use the local fallback asset.
     return [getCategoryFallbackImage(updatedEvent.category, updatedEvent.type, 'post', updatedEvent)];
@@ -1474,7 +1461,7 @@ const handleNonTicketAction = () => {
               ]}
             >
               <FallbackImage
-                imageUrl={displayGalleryImageUrls[0] || displayImageUrl}
+                imageUrl={galleryImageUrls[0] || displayImageUrl}
                 category={updatedEvent.category}
                 type={updatedEvent.type}
                 style={styles.image}
@@ -1491,7 +1478,7 @@ const handleNonTicketAction = () => {
                     && galleryHiddenImageCount > 0;
                   return (
                     <TouchableOpacity
-                      key={displayGalleryImageUrls[index]}
+                      key={galleryImageUrls[index]}
                       accessibilityLabel={`Open additional photo for ${updatedEvent.title}`}
                       accessibilityRole="imagebutton"
                       activeOpacity={0.9}
@@ -1499,7 +1486,7 @@ const handleNonTicketAction = () => {
                       style={styles.imageGridSideTile}
                     >
                       <FallbackImage
-                        imageUrl={displayGalleryImageUrls[index]}
+                        imageUrl={galleryImageUrls[index]}
                         category={updatedEvent.category}
                         type={updatedEvent.type}
                         style={styles.imageGalleryThumbnail}
@@ -2277,7 +2264,7 @@ const handleNonTicketAction = () => {
       {/* Full-Screen Image Viewer */}
       <ImageView
         images={images}
-        imageIndex={displayGalleryImageUrls.length > 0 ? selectedGalleryImageIndex : 0}
+        imageIndex={galleryImageUrls.length > 0 ? selectedGalleryImageIndex : 0}
         visible={isImageViewerVisible}
         onRequestClose={handleImageViewerClose}
         backgroundColor="#000000"
