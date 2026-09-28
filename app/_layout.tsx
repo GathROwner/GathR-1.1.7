@@ -62,6 +62,7 @@ import {
   // ðŸš€ PERFORMANCE: Preload data on app start
   import { EVENTS_MINIMAL } from '../lib/queryKeys';
   import { fetchMinimalEvents } from '../lib/api/events';
+  import { fetchEventFeedVersion } from '../lib/api/firestoreEvents';
   import { useMapStore } from '../store';
   // 📢 AdMob SDK initialization (moved from index.tsx to ensure it runs regardless of auth state)
   import mobileAds, { MaxAdContentRating } from 'react-native-google-mobile-ads';
@@ -828,7 +829,9 @@ try {
       return () => sub.remove();
     }, []);
 
-// ðŸ”„ Live refresh while app is active: periodically reconcile with server
+// ðŸ”„ Live refresh while app is active: check the lightweight feed marker every
+// ten minutes, then reconcile the full event set only after parser changes.
+const eventFeedVersionRef = useRef<string | null>(null);
 useEffect(() => {
   let interval: any;
 
@@ -840,14 +843,37 @@ useEffect(() => {
       const beforeUpdatedAt = before?.dataUpdatedAt ?? 0;
       const t0 = Date.now();
 
-      queryClient
-        .fetchQuery({
-          queryKey: key,
-          queryFn: rqFetchEventsMinimal,
-          staleTime: 0,              // force a network check each tick
-          gcTime: 1000 * 60 * 10,
+      void fetchEventFeedVersion()
+        .catch((err) => {
+          // Keep existing user-visible behavior if a version check is down.
+          console.warn('[RQ Live] Feed version unavailable; doing full refresh', err);
+          return null;
         })
-        .then((result: any) => {
+        .then((feedVersion) => {
+          const marker = feedVersion?.version === null || !feedVersion
+            ? null
+            : `${feedVersion.version}:${feedVersion.updatedAt || ''}`;
+
+          // A missing marker is treated as unavailable. This preserves the
+          // former full-refresh behavior until both backend and parser are on
+          // the marker-aware release.
+          if (marker && eventFeedVersionRef.current === marker) {
+            console.log('[RQ Live] No public event feed change');
+            return null;
+          }
+
+          return queryClient
+            .fetchQuery({
+              queryKey: key,
+              queryFn: rqFetchEventsMinimal,
+              staleTime: 0,
+              gcTime: 1000 * 60 * 10,
+            })
+            .then((result: any) => ({ result, marker }));
+        })
+        .then((payload) => {
+          if (!payload) return;
+          const { result, marker } = payload;
           const after = queryClient.getQueryState(key);
           const afterUpdatedAt = after?.dataUpdatedAt ?? 0;
           const fromNetwork = afterUpdatedAt > beforeUpdatedAt;
@@ -863,6 +889,10 @@ useEffect(() => {
             );
           } else {
             console.log('[RQ Live] No change (cache up to date)');
+          }
+
+          if (marker) {
+            eventFeedVersionRef.current = marker;
           }
 
           if (items.length > 0) {

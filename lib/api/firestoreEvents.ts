@@ -37,6 +37,11 @@ interface FirestorePageRequest extends FirestoreFetchOptions {
   startAfter?: string;
 }
 
+export interface EventFeedVersion {
+  version: number | null;
+  updatedAt: string | null;
+}
+
 export const toFirestoreEventId = (eventId: string | number): string => {
   const raw = String(eventId ?? '').trim();
   if (!raw) return '';
@@ -497,6 +502,25 @@ async function fetchFirestorePage({
   }
 
   return data;
+}
+
+/**
+ * Fetch the compact parser-maintained feed marker. This is used by the active
+ * 10-minute refresh loop to avoid re-downloading every event when nothing has
+ * changed. Callers must fall back to a full fetch if it is unavailable.
+ */
+export async function fetchEventFeedVersion(): Promise<EventFeedVersion> {
+  const response = await fetch(`${FIRESTORE_API_BASE}/events/version`);
+  if (!response.ok) {
+    throw new Error(`Firestore event feed version error: ${response.status}`);
+  }
+
+  const payload = await response.json();
+  const version = Number(payload?.version);
+  return {
+    version: Number.isFinite(version) ? version : null,
+    updatedAt: typeof payload?.updatedAt === 'string' ? payload.updatedAt : null,
+  };
 }
 
 /**
