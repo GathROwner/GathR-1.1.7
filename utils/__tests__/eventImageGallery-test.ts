@@ -1,5 +1,6 @@
 import {
   buildEventImageGallery,
+  getEventImageGalleryHeroUrl,
   getEventImageGalleryHiddenCount,
   getEventImageGallerySideTileIndexes,
 } from '../eventImageGallery';
@@ -27,6 +28,21 @@ describe('buildEventImageGallery', () => {
       'https://images.example/flyer.jpg',
       'https://images.example/schedule.jpg',
     ]);
+  });
+
+  it('uses the parser-selected hero only when requested and keeps the remaining source order', () => {
+    const generic = 'https://images.example/dining-room.jpg';
+    const wings = 'https://images.example/wings.jpg';
+    const menu = 'https://images.example/menu.jpg';
+    const media = [generic, wings, menu];
+
+    expect(buildEventImageGallery(
+      getEventImageGalleryHeroUrl(generic, wings, true), media
+    )).toEqual([wings, generic, menu]);
+    expect(buildEventImageGallery(
+      getEventImageGalleryHeroUrl(generic, wings, false), media
+    )).toEqual([generic, wings, menu]);
+    expect(getEventImageGalleryHeroUrl(generic, 'not-an-image', true)).toBe(generic);
   });
 
   it('keeps a generated fallback as a single hero when the source supplied no media', () => {

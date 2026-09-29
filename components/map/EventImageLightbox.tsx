@@ -46,6 +46,7 @@ import { addEventToCalendarWithTiming } from '../../utils/calendarUtils';
 import { getCategoryFallbackImage } from '../../utils/imageUtils';
 import {
   buildEventImageGallery,
+  getEventImageGalleryHeroUrl,
   getEventImageGalleryHiddenCount,
   getEventImageGallerySideTileIndexes,
 } from '../../utils/eventImageGallery';
@@ -209,6 +210,7 @@ interface EventImageLightboxProps {
   currentIndex?: number;
   onNavigate?: (index: number) => void;
   isTrending?: boolean;
+  preferRelevantHero?: boolean;
   // City-level (festival) event opened from its map marker
   isCityEvent?: boolean;
   // Route events use the existing secondary action slot to reveal the route.
@@ -227,6 +229,7 @@ const EventImageLightbox: React.FC<EventImageLightboxProps> = ({
   currentIndex,
   onNavigate,
   isTrending = false,
+  preferRelevantHero = false,
   isCityEvent = false,
   onShowRoute,
   onViewVenue,
@@ -257,9 +260,14 @@ const EventImageLightbox: React.FC<EventImageLightboxProps> = ({
 // Use updated event data with fallback to original prop (keep prop fields!)
   const updatedFromStore = getUpdatedEvent(event.id);
   const updatedEvent = { ...event, ...(updatedFromStore || {}) };
+  const galleryHeroUrl = getEventImageGalleryHeroUrl(
+    imageUrl,
+    updatedEvent.relevantImageUrl,
+    isTrending || preferRelevantHero
+  );
   const galleryImageUrls = useMemo(
-    () => buildEventImageGallery(imageUrl, updatedEvent.mediaUrls),
-    [imageUrl, updatedEvent.mediaUrls]
+    () => buildEventImageGallery(galleryHeroUrl, updatedEvent.mediaUrls),
+    [galleryHeroUrl, updatedEvent.mediaUrls]
   );
   const gallerySideTileIndexes = useMemo(
     () => getEventImageGallerySideTileIndexes(galleryImageUrls),

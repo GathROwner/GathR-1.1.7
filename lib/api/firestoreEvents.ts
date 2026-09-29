@@ -384,6 +384,7 @@ export function normalizeFirestoreEvent(fsEvent: FirestoreEvent): Event {
 
     // Media
     imageUrl: eventImageUrl,
+    relevantImageUrl: fsEvent.relevantImageUrl || fsEvent.metadata?.relevantImageUrl,
     profileUrl: eventProfileUrl,
     SharedPostThumbnail: sharedPostThumbnail,
 

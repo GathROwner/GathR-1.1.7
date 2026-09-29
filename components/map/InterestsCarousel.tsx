@@ -879,6 +879,7 @@ const InterestsCarousel: React.FC = () => {
         >
           <EventImageLightbox
             imageUrl={selectedImageData.imageUrl}
+            preferRelevantHero
             event={selectedImageData.event}
             venue={selectedImageData.venue}
             cluster={selectedImageData.cluster}

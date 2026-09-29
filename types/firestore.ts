@@ -39,6 +39,7 @@ export interface FirestoreVenueInfo {
 export interface FirestoreEventMetadata {
   icon?: string;
   image?: string;
+  relevantImageUrl?: string;
   address?: string;
   establishment?: string;
   venueName?: string;

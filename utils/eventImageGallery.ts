@@ -1,5 +1,15 @@
 import { isValidImageUrl } from './imageUtils';
 
+/** Prefer the parser's event-specific image when a gallery surface requests it. */
+export const getEventImageGalleryHeroUrl = (
+  imageUrl: string | null | undefined,
+  relevantImageUrl: string | null | undefined,
+  preferRelevant: boolean
+): string => {
+  const relevant = typeof relevantImageUrl === 'string' ? relevantImageUrl.trim() : '';
+  return preferRelevant && isValidImageUrl(relevant) ? relevant : imageUrl || '';
+};
+
 /**
  * Builds an event-detail gallery without inventing a new image ranking.
  * The caller-selected hero stays first, then event media remains in source
