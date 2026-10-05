@@ -613,13 +613,26 @@ export default function ContextualCheckInControl({ enabled }: Props) {
                 <Text style={styles.pickerSubtitle}>
                   {privateSetupVisible
                     ? 'Use a private label. Never enter a home address.'
-                    : 'Choose a public place close to your phone.'}
+                    : 'Choose a public place nearby or check in privately.'}
                 </Text>
               </View>
               <TouchableOpacity accessibilityLabel="Close nearby places" onPress={closePicker} style={styles.closeButton}>
                 <Ionicons name="close" size={22} color="#344054" />
               </TouchableOpacity>
             </View>
+
+            {!privateSetupVisible && (
+              <View style={styles.privateEntryBar}>
+                <TouchableOpacity accessibilityRole="button" onPress={openPrivateSetup} style={styles.privateEntryButton} testID="private-place-entry">
+                  <View style={styles.privateEntryIcon}><Ionicons name="home-outline" size={20} color="#6941C6" /></View>
+                  <View style={styles.copy}>
+                    <Text style={styles.privateEntryTitle}>Check in at a private place</Text>
+                    <Text style={styles.privateEntryCopy}>Home or somewhere that should not become a public venue</Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={20} color="#6941C6" />
+                </TouchableOpacity>
+              </View>
+            )}
 
             {privateSetupVisible ? (
               <View style={styles.privateSetup}>
@@ -762,18 +775,6 @@ export default function ContextualCheckInControl({ enabled }: Props) {
                 </View>
               </>
             )}
-            {!privateSetupVisible && (
-              <View style={styles.privateEntryBar}>
-                <TouchableOpacity accessibilityRole="button" onPress={openPrivateSetup} style={styles.privateEntryButton} testID="private-place-entry">
-                  <View style={styles.privateEntryIcon}><Ionicons name="home-outline" size={20} color="#6941C6" /></View>
-                  <View style={styles.copy}>
-                    <Text style={styles.privateEntryTitle}>Check in at a private place</Text>
-                    <Text style={styles.privateEntryCopy}>Home or somewhere that should not become a public venue</Text>
-                  </View>
-                  <Ionicons name="chevron-forward" size={20} color="#6941C6" />
-                </TouchableOpacity>
-              </View>
-            )}
           </View>
         </View>
       </Modal>
@@ -862,7 +863,7 @@ const styles = StyleSheet.create({
   attributionText: { color: '#667085', fontSize: 10.5, textDecorationLine: 'underline' },
   usePlaceButton: { minHeight: 52, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderRadius: 17, backgroundColor: '#2F80ED' },
   usePlaceText: { color: '#FFFFFF', fontSize: 16, fontWeight: '900' },
-  privateEntryBar: { paddingHorizontal: 14, paddingTop: 10, paddingBottom: 20, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#D0D5DD', backgroundColor: '#F8FAFC' },
+  privateEntryBar: { paddingHorizontal: 18, paddingTop: 2, paddingBottom: 12, backgroundColor: '#F8FAFC' },
   privateEntryButton: { minHeight: 68, flexDirection: 'row', alignItems: 'center', gap: 11, paddingHorizontal: 13, paddingVertical: 10, borderRadius: 18, borderWidth: 1.5, borderColor: '#D6BBFB', backgroundColor: '#F4EBFF' },
   privateEntryIcon: { width: 38, height: 38, alignItems: 'center', justifyContent: 'center', borderRadius: 13, backgroundColor: '#FFFFFF' },
   privateEntryTitle: { color: '#53389E', fontSize: 14, fontWeight: '900' },
