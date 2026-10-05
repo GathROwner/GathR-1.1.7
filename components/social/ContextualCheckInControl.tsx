@@ -458,7 +458,9 @@ export default function ContextualCheckInControl({ enabled }: Props) {
         };
       }).sort((first, second) => first.distanceMetres - second.distanceMetres);
       setNearbyPlaces(decorated);
-      setSelectedPlaceId(closestNearbyPlaceId(decorated));
+      setSelectedPlaceId((currentId) => currentId
+        ? (decorated.some((place) => place.id === currentId) ? currentId : '')
+        : closestNearbyPlaceId(decorated));
       if (result.externalLookupStatus === 'partial_unavailable') {
         setPartialDiscoveryNotice('Additional nearby public places could not be loaded. You can choose from the places shown or try again.');
       } else if (decorated.length === 0) {

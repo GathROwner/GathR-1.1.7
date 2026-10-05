@@ -81,6 +81,38 @@ describe('foreground readiness observer lifecycle', () => {
     expect(useCheckInReadinessStore.getState().evidence.hereMs).toBe(10_000);
     expect(useCheckInReadinessStore.getState().grant).toBeNull();
   });
+  it('feeds time-ordered jitter, accuracy wobble, and movement into the real readiness reducer', async () => {
+    const origin = Date.now();
+    const fixes = [
+      { capturedAtMs: origin, latitude: 46.235, longitude: -63.129, accuracy: 10, speed: 0.2 },
+      { capturedAtMs: origin + 9_500, latitude: 46.23504, longitude: -63.12897, accuracy: 18, speed: 0.2 },
+      { capturedAtMs: origin + 19_800, latitude: 46.23497, longitude: -63.12902, accuracy: 30, speed: null },
+      { capturedAtMs: origin + 29_200, latitude: 46.23502, longitude: -63.12898, accuracy: 17, speed: 0.4 },
+      { capturedAtMs: origin + 40_000, latitude: 46.23498, longitude: -63.12901, accuracy: 12, speed: 0.3 },
+      { capturedAtMs: origin + 49_700, latitude: 46.23505, longitude: -63.129, accuracy: 18, speed: 1.2 },
+    ];
+    let fixIndex = 0;
+    (Location.getCurrentPositionAsync as jest.Mock).mockImplementation(async () => {
+      const next = fixes[fixIndex++];
+      return { timestamp: next.capturedAtMs, coords: {
+        latitude: next.latitude, longitude: next.longitude, accuracy: next.accuracy, speed: next.speed,
+      } };
+    });
+
+    await mount();
+    for (let index = 0; index < fixes.length - 1; index += 1) await advance(10_000);
+
+    const inputs = (recordCheckInReadinessSample as jest.Mock).mock.calls.map(([input]) => input as CheckInReadinessSampleInput);
+    expect(inputs).toHaveLength(fixes.length);
+    expect(inputs.map(({ capturedAtMs }) => capturedAtMs)).toEqual(fixes.map(({ capturedAtMs }) => capturedAtMs));
+    expect(inputs[1].latitude).not.toBe(inputs[0].latitude);
+    expect(inputs[2]).toMatchObject({ accuracyMeters: 30, speedMetersPerSecond: null, reset: false });
+    expect(inputs[4]).toMatchObject({ accuracyMeters: 12, speedMetersPerSecond: 0.3, reset: false });
+    expect(inputs[5]).toMatchObject({ accuracyMeters: 18, speedMetersPerSecond: 1.2, reset: true, sequence: 1 });
+    expect(useCheckInReadinessStore.getState()).toMatchObject({
+      sessionId: 'session-2', evidence: { hereMs: 0, placeMs: 0, reason: 'moving' },
+    });
+  });
   it('pauses GPS and readiness calls while privacy has a bound place, including short inactive pauses', async () => {
     await mount();
     const grant = { protocolVersion: 1 as const, readinessSessionId: 'bound-session',

@@ -169,6 +169,51 @@ describe('ContextualCheckInControl', () => {
     act(() => component!.unmount());
   });
 
+  it('does not switch an explicitly selected venue on refresh when another result is closer', async () => {
+    makeReady(60);
+    const candidates = [
+      { id: 'taste-candidate', type: 'external_place', name: 'Taste of India', address: '129 Kent St',
+        category: 'Restaurant', latitude: 46.2351, longitude: -63.129, distanceMetres: 12 },
+      { id: 'tim-candidate', type: 'external_place', name: 'Tim Hortons', address: '125 Kent St',
+        category: 'Cafe', latitude: 46.23504, longitude: -63.129, distanceMetres: 8 },
+    ];
+    (discoverNearbyCheckInPlaces as jest.Mock)
+      .mockResolvedValueOnce({ candidates, externalLookupStatus: 'partial_unavailable' })
+      .mockResolvedValueOnce({ candidates, externalLookupStatus: 'partial_unavailable' })
+      .mockResolvedValueOnce({ candidates: [candidates[1]], externalLookupStatus: 'partial_unavailable' });
+    let component: renderer.ReactTestRenderer;
+    await act(async () => { component = renderer.create(<ContextualCheckInControl enabled />); });
+    await act(async () => component!.root.findByProps({ testID: 'contextual-check-in-ready' }).props.onPress());
+
+    const tim = component!.root.findByProps({ accessibilityLabel: 'Tim Hortons, 8 metres away' });
+    const taste = component!.root.findByProps({ accessibilityLabel: 'Taste of India, 12 metres away' });
+    expect(tim.props.accessibilityState.selected).toBe(true);
+    expect(taste.props.accessibilityState.selected).toBe(false);
+    act(() => taste.props.onPress());
+
+    const before = useCheckInReadinessStore.getState();
+    jest.setSystemTime(Date.now() + 10_000);
+    const capturedAtMs = Date.now();
+    const jitteredEvidence = advanceReadiness(before.evidence, {
+      latitude: 46.23502, longitude: -63.12901, accuracyMeters: 22, speedMetersPerSecond: 0.3, capturedAtMs,
+    }, capturedAtMs);
+    act(() => useCheckInReadinessStore.setState({ evidence: jitteredEvidence }));
+
+    expect(component!.root.findByProps({ accessibilityLabel: 'Taste of India, 12 metres away' }).props.accessibilityState.selected).toBe(true);
+    expect(component!.root.findByProps({ accessibilityLabel: 'Tim Hortons, 8 metres away' }).props.accessibilityState.selected).toBe(false);
+    expect(component!.root.findByProps({ testID: 'continue-public-check-in' }).props.disabled).toBe(true);
+    expect(bindCheckInReadiness).not.toHaveBeenCalled();
+
+    await act(async () => component!.root.findByProps({ testID: 'retry-nearby-public-places' }).props.onPress());
+    expect(component!.root.findByProps({ accessibilityLabel: 'Taste of India, 12 metres away' }).props.accessibilityState.selected).toBe(true);
+    expect(component!.root.findByProps({ accessibilityLabel: 'Tim Hortons, 8 metres away' }).props.accessibilityState.selected).toBe(false);
+
+    await act(async () => component!.root.findByProps({ testID: 'retry-nearby-public-places' }).props.onPress());
+    expect(component!.root.findByProps({ accessibilityLabel: 'Tim Hortons, 8 metres away' }).props.accessibilityState.selected).toBe(false);
+    expect(component!.root.findByProps({ testID: 'continue-public-check-in' }).props.disabled).toBe(true);
+    act(() => component!.unmount());
+  });
+
   it('keeps the projected full Here ring open until the server confirms, then updates the hint and opens immediately', async () => {
     makeReady(30);
     const receipt = useCheckInReadinessStore.getState().receipt!;

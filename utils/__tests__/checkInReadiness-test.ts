@@ -1,8 +1,8 @@
 import {
   advanceReadiness, canCollectReadiness, canDeliverArrivalNotification, CHECK_IN_READINESS,
   emptyReadiness, isFreshReadiness, mayPromptReadiness, mayShareExactPrivateLocation, pauseReadiness,
-  projectedReadinessMs, readinessResumeDecision,
-  type ReadinessPermissions, type ReadinessSample,
+  projectedReadinessMs, readinessDistance, readinessResumeDecision,
+  type ReadinessPermissions, type ReadinessSample, type ReadinessState,
 } from '../checkInReadiness';
 import { readinessLevels, validBoundReadiness, validReadinessReceipt } from '../checkInReadinessContract';
 import type { BoundCheckInReadiness, CheckInReadinessReceipt } from '../../types/social';
@@ -28,6 +28,86 @@ describe('real check-in readiness evidence', () => {
     expect(dwell(80).placeMs).toBe(80_000);
     expect(dwell(90)).toMatchObject({ hereMs: 30_000, placeMs: 90_000 });
     expect(dwell(110).placeMs).toBe(90_000);
+  });
+  it('accumulates a time-ordered stationary jitter sequence with changing accuracy and speed', () => {
+    const times = [0, 9.8, 20.1, 29.7, 40.3, 50, 60.2, 70, 80.4, 90];
+    const latitudeOffsets = [0, 0.00004, -0.00003, 0.00006, -0.00002, 0.00003, -0.00005, 0.00002, 0.00005, -0.00001];
+    const longitudeOffsets = [0, 0.00005, -0.00004, 0.00002, -0.00006, 0.00003, 0.00004, -0.00002, 0.00001, -0.00005];
+    const accuracies = [12, 18, 23, 16, 25, 14, 22, 16, 24, 20];
+    const speeds = [0.2, 0.3, 0.4, 0.2, 0.5, null, 0.1, 0.6, 0.3, 0.2];
+    let state = emptyReadiness();
+
+    for (let index = 0; index < times.length; index += 1) {
+      const sample = fix(times[index], {
+        latitude: 46.235 + latitudeOffsets[index],
+        longitude: -63.129 + longitudeOffsets[index],
+        accuracyMeters: accuracies[index],
+        speedMetersPerSecond: speeds[index],
+      });
+      state = advanceReadiness(state, sample, sample.capturedAtMs + 250);
+    }
+
+    expect(state).toMatchObject({ hereMs: 30_000, placeMs: 90_000, reason: 'qualifying', revision: 0 });
+    expect(readinessDistance(state.anchor!, state.previous!)).toBeLessThan(CHECK_IN_READINESS.stationaryRadiusMetres);
+  });
+  it('clears only Place for accuracy wobble above 25 m, then resets both rings above 50 m', () => {
+    const times = [0, 10, 20, 31, 40, 50, 60, 70, 80, 90, 100];
+    const accuracies = [10, 18, 28, 12, 16, 24, 28, 14, 15, 20, 52];
+    const speeds = [0.2, 0.2, 0.4, 0.1, 0, 0.5, 0.4, 0.2, null, 0.3, 0.1];
+    let state = emptyReadiness();
+    const snapshots = new Map<number, ReadinessState>();
+
+    for (let index = 0; index < times.length; index += 1) {
+      const sample = fix(times[index], {
+        latitude: 46.235 + (index % 2 === 0 ? 0.00002 : -0.00003),
+        longitude: -63.129 + (index % 3 === 0 ? 0.00002 : -0.00001),
+        accuracyMeters: accuracies[index],
+        speedMetersPerSecond: speeds[index],
+      });
+      state = advanceReadiness(state, sample, sample.capturedAtMs + 175);
+      snapshots.set(times[index], state);
+    }
+
+    expect(snapshots.get(20)).toMatchObject({ hereMs: 20_000, placeMs: 0, reason: 'qualifying' });
+    expect(snapshots.get(50)).toMatchObject({ hereMs: 30_000, placeMs: 19_000, reason: 'qualifying' });
+    expect(snapshots.get(90)).toMatchObject({ hereMs: 30_000, placeMs: 20_000, reason: 'qualifying' });
+    expect(state).toMatchObject({ hereMs: 0, placeMs: 0, reason: 'low_accuracy', revision: 1 });
+  });
+  it('resets both rings while moving toward and away from an adjacent candidate, even within 20 m', () => {
+    const ready = dwell(30);
+    const towardNeighbor = fix(40, { latitude: 46.23504, accuracyMeters: 17, speedMetersPerSecond: 1.2 });
+    const moving = advanceReadiness(ready, towardNeighbor, towardNeighbor.capturedAtMs + 200);
+    expect(moving).toMatchObject({ hereMs: 0, placeMs: 0, reason: 'moving', anchor: null, previous: null });
+
+    const backTowardStart = fix(50, { latitude: 46.235, accuracyMeters: 12, speedMetersPerSecond: 0.9 });
+    const returning = advanceReadiness(moving, backTowardStart, backTowardStart.capturedAtMs + 200);
+    expect(returning).toMatchObject({ hereMs: 0, placeMs: 0, reason: 'moving', anchor: null, previous: null });
+
+    const settled = fix(60, { latitude: 46.23501, accuracyMeters: 19, speedMetersPerSecond: 0.2 });
+    const restarted = advanceReadiness(returning, settled, settled.capturedAtMs + 200);
+    const next = fix(70, { latitude: 46.23502, accuracyMeters: 18, speedMetersPerSecond: 0.3 });
+    expect(advanceReadiness(restarted, next, next.capturedAtMs + 200))
+      .toMatchObject({ hereMs: 10_000, placeMs: 10_000, reason: 'qualifying' });
+  });
+  it('accepts the maximum sample gap, restarts after a larger gap, and validates a fresh resume fix', () => {
+    const progress = dwell(30);
+    const atMaximumGap = fix(50, { latitude: 46.23502, accuracyMeters: 18, speedMetersPerSecond: 0.2 });
+    const continued = advanceReadiness(progress, atMaximumGap, atMaximumGap.capturedAtMs + 250);
+    expect(continued).toMatchObject({ hereMs: 30_000, placeMs: 50_000, reason: 'qualifying' });
+
+    const afterLargeGap = fix(55, { latitude: 46.23503, accuracyMeters: 22, speedMetersPerSecond: 0.3 });
+    const restarted = advanceReadiness(progress, afterLargeGap, afterLargeGap.capturedAtMs + 250);
+    expect(restarted).toMatchObject({ hereMs: 0, placeMs: 0, reason: 'qualifying', revision: progress.revision + 1,
+      anchor: afterLargeGap, previous: afterLargeGap });
+
+    const resumedSample = fix(85, { latitude: 46.23506, longitude: -63.12902, accuracyMeters: 20, speedMetersPerSecond: 0.4 });
+    expect(readinessResumeDecision(restarted, resumedSample, resumedSample.capturedAtMs + 250)).toBe('accept');
+    const resumed = advanceReadiness(restarted, resumedSample, resumedSample.capturedAtMs + 250, true,
+      CHECK_IN_READINESS.maxResumeGapMs);
+    expect(resumed).toMatchObject({ hereMs: 30_000, placeMs: 30_000, reason: 'qualifying' });
+
+    const expiredReturn = fix(386, { latitude: 46.23505, accuracyMeters: 18, speedMetersPerSecond: 0.2 });
+    expect(readinessResumeDecision(resumed, expiredReturn, expiredReturn.capturedAtMs + 250)).toBe('reset');
   });
   it('never credits a timer, repeated cached fix, future fix or stale gap', () => {
     const state = dwell(20);
