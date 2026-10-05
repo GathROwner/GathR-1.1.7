@@ -238,7 +238,11 @@ const EventImageLightbox: React.FC<EventImageLightboxProps> = ({
   const router = useRouter();
   const safeAreaInsets = useSafeAreaInsets();
   const tabBarHeight = useBottomTabBarHeight();
-  const { height: windowHeight } = useWindowDimensions();
+  const { height: windowHeight, width: windowWidth } = useWindowDimensions();
+  const headerIdentityMaxWidth = Math.max(
+    0,
+    windowWidth - safeAreaInsets.left - safeAreaInsets.right - 24 - 50
+  );
   const {
     panelTop: lightboxTop,
     imageHeight,
@@ -1527,7 +1531,7 @@ const handleNonTicketAction = () => {
 
           {/* Event and venue identity share the image plane, matching list cards. */}
           <View style={styles.header}>
-            <View style={styles.headerIdentitySurface}>
+            <View style={[styles.headerIdentitySurface, { maxWidth: headerIdentityMaxWidth }]}>
               <View style={styles.headerVenueAvatarContainer}>
                 <FallbackImage
                   imageUrl={updatedEvent.profileUrl}
@@ -2479,7 +2483,8 @@ const styles = StyleSheet.create({
     zIndex: 24,
   },
   headerIdentitySurface: {
-    flex: 1,
+    flexGrow: 0,
+    flexShrink: 1,
     minWidth: 0,
     minHeight: 50,
     flexDirection: 'row',
@@ -2493,7 +2498,9 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(17, 17, 17, 0.74)',
   },
   headerTextContainer: {
-    flex: 1,
+    flexGrow: 0,
+    flexShrink: 1,
+    minWidth: 0,
     marginRight: 10,
   },
   titleScroll: {
