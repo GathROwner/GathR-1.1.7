@@ -278,6 +278,10 @@ const EventImageLightbox: React.FC<EventImageLightboxProps> = ({
   const provinceScopeEvent = isProvinceScopeEvent(updatedEvent);
   const areaScopeBadge = getAreaScopeBadgePresentation(updatedEvent);
   const scopedLocationSummary = getScopedLocationSummary(updatedEvent);
+  const headerVenueName = scopedLocationSummary
+    || updatedEvent.venue?.trim()
+    || venue?.venue?.trim()
+    || '';
   const friendEventId = updatedEvent.friendEvent?.eventId || null;
   const friendEventProjection = useSocialStore((state) => (
     friendEventId
@@ -1523,10 +1527,7 @@ const handleNonTicketAction = () => {
 
           {/* Event and venue identity share the image plane, matching list cards. */}
           <View style={styles.header}>
-            <View style={[
-              styles.headerIdentitySurface,
-              gallerySideTileIndexes.length > 0 && styles.headerIdentitySurfaceWithGallery,
-            ]}>
+            <View style={styles.headerIdentitySurface}>
               <View style={styles.headerVenueAvatarContainer}>
                 <FallbackImage
                   imageUrl={updatedEvent.profileUrl}
@@ -1568,8 +1569,8 @@ const handleNonTicketAction = () => {
                     {updatedEvent.title}
                   </Text>
                 </GestureScrollView>
-                <Text style={styles.subtitle} numberOfLines={1}>
-                  {scopedLocationSummary || updatedEvent.venue}
+                <Text style={styles.subtitle} numberOfLines={1} accessibilityLabel={headerVenueName}>
+                  {headerVenueName}
                 </Text>
               </View>
             </View>
@@ -2490,10 +2491,6 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: 'rgba(255, 255, 255, 0.18)',
     backgroundColor: 'rgba(17, 17, 17, 0.74)',
-  },
-  headerIdentitySurfaceWithGallery: {
-    flexGrow: 0,
-    flexBasis: '68%',
   },
   headerTextContainer: {
     flex: 1,
