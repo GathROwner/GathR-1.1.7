@@ -2490,7 +2490,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingLeft: 5,
-    paddingRight: 12,
+    paddingRight: 8,
     paddingVertical: 5,
     borderRadius: 27,
     borderWidth: StyleSheet.hairlineWidth,
@@ -2501,7 +2501,7 @@ const styles = StyleSheet.create({
     flexGrow: 0,
     flexShrink: 1,
     minWidth: 0,
-    marginRight: 10,
+    marginRight: 0,
   },
   titleScroll: {
     maxWidth: '100%',
@@ -2509,7 +2509,7 @@ const styles = StyleSheet.create({
     flexShrink: 1,
   },
   titleScrollContent: {
-    paddingRight: 18,
+    paddingRight: 4,
   },
   title: {
     fontSize: 18,
