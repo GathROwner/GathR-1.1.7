@@ -21,6 +21,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import {
   createPrivateCheckInPlaceCandidate,
   discoverNearbyCheckInPlaces,
+  listNearbyCanonicalCheckInVenues,
   bindCheckInReadiness,
   createSocialOperationId,
   SocialServiceError,
@@ -33,7 +34,7 @@ import type {
 import { SOCIAL_FEATURE_ENABLED, SOCIAL_RELEASE_TWO_ENABLED } from '../../types/social';
 import { useCheckInReadinessStore } from '../../store/checkInReadinessStore';
 import { claimReadinessPrompt } from '../../services/checkInReadinessPreferences';
-import { advanceReadiness, CHECK_IN_READINESS, mayPromptReadiness, projectedReadinessMs } from '../../utils/checkInReadiness';
+import { CHECK_IN_READINESS, mayPromptReadiness, projectedReadinessMs } from '../../utils/checkInReadiness';
 import { readinessLevels, validBoundReadiness } from '../../utils/checkInReadinessContract';
 
 const MAX_ACCURACY_METRES = 75;
@@ -244,6 +245,38 @@ function isNearbyPublicPlacesLookupUnavailable(error: unknown) {
     && error.details.retryable === true;
 }
 
+function acceptedReadinessLocation(uid: string, requirePlace: boolean) {
+  const current = useCheckInReadinessStore.getState();
+  const now = Date.now();
+  const levels = readinessLevels(current.evidence, current.receipt, current.sessionId, now);
+  const sample = current.evidence.previous;
+  const accuracyLimit = requirePlace
+    ? CHECK_IN_READINESS.placeAccuracyMetres
+    : CHECK_IN_READINESS.hereAccuracyMetres;
+  const ageMs = sample ? now - sample.capturedAtMs : Number.POSITIVE_INFINITY;
+  if (
+    current.uid !== uid
+    || !current.appActive
+    || current.interruptedAtMs !== null
+    || !current.sessionId
+    || !(requirePlace ? levels.place : levels.here)
+    || !sample
+    || !Number.isFinite(sample.accuracyMeters)
+    || sample.accuracyMeters! < 0
+    || sample.accuracyMeters! > accuracyLimit
+    || ageMs < 0
+    || ageMs > CHECK_IN_READINESS.maxSampleGapMs
+  ) return null;
+  return {
+    latitude: sample.latitude,
+    longitude: sample.longitude,
+    accuracyMeters: sample.accuracyMeters!,
+    speedMetersPerSecond: sample.speedMetersPerSecond,
+    capturedAtMs: Math.floor(sample.capturedAtMs),
+    sessionId: current.sessionId,
+  };
+}
+
 export default function ContextualCheckInControl({ enabled }: Props) {
   const router = useRouter();
   const { user } = useAuth();
@@ -265,6 +298,10 @@ export default function ContextualCheckInControl({ enabled }: Props) {
 
 
   const [pickerVisible, setPickerVisible] = useState(false);
+  const [externalSearchVisible, setExternalSearchVisible] = useState(false);
+  const [knownNearbyPlaces, setKnownNearbyPlaces] = useState<VenueCandidate[]>([]);
+  const [knownVenuesLoading, setKnownVenuesLoading] = useState(false);
+  const [knownVenuesNotice, setKnownVenuesNotice] = useState('');
   const [discovering, setDiscovering] = useState(false);
   const [discoveryError, setDiscoveryError] = useState('');
   const [partialDiscoveryNotice, setPartialDiscoveryNotice] = useState('');
@@ -276,6 +313,8 @@ export default function ContextualCheckInControl({ enabled }: Props) {
   const [privateCustomLabel, setPrivateCustomLabel] = useState('');
   const [creatingPrivatePlace, setCreatingPrivatePlace] = useState(false);
   const [privatePlaceError, setPrivatePlaceError] = useState('');
+  const [locationInfoVisible, setLocationInfoVisible] = useState(false);
+  const canonicalCacheRef = useRef<{ sessionId: string; expiresAtMs: number; places: VenueCandidate[] } | null>(null);
   const venues = useMemo(() => {
     const byId = new Map<string, VenueCandidate>();
     for (const event of allEvents) {
@@ -320,6 +359,21 @@ export default function ContextualCheckInControl({ enabled }: Props) {
     ? findCandidates(venues, { coords: {
       ...readiness.evidence.previous, accuracy: readiness.evidence.previous.accuracyMeters,
     } } as unknown as Location.LocationObject) : [];
+  const knownPlaces = (() => {
+    const byId = new Map<string, VenueCandidate>();
+    nearby.forEach((place) => byId.set(place.id, place));
+    knownNearbyPlaces.forEach((place) => byId.set(place.id, place));
+    const sample = readiness.evidence.previous;
+    return [...byId.values()]
+      .map((place) => ({
+        ...place,
+        distanceMetres: sample
+          ? Math.round(distanceMetres(sample.latitude, sample.longitude, place.latitude, place.longitude))
+          : place.distanceMetres,
+      }))
+      .sort((first, second) => first.distanceMetres - second.distanceMetres)
+      .slice(0, 5);
+  })();
   // GPS cannot identify one business among overlapping venues. Keep the generic icon when ambiguous.
   const candidate = nearby.length === 1 && nearby[0].distanceMetres <= 25 && levels.place ? nearby[0] : null;
   const showBubble = useCallback((message: string, automatic = false) => {
@@ -331,6 +385,15 @@ export default function ContextualCheckInControl({ enabled }: Props) {
   useEffect(() => {
     if (!readiness.appActive || (autoBubbleRef.current && (!levels.place || !enabled || pickerVisible))) setBubble('');
   }, [enabled, levels.place, pickerVisible, readiness.appActive]);
+  useEffect(() => {
+    if (pickerVisible && externalSearchVisible && !levels.place) {
+      setNearbyPlaces([]);
+      setSelectedPlaceId('');
+      if (!discovering) {
+        setDiscoveryError('Your location needs to settle again. Wait for the blue Place ring, then search again.');
+      }
+    }
+  }, [discovering, externalSearchVisible, levels.place, pickerVisible]);
   useEffect(() => {
     mountedRef.current = true;
     return () => { mountedRef.current = false; if (bubbleTimer.current) clearTimeout(bubbleTimer.current); };
@@ -353,13 +416,139 @@ export default function ContextualCheckInControl({ enabled }: Props) {
 
   if (!enabled || !SOCIAL_FEATURE_ENABLED || !SOCIAL_RELEASE_TWO_ENABLED || !user) return null;
 
+  const decorateNearbyCandidate = (place: NearbyCheckInPlaceCandidate): VenueCandidate => {
+    const recognized = place.venueId
+      ? venues.find((venue) => venue.venueId === place.venueId)
+      : null;
+    return {
+      id: place.id,
+      type: place.type,
+      venueId: place.venueId,
+      placeCandidateId: place.type === 'external_place' ? place.id : undefined,
+      venueName: place.name,
+      address: place.address,
+      category: place.category,
+      latitude: place.latitude,
+      longitude: place.longitude,
+      distanceMetres: place.distanceMetres,
+      imageUrl: recognized?.imageUrl || '',
+    };
+  };
+
+  const loadKnownNearbyVenues = async (
+    capture: NonNullable<ReturnType<typeof acceptedReadinessLocation>>,
+    flowGeneration: number
+  ) => {
+    const cached = canonicalCacheRef.current;
+    if (cached && cached.sessionId === capture.sessionId && cached.expiresAtMs > Date.now()) {
+      setKnownNearbyPlaces(cached.places);
+      setKnownVenuesLoading(false);
+      return;
+    }
+    setKnownVenuesLoading(true);
+    setKnownVenuesNotice('');
+    const { sessionId, ...location } = capture;
+    try {
+      const result = await listNearbyCanonicalCheckInVenues(location);
+      const current = useCheckInReadinessStore.getState();
+      const stillReady = acceptedReadinessLocation(user.uid, false);
+      if (!mountedRef.current || flowGenerationRef.current !== flowGeneration
+        || !stillReady || current.sessionId !== sessionId || stillReady.sessionId !== sessionId) return;
+      const places = result.candidates.map(decorateNearbyCandidate);
+      canonicalCacheRef.current = { sessionId, expiresAtMs: Date.now() + 5 * 60_000, places };
+      setKnownNearbyPlaces(places);
+      setSelectedPlaceId((currentId) => places.some((place) => place.id === currentId)
+        ? currentId : closestNearbyPlaceId([...nearby, ...places]));
+    } catch {
+      const current = useCheckInReadinessStore.getState();
+      if (!mountedRef.current || flowGenerationRef.current !== flowGeneration || current.sessionId !== sessionId) return;
+      setKnownVenuesNotice('Could not refresh GathR venues. Showing the nearby places already loaded.');
+    } finally {
+      if (mountedRef.current && flowGenerationRef.current === flowGeneration) setKnownVenuesLoading(false);
+    }
+  };
+
+  const openCheckInPicker = () => {
+    const capture = acceptedReadinessLocation(user.uid, false);
+    if (!capture) {
+      showBubble('Your location is updating. The check-in choices will be ready when the purple ring is complete.');
+      return;
+    }
+    flowGenerationRef.current += 1;
+    const flowGeneration = flowGenerationRef.current;
+    setBubble('');
+    setPickerVisible(true);
+    setExternalSearchVisible(false);
+    setPrivateSetupVisible(false);
+    setDiscoveryError('');
+    setPartialDiscoveryNotice('');
+    setSelectionError('');
+    setNearbyPlaces([]);
+    setKnownVenuesNotice('');
+    const localKnown = findCandidates(venues, { coords: {
+      latitude: capture.latitude,
+      longitude: capture.longitude,
+      accuracy: capture.accuracyMeters,
+    } } as Location.LocationObject);
+    setKnownNearbyPlaces(localKnown);
+    setSelectedPlaceId(closestNearbyPlaceId(localKnown));
+    void loadKnownNearbyVenues(capture, flowGeneration);
+  };
+
+  const searchSomewhereElse = async () => {
+    if (discovering) return;
+    const capture = acceptedReadinessLocation(user.uid, true);
+    setExternalSearchVisible(true);
+    setDiscoveryError('');
+    setPartialDiscoveryNotice('');
+    setNearbyPlaces([]);
+    setSelectedPlaceId('');
+    if (!capture) {
+      setDiscoveryError('The blue Place ring needs to be ready before searching nearby. Stay here while it finishes.');
+      return;
+    }
+    const flowGeneration = flowGenerationRef.current;
+    setDiscovering(true);
+    const { sessionId, ...location } = capture;
+    try {
+      const result = await discoverNearbyCheckInPlaces(location);
+      const current = useCheckInReadinessStore.getState();
+      const stillReady = acceptedReadinessLocation(user.uid, true);
+      if (!mountedRef.current || flowGenerationRef.current !== flowGeneration) return;
+      if (!stillReady || current.sessionId !== sessionId || stillReady.sessionId !== sessionId) {
+        setDiscoveryError('Your location changed during the search. Stay still until the blue ring is ready, then try again.');
+        return;
+      }
+      const external = result.candidates
+        .filter((place) => place.type === 'external_place')
+        .map(decorateNearbyCandidate)
+        .sort((first, second) => first.distanceMetres - second.distanceMetres);
+      setNearbyPlaces(external);
+      setSelectedPlaceId('');
+      if (result.externalLookupStatus === 'partial_unavailable') {
+        setPartialDiscoveryNotice('OpenStreetMap could not load additional places. Your nearby GathR venues are still available.');
+      } else if (external.length === 0) {
+        setDiscoveryError('No additional public places showed up nearby. Your GathR venues are still available.');
+      }
+    } catch (error) {
+      if (!mountedRef.current || flowGenerationRef.current !== flowGeneration) return;
+      setDiscoveryError(isNearbyPublicPlacesLookupUnavailable(error)
+        ? 'Nearby public places could not be loaded. Your GathR venues are still available.'
+        : messageForError(error));
+    } finally {
+      if (mountedRef.current && flowGenerationRef.current === flowGeneration) setDiscovering(false);
+    }
+  };
+
   const choosePlace = async (place: VenueCandidate | null) => {
     if (!place || bindingRef.current) return;
     const initial = useCheckInReadinessStore.getState();
     const initialLevels = readinessLevels(initial.evidence, initial.receipt, initial.sessionId, Date.now());
+    const capture = acceptedReadinessLocation(user.uid, place.type !== 'private_place');
     const report = (message: string) => place.type === 'private_place' ? setPrivatePlaceError(message) : setSelectionError(message);
     if (initial.uid !== user.uid || !initial.appActive || initial.interruptedAtMs !== null
-      || (place.type === 'private_place' ? !initialLevels.here : !initialLevels.place)) {
+      || (place.type === 'private_place' ? !initialLevels.here : !initialLevels.place)
+      || !capture || capture.sessionId !== initial.sessionId) {
       report('Readiness changed. Return to the map; the rings will update as your location settles.');
       return;
     }
@@ -371,26 +560,24 @@ export default function ContextualCheckInControl({ enabled }: Props) {
     setBinding(true);
     setSelectionError('');
     try {
-      const location = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
-      const sample = { latitude: location.coords.latitude, longitude: location.coords.longitude,
-        accuracyMeters: location.coords.accuracy, speedMetersPerSecond: location.coords.speed, capturedAtMs: location.timestamp };
+      const { sessionId, ...sample } = capture;
       const current = useCheckInReadinessStore.getState();
-      const fresh = advanceReadiness(current.evidence, sample, Date.now());
       if (!mountedRef.current || flowGenerationRef.current !== flowGeneration) return;
-      const freshLevels = readinessLevels(fresh, current.receipt, current.sessionId, Date.now());
+      const freshLevels = readinessLevels(current.evidence, current.receipt, current.sessionId, Date.now());
       if (current.uid !== user.uid || !current.appActive || current.interruptedAtMs !== null
-        || current.sessionId !== initial.sessionId
-        || fresh.revision !== current.evidence.revision || (place.type === 'private_place' ? !freshLevels.here : !freshLevels.place)) {
-        if (current.uid === user.uid) useCheckInReadinessStore.setState({ evidence: fresh, receipt: null, sessionId: '' });
+        || current.sessionId !== initial.sessionId || current.sessionId !== sessionId
+        || (place.type === 'private_place' ? !freshLevels.here : !freshLevels.place)) {
         throw new Error('Readiness changed. Return to the map to check your location.');
       }
-      const grant = await bindCheckInReadiness({ protocolVersion: 1, readinessSessionId: current.sessionId,
+      const grant = await bindCheckInReadiness({ protocolVersion: 1, readinessSessionId: sessionId,
         operationId,
         ...(place.type === 'gathr_venue' ? { venueId: place.venueId } : { placeCandidateId: place.placeCandidateId }), ...sample });
       const after = useCheckInReadinessStore.getState();
       if (!mountedRef.current || flowGenerationRef.current !== flowGeneration || after.uid !== user.uid
-        || !after.appActive || after.interruptedAtMs !== null || after.sessionId !== initial.sessionId) return;
-      if (!validBoundReadiness(grant, place, current.sessionId, Date.now()) || (grant.exactPrivateAllowed && !freshLevels.place)) {
+        || !after.appActive || after.interruptedAtMs !== null || after.sessionId !== initial.sessionId
+        || !(place.type === 'private_place' ? readinessLevels(after.evidence, after.receipt, after.sessionId, Date.now()).here
+          : readinessLevels(after.evidence, after.receipt, after.sessionId, Date.now()).place)) return;
+      if (!validBoundReadiness(grant, place, sessionId, Date.now()) || (grant.exactPrivateAllowed && !freshLevels.place)) {
         throw new Error('Check-in verification is unavailable. Please try again from the map.');
       }
       useCheckInReadinessStore.setState({ grant });
@@ -409,73 +596,20 @@ export default function ContextualCheckInControl({ enabled }: Props) {
     }
   };
 
-  const loadNearbyPlaces = async () => {
-    flowGenerationRef.current += 1;
-    const flowGeneration = flowGenerationRef.current;
-    setBubble('');
-    setPickerVisible(true);
-    setPrivateSetupVisible(false);
-    setDiscovering(true);
+  const selectedPlace = (externalSearchVisible ? nearbyPlaces : knownPlaces)
+    .find((place) => place.id === selectedPlaceId) || null;
+  const returnToKnownPlaces = () => {
+    setExternalSearchVisible(false);
+    setLocationInfoVisible(false);
     setDiscoveryError('');
     setPartialDiscoveryNotice('');
-    setSelectionError('');
-    try {
-      let permission = await Location.getForegroundPermissionsAsync();
-      if (permission.status !== 'granted') permission = await Location.requestForegroundPermissionsAsync();
-      if (permission.status !== 'granted') {
-        setDiscoveryError('Allow precise location to see public places immediately around you.');
-        return;
-      }
-      const location = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
-      const accuracyMeters = location.coords.accuracy;
-      if (accuracyMeters === null || !Number.isFinite(accuracyMeters) || accuracyMeters < 0 || accuracyMeters > CHECK_IN_READINESS.hereAccuracyMetres) {
-        setDiscoveryError('Your location is not precise enough yet. Step outdoors or wait a moment, then retry.');
-        return;
-      }
-      const result = await discoverNearbyCheckInPlaces({
-        latitude: location.coords.latitude,
-        longitude: location.coords.longitude,
-        accuracyMeters,
-        capturedAtMs: location.timestamp,
-      });
-      if (!mountedRef.current || flowGenerationRef.current !== flowGeneration) return;
-      const decorated = result.candidates.map((place: NearbyCheckInPlaceCandidate): VenueCandidate => {
-        const recognized = place.venueId
-          ? venues.find((venue) => venue.venueId === place.venueId)
-          : null;
-        return {
-          id: place.id,
-          type: place.type,
-          venueId: place.venueId,
-          placeCandidateId: place.type === 'external_place' ? place.id : undefined,
-          venueName: place.name,
-          address: place.address,
-          category: place.category,
-          latitude: place.latitude,
-          longitude: place.longitude,
-          distanceMetres: place.distanceMetres,
-          imageUrl: recognized?.imageUrl || '',
-        };
-      }).sort((first, second) => first.distanceMetres - second.distanceMetres);
-      setNearbyPlaces(decorated);
-      setSelectedPlaceId((currentId) => currentId
-        ? (decorated.some((place) => place.id === currentId) ? currentId : '')
-        : closestNearbyPlaceId(decorated));
-      if (result.externalLookupStatus === 'partial_unavailable') {
-        setPartialDiscoveryNotice('Additional nearby public places could not be loaded. You can choose from the places shown or try again.');
-      } else if (decorated.length === 0) {
-        setDiscoveryError('No eligible public places were found close enough to your current location.');
-      }
-    } catch (error) {
-      setDiscoveryError(isNearbyPublicPlacesLookupUnavailable(error)
-        ? 'Nearby public places could not be loaded right now.'
-        : messageForError(error));
-    } finally {
-      setDiscovering(false);
-    }
+    setNearbyPlaces([]);
+    setSelectedPlaceId(closestNearbyPlaceId(knownPlaces));
   };
-
-  const selectedPlace = nearbyPlaces.find((place) => place.id === selectedPlaceId) || null;
+  const refreshCurrentPlaces = () => {
+    if (externalSearchVisible) void searchSomewhereElse();
+    else openCheckInPicker();
+  };
   const openPrivateSetup = () => {
     setPrivatePlaceError('');
     setPrivateSetupVisible(true);
@@ -501,25 +635,22 @@ export default function ContextualCheckInControl({ enabled }: Props) {
     const flowGeneration = flowGenerationRef.current;
     setPrivatePlaceError('');
     try {
-      let permission = await Location.getForegroundPermissionsAsync();
-      if (permission.status !== 'granted') permission = await Location.requestForegroundPermissionsAsync();
-      if (permission.status !== 'granted') {
-        setPrivatePlaceError('Allow precise location to verify that you remain at this private place.');
+      const capture = acceptedReadinessLocation(user.uid, false);
+      if (!capture) {
+        setPrivatePlaceError('Your location is updating. Wait for the purple ring to be ready, then retry.');
         return;
       }
-      const location = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
-      const accuracyMeters = location.coords.accuracy;
-      if (accuracyMeters === null || !Number.isFinite(accuracyMeters) || accuracyMeters < 0 || accuracyMeters > CHECK_IN_READINESS.hereAccuracyMetres) {
-        setPrivatePlaceError('Your location is not precise enough yet. Wait a moment, then retry.');
-        return;
-      }
+      const { sessionId: capturedSessionId, ...location } = capture;
       const result = await createPrivateCheckInPlaceCandidate({
         label,
-        latitude: location.coords.latitude,
-        longitude: location.coords.longitude,
-        accuracyMeters,
-        capturedAtMs: location.timestamp,
+        latitude: location.latitude,
+        longitude: location.longitude,
+        accuracyMeters: location.accuracyMeters,
+        capturedAtMs: location.capturedAtMs,
       });
+      if (useCheckInReadinessStore.getState().sessionId !== capturedSessionId) {
+        throw new Error('Your location changed while preparing this private place. Wait for the purple ring to be ready again.');
+      }
       const place = result.candidate;
       if (!mountedRef.current || flowGenerationRef.current !== flowGeneration) return;
       await choosePlace({
@@ -584,7 +715,7 @@ export default function ContextualCheckInControl({ enabled }: Props) {
         : `${levels.here ? 'Check-in ready' : 'Check-in readiness'}. Here ${Math.floor(hereProgress * 100)} percent. Place ${Math.floor(placeProgress * 100)} percent.`}
       onPress={() => {
         if (ownCheckIn) router.push('/check-in');
-        else if (levels.here && readiness.uid === user.uid) void loadNearbyPlaces();
+        else if (levels.here && readiness.uid === user.uid) openCheckInPicker();
         else showBubble(earlyCopy);
       }}
       style={[styles.control, (levels.here || !!ownCheckIn) && styles.readyControl]}
@@ -609,25 +740,60 @@ export default function ContextualCheckInControl({ enabled }: Props) {
             <View style={styles.pickerHeader}>
               <View style={styles.copy}>
                 <Text style={styles.pickerEyebrow}>CHECK IN</Text>
-                <Text style={styles.pickerTitle}>Where are you?</Text>
-                <Text style={styles.pickerSubtitle}>
-                  {privateSetupVisible
-                    ? 'Use a private label. Never enter a home address.'
-                    : 'Choose a public place nearby or check in privately.'}
-                </Text>
+                <Text style={styles.pickerTitle}>{externalSearchVisible ? 'Find a public place' : 'Where are you?'}</Text>
+                {externalSearchVisible ? (
+                  <>
+                    <View style={styles.locationStatusRow}>
+                      <Ionicons name="navigate-outline" size={17} color="#2F80ED" />
+                      <Text numberOfLines={1} style={styles.locationStatusCopy}>Using your recent location</Text>
+                      <View style={styles.locationReadyStatus}>
+                        {levels.place
+                          ? <Ionicons name="checkmark-circle" size={16} color="#039855" />
+                          : <ActivityIndicator size="small" color="#2F80ED" />}
+                        <Text style={[styles.locationReadyText, !levels.place && styles.locationCheckingText]}>
+                          {levels.place ? 'Ready' : 'Waiting'}
+                        </Text>
+                      </View>
+                      <TouchableOpacity
+                        accessibilityRole="button"
+                        accessibilityLabel={locationInfoVisible ? 'Hide location information' : 'Why GathR uses your location'}
+                        accessibilityState={{ expanded: locationInfoVisible }}
+                        onPress={() => setLocationInfoVisible((visible) => !visible)}
+                        style={styles.locationInfoButton}
+                      >
+                        <Ionicons name={locationInfoVisible ? 'close-circle-outline' : 'information-circle-outline'} size={20} color="#2F80ED" />
+                      </TouchableOpacity>
+                    </View>
+                    {locationInfoVisible && (
+                      <View style={styles.locationInfoCard} accessibilityLiveRegion="polite">
+                        <Text style={styles.locationInfoCopy}>
+                          GathR uses your recent location to find nearby public places. It isn’t shared with friends; you choose who can see your check-in before continuing.
+                        </Text>
+                      </View>
+                    )}
+                  </>
+                ) : (
+                  <Text style={styles.pickerSubtitle}>
+                    {privateSetupVisible
+                      ? 'Use a private label. Never enter a home address.'
+                      : levels.place
+                        ? 'Choose a nearby GathR venue, find somewhere else, or check in privately.'
+                        : 'Private check-in is ready. Public places unlock when the blue ring is ready.'}
+                  </Text>
+                )}
               </View>
               <TouchableOpacity accessibilityLabel="Close nearby places" onPress={closePicker} style={styles.closeButton}>
                 <Ionicons name="close" size={22} color="#344054" />
               </TouchableOpacity>
             </View>
 
-            {!privateSetupVisible && (
+            {!privateSetupVisible && !externalSearchVisible && (
               <View style={styles.privateEntryBar}>
                 <TouchableOpacity accessibilityRole="button" onPress={openPrivateSetup} style={styles.privateEntryButton} testID="private-place-entry">
                   <View style={styles.privateEntryIcon}><Ionicons name="home-outline" size={20} color="#6941C6" /></View>
                   <View style={styles.copy}>
-                    <Text style={styles.privateEntryTitle}>Check in at a private place</Text>
-                    <Text style={styles.privateEntryCopy}>Home or somewhere that should not become a public venue</Text>
+                    <Text style={styles.privateEntryTitle}>Private check-in</Text>
+                    <Text numberOfLines={1} style={styles.privateEntryCopy}>Home or another private place</Text>
                   </View>
                   <Ionicons name="chevron-forward" size={20} color="#6941C6" />
                 </TouchableOpacity>
@@ -692,64 +858,144 @@ export default function ContextualCheckInControl({ enabled }: Props) {
                     : <><Text style={styles.usePlaceText}>Continue to privacy</Text><Ionicons name="arrow-forward" size={19} color="#FFFFFF" /></>}
                 </TouchableOpacity>
               </View>
-            ) : discovering ? (
-              <View style={styles.pickerState}>
-                <ActivityIndicator color="#2F80ED" />
-                <Text style={styles.pickerStateTitle}>Finding nearby places…</Text>
-                <Text style={styles.pickerStateCopy}>Your location finds nearby options. Nothing is shared with friends.</Text>
-              </View>
-            ) : discoveryError ? (
-              <View style={styles.pickerState}>
-                <View style={styles.stateIcon}><Ionicons name="location-outline" size={24} color="#B54708" /></View>
-                <Text style={styles.pickerStateTitle}>{discoveryError}</Text>
-                <TouchableOpacity accessibilityRole="button" onPress={() => void loadNearbyPlaces()} style={styles.retryButton}>
-                  <Text style={styles.retryText}>Try again</Text>
-                </TouchableOpacity>
-              </View>
             ) : (
               <>
-                {!!partialDiscoveryNotice && <View testID="nearby-public-places-partial-notice" style={styles.partialDiscoveryNotice} accessibilityLiveRegion="polite">
-                  <View style={styles.partialDiscoveryNoticeCopy}>
-                    <Text style={styles.partialDiscoveryTitle}>Some nearby public places are unavailable</Text>
-                    <Text style={styles.partialDiscoveryCopy}>{partialDiscoveryNotice}</Text>
-                  </View>
-                  <TouchableOpacity accessibilityRole="button" onPress={() => void loadNearbyPlaces()} testID="retry-nearby-public-places" style={styles.partialDiscoveryRetry}>
-                    <Text style={styles.retryText}>Retry</Text>
+                {externalSearchVisible && (
+                  <TouchableOpacity accessibilityRole="button" onPress={returnToKnownPlaces} style={styles.externalBackRow}>
+                    <Ionicons name="arrow-back" size={17} color="#175CD3" />
+                    <Text style={styles.externalBackText}>Nearby GathR venues</Text>
                   </TouchableOpacity>
-                </View>}
+                )}
                 <ScrollView contentContainerStyle={styles.placeList} showsVerticalScrollIndicator={false}>
-                  {nearbyPlaces.map((place, index) => {
-                    const selected = place.id === selectedPlaceId;
-                    return (
-                      <TouchableOpacity
-                        accessibilityLabel={`${place.venueName}, ${place.distanceMetres} metres away`}
-                        accessibilityRole="radio"
-                        accessibilityState={{ selected }}
-                        key={place.id}
-                        onPress={() => { setSelectedPlaceId(place.id); setSelectionError(''); }}
-                        style={[styles.placeRow, selected && styles.placeRowSelected]}
-                      >
-                        <VenueAvatar venue={place} />
-                        <View style={styles.copy}>
-                          <View style={styles.placeNameRow}>
-                            <Text numberOfLines={1} style={styles.placeName}>{place.venueName}</Text>
-                            {index === 0 && <Text style={styles.closestBadge}>CLOSEST</Text>}
-                          </View>
-                          <Text numberOfLines={1} style={styles.placeMeta}>
-                            {place.distanceMetres} m · {place.type === 'gathr_venue' ? 'GathR venue' : place.category}
-                          </Text>
-                          <Text numberOfLines={1} style={styles.placeAddress}>{place.address}</Text>
+                  {externalSearchVisible ? (
+                    <>
+                      {!!partialDiscoveryNotice && <View testID="nearby-public-places-partial-notice" style={styles.partialDiscoveryNotice} accessibilityLiveRegion="polite">
+                        <View style={styles.partialDiscoveryNoticeCopy}>
+                          <Text style={styles.partialDiscoveryTitle}>Some places could not be loaded</Text>
+                          <Text style={styles.partialDiscoveryCopy}>{partialDiscoveryNotice}</Text>
                         </View>
-                        <Ionicons name={selected ? 'checkmark-circle' : 'ellipse-outline'} size={23} color={selected ? '#2F80ED' : '#98A2B3'} />
+                      </View>}
+                      {discovering && (
+                        <View style={styles.inlineSearchState} accessibilityLiveRegion="polite">
+                          <ActivityIndicator color="#2F80ED" />
+                          <Text style={styles.inlineSearchCopy}>Looking for other nearby public places…</Text>
+                        </View>
+                      )}
+                      {!!discoveryError && (
+                        <View style={styles.searchErrorCard} accessibilityLiveRegion="polite">
+                          <View style={styles.stateIcon}><Ionicons name="location-outline" size={21} color="#B54708" /></View>
+                          <Text style={styles.searchErrorCopy}>{discoveryError}</Text>
+                          {levels.place && (
+                            <TouchableOpacity accessibilityRole="button" onPress={() => void searchSomewhereElse()} testID="retry-nearby-public-places" style={styles.retryButton}>
+                              <Text style={styles.retryText}>Try again</Text>
+                            </TouchableOpacity>
+                          )}
+                        </View>
+                      )}
+                      {nearbyPlaces.map((place, index) => {
+                        const selected = place.id === selectedPlaceId;
+                        return (
+                          <TouchableOpacity
+                            accessibilityLabel={`${place.venueName}, ${place.distanceMetres} metres away`}
+                            accessibilityRole="radio"
+                            accessibilityState={{ selected, disabled: !levels.place }}
+                            disabled={!levels.place}
+                            key={place.id}
+                            onPress={() => { setSelectedPlaceId(place.id); setSelectionError(''); }}
+                            style={[styles.placeRow, selected && styles.placeRowSelected, !levels.place && styles.disabledPlaceRow]}
+                          >
+                            <VenueAvatar venue={place} />
+                            <View style={styles.copy}>
+                              <View style={styles.placeNameRow}>
+                                <Text numberOfLines={1} style={styles.placeName}>{place.venueName}</Text>
+                                {index === 0 && <Text style={styles.closestBadge}>CLOSEST</Text>}
+                              </View>
+                              <Text numberOfLines={1} style={styles.placeMeta}>{place.distanceMetres} m · {place.category}</Text>
+                              <Text numberOfLines={1} style={styles.placeAddress}>{place.address}</Text>
+                            </View>
+                            <Ionicons name={selected ? 'checkmark-circle' : 'ellipse-outline'} size={23} color={selected ? '#2F80ED' : '#98A2B3'} />
+                          </TouchableOpacity>
+                        );
+                      })}
+                      {!discovering && !discoveryError && !partialDiscoveryNotice && nearbyPlaces.length === 0 && (
+                        <View style={styles.emptyPlacesCard}>
+                          <Ionicons name="search-outline" size={22} color="#667085" />
+                          <Text style={styles.emptyPlacesCopy}>No other public places showed up nearby. Your GathR venues are still available.</Text>
+                        </View>
+                      )}
+                    </>
+                  ) : (
+                    <>
+                      <View style={styles.nearbySectionHeading}>
+                        <Text style={styles.nearbySectionTitle}>Nearby on GathR</Text>
+                        {knownVenuesLoading && <ActivityIndicator size="small" color="#2F80ED" />}
+                      </View>
+                      {!!knownVenuesNotice && (
+                        <View style={styles.knownVenueNotice} accessibilityLiveRegion="polite">
+                          <Ionicons name="information-circle-outline" size={17} color="#667085" />
+                          <Text style={styles.knownVenueNoticeCopy}>{knownVenuesNotice}</Text>
+                        </View>
+                      )}
+                      {knownPlaces.map((place, index) => {
+                        const selected = place.id === selectedPlaceId;
+                        return (
+                          <TouchableOpacity
+                            accessibilityLabel={`${place.venueName}, ${place.distanceMetres} metres away`}
+                            accessibilityRole="radio"
+                            accessibilityState={{ selected, disabled: !levels.place }}
+                            disabled={!levels.place}
+                            key={place.id}
+                            onPress={() => { setSelectedPlaceId(place.id); setSelectionError(''); }}
+                            style={[styles.placeRow, selected && styles.placeRowSelected, !levels.place && styles.disabledPlaceRow]}
+                          >
+                            <VenueAvatar venue={place} />
+                            <View style={styles.copy}>
+                              <View style={styles.placeNameRow}>
+                                <Text numberOfLines={1} style={styles.placeName}>{place.venueName}</Text>
+                                {index === 0 && <Text style={styles.closestBadge}>CLOSEST</Text>}
+                              </View>
+                              <Text numberOfLines={1} style={styles.placeMeta}>{place.distanceMetres} m · GathR venue</Text>
+                              <Text numberOfLines={1} style={styles.placeAddress}>{place.address}</Text>
+                            </View>
+                            <Ionicons name={selected ? 'checkmark-circle' : 'ellipse-outline'} size={23} color={selected ? '#2F80ED' : '#98A2B3'} />
+                          </TouchableOpacity>
+                        );
+                      })}
+                      {!knownPlaces.length && knownVenuesLoading && (
+                        <View style={styles.inlineSearchState} accessibilityLiveRegion="polite">
+                          <ActivityIndicator color="#2F80ED" />
+                          <Text style={styles.inlineSearchCopy}>Checking nearby GathR venues…</Text>
+                        </View>
+                      )}
+                      {!knownPlaces.length && !knownVenuesLoading && (
+                        <View style={styles.emptyPlacesCard}>
+                          <Ionicons name="business-outline" size={22} color="#667085" />
+                          <Text style={styles.emptyPlacesCopy}>No known GathR venues are close by. You can search public places instead.</Text>
+                        </View>
+                      )}
+                      <TouchableOpacity
+                        accessibilityRole="button"
+                        accessibilityState={{ disabled: !levels.place }}
+                        disabled={!levels.place || discovering}
+                        onPress={() => void searchSomewhereElse()}
+                        style={[styles.somewhereElseButton, (!levels.place || discovering) && styles.disabledPlaceRow]}
+                        testID="find-somewhere-else"
+                      >
+                        <View style={styles.somewhereElseIcon}><Ionicons name="search-outline" size={20} color="#175CD3" /></View>
+                        <View style={styles.copy}>
+                          <Text style={styles.somewhereElseTitle}>Somewhere else</Text>
+                          <Text style={styles.somewhereElseCopy}>Find a public place</Text>
+                        </View>
+                        <Ionicons name="chevron-forward" size={19} color="#175CD3" />
                       </TouchableOpacity>
-                    );
-                  })}
+                    </>
+                  )}
                 </ScrollView>
                 <View style={styles.pickerFooter}>
                   {!!selectionError && <View testID="check-in-selection-error" style={styles.selectionErrorCard} accessibilityLiveRegion="polite">
                     <Text style={styles.selectionErrorText}>{selectionError}</Text>
                     <View style={styles.selectionErrorActions}>
-                      <TouchableOpacity accessibilityRole="button" onPress={() => void loadNearbyPlaces()} testID="refresh-check-in-places">
+                      <TouchableOpacity accessibilityRole="button" onPress={refreshCurrentPlaces} testID="refresh-check-in-places">
                         <Text style={styles.retryText}>Refresh places</Text>
                       </TouchableOpacity>
                       <TouchableOpacity accessibilityRole="button" onPress={closePicker}>
@@ -759,19 +1005,27 @@ export default function ContextualCheckInControl({ enabled }: Props) {
                   </View>}
                   <View style={styles.privacyRow}>
                     <Ionicons name="shield-checkmark-outline" size={18} color="#0F766E" />
-                    <Text style={styles.privacyCopy}>{levels.place ? 'Choose who can see your check-in next. Nothing is shared yet.' : 'Public places need the blue Place ring. An approximate private check-in is ready now.'}</Text>
+                    <Text style={styles.privacyCopy}>{levels.place
+                      ? 'Nothing is shared yet. Choose who can see your check-in next.'
+                      : 'Private check-in is ready now. Public choices unlock when the blue Place ring completes.'}</Text>
                   </View>
-                  <TouchableOpacity
-                    accessibilityRole="link"
-                    onPress={() => void Linking.openURL('https://www.openstreetmap.org/copyright')}
-                    style={styles.attributionRow}
-                  >
-                    <Text style={styles.attributionText}>Place data © OpenStreetMap contributors</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity testID="continue-public-check-in" accessibilityRole="button" disabled={!selectedPlace || binding || !levels.place} onPress={() => void choosePlace(selectedPlace)} style={[styles.usePlaceButton, (!selectedPlace || binding || !levels.place) && styles.disabled]}>
-                    <Text style={styles.usePlaceText}>{binding ? 'Preparing privacy options…' : selectionError ? 'Try this place again' : 'Continue to privacy'}</Text>
-                    <Ionicons name="arrow-forward" size={19} color="#FFFFFF" />
-                  </TouchableOpacity>
+                  {externalSearchVisible && (
+                    <TouchableOpacity
+                      accessibilityRole="link"
+                      onPress={() => void Linking.openURL('https://www.openstreetmap.org/copyright')}
+                      style={styles.attributionRow}
+                    >
+                      <Text style={styles.attributionText}>Place data © OpenStreetMap contributors</Text>
+                    </TouchableOpacity>
+                  )}
+                  {levels.place ? (
+                    <TouchableOpacity testID="continue-public-check-in" accessibilityRole="button" disabled={!selectedPlace || binding} onPress={() => void choosePlace(selectedPlace)} style={[styles.usePlaceButton, (!selectedPlace || binding) && styles.disabled]}>
+                      <Text style={styles.usePlaceText}>{binding ? 'Preparing privacy options…' : selectionError ? 'Try this place again' : 'Continue to privacy'}</Text>
+                      <Ionicons name="arrow-forward" size={19} color="#FFFFFF" />
+                    </TouchableOpacity>
+                  ) : (
+                    <Text style={styles.placeReadinessHint}>Stay here while the blue Place ring finishes.</Text>
+                  )}
                 </View>
               </>
             )}
@@ -851,6 +1105,7 @@ const styles = StyleSheet.create({
   placeList: { paddingHorizontal: 14, paddingBottom: 4, gap: 8 },
   placeRow: { minHeight: 74, flexDirection: 'row', alignItems: 'center', gap: 11, padding: 11, borderRadius: 18, borderWidth: 1.5, borderColor: '#EAECF0', backgroundColor: '#FFFFFF' },
   placeRowSelected: { borderColor: '#2F80ED', backgroundColor: '#EFF8FF' },
+  disabledPlaceRow: { opacity: 0.58 },
   placeNameRow: { flexDirection: 'row', alignItems: 'center', gap: 7 },
   placeName: { flexShrink: 1, color: '#101828', fontSize: 15, fontWeight: '900' },
   closestBadge: { color: '#067647', fontSize: 8.5, fontWeight: '900', letterSpacing: 0.6, backgroundColor: '#ECFDF3', paddingHorizontal: 6, paddingVertical: 3, borderRadius: 8 },
@@ -863,11 +1118,11 @@ const styles = StyleSheet.create({
   attributionText: { color: '#667085', fontSize: 10.5, textDecorationLine: 'underline' },
   usePlaceButton: { minHeight: 52, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderRadius: 17, backgroundColor: '#2F80ED' },
   usePlaceText: { color: '#FFFFFF', fontSize: 16, fontWeight: '900' },
-  privateEntryBar: { paddingHorizontal: 18, paddingTop: 2, paddingBottom: 12, backgroundColor: '#F8FAFC' },
-  privateEntryButton: { minHeight: 68, flexDirection: 'row', alignItems: 'center', gap: 11, paddingHorizontal: 13, paddingVertical: 10, borderRadius: 18, borderWidth: 1.5, borderColor: '#D6BBFB', backgroundColor: '#F4EBFF' },
-  privateEntryIcon: { width: 38, height: 38, alignItems: 'center', justifyContent: 'center', borderRadius: 13, backgroundColor: '#FFFFFF' },
-  privateEntryTitle: { color: '#53389E', fontSize: 14, fontWeight: '900' },
-  privateEntryCopy: { marginTop: 2, color: '#6941C6', fontSize: 10.5, lineHeight: 14 },
+  privateEntryBar: { paddingHorizontal: 18, paddingTop: 1, paddingBottom: 8, backgroundColor: '#F8FAFC' },
+  privateEntryButton: { minHeight: 59, flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 12, paddingVertical: 7, borderRadius: 16, borderWidth: 1.5, borderColor: '#D6BBFB', backgroundColor: '#F4EBFF' },
+  privateEntryIcon: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center', borderRadius: 12, backgroundColor: '#FFFFFF' },
+  privateEntryTitle: { color: '#53389E', fontSize: 13.5, fontWeight: '900' },
+  privateEntryCopy: { marginTop: 1, color: '#6941C6', fontSize: 11.5, lineHeight: 15 },
   privateSetup: { paddingHorizontal: 18, paddingBottom: 24, gap: 13 },
   privateBackRow: { alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 4 },
   privateBackText: { color: '#175CD3', fontSize: 12.5, fontWeight: '800' },
@@ -886,5 +1141,30 @@ const styles = StyleSheet.create({
   privatePrivacyCopy: { flex: 1, color: '#475467', fontSize: 11.5, lineHeight: 17 },
   privateError: { color: '#B42318', fontSize: 11.5, fontWeight: '700' },
   usePrivateButton: { minHeight: 52, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderRadius: 17, backgroundColor: '#6941C6' },
+  externalBackRow: { alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 6, marginLeft: 18, marginBottom: 5, paddingVertical: 2 },
+  externalBackText: { color: '#175CD3', fontSize: 12.5, fontWeight: '800' },
+  locationStatusRow: { minHeight: 30, flexDirection: 'row', alignItems: 'center', gap: 7, marginTop: 5 },
+  locationStatusCopy: { flex: 1, minWidth: 0, color: '#475467', fontSize: 12.5, fontWeight: '600' },
+  locationReadyStatus: { flexDirection: 'row', alignItems: 'center', gap: 3, paddingHorizontal: 5 },
+  locationReadyText: { color: '#067647', fontSize: 11.5, fontWeight: '800' },
+  locationCheckingText: { color: '#175CD3' },
+  locationInfoButton: { width: 32, height: 32, alignItems: 'center', justifyContent: 'center', borderRadius: 16 },
+  locationInfoCard: { marginTop: 5, paddingHorizontal: 11, paddingVertical: 9, borderRadius: 12, backgroundColor: '#EFF8FF', borderWidth: 1, borderColor: '#B2DDFF' },
+  locationInfoCopy: { color: '#344054', fontSize: 11.5, lineHeight: 16 },
+  nearbySectionHeading: { minHeight: 25, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 2 },
+  nearbySectionTitle: { color: '#344054', fontSize: 14, fontWeight: '900' },
+  knownVenueNotice: { flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 10, paddingVertical: 8, borderRadius: 12, backgroundColor: '#F2F4F7' },
+  knownVenueNoticeCopy: { flex: 1, color: '#667085', fontSize: 11, lineHeight: 15 },
+  somewhereElseButton: { minHeight: 60, flexDirection: 'row', alignItems: 'center', gap: 11, marginTop: 3, paddingHorizontal: 12, borderRadius: 17, borderWidth: 1.3, borderColor: '#D0D5DD', backgroundColor: '#FFFFFF' },
+  somewhereElseIcon: { width: 38, height: 38, alignItems: 'center', justifyContent: 'center', borderRadius: 13, backgroundColor: '#EFF8FF' },
+  somewhereElseTitle: { color: '#175CD3', fontSize: 13.5, fontWeight: '900' },
+  somewhereElseCopy: { marginTop: 1, color: '#667085', fontSize: 11.5 },
+  emptyPlacesCard: { minHeight: 80, flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 15, paddingVertical: 13, borderRadius: 16, backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#EAECF0' },
+  emptyPlacesCopy: { flex: 1, color: '#667085', fontSize: 12.5, lineHeight: 18 },
+  inlineSearchState: { minHeight: 72, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, paddingHorizontal: 16, borderRadius: 16, backgroundColor: '#FFFFFF' },
+  inlineSearchCopy: { color: '#475467', fontSize: 12.5, fontWeight: '700' },
+  searchErrorCard: { alignItems: 'center', gap: 9, paddingHorizontal: 18, paddingVertical: 16, borderRadius: 16, backgroundColor: '#FFFAEB', borderWidth: 1, borderColor: '#FEDF89' },
+  searchErrorCopy: { color: '#7A2E0E', fontSize: 12.5, lineHeight: 18, textAlign: 'center' },
+  placeReadinessHint: { paddingTop: 4, color: '#667085', fontSize: 12, fontWeight: '700', textAlign: 'center' },
   disabled: { opacity: 0.45 },
 });

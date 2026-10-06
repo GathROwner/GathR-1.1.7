@@ -118,6 +118,7 @@ function normalizeCallableError(error: unknown): SocialServiceError {
 const APP_CHECKED_CALLABLES = new Set([
   'createPrivateCheckInPlaceCandidateCallable',
   'discoverNearbyCheckInPlacesCallable',
+  'listNearbyCanonicalCheckInVenuesCallable',
   'recordCheckInEligibilitySampleCallable',
   'recordCheckInReadinessSampleCallable',
   'bindCheckInReadinessCallable',
@@ -387,6 +388,16 @@ export const discoverNearbyCheckInPlaces = async (input: {
   capturedAtMs: number;
 }) => callSocial<typeof input, NearbyCheckInPlacesResult>(
   'discoverNearbyCheckInPlacesCallable',
+  normalizeLocationCaptureTime(input)
+);
+
+export const listNearbyCanonicalCheckInVenues = async (input: {
+  latitude: number;
+  longitude: number;
+  accuracyMeters: number;
+  capturedAtMs: number;
+}) => callSocial<typeof input, NearbyCheckInPlacesResult>(
+  'listNearbyCanonicalCheckInVenuesCallable',
   normalizeLocationCaptureTime(input)
 );
 
