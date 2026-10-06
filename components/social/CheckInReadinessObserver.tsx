@@ -5,6 +5,7 @@ import { AppState } from 'react-native';
 import { useAuth } from '../../contexts/AuthContext';
 import { loadReadinessPreferences } from '../../services/checkInReadinessPreferences';
 import { createSocialOperationId, recordCheckInReadinessSample } from '../../services/socialService';
+import { useMapStore } from '../../store/mapStore';
 import { resetCheckInReadinessOwner, useCheckInReadinessStore } from '../../store/checkInReadinessStore';
 import { useSocialStore } from '../../store/socialStore';
 import { SOCIAL_FEATURE_ENABLED, SOCIAL_RELEASE_TWO_ENABLED } from '../../types/social';
@@ -15,8 +16,59 @@ import {
   isFreshReadiness,
   pauseReadiness,
   readinessResumeDecision,
+  type ReadinessSample,
 } from '../../utils/checkInReadiness';
 import { validReadinessReceipt } from '../../utils/checkInReadinessContract';
+
+function asReadinessSample(location: Location.LocationObject): ReadinessSample {
+  return {
+    latitude: location.coords.latitude,
+    longitude: location.coords.longitude,
+    accuracyMeters: location.coords.accuracy,
+    speedMetersPerSecond: location.coords.speed,
+    capturedAtMs: location.timestamp,
+  };
+}
+
+function freshSharedMapSample(location: Location.LocationObject | null, nowMs: number, newerThanMs: number | null) {
+  if (!location) return null;
+  const sample = asReadinessSample(location);
+  const ageMs = nowMs - sample.capturedAtMs;
+  const accuracy = sample.accuracyMeters;
+  if (
+    !Number.isFinite(sample.capturedAtMs)
+    || ageMs < 0
+    || ageMs > CHECK_IN_READINESS.maxSampleAgeMs
+    || (newerThanMs !== null && sample.capturedAtMs <= newerThanMs)
+    || accuracy === null
+    || !Number.isFinite(accuracy)
+    || accuracy < 0
+    || accuracy > CHECK_IN_READINESS.hereAccuracyMetres
+  ) return null;
+  return sample;
+}
+
+function waitForFreshSharedMapSample(newerThanMs: number | null) {
+  let settled = false;
+  let unsubscribe: () => void = () => undefined;
+  let resolveSample: (sample: ReadinessSample | null) => void = () => undefined;
+  const promise = new Promise<ReadinessSample | null>((resolve) => { resolveSample = resolve; });
+  const finish = (sample: ReadinessSample | null) => {
+    if (settled) return;
+    settled = true;
+    unsubscribe();
+    resolveSample(sample);
+  };
+  const inspect = (location: Location.LocationObject | null) => {
+    const sample = freshSharedMapSample(location, Date.now(), newerThanMs);
+    if (sample) finish(sample);
+  };
+  unsubscribe = useMapStore.subscribe((state, previous) => {
+    if (state.userLocation !== previous.userLocation) inspect(state.userLocation);
+  });
+  inspect(useMapStore.getState().userLocation);
+  return { promise, cancel: () => finish(null) };
+}
 
 /** One foreground observer for the whole authenticated app, independent of map/modals. */
 export default function CheckInReadinessObserver() {
@@ -40,6 +92,7 @@ export default function CheckInReadinessObserver() {
     let timer: ReturnType<typeof setTimeout> | undefined;
     let sequence = 0;
     let pendingRequest: AbortController | null = null;
+    let cancelPendingMapSample: (() => void) | null = null;
     let resumeValidationStartedAtMs = 0;
     const invalidate = () => {
       const current = useCheckInReadinessStore.getState();
@@ -64,14 +117,30 @@ export default function CheckInReadinessObserver() {
           invalidate();
           return;
         }
-        const location = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
-        if (!currentRun()) return;
-        const sample = {
-          latitude: location.coords.latitude, longitude: location.coords.longitude,
-          accuracyMeters: location.coords.accuracy, speedMetersPerSecond: location.coords.speed,
-          capturedAtMs: location.timestamp,
-        };
         const before = useCheckInReadinessStore.getState();
+        const newerThanMs = before.evidence.previous?.capturedAtMs ?? null;
+        // Reuse the same fresh map fix the user dot already received when it
+        // meets Here accuracy. Race it against the high-accuracy fallback so
+        // opening the app does not wait on a second location request.
+        let sample = freshSharedMapSample(useMapStore.getState().userLocation, Date.now(), newerThanMs);
+        if (!sample) {
+          const sharedMapSample = waitForFreshSharedMapSample(newerThanMs);
+          cancelPendingMapSample = sharedMapSample.cancel;
+          let nextSample: { sample: ReadinessSample | null };
+          try {
+            nextSample = await Promise.race([
+              sharedMapSample.promise.then((sharedSample) => ({ sample: sharedSample })),
+              Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High })
+                .then((location) => ({ sample: asReadinessSample(location) })),
+            ]);
+          } finally {
+            sharedMapSample.cancel();
+            cancelPendingMapSample = null;
+          }
+          if (!currentRun()) return;
+          sample = nextSample.sample;
+        }
+        if (!sample || !currentRun()) return;
         const nowMs = Date.now();
         const resuming = before.interruptedAtMs !== null;
         const resumeDecision = resuming
@@ -138,6 +207,8 @@ export default function CheckInReadinessObserver() {
     };
     const changeState = (state: string) => {
       generation += 1;
+      cancelPendingMapSample?.();
+      cancelPendingMapSample = null;
       pendingRequest?.abort();
       if (timer) clearTimeout(timer);
       const current = useCheckInReadinessStore.getState();
@@ -180,6 +251,8 @@ export default function CheckInReadinessObserver() {
     return () => {
       disposed = true;
       generation += 1;
+      cancelPendingMapSample?.();
+      cancelPendingMapSample = null;
       pendingRequest?.abort();
       if (timer) clearTimeout(timer);
       clearInterval(expiryTimer);
