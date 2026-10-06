@@ -49,6 +49,7 @@ export default function CheckInReadinessObserver() {
     };
     const run = async (epoch: number) => {
       let nextDelayMs: number = CHECK_IN_READINESS.sampleIntervalMs;
+      let nextSampleDueAtMs: number | null = null;
       const currentRun = () => !disposed && epoch === generation && AppState.currentState === 'active'
         && useCheckInReadinessStore.getState().uid === uid
         && !useCheckInReadinessStore.getState().grant;
@@ -99,6 +100,9 @@ export default function CheckInReadinessObserver() {
         useCheckInReadinessStore.setState({ evidence, sessionId, interruptedAtMs: null,
           ...(sessionId !== before.sessionId ? { receipt: null } : {}) });
         if (evidence.reason === 'stale') return;
+        // Keep the cadence tied to captured GPS times. Waiting a full interval
+        // after the server response adds its latency to every readiness cycle.
+        nextSampleDueAtMs = sample.capturedAtMs + CHECK_IN_READINESS.sampleIntervalMs;
         const sentSequence = ++sequence;
         pendingRequest = new AbortController();
         const receipt = await recordCheckInReadinessSample({ protocolVersion: 1, sessionId, sequence: sentSequence,
@@ -109,7 +113,12 @@ export default function CheckInReadinessObserver() {
       } catch {
         if (currentRun()) useCheckInReadinessStore.setState({ receipt: null, serviceError: true });
       } finally {
-        if (currentRun()) timer = setTimeout(() => void run(epoch), nextDelayMs);
+        if (currentRun()) {
+          const delayMs = nextSampleDueAtMs === null
+            ? nextDelayMs
+            : Math.max(0, nextSampleDueAtMs - Date.now());
+          timer = setTimeout(() => void run(epoch), delayMs);
+        }
       }
     };
     const changeState = (state: string) => {

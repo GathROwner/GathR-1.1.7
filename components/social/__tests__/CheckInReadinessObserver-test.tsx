@@ -8,6 +8,7 @@ import { recordCheckInReadinessSample } from '../../../services/socialService';
 import { resetCheckInReadinessOwner, useCheckInReadinessStore } from '../../../store/checkInReadinessStore';
 import type { CheckInReadinessSampleInput } from '../../../types/social';
 import { CHECK_IN_READINESS } from '../../../utils/checkInReadiness';
+import { readinessLevels } from '../../../utils/checkInReadinessContract';
 import CheckInReadinessObserver from '../CheckInReadinessObserver';
 
 let mockUid: string | null = 'observer-user';
@@ -203,19 +204,46 @@ describe('foreground readiness observer lifecycle', () => {
     });
   });
   it('credits a longer interruption only after a fresh return fix matches the same anchor', async () => {
+    (recordCheckInReadinessSample as jest.Mock).mockImplementation(async (input: CheckInReadinessSampleInput) => {
+      const evidence = useCheckInReadinessStore.getState().evidence;
+      return {
+        protocolVersion: 1, sessionId: input.sessionId, sequence: input.sequence,
+        hereQualifyingMs: evidence.hereMs, placeQualifyingMs: evidence.placeMs,
+        expiresAtMs: Date.now() + 20_000,
+      };
+    });
     await mount();
     await advance(10_000);
-    const sessionId = useCheckInReadinessStore.getState().sessionId;
+    const before = useCheckInReadinessStore.getState();
     act(() => { AppState.currentState = 'background'; mockChangeState('background'); });
     await advance(91_000);
     expect(useCheckInReadinessStore.getState().evidence.hereMs).toBe(10_000);
     await act(async () => { AppState.currentState = 'active'; mockChangeState('active'); });
-    expect(useCheckInReadinessStore.getState()).toMatchObject({
+    const resumed = useCheckInReadinessStore.getState();
+    expect(resumed).toMatchObject({
       appActive: true,
       interruptedAtMs: null,
       evidence: { hereMs: 30_000, placeMs: 90_000 },
     });
-    expect(useCheckInReadinessStore.getState().sessionId).toBe(sessionId);
+    expect(resumed.sessionId).toBe(before.sessionId);
+    expect(readinessLevels(resumed.evidence, resumed.receipt, resumed.sessionId, Date.now()))
+      .toEqual({ here: true, place: true });
+  });
+  it('starts the next sample ten seconds after the GPS fix, including server time', async () => {
+    (recordCheckInReadinessSample as jest.Mock).mockImplementationOnce(async (input: CheckInReadinessSampleInput) => {
+      await new Promise((resolve) => setTimeout(resolve, 3_000));
+      return {
+        protocolVersion: 1, sessionId: input.sessionId, sequence: input.sequence,
+        hereQualifyingMs: 0, placeQualifyingMs: 0, expiresAtMs: Date.now() + 20_000,
+      };
+    });
+    await mount();
+    expect(Location.getCurrentPositionAsync).toHaveBeenCalledTimes(1);
+    await advance(3_000);
+    await advance(6_999);
+    expect(Location.getCurrentPositionAsync).toHaveBeenCalledTimes(1);
+    await advance(1);
+    expect(Location.getCurrentPositionAsync).toHaveBeenCalledTimes(2);
   });
   it('waits through transient return drift, then resets a sustained displacement', async () => {
     await mount();
@@ -235,6 +263,9 @@ describe('foreground readiness observer lifecycle', () => {
     await advance(CHECK_IN_READINESS.resumeValidationGraceMs);
     expect(useCheckInReadinessStore.getState()).toMatchObject({ interruptedAtMs: null, evidence: { hereMs: 0 } });
     expect(useCheckInReadinessStore.getState().sessionId).not.toBe(sessionId);
+    const reset = useCheckInReadinessStore.getState();
+    expect(readinessLevels(reset.evidence, reset.receipt, reset.sessionId, Date.now()))
+      .toEqual({ here: false, place: false });
   });
   it('ignores a location result delivered after sign-out', async () => {
     let resolveFix: (value: unknown) => void = () => undefined;
