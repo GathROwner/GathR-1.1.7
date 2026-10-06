@@ -3,6 +3,8 @@ export const CHECK_IN_READINESS = {
   hereMs: 30_000,
   placeMs: 90_000,
   sampleIntervalMs: 10_000,
+  nearReadyWindowMs: 5_000,
+  nearReadySampleIntervalMs: 2_000,
   maxSampleGapMs: 20_000,
   maxResumeGapMs: 5 * 60_000,
   resumeValidationGraceMs: 8_000,

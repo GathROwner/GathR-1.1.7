@@ -100,9 +100,23 @@ export default function CheckInReadinessObserver() {
         useCheckInReadinessStore.setState({ evidence, sessionId, interruptedAtMs: null,
           ...(sessionId !== before.sessionId ? { receipt: null } : {}) });
         if (evidence.reason === 'stale') return;
+        const sampleIntervalForReceipt = (candidateReceipt: typeof before.receipt) => {
+          const currentReceipt = candidateReceipt?.sessionId === sessionId
+            && candidateReceipt.expiresAtMs > Date.now() ? candidateReceipt : null;
+          const needsHereConfirmation = (currentReceipt?.hereQualifyingMs ?? 0) < CHECK_IN_READINESS.hereMs
+            && Math.max(evidence.hereMs, currentReceipt?.hereQualifyingMs ?? 0)
+              >= CHECK_IN_READINESS.hereMs - CHECK_IN_READINESS.nearReadyWindowMs;
+          const needsPlaceConfirmation = (currentReceipt?.placeQualifyingMs ?? 0) < CHECK_IN_READINESS.placeMs
+            && Math.max(evidence.placeMs, currentReceipt?.placeQualifyingMs ?? 0)
+              >= CHECK_IN_READINESS.placeMs - CHECK_IN_READINESS.nearReadyWindowMs;
+          return evidence.reason === 'qualifying' && (needsHereConfirmation || needsPlaceConfirmation)
+            ? CHECK_IN_READINESS.nearReadySampleIntervalMs
+            : CHECK_IN_READINESS.sampleIntervalMs;
+        };
         // Keep the cadence tied to captured GPS times. Waiting a full interval
         // after the server response adds its latency to every readiness cycle.
-        nextSampleDueAtMs = sample.capturedAtMs + CHECK_IN_READINESS.sampleIntervalMs;
+        // Sample more often only while waiting for the server's final readiness receipt.
+        nextSampleDueAtMs = sample.capturedAtMs + sampleIntervalForReceipt(before.receipt);
         const sentSequence = ++sequence;
         pendingRequest = new AbortController();
         const receipt = await recordCheckInReadinessSample({ protocolVersion: 1, sessionId, sequence: sentSequence,
@@ -110,6 +124,7 @@ export default function CheckInReadinessObserver() {
         if (!currentRun() || useCheckInReadinessStore.getState().sessionId !== sessionId) return;
         if (!validReadinessReceipt(receipt, sessionId, sentSequence, Date.now())) throw new Error('Invalid readiness receipt');
         useCheckInReadinessStore.setState({ receipt, serviceError: false });
+        nextSampleDueAtMs = sample.capturedAtMs + sampleIntervalForReceipt(receipt);
       } catch {
         if (currentRun()) useCheckInReadinessStore.setState({ receipt: null, serviceError: true });
       } finally {
