@@ -311,7 +311,10 @@ function localReadinessLocation(uid: string, requirePlace: boolean) {
   };
 }
 
-function waitForServerReadiness(uid: string, requirePlace: boolean, sessionId: string, timeoutMs = 6_000) {
+// A near-ready sample may still be in flight when the ring reaches its local
+// threshold. Allow the 8-second sample-call timeout plus a near-ready retry and
+// a small margin before telling the user server confirmation failed.
+function waitForServerReadiness(uid: string, requirePlace: boolean, sessionId: string, timeoutMs = 12_000) {
   return new Promise<boolean>((resolve) => {
     let finished = false;
     let unsubscribe: (() => void) | undefined;

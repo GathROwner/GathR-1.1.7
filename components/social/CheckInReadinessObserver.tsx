@@ -119,6 +119,23 @@ export default function CheckInReadinessObserver() {
         }
         const before = useCheckInReadinessStore.getState();
         const newerThanMs = before.evidence.previous?.capturedAtMs ?? null;
+        const sampleIntervalForReceipt = (
+          evidence: typeof before.evidence,
+          candidateReceipt: typeof before.receipt,
+          sessionId: string
+        ) => {
+          const currentReceipt = candidateReceipt?.sessionId === sessionId
+            && candidateReceipt.expiresAtMs > Date.now() ? candidateReceipt : null;
+          const needsHereConfirmation = (currentReceipt?.hereQualifyingMs ?? 0) < CHECK_IN_READINESS.hereMs
+            && Math.max(evidence.hereMs, currentReceipt?.hereQualifyingMs ?? 0)
+              >= CHECK_IN_READINESS.hereMs - CHECK_IN_READINESS.nearReadyWindowMs;
+          const needsPlaceConfirmation = (currentReceipt?.placeQualifyingMs ?? 0) < CHECK_IN_READINESS.placeMs
+            && Math.max(evidence.placeMs, currentReceipt?.placeQualifyingMs ?? 0)
+              >= CHECK_IN_READINESS.placeMs - CHECK_IN_READINESS.nearReadyWindowMs;
+          return evidence.reason === 'qualifying' && (needsHereConfirmation || needsPlaceConfirmation)
+            ? CHECK_IN_READINESS.nearReadySampleIntervalMs
+            : CHECK_IN_READINESS.sampleIntervalMs;
+        };
         // Reuse the same fresh map fix the user dot already received when it
         // meets Here accuracy. Race it against the high-accuracy fallback so
         // opening the app does not wait on a second location request.
@@ -141,6 +158,15 @@ export default function CheckInReadinessObserver() {
           sample = nextSample.sample;
         }
         if (!sample || !currentRun()) return;
+        // iOS can return the same cached fix from successive current-position
+        // requests. It cannot add evidence, so don't resend it to the server or
+        // let its old capture time schedule a zero-delay request loop.
+        if (before.evidence.previous && sample.capturedAtMs <= before.evidence.previous.capturedAtMs) {
+          nextDelayMs = before.interruptedAtMs !== null
+            ? CHECK_IN_READINESS.resumeRetryMs
+            : sampleIntervalForReceipt(before.evidence, before.receipt, before.sessionId);
+          return;
+        }
         const nowMs = Date.now();
         const resuming = before.interruptedAtMs !== null;
         const resumeDecision = resuming
@@ -169,23 +195,10 @@ export default function CheckInReadinessObserver() {
         useCheckInReadinessStore.setState({ evidence, sessionId, interruptedAtMs: null,
           ...(sessionId !== before.sessionId ? { receipt: null } : {}) });
         if (evidence.reason === 'stale') return;
-        const sampleIntervalForReceipt = (candidateReceipt: typeof before.receipt) => {
-          const currentReceipt = candidateReceipt?.sessionId === sessionId
-            && candidateReceipt.expiresAtMs > Date.now() ? candidateReceipt : null;
-          const needsHereConfirmation = (currentReceipt?.hereQualifyingMs ?? 0) < CHECK_IN_READINESS.hereMs
-            && Math.max(evidence.hereMs, currentReceipt?.hereQualifyingMs ?? 0)
-              >= CHECK_IN_READINESS.hereMs - CHECK_IN_READINESS.nearReadyWindowMs;
-          const needsPlaceConfirmation = (currentReceipt?.placeQualifyingMs ?? 0) < CHECK_IN_READINESS.placeMs
-            && Math.max(evidence.placeMs, currentReceipt?.placeQualifyingMs ?? 0)
-              >= CHECK_IN_READINESS.placeMs - CHECK_IN_READINESS.nearReadyWindowMs;
-          return evidence.reason === 'qualifying' && (needsHereConfirmation || needsPlaceConfirmation)
-            ? CHECK_IN_READINESS.nearReadySampleIntervalMs
-            : CHECK_IN_READINESS.sampleIntervalMs;
-        };
         // Keep the cadence tied to captured GPS times. Waiting a full interval
         // after the server response adds its latency to every readiness cycle.
         // Sample more often only while waiting for the server's final readiness receipt.
-        nextSampleDueAtMs = sample.capturedAtMs + sampleIntervalForReceipt(before.receipt);
+        nextSampleDueAtMs = sample.capturedAtMs + sampleIntervalForReceipt(evidence, before.receipt, sessionId);
         const sentSequence = ++sequence;
         pendingRequest = new AbortController();
         const receipt = await recordCheckInReadinessSample({ protocolVersion: 1, sessionId, sequence: sentSequence,
@@ -193,14 +206,15 @@ export default function CheckInReadinessObserver() {
         if (!currentRun() || useCheckInReadinessStore.getState().sessionId !== sessionId) return;
         if (!validReadinessReceipt(receipt, sessionId, sentSequence, Date.now())) throw new Error('Invalid readiness receipt');
         useCheckInReadinessStore.setState({ receipt, serviceError: false });
-        nextSampleDueAtMs = sample.capturedAtMs + sampleIntervalForReceipt(receipt);
+        nextSampleDueAtMs = sample.capturedAtMs + sampleIntervalForReceipt(evidence, receipt, sessionId);
       } catch {
         if (currentRun()) useCheckInReadinessStore.setState({ receipt: null, serviceError: true });
       } finally {
         if (currentRun()) {
-          const delayMs = nextSampleDueAtMs === null
+          const scheduledDelayMs = nextSampleDueAtMs === null
             ? nextDelayMs
             : Math.max(0, nextSampleDueAtMs - Date.now());
+          const delayMs = Math.max(CHECK_IN_READINESS.nearReadySampleIntervalMs, scheduledDelayMs);
           timer = setTimeout(() => void run(epoch), delayMs);
         }
       }
