@@ -173,9 +173,9 @@ export function ReadinessRings({ here, place, hereReady, placeReady, children }:
 }) {
   const ring = (name: string, radius: number, progress: number, ready: boolean, color: string, readyColor: string) => {
     const circumference = 2 * Math.PI * radius;
-    // Leave a visible gap, including rounded stroke caps, until the same server
-    // receipt that enables the action confirms readiness. Projection is not completion.
-    const displayedProgress = ready ? 1 : Math.min(0.9, Math.max(0, progress));
+    // Local dwell can finish before its server receipt arrives. Show the elapsed
+    // progress, but reserve the brighter ready treatment for server confirmation.
+    const displayedProgress = ready ? 1 : Math.min(1, Math.max(0, progress));
     return <React.Fragment key={radius}>
       <Circle cx={24} cy={24} r={radius} stroke={color} strokeOpacity={0.16} strokeWidth={3.5} fill="none" />
       {displayedProgress > 0 && <Circle testID={`check-in-${name}-ring`} cx={24} cy={24} r={radius}
@@ -687,14 +687,14 @@ export default function ContextualCheckInControl({ enabled }: Props) {
           : presentedReadiness.hereMs >= CHECK_IN_READINESS.hereMs
             ? 'Finishing location verification. The purple ring will brighten and show a checkmark when you can check in.'
           : 'Here prepares an approximate private check-in. Place prepares a public place or optional exact pin. Nothing is shared.';
-  const hereProgress = levels.here ? 1 : Math.min(0.9, presentedReadiness.hereMs / CHECK_IN_READINESS.hereMs);
-  const placeProgress = levels.place ? 1 : Math.min(0.9, presentedReadiness.placeMs / CHECK_IN_READINESS.placeMs);
+  const hereProgress = levels.here ? 1 : Math.min(1, presentedReadiness.hereMs / CHECK_IN_READINESS.hereMs);
+  const placeProgress = levels.place ? 1 : Math.min(1, presentedReadiness.placeMs / CHECK_IN_READINESS.placeMs);
   const explanation = autoBubbleRef.current ? bubble : levels.here
     ? levels.place ? 'Ready for a private or public-place check-in. Tap the checkmark to choose.'
       : 'Private check-in is ready. Tap the checkmark to choose. Public places need the blue ring too.'
     : earlyCopy;
   const ringStatus = (ready: boolean, elapsed: number, required: number) => ready ? 'Ready'
-    : elapsed >= required ? 'Checking' : `${Math.floor(elapsed / 1000)}/${required / 1000}s`;
+    : elapsed >= required ? 'Confirming' : `${Math.floor(elapsed / 1000)}/${required / 1000}s`;
   const control = <>
     {!!bubble && <View style={styles.bubble} testID="check-in-readiness-explanation" accessibilityLiveRegion="polite">
       <View style={styles.bubbleHeading}>
@@ -712,7 +712,7 @@ export default function ContextualCheckInControl({ enabled }: Props) {
     </View>}
     <TouchableOpacity accessibilityRole="button" activeOpacity={0.85}
       accessibilityLabel={ownCheckIn ? `Manage active check-in at ${ownCheckIn.venueNameSnapshot}`
-        : `${levels.here ? 'Check-in ready' : 'Check-in readiness'}. Here ${Math.floor(hereProgress * 100)} percent. Place ${Math.floor(placeProgress * 100)} percent.`}
+        : `${levels.here ? 'Check-in ready' : 'Check-in readiness'}. Here ${ringStatus(levels.here, presentedReadiness.hereMs, CHECK_IN_READINESS.hereMs)}. Place ${ringStatus(levels.place, presentedReadiness.placeMs, CHECK_IN_READINESS.placeMs)}.`}
       onPress={() => {
         if (ownCheckIn) router.push('/check-in');
         else if (levels.here && readiness.uid === user.uid) openCheckInPicker();
