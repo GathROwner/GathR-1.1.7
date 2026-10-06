@@ -34,7 +34,7 @@ import type {
 import { SOCIAL_FEATURE_ENABLED, SOCIAL_RELEASE_TWO_ENABLED } from '../../types/social';
 import { useCheckInReadinessStore } from '../../store/checkInReadinessStore';
 import { claimReadinessPrompt } from '../../services/checkInReadinessPreferences';
-import { CHECK_IN_READINESS, mayPromptReadiness, projectedReadinessMs } from '../../utils/checkInReadiness';
+import { CHECK_IN_READINESS, isFreshReadiness, mayPromptReadiness, projectedReadinessMs } from '../../utils/checkInReadiness';
 import { readinessLevels, validBoundReadiness } from '../../utils/checkInReadinessContract';
 
 const MAX_ACCURACY_METRES = 75;
@@ -173,8 +173,8 @@ export function ReadinessRings({ here, place, hereReady, placeReady, children }:
 }) {
   const ring = (name: string, radius: number, progress: number, ready: boolean, color: string, readyColor: string) => {
     const circumference = 2 * Math.PI * radius;
-    // Local dwell can finish before its server receipt arrives. Show the elapsed
-    // progress, but reserve the brighter ready treatment for server confirmation.
+    // A fresh local stationary threshold opens the choices immediately. The
+    // server receipt remains mandatory before any check-in is saved.
     const displayedProgress = ready ? 1 : Math.min(1, Math.max(0, progress));
     return <React.Fragment key={radius}>
       <Circle cx={24} cy={24} r={radius} stroke={color} strokeOpacity={0.16} strokeWidth={3.5} fill="none" />
@@ -277,6 +277,69 @@ function acceptedReadinessLocation(uid: string, requirePlace: boolean) {
   };
 }
 
+function localReadinessLocation(uid: string, requirePlace: boolean) {
+  const current = useCheckInReadinessStore.getState();
+  const now = Date.now();
+  const elapsed = projectedReadinessMs(current.evidence, now);
+  const sample = current.evidence.previous;
+  const accuracyLimit = requirePlace
+    ? CHECK_IN_READINESS.placeAccuracyMetres
+    : CHECK_IN_READINESS.hereAccuracyMetres;
+  const ageMs = sample ? now - sample.capturedAtMs : Number.POSITIVE_INFINITY;
+  const localThresholdMet = isFreshReadiness(current.evidence, now)
+    && (requirePlace ? elapsed.placeMs >= CHECK_IN_READINESS.placeMs : elapsed.hereMs >= CHECK_IN_READINESS.hereMs);
+  if (
+    current.uid !== uid
+    || !current.appActive
+    || current.interruptedAtMs !== null
+    || !current.sessionId
+    || !localThresholdMet
+    || !sample
+    || !Number.isFinite(sample.accuracyMeters)
+    || sample.accuracyMeters! < 0
+    || sample.accuracyMeters! > accuracyLimit
+    || ageMs < 0
+    || ageMs > CHECK_IN_READINESS.maxSampleGapMs
+  ) return null;
+  return {
+    latitude: sample.latitude,
+    longitude: sample.longitude,
+    accuracyMeters: sample.accuracyMeters!,
+    speedMetersPerSecond: sample.speedMetersPerSecond,
+    capturedAtMs: Math.floor(sample.capturedAtMs),
+    sessionId: current.sessionId,
+  };
+}
+
+function waitForServerReadiness(uid: string, requirePlace: boolean, sessionId: string, timeoutMs = 6_000) {
+  return new Promise<boolean>((resolve) => {
+    let finished = false;
+    let unsubscribe: (() => void) | undefined;
+    let timeout: ReturnType<typeof setTimeout> | null = null;
+    const finish = (ready: boolean) => {
+      if (finished) return;
+      finished = true;
+      if (timeout) clearTimeout(timeout);
+      unsubscribe?.();
+      resolve(ready);
+    };
+    const inspect = () => {
+      const current = useCheckInReadinessStore.getState();
+      const now = Date.now();
+      if (current.uid !== uid || !current.appActive || current.interruptedAtMs !== null
+        || current.sessionId !== sessionId || !isFreshReadiness(current.evidence, now)) {
+        finish(false);
+        return;
+      }
+      const levels = readinessLevels(current.evidence, current.receipt, current.sessionId, now);
+      if (requirePlace ? levels.place : levels.here) finish(true);
+    };
+    timeout = setTimeout(() => finish(false), timeoutMs);
+    unsubscribe = useCheckInReadinessStore.subscribe(inspect);
+    inspect();
+  });
+}
+
 export default function ContextualCheckInControl({ enabled }: Props) {
   const router = useRouter();
   const { user } = useAuth();
@@ -303,6 +366,7 @@ export default function ContextualCheckInControl({ enabled }: Props) {
   const [knownVenuesLoading, setKnownVenuesLoading] = useState(false);
   const [knownVenuesNotice, setKnownVenuesNotice] = useState('');
   const [discovering, setDiscovering] = useState(false);
+  const [confirmingReadiness, setConfirmingReadiness] = useState(false);
   const [discoveryError, setDiscoveryError] = useState('');
   const [partialDiscoveryNotice, setPartialDiscoveryNotice] = useState('');
   const [selectionError, setSelectionError] = useState('');
@@ -375,7 +439,11 @@ export default function ContextualCheckInControl({ enabled }: Props) {
       .slice(0, 5);
   })();
   // GPS cannot identify one business among overlapping venues. Keep the generic icon when ambiguous.
-  const candidate = nearby.length === 1 && nearby[0].distanceMetres <= 25 && levels.place ? nearby[0] : null;
+  const localHereCapture = user ? localReadinessLocation(user.uid, false) : null;
+  const localPlaceCapture = user ? localReadinessLocation(user.uid, true) : null;
+  const hereEntryReady = levels.here || !!localHereCapture;
+  const placeEntryReady = levels.place || !!localPlaceCapture;
+  const candidate = nearby.length === 1 && nearby[0].distanceMetres <= 25 && placeEntryReady ? nearby[0] : null;
   const showBubble = useCallback((message: string, automatic = false) => {
     if (bubbleTimer.current) clearTimeout(bubbleTimer.current);
     autoBubbleRef.current = automatic;
@@ -386,14 +454,14 @@ export default function ContextualCheckInControl({ enabled }: Props) {
     if (!readiness.appActive || (autoBubbleRef.current && (!levels.place || !enabled || pickerVisible))) setBubble('');
   }, [enabled, levels.place, pickerVisible, readiness.appActive]);
   useEffect(() => {
-    if (pickerVisible && externalSearchVisible && !levels.place) {
+    if (pickerVisible && externalSearchVisible && !placeEntryReady) {
       setNearbyPlaces([]);
       setSelectedPlaceId('');
       if (!discovering) {
         setDiscoveryError('Your location needs to settle again. Wait for the blue Place ring, then search again.');
       }
     }
-  }, [discovering, externalSearchVisible, levels.place, pickerVisible]);
+  }, [discovering, externalSearchVisible, placeEntryReady, pickerVisible]);
   useEffect(() => {
     mountedRef.current = true;
     return () => { mountedRef.current = false; if (bubbleTimer.current) clearTimeout(bubbleTimer.current); };
@@ -436,26 +504,40 @@ export default function ContextualCheckInControl({ enabled }: Props) {
   };
 
   const loadKnownNearbyVenues = async (
-    capture: NonNullable<ReturnType<typeof acceptedReadinessLocation>>,
+    capture: NonNullable<ReturnType<typeof localReadinessLocation>>,
     flowGeneration: number
   ) => {
+    const sessionId = capture.sessionId;
     const cached = canonicalCacheRef.current;
-    if (cached && cached.sessionId === capture.sessionId && cached.expiresAtMs > Date.now()) {
+    if (cached && cached.sessionId === sessionId && cached.expiresAtMs > Date.now()) {
       setKnownNearbyPlaces(cached.places);
       setKnownVenuesLoading(false);
       return;
     }
     setKnownVenuesLoading(true);
     setKnownVenuesNotice('');
-    const { sessionId, ...location } = capture;
     try {
+      // The picker and locally known venues appear as soon as Here is complete.
+      // Wait for the server receipt only before asking the canonical venue service.
+      const confirmed = await waitForServerReadiness(user.uid, false, sessionId);
+      if (!mountedRef.current || flowGenerationRef.current !== flowGeneration) return;
+      if (!confirmed) {
+        const stillHere = localReadinessLocation(user.uid, false);
+        if (stillHere?.sessionId === sessionId) {
+          setKnownVenuesNotice('GathR is still confirming your location. Nearby venues already loaded on the map remain available.');
+        }
+        return;
+      }
+      const verifiedCapture = acceptedReadinessLocation(user.uid, false);
+      if (!verifiedCapture || verifiedCapture.sessionId !== sessionId) return;
+      const { sessionId: verifiedSessionId, ...location } = verifiedCapture;
       const result = await listNearbyCanonicalCheckInVenues(location);
       const current = useCheckInReadinessStore.getState();
-      const stillReady = acceptedReadinessLocation(user.uid, false);
+      const stillReady = localReadinessLocation(user.uid, false);
       if (!mountedRef.current || flowGenerationRef.current !== flowGeneration
-        || !stillReady || current.sessionId !== sessionId || stillReady.sessionId !== sessionId) return;
+        || !stillReady || current.sessionId !== verifiedSessionId || stillReady.sessionId !== verifiedSessionId) return;
       const places = result.candidates.map(decorateNearbyCandidate);
-      canonicalCacheRef.current = { sessionId, expiresAtMs: Date.now() + 5 * 60_000, places };
+      canonicalCacheRef.current = { sessionId: verifiedSessionId, expiresAtMs: Date.now() + 5 * 60_000, places };
       setKnownNearbyPlaces(places);
       setSelectedPlaceId((currentId) => places.some((place) => place.id === currentId)
         ? currentId : closestNearbyPlaceId([...nearby, ...places]));
@@ -469,7 +551,7 @@ export default function ContextualCheckInControl({ enabled }: Props) {
   };
 
   const openCheckInPicker = () => {
-    const capture = acceptedReadinessLocation(user.uid, false);
+    const capture = localReadinessLocation(user.uid, false);
     if (!capture) {
       showBubble('Your location is updating. The check-in choices will be ready when the purple ring is complete.');
       return;
@@ -480,6 +562,9 @@ export default function ContextualCheckInControl({ enabled }: Props) {
     setPickerVisible(true);
     setExternalSearchVisible(false);
     setPrivateSetupVisible(false);
+    setKnownVenuesLoading(false);
+    setDiscovering(false);
+    setConfirmingReadiness(false);
     setDiscoveryError('');
     setPartialDiscoveryNotice('');
     setSelectionError('');
@@ -497,20 +582,29 @@ export default function ContextualCheckInControl({ enabled }: Props) {
 
   const searchSomewhereElse = async () => {
     if (discovering) return;
-    const capture = acceptedReadinessLocation(user.uid, true);
+    const localCapture = localReadinessLocation(user.uid, true);
     setExternalSearchVisible(true);
     setDiscoveryError('');
     setPartialDiscoveryNotice('');
     setNearbyPlaces([]);
     setSelectedPlaceId('');
-    if (!capture) {
+    if (!localCapture) {
       setDiscoveryError('The blue Place ring needs to be ready before searching nearby. Stay here while it finishes.');
       return;
     }
     const flowGeneration = flowGenerationRef.current;
     setDiscovering(true);
-    const { sessionId, ...location } = capture;
+    setConfirmingReadiness(true);
     try {
+      const confirmed = await waitForServerReadiness(user.uid, true, localCapture.sessionId);
+      setConfirmingReadiness(false);
+      if (!mountedRef.current || flowGenerationRef.current !== flowGeneration) return;
+      const capture = confirmed ? acceptedReadinessLocation(user.uid, true) : null;
+      if (!capture || capture.sessionId !== localCapture.sessionId) {
+        setDiscoveryError('Location confirmation did not finish. Stay here until the blue Place ring is ready, then try again.');
+        return;
+      }
+      const { sessionId, ...location } = capture;
       const result = await discoverNearbyCheckInPlaces(location);
       const current = useCheckInReadinessStore.getState();
       const stillReady = acceptedReadinessLocation(user.uid, true);
@@ -536,19 +630,21 @@ export default function ContextualCheckInControl({ enabled }: Props) {
         ? 'Nearby public places could not be loaded. Your GathR venues are still available.'
         : messageForError(error));
     } finally {
-      if (mountedRef.current && flowGenerationRef.current === flowGeneration) setDiscovering(false);
+      if (mountedRef.current && flowGenerationRef.current === flowGeneration) {
+        setDiscovering(false);
+        setConfirmingReadiness(false);
+      }
     }
   };
 
   const choosePlace = async (place: VenueCandidate | null) => {
     if (!place || bindingRef.current) return;
     const initial = useCheckInReadinessStore.getState();
-    const initialLevels = readinessLevels(initial.evidence, initial.receipt, initial.sessionId, Date.now());
-    const capture = acceptedReadinessLocation(user.uid, place.type !== 'private_place');
+    const requirePlace = place.type !== 'private_place';
+    const localCapture = localReadinessLocation(user.uid, requirePlace);
     const report = (message: string) => place.type === 'private_place' ? setPrivatePlaceError(message) : setSelectionError(message);
     if (initial.uid !== user.uid || !initial.appActive || initial.interruptedAtMs !== null
-      || (place.type === 'private_place' ? !initialLevels.here : !initialLevels.place)
-      || !capture || capture.sessionId !== initial.sessionId) {
+      || !localCapture || localCapture.sessionId !== initial.sessionId) {
       report('Readiness changed. Return to the map; the rings will update as your location settles.');
       return;
     }
@@ -560,6 +656,12 @@ export default function ContextualCheckInControl({ enabled }: Props) {
     setBinding(true);
     setSelectionError('');
     try {
+      const confirmed = await waitForServerReadiness(user.uid, requirePlace, localCapture.sessionId);
+      if (!confirmed) throw new Error('Location confirmation did not finish. Stay here until the ring is ready, then try again.');
+      const capture = acceptedReadinessLocation(user.uid, requirePlace);
+      if (!capture || capture.sessionId !== localCapture.sessionId) {
+        throw new Error('Your location changed before GathR could confirm it. Wait for the ring to fill again.');
+      }
       const { sessionId, ...sample } = capture;
       const current = useCheckInReadinessStore.getState();
       if (!mountedRef.current || flowGenerationRef.current !== flowGeneration) return;
@@ -618,8 +720,9 @@ export default function ContextualCheckInControl({ enabled }: Props) {
   const createPrivatePlace = async () => {
     if (privateCreationRef.current || bindingRef.current) return;
     const current = useCheckInReadinessStore.getState();
+    const localCapture = localReadinessLocation(user.uid, false);
     if (current.uid !== user.uid || !current.appActive || current.interruptedAtMs !== null
-      || !readinessLevels(current.evidence, current.receipt, current.sessionId, Date.now()).here) {
+      || !localCapture || localCapture.sessionId !== current.sessionId) {
       setPrivatePlaceError('Readiness changed. Return to the map to check your location.');
       return;
     }
@@ -635,8 +738,14 @@ export default function ContextualCheckInControl({ enabled }: Props) {
     const flowGeneration = flowGenerationRef.current;
     setPrivatePlaceError('');
     try {
+      const confirmed = await waitForServerReadiness(user.uid, false, localCapture.sessionId);
+      if (!confirmed) {
+        setPrivatePlaceError('Location confirmation is taking longer than expected. Stay here and try again.');
+        return;
+      }
+      if (!mountedRef.current || flowGenerationRef.current !== flowGeneration) return;
       const capture = acceptedReadinessLocation(user.uid, false);
-      if (!capture) {
+      if (!capture || capture.sessionId !== localCapture.sessionId) {
         setPrivatePlaceError('Your location is updating. Wait for the purple ring to be ready, then retry.');
         return;
       }
@@ -648,7 +757,8 @@ export default function ContextualCheckInControl({ enabled }: Props) {
         accuracyMeters: location.accuracyMeters,
         capturedAtMs: location.capturedAtMs,
       });
-      if (useCheckInReadinessStore.getState().sessionId !== capturedSessionId) {
+      if (useCheckInReadinessStore.getState().sessionId !== capturedSessionId
+        || !acceptedReadinessLocation(user.uid, false)) {
         throw new Error('Your location changed while preparing this private place. Wait for the purple ring to be ready again.');
       }
       const place = result.candidate;
@@ -682,15 +792,15 @@ export default function ContextualCheckInControl({ enabled }: Props) {
         ? 'The rings reset when you move. They build once your location settles.'
         : readiness.evidence.reason === 'low_accuracy' || readiness.evidence.reason === 'stale'
           ? 'Waiting for fresh, accurate location fixes. You can keep browsing while the rings prepare.'
+        : hereEntryReady
+          ? 'The 30-second wait is complete. Tap the checkmark to choose; GathR confirms your location before saving.'
         : readiness.serviceError
           ? 'Check-in verification is unavailable right now. You can keep browsing.'
-          : presentedReadiness.hereMs >= CHECK_IN_READINESS.hereMs
-            ? 'Finishing location verification. The purple ring will brighten and show a checkmark when you can check in.'
           : 'Here prepares an approximate private check-in. Place prepares a public place or optional exact pin. Nothing is shared.';
-  const hereProgress = levels.here ? 1 : Math.min(1, presentedReadiness.hereMs / CHECK_IN_READINESS.hereMs);
-  const placeProgress = levels.place ? 1 : Math.min(1, presentedReadiness.placeMs / CHECK_IN_READINESS.placeMs);
-  const explanation = autoBubbleRef.current ? bubble : levels.here
-    ? levels.place ? 'Ready for a private or public-place check-in. Tap the checkmark to choose.'
+  const hereProgress = hereEntryReady ? 1 : Math.min(1, presentedReadiness.hereMs / CHECK_IN_READINESS.hereMs);
+  const placeProgress = placeEntryReady ? 1 : Math.min(1, presentedReadiness.placeMs / CHECK_IN_READINESS.placeMs);
+  const explanation = autoBubbleRef.current ? bubble : hereEntryReady
+    ? placeEntryReady ? 'Ready for a private or public-place check-in. Tap the checkmark to choose.'
       : 'Private check-in is ready. Tap the checkmark to choose. Public places need the blue ring too.'
     : earlyCopy;
   const ringStatus = (ready: boolean, elapsed: number, required: number) => ready ? 'Ready'
@@ -703,8 +813,8 @@ export default function ContextualCheckInControl({ enabled }: Props) {
           onPress={() => setBubble('')} style={styles.bubbleClose}><Ionicons name="close" size={19} color="#475467" /></TouchableOpacity>
       </View>
       <View style={styles.legend}>
-        <Text style={styles.hereLegend}>Here · {ringStatus(levels.here, presentedReadiness.hereMs, CHECK_IN_READINESS.hereMs)}</Text>
-        <Text style={styles.placeLegend}>Place · {ringStatus(levels.place, presentedReadiness.placeMs, CHECK_IN_READINESS.placeMs)}</Text>
+        <Text style={styles.hereLegend}>Here · {ringStatus(hereEntryReady, presentedReadiness.hereMs, CHECK_IN_READINESS.hereMs)}</Text>
+        <Text style={styles.placeLegend}>Place · {ringStatus(placeEntryReady, presentedReadiness.placeMs, CHECK_IN_READINESS.placeMs)}</Text>
       </View>
       <TouchableOpacity accessibilityRole="button" onPress={() => { setBubble(''); router.push('/check-in-settings'); }} style={styles.settingsLink}>
         <Text style={styles.settingsText}>Location &amp; arrival reminders</Text>
@@ -712,20 +822,20 @@ export default function ContextualCheckInControl({ enabled }: Props) {
     </View>}
     <TouchableOpacity accessibilityRole="button" activeOpacity={0.85}
       accessibilityLabel={ownCheckIn ? `Manage active check-in at ${ownCheckIn.venueNameSnapshot}`
-        : `${levels.here ? 'Check-in ready' : 'Check-in readiness'}. Here ${ringStatus(levels.here, presentedReadiness.hereMs, CHECK_IN_READINESS.hereMs)}. Place ${ringStatus(levels.place, presentedReadiness.placeMs, CHECK_IN_READINESS.placeMs)}.`}
+        : `${hereEntryReady ? 'Check-in ready' : 'Check-in readiness'}. Here ${ringStatus(hereEntryReady, presentedReadiness.hereMs, CHECK_IN_READINESS.hereMs)}. Place ${ringStatus(placeEntryReady, presentedReadiness.placeMs, CHECK_IN_READINESS.placeMs)}.`}
       onPress={() => {
         if (ownCheckIn) router.push('/check-in');
-        else if (levels.here && readiness.uid === user.uid) openCheckInPicker();
+        else if (hereEntryReady && readiness.uid === user.uid) openCheckInPicker();
         else showBubble(earlyCopy);
       }}
-      style={[styles.control, (levels.here || !!ownCheckIn) && styles.readyControl]}
-      testID={ownCheckIn ? 'contextual-check-in-active' : levels.here ? 'contextual-check-in-ready' : 'contextual-check-in-idle'}>
+      style={[styles.control, (hereEntryReady || !!ownCheckIn) && styles.readyControl]}
+      testID={ownCheckIn ? 'contextual-check-in-active' : hereEntryReady ? 'contextual-check-in-ready' : 'contextual-check-in-idle'}>
       {ownCheckIn ? <Ionicons name="checkmark-circle" size={26} color="#175CD3" /> : <ReadinessRings
-        here={hereProgress} place={placeProgress} hereReady={levels.here} placeReady={levels.place}>
-        {levels.here ? <View testID="check-in-ready-mark" style={[styles.readyMark, levels.place && styles.placeReadyMark]}>
+        here={hereProgress} place={placeProgress} hereReady={hereEntryReady} placeReady={placeEntryReady}>
+        {hereEntryReady ? <View testID="check-in-ready-mark" style={[styles.readyMark, placeEntryReady && styles.placeReadyMark]}>
           <Ionicons name="checkmark" color="#FFFFFF" size={19} />
         </View> : candidate ? <View style={styles.smallAvatar}><VenueAvatar venue={candidate} /></View>
-          : <Ionicons name="location-outline" size={21} color={levels.here ? '#175CD3' : '#667085'} />}
+          : <Ionicons name="location-outline" size={21} color={hereEntryReady ? '#175CD3' : '#667085'} />}
       </ReadinessRings>}
     </TouchableOpacity>
   </>;
@@ -747,11 +857,11 @@ export default function ContextualCheckInControl({ enabled }: Props) {
                       <Ionicons name="navigate-outline" size={17} color="#2F80ED" />
                       <Text numberOfLines={1} style={styles.locationStatusCopy}>Using your recent location</Text>
                       <View style={styles.locationReadyStatus}>
-                        {levels.place
+                        {placeEntryReady
                           ? <Ionicons name="checkmark-circle" size={16} color="#039855" />
                           : <ActivityIndicator size="small" color="#2F80ED" />}
-                        <Text style={[styles.locationReadyText, !levels.place && styles.locationCheckingText]}>
-                          {levels.place ? 'Ready' : 'Waiting'}
+                        <Text style={[styles.locationReadyText, !placeEntryReady && styles.locationCheckingText]}>
+                          {placeEntryReady ? 'Ready' : 'Waiting'}
                         </Text>
                       </View>
                       <TouchableOpacity
@@ -776,7 +886,7 @@ export default function ContextualCheckInControl({ enabled }: Props) {
                   <Text style={styles.pickerSubtitle}>
                     {privateSetupVisible
                       ? 'Use a private label. Never enter a home address.'
-                      : levels.place
+                      : placeEntryReady
                         ? 'Choose a nearby GathR venue, find somewhere else, or check in privately.'
                         : 'Private check-in is ready. Public places unlock when the blue ring is ready.'}
                   </Text>
@@ -849,12 +959,12 @@ export default function ContextualCheckInControl({ enabled }: Props) {
                 <TouchableOpacity
                   accessibilityRole="button"
                   testID="continue-private-check-in"
-                  disabled={creatingPrivatePlace || binding || !levels.here}
+                  disabled={creatingPrivatePlace || binding || !hereEntryReady}
                   onPress={() => void createPrivatePlace()}
-                  style={[styles.usePrivateButton, (creatingPrivatePlace || binding || !levels.here) && styles.disabled]}
+                  style={[styles.usePrivateButton, (creatingPrivatePlace || binding || !hereEntryReady) && styles.disabled]}
                 >
                   {creatingPrivatePlace
-                    ? <ActivityIndicator color="#FFFFFF" />
+                    ? <><ActivityIndicator color="#FFFFFF" /><Text style={styles.usePlaceText}>Confirming location…</Text></>
                     : <><Text style={styles.usePlaceText}>Continue to privacy</Text><Ionicons name="arrow-forward" size={19} color="#FFFFFF" /></>}
                 </TouchableOpacity>
               </View>
@@ -878,14 +988,14 @@ export default function ContextualCheckInControl({ enabled }: Props) {
                       {discovering && (
                         <View style={styles.inlineSearchState} accessibilityLiveRegion="polite">
                           <ActivityIndicator color="#2F80ED" />
-                          <Text style={styles.inlineSearchCopy}>Looking for other nearby public places…</Text>
+                          <Text style={styles.inlineSearchCopy}>{confirmingReadiness ? 'Confirming your location…' : 'Looking for other nearby public places…'}</Text>
                         </View>
                       )}
                       {!!discoveryError && (
                         <View style={styles.searchErrorCard} accessibilityLiveRegion="polite">
                           <View style={styles.stateIcon}><Ionicons name="location-outline" size={21} color="#B54708" /></View>
                           <Text style={styles.searchErrorCopy}>{discoveryError}</Text>
-                          {levels.place && (
+                          {placeEntryReady && (
                             <TouchableOpacity accessibilityRole="button" onPress={() => void searchSomewhereElse()} testID="retry-nearby-public-places" style={styles.retryButton}>
                               <Text style={styles.retryText}>Try again</Text>
                             </TouchableOpacity>
@@ -898,11 +1008,11 @@ export default function ContextualCheckInControl({ enabled }: Props) {
                           <TouchableOpacity
                             accessibilityLabel={`${place.venueName}, ${place.distanceMetres} metres away`}
                             accessibilityRole="radio"
-                            accessibilityState={{ selected, disabled: !levels.place }}
-                            disabled={!levels.place}
+                            accessibilityState={{ selected, disabled: !placeEntryReady }}
+                            disabled={!placeEntryReady}
                             key={place.id}
                             onPress={() => { setSelectedPlaceId(place.id); setSelectionError(''); }}
-                            style={[styles.placeRow, selected && styles.placeRowSelected, !levels.place && styles.disabledPlaceRow]}
+                            style={[styles.placeRow, selected && styles.placeRowSelected, !placeEntryReady && styles.disabledPlaceRow]}
                           >
                             <VenueAvatar venue={place} />
                             <View style={styles.copy}>
@@ -942,11 +1052,11 @@ export default function ContextualCheckInControl({ enabled }: Props) {
                           <TouchableOpacity
                             accessibilityLabel={`${place.venueName}, ${place.distanceMetres} metres away`}
                             accessibilityRole="radio"
-                            accessibilityState={{ selected, disabled: !levels.place }}
-                            disabled={!levels.place}
+                            accessibilityState={{ selected, disabled: !placeEntryReady }}
+                            disabled={!placeEntryReady}
                             key={place.id}
                             onPress={() => { setSelectedPlaceId(place.id); setSelectionError(''); }}
-                            style={[styles.placeRow, selected && styles.placeRowSelected, !levels.place && styles.disabledPlaceRow]}
+                            style={[styles.placeRow, selected && styles.placeRowSelected, !placeEntryReady && styles.disabledPlaceRow]}
                           >
                             <VenueAvatar venue={place} />
                             <View style={styles.copy}>
@@ -975,10 +1085,10 @@ export default function ContextualCheckInControl({ enabled }: Props) {
                       )}
                       <TouchableOpacity
                         accessibilityRole="button"
-                        accessibilityState={{ disabled: !levels.place }}
-                        disabled={!levels.place || discovering}
+                        accessibilityState={{ disabled: !placeEntryReady }}
+                        disabled={!placeEntryReady || discovering}
                         onPress={() => void searchSomewhereElse()}
-                        style={[styles.somewhereElseButton, (!levels.place || discovering) && styles.disabledPlaceRow]}
+                        style={[styles.somewhereElseButton, (!placeEntryReady || discovering) && styles.disabledPlaceRow]}
                         testID="find-somewhere-else"
                       >
                         <View style={styles.somewhereElseIcon}><Ionicons name="search-outline" size={20} color="#175CD3" /></View>
@@ -1005,7 +1115,7 @@ export default function ContextualCheckInControl({ enabled }: Props) {
                   </View>}
                   <View style={styles.privacyRow}>
                     <Ionicons name="shield-checkmark-outline" size={18} color="#0F766E" />
-                    <Text style={styles.privacyCopy}>{levels.place
+                    <Text style={styles.privacyCopy}>{placeEntryReady
                       ? 'Nothing is shared yet. Choose who can see your check-in next.'
                       : 'Private check-in is ready now. Public choices unlock when the blue Place ring completes.'}</Text>
                   </View>
@@ -1018,9 +1128,9 @@ export default function ContextualCheckInControl({ enabled }: Props) {
                       <Text style={styles.attributionText}>Place data © OpenStreetMap contributors</Text>
                     </TouchableOpacity>
                   )}
-                  {levels.place ? (
+                  {placeEntryReady ? (
                     <TouchableOpacity testID="continue-public-check-in" accessibilityRole="button" disabled={!selectedPlace || binding} onPress={() => void choosePlace(selectedPlace)} style={[styles.usePlaceButton, (!selectedPlace || binding) && styles.disabled]}>
-                      <Text style={styles.usePlaceText}>{binding ? 'Preparing privacy options…' : selectionError ? 'Try this place again' : 'Continue to privacy'}</Text>
+                      <Text style={styles.usePlaceText}>{binding ? 'Confirming location…' : selectionError ? 'Try this place again' : 'Continue to privacy'}</Text>
                       <Ionicons name="arrow-forward" size={19} color="#FFFFFF" />
                     </TouchableOpacity>
                   ) : (

@@ -80,8 +80,9 @@ export function isFreshReadiness(state: ReadinessState, nowMs: number): boolean 
 }
 
 /**
- * Smooth presentation between verified samples. This never grants readiness:
- * readinessLevels still requires fresh local evidence and a server receipt.
+ * Smooth presentation between fresh stationary samples. The UI may use the
+ * projected threshold to open choices; readinessLevels still requires a server
+ * receipt before any check-in can be saved.
  */
 export function projectedReadinessMs(
   state: ReadinessState,
