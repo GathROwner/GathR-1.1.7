@@ -359,6 +359,7 @@ export default function ContextualCheckInControl({ enabled }: Props) {
   const bubbleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const autoBubbleRef = useRef(false);
   const visibleRef = useRef(false);
+  const retryKnownVenuesRef = useRef<((capture: NonNullable<ReturnType<typeof localReadinessLocation>>, flowGeneration: number) => Promise<void>) | null>(null);
 
 
 
@@ -484,6 +485,16 @@ export default function ContextualCheckInControl({ enabled }: Props) {
       });
     }
   }, [candidate, enabled, levels.place, ownCheckIn, pickerVisible, readiness, showBubble, user?.uid]);
+  // If the local ring opens the picker before its server receipt is ready,
+  // the first canonical lookup can time out. Retry it once Here is confirmed
+  // so the temporary notice cannot remain after readiness catches up.
+  useEffect(() => {
+    if (!pickerVisible || externalSearchVisible || knownVenuesLoading
+      || !knownVenuesNotice.startsWith('GathR is still confirming your location.')
+      || !levels.here || !user) return;
+    const capture = acceptedReadinessLocation(user.uid, false);
+    if (capture) void retryKnownVenuesRef.current?.(capture, flowGenerationRef.current);
+  }, [externalSearchVisible, knownVenuesLoading, knownVenuesNotice, levels.here, pickerVisible, user]);
 
   if (!enabled || !SOCIAL_FEATURE_ENABLED || !SOCIAL_RELEASE_TWO_ENABLED || !user) return null;
 
@@ -514,6 +525,7 @@ export default function ContextualCheckInControl({ enabled }: Props) {
     const cached = canonicalCacheRef.current;
     if (cached && cached.sessionId === sessionId && cached.expiresAtMs > Date.now()) {
       setKnownNearbyPlaces(cached.places);
+      setKnownVenuesNotice('');
       setKnownVenuesLoading(false);
       return;
     }
@@ -552,6 +564,7 @@ export default function ContextualCheckInControl({ enabled }: Props) {
       if (mountedRef.current && flowGenerationRef.current === flowGeneration) setKnownVenuesLoading(false);
     }
   };
+  retryKnownVenuesRef.current = loadKnownNearbyVenues;
 
   const openCheckInPicker = () => {
     const capture = localReadinessLocation(user.uid, false);
