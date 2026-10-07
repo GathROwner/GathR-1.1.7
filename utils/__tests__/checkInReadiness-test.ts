@@ -1,6 +1,6 @@
 import {
   advanceReadiness, canCollectReadiness, canDeliverArrivalNotification, CHECK_IN_READINESS,
-  emptyReadiness, isFreshReadiness, mayPromptReadiness, mayShareExactPrivateLocation, pauseReadiness,
+  emptyReadiness, isFreshReadiness, mayOfferExactPrivateLocation, mayPromptReadiness, mayShareExactPrivateLocation, pauseReadiness,
   projectedReadinessMs, readinessDistance, readinessResumeDecision,
   type ReadinessPermissions, type ReadinessSample, type ReadinessState,
 } from '../checkInReadiness';
@@ -250,5 +250,15 @@ describe('server and privacy contracts', () => {
     expect(mayShareExactPrivateLocation({ ...input, audienceMode: 'all_friends' })).toBe(false);
     expect(mayShareExactPrivateLocation({ ...input, selectedFriendCount: 0 })).toBe(false);
     expect(mayShareExactPrivateLocation({ ...input, isPrivatePlace: false })).toBe(false);
+  });
+  it('offers exact private sharing at Here readiness without waiting for Place', () => {
+    const hereOnly = { isPrivatePlace: true, readinessV1: true, hasContextualEligibility: true,
+      hasBoundGrant: false, boundGrantAllowsExact: false, hereReady: true };
+    expect(mayOfferExactPrivateLocation(hereOnly)).toBe(true);
+    expect(mayOfferExactPrivateLocation({ ...hereOnly, hereReady: false })).toBe(false);
+    expect(mayOfferExactPrivateLocation({ ...hereOnly, isPrivatePlace: false })).toBe(false);
+    expect(mayOfferExactPrivateLocation({ ...hereOnly, hasContextualEligibility: false })).toBe(false);
+    expect(mayOfferExactPrivateLocation({ ...hereOnly, hasBoundGrant: true, boundGrantAllowsExact: true, hereReady: false })).toBe(true);
+    expect(mayOfferExactPrivateLocation({ ...hereOnly, hasBoundGrant: true, boundGrantAllowsExact: false })).toBe(false);
   });
 });

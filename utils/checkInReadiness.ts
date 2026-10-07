@@ -211,6 +211,19 @@ export function mayPromptReadiness(state: ReadinessState, nowMs: number, lastPro
     && nowMs - lastPromptAtMs >= CHECK_IN_READINESS.promptCooldownMs;
 }
 
+export function mayOfferExactPrivateLocation(input: {
+  isPrivatePlace: boolean;
+  readinessV1: boolean;
+  hasContextualEligibility: boolean;
+  hasBoundGrant: boolean;
+  boundGrantAllowsExact: boolean;
+  hereReady: boolean;
+}): boolean {
+  if (!input.isPrivatePlace || !input.hasContextualEligibility) return false;
+  if (!input.readinessV1) return true;
+  return input.hasBoundGrant ? input.boundGrantAllowsExact : input.hereReady;
+}
+
 export function mayShareExactPrivateLocation(input: {
   isPrivatePlace: boolean;
   audienceMode: string;

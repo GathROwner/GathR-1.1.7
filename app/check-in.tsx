@@ -31,7 +31,7 @@ import {
 import { useMapStore } from '../store';
 import { useSocialStore } from '../store/socialStore';
 import { useCheckInReadinessStore } from '../store/checkInReadinessStore';
-import { CHECK_IN_READINESS, emptyReadiness, mayShareExactPrivateLocation } from '../utils/checkInReadiness';
+import { CHECK_IN_READINESS, emptyReadiness, mayOfferExactPrivateLocation, mayShareExactPrivateLocation } from '../utils/checkInReadiness';
 import { readinessLevels, validBoundReadiness } from '../utils/checkInReadinessContract';
 import type {
   CheckInAudienceMode,
@@ -256,12 +256,16 @@ export default function CheckInScreen() {
       ? existingBoundGrant || readyForSelectedPlace
       : eligibilitySessionId && (contextualPlace || contextualEligibleVenueIds.has(venueId)))
   );
-  // V1 lets a private check-in use Here readiness; exact-pin sharing still
-  // needs the stronger Place ring unless a valid bound grant already allows it.
-  const exactAllowed = hasContextualEligibility && (params.readinessVersion !== '1'
-    || (existingBoundGrant
-      ? readiness.grant?.exactPrivateAllowed === true
-      : Boolean(isPrivatePlace && currentReadinessLevels.place)));
+  // Exact sharing is available for private places after Here readiness. A
+  // bound server grant remains authoritative once one exists.
+  const exactAllowed = mayOfferExactPrivateLocation({
+    isPrivatePlace,
+    readinessV1: params.readinessVersion === '1',
+    hasContextualEligibility,
+    hasBoundGrant: existingBoundGrant,
+    boundGrantAllowsExact: readiness.grant?.exactPrivateAllowed === true,
+    hereReady: currentReadinessLevels.here,
+  });
   const exactSharing = mayShareExactPrivateLocation({ isPrivatePlace, audienceMode,
     selectedFriendCount: selectedUids.length, exactAllowed, explicitlyEnabled: shareExactLocation });
   useEffect(() => {
@@ -387,8 +391,7 @@ export default function CheckInScreen() {
               || !fix
               || !Number.isFinite(fix.latitude) || !Number.isFinite(fix.longitude)
               || !Number.isFinite(fix.accuracyMeters) || fix.accuracyMeters! < 0 || fix.accuracyMeters! > accuracyLimit
-              || fixAgeMs < 0 || fixAgeMs > CHECK_IN_READINESS.maxSampleGapMs
-              || (exactSharing && !levels.place)) {
+              || fixAgeMs < 0 || fixAgeMs > CHECK_IN_READINESS.maxSampleGapMs) {
               throw new Error('Your location changed. Stay here until the check-in ring is ready, then try again.');
             }
             const bindKey = `${readinessSessionId}:${selectedVenue.locationType}:${selectedVenue.venueId || selectedVenue.placeCandidateId}`;
@@ -420,7 +423,7 @@ export default function CheckInScreen() {
             useCheckInReadinessStore.setState({ grant });
           }
           if (!grant || (exactSharing && !grant.exactPrivateAllowed)) {
-            throw new Error('This check-in is not eligible to share an exact location. Choose approximate sharing or wait for the Place ring.');
+            throw new Error('This check-in is not eligible to share an exact location. Choose approximate sharing or verify your private location again.');
           }
           boundEligibilitySessionId = grant.eligibilitySessionId;
         }
@@ -735,7 +738,7 @@ export default function CheckInScreen() {
                       </Text>
                       <Text style={styles.privateLocationCopy}>
                         {!exactAllowed
-                          ? 'Approximate sharing is ready. An exact pin needs the blue Place ring before choosing this place.'
+                          ? 'An exact pin requires a verified private location and is shared only with selected friends.'
                           : audienceMode === 'selected_friends'
                           ? 'Exact sharing is optional and applies only to the friends you chose.'
                           : 'All friends see a neighbourhood-sized area. Your address is never shown.'}
