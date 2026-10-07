@@ -847,9 +847,16 @@ export default function ContextualCheckInControl({ enabled }: Props) {
         else if (hereEntryReady && readiness.uid === user.uid) openCheckInPicker();
         else showBubble(earlyCopy);
       }}
-      style={[styles.control, (hereEntryReady || !!ownCheckIn) && styles.readyControl]}
+      style={[styles.control, ownCheckIn ? styles.checkedInControl : hereEntryReady && styles.readyControl]}
       testID={ownCheckIn ? 'contextual-check-in-active' : hereEntryReady ? 'contextual-check-in-ready' : 'contextual-check-in-idle'}>
-      {ownCheckIn ? <Ionicons name="checkmark-circle" size={22} color="#175CD3" /> : <ReadinessRings
+      {ownCheckIn ? <View style={styles.checkedInMark}>
+        <View style={styles.checkedInPinCircle}>
+          <Ionicons name="location" size={15} color="#FFFFFF" />
+        </View>
+        <View style={styles.checkedInBadge}>
+          <Ionicons name="checkmark" size={8} color="#FFFFFF" />
+        </View>
+      </View> : <ReadinessRings
         here={hereProgress} place={placeProgress} hereReady={hereEntryReady} placeReady={placeEntryReady}>
         {hereEntryReady ? <View testID="check-in-ready-mark" style={[styles.readyMark, placeEntryReady && styles.placeReadyMark]}>
           <Ionicons name="checkmark" color="#FFFFFF" size={16} />
@@ -1177,10 +1184,14 @@ const styles = StyleSheet.create({
     elevation: 6, zIndex: 32,
   },
   readyControl: { backgroundColor: '#F0F7FF' },
+  checkedInControl: { backgroundColor: '#FFFFFF', borderWidth: 1.5, borderColor: '#2F80ED' },
   rings: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
   smallAvatar: { transform: [{ scale: 0.55 }] },
   readyMark: { width: 22, height: 22, borderRadius: 11, alignItems: 'center', justifyContent: 'center', backgroundColor: '#6D28D9' },
   placeReadyMark: { backgroundColor: '#175CD3' },
+  checkedInMark: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
+  checkedInPinCircle: { width: 23, height: 23, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: '#175CD3' },
+  checkedInBadge: { position: 'absolute', top: 0, right: 0, width: 13, height: 13, borderRadius: 7, alignItems: 'center', justifyContent: 'center', backgroundColor: '#12B76A', borderWidth: 1.5, borderColor: '#FFFFFF' },
   bubble: { position: 'absolute', right: 54, bottom: 50, width: 254, maxWidth: '76%', backgroundColor: '#FFFFFF', borderRadius: 16, padding: 12, elevation: 7, zIndex: 33, shadowColor: '#101828', shadowOpacity: 0.14, shadowRadius: 8, shadowOffset: { width: 0, height: 3 } },
   bubbleHeading: { flexDirection: 'row', alignItems: 'flex-start' },
   bubbleCopy: { flex: 1, color: '#344054', fontSize: 13, lineHeight: 19, fontWeight: '600' },
