@@ -356,7 +356,6 @@ export default function ContextualCheckInControl({ enabled }: Props) {
   const privateCreationRef = useRef(false);
   const flowGenerationRef = useRef(0);
   const mountedRef = useRef(true);
-  const bubbleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const autoBubbleRef = useRef(false);
   const visibleRef = useRef(false);
   const retryKnownVenuesRef = useRef<((capture: NonNullable<ReturnType<typeof localReadinessLocation>>, flowGeneration: number) => Promise<void>) | null>(null);
@@ -449,14 +448,9 @@ export default function ContextualCheckInControl({ enabled }: Props) {
   const placeEntryReady = levels.place || !!localPlaceCapture;
   const candidate = nearby.length === 1 && nearby[0].distanceMetres <= 25 && placeEntryReady ? nearby[0] : null;
   const showBubble = useCallback((message: string, automatic = false) => {
-    if (bubbleTimer.current) clearTimeout(bubbleTimer.current);
     autoBubbleRef.current = automatic;
     setBubble(message);
-    bubbleTimer.current = setTimeout(() => setBubble(''), 8_000);
   }, []);
-  useEffect(() => {
-    if (!readiness.appActive || (autoBubbleRef.current && (!levels.place || !enabled || pickerVisible))) setBubble('');
-  }, [enabled, levels.place, pickerVisible, readiness.appActive]);
   useEffect(() => {
     if (pickerVisible && externalSearchVisible && !placeEntryReady) {
       setNearbyPlaces([]);
@@ -468,12 +462,13 @@ export default function ContextualCheckInControl({ enabled }: Props) {
   }, [discovering, externalSearchVisible, placeEntryReady, pickerVisible]);
   useEffect(() => {
     mountedRef.current = true;
-    return () => { mountedRef.current = false; if (bubbleTimer.current) clearTimeout(bubbleTimer.current); };
+    return () => { mountedRef.current = false; };
   }, []);
   useEffect(() => {
     if (!readiness.restorePickerOnReturn || !isFocused || !enabled || !user) return;
     useCheckInReadinessStore.setState({ restorePickerOnReturn: false });
     flowGenerationRef.current += 1;
+    setBubble('');
     setPickerVisible(true);
     setExternalSearchVisible(false);
     setPrivateSetupVisible(false);
@@ -820,7 +815,7 @@ export default function ContextualCheckInControl({ enabled }: Props) {
           : defaultReadinessCopy;
   const hereProgress = hereEntryReady ? 1 : Math.min(1, presentedReadiness.hereMs / CHECK_IN_READINESS.hereMs);
   const placeProgress = placeEntryReady ? 1 : Math.min(1, presentedReadiness.placeMs / CHECK_IN_READINESS.placeMs);
-  const explanation = autoBubbleRef.current ? bubble : hereEntryReady
+  const explanation = autoBubbleRef.current && levels.place ? bubble : hereEntryReady
     ? placeEntryReady ? 'Ready for a private or public-place check-in. Tap the checkmark to choose.'
       : 'Private check-in is ready. Tap the checkmark to choose. Public places need the blue ring too.'
     : earlyCopy;
