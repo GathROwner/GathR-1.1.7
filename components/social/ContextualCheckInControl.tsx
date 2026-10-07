@@ -184,7 +184,7 @@ export function ReadinessRings({ here, place, hereReady, placeReady, children }:
     </React.Fragment>;
   };
   return <View style={styles.rings} pointerEvents="none">
-    <Svg width={48} height={48} style={StyleSheet.absoluteFill}>
+    <Svg width={36} height={36} viewBox="0 0 48 48" style={StyleSheet.absoluteFill}>
       {ring('place', 21.5, place, placeReady, '#2F80ED', '#175CD3')}
       {ring('here', 16, here, hereReady, '#8B5CF6', '#6D28D9')}
     </Svg>
@@ -849,12 +849,12 @@ export default function ContextualCheckInControl({ enabled }: Props) {
       }}
       style={[styles.control, (hereEntryReady || !!ownCheckIn) && styles.readyControl]}
       testID={ownCheckIn ? 'contextual-check-in-active' : hereEntryReady ? 'contextual-check-in-ready' : 'contextual-check-in-idle'}>
-      {ownCheckIn ? <Ionicons name="checkmark-circle" size={26} color="#175CD3" /> : <ReadinessRings
+      {ownCheckIn ? <Ionicons name="checkmark-circle" size={22} color="#175CD3" /> : <ReadinessRings
         here={hereProgress} place={placeProgress} hereReady={hereEntryReady} placeReady={placeEntryReady}>
         {hereEntryReady ? <View testID="check-in-ready-mark" style={[styles.readyMark, placeEntryReady && styles.placeReadyMark]}>
-          <Ionicons name="checkmark" color="#FFFFFF" size={19} />
+          <Ionicons name="checkmark" color="#FFFFFF" size={16} />
         </View> : candidate ? <View style={styles.smallAvatar}><VenueAvatar venue={candidate} /></View>
-          : <Ionicons name="location-outline" size={21} color={hereEntryReady ? '#175CD3' : '#667085'} />}
+          : <Ionicons name="location-outline" size={18} color={hereEntryReady ? '#175CD3' : '#667085'} />}
       </ReadinessRings>}
     </TouchableOpacity>
   </>;
@@ -1170,18 +1170,18 @@ const styles = StyleSheet.create({
   selectionErrorText: { color: '#93370D', fontSize: 14, lineHeight: 20 },
   selectionErrorActions: { flexDirection: 'row', justifyContent: 'space-between', gap: 12 },
   control: {
-    position: 'absolute', right: 4, bottom: 20, width: 48, height: 48,
-    alignItems: 'center', justifyContent: 'center', borderRadius: 24,
+    position: 'absolute', right: 10, bottom: 50, width: 36, height: 36,
+    alignItems: 'center', justifyContent: 'center', borderRadius: 18,
     backgroundColor: '#FFFFFF', shadowColor: '#101828',
     shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.16, shadowRadius: 5,
     elevation: 6, zIndex: 32,
   },
   readyControl: { backgroundColor: '#F0F7FF' },
-  rings: { width: 48, height: 48, alignItems: 'center', justifyContent: 'center' },
-  smallAvatar: { transform: [{ scale: 0.62 }] },
-  readyMark: { width: 24, height: 24, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: '#6D28D9' },
+  rings: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
+  smallAvatar: { transform: [{ scale: 0.55 }] },
+  readyMark: { width: 22, height: 22, borderRadius: 11, alignItems: 'center', justifyContent: 'center', backgroundColor: '#6D28D9' },
   placeReadyMark: { backgroundColor: '#175CD3' },
-  bubble: { position: 'absolute', right: 60, bottom: 20, width: 254, maxWidth: '76%', backgroundColor: '#FFFFFF', borderRadius: 16, padding: 12, elevation: 7, zIndex: 33, shadowColor: '#101828', shadowOpacity: 0.14, shadowRadius: 8, shadowOffset: { width: 0, height: 3 } },
+  bubble: { position: 'absolute', right: 54, bottom: 50, width: 254, maxWidth: '76%', backgroundColor: '#FFFFFF', borderRadius: 16, padding: 12, elevation: 7, zIndex: 33, shadowColor: '#101828', shadowOpacity: 0.14, shadowRadius: 8, shadowOffset: { width: 0, height: 3 } },
   bubbleHeading: { flexDirection: 'row', alignItems: 'flex-start' },
   bubbleCopy: { flex: 1, color: '#344054', fontSize: 13, lineHeight: 19, fontWeight: '600' },
   bubbleClose: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center', marginRight: -8, marginTop: -8 },

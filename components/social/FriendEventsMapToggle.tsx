@@ -256,7 +256,7 @@ const styles = StyleSheet.create({
   pill: {
     position: 'absolute',
     right: 10,
-    bottom: 128,
+    bottom: 154,
     height: 30,
     minWidth: 60,
     flexDirection: 'row',
@@ -280,7 +280,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 0,
     right: 0,
-    bottom: 72,
+    bottom: 90,
     zIndex: 25,
   },
   carouselHeader: {

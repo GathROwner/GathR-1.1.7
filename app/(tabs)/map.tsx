@@ -13075,7 +13075,7 @@ countText: {
   // Re-center button styles
   recenterButton: {
     position: 'absolute',
-    bottom: 80,
+    bottom: 106,
     right: 10,
     backgroundColor: 'white',
     width: 36,
@@ -13123,7 +13123,7 @@ countText: {
     position: 'absolute',
     right: 10,
     top: 182, // Legend button ends at ~170 (80+54+36), add 12px spacing
-    bottom: 172, // Reserve the compact Friends shortcut above recenter.
+    bottom: 198, // Reserve the shifted Friends shortcut above recenter.
     justifyContent: 'center',
     alignItems: 'flex-end',
     zIndex: 11,
