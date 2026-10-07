@@ -22,6 +22,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useAuth } from '../contexts/AuthContext';
 import {
+  bindCheckInReadiness,
   checkOut,
   createCheckIn,
   createSocialOperationId,
@@ -30,8 +31,8 @@ import {
 import { useMapStore } from '../store';
 import { useSocialStore } from '../store/socialStore';
 import { useCheckInReadinessStore } from '../store/checkInReadinessStore';
-import { mayShareExactPrivateLocation } from '../utils/checkInReadiness';
-import { validBoundReadiness } from '../utils/checkInReadinessContract';
+import { CHECK_IN_READINESS, emptyReadiness, mayShareExactPrivateLocation } from '../utils/checkInReadiness';
+import { readinessLevels, validBoundReadiness } from '../utils/checkInReadinessContract';
 import type {
   CheckInAudienceMode,
   CheckInDurationMinutes,
@@ -76,6 +77,7 @@ export default function CheckInScreen() {
     placeAddress?: string;
     placeCategory?: string;
     eligibilitySessionId?: string;
+    readinessSessionId?: string;
     readinessVersion?: string;
     eligibleVenueIds?: string | string[];
   }>();
@@ -94,11 +96,17 @@ export default function CheckInScreen() {
     if (params.readinessVersion !== '1') return;
     return () => {
       const current = useCheckInReadinessStore.getState();
-      if (current.grant?.eligibilitySessionId === params.eligibilitySessionId) {
-        useCheckInReadinessStore.setState({ grant: null });
+      if (current.grant?.readinessSessionId === params.readinessSessionId) {
+        useCheckInReadinessStore.setState({
+          grant: null,
+          evidence: emptyReadiness(current.evidence.revision + 1, current.evidence.suppressedUntilMs),
+          receipt: null,
+          sessionId: '',
+          interruptedAtMs: null,
+        });
       }
     };
-  }, [params.eligibilitySessionId, params.readinessVersion]);
+  }, [params.readinessSessionId, params.readinessVersion]);
   const options = useMemo(() => {
     const byId = new Map<string, CheckInPlaceOption>();
     for (const event of allEvents) {
@@ -145,6 +153,7 @@ export default function CheckInScreen() {
   const [venuePickerVisible, setVenuePickerVisible] = useState(false);
   const [audiencePickerVisible, setAudiencePickerVisible] = useState(false);
   const pendingOperationRef = useRef<{ fingerprint: string; operationId: string } | null>(null);
+  const pendingBindRef = useRef<{ key: string; operationId: string } | null>(null);
   const activeRevisionRef = useRef<string | null>(ownCheckIn?.revision ?? null);
 
   useEffect(() => {
@@ -172,7 +181,7 @@ export default function CheckInScreen() {
     const placeCandidateId = String(params.placeCandidateId || '').trim();
     const venueName = String(params.placeName || '').trim();
     // Discovery may return a recognized venue with no event in the current viewport.
-    // Its bound grant, not the route's display snapshot, authorizes the check-in below.
+    // The final readiness binding, not this route's display snapshot, authorizes check-in.
     if (params.readinessVersion === '1' && params.placeType === 'gathr_venue' && params.venueId && venueName) {
       return { venueId: String(params.venueId), locationType: 'gathr_venue', locationKey: `venue:${params.venueId}`,
         venueName, address: String(params.placeAddress || ''), category: 'GathR venue' };
@@ -196,6 +205,7 @@ export default function CheckInScreen() {
   const selectedVenue = contextualPlace ?? options.find((option) => option.venueId === venueId) ?? null;
   const isPrivatePlace = selectedVenue?.locationType === 'private_place';
   const eligibilitySessionId = String(params.eligibilitySessionId || '').trim();
+  const readinessSessionId = String(params.readinessSessionId || '').trim();
   const contextualEligibleVenueIds = useMemo(() => {
     const serialized = Array.isArray(params.eligibleVenueIds)
       ? params.eligibleVenueIds.join(',')
@@ -216,18 +226,41 @@ export default function CheckInScreen() {
     && selectedVenue?.locationType === 'gathr_venue'
     && ownCheckIn.venueId === selectedVenue.venueId
   );
-  const hasContextualEligibility = Boolean(
-    eligibilitySessionId
-    && (contextualPlace || contextualEligibleVenueIds.has(venueId))
-    && (params.readinessVersion !== '1' || (
-      readiness.uid === user?.uid && readiness.grant?.eligibilitySessionId === eligibilitySessionId
-      && selectedVenue && validBoundReadiness(readiness.grant, {
-        type: selectedVenue.locationType, venueId: selectedVenue.venueId, placeCandidateId: selectedVenue.placeCandidateId,
-      }, readiness.grant.readinessSessionId, nowMs)
-    ))
+  const currentReadinessLevels = readinessLevels(readiness.evidence, readiness.receipt, readiness.sessionId, nowMs);
+  const readinessTarget = selectedVenue ? {
+    type: selectedVenue.locationType,
+    venueId: selectedVenue.venueId,
+    placeCandidateId: selectedVenue.placeCandidateId,
+  } : null;
+  const existingBoundGrant = Boolean(
+    params.readinessVersion === '1'
+    && readinessSessionId
+    && readiness.uid === user?.uid
+    && readinessTarget
+    && readiness.grant?.readinessSessionId === readinessSessionId
+    && validBoundReadiness(readiness.grant, readinessTarget, readinessSessionId, nowMs)
   );
-  // Existing legacy sessions required 90 seconds. V1 grants explicitly distinguish Here from Place.
-  const exactAllowed = hasContextualEligibility && (params.readinessVersion !== '1' || readiness.grant?.exactPrivateAllowed === true);
+  const readyForSelectedPlace = Boolean(
+    params.readinessVersion === '1'
+    && readinessSessionId
+    && readiness.uid === user?.uid
+    && readiness.sessionId === readinessSessionId
+    && readiness.appActive
+    && readiness.interruptedAtMs === null
+    && (isPrivatePlace ? currentReadinessLevels.here : currentReadinessLevels.place)
+  );
+  const hasContextualEligibility = Boolean(
+    selectedVenue
+    && (params.readinessVersion === '1'
+      ? existingBoundGrant || readyForSelectedPlace
+      : eligibilitySessionId && (contextualPlace || contextualEligibleVenueIds.has(venueId)))
+  );
+  // V1 lets a private check-in use Here readiness; exact-pin sharing still
+  // needs the stronger Place ring unless a valid bound grant already allows it.
+  const exactAllowed = hasContextualEligibility && (params.readinessVersion !== '1'
+    || (existingBoundGrant
+      ? readiness.grant?.exactPrivateAllowed === true
+      : Boolean(isPrivatePlace && currentReadinessLevels.place)));
   const exactSharing = mayShareExactPrivateLocation({ isPrivatePlace, audienceMode,
     selectedFriendCount: selectedUids.length, exactAllowed, explicitlyEnabled: shareExactLocation });
   useEffect(() => {
@@ -265,6 +298,25 @@ export default function CheckInScreen() {
       ? `Only ${currentAudienceCount} selected friend${currentAudienceCount === 1 ? '' : 's'} will see the exact pin. It expires automatically.`
       : `${currentAudienceCount} friend${currentAudienceCount === 1 ? '' : 's'} will see only an approximate area. It expires automatically.`
     : formatCheckInVisibilityCopy(currentAudienceCount, estimatedExpiry);
+
+  const backToPreviousStep = () => {
+    const current = useCheckInReadinessStore.getState();
+    if (params.readinessVersion === '1' && readinessSessionId) {
+      useCheckInReadinessStore.setState({ restorePickerOnReturn: true });
+      // A failed final attempt may have consumed this one-use readiness
+      // session. Start a fresh one only after a grant was actually bound.
+      if (current.grant?.readinessSessionId === readinessSessionId) {
+        useCheckInReadinessStore.setState({
+          grant: null,
+          evidence: emptyReadiness(current.evidence.revision + 1, current.evidence.suppressedUntilMs),
+          receipt: null,
+          sessionId: '',
+          interruptedAtMs: null,
+        });
+      }
+    }
+    router.back();
+  };
 
   const toggleFriend = (uid: string) => setSelectedUids((current) =>
     current.includes(uid) ? current.filter((item) => item !== uid) : [...current, uid]
@@ -304,17 +356,83 @@ export default function CheckInScreen() {
     const perform = async () => {
       setBusy(true);
       try {
+        let boundEligibilitySessionId = eligibilitySessionId;
+        if (params.readinessVersion === '1' && !canReuseActiveVenue) {
+          if (!readinessSessionId || !selectedVenue || !user) {
+            throw new Error('Check-in readiness expired. Return to the map and wait for the ring to fill again.');
+          }
+          const target = {
+            type: selectedVenue.locationType,
+            venueId: selectedVenue.venueId,
+            placeCandidateId: selectedVenue.placeCandidateId,
+          };
+          const current = useCheckInReadinessStore.getState();
+          let grant = current.grant?.readinessSessionId === readinessSessionId
+            && validBoundReadiness(current.grant, target, readinessSessionId, Date.now())
+            ? current.grant
+            : null;
+          if (!grant) {
+            const requirePlace = selectedVenue.locationType !== 'private_place';
+            const levels = readinessLevels(current.evidence, current.receipt, current.sessionId, Date.now());
+            const fix = current.evidence.previous;
+            const accuracyLimit = requirePlace
+              ? CHECK_IN_READINESS.placeAccuracyMetres
+              : CHECK_IN_READINESS.hereAccuracyMetres;
+            const fixAgeMs = fix ? Date.now() - fix.capturedAtMs : Number.POSITIVE_INFINITY;
+            if (current.uid !== user.uid || !current.appActive || current.interruptedAtMs !== null
+              || current.sessionId !== readinessSessionId
+              || !(requirePlace ? levels.place : levels.here)
+              || !fix
+              || !Number.isFinite(fix.latitude) || !Number.isFinite(fix.longitude)
+              || !Number.isFinite(fix.accuracyMeters) || fix.accuracyMeters! < 0 || fix.accuracyMeters! > accuracyLimit
+              || fixAgeMs < 0 || fixAgeMs > CHECK_IN_READINESS.maxSampleGapMs
+              || (exactSharing && !levels.place)) {
+              throw new Error('Your location changed. Stay here until the check-in ring is ready, then try again.');
+            }
+            const bindKey = `${readinessSessionId}:${selectedVenue.locationType}:${selectedVenue.venueId || selectedVenue.placeCandidateId}`;
+            if (pendingBindRef.current?.key !== bindKey) {
+              pendingBindRef.current = { key: bindKey, operationId: createSocialOperationId() };
+            }
+            grant = await bindCheckInReadiness({
+              protocolVersion: 1,
+              readinessSessionId,
+              operationId: pendingBindRef.current.operationId,
+              ...(selectedVenue.locationType === 'gathr_venue'
+                ? { venueId: selectedVenue.venueId }
+                : { placeCandidateId: selectedVenue.placeCandidateId }),
+              latitude: fix.latitude,
+              longitude: fix.longitude,
+              accuracyMeters: fix.accuracyMeters,
+              speedMetersPerSecond: fix.speedMetersPerSecond,
+              capturedAtMs: Math.floor(fix.capturedAtMs),
+            });
+            const after = useCheckInReadinessStore.getState();
+            const afterLevels = readinessLevels(after.evidence, after.receipt, after.sessionId, Date.now());
+            if (after.uid !== user.uid || !after.appActive || after.interruptedAtMs !== null
+              || after.sessionId !== readinessSessionId
+              || !(requirePlace ? afterLevels.place : afterLevels.here)
+              || !validBoundReadiness(grant, target, readinessSessionId, Date.now())
+              || (exactSharing && !grant.exactPrivateAllowed)) {
+              throw new Error('Location changed during check-in confirmation. Wait for the ring to fill again.');
+            }
+            useCheckInReadinessStore.setState({ grant });
+          }
+          if (!grant || (exactSharing && !grant.exactPrivateAllowed)) {
+            throw new Error('This check-in is not eligible to share an exact location. Choose approximate sharing or wait for the Place ring.');
+          }
+          boundEligibilitySessionId = grant.eligibilitySessionId;
+        }
         const input = {
           ...(selectedVenue.locationType !== 'gathr_venue'
             ? { placeCandidateId: selectedVenue.placeCandidateId }
             : { venueId: selectedVenue.venueId }),
-          eligibilitySessionId: canReuseActiveVenue ? undefined : eligibilitySessionId,
+          eligibilitySessionId: canReuseActiveVenue ? undefined : boundEligibilitySessionId,
           durationMinutes,
           audienceMode,
           selectedUids: audienceMode === 'selected_friends' ? [...selectedUids].sort() : undefined,
-          shareExactLocation: isPrivatePlace
-            ? exactSharing
-            : undefined,
+          // Always send an explicit boolean. Public check-ins and approximate
+          // private check-ins must never share an exact pin.
+          shareExactLocation: isPrivatePlace ? exactSharing : false,
           message,
         };
         const fingerprint = JSON.stringify(input);
@@ -404,8 +522,8 @@ export default function CheckInScreen() {
       <StatusBar style="dark" backgroundColor="#FFFFFF" />
       <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <View style={styles.header}>
-          <TouchableOpacity accessibilityLabel="Close check-in" onPress={() => router.back()} style={styles.iconButton}>
-            <Ionicons name="close" size={25} color="#101828" />
+          <TouchableOpacity accessibilityLabel="Back to place choices" onPress={backToPreviousStep} style={styles.iconButton}>
+            <Ionicons name="chevron-back" size={25} color="#101828" />
           </TouchableOpacity>
           <View style={styles.headerText}>
             <Text style={styles.title}>{ownCheckIn && !isEditing ? 'Your check-in' : ownCheckIn ? 'Update check-in' : 'Check in'}</Text>

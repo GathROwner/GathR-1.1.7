@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import { useIsFocused } from '@react-navigation/native';
 import * as Haptics from 'expo-haptics';
 import * as Location from 'expo-location';
 import { useRouter } from 'expo-router';
@@ -22,8 +23,6 @@ import {
   createPrivateCheckInPlaceCandidate,
   discoverNearbyCheckInPlaces,
   listNearbyCanonicalCheckInVenues,
-  bindCheckInReadiness,
-  createSocialOperationId,
   SocialServiceError,
 } from '../../services/socialService';
 import { useMapStore } from '../../store';
@@ -35,7 +34,7 @@ import { SOCIAL_FEATURE_ENABLED, SOCIAL_RELEASE_TWO_ENABLED } from '../../types/
 import { useCheckInReadinessStore } from '../../store/checkInReadinessStore';
 import { claimReadinessPrompt } from '../../services/checkInReadinessPreferences';
 import { CHECK_IN_READINESS, isFreshReadiness, mayPromptReadiness, projectedReadinessMs } from '../../utils/checkInReadiness';
-import { readinessLevels, validBoundReadiness } from '../../utils/checkInReadinessContract';
+import { readinessLevels } from '../../utils/checkInReadinessContract';
 
 const MAX_ACCURACY_METRES = 75;
 const BASE_RADIUS_METRES = 50;
@@ -133,7 +132,7 @@ export function VenueAvatar({ venue, active = false }: { venue: VenueCandidate |
 
 export function buildNearbyCheckInRoute(
   venue: VenueCandidate,
-  eligibilitySessionId: string,
+  readinessSessionId: string,
   eligibleCandidates: VenueCandidate[]
 ) {
   if (venue.type !== 'gathr_venue') {
@@ -145,7 +144,7 @@ export function buildNearbyCheckInRoute(
         placeName: venue.venueName,
         ...(venue.type === 'external_place' ? { placeAddress: venue.address } : {}),
         placeCategory: venue.category,
-        eligibilitySessionId,
+        readinessSessionId,
       },
     };
   }
@@ -153,7 +152,7 @@ export function buildNearbyCheckInRoute(
     pathname: '/check-in' as const,
     params: {
       venueId: venue.venueId,
-      eligibilitySessionId,
+      readinessSessionId,
       eligibleVenueIds: eligibleCandidates
         .filter((item) => item.type === 'gathr_venue' && item.venueId)
         .map((item) => item.venueId)
@@ -345,6 +344,7 @@ function waitForServerReadiness(uid: string, requirePlace: boolean, sessionId: s
 
 export default function ContextualCheckInControl({ enabled }: Props) {
   const router = useRouter();
+  const isFocused = useIsFocused();
   const { user } = useAuth();
   const allEvents = useMapStore((state) => state.allEvents);
   const ownCheckIn = useSocialStore((state) => state.ownCheckIn);
@@ -352,7 +352,6 @@ export default function ContextualCheckInControl({ enabled }: Props) {
   const [bubble, setBubble] = useState('');
   const [binding, setBinding] = useState(false);
   const bindingRef = useRef(false);
-  const bindOperationRef = useRef<{ key: string; operationId: string } | null>(null);
   const privateCreationRef = useRef(false);
   const flowGenerationRef = useRef(0);
   const mountedRef = useRef(true);
@@ -470,6 +469,22 @@ export default function ContextualCheckInControl({ enabled }: Props) {
     mountedRef.current = true;
     return () => { mountedRef.current = false; if (bubbleTimer.current) clearTimeout(bubbleTimer.current); };
   }, []);
+  useEffect(() => {
+    if (!readiness.restorePickerOnReturn || !isFocused || !enabled || !user) return;
+    useCheckInReadinessStore.setState({ restorePickerOnReturn: false });
+    flowGenerationRef.current += 1;
+    setPickerVisible(true);
+    setExternalSearchVisible(false);
+    setPrivateSetupVisible(false);
+    setLocationInfoVisible(false);
+    setKnownVenuesLoading(false);
+    setDiscovering(false);
+    setDiscoveryError('');
+    setPartialDiscoveryNotice('');
+    setSelectionError('');
+    setPrivatePlaceError('');
+    setNearbyPlaces([]);
+  }, [enabled, isFocused, readiness.restorePickerOnReturn, user]);
   useEffect(() => {
     const now = Date.now();
     if (!ownCheckIn && readiness.uid === user?.uid && readiness.preferencesLoaded
@@ -666,9 +681,6 @@ export default function ContextualCheckInControl({ enabled }: Props) {
     }
     bindingRef.current = true;
     const flowGeneration = flowGenerationRef.current;
-    const operationKey = `${initial.sessionId}:${place.type}:${place.venueId || place.placeCandidateId}`;
-    if (bindOperationRef.current?.key !== operationKey) bindOperationRef.current = { key: operationKey, operationId: createSocialOperationId() };
-    const operationId = bindOperationRef.current.operationId;
     setBinding(true);
     setSelectionError('');
     try {
@@ -678,7 +690,7 @@ export default function ContextualCheckInControl({ enabled }: Props) {
       if (!capture || capture.sessionId !== localCapture.sessionId) {
         throw new Error('Your location changed before GathR could confirm it. Wait for the ring to fill again.');
       }
-      const { sessionId, ...sample } = capture;
+      const sessionId = capture.sessionId;
       const current = useCheckInReadinessStore.getState();
       if (!mountedRef.current || flowGenerationRef.current !== flowGeneration) return;
       const freshLevels = readinessLevels(current.evidence, current.receipt, current.sessionId, Date.now());
@@ -687,21 +699,12 @@ export default function ContextualCheckInControl({ enabled }: Props) {
         || (place.type === 'private_place' ? !freshLevels.here : !freshLevels.place)) {
         throw new Error('Readiness changed. Return to the map to check your location.');
       }
-      const grant = await bindCheckInReadiness({ protocolVersion: 1, readinessSessionId: sessionId,
-        operationId,
-        ...(place.type === 'gathr_venue' ? { venueId: place.venueId } : { placeCandidateId: place.placeCandidateId }), ...sample });
-      const after = useCheckInReadinessStore.getState();
-      if (!mountedRef.current || flowGenerationRef.current !== flowGeneration || after.uid !== user.uid
-        || !after.appActive || after.interruptedAtMs !== null || after.sessionId !== initial.sessionId
-        || !(place.type === 'private_place' ? readinessLevels(after.evidence, after.receipt, after.sessionId, Date.now()).here
-          : readinessLevels(after.evidence, after.receipt, after.sessionId, Date.now()).place)) return;
-      if (!validBoundReadiness(grant, place, sessionId, Date.now()) || (grant.exactPrivateAllowed && !freshLevels.place)) {
-        throw new Error('Check-in verification is unavailable. Please try again from the map.');
-      }
-      useCheckInReadinessStore.setState({ grant });
       setPickerVisible(false);
       setPrivateSetupVisible(false);
-      const route = buildNearbyCheckInRoute(place, grant.eligibilitySessionId, [place]);
+      // Keep observing movement while the user chooses privacy settings. The
+      // server session is one-use and target-bound, so bind it only when they
+      // confirm the final check-in.
+      const route = buildNearbyCheckInRoute(place, sessionId, [place]);
       router.push({ ...route, params: { ...route.params, readinessVersion: '1',
         ...(place.type === 'gathr_venue' ? { placeType: 'gathr_venue', placeName: place.venueName, placeAddress: place.address } : {}),
       } });
