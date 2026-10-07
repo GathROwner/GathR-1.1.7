@@ -412,10 +412,10 @@ export const createPrivateCheckInPlaceCandidate = async (input: {
   normalizeLocationCaptureTime(input)
 );
 
-export const checkOut = () =>
-  callSocial<Record<string, never>, { checkedOut: true; removedViewerCount: number }>(
+export const checkOut = (expectedRevision?: string) =>
+  callSocial<{ expectedRevision?: string }, { checkedOut: boolean; removedViewerCount: number }>(
     'checkOutCallable',
-    {}
+    expectedRevision ? { expectedRevision } : {}
   );
 
 export const createFriendEvent = (input: FriendEventInput) =>

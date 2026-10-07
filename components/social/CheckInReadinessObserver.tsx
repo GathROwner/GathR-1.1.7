@@ -98,6 +98,17 @@ export default function CheckInReadinessObserver() {
       const current = useCheckInReadinessStore.getState();
       useCheckInReadinessStore.setState({
         evidence: pauseReadiness(current.evidence), receipt: null, sessionId: '', interruptedAtMs: null,
+        resumeAfterCheckIn: false,
+      });
+    };
+    const preserveForCheckIn = () => {
+      const current = useCheckInReadinessStore.getState();
+      useCheckInReadinessStore.setState({
+        receipt: null,
+        sessionId: '',
+        grant: null,
+        interruptedAtMs: current.interruptedAtMs ?? Date.now(),
+        resumeAfterCheckIn: true,
       });
     };
     const run = async (epoch: number) => {
@@ -105,14 +116,19 @@ export default function CheckInReadinessObserver() {
       let nextSampleDueAtMs: number | null = null;
       const currentRun = () => !disposed && epoch === generation && AppState.currentState === 'active'
         && useCheckInReadinessStore.getState().uid === uid
-        && !useCheckInReadinessStore.getState().grant;
+        && !useCheckInReadinessStore.getState().grant
+        && !useSocialStore.getState().ownCheckIn;
       if (!currentRun()) return;
       try {
         const permission = await Location.getForegroundPermissionsAsync();
         if (!currentRun()) return;
         const granted = permission.status === 'granted';
         useCheckInReadinessStore.setState({ foregroundGranted: granted });
-        if (ownCheckIn || !canCollectReadiness({ mode, foregroundGranted: granted, backgroundGranted: false,
+        if (useSocialStore.getState().ownCheckIn) {
+          preserveForCheckIn();
+          return;
+        }
+        if (!canCollectReadiness({ mode, foregroundGranted: granted, backgroundGranted: false,
           notificationsGranted: false, backgroundSupported: false, appActive: true })) {
           invalidate();
           return;
@@ -170,7 +186,8 @@ export default function CheckInReadinessObserver() {
         const nowMs = Date.now();
         const resuming = before.interruptedAtMs !== null;
         const resumeDecision = resuming
-          ? readinessResumeDecision(before.evidence, sample, nowMs)
+          ? readinessResumeDecision(before.evidence, sample, nowMs,
+            before.resumeAfterCheckIn ? CHECK_IN_READINESS.maxCheckInResumeGapMs : undefined)
           : 'reset';
         if (resuming && resumeDecision === 'retry'
           && nowMs - resumeValidationStartedAtMs < CHECK_IN_READINESS.resumeValidationGraceMs) {
@@ -179,6 +196,8 @@ export default function CheckInReadinessObserver() {
         }
         const evidence = resuming && resumeDecision === 'retry'
           ? pauseReadiness(before.evidence)
+          : resuming && resumeDecision === 'accept' && before.resumeAfterCheckIn
+            ? { ...before.evidence, anchor: before.evidence.anchor || sample, previous: sample, reason: 'qualifying' as const }
           : advanceReadiness(
             before.evidence,
             sample,
@@ -192,7 +211,7 @@ export default function CheckInReadinessObserver() {
         const sessionId = !before.sessionId || evidence.revision !== before.evidence.revision
           ? createSocialOperationId() : before.sessionId;
         if (sessionId !== before.sessionId) sequence = 0;
-        useCheckInReadinessStore.setState({ evidence, sessionId, interruptedAtMs: null,
+        useCheckInReadinessStore.setState({ evidence, sessionId, interruptedAtMs: null, resumeAfterCheckIn: false,
           ...(sessionId !== before.sessionId ? { receipt: null } : {}) });
         if (evidence.reason === 'stale') return;
         // Keep the cadence tied to captured GPS times. Waiting a full interval
@@ -231,6 +250,10 @@ export default function CheckInReadinessObserver() {
         appActive: active,
         ...(!active && current.interruptedAtMs === null ? { interruptedAtMs: Date.now() } : {}),
       });
+      if (ownCheckIn) {
+        preserveForCheckIn();
+        return;
+      }
       // The privacy screen owns a one-time bound grant. Do not request another
       // GPS fix or mutate its evidence during ordinary form entry/short pauses.
       if (current.grant) {
@@ -271,7 +294,9 @@ export default function CheckInReadinessObserver() {
       if (timer) clearTimeout(timer);
       clearInterval(expiryTimer);
       subscription.remove();
-      invalidate();
+      const current = useCheckInReadinessStore.getState();
+      if (useSocialStore.getState().ownCheckIn) preserveForCheckIn();
+      else if (!current.grant && !current.resumeAfterCheckIn) invalidate();
     };
   }, [hasGrant, loaded, mode, ownCheckIn, uid]);
   return null;

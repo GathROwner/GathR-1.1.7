@@ -140,6 +140,21 @@ describe('real check-in readiness evidence', () => {
     expect(readinessResumeDecision(state, fix(100, { speedMetersPerSecond: 8 }), start + 100_000)).toBe('reset');
     expect(readinessResumeDecision(state, fix(311), start + 311_000)).toBe('reset');
   });
+  it('allows a longer checkout return only when a fresh fix still matches the saved anchor', () => {
+    const ready = dwell(90);
+    const afterAnHour = fix(3_690, { accuracyMeters: 18, speedMetersPerSecond: 0.2 });
+    expect(readinessResumeDecision(ready, afterAnHour, afterAnHour.capturedAtMs + 250)).toBe('reset');
+    expect(readinessResumeDecision(ready, afterAnHour, afterAnHour.capturedAtMs + 250,
+      CHECK_IN_READINESS.maxCheckInResumeGapMs)).toBe('accept');
+
+    const moved = fix(3_690, { latitude: 46.236, accuracyMeters: 18, speedMetersPerSecond: 0.2 });
+    expect(readinessResumeDecision(ready, moved, moved.capturedAtMs + 250,
+      CHECK_IN_READINESS.maxCheckInResumeGapMs)).toBe('retry');
+
+    const tooLate = fix(7_891, { accuracyMeters: 18, speedMetersPerSecond: 0.2 });
+    expect(readinessResumeDecision(ready, tooLate, tooLate.capturedAtMs + 250,
+      CHECK_IN_READINESS.maxCheckInResumeGapMs)).toBe('reset');
+  });
   it('uses different accuracy thresholds and never treats unknown accuracy as zero', () => {
     expect(dwell(90, 40)).toMatchObject({ hereMs: 30_000, placeMs: 0 });
     expect(dwell(90, 51)).toMatchObject({ hereMs: 0, placeMs: 0, reason: 'low_accuracy' });

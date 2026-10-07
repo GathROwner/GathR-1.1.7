@@ -103,6 +103,7 @@ export default function CheckInScreen() {
           receipt: null,
           sessionId: '',
           interruptedAtMs: null,
+          resumeAfterCheckIn: false,
         });
       }
     };
@@ -312,6 +313,7 @@ export default function CheckInScreen() {
           receipt: null,
           sessionId: '',
           interruptedAtMs: null,
+          resumeAfterCheckIn: false,
         });
       }
     }
@@ -447,6 +449,20 @@ export default function CheckInScreen() {
           operationId: pendingOperationRef.current.operationId,
         });
         pendingOperationRef.current = null;
+        if (params.readinessVersion === '1' && !canReuseActiveVenue) {
+          const currentReadiness = useCheckInReadinessStore.getState();
+          if (currentReadiness.uid === user?.uid
+            && (currentReadiness.sessionId === readinessSessionId
+              || currentReadiness.grant?.readinessSessionId === readinessSessionId)) {
+            useCheckInReadinessStore.setState({
+              grant: null,
+              receipt: null,
+              sessionId: '',
+              interruptedAtMs: Date.now(),
+              resumeAfterCheckIn: true,
+            });
+          }
+        }
         await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => undefined);
         Alert.alert(
           ownCheckIn ? 'Check-in updated' : 'Checked in',

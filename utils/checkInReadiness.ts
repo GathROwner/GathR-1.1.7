@@ -7,6 +7,9 @@ export const CHECK_IN_READINESS = {
   nearReadySampleIntervalMs: 2_000,
   maxSampleGapMs: 20_000,
   maxResumeGapMs: 5 * 60_000,
+  // A check-in can remain active for up to two hours. On checkout, one fresh
+  // foreground fix must still match the saved stationary anchor before readiness resumes.
+  maxCheckInResumeGapMs: 2 * 60 * 60_000 + 10 * 60_000,
   resumeValidationGraceMs: 8_000,
   resumeRetryMs: 1_000,
   maxSampleAgeMs: 15_000,
@@ -118,12 +121,13 @@ export type ReadinessResumeDecision = 'accept' | 'retry' | 'reset';
 export function readinessResumeDecision(
   state: ReadinessState,
   sample: ReadinessSample,
-  nowMs: number
+  nowMs: number,
+  maxGapMs: number = CHECK_IN_READINESS.maxResumeGapMs
 ): ReadinessResumeDecision {
   if (!state.anchor || !state.previous || state.reason !== 'qualifying') return 'reset';
   const gapMs = sample.capturedAtMs - state.previous.capturedAtMs;
   if (!Number.isFinite(gapMs) || !Number.isFinite(sample.capturedAtMs)) return 'reset';
-  if (gapMs > CHECK_IN_READINESS.maxResumeGapMs) return 'reset';
+  if (gapMs > maxGapMs) return 'reset';
   // A very short iOS interruption (including a screenshot) can initially return
   // the cached pre-interruption fix. Give Location a chance to produce a fresh
   // sample; never credit the duplicate sample itself.
