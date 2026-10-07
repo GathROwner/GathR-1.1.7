@@ -19,7 +19,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 
 import { useAuth } from '../contexts/AuthContext';
 import {
@@ -69,6 +69,14 @@ function audienceCount(mode: CheckInAudienceMode, friends: FriendProjection[], s
 }
 
 export default function CheckInScreen() {
+  return (
+    <SafeAreaProvider>
+      <CheckInScreenContent />
+    </SafeAreaProvider>
+  );
+}
+
+function CheckInScreenContent() {
   const router = useRouter();
   const params = useLocalSearchParams<{
     venueId?: string;
