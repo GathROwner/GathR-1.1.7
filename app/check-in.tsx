@@ -265,7 +265,7 @@ function CheckInScreenContent() {
       ? existingBoundGrant || readyForSelectedPlace
       : eligibilitySessionId && (contextualPlace || contextualEligibleVenueIds.has(venueId)))
   );
-  // Exact sharing is available for private places after Here readiness. A
+  // Precise location sharing is available for private places after Here readiness. A
   // bound server grant remains authoritative once one exists.
   const exactAllowed = mayOfferExactPrivateLocation({
     isPrivatePlace,
@@ -309,7 +309,7 @@ function CheckInScreenContent() {
         : `${selectedFriendNames.slice(0, 2).join(', ')} +${selectedFriendNames.length - 2}`;
   const confirmationCopy = isPrivatePlace
     ? exactSharing
-      ? `Only ${currentAudienceCount} selected friend${currentAudienceCount === 1 ? '' : 's'} will see the exact pin. It expires automatically.`
+      ? `Only ${currentAudienceCount} selected friend${currentAudienceCount === 1 ? '' : 's'} will see your precise location. It expires automatically.`
       : `${currentAudienceCount} friend${currentAudienceCount === 1 ? '' : 's'} will see only an approximate area. It expires automatically.`
     : formatCheckInVisibilityCopy(currentAudienceCount, estimatedExpiry);
 
@@ -331,6 +331,12 @@ function CheckInScreenContent() {
       }
     }
     router.back();
+  };
+
+  const cancelCheckInFlow = () => {
+    if (busy) return;
+    useCheckInReadinessStore.setState({ restorePickerOnReturn: false });
+    router.replace('/(tabs)/map');
   };
 
   const toggleFriend = (uid: string) => setSelectedUids((current) =>
@@ -432,7 +438,7 @@ function CheckInScreenContent() {
             useCheckInReadinessStore.setState({ grant });
           }
           if (!grant || (exactSharing && !grant.exactPrivateAllowed)) {
-            throw new Error('This check-in is not eligible to share an exact location. Choose approximate sharing or verify your private location again.');
+            throw new Error('This check-in is not eligible to share your precise location. Choose approximate sharing or verify your private location again.');
           }
           boundEligibilitySessionId = grant.eligibilitySessionId;
         }
@@ -456,7 +462,7 @@ function CheckInScreenContent() {
             operationId: createSocialOperationId(),
           };
         }
-        const result = await createCheckIn({
+        await createCheckIn({
           ...input,
           operationId: pendingOperationRef.current.operationId,
         });
@@ -475,14 +481,8 @@ function CheckInScreenContent() {
             });
           }
         }
+        useCheckInReadinessStore.setState({ restorePickerOnReturn: false });
         await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => undefined);
-        Alert.alert(
-          ownCheckIn ? 'Check-in updated' : 'Checked in',
-          isPrivatePlace
-            ? confirmationCopy
-            : formatCheckInVisibilityCopy(result.viewerCount, result.expiresAt),
-          [{ text: 'View map', onPress: () => router.replace('/(tabs)/map') }]
-        );
       } catch (error) {
         Alert.alert('Could not check in', messageForError(error));
       } finally {
@@ -549,7 +549,7 @@ function CheckInScreenContent() {
           <Ionicons name="shield-checkmark-outline" size={17} color="#6941C6" />
           <Text style={styles.activePrivateText}>
             {ownCheckIn.shareExactLocation
-              ? 'Exact pin shared only with your selected friends'
+              ? 'Precise location shared only with your selected friends'
               : 'Friends see only an approximate area'}
           </Text>
         </View>
@@ -558,7 +558,7 @@ function CheckInScreenContent() {
         <Text maxFontSizeMultiplier={1.15} numberOfLines={3} style={styles.activeMessage}>“{ownCheckIn.message}”</Text>
       )}
       <View style={styles.activeActions}>
-        <TouchableOpacity accessibilityRole="button" accessibilityLabel="View check-in on map" onPress={() => router.replace('/(tabs)/map')} style={styles.secondaryButton}>
+        <TouchableOpacity accessibilityRole="button" accessibilityLabel="Close check-in details and return to map" onPress={() => router.back()} style={styles.secondaryButton}>
           <Ionicons name="map-outline" size={18} color="#175CD3" />
           <Text maxFontSizeMultiplier={1.1} style={styles.secondaryText}>View map</Text>
         </TouchableOpacity>
@@ -603,13 +603,16 @@ function CheckInScreenContent() {
           <SafeAreaView edges={['bottom']} style={styles.activeOverviewSafeArea}>
             <StatusBar style="dark" backgroundColor="transparent" />
             <View style={styles.header}>
-              <TouchableOpacity accessibilityLabel="Close check-in details" onPress={() => router.back()} style={styles.iconButton}>
+              <TouchableOpacity accessibilityLabel="Back to map" onPress={() => router.back()} style={styles.iconButton}>
                 <Ionicons name="chevron-back" size={25} color="#101828" />
               </TouchableOpacity>
               <View style={styles.headerText}>
                 <Text style={styles.title}>Your check-in</Text>
                 <Text style={styles.muted}>Share a place, never continuous location.</Text>
               </View>
+              <TouchableOpacity accessibilityRole="button" accessibilityLabel="Close check-in details" onPress={() => router.back()} style={styles.iconButton}>
+                <Ionicons name="close" size={23} color="#344054" />
+              </TouchableOpacity>
             </View>
             <View style={styles.activeOverviewContent}>
               {activeCheckInCard}
@@ -621,19 +624,31 @@ function CheckInScreenContent() {
   }
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
-      <StatusBar style="dark" backgroundColor="#FFFFFF" />
-      <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <View style={styles.header}>
-          <TouchableOpacity accessibilityLabel="Back to place choices" onPress={backToPreviousStep} style={styles.iconButton}>
+    <View style={styles.formModalRoot}>
+      <StatusBar style="dark" backgroundColor="transparent" />
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="Back to place choices"
+        disabled={busy}
+        onPress={backToPreviousStep}
+        style={[StyleSheet.absoluteFillObject, styles.formModalScrim]}
+      />
+      <KeyboardAvoidingView pointerEvents="box-none" style={styles.formModalKeyboard} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+        <SafeAreaView accessibilityViewIsModal edges={['bottom']} style={styles.formSheet}>
+          <View style={[styles.header, styles.formHeader]}>
+          <TouchableOpacity accessibilityLabel="Back to place choices" disabled={busy} onPress={backToPreviousStep} style={styles.iconButton}>
             <Ionicons name="chevron-back" size={25} color="#101828" />
           </TouchableOpacity>
           <View style={styles.headerText}>
             <Text style={styles.title}>{ownCheckIn && !isEditing ? 'Your check-in' : ownCheckIn ? 'Update check-in' : 'Check in'}</Text>
             <Text style={styles.muted}>Share a place, never continuous location.</Text>
           </View>
-        </View>
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel={ownCheckIn ? 'Cancel check-in changes' : 'Cancel check-in'} disabled={busy} onPress={cancelCheckInFlow} style={styles.iconButton}>
+            <Ionicons name="close" size={23} color="#344054" />
+          </TouchableOpacity>
+          </View>
 
+          <ScrollView keyboardShouldPersistTaps="handled" style={styles.formScroll} contentContainerStyle={styles.formScrollContent}>
         <View style={styles.content}>
           {fromCache && <Text maxFontSizeMultiplier={1.15} numberOfLines={2} style={styles.offlineBanner}>Offline: changing a check-in requires a connection.</Text>}
 
@@ -769,24 +784,24 @@ function CheckInScreenContent() {
                     </View>
                     <View style={styles.flex}>
                       <Text style={styles.privateLocationTitle}>
-                        {exactSharing ? 'Exact pin for selected friends' : 'Approximate area'}
+                        {exactSharing ? 'Precise location for selected friends' : 'Approximate area'}
                       </Text>
                       <Text style={styles.privateLocationCopy}>
                         {!exactAllowed
-                          ? 'An exact pin requires a verified private location and is shared only with selected friends.'
+                          ? 'Precise location requires a verified private place and is shared only with selected friends.'
                           : audienceMode === 'selected_friends'
-                          ? 'Exact sharing is optional and applies only to the friends you chose.'
+                          ? 'Precise location is optional and applies only to the friends you chose.'
                           : 'All friends see a neighbourhood-sized area. Your address is never shown.'}
                       </Text>
                     </View>
                     {audienceMode === 'selected_friends' && (
                       <Switch
-                        accessibilityLabel="Share exact private location with selected friends"
+                        accessibilityLabel="Share precise location with selected friends"
                         accessibilityRole="switch"
                         disabled={!exactAllowed || selectedUids.length === 0}
                         onValueChange={setShareExactLocation}
-                        trackColor={{ false: '#D0D5DD', true: '#B692F6' }}
-                        thumbColor={shareExactLocation ? '#6941C6' : '#FFFFFF'}
+                        trackColor={{ false: '#D6BBFB', true: '#9E77ED' }}
+                        thumbColor="#FFFFFF"
                         value={exactSharing}
                       />
                     )}
@@ -810,20 +825,24 @@ function CheckInScreenContent() {
                 />
               </View>
 
-              <View style={styles.submitArea}>
-                <View style={styles.privacyPill}>
-                  <Ionicons name="lock-closed" size={15} color="#175CD3" />
-                  <Text maxFontSizeMultiplier={1.1} numberOfLines={2} style={styles.confirmationCopy}>
-                    {confirmationCopy}
-                  </Text>
-                </View>
-                <TouchableOpacity accessibilityRole="button" accessibilityLabel={ownCheckIn ? 'Replace active check-in' : 'Confirm check-in'} disabled={!canSubmit} onPress={() => void submit()} style={[styles.primaryButton, !canSubmit && styles.disabled]}>
-                  {busy ? <ActivityIndicator color="#FFF" /> : <Text maxFontSizeMultiplier={1.1} style={styles.primaryText}>{ownCheckIn ? 'Replace check-in' : 'Check in'}</Text>}
-                </TouchableOpacity>
-              </View>
             </View>
           )}
         </View>
+          </ScrollView>
+          {isEditing && (
+            <View style={styles.submitArea}>
+              <View style={styles.privacyPill}>
+                <Ionicons name="lock-closed" size={15} color="#175CD3" />
+                <Text maxFontSizeMultiplier={1.1} numberOfLines={2} style={styles.confirmationCopy}>
+                  {confirmationCopy}
+                </Text>
+              </View>
+              <TouchableOpacity accessibilityRole="button" accessibilityLabel={ownCheckIn ? 'Replace active check-in' : 'Confirm check-in'} disabled={!canSubmit} onPress={() => void submit()} style={[styles.primaryButton, !canSubmit && styles.disabled]}>
+                {busy ? <ActivityIndicator color="#FFF" /> : <Text maxFontSizeMultiplier={1.1} style={styles.primaryText}>{ownCheckIn ? 'Replace check-in' : 'Check in'}</Text>}
+              </TouchableOpacity>
+            </View>
+          )}
+        </SafeAreaView>
       </KeyboardAvoidingView>
 
       <Modal animationType="slide" onRequestClose={() => setVenuePickerVisible(false)} transparent visible={venuePickerVisible}>
@@ -903,12 +922,19 @@ function CheckInScreenContent() {
           </View>
         </View>
       </Modal>
-    </SafeAreaView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  activeOverviewRoot: { flex: 1, justifyContent: 'flex-end' },
+  formModalRoot: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'transparent' },
+  formModalScrim: { backgroundColor: 'rgba(16,24,40,0.45)' },
+  formModalKeyboard: { flex: 1, justifyContent: 'flex-end' },
+  formSheet: { width: '100%', maxHeight: '90%', flexShrink: 1, paddingHorizontal: 16, paddingTop: 8, borderTopLeftRadius: 28, borderTopRightRadius: 28, overflow: 'hidden', backgroundColor: '#F8FAFC', shadowColor: '#101828', shadowOffset: { width: 0, height: -4 }, shadowOpacity: 0.13, shadowRadius: 14, elevation: 12 },
+  formHeader: { paddingHorizontal: 0, paddingTop: 2, paddingBottom: 8, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#EAECF0', backgroundColor: 'transparent' },
+  formScroll: { flexGrow: 0, flexShrink: 1 },
+  formScrollContent: { paddingTop: 8, paddingBottom: 4 },
+  activeOverviewRoot: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(16,24,40,0.45)' },
   activeOverviewSheet: { width: '100%', maxHeight: '78%', overflow: 'hidden', borderTopLeftRadius: 30, borderTopRightRadius: 30, backgroundColor: '#F6F8FB', shadowColor: '#101828', shadowOffset: { width: 0, height: -4 }, shadowOpacity: 0.12, shadowRadius: 14, elevation: 12 },
   activeOverviewSafeArea: { backgroundColor: '#F6F8FB' },
   activeOverviewContent: { paddingHorizontal: 16, paddingTop: 16, paddingBottom: 14 },
@@ -920,7 +946,7 @@ const styles = StyleSheet.create({
   iconButton: { width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center' },
   compactIconButton: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
   title: { fontSize: 24, fontWeight: '800', color: '#101828' },
-  content: { flex: 1, padding: 12, gap: 10, minHeight: 0 },
+  content: { gap: 10, minHeight: 0 },
   card: { backgroundColor: '#FFF', borderWidth: StyleSheet.hairlineWidth, borderColor: '#E4E7EC', borderRadius: 16, padding: 16, gap: 11 },
   activeCard: { borderColor: '#53B1FD', backgroundColor: '#EFF8FF' },
   sectionTitle: { fontSize: 17, fontWeight: '700', color: '#101828' },
@@ -936,7 +962,7 @@ const styles = StyleSheet.create({
   secondaryText: { color: '#175CD3', fontWeight: '700' },
   checkoutButton: { minHeight: 42, justifyContent: 'center', paddingHorizontal: 12, borderRadius: 9, backgroundColor: '#FEE4E2' },
   checkoutText: { color: '#B42318', fontWeight: '700' },
-  formSurface: { flex: 1, minHeight: 0, gap: 9, padding: 12, borderRadius: 20, backgroundColor: '#FFF', borderWidth: StyleSheet.hairlineWidth, borderColor: '#E4E7EC', shadowColor: '#101828', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.07, shadowRadius: 12, elevation: 3 },
+  formSurface: { gap: 9, backgroundColor: 'transparent' },
   activeStrip: { minHeight: 52, flexDirection: 'row', alignItems: 'center', gap: 9, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 11, backgroundColor: '#EFF8FF' },
   stripVenue: { color: '#101828', fontWeight: '700', marginTop: 1 },
   venueHero: { minHeight: 94, flexDirection: 'row', alignItems: 'center', gap: 10, overflow: 'hidden', paddingHorizontal: 13, paddingVertical: 12, borderRadius: 16 },
@@ -982,7 +1008,7 @@ const styles = StyleSheet.create({
   privateLocationIcon: { width: 38, height: 38, alignItems: 'center', justifyContent: 'center', borderRadius: 13, backgroundColor: '#FFFFFF' },
   privateLocationTitle: { color: '#42307D', fontSize: 13, fontWeight: '900' },
   privateLocationCopy: { marginTop: 2, color: '#6941C6', fontSize: 10.5, lineHeight: 14 },
-  submitArea: { marginTop: 'auto', gap: 7, paddingTop: 3 },
+  submitArea: { gap: 7, paddingTop: 9, paddingBottom: 8, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#EAECF0' },
   privacyPill: { minHeight: 40, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 12, backgroundColor: '#EFF8FF' },
   confirmationCopy: { flexShrink: 1, color: '#175CD3', textAlign: 'center', fontSize: 12, lineHeight: 16, fontWeight: '600' },
   primaryButton: { minHeight: 50, alignItems: 'center', justifyContent: 'center', backgroundColor: BRAND, borderRadius: 14, paddingHorizontal: 20, shadowColor: '#175CD3', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.2, shadowRadius: 7, elevation: 3 },

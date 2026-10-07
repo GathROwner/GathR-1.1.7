@@ -358,6 +358,7 @@ export default function ContextualCheckInControl({ enabled }: Props) {
   const mountedRef = useRef(true);
   const autoBubbleRef = useRef(false);
   const visibleRef = useRef(false);
+  const checkInRouteOpeningRef = useRef(false);
   const retryKnownVenuesRef = useRef<((capture: NonNullable<ReturnType<typeof localReadinessLocation>>, flowGeneration: number) => Promise<void>) | null>(null);
 
 
@@ -421,7 +422,7 @@ export default function ContextualCheckInControl({ enabled }: Props) {
   const recordedLevels = readinessLevels(readiness.evidence, readiness.receipt, readiness.sessionId, Date.now());
   // Both the completion cue and action wait for a fresh return fix after an interruption.
   const levels = readiness.interruptedAtMs === null ? recordedLevels : { here: false, place: false };
-  visibleRef.current = enabled && readiness.appActive && !pickerVisible;
+  visibleRef.current = enabled && isFocused && readiness.appActive && !pickerVisible && !checkInRouteOpeningRef.current;
   const nearby = readiness.evidence.previous
     ? findCandidates(venues, { coords: {
       ...readiness.evidence.previous, accuracy: readiness.evidence.previous.accuracyMeters,
@@ -465,6 +466,9 @@ export default function ContextualCheckInControl({ enabled }: Props) {
     return () => { mountedRef.current = false; };
   }, []);
   useEffect(() => {
+    if (isFocused) checkInRouteOpeningRef.current = false;
+  }, [isFocused]);
+  useEffect(() => {
     if (!readiness.restorePickerOnReturn || !isFocused || !enabled || !user) return;
     useCheckInReadinessStore.setState({ restorePickerOnReturn: false });
     flowGenerationRef.current += 1;
@@ -485,7 +489,7 @@ export default function ContextualCheckInControl({ enabled }: Props) {
     const now = Date.now();
     if (!ownCheckIn && readiness.uid === user?.uid && readiness.preferencesLoaded
       && mayPromptReadiness(readiness.evidence, now, readiness.lastPromptAtMs,
-        enabled && readiness.appActive && !pickerVisible, levels.place)) {
+        enabled && isFocused && readiness.appActive && !pickerVisible && !checkInRouteOpeningRef.current, levels.place)) {
       void claimReadinessPrompt(now).then((claimed) => {
         const current = useCheckInReadinessStore.getState();
         if (claimed && mountedRef.current && visibleRef.current && current.uid === user?.uid && current.appActive
@@ -495,7 +499,7 @@ export default function ContextualCheckInControl({ enabled }: Props) {
         }
       });
     }
-  }, [candidate, enabled, levels.place, ownCheckIn, pickerVisible, readiness, showBubble, user?.uid]);
+  }, [candidate, enabled, isFocused, levels.place, ownCheckIn, pickerVisible, readiness, showBubble, user?.uid]);
   // If the local ring opens the picker before its server receipt is ready,
   // the first canonical lookup can time out. Retry it once Here is confirmed
   // so the temporary notice cannot remain after readiness catches up.
@@ -695,8 +699,14 @@ export default function ContextualCheckInControl({ enabled }: Props) {
         || (place.type === 'private_place' ? !freshLevels.here : !freshLevels.place)) {
         throw new Error('Readiness changed. Return to the map to check your location.');
       }
+      checkInRouteOpeningRef.current = true;
+      visibleRef.current = false;
       setPickerVisible(false);
       setPrivateSetupVisible(false);
+      setExternalSearchVisible(false);
+      setLocationInfoVisible(false);
+      setBubble('');
+      autoBubbleRef.current = false;
       // Keep observing movement while the user chooses privacy settings. The
       // server session is one-use and target-bound, so bind it only when they
       // confirm the final check-in.
@@ -825,7 +835,7 @@ export default function ContextualCheckInControl({ enabled }: Props) {
   const progressCopy = (ready: boolean, elapsed: number, required: number) => ready ? 'Ready'
     : elapsed >= required ? 'Confirming' : `${Math.floor(elapsed / 1000)} / ${required / 1000} sec`;
   const control = <>
-    {!!bubble && <View style={styles.bubble} testID="check-in-readiness-explanation" accessibilityLiveRegion="polite">
+    {!!bubble && isFocused && <View style={styles.bubble} testID="check-in-readiness-explanation" accessibilityLiveRegion="polite">
       <View style={styles.bubbleHeading}>
         <View style={styles.bubbleTitleIcon}>
           <Ionicons name="location-outline" size={18} color="#6941C6" />
@@ -922,8 +932,17 @@ export default function ContextualCheckInControl({ enabled }: Props) {
       <Modal animationType="slide" onRequestClose={closePicker} transparent visible={pickerVisible}>
         <View style={styles.modalBackdrop}>
           <View accessibilityViewIsModal style={styles.pickerCard}>
-            <View style={styles.dragHandle} />
             <View style={styles.pickerHeader}>
+              {privateSetupVisible && (
+                <TouchableOpacity
+                  accessibilityRole="button"
+                  accessibilityLabel="Back to place choices"
+                  onPress={() => { setPrivateSetupVisible(false); setPrivatePlaceError(''); }}
+                  style={styles.pickerBackButton}
+                >
+                  <Ionicons name="chevron-back" size={25} color="#101828" />
+                </TouchableOpacity>
+              )}
               <View style={styles.copy}>
                 <Text style={styles.pickerEyebrow}>CHECK IN</Text>
                 <Text style={styles.pickerTitle}>{externalSearchVisible ? 'Find a public place' : 'Where are you?'}</Text>
@@ -968,7 +987,12 @@ export default function ContextualCheckInControl({ enabled }: Props) {
                   </Text>
                 )}
               </View>
-              <TouchableOpacity accessibilityLabel="Close nearby places" onPress={closePicker} style={styles.closeButton}>
+              <TouchableOpacity
+                accessibilityRole="button"
+                accessibilityLabel={privateSetupVisible ? 'Cancel private check-in setup' : externalSearchVisible ? 'Close public place search' : 'Close place choices'}
+                onPress={closePicker}
+                style={styles.closeButton}
+              >
                 <Ionicons name="close" size={22} color="#344054" />
               </TouchableOpacity>
             </View>
@@ -988,10 +1012,6 @@ export default function ContextualCheckInControl({ enabled }: Props) {
 
             {privateSetupVisible ? (
               <View style={styles.privateSetup}>
-                <TouchableOpacity accessibilityRole="button" onPress={() => setPrivateSetupVisible(false)} style={styles.privateBackRow}>
-                  <Ionicons name="arrow-back" size={18} color="#175CD3" />
-                  <Text style={styles.privateBackText}>Nearby public places</Text>
-                </TouchableOpacity>
                 <View style={styles.privateHero}>
                   <View style={styles.privateHeroIcon}><Ionicons name="home-outline" size={24} color="#6941C6" /></View>
                   <View style={styles.copy}>
@@ -1029,7 +1049,7 @@ export default function ContextualCheckInControl({ enabled }: Props) {
                 )}
                 <View style={styles.privatePrivacyCard}>
                   <Ionicons name="shield-checkmark-outline" size={21} color="#0F766E" />
-                  <Text style={styles.privatePrivacyCopy}>By default, friends see only a neighbourhood-sized approximate area. On the next screen, an exact pin can be shared only with friends you explicitly select.</Text>
+                  <Text style={styles.privatePrivacyCopy}>By default, friends see only a neighbourhood-sized approximate area. On the next screen, your precise location can be shared only with friends you explicitly select.</Text>
                 </View>
                 {!!privatePlaceError && <Text style={styles.privateError}>{privatePlaceError}</Text>}
                 <TouchableOpacity
@@ -1292,8 +1312,8 @@ const styles = StyleSheet.create({
   progressText: { color: '#6941C6', fontSize: 12, fontWeight: '600', marginTop: 1 },
   modalBackdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(16,24,40,0.45)' },
   pickerCard: { maxHeight: '78%', borderTopLeftRadius: 28, borderTopRightRadius: 28, backgroundColor: '#F8FAFC', overflow: 'hidden' },
-  dragHandle: { alignSelf: 'center', width: 42, height: 5, marginTop: 10, borderRadius: 3, backgroundColor: '#D0D5DD' },
   pickerHeader: { flexDirection: 'row', alignItems: 'flex-start', gap: 12, paddingHorizontal: 20, paddingTop: 15, paddingBottom: 13 },
+  pickerBackButton: { width: 38, height: 38, flexShrink: 0, alignItems: 'center', justifyContent: 'center', marginLeft: -8, borderRadius: 19 },
   pickerEyebrow: { color: '#2F80ED', fontSize: 10, fontWeight: '900', letterSpacing: 1.1 },
   pickerTitle: { marginTop: 2, color: '#101828', fontSize: 25, lineHeight: 30, fontWeight: '900' },
   pickerSubtitle: { marginTop: 2, color: '#667085', fontSize: 13.5, lineHeight: 19 },
@@ -1331,8 +1351,6 @@ const styles = StyleSheet.create({
   privateEntryTitle: { color: '#53389E', fontSize: 13.5, fontWeight: '900' },
   privateEntryCopy: { marginTop: 1, color: '#6941C6', fontSize: 11.5, lineHeight: 15 },
   privateSetup: { paddingHorizontal: 18, paddingBottom: 24, gap: 13 },
-  privateBackRow: { alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 4 },
-  privateBackText: { color: '#175CD3', fontSize: 12.5, fontWeight: '800' },
   privateHero: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14, borderRadius: 18, backgroundColor: '#F4EBFF' },
   privateHeroIcon: { width: 46, height: 46, alignItems: 'center', justifyContent: 'center', borderRadius: 16, backgroundColor: '#FFFFFF' },
   privateTitle: { color: '#42307D', fontSize: 18, fontWeight: '900' },

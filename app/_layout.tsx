@@ -1104,6 +1104,7 @@ useEffect(() => {
           headerShown: false,
           presentation: 'transparentModal',
           animation: 'slide_from_bottom',
+          gestureEnabled: false,
           contentStyle: { backgroundColor: 'transparent' }
         }} />
         <Stack.Screen name="check-in-settings" options={{ headerShown: false }} />
