@@ -69,6 +69,7 @@ import MapTracePanel from '../../components/debug/MapTracePanel';
 import StaticDebugCallout from '../../components/map/StaticDebugCallout';
 import RouteFeatureCallout from '../../components/map/RouteFeatureCallout';
 import ContextualCheckInControl from '../../components/social/ContextualCheckInControl';
+import CheckInRadiusOverlay from '../../components/social/CheckInRadiusOverlay';
 import FriendCheckInBadge from '../../components/social/FriendCheckInBadge';
 import FriendEventsMapToggle from '../../components/social/FriendEventsMapToggle';
 import ExternalFriendCheckInMarkers, {
@@ -11601,6 +11602,8 @@ onDidFinishLoadingMap={() => {
           <MapboxGL.Images images={ANDROID_CLUSTER_MARKER_IMAGES} />
         )}
        
+        {SOCIAL_FEATURE_ENABLED && <CheckInRadiusOverlay />}
+
         {/* Render native user location as soon as permission is available */}
         {locationPermissionGranted && (
           <UserLocationMarker visible={locationPermissionGranted} zoomLevel={zoomLevel} />

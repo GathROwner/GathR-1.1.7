@@ -10,9 +10,10 @@ import { checkOut } from '../../services/socialService';
 import { useMapStore } from '../../store/mapStore';
 import { useCheckInReadinessStore } from '../../store/checkInReadinessStore';
 import { useSocialStore } from '../../store/socialStore';
+import { CHECK_IN_RADIUS_METRES, resolveCheckInRadiusCenter } from '../../utils/checkInRadius';
 import { readinessDistance } from '../../utils/checkInReadiness';
 
-const CHECK_IN_EXIT_RADIUS_METRES = 50;
+const CHECK_IN_EXIT_RADIUS_METRES = CHECK_IN_RADIUS_METRES;
 const CHECK_IN_EXIT_MAX_ACCURACY_METRES = 50;
 const CHECK_IN_EXIT_GRACE_MS = 5 * 60_000;
 const CHECK_IN_EXIT_FIX_MAX_AGE_MS = 15_000;
@@ -51,32 +52,11 @@ export default function CheckInExitMonitor() {
   const pollingLocationRef = useRef(false);
 
   ownCheckInRef.current = ownCheckIn;
-  const checkInType = ownCheckIn?.locationType;
-  const checkInLocationKey = ownCheckIn?.venueLocationKey;
-  const checkInLatitude = ownCheckIn?.latitude;
-  const checkInLongitude = ownCheckIn?.longitude;
   const hasActiveCheckIn = Boolean(ownCheckIn);
 
-  const canonicalVenue = useMemo(() => {
-    if (!hasActiveCheckIn || checkInType !== 'gathr_venue' || !checkInLocationKey) return null;
-    const selected = selectedVenues.find((venue) => venue.locationKey === checkInLocationKey);
-    if (selected) return selected;
-    for (const cluster of clusters) {
-      const match = cluster.venues.find((venue) => venue.locationKey === checkInLocationKey);
-      if (match) return match;
-    }
-    return null;
-  }, [checkInLocationKey, checkInType, clusters, hasActiveCheckIn, selectedVenues]);
-
   const center = useMemo(() => {
-    if (!hasActiveCheckIn) return null;
-    if (readinessAnchor) return { latitude: readinessAnchor.latitude, longitude: readinessAnchor.longitude };
-    if (Number.isFinite(checkInLatitude) && Number.isFinite(checkInLongitude)) {
-      return { latitude: checkInLatitude as number, longitude: checkInLongitude as number };
-    }
-    if (canonicalVenue) return { latitude: canonicalVenue.latitude, longitude: canonicalVenue.longitude };
-    return null;
-  }, [canonicalVenue, checkInLatitude, checkInLongitude, hasActiveCheckIn, readinessAnchor]);
+    return resolveCheckInRadiusCenter(ownCheckIn, readinessAnchor, selectedVenues, clusters);
+  }, [clusters, ownCheckIn, readinessAnchor, selectedVenues]);
 
   centerRef.current = center;
   const monitorKey = ownCheckIn && center
