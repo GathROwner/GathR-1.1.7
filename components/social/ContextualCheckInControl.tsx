@@ -167,10 +167,11 @@ export function closestNearbyPlaceId(candidates: VenueCandidate[]): string {
   ), null)?.id || '';
 }
 
-export function ReadinessRings({ here, place, hereReady, placeReady, children }: {
-  here: number; place: number; hereReady: boolean; placeReady: boolean; children: React.ReactNode;
+export function ReadinessRings({ here, place, hereReady, placeReady, emphasizedRing, children }: {
+  here: number; place: number; hereReady: boolean; placeReady: boolean;
+  emphasizedRing?: 'here' | 'place'; children: React.ReactNode;
 }) {
-  const ring = (name: string, radius: number, progress: number, ready: boolean, color: string, readyColor: string) => {
+  const ring = (name: 'here' | 'place', radius: number, progress: number, ready: boolean, color: string, readyColor: string) => {
     const circumference = 2 * Math.PI * radius;
     // A fresh local stationary threshold opens the choices immediately. The
     // server receipt remains mandatory before any check-in is saved.
@@ -178,7 +179,7 @@ export function ReadinessRings({ here, place, hereReady, placeReady, children }:
     return <React.Fragment key={radius}>
       <Circle cx={24} cy={24} r={radius} stroke={color} strokeOpacity={0.16} strokeWidth={3.5} fill="none" />
       {displayedProgress > 0 && <Circle testID={`check-in-${name}-ring`} cx={24} cy={24} r={radius}
-        stroke={ready ? readyColor : color} strokeWidth={ready ? 4.5 : 3.5} fill="none"
+        stroke={ready ? readyColor : color} strokeWidth={ready ? (emphasizedRing === name ? 5.5 : 4.5) : 3.5} fill="none"
         strokeLinecap="round" strokeDasharray={`${circumference} ${circumference}`}
         strokeDashoffset={circumference * (1 - displayedProgress)} rotation={-90} origin="24, 24" />}
     </React.Fragment>;
@@ -849,14 +850,18 @@ export default function ContextualCheckInControl({ enabled }: Props) {
       }}
       style={[styles.control, ownCheckIn ? styles.checkedInControl : hereEntryReady && styles.readyControl]}
       testID={ownCheckIn ? 'contextual-check-in-active' : hereEntryReady ? 'contextual-check-in-ready' : 'contextual-check-in-idle'}>
-      {ownCheckIn ? <View style={styles.checkedInMark}>
-        <View style={styles.checkedInPinCircle}>
-          <Ionicons name="location" size={15} color="#FFFFFF" />
+      {ownCheckIn ? <ReadinessRings
+        here={1} place={1} hereReady placeReady
+        emphasizedRing={ownCheckIn.locationType === 'private_place' ? 'here' : 'place'}>
+        <View style={styles.checkedInMark}>
+          <View style={styles.checkedInPinCircle}>
+            <Ionicons name="location" size={14} color="#FFFFFF" />
+          </View>
+          <View style={styles.checkedInBadge}>
+            <Ionicons name="checkmark" size={8} color="#FFFFFF" />
+          </View>
         </View>
-        <View style={styles.checkedInBadge}>
-          <Ionicons name="checkmark" size={8} color="#FFFFFF" />
-        </View>
-      </View> : <ReadinessRings
+      </ReadinessRings> : <ReadinessRings
         here={hereProgress} place={placeProgress} hereReady={hereEntryReady} placeReady={placeEntryReady}>
         {hereEntryReady ? <View testID="check-in-ready-mark" style={[styles.readyMark, placeEntryReady && styles.placeReadyMark]}>
           <Ionicons name="checkmark" color="#FFFFFF" size={16} />
@@ -1184,13 +1189,13 @@ const styles = StyleSheet.create({
     elevation: 6, zIndex: 32,
   },
   readyControl: { backgroundColor: '#F0F7FF' },
-  checkedInControl: { backgroundColor: '#FFFFFF', borderWidth: 1.5, borderColor: '#2F80ED' },
+  checkedInControl: { backgroundColor: '#FFFFFF' },
   rings: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
   smallAvatar: { transform: [{ scale: 0.55 }] },
   readyMark: { width: 22, height: 22, borderRadius: 11, alignItems: 'center', justifyContent: 'center', backgroundColor: '#6D28D9' },
   placeReadyMark: { backgroundColor: '#175CD3' },
   checkedInMark: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
-  checkedInPinCircle: { width: 23, height: 23, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: '#175CD3' },
+  checkedInPinCircle: { width: 20, height: 20, borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: '#175CD3' },
   checkedInBadge: { position: 'absolute', top: 0, right: 0, width: 13, height: 13, borderRadius: 7, alignItems: 'center', justifyContent: 'center', backgroundColor: '#12B76A', borderWidth: 1.5, borderColor: '#FFFFFF' },
   bubble: { position: 'absolute', right: 54, bottom: 50, width: 254, maxWidth: '76%', backgroundColor: '#FFFFFF', borderRadius: 16, padding: 12, elevation: 7, zIndex: 33, shadowColor: '#101828', shadowOpacity: 0.14, shadowRadius: 8, shadowOffset: { width: 0, height: 3 } },
   bubbleHeading: { flexDirection: 'row', alignItems: 'flex-start' },
