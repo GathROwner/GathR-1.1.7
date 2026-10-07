@@ -10,6 +10,7 @@ import {
   KeyboardAvoidingView,
   Modal,
   Platform,
+  Pressable,
   ScrollView,
   StyleSheet,
   Switch,
@@ -513,16 +514,57 @@ export default function CheckInScreen() {
         onPress: () => {
           setBusy(true);
           void checkOut()
-            .then(() => Alert.alert(
-              'Checked out',
-              'Your check-in is no longer visible.',
-              [{ text: 'Return to map', onPress: () => router.replace('/(tabs)/map') }]
-            ))
+            .then(() => router.replace('/(tabs)/map'))
             .catch((error) => Alert.alert('Could not check out', messageForError(error)))
             .finally(() => setBusy(false));
         },
       },
     ]
+  );
+
+  const activeCheckInCard = ownCheckIn && (
+    <View style={[styles.card, styles.activeCard]}>
+      <View style={styles.activeHeading}>
+        <View style={styles.activeIcon}>
+          <Ionicons name="location" size={22} color="#175CD3" />
+        </View>
+        <View style={styles.flex}>
+          <Text maxFontSizeMultiplier={1.1} style={styles.activeEyebrow}>ACTIVE NOW</Text>
+          <Text maxFontSizeMultiplier={1.2} numberOfLines={2} style={styles.sectionTitle}>{ownCheckIn.venueNameSnapshot}</Text>
+        </View>
+      </View>
+      <Text maxFontSizeMultiplier={1.15} style={styles.muted}>
+        {formatCheckInVisibilityCopy(ownCheckIn.viewerCount, ownCheckIn.expiresAt)}
+      </Text>
+      {ownCheckIn.locationType === 'private_place' && (
+        <View style={styles.activePrivateRow}>
+          <Ionicons name="shield-checkmark-outline" size={17} color="#6941C6" />
+          <Text style={styles.activePrivateText}>
+            {ownCheckIn.shareExactLocation
+              ? 'Exact pin shared only with your selected friends'
+              : 'Friends see only an approximate area'}
+          </Text>
+        </View>
+      )}
+      {!!ownCheckIn.message && (
+        <Text maxFontSizeMultiplier={1.15} numberOfLines={3} style={styles.activeMessage}>“{ownCheckIn.message}”</Text>
+      )}
+      <View style={styles.activeActions}>
+        <TouchableOpacity accessibilityRole="button" accessibilityLabel="View check-in on map" onPress={() => router.replace('/(tabs)/map')} style={styles.secondaryButton}>
+          <Ionicons name="map-outline" size={18} color="#175CD3" />
+          <Text maxFontSizeMultiplier={1.1} style={styles.secondaryText}>View map</Text>
+        </TouchableOpacity>
+        {ownCheckIn.locationType === 'gathr_venue' && (
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel="Change active check-in" onPress={beginEditing} style={styles.secondaryButton}>
+            <Ionicons name="create-outline" size={18} color="#175CD3" />
+            <Text maxFontSizeMultiplier={1.1} style={styles.secondaryText}>Change</Text>
+          </TouchableOpacity>
+        )}
+        <TouchableOpacity accessibilityRole="button" accessibilityLabel="Check out now" disabled={busy} onPress={checkout} style={styles.checkoutButton}>
+          <Text maxFontSizeMultiplier={1.1} style={styles.checkoutText}>Check out</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
   );
 
   if (!SOCIAL_FEATURE_ENABLED || !user) {
@@ -537,6 +579,36 @@ export default function CheckInScreen() {
           </TouchableOpacity>
         </View>
       </SafeAreaView>
+    );
+  }
+
+  if (ownCheckIn && !isEditing) {
+    return (
+      <View style={styles.activeOverviewRoot}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Close check-in details"
+          onPress={() => router.back()}
+          style={StyleSheet.absoluteFillObject}
+        />
+        <View accessibilityViewIsModal style={styles.activeOverviewSheet}>
+          <SafeAreaView edges={['bottom']} style={styles.activeOverviewSafeArea}>
+            <StatusBar style="dark" backgroundColor="transparent" />
+            <View style={styles.header}>
+              <TouchableOpacity accessibilityLabel="Close check-in details" onPress={() => router.back()} style={styles.iconButton}>
+                <Ionicons name="chevron-back" size={25} color="#101828" />
+              </TouchableOpacity>
+              <View style={styles.headerText}>
+                <Text style={styles.title}>Your check-in</Text>
+                <Text style={styles.muted}>Share a place, never continuous location.</Text>
+              </View>
+            </View>
+            <View style={styles.activeOverviewContent}>
+              {activeCheckInCard}
+            </View>
+          </SafeAreaView>
+        </View>
+      </View>
     );
   }
 
@@ -556,51 +628,6 @@ export default function CheckInScreen() {
 
         <View style={styles.content}>
           {fromCache && <Text maxFontSizeMultiplier={1.15} numberOfLines={2} style={styles.offlineBanner}>Offline: changing a check-in requires a connection.</Text>}
-
-          {ownCheckIn && !isEditing && (
-            <View style={[styles.card, styles.activeCard]}>
-              <View style={styles.activeHeading}>
-                <View style={styles.activeIcon}>
-                  <Ionicons name="location" size={22} color="#175CD3" />
-                </View>
-                <View style={styles.flex}>
-                  <Text maxFontSizeMultiplier={1.1} style={styles.activeEyebrow}>ACTIVE NOW</Text>
-                  <Text maxFontSizeMultiplier={1.2} numberOfLines={2} style={styles.sectionTitle}>{ownCheckIn.venueNameSnapshot}</Text>
-                </View>
-              </View>
-              <Text maxFontSizeMultiplier={1.15} style={styles.muted}>
-                {formatCheckInVisibilityCopy(ownCheckIn.viewerCount, ownCheckIn.expiresAt)}
-              </Text>
-              {ownCheckIn.locationType === 'private_place' && (
-                <View style={styles.activePrivateRow}>
-                  <Ionicons name="shield-checkmark-outline" size={17} color="#6941C6" />
-                  <Text style={styles.activePrivateText}>
-                    {ownCheckIn.shareExactLocation
-                      ? 'Exact pin shared only with your selected friends'
-                      : 'Friends see only an approximate area'}
-                  </Text>
-                </View>
-              )}
-              {!!ownCheckIn.message && (
-                <Text maxFontSizeMultiplier={1.15} numberOfLines={3} style={styles.activeMessage}>“{ownCheckIn.message}”</Text>
-              )}
-              <View style={styles.activeActions}>
-                <TouchableOpacity accessibilityRole="button" accessibilityLabel="View check-in on map" onPress={() => router.replace('/(tabs)/map')} style={styles.secondaryButton}>
-                  <Ionicons name="map-outline" size={18} color="#175CD3" />
-                  <Text maxFontSizeMultiplier={1.1} style={styles.secondaryText}>View map</Text>
-                </TouchableOpacity>
-                {ownCheckIn.locationType === 'gathr_venue' && (
-                  <TouchableOpacity accessibilityRole="button" accessibilityLabel="Change active check-in" onPress={beginEditing} style={styles.secondaryButton}>
-                    <Ionicons name="create-outline" size={18} color="#175CD3" />
-                    <Text maxFontSizeMultiplier={1.1} style={styles.secondaryText}>Change</Text>
-                  </TouchableOpacity>
-                )}
-                <TouchableOpacity accessibilityRole="button" accessibilityLabel="Check out now" disabled={busy} onPress={checkout} style={styles.checkoutButton}>
-                  <Text maxFontSizeMultiplier={1.1} style={styles.checkoutText}>Check out</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          )}
 
           {isEditing && (
             <View style={styles.formSurface}>
@@ -873,6 +900,10 @@ export default function CheckInScreen() {
 }
 
 const styles = StyleSheet.create({
+  activeOverviewRoot: { flex: 1, justifyContent: 'flex-end' },
+  activeOverviewSheet: { width: '100%', maxHeight: '78%', overflow: 'hidden', borderTopLeftRadius: 30, borderTopRightRadius: 30, backgroundColor: '#F6F8FB', shadowColor: '#101828', shadowOffset: { width: 0, height: -4 }, shadowOpacity: 0.12, shadowRadius: 14, elevation: 12 },
+  activeOverviewSafeArea: { backgroundColor: '#F6F8FB' },
+  activeOverviewContent: { paddingHorizontal: 16, paddingTop: 16, paddingBottom: 14 },
   safeArea: { flex: 1, backgroundColor: '#F6F8FB' },
   flex: { flex: 1 },
   centered: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 14, padding: 28 },

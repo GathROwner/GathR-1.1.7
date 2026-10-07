@@ -804,6 +804,7 @@ export default function ContextualCheckInControl({ enabled }: Props) {
   };
   const closePicker = () => { flowGenerationRef.current += 1; setPickerVisible(false); };
 
+  const defaultReadinessCopy = 'Here prepares a private check-in. Place prepares a nearby public venue.';
   const earlyCopy = readiness.mode === 'basic' || !readiness.foregroundGranted
     ? 'Browse without location. Enable While Using GathR to prepare a nearby check-in.'
     : readiness.evidence.reason === 'driving'
@@ -816,28 +817,77 @@ export default function ContextualCheckInControl({ enabled }: Props) {
           ? 'The 30-second wait is complete. Tap the checkmark to choose; GathR confirms your location before saving.'
         : readiness.serviceError
           ? 'Check-in verification is unavailable right now. You can keep browsing.'
-          : 'Here prepares an approximate private check-in. Place prepares a public place or optional exact pin. Nothing is shared.';
+          : defaultReadinessCopy;
   const hereProgress = hereEntryReady ? 1 : Math.min(1, presentedReadiness.hereMs / CHECK_IN_READINESS.hereMs);
   const placeProgress = placeEntryReady ? 1 : Math.min(1, presentedReadiness.placeMs / CHECK_IN_READINESS.placeMs);
   const explanation = autoBubbleRef.current ? bubble : hereEntryReady
     ? placeEntryReady ? 'Ready for a private or public-place check-in. Tap the checkmark to choose.'
       : 'Private check-in is ready. Tap the checkmark to choose. Public places need the blue ring too.'
     : earlyCopy;
+  const readinessNotice = explanation === defaultReadinessCopy ? '' : explanation;
   const ringStatus = (ready: boolean, elapsed: number, required: number) => ready ? 'Ready'
     : elapsed >= required ? 'Confirming' : `${Math.floor(elapsed / 1000)}/${required / 1000}s`;
+  const progressCopy = (ready: boolean, elapsed: number, required: number) => ready ? 'Ready'
+    : elapsed >= required ? 'Confirming' : `${Math.floor(elapsed / 1000)} / ${required / 1000} sec`;
   const control = <>
     {!!bubble && <View style={styles.bubble} testID="check-in-readiness-explanation" accessibilityLiveRegion="polite">
       <View style={styles.bubbleHeading}>
-        <Text style={styles.bubbleCopy}>{explanation}</Text>
+        <View style={styles.bubbleTitleIcon}>
+          <Ionicons name="location-outline" size={18} color="#6941C6" />
+        </View>
+        <Text style={styles.bubbleTitle}>Check-in readiness</Text>
         <TouchableOpacity accessibilityRole="button" accessibilityLabel="Dismiss check-in hint"
           onPress={() => setBubble('')} style={styles.bubbleClose}><Ionicons name="close" size={19} color="#475467" /></TouchableOpacity>
       </View>
-      <View style={styles.legend}>
-        <Text style={styles.hereLegend}>Here · {ringStatus(hereEntryReady, presentedReadiness.hereMs, CHECK_IN_READINESS.hereMs)}</Text>
-        <Text style={styles.placeLegend}>Place · {ringStatus(placeEntryReady, presentedReadiness.placeMs, CHECK_IN_READINESS.placeMs)}</Text>
+      <View style={styles.readinessRows}>
+        <View style={styles.readinessRow}>
+          <View style={[styles.readinessIcon, styles.hereReadinessIcon]}>
+            <Ionicons name="home-outline" size={17} color="#6941C6" />
+          </View>
+          <View style={styles.readinessBody}>
+            <View style={styles.readinessRowHeading}>
+              <View style={styles.readinessLabelGroup}>
+                <Text style={styles.hereReadinessLabel}>Here</Text>
+                <Text numberOfLines={1} style={styles.readinessDescription}>Private check-in</Text>
+              </View>
+              <Text numberOfLines={1} style={styles.hereProgressText}>
+                {progressCopy(hereEntryReady, presentedReadiness.hereMs, CHECK_IN_READINESS.hereMs)}
+              </Text>
+            </View>
+            <View style={styles.progressTrack}>
+              <View style={[styles.progressFill, styles.hereProgressFill, { width: `${Math.round(hereProgress * 100)}%` }]} />
+            </View>
+          </View>
+        </View>
+        <View style={styles.readinessRow}>
+          <View style={[styles.readinessIcon, styles.placeReadinessIcon]}>
+            <Ionicons name="business-outline" size={17} color="#175CD3" />
+          </View>
+          <View style={styles.readinessBody}>
+            <View style={styles.readinessRowHeading}>
+              <View style={styles.readinessLabelGroup}>
+                <Text style={styles.placeReadinessLabel}>Place</Text>
+                <Text numberOfLines={1} style={styles.readinessDescription}>Nearby public venue</Text>
+              </View>
+              <Text numberOfLines={1} style={styles.placeProgressText}>
+                {progressCopy(placeEntryReady, presentedReadiness.placeMs, CHECK_IN_READINESS.placeMs)}
+              </Text>
+            </View>
+            <View style={styles.progressTrack}>
+              <View style={[styles.progressFill, styles.placeProgressFill, { width: `${Math.round(placeProgress * 100)}%` }]} />
+            </View>
+          </View>
+        </View>
       </View>
+      {!!readinessNotice && (
+        <View style={styles.readinessNotice}>
+          <Ionicons name="information-circle-outline" size={16} color="#667085" />
+          <Text style={styles.readinessNoticeText}>{readinessNotice}</Text>
+        </View>
+      )}
       <TouchableOpacity accessibilityRole="button" onPress={() => { setBubble(''); router.push('/check-in-settings'); }} style={styles.settingsLink}>
         <Text style={styles.settingsText}>Location &amp; arrival reminders</Text>
+        <Ionicons name="chevron-forward" size={15} color="#175CD3" />
       </TouchableOpacity>
     </View>}
     <TouchableOpacity accessibilityRole="button" activeOpacity={0.85}
@@ -1197,15 +1247,32 @@ const styles = StyleSheet.create({
   checkedInMark: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
   checkedInPinCircle: { width: 20, height: 20, borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: '#175CD3' },
   checkedInBadge: { position: 'absolute', top: 0, right: 0, width: 13, height: 13, borderRadius: 7, alignItems: 'center', justifyContent: 'center', backgroundColor: '#12B76A', borderWidth: 1.5, borderColor: '#FFFFFF' },
-  bubble: { position: 'absolute', right: 54, bottom: 50, width: 254, maxWidth: '76%', backgroundColor: '#FFFFFF', borderRadius: 16, padding: 12, elevation: 7, zIndex: 33, shadowColor: '#101828', shadowOpacity: 0.14, shadowRadius: 8, shadowOffset: { width: 0, height: 3 } },
-  bubbleHeading: { flexDirection: 'row', alignItems: 'flex-start' },
-  bubbleCopy: { flex: 1, color: '#344054', fontSize: 13, lineHeight: 19, fontWeight: '600' },
-  bubbleClose: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center', marginRight: -8, marginTop: -8 },
-  legend: { flexDirection: 'row', gap: 12, marginTop: 8 },
-  hereLegend: { color: '#6941C6', fontSize: 12, fontWeight: '700' },
-  placeLegend: { color: '#175CD3', fontSize: 12, fontWeight: '700' },
-  settingsLink: { minHeight: 44, justifyContent: 'center' },
-  settingsText: { color: '#175CD3', fontSize: 12, fontWeight: '700' },
+  bubble: { position: 'absolute', right: 54, bottom: 50, width: 254, maxWidth: '76%', backgroundColor: '#FFFFFF', borderRadius: 18, padding: 12, elevation: 7, zIndex: 33, shadowColor: '#101828', shadowOpacity: 0.14, shadowRadius: 8, shadowOffset: { width: 0, height: 3 } },
+  bubbleHeading: { minHeight: 36, flexDirection: 'row', alignItems: 'center', gap: 7, paddingBottom: 8, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#EAECF0' },
+  bubbleTitleIcon: { width: 28, height: 28, alignItems: 'center', justifyContent: 'center', borderRadius: 14, backgroundColor: '#F4EBFF' },
+  bubbleTitle: { flex: 1, minWidth: 0, color: '#344054', fontSize: 14, lineHeight: 18, fontWeight: '800' },
+  bubbleClose: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center', marginRight: -8, marginTop: -4 },
+  readinessRows: { marginTop: 2 },
+  readinessRow: { flexDirection: 'row', alignItems: 'center', gap: 9, paddingVertical: 9, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#EAECF0' },
+  readinessIcon: { width: 34, height: 34, alignItems: 'center', justifyContent: 'center', borderRadius: 17 },
+  hereReadinessIcon: { backgroundColor: '#F4EBFF' },
+  placeReadinessIcon: { backgroundColor: '#EFF8FF' },
+  readinessBody: { flex: 1, minWidth: 0 },
+  readinessRowHeading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 4 },
+  readinessLabelGroup: { flex: 1, minWidth: 0 },
+  hereReadinessLabel: { color: '#6941C6', fontSize: 13, lineHeight: 16, fontWeight: '800' },
+  placeReadinessLabel: { color: '#175CD3', fontSize: 13, lineHeight: 16, fontWeight: '800' },
+  readinessDescription: { color: '#667085', fontSize: 10.5, lineHeight: 14 },
+  hereProgressText: { color: '#6941C6', fontSize: 10.5, fontWeight: '800' },
+  placeProgressText: { color: '#175CD3', fontSize: 10.5, fontWeight: '800' },
+  progressTrack: { height: 6, marginTop: 6, borderRadius: 3, overflow: 'hidden', backgroundColor: '#EAECF0' },
+  progressFill: { height: '100%', borderRadius: 3 },
+  hereProgressFill: { backgroundColor: '#9E77ED' },
+  placeProgressFill: { backgroundColor: '#2F80ED' },
+  readinessNotice: { flexDirection: 'row', alignItems: 'flex-start', gap: 6, marginTop: 8, padding: 8, borderRadius: 10, backgroundColor: '#F8FAFC' },
+  readinessNoticeText: { flex: 1, color: '#475467', fontSize: 10.5, lineHeight: 15, fontWeight: '500' },
+  settingsLink: { minHeight: 42, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 6, paddingTop: 4 },
+  settingsText: { flex: 1, color: '#175CD3', fontSize: 11.5, fontWeight: '700' },
   activeControl: { backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#B2DDFF' },
   progressControl: { backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#D6BBFB' },
   idleControl: {

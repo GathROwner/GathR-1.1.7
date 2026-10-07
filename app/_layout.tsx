@@ -1102,8 +1102,9 @@ useEffect(() => {
         }} />
         <Stack.Screen name="check-in" options={{
           headerShown: false,
-          presentation: 'modal',
-          animation: 'slide_from_bottom'
+          presentation: 'transparentModal',
+          animation: 'slide_from_bottom',
+          contentStyle: { backgroundColor: 'transparent' }
         }} />
         <Stack.Screen name="check-in-settings" options={{ headerShown: false }} />
         <Stack.Screen name="attendance-survey" options={{ 
