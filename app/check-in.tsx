@@ -494,7 +494,11 @@ export default function CheckInScreen() {
         onPress: () => {
           setBusy(true);
           void checkOut()
-            .then(() => Alert.alert('Checked out', 'Your check-in is no longer visible.'))
+            .then(() => Alert.alert(
+              'Checked out',
+              'Your check-in is no longer visible.',
+              [{ text: 'Return to map', onPress: () => router.replace('/(tabs)/map') }]
+            ))
             .catch((error) => Alert.alert('Could not check out', messageForError(error)))
             .finally(() => setBusy(false));
         },
