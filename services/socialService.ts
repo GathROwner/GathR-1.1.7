@@ -100,12 +100,23 @@ function publishCallableDiagnostic(diagnostic: SocialCallableDiagnostic) {
   diagnosticSubscribers.forEach((listener) => listener());
 }
 
-function isPrivatePlaceDailyLimitError(error: unknown, callableName: string) {
+function checkInRateLimitErrorReason(error: unknown, callableName: string) {
   const candidate = error as { code?: string; message?: string };
   const code = String(candidate?.code || '').replace(/^functions\//, '');
-  return callableName === 'createPrivateCheckInPlaceCandidateCallable'
-    && code === 'resource-exhausted'
-    && candidate?.message === 'Please wait before trying again.';
+  if (code !== 'resource-exhausted') return null;
+  if (
+    callableName === 'createCheckInCallable'
+    && candidate?.message === 'Daily private check-in limit reached.'
+  ) return 'private_check_in_daily_limit';
+  if (
+    callableName === 'createCheckInCallable'
+    && candidate?.message === 'Please wait before trying again.'
+  ) return 'check_in_attempt_rate_limit';
+  if (
+    callableName === 'createPrivateCheckInPlaceCandidateCallable'
+    && candidate?.message === 'Please wait before trying again.'
+  ) return 'private_place_candidate_rate_limit';
+  return null;
 }
 
 function normalizeCallableError(error: unknown, callableName = ''): SocialServiceError {
@@ -117,9 +128,14 @@ function normalizeCallableError(error: unknown, callableName = ''): SocialServic
     'resource-exhausted': 'Please wait a moment before trying again.',
     unavailable: 'GathR social is temporarily unavailable. Try again when you are online.',
   };
-  const message = isPrivatePlaceDailyLimitError(error, callableName)
-    ? 'Daily private-place limit reached.'
-    : fallback[code] || candidate?.message || 'The social request could not be completed.';
+  const reason = checkInRateLimitErrorReason(error, callableName);
+  const message = reason === 'private_check_in_daily_limit'
+    ? 'Daily private check-in limit reached.'
+    : reason === 'check_in_attempt_rate_limit'
+      ? 'Too many check-in attempts. Try again later.'
+      : reason === 'private_place_candidate_rate_limit'
+        ? 'Place setup limit reached. Try again later.'
+        : fallback[code] || candidate?.message || 'The social request could not be completed.';
   return new SocialServiceError(
     code,
     message,
@@ -252,9 +268,7 @@ async function callSocial<Request, Response>(
     return result;
   } catch (error) {
     if (error instanceof Error && error.name === 'AbortError') throw error;
-    const errorReason = isPrivatePlaceDailyLimitError(error, name)
-      ? 'private_place_daily_limit'
-      : null;
+    const errorReason = checkInRateLimitErrorReason(error, name);
     const normalized = normalizeCallableError(error, name);
     if (name !== 'recordCheckInReadinessSampleCallable') {
       amplitudeTrack('social_callable_completed', {
