@@ -118,7 +118,7 @@ function normalizeCallableError(error: unknown, callableName = ''): SocialServic
     unavailable: 'GathR social is temporarily unavailable. Try again when you are online.',
   };
   const message = isPrivatePlaceDailyLimitError(error, callableName)
-    ? 'You’ve reached the daily limit for preparing a private place. Please try again after it resets.'
+    ? 'Daily private-place limit reached.'
     : fallback[code] || candidate?.message || 'The social request could not be completed.';
   return new SocialServiceError(
     code,
