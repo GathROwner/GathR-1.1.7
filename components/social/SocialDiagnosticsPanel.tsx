@@ -61,7 +61,7 @@ function DevSocialDiagnosticsPanel() {
       </Text>
       <Text style={styles.row}>
         Last call: {callable
-          ? `${callable.operation} · ${callable.requestId} · ${callable.durationMs}ms · ${callable.success ? 'ok' : callable.errorCode}`
+          ? `${callable.operation} · ${callable.requestId} · ${callable.durationMs}ms · ${callable.success ? 'ok' : callable.errorReason || callable.errorCode}`
           : 'none'}
       </Text>
       {!!listenerError && <Text style={styles.error}>Listener: {listenerError}</Text>}

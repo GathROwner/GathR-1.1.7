@@ -79,6 +79,7 @@ export interface SocialCallableDiagnostic {
   durationMs: number;
   success: boolean;
   errorCode: string | null;
+  errorReason: string | null;
 }
 
 let diagnosticSequence = 0;
@@ -99,7 +100,15 @@ function publishCallableDiagnostic(diagnostic: SocialCallableDiagnostic) {
   diagnosticSubscribers.forEach((listener) => listener());
 }
 
-function normalizeCallableError(error: unknown): SocialServiceError {
+function isPrivatePlaceDailyLimitError(error: unknown, callableName: string) {
+  const candidate = error as { code?: string; message?: string };
+  const code = String(candidate?.code || '').replace(/^functions\//, '');
+  return callableName === 'createPrivateCheckInPlaceCandidateCallable'
+    && code === 'resource-exhausted'
+    && candidate?.message === 'Please wait before trying again.';
+}
+
+function normalizeCallableError(error: unknown, callableName = ''): SocialServiceError {
   const candidate = error as { code?: string; message?: string; details?: unknown };
   const code = String(candidate?.code || 'unknown').replace(/^functions\//, '');
   const fallback: Record<string, string> = {
@@ -108,9 +117,12 @@ function normalizeCallableError(error: unknown): SocialServiceError {
     'resource-exhausted': 'Please wait a moment before trying again.',
     unavailable: 'GathR social is temporarily unavailable. Try again when you are online.',
   };
+  const message = isPrivatePlaceDailyLimitError(error, callableName)
+    ? 'You’ve reached the daily limit for preparing a private place. Please try again after it resets.'
+    : fallback[code] || candidate?.message || 'The social request could not be completed.';
   return new SocialServiceError(
     code,
-    fallback[code] || candidate?.message || 'The social request could not be completed.',
+    message,
     safeCallableErrorDetails(candidate?.details)
   );
 }
@@ -234,18 +246,23 @@ async function callSocial<Request, Response>(
         durationMs: Date.now() - startedAt,
         success: true,
         errorCode: null,
+        errorReason: null,
       });
     }
     return result;
   } catch (error) {
     if (error instanceof Error && error.name === 'AbortError') throw error;
-    const normalized = normalizeCallableError(error);
+    const errorReason = isPrivatePlaceDailyLimitError(error, name)
+      ? 'private_place_daily_limit'
+      : null;
+    const normalized = normalizeCallableError(error, name);
     if (name !== 'recordCheckInReadinessSampleCallable') {
       amplitudeTrack('social_callable_completed', {
         operation,
         success: false,
         firebase_target: firebaseTarget,
         error_code: normalized.code,
+        ...(errorReason ? { error_reason: errorReason } : {}),
         duration_ms: Date.now() - startedAt,
       });
       publishCallableDiagnostic({
@@ -254,6 +271,7 @@ async function callSocial<Request, Response>(
         durationMs: Date.now() - startedAt,
         success: false,
         errorCode: normalized.code,
+        errorReason,
       });
     }
     throw normalized;
