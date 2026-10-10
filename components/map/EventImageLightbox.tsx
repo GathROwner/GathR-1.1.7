@@ -251,6 +251,7 @@ const EventImageLightbox: React.FC<EventImageLightboxProps> = ({
     windowHeight,
     safeAreaTop: safeAreaInsets.top,
     tabBarHeight,
+    extendToDeviceEdges: true,
   });
   // Add store subscription to get fresh event data
   const storeEvents = useMapStore((state) => state.events);
@@ -1458,7 +1459,7 @@ const handleNonTicketAction = () => {
           styles.contentContainer,
           {
             top: lightboxTop,
-            bottom: tabBarHeight,
+            bottom: 0,
           },
           { transform: [{ translateY: translateY }, { translateX: translateX }] }
         ]}
@@ -1530,8 +1531,16 @@ const handleNonTicketAction = () => {
           />
 
           {/* Event and venue identity share the image plane, matching list cards. */}
-          <View style={styles.header}>
-            <View style={[styles.headerIdentitySurface, { maxWidth: headerIdentityMaxWidth }]}>
+          <View style={[styles.header, { top: safeAreaInsets.top }]}>
+            <View
+              style={[
+                styles.headerIdentitySurface,
+                {
+                  maxWidth: headerIdentityMaxWidth,
+                  transform: [{ translateY: -5 }],
+                },
+              ]}
+            >
               <View style={styles.headerVenueAvatarContainer}>
                 <FallbackImage
                   imageUrl={updatedEvent.profileUrl}
@@ -2117,7 +2126,12 @@ const handleNonTicketAction = () => {
 
                   
         {/* Actions */}
-        <View style={styles.actionContainer}>
+        <View
+          style={[
+            styles.actionContainer,
+            !venue && { paddingBottom: Math.max(2, safeAreaInsets.bottom + 2) },
+          ]}
+        >
           <TouchableOpacity
             style={[
               styles.actionButton,
@@ -2241,7 +2255,10 @@ const handleNonTicketAction = () => {
         {/* View Venue Button - Opens EventCallout with all events at venue */}
         {venue && (
           <TouchableOpacity
-            style={styles.viewVenueButton}
+            style={[
+              styles.viewVenueButton,
+              { paddingBottom: Math.max(16, safeAreaInsets.bottom + 16) },
+            ]}
             onPress={handleViewVenue}
             activeOpacity={0.8}
           >
