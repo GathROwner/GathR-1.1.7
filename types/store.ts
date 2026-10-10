@@ -63,6 +63,9 @@ export interface MapState {
     outsideViewportCount: number;
     lastFetchTimestamp: string | null;
   };
+  // True after the first viewport has been partitioned (or its first request
+  // failed), so app-wide readiness work can wait for the map's initial data pass.
+  hasInitialViewportSettled: boolean;
   
   // Venue and cluster data
   clusters: Cluster[];

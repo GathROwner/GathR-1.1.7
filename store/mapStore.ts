@@ -1062,6 +1062,7 @@ export const useMapStore = create<MapState>((set, get) => ({
     outsideViewportCount: 0,
     lastFetchTimestamp: null,
   },
+  hasInitialViewportSettled: false,
 
   clusters: [],
   selectedVenue: null,
@@ -2030,10 +2031,12 @@ refreshPrivateSharedEventsFromServer: async (privateEventIds?: string[]) => {
             outsideViewportCount: outsideViewportEvents.length,
             lastFetchTimestamp: new Date().toISOString(),
           },
+          hasInitialViewportSettled: true,
           isLoading: false,
           lastFetchedAt: Date.now(),
         });
       } else {
+        if (!currentState.hasInitialViewportSettled) set({ hasInitialViewportSettled: true });
         traceMapEvent('viewport_store_commit_skipped', {
           requestId,
           source: options.source ?? 'unspecified',
@@ -2075,6 +2078,7 @@ refreshPrivateSharedEventsFromServer: async (privateEventIds?: string[]) => {
       console.error('[MapStore] Viewport fetch error:', errorMsg);
       set({
         error: errorMsg,
+        hasInitialViewportSettled: true,
         isLoading: false,
       });
       traceMapEvent('viewport_fetch_failed', {

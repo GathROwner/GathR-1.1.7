@@ -1,4 +1,5 @@
 import * as Location from 'expo-location';
+import { usePathname } from 'expo-router';
 import { useEffect } from 'react';
 import { AppState } from 'react-native';
 
@@ -73,11 +74,16 @@ function waitForFreshSharedMapSample(newerThanMs: number | null) {
 /** One foreground observer for the whole authenticated app, independent of map/modals. */
 export default function CheckInReadinessObserver() {
   const { user } = useAuth();
+  const pathname = usePathname();
   const uid = user?.uid || null;
   const ownCheckIn = useSocialStore((state) => state.ownCheckIn);
   const mode = useCheckInReadinessStore((state) => state.mode);
   const loaded = useCheckInReadinessStore((state) => state.preferencesLoaded);
   const hasGrant = useCheckInReadinessStore((state) => state.grant !== null);
+  const hasInitialViewportSettled = useMapStore((state) => state.hasInitialViewportSettled);
+  const mapStartupFlowActive = pathname.endsWith('/map')
+    || pathname.endsWith('/check-in')
+    || pathname.endsWith('/check-in-settings');
 
   useEffect(() => {
     resetCheckInReadinessOwner(uid);
@@ -86,7 +92,8 @@ export default function CheckInReadinessObserver() {
   }, [uid]);
 
   useEffect(() => {
-    if (!uid || !loaded || !SOCIAL_FEATURE_ENABLED || !SOCIAL_RELEASE_TWO_ENABLED) return;
+    const deferForMapStartup = mapStartupFlowActive && !hasInitialViewportSettled && !ownCheckIn && !hasGrant;
+    if (!uid || !loaded || deferForMapStartup || !SOCIAL_FEATURE_ENABLED || !SOCIAL_RELEASE_TWO_ENABLED) return;
     let disposed = false;
     let generation = 0;
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -298,6 +305,6 @@ export default function CheckInReadinessObserver() {
       if (useSocialStore.getState().ownCheckIn) preserveForCheckIn();
       else if (!current.grant && !current.resumeAfterCheckIn) invalidate();
     };
-  }, [hasGrant, loaded, mode, ownCheckIn, uid]);
+  }, [hasGrant, hasInitialViewportSettled, loaded, mapStartupFlowActive, mode, ownCheckIn, uid]);
   return null;
 }

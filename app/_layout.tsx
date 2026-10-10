@@ -37,6 +37,7 @@ import { QueryClient, QueryClientProvider, focusManager, useQueryClient } from '
 import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client';
 import { createAsyncStoragePersister } from '@tanstack/query-async-storage-persister';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { chunkedQueryStorage } from '../utils/chunkedAsyncStorage';
 import { AppState } from 'react-native';
 import { amplitudeInit, amplitudeTrack, amplitudeSetUserId, amplitudeSetUserProps } from '../lib/amplitudeAnalytics';
 import * as Notifications from 'expo-notifications';
@@ -79,8 +80,8 @@ const rqFetchEventsMinimal = async () => {
 
 // Persist React Query cache across app restarts (AsyncStorage)
 const asyncStoragePersister = createAsyncStoragePersister({
-  storage: AsyncStorage,
-  key: 'rq-gathr-cache-v2',
+  storage: chunkedQueryStorage,
+  key: 'rq-gathr-cache-v3-chunked',
   throttleTime: 1000,
   serialize: JSON.stringify,
   deserialize: JSON.parse,
@@ -148,6 +149,12 @@ export default function RootLayout() {
     // Expose so non-React modules (Zustand store) can use the same client
     (global as any).__RQ_CLIENT = qc;
     return qc;
+  }, []);
+
+  // The old single-row snapshot could exceed Android's SQLite CursorWindow limit.
+  // Drop its stale key after switching to the chunked v3 cache format.
+  useEffect(() => {
+    void AsyncStorage.removeItem('rq-gathr-cache-v2').catch(() => undefined);
   }, []);
 
   // Notifications: handler + permissions + Android channel
