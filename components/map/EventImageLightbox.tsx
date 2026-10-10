@@ -251,7 +251,9 @@ const EventImageLightbox: React.FC<EventImageLightboxProps> = ({
   } = getEventLightboxLayout({
     windowHeight,
     safeAreaTop: safeAreaInsets.top,
-    safeAreaBottom: safeAreaInsets.bottom,
+    // iOS should let the lightbox and its footer reach the physical screen edge.
+    // Android keeps the system-navigation inset below the footer.
+    safeAreaBottom: Platform.OS === 'android' ? safeAreaInsets.bottom : 0,
     tabBarHeight,
     extendToDeviceEdges: true,
   });
@@ -2285,7 +2287,7 @@ const handleNonTicketAction = () => {
       </Animated.View>
       </PanGestureHandler>
 
-      {safeAreaInsets.bottom > 0 && (
+      {Platform.OS === 'android' && safeAreaInsets.bottom > 0 && (
         <View
           pointerEvents="none"
           style={{
