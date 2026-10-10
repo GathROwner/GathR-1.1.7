@@ -245,11 +245,13 @@ const EventImageLightbox: React.FC<EventImageLightboxProps> = ({
   );
   const {
     panelTop: lightboxTop,
+    panelBottom: lightboxBottom,
     imageHeight,
     descriptionMinHeight,
   } = getEventLightboxLayout({
     windowHeight,
     safeAreaTop: safeAreaInsets.top,
+    safeAreaBottom: safeAreaInsets.bottom,
     tabBarHeight,
     extendToDeviceEdges: true,
   });
@@ -1459,7 +1461,7 @@ const handleNonTicketAction = () => {
           styles.contentContainer,
           {
             top: lightboxTop,
-            bottom: 0,
+            bottom: lightboxBottom,
           },
           { transform: [{ translateY: translateY }, { translateX: translateX }] }
         ]}
@@ -2126,12 +2128,7 @@ const handleNonTicketAction = () => {
 
                   
         {/* Actions */}
-        <View
-          style={[
-            styles.actionContainer,
-            !venue && { paddingBottom: Math.max(2, safeAreaInsets.bottom + 2) },
-          ]}
-        >
+        <View style={styles.actionContainer}>
           <TouchableOpacity
             style={[
               styles.actionButton,
@@ -2255,10 +2252,7 @@ const handleNonTicketAction = () => {
         {/* View Venue Button - Opens EventCallout with all events at venue */}
         {venue && (
           <TouchableOpacity
-            style={[
-              styles.viewVenueButton,
-              { paddingBottom: Math.max(16, safeAreaInsets.bottom + 16) },
-            ]}
+            style={styles.viewVenueButton}
             onPress={handleViewVenue}
             activeOpacity={0.8}
           >
@@ -2290,6 +2284,20 @@ const handleNonTicketAction = () => {
         )}
       </Animated.View>
       </PanGestureHandler>
+
+      {safeAreaInsets.bottom > 0 && (
+        <View
+          pointerEvents="none"
+          style={{
+            position: 'absolute',
+            left: 0,
+            right: 0,
+            bottom: 0,
+            height: safeAreaInsets.bottom,
+            backgroundColor: '#111111',
+          }}
+        />
+      )}
 
       {/* Full-Screen Image Viewer */}
       <ImageView

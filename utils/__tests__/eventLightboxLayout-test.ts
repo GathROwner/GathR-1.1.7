@@ -8,6 +8,7 @@ describe('getEventLightboxLayout', () => {
       tabBarHeight: 83,
     })).toEqual({
       panelTop: 59,
+      panelBottom: 83,
       panelHeight: 732,
       imageHeight: 305.9,
       descriptionMinHeight: 114,
@@ -49,9 +50,39 @@ describe('getEventLightboxLayout', () => {
       tabBarHeight: 100,
     })).toEqual({
       panelTop: 0,
+      panelBottom: 100,
       panelHeight: 0,
       imageHeight: 0,
       descriptionMinHeight: 0,
     });
+  });
+
+  it('extends to the top edge while keeping the footer above the device bottom safe area', () => {
+    expect(getEventLightboxLayout({
+      windowHeight: 874,
+      safeAreaTop: 59,
+      safeAreaBottom: 34,
+      tabBarHeight: 83,
+      extendToDeviceEdges: true,
+    })).toEqual({
+      panelTop: 0,
+      panelBottom: 34,
+      panelHeight: 840,
+      imageHeight: 349.6,
+      descriptionMinHeight: 114,
+    });
+  });
+
+  it('does not reserve bottom space when the platform reports no bottom inset', () => {
+    const layout = getEventLightboxLayout({
+      windowHeight: 874,
+      safeAreaTop: 59,
+      safeAreaBottom: 0,
+      tabBarHeight: 83,
+      extendToDeviceEdges: true,
+    });
+
+    expect(layout.panelBottom).toBe(0);
+    expect(layout.panelHeight).toBe(874);
   });
 });

@@ -1,12 +1,14 @@
 interface EventLightboxLayoutInput {
   windowHeight: number;
   safeAreaTop: number;
+  safeAreaBottom?: number;
   tabBarHeight: number;
   extendToDeviceEdges?: boolean;
 }
 
 interface EventLightboxLayout {
   panelTop: number;
+  panelBottom: number;
   panelHeight: number;
   imageHeight: number;
   descriptionMinHeight: number;
@@ -21,12 +23,15 @@ const DESCRIPTION_PANEL_HEIGHT_RATIO = 0.19;
 export const getEventLightboxLayout = ({
   windowHeight,
   safeAreaTop,
+  safeAreaBottom = 0,
   tabBarHeight,
   extendToDeviceEdges = false,
 }: EventLightboxLayoutInput): EventLightboxLayout => {
   const normalizedWindowHeight = Math.max(0, windowHeight);
   const panelTop = extendToDeviceEdges ? 0 : Math.max(0, safeAreaTop);
-  const panelBottom = extendToDeviceEdges ? 0 : Math.max(0, tabBarHeight);
+  const panelBottom = extendToDeviceEdges
+    ? Math.max(0, safeAreaBottom)
+    : Math.max(0, tabBarHeight);
   const panelHeight = Math.max(0, normalizedWindowHeight - panelTop - panelBottom);
   const imageHeight = Math.min(
     normalizedWindowHeight * (
@@ -43,6 +48,7 @@ export const getEventLightboxLayout = ({
 
   return {
     panelTop,
+    panelBottom,
     panelHeight,
     imageHeight,
     descriptionMinHeight,
