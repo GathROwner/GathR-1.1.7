@@ -8407,7 +8407,7 @@ const showPills = useCallback((reason: string = 'unspecified') => {
 
   // --- Floating pills top offset (baseline + small per-platform nudge) ---
 const BASELINE_TOP = 0; // dp - starting point that looks good under the header (reduced by 6px)
-const PLATFORM_NUDGE = Platform.select({ ios: 20, android: 20, default: 0 })!;
+const PLATFORM_NUDGE = Platform.select({ ios: 16, android: 20, default: 0 })!;
 const TOP_OFFSET = BASELINE_TOP + PLATFORM_NUDGE;
 // -----------
 
