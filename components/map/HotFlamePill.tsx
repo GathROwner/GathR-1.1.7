@@ -201,10 +201,10 @@ const styles = StyleSheet.create({
     opacity: 0.7,
   },
   countBadge: {
-    minWidth: 24,
+    minWidth: 20,
     height: 20,
     borderRadius: 10,
-    paddingHorizontal: 6,
+    paddingHorizontal: 2,
     backgroundColor: 'rgba(179, 57, 0, 0.10)',
     alignItems: 'center',
     justifyContent: 'center',

@@ -207,7 +207,9 @@ export default function FriendEventsMapToggle({
           style={styles.pill}
         >
           <Ionicons name="people" size={18} color="#FFFFFF" />
-          <Text maxFontSizeMultiplier={1.3} style={styles.placeBadgeText}>{destinations.length > 99 ? '99+' : destinations.length}</Text>
+          <View style={styles.placeCountBadge}>
+            <Text maxFontSizeMultiplier={1.3} style={styles.placeBadgeText}>{destinations.length > 99 ? '99+' : destinations.length}</Text>
+          </View>
         </TouchableOpacity>
       )}
 
@@ -274,6 +276,15 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 6,
     zIndex: 24,
+  },
+  placeCountBadge: {
+    minWidth: 20,
+    height: 20,
+    paddingHorizontal: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 10,
+    backgroundColor: 'rgba(255,255,255,0.2)',
   },
   placeBadgeText: { color: '#FFFFFF', fontSize: 11, fontWeight: '900' },
   carouselShell: {

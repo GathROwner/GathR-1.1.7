@@ -36,7 +36,8 @@ type InterestPillEventContext = {
 };
 
 const ITEM_HEIGHT = 48; // Increased spacing between pills (36px pill + 12px gap)
-const VISIBLE_ITEMS = 7;
+const MAX_VISIBLE_ITEMS = 7;
+const MIN_VISIBLE_ITEMS = 3;
 const CLEAR_HOLD_TO_ARM_MS = 850;
 const CLEAR_ARMED_AUTO_CANCEL_MS = 4000;
 
@@ -138,7 +139,7 @@ const NewContentDot: React.FC = () => {
   );
 };
 
-const InterestFilterPills: React.FC = () => {
+const InterestFilterPills: React.FC<{ availableHeight?: number }> = ({ availableHeight }) => {
   const userInterests = useUserPrefsStore((s) => s.interests);
   const isFocused = useIsFocused();
 
@@ -306,6 +307,7 @@ const InterestFilterPills: React.FC = () => {
   const optimisticFilterActive = interestCarouselFilter?.status === 'active';
   const optimisticFilterCleared = interestCarouselFilter?.status === 'cleared';
   const cityFilterActive = selectedImageData?.source === 'city_event_marker';
+  const showCityPill = cityEventCount > 0 || cityFilterActive;
   const activeEventKey =
     optimisticFilterActive &&
     interestCarouselFilter.kind !== 'city' &&
@@ -323,6 +325,18 @@ const InterestFilterPills: React.FC = () => {
       ? ''
       : normalize(filterCriteria.specialFilters.category || '');
   const hasActiveFilter = !!activeEventKey || !!activeSpecialKey;
+
+  const visibleItems = useMemo(() => {
+    if (!Number.isFinite(availableHeight) || availableHeight === undefined) {
+      return MAX_VISIBLE_ITEMS;
+    }
+
+    const pinnedCityPillHeight = showCityPill ? ITEM_HEIGHT : 0;
+    const fitCount = Math.floor((availableHeight - pinnedCityPillHeight) / ITEM_HEIGHT);
+    const boundedCount = Math.min(MAX_VISIBLE_ITEMS, fitCount);
+    const oddCount = boundedCount % 2 === 0 ? boundedCount - 1 : boundedCount;
+    return Math.max(MIN_VISIBLE_ITEMS, oddCount);
+  }, [availableHeight, showCityPill]);
 
   const isActive = useCallback((item: PillItem) => {
     // Check if any of the original interests match the current filter
@@ -379,7 +393,7 @@ const InterestFilterPills: React.FC = () => {
   const lastPanelStateRef = useRef<string | null>(null);
   const isHiddenRef = useRef(false);
 
-  const needsScrolling = pills.length > VISIBLE_ITEMS;
+  const needsScrolling = pills.length > visibleItems;
 
   const loopedItems = useMemo(() => {
     if (!needsScrolling) return pills;
@@ -701,12 +715,10 @@ const InterestFilterPills: React.FC = () => {
     [pills.length, selectedIndexFromFilters, scrollToCenteredIndex, needsScrolling, fadeOutScrollbar]
   );
 
-  const showCityPill = cityEventCount > 0 || cityFilterActive;
-
   if (pills.length === 0 && !showCityPill) return null;
 
   // Calculate scrollbar thumb position and height
-  const containerHeight = ITEM_HEIGHT * VISIBLE_ITEMS;
+  const containerHeight = ITEM_HEIGHT * visibleItems;
   const contentHeight = Math.max(ITEM_HEIGHT, pills.length * ITEM_HEIGHT);
   const scrollbarHeight = containerHeight;
   const thumbHeight = Math.max(30, (containerHeight / contentHeight) * scrollbarHeight);
@@ -800,7 +812,7 @@ const InterestFilterPills: React.FC = () => {
         </View>
       )}
       {pills.length > 0 && (
-      <View style={styles.container}>
+        <View style={[styles.container, { height: ITEM_HEIGHT * visibleItems }]}>
       {/* Swipeable handle */}
       <View style={styles.handleContainer}>
         <TouchableOpacity
@@ -825,7 +837,7 @@ const InterestFilterPills: React.FC = () => {
         })}
         contentContainerStyle={[
           styles.listContent,
-          needsScrolling ? { paddingVertical: (VISIBLE_ITEMS * ITEM_HEIGHT - ITEM_HEIGHT) / 2 } : {},
+          needsScrolling ? { paddingVertical: (visibleItems * ITEM_HEIGHT - ITEM_HEIGHT) / 2 } : {},
         ]}
         onMomentumScrollEnd={(event) => {
           handleMomentumEnd(event.nativeEvent.contentOffset.y);
@@ -864,7 +876,7 @@ const InterestFilterPills: React.FC = () => {
           // Determine if this pill is at the top or bottom visible position
           // Calculate the current centered index based on scroll position
           const currentCenteredRawIndex = Math.round(scrollOffset / ITEM_HEIGHT);
-          const paddingItems = Math.floor((VISIBLE_ITEMS - 1) / 2);
+          const paddingItems = Math.floor((visibleItems - 1) / 2);
           const topVisibleRawIndex = currentCenteredRawIndex - paddingItems;
           const bottomVisibleRawIndex = currentCenteredRawIndex + paddingItems;
           const isTopPill = needsScrolling && index === topVisibleRawIndex;
@@ -1063,7 +1075,6 @@ const styles = StyleSheet.create({
   },
   container: {
     alignItems: 'flex-end',
-    height: ITEM_HEIGHT * VISIBLE_ITEMS,
     position: 'relative',
   },
   listContent: {
@@ -1100,8 +1111,11 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
   },
   countBadge: {
-    paddingHorizontal: 4,
-    paddingVertical: 1,
+    minWidth: 20,
+    height: 20,
+    paddingHorizontal: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
     borderRadius: 10,
     backgroundColor: 'rgba(0,0,0,0.08)',
   },

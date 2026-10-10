@@ -56,6 +56,7 @@ export interface VenueCandidate {
 
 interface Props {
   enabled: boolean;
+  rightOffset?: number;
 }
 
 function distanceMetres(
@@ -343,7 +344,7 @@ function waitForServerReadiness(uid: string, requirePlace: boolean, sessionId: s
   });
 }
 
-export default function ContextualCheckInControl({ enabled }: Props) {
+export default function ContextualCheckInControl({ enabled, rightOffset = 10 }: Props) {
   const router = useRouter();
   const isFocused = useIsFocused();
   const { user } = useAuth();
@@ -835,7 +836,7 @@ export default function ContextualCheckInControl({ enabled }: Props) {
   const progressCopy = (ready: boolean, elapsed: number, required: number) => ready ? 'Ready'
     : elapsed >= required ? 'Confirming' : `${Math.floor(elapsed / 1000)} / ${required / 1000} sec`;
   const control = <>
-    {!!bubble && isFocused && <View style={styles.bubble} testID="check-in-readiness-explanation" accessibilityLiveRegion="polite">
+    {!!bubble && isFocused && <View style={[styles.bubble, { right: rightOffset + 44 }]} testID="check-in-readiness-explanation" accessibilityLiveRegion="polite">
       <View style={styles.bubbleHeading}>
         <View style={styles.bubbleTitleIcon}>
           <Ionicons name="location-outline" size={18} color="#6941C6" />
@@ -903,7 +904,7 @@ export default function ContextualCheckInControl({ enabled }: Props) {
         else if (hereEntryReady && readiness.uid === user.uid) openCheckInPicker();
         else showBubble(earlyCopy);
       }}
-      style={[styles.control, ownCheckIn ? styles.checkedInControl : hereEntryReady && styles.readyControl]}
+        style={[styles.control, { right: rightOffset }, ownCheckIn ? styles.checkedInControl : hereEntryReady && styles.readyControl]}
       testID={ownCheckIn ? 'contextual-check-in-active' : hereEntryReady ? 'contextual-check-in-ready' : 'contextual-check-in-idle'}>
       {ownCheckIn ? <ReadinessRings
         here={1} place={1} hereReady placeReady

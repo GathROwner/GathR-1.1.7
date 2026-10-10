@@ -14,7 +14,7 @@
  */
 
 import React, { useEffect, useLayoutEffect, useRef, useState, useMemo, useCallback } from 'react';
-import { View, Text, StyleSheet, Animated, Dimensions, PixelRatio, TouchableOpacity, Easing, Keyboard, Pressable, Image, Modal, InteractionManager, GestureResponderEvent } from 'react-native';
+import { View, Text, StyleSheet, Animated, Dimensions, PixelRatio, TouchableOpacity, Easing, Keyboard, Pressable, Image, Modal, InteractionManager, GestureResponderEvent, LayoutChangeEvent } from 'react-native';
 import * as Location from 'expo-location';
 import * as Haptics from 'expo-haptics';
 import MapboxGL from '@rnmapbox/maps';
@@ -3011,12 +3011,14 @@ const TreeMarker: React.FC<TreeMarkerProps> = React.memo(({ cluster, isSelected,
 // Re-center button component
 const RecenterButton: React.FC<{ 
   onPress: () => void,
-  disabled: boolean 
-}> = ({ onPress, disabled }) => {
+  disabled: boolean,
+  rightOffset?: number,
+}> = ({ onPress, disabled, rightOffset = 10 }) => {
   return (
     <TouchableOpacity 
       style={[
         styles.recenterButton,
+        { right: rightOffset },
         disabled && styles.recenterButtonDisabled
       ]}
       onPress={onPress}
@@ -3432,6 +3434,19 @@ useEffect(() => {
   const [activeAreaEvent, setActiveAreaEvent] = useState<Event | null>(null);
   const activeMapExperienceEvent = activeRouteEvent || activeAreaEvent;
   const [routeOverlayHeight, setRouteOverlayHeight] = useState(0);
+  const [interestRailLayout, setInterestRailLayout] = useState({ width: 0, height: 0 });
+  const handleInterestRailLayout = useCallback((event: LayoutChangeEvent) => {
+    const { width, height } = event.nativeEvent.layout;
+    setInterestRailLayout((current) => (
+      Math.abs(current.width - width) < 1 && Math.abs(current.height - height) < 1
+        ? current
+        : { width, height }
+    ));
+  }, []);
+  const measuredRailWidth = interestRailLayout.width;
+  const sideControlRightOffset = measuredRailWidth >= 36 && measuredRailWidth <= 220
+    ? 10 + (measuredRailWidth - 36) / 2
+    : 27;
   const [routeFeatureCallout, setRouteFeatureCallout] = useState<{
     data: RouteFeatureCalloutData;
     anchorX: number;
@@ -11767,8 +11782,12 @@ onDidFinishLoadingMap={() => {
             onPress={handleTrendingPillPress}
           />
 
-          <View pointerEvents="box-none" style={styles.interestPillsContainer}>
-            <InterestFilterPills />
+          <View
+            pointerEvents="box-none"
+            onLayout={handleInterestRailLayout}
+            style={styles.interestPillsContainer}
+          >
+            <InterestFilterPills availableHeight={interestRailLayout.height || undefined} />
           </View>
 
           {/* Interests Carousel - appears when interest pill is selected */}
@@ -11789,11 +11808,13 @@ onDidFinishLoadingMap={() => {
         <RecenterButton 
           onPress={handleRecenterPress}
           disabled={!location} 
+          rightOffset={sideControlRightOffset}
         />
       )}
 
       <ContextualCheckInControl
         enabled={Boolean(!isCalloutOpen)}
+        rightOffset={sideControlRightOffset}
       />
       <FriendEventsMapToggle
         hidden={Boolean(isCalloutOpen)}
