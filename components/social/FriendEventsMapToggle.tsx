@@ -258,7 +258,7 @@ const styles = StyleSheet.create({
   pill: {
     position: 'absolute',
     right: 10,
-    bottom: 154,
+    bottom: 136,
     height: 30,
     minWidth: 60,
     flexDirection: 'row',

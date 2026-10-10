@@ -35,7 +35,7 @@ type InterestPillEventContext = {
   venueEventIds: string[];
 };
 
-const ITEM_HEIGHT = 48; // Increased spacing between pills (36px pill + 12px gap)
+const ITEM_HEIGHT = 42; // 30px pills with a compact 12px row pitch; full row remains tappable
 const MAX_VISIBLE_ITEMS = 7;
 const MIN_VISIBLE_ITEMS = 3;
 const CLEAR_HOLD_TO_ARM_MS = 850;
@@ -334,8 +334,7 @@ const InterestFilterPills: React.FC<{ availableHeight?: number }> = ({ available
     const pinnedCityPillHeight = showCityPill ? ITEM_HEIGHT : 0;
     const fitCount = Math.floor((availableHeight - pinnedCityPillHeight) / ITEM_HEIGHT);
     const boundedCount = Math.min(MAX_VISIBLE_ITEMS, fitCount);
-    const oddCount = boundedCount % 2 === 0 ? boundedCount - 1 : boundedCount;
-    return Math.max(MIN_VISIBLE_ITEMS, oddCount);
+    return Math.max(MIN_VISIBLE_ITEMS, boundedCount);
   }, [availableHeight, showCityPill]);
 
   const isActive = useCallback((item: PillItem) => {
@@ -771,6 +770,7 @@ const InterestFilterPills: React.FC<{ availableHeight?: number }> = ({ available
         <View style={styles.cityPillWrapper}>
           <TouchableOpacity
             activeOpacity={0.85}
+            hitSlop={{ top: 6, bottom: 6 }}
             onPress={handleCityPress}
             style={[
               styles.pill,
@@ -876,9 +876,10 @@ const InterestFilterPills: React.FC<{ availableHeight?: number }> = ({ available
           // Determine if this pill is at the top or bottom visible position
           // Calculate the current centered index based on scroll position
           const currentCenteredRawIndex = Math.round(scrollOffset / ITEM_HEIGHT);
-          const paddingItems = Math.floor((visibleItems - 1) / 2);
-          const topVisibleRawIndex = currentCenteredRawIndex - paddingItems;
-          const bottomVisibleRawIndex = currentCenteredRawIndex + paddingItems;
+          const rowsAboveCenter = Math.floor((visibleItems - 1) / 2);
+          const rowsBelowCenter = visibleItems - rowsAboveCenter - 1;
+          const topVisibleRawIndex = currentCenteredRawIndex - rowsAboveCenter;
+          const bottomVisibleRawIndex = currentCenteredRawIndex + rowsBelowCenter;
           const isTopPill = needsScrolling && index === topVisibleRawIndex;
           const isBottomPill = needsScrolling && index === bottomVisibleRawIndex;
 
@@ -894,6 +895,7 @@ const InterestFilterPills: React.FC<{ availableHeight?: number }> = ({ available
             <Animated.View style={[styles.itemWrapper, { transform: [{ scale }] }]}>
               <AnimatedTouchableOpacity
                 activeOpacity={0.85}
+                hitSlop={{ top: 6, bottom: 6 }}
                 onPress={() => handlePress(item, baseIndex)}
                 onPressIn={() => {
                   if (!hasActiveFilter || !selected) return;

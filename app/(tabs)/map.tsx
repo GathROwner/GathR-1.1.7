@@ -11764,7 +11764,7 @@ onDidFinishLoadingMap={() => {
           ]}
         >
           <MapLegend
-            topOffset={30}
+            topOffset={18}
             rightOffset={10}
             mapStyle={mapStyleChoice}
             mapStyleChanging={mapStyleChanging}
@@ -11777,7 +11777,7 @@ onDidFinishLoadingMap={() => {
 
           {/* Trending pill - opens the trending lightbox from the top-right */}
           <HotFlamePill
-            top={134}
+            top={122}
             right={10}
             onPress={handleTrendingPillPress}
           />
@@ -13099,7 +13099,7 @@ countText: {
   // Re-center button styles
   recenterButton: {
     position: 'absolute',
-    bottom: 106,
+    bottom: 88,
     right: 10,
     backgroundColor: 'white',
     width: 36,
@@ -13146,8 +13146,8 @@ countText: {
   interestPillsContainer: {
     position: 'absolute',
     right: 10,
-    top: 182, // Legend button ends at ~170 (80+54+36), add 12px spacing
-    bottom: 198, // Reserve the shifted Friends shortcut above recenter.
+    top: 170, // Keep the wheel tucked below the raised Trending control.
+    bottom: 182, // Leave a compact gap above the separate Friends Checked In pill.
     justifyContent: 'center',
     alignItems: 'flex-end',
     zIndex: 11,

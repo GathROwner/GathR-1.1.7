@@ -1248,7 +1248,7 @@ const styles = StyleSheet.create({
   selectionErrorText: { color: '#93370D', fontSize: 14, lineHeight: 20 },
   selectionErrorActions: { flexDirection: 'row', justifyContent: 'space-between', gap: 12 },
   control: {
-    position: 'absolute', right: 10, bottom: 50, width: 36, height: 36,
+    position: 'absolute', right: 10, bottom: 42, width: 36, height: 36,
     alignItems: 'center', justifyContent: 'center', borderRadius: 18,
     backgroundColor: '#FFFFFF', shadowColor: '#101828',
     shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.16, shadowRadius: 5,
@@ -1263,7 +1263,7 @@ const styles = StyleSheet.create({
   checkedInMark: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
   checkedInPinCircle: { width: 20, height: 20, borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: '#175CD3' },
   checkedInBadge: { position: 'absolute', top: 0, right: 0, width: 13, height: 13, borderRadius: 7, alignItems: 'center', justifyContent: 'center', backgroundColor: '#12B76A', borderWidth: 1.5, borderColor: '#FFFFFF' },
-  bubble: { position: 'absolute', right: 54, bottom: 50, width: 254, maxWidth: '76%', backgroundColor: '#FFFFFF', borderRadius: 18, padding: 12, elevation: 7, zIndex: 33, shadowColor: '#101828', shadowOpacity: 0.14, shadowRadius: 8, shadowOffset: { width: 0, height: 3 } },
+  bubble: { position: 'absolute', right: 54, bottom: 42, width: 254, maxWidth: '76%', backgroundColor: '#FFFFFF', borderRadius: 18, padding: 12, elevation: 7, zIndex: 33, shadowColor: '#101828', shadowOpacity: 0.14, shadowRadius: 8, shadowOffset: { width: 0, height: 3 } },
   bubbleHeading: { minHeight: 36, flexDirection: 'row', alignItems: 'center', gap: 7, paddingBottom: 8, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#EAECF0' },
   bubbleTitleIcon: { width: 28, height: 28, alignItems: 'center', justifyContent: 'center', borderRadius: 14, backgroundColor: '#F4EBFF' },
   bubbleTitle: { flex: 1, minWidth: 0, color: '#344054', fontSize: 14, lineHeight: 18, fontWeight: '800' },
