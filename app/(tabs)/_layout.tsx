@@ -1,7 +1,7 @@
 // app\(tabs)\_layout.tsx
 
 import { Tabs } from 'expo-router';
-import { TouchableOpacity, View, TextInput, Text, Image, InteractionManager, Pressable, Platform, Dimensions } from 'react-native';
+import { TouchableOpacity, View, TextInput, Text, Image, InteractionManager, Pressable, Platform, Dimensions, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useRouter } from 'expo-router';
 import { useMapStore } from '../../store/mapStore';
@@ -141,6 +141,7 @@ const InstrumentedTabBarButton = (props: InstrumentedTabBarButtonProps) => {
       android_ripple={TAB_PRESS_RIPPLE}
       style={{ flex: 1, position: 'relative' }}
     >
+      {targetTab === 'map' && isSelected && <View pointerEvents="none" style={{ ...StyleSheet.absoluteFillObject, margin: 5, borderRadius: 28, backgroundColor: 'rgba(255,255,255,0.94)' }} />}
       <ActiveTabIndicator targetTab={targetTab} visible={isSelected} />
       <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
         {children}
@@ -722,7 +723,25 @@ export default function TabLayout() {
       // but mount them after startup so later tab switches do not pay that cost.
       lazy: !prewarmInactiveTabs,
       freezeOnBlur: Platform.OS === 'android' ? true : false,
-      tabBarStyle: androidTabletTabBarStyle,
+      tabBarStyle: route.name === 'map' && !isHeaderSearchActive
+        ? {
+            position: 'absolute',
+            left: 16,
+            right: 16,
+            bottom: Math.max(insets.bottom, 8) + 8,
+            height: 66,
+            paddingBottom: 4,
+            paddingTop: 4,
+            borderTopWidth: 0,
+            borderRadius: 34,
+            backgroundColor: 'rgba(20, 22, 27, 0.90)',
+            shadowColor: '#000000',
+            shadowOffset: { width: 0, height: 6 },
+            shadowOpacity: 0.24,
+            shadowRadius: 16,
+            elevation: 12,
+          }
+        : androidTabletTabBarStyle,
     })}>
       <Tabs.Screen
         name="events"
@@ -790,9 +809,10 @@ export default function TabLayout() {
         name="map"
         options={({ route }) => ({
           title: 'Map',
+          headerShown: isHeaderSearchActive || profileButtonHighlighted,
           headerTitle: () => <HeaderTitle route={route} />,
-          tabBarActiveTintColor: '#111111',
-          tabBarInactiveTintColor: '#202124',
+          tabBarActiveTintColor: '#1E90FF',
+          tabBarInactiveTintColor: isHeaderSearchActive ? '#202124' : 'rgba(255,255,255,0.78)',
           headerLeft: () => (
             !isHeaderSearchActive ? (
               <TouchableOpacity onPress={handleSearchActivation} style={{ marginLeft: 16 }}>

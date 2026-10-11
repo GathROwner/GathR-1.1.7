@@ -14,13 +14,14 @@
  */
 
 import React, { useEffect, useLayoutEffect, useRef, useState, useMemo, useCallback } from 'react';
-import { View, Text, StyleSheet, Animated, Dimensions, PixelRatio, TouchableOpacity, Easing, Keyboard, Pressable, Image, Modal, InteractionManager, GestureResponderEvent, LayoutChangeEvent } from 'react-native';
+import { View, Text, StyleSheet, Animated, Dimensions, PixelRatio, TouchableOpacity, Easing, Keyboard, Pressable, Image, Modal, InteractionManager, GestureResponderEvent, LayoutChangeEvent, StatusBar } from 'react-native';
 import * as Location from 'expo-location';
 import * as Haptics from 'expo-haptics';
 import MapboxGL from '@rnmapbox/maps';
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import { useIsFocused } from '@react-navigation/native';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Platform } from 'react-native';
 import { usePathname, useRouter } from 'expo-router';
 
@@ -3013,12 +3014,13 @@ const RecenterButton: React.FC<{
   onPress: () => void,
   disabled: boolean,
   rightOffset?: number,
-}> = ({ onPress, disabled, rightOffset = 10 }) => {
+  bottomOffset?: number,
+}> = ({ onPress, disabled, rightOffset = 10, bottomOffset = 0 }) => {
   return (
     <TouchableOpacity 
       style={[
         styles.recenterButton,
-        { right: rightOffset },
+        { right: rightOffset, bottom: 88 + bottomOffset },
         disabled && styles.recenterButtonDisabled
       ]}
       onPress={onPress}
@@ -3248,6 +3250,10 @@ useEffect(() => {
   const isGuest = !user;
   const router = useRouter();
   const modalTabBarHeight = useBottomTabBarHeight();
+  const safeAreaInsets = useSafeAreaInsets();
+  const floatingHeaderTop = safeAreaInsets.top + 8;
+  const mapChromeTopReserve = safeAreaInsets.top + 56;
+  const floatingNavLift = 56;
 
   // Guest limitation hook - only for guests
   const { trackInteraction } = useGuestInteraction();
@@ -3348,6 +3354,7 @@ useEffect(() => {
   const triggerCloseCallout = useMapStore((state) => state.triggerCloseCallout);
   const isHeaderSearchActive = useMapStore((state) => state.isHeaderSearchActive);
   const setHeaderSearchActive = useMapStore((state) => state.setHeaderSearchActive);
+  const profileButtonHighlighted = useTutorialUiStore((state) => state.currentStepId === 'profile-facebook');
   const setTypeFiltersBatch = useMapStore((state) => state.setTypeFiltersBatch);
   const pendingRouteEvent = useMapStore((state) => state.pendingRouteEvent);
   const interestCarouselFilter = useInterestCarouselUiStore((state) => state.interestCarouselFilter);
@@ -11019,6 +11026,40 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
       style={styles.container}
       onLayout={handleRootLayout}
     >
+      {isFocused && !isHeaderSearchActive && (
+        <StatusBar barStyle="dark-content" backgroundColor="transparent" translucent />
+      )}
+      {!isHeaderSearchActive && !profileButtonHighlighted && (
+        <View style={[styles.floatingMapHeader, { top: floatingHeaderTop }]} pointerEvents="box-none">
+          <TouchableOpacity
+            accessibilityRole="button"
+            accessibilityLabel="Search"
+            onPress={() => {
+              analytics.trackUserAction('header_search_activated', {});
+              setHeaderSearchActive(true);
+            }}
+            style={styles.floatingSearchButton}
+          >
+            <Ionicons name="search" size={18} color="#202124" />
+            <Text style={styles.floatingSearchText}>Search</Text>
+          </TouchableOpacity>
+          <View pointerEvents="none" style={styles.floatingBrandPill}>
+            <Image source={require('../../assets/GathR Text Logo.png')} style={styles.floatingBrandLogo} resizeMode="contain" />
+          </View>
+          <TouchableOpacity
+            accessibilityRole="button"
+            accessibilityLabel="Settings"
+            testID="floating-profile-button"
+            onPress={() => {
+              analytics.trackUserAction('profile_access', { access_method: 'header_button' });
+              router.push('/profile');
+            }}
+            style={styles.floatingSettingsButton}
+          >
+            <Ionicons name="settings-outline" size={23} color="#202124" />
+          </TouchableOpacity>
+        </View>
+      )}
       {isHeaderSearchActive && (
         <Pressable
           onPress={() => { setHeaderSearchActive(false); Keyboard.dismiss(); }}
@@ -11044,7 +11085,7 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
             position: 'absolute',
             left: 0,
             right: 0,
-            top: TOP_OFFSET, // baseline + per-platform nudge
+            top: TOP_OFFSET + mapChromeTopReserve, // preserve the old header-relative position over the full-screen map
             zIndex: activeFilterPanel ? 40 : 12,
             elevation: activeFilterPanel ? 40 : 12,
             transform: [{ translateY: pillsAnimation }],
@@ -11764,7 +11805,7 @@ onDidFinishLoadingMap={() => {
           ]}
         >
           <MapLegend
-            topOffset={18}
+            topOffset={18 + mapChromeTopReserve}
             rightOffset={10}
             mapStyle={mapStyleChoice}
             mapStyleChanging={mapStyleChanging}
@@ -11777,7 +11818,7 @@ onDidFinishLoadingMap={() => {
 
           {/* Trending pill - opens the trending lightbox from the top-right */}
           <HotFlamePill
-            top={122}
+            top={122 + mapChromeTopReserve}
             right={10}
             onPress={handleTrendingPillPress}
           />
@@ -11785,7 +11826,7 @@ onDidFinishLoadingMap={() => {
           <View
             pointerEvents="box-none"
             onLayout={handleInterestRailLayout}
-            style={styles.interestPillsContainer}
+            style={[styles.interestPillsContainer, { top: 170 + mapChromeTopReserve }]}
           >
             <InterestFilterPills availableHeight={interestRailLayout.height || undefined} />
           </View>
@@ -11809,15 +11850,18 @@ onDidFinishLoadingMap={() => {
           onPress={handleRecenterPress}
           disabled={!location} 
           rightOffset={sideControlRightOffset}
+          bottomOffset={floatingNavLift}
         />
       )}
 
       <ContextualCheckInControl
         enabled={Boolean(!isCalloutOpen)}
         rightOffset={sideControlRightOffset}
+        bottomOffset={floatingNavLift}
       />
       <FriendEventsMapToggle
-        hidden={Boolean(isCalloutOpen)}
+          hidden={Boolean(isCalloutOpen)}
+          bottomOffset={floatingNavLift}
         onOpenExternal={(activity) => {
           const group = externalFriendPlaces.find(
             (candidate) => candidate.locationKey === activity.venueLocationKey
@@ -12207,6 +12251,65 @@ Owner: Map UX stability on Android • Last validated: 2025-09-04
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  floatingMapHeader: {
+    position: 'absolute',
+    left: 16,
+    right: 16,
+    height: 44,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    zIndex: 28,
+    elevation: 28,
+  },
+  floatingSearchButton: {
+    height: 42,
+    minWidth: 112,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingHorizontal: 14,
+    borderRadius: 24,
+    backgroundColor: 'rgba(255,255,255,0.96)',
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  floatingSearchText: { color: '#202124', fontSize: 15, fontWeight: '600' },
+  floatingBrandPill: {
+    position: 'absolute',
+    left: '50%',
+    width: 116,
+    height: 44,
+    marginLeft: -58,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 24,
+    backgroundColor: '#1E90FF',
+    overflow: 'hidden',
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.22,
+    shadowRadius: 8,
+    elevation: 7,
+  },
+  floatingBrandLogo: { width: 110, height: 72 },
+  floatingSettingsButton: {
+    width: 42,
+    height: 42,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 22,
+    backgroundColor: 'rgba(255,255,255,0.96)',
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 6,
   },
   map: {
     flex: 1,

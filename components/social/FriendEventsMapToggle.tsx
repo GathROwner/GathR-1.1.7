@@ -118,9 +118,11 @@ DestinationCard.displayName = 'DestinationCard';
 export default function FriendEventsMapToggle({
   hidden = false,
   onOpenExternal,
+  bottomOffset = 0,
 }: {
   hidden?: boolean;
   onOpenExternal?: (activity: FriendActivityProjection) => void;
+  bottomOffset?: number;
 }) {
   const isFocused = useIsFocused();
   const activity = useSocialStore((state) => state.activity);
@@ -204,7 +206,7 @@ export default function FriendEventsMapToggle({
             void Haptics.selectionAsync().catch(() => undefined);
             setOpen(true);
           }}
-          style={styles.pill}
+          style={[styles.pill, { bottom: 136 + bottomOffset }]}
         >
           <Ionicons name="people" size={18} color="#FFFFFF" />
           <View style={styles.placeCountBadge}>
@@ -214,7 +216,7 @@ export default function FriendEventsMapToggle({
       )}
 
       {open && (
-        <View style={styles.carouselShell}>
+        <View style={[styles.carouselShell, { bottom: 90 + bottomOffset }]}>
           <View style={styles.carouselHeader}>
             <View style={styles.headerTitleRow}>
               <View style={styles.headerLiveDot} />
