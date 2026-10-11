@@ -53,7 +53,7 @@ import { isFriendEventDetailPath } from '../../utils/friendEventLightbox';
 // Import components
 import FilterPills from '../../components/map/FilterPills';
 import FloatingMapSearchHeader from '../../components/map/FloatingMapSearchHeader';
-import StatusBarBlur from '../../components/common/StatusBarBlur';
+import EdgeBlur from '../../components/common/EdgeBlur';
 import MapLegend, {
   type MapLightPreset,
   type MapPerspective,
@@ -3259,6 +3259,9 @@ useEffect(() => {
   const floatingHeaderTop = (getDefaultHeaderHeight(windowDimensions, false, safeAreaInsets.top)
     + safeAreaInsets.top - 44) / 2;
   const mapChromeTopReserve = floatingHeaderTop + 34;
+  // One continuous fade behind the controls and status icons. Keep the
+  // strongest portion inside the status area and taper below the 44pt row.
+  const mapTopFadeHeight = floatingHeaderTop + 44 + 6;
   const floatingSideControlLift = 100;
   const floatingDockBottomOffset = getTabDockBottom(Platform.OS, safeAreaInsets.bottom);
   const mapboxOrnamentBottomOffset = floatingDockBottomOffset + TAB_DOCK_HEIGHT + 8;
@@ -11676,7 +11679,15 @@ onDidFinishLoadingMap={() => {
       )}
       {/* Android's Mapbox texture cannot be sampled by a view blur. Preserve
           the map beneath a translucent tint there; iOS uses the native blur. */}
-      {isFocused && !profileButtonHighlighted && <StatusBarBlur androidBlurEnabled={false} />}
+      {isFocused && !profileButtonHighlighted && (
+        <View pointerEvents="none" style={{
+          position: 'absolute', top: 0, left: 0, right: 0,
+          height: mapTopFadeHeight, zIndex: 20, elevation: 20,
+        }}>
+          <EdgeBlur edge="top" androidBlurEnabled={false}
+            topFadeStart={safeAreaInsets.top * 0.6 / mapTopFadeHeight} />
+        </View>
+      )}
 
       {activeMapExperienceEvent && (
         <Pressable

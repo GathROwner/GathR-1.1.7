@@ -4,8 +4,8 @@ import MaskedView from '@react-native-masked-view/masked-view';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 
-export default function EdgeBlur({ edge, androidBlurEnabled = true }: {
-  edge: 'top' | 'bottom'; androidBlurEnabled?: boolean;
+export default function EdgeBlur({ edge, androidBlurEnabled = true, topFadeStart = 0.6 }: {
+  edge: 'top' | 'bottom'; androidBlurEnabled?: boolean; topFadeStart?: number;
 }) {
   const top = edge === 'top';
   const [reduceTransparency, setReduceTransparency] = useState(false);
@@ -21,7 +21,7 @@ export default function EdgeBlur({ edge, androidBlurEnabled = true }: {
     <MaskedView androidRenderingMode="software" style={StyleSheet.absoluteFill} maskElement={
       <LinearGradient style={StyleSheet.absoluteFill}
         colors={top ? ['black', 'black', 'transparent'] : ['transparent', 'black', 'black']}
-        locations={top ? [0, 0.6, 1] : [0, 0.7, 1]} />
+        locations={top ? [0, topFadeStart, 1] : [0, 0.7, 1]} />
     }>
       {reduceTransparency ? <View style={[StyleSheet.absoluteFill, { backgroundColor: '#F2F3F5' }]} /> : (
         <>
