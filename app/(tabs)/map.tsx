@@ -11676,7 +11676,7 @@ onDidFinishLoadingMap={() => {
       )}
       {/* Android's Mapbox texture cannot be sampled by a view blur. Preserve
           the map beneath a translucent tint there; iOS uses the native blur. */}
-      {isFocused && !profileButtonHighlighted && <StatusBarBlur tint="light" androidBlurEnabled={false} />}
+      {isFocused && !profileButtonHighlighted && <StatusBarBlur androidBlurEnabled={false} />}
 
       {activeMapExperienceEvent && (
         <Pressable

@@ -3,6 +3,7 @@
 import { Tabs } from 'expo-router';
 import { FeedChromeProvider, useFeedChrome } from '../../contexts/FeedChromeContext';
 import SlidingFeedHeader from '../../components/common/SlidingFeedHeader';
+import ScrollingTabBar from '../../components/common/ScrollingTabBar';
 import { TouchableOpacity, View, TextInput, Text, Image, InteractionManager, Pressable, Platform, Dimensions, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useRouter } from 'expo-router';
@@ -699,7 +700,7 @@ function TabNavigator() {
   }, [navigation]);
 
   return (
-    <Tabs screenOptions={({ route }) => ({
+    <Tabs tabBar={(props) => <ScrollingTabBar {...props} />} screenOptions={({ route }) => ({
       headerRight: () => (
         !isHeaderSearchActive ? (
           <View

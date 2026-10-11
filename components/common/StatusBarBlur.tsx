@@ -1,31 +1,15 @@
-import React, { useEffect, useState } from 'react';
-import { AccessibilityInfo, StyleSheet, View } from 'react-native';
-import { BlurView } from 'expo-blur';
+import React from 'react';
+import { StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import EdgeBlur from './EdgeBlur';
 
-export default function StatusBarBlur({ tint = 'dark', androidBlurEnabled = true, children }: {
-  tint?: 'light' | 'dark'; androidBlurEnabled?: boolean; children?: React.ReactNode;
+export default function StatusBarBlur({ androidBlurEnabled = true, children }: {
+  androidBlurEnabled?: boolean; children?: React.ReactNode;
 }) {
   const { top } = useSafeAreaInsets();
-  const [reduceTransparency, setReduceTransparency] = useState(false);
-  useEffect(() => {
-    let mounted = true;
-    AccessibilityInfo.isReduceTransparencyEnabled().then((enabled) => {
-      if (mounted) setReduceTransparency(enabled);
-    });
-    const subscription = AccessibilityInfo.addEventListener('reduceTransparencyChanged', setReduceTransparency);
-    return () => { mounted = false; subscription.remove(); };
-  }, []);
-
   return (
     <View pointerEvents="none" style={[styles.container, { height: top }]}>
-      {reduceTransparency ? (
-        <View style={[StyleSheet.absoluteFill, { backgroundColor: tint === 'dark' ? '#0B0D10' : '#F2F3F5' }]} />
-      ) : (
-        <BlurView intensity={35} tint={tint}
-          experimentalBlurMethod={androidBlurEnabled ? 'dimezisBlurView' : 'none'}
-          style={StyleSheet.absoluteFill} />
-      )}
+      <EdgeBlur edge="top" androidBlurEnabled={androidBlurEnabled} />
       {children}
     </View>
   );

@@ -14,7 +14,7 @@ it('honors Reduce Transparency and responds when the user changes it', async () 
     { remove } as unknown as ReturnType<typeof AccessibilityInfo.addEventListener>,
   );
   let tree!: renderer.ReactTestRenderer;
-  await act(async () => { tree = renderer.create(<StatusBarBlur tint="light" />); });
+  await act(async () => { tree = renderer.create(<StatusBarBlur />); });
   const changed = subscribe.mock.calls[0][1] as unknown as (enabled: boolean) => void;
   expect(tree.root.findAllByType(BlurView)).toHaveLength(0);
   act(() => changed(false));
