@@ -11137,7 +11137,11 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
         style={styles.map}
         styleURL={mapStyleChoice === 'current' ? GATHR_MAPBOX_STYLE_URL : GATHR_MAPBOX_STANDARD_STYLE_URL}
         scaleBarEnabled={true}
-        logoPosition={{ bottom: mapboxBrandingBottomOffset, left: 0 }}
+        logoPosition={{
+          bottom: mapboxBrandingBottomOffset,
+          // Center Mapbox's 21-point circle beneath the 24-point globe, inset 10.
+          left: 11.5,
+        }}
         attributionPosition={{ bottom: mapboxBrandingBottomOffset, right: mapboxAttributionRightOffset }}
         scaleBarPosition={
           // iOS stacks ornaments sharing a corner, ignoring the scale's bottom
@@ -13280,7 +13284,7 @@ countText: {
   },
   mapLogoContainer: {
     position: 'absolute',
-    left: 0,
+    left: 10,
     bottom: 34, // sits just above the Mapbox logo area
     zIndex: 6,
   },
@@ -13296,10 +13300,9 @@ countText: {
     elevation: 200,
   },
   mapLogo: {
-    // Match the Mapbox circle's 21-point diameter and left-edge centerline.
-    width: 21,
-    height: 21,
-    borderRadius: 10.5,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.25,
