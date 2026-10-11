@@ -10,7 +10,7 @@ describe('getEventLightboxLayout', () => {
       panelTop: 59,
       panelBottom: 83,
       panelHeight: 732,
-      imageHeight: 305.9,
+      imageHeight: expect.closeTo(275.31, 2),
       descriptionMinHeight: 114,
     });
   });
@@ -68,7 +68,7 @@ describe('getEventLightboxLayout', () => {
       panelTop: 0,
       panelBottom: 34,
       panelHeight: 840,
-      imageHeight: 349.6,
+      imageHeight: expect.closeTo(314.64, 2),
       descriptionMinHeight: 114,
     });
   });

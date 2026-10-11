@@ -78,4 +78,16 @@ describe('EventTimingSummaryText', () => {
 
     act(() => component!.unmount());
   });
+
+  it('retains estimated endpoint disclosure when a surface hides the repeated status prefix', () => {
+    let component: renderer.ReactTestRenderer;
+    act(() => {
+      component = renderer.create(<EventTimingSummaryText event={estimatedEndEvent()} showStatusPrefix={false} />);
+    });
+    const endInfo = component!.root.findByProps({ testID: 'estimated-end-info' });
+    expect(endInfo.props.accessibilityLabel).toBe('Explain estimated end time');
+    act(() => endInfo.props.onPress({ stopPropagation: jest.fn() }));
+    expect(component!.root.findByProps({ testID: 'estimated-time-disclosure' })).toBeTruthy();
+    act(() => component!.unmount());
+  });
 });

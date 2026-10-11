@@ -26,6 +26,7 @@ interface EventTimingSummaryTextProps {
   onInfoPress?: () => void;
   infoColor?: string;
   showInfoMarker?: boolean;
+  showStatusPrefix?: boolean;
 }
 
 /**
@@ -44,6 +45,7 @@ export function EventTimingSummaryText({
   onInfoPress,
   infoColor = '#267DBD',
   showInfoMarker = true,
+  showStatusPrefix = true,
 }: EventTimingSummaryTextProps) {
   const [expanded, setExpanded] = useState(false);
   const parts = getEventTimeRangeParts(event);
@@ -81,7 +83,7 @@ export function EventTimingSummaryText({
         adjustsFontSizeToFit={adjustsFontSizeToFit}
         minimumFontScale={minimumFontScale}
       >
-        {summaryPrefix}{parts.prefix}{parts.start}
+        {showStatusPrefix ? summaryPrefix : ''}{parts.prefix}{parts.start}
         {showInfoMarker && parts.startEstimated ? (
           <Text
             accessibilityRole="button"

@@ -14,6 +14,8 @@ import {
   Easing,
   Modal,
   StatusBar,
+  LayoutAnimation,
+  UIManager,
   useWindowDimensions,
 } from 'react-native';
 import { useReduceMotion } from '../../hooks/useReduceMotion';
@@ -101,6 +103,7 @@ import { inviteToFriendEvent, respondToFriendEvent } from '../../services/social
 import type { FriendEventRsvp } from '../../types/social';
 import { getEventLightboxLayout } from '../../utils/eventLightboxLayout';
 import { formatLightboxAddress } from '../../utils/lightboxAddress';
+import { initialLightboxReadingState, reduceLightboxReadingMode, type LightboxReadingAction } from '../../utils/lightboxReadingMode';
 
 // Store imports for like/share functionality
 import * as userService from '../../services/userService';
@@ -290,6 +293,9 @@ const EventImageLightbox: React.FC<EventImageLightboxProps> = ({
     || venue?.venue?.trim()
     || '';
   const headerAddress = scopedLocationSummary ? '' : formatLightboxAddress(updatedEvent.address);
+  const titleParts = updatedEvent.title.length > 55
+    ? updatedEvent.title.match(/^(.+?)\s+(\([^]*\).*)$/)
+    : null;
   const friendEventId = updatedEvent.friendEvent?.eventId || null;
   const friendEventProjection = useSocialStore((state) => (
     friendEventId
@@ -318,9 +324,11 @@ const EventImageLightbox: React.FC<EventImageLightboxProps> = ({
   const friendPresence = getVenueFriendPresence(cluster || null, venue || null);
   const [friendListExpanded, setFriendListExpanded] = useState(false);
   const [timingDisclosureExpanded, setTimingDisclosureExpanded] = useState(false);
+  const [scheduleExpanded, setScheduleExpanded] = useState(false);
 
   useEffect(() => {
     setTimingDisclosureExpanded(false);
+    setScheduleExpanded(false);
   }, [updatedEvent.id]);
   const [routeActionBusy, setRouteActionBusy] = useState(false);
   const routeActionInFlightRef = useRef(false);
@@ -587,15 +595,56 @@ try {
   // (read-more removed; description is now scrollable)
 
 // --- description scroll state for fade/affordance ---
-const [descLayoutHeight, setDescLayoutHeight] = useState(0);
 const [descCanScroll, setDescCanScroll] = useState(false);
 const [descAtEnd, setDescAtEnd] = useState(true);
 const [descAtTop, setDescAtTop] = useState(true);
+const descMetrics = useRef({ height: 0, contentHeight: 0, y: 0 });
+const readingState = useRef(initialLightboxReadingState);
+const [readingMode, setReadingMode] = useState(false);
+
+  useEffect(() => {
+    if (Platform.OS === 'android' && !('nativeFabricUIManager' in globalThis)) {
+      UIManager.setLayoutAnimationEnabledExperimental?.(true);
+    }
+  }, []);
+
+  const animateDetails = () => {
+    if (!isReduceMotionEnabled) LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+  };
+
+  const applyReadingAction = (action: LightboxReadingAction) => {
+    const previous = readingState.current;
+    const next = reduceLightboxReadingMode(previous, action);
+    readingState.current = next;
+    if (next.reading !== previous.reading) {
+      animateDetails();
+      setReadingMode(next.reading);
+      if (next.reading) {
+        setTimingDisclosureExpanded(false);
+        setScheduleExpanded(false);
+      }
+    }
+  };
+
+  const updateDescriptionFades = () => {
+    const { height, contentHeight, y } = descMetrics.current;
+    setDescCanScroll(contentHeight > height + 4);
+    setDescAtEnd(y + height >= contentHeight - 4);
+    setDescAtTop(y <= 4);
+  };
 
 
   // Gesture-handler setup: scroll in description; swipe-to-close elsewhere
   const titleScrollRef = useRef(null);
-  const descriptionScrollRef = useRef(null);
+  const descriptionScrollRef = useRef<React.ElementRef<typeof GestureScrollView>>(null);
+
+  useEffect(() => {
+    readingState.current = initialLightboxReadingState;
+    setReadingMode(false);
+    descMetrics.current.y = 0;
+    setDescAtTop(true);
+    descriptionScrollRef.current?.scrollTo({ y: 0, animated: false });
+  }, [updatedEvent.id]);
 
   const onPanGestureEvent = useRef(
     Animated.event(
@@ -1782,7 +1831,6 @@ const handleNonTicketAction = () => {
         <View style={styles.eventHeading}>
           <GestureScrollView
             ref={titleScrollRef}
-            horizontal
             nestedScrollEnabled
             bounces={false}
             showsHorizontalScrollIndicator={false}
@@ -1790,14 +1838,15 @@ const handleNonTicketAction = () => {
             style={styles.titleScroll}
             contentContainerStyle={styles.titleScrollContent}
           >
-            <Text style={styles.title} numberOfLines={1} accessibilityLabel={updatedEvent.title}>
-              {updatedEvent.title}
+            <Text style={styles.title} accessibilityRole="header" accessibilityLabel={updatedEvent.title}>
+              {titleParts?.[1] || updatedEvent.title}
             </Text>
+            {titleParts && <Text style={styles.titleSubtitle}>{titleParts[2]}</Text>}
           </GestureScrollView>
         </View>
 
         {/* Status badges */}
-        <View style={styles.badgeContainer}>
+        {!readingMode && <View style={styles.badgeContainer}>
           {isHappeningNow && (
             <View style={styles.nowBadge}>
               <Text style={styles.badgeText}>Now</Text>
@@ -1869,7 +1918,7 @@ const handleNonTicketAction = () => {
               style={styles.ticketCtaPill}
             />
           )}
-        </View>
+        </View>}
 
         {isPrivateFriendEvent && (
           <View style={styles.privateEventContext}>
@@ -2003,24 +2052,56 @@ const handleNonTicketAction = () => {
         )}
 
         {/* Essential event information */}
-        <View style={styles.infoContainer}>
+        {readingMode ? (
+          <TouchableOpacity
+            testID="event-lightbox-restore-details"
+            accessibilityRole="button"
+            accessibilityLabel="Show event categories and timing"
+            accessibilityState={{ expanded: false }}
+            onPress={() => applyReadingAction({ type: 'restore' })}
+            style={styles.restoreDetailsButton}
+          >
+            <MaterialIcons name="format-list-bulleted" size={17} color="#D1D5DB" />
+            <Text style={styles.restoreDetailsText}>Event details</Text>
+            <MaterialIcons name="keyboard-arrow-down" size={21} color="#FFFFFF" />
+          </TouchableOpacity>
+        ) : <View style={styles.infoContainer}>
           <View style={styles.infoRow}>
             <MaterialIcons name="access-time" size={20} color="#FFFFFF" />
             <View style={styles.timingSummaryGroup}>
               <EventTimingSummaryText
                 event={updatedEvent}
-                suffix={endDateSuffix}
                 style={[styles.infoText, styles.timingSummaryLabel]}
                 containerStyle={styles.timingSummaryText}
                 showInfoMarker={false}
+                showStatusPrefix={!isHappeningNow}
               />
+              {(scheduleContext || endDateSuffix) && (
+                <TouchableOpacity
+                  accessibilityLabel={scheduleExpanded ? 'Hide schedule details' : 'Show schedule details'}
+                  accessibilityRole="button"
+                  accessibilityState={{ expanded: scheduleExpanded }}
+                  onPress={() => {
+                    animateDetails();
+                    setScheduleExpanded((value) => !value);
+                    setTimingDisclosureExpanded(false);
+                  }}
+                  style={styles.timingInfoButton}
+                  testID="event-schedule-toggle"
+                >
+                  <MaterialIcons name={scheduleExpanded ? 'keyboard-arrow-up' : 'keyboard-arrow-down'} size={22} color="#D1D5DB" />
+                </TouchableOpacity>
+              )}
               {!isPrivateFriendEvent ? (
                 <TouchableOpacity
                   accessibilityLabel={timingDisclosureExpanded ? 'Hide time details' : 'Explain event time'}
                   accessibilityRole="button"
                   accessibilityState={{ expanded: timingDisclosureExpanded }}
-                  hitSlop={{ top: 8, right: 8, bottom: 8, left: 8 }}
-                  onPress={() => setTimingDisclosureExpanded((value) => !value)}
+                  onPress={() => {
+                    animateDetails();
+                    setTimingDisclosureExpanded((value) => !value);
+                    setScheduleExpanded(false);
+                  }}
                   style={styles.timingInfoButton}
                   testID="event-time-info-button"
                 >
@@ -2036,11 +2117,16 @@ const handleNonTicketAction = () => {
             />
           </View>
 
-          <EventSeriesContextLine
-            event={updatedEvent}
-            tone="dark"
-            containerStyle={styles.seriesContextLine}
-          />
+          {scheduleExpanded && (
+            <View testID="event-schedule-details" style={styles.scheduleDetails}>
+              {scheduleContext ? <EventSeriesContextLine
+                event={updatedEvent}
+                tone="dark"
+                numberOfLines={3}
+                containerStyle={styles.seriesContextLine}
+              /> : <Text style={styles.scheduleDetailsText}>{endDateSuffix.replace(/^ • /, '')}</Text>}
+            </View>
+          )}
 
           {!isPrivateFriendEvent && timingDisclosureExpanded && (
             <View style={styles.timingDisclosureContainer}>
@@ -2056,7 +2142,7 @@ const handleNonTicketAction = () => {
             </View>
           )}
 
-        </View>
+        </View>}
 
         {/* Description — fixed flexible area; scrolls internally for long copy */}
 <View
@@ -2077,21 +2163,22 @@ const handleNonTicketAction = () => {
     scrollEventThrottle={16}
     accessibilityHint="Scrollable description. Swipe up to read more."
     onLayout={(e) => {
-      const h = e.nativeEvent.layout.height;
-      setDescLayoutHeight(h);
+      descMetrics.current.height = e.nativeEvent.layout.height;
+      updateDescriptionFades();
     }}
     onContentSizeChange={(_, h) => {
-      const can = h > descLayoutHeight;
-      setDescCanScroll(can);
-      setDescAtEnd(!can || h <= descLayoutHeight);
-      setDescAtTop(true);
+      descMetrics.current.contentHeight = h;
+      updateDescriptionFades();
     }}
+    onScrollBeginDrag={(e) => applyReadingAction({ type: 'begin', y: e.nativeEvent.contentOffset.y })}
+    onScrollEndDrag={() => applyReadingAction({ type: 'end' })}
+    onMomentumScrollBegin={() => applyReadingAction({ type: 'momentum' })}
+    onMomentumScrollEnd={() => applyReadingAction({ type: 'end' })}
     onScroll={(e) => {
       const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
-      const atEnd = contentOffset.y + layoutMeasurement.height >= contentSize.height - 4;
-      const atTop = contentOffset.y <= 4;
-      setDescAtEnd(atEnd);
-      setDescAtTop(atTop);
+      descMetrics.current = { height: layoutMeasurement.height, contentHeight: contentSize.height, y: contentOffset.y };
+      updateDescriptionFades();
+      applyReadingAction({ type: 'scroll', y: contentOffset.y, canScroll: contentSize.height > layoutMeasurement.height + 4 });
     }}
   >
     <GuestLimitedContent 
@@ -2278,14 +2365,14 @@ const handleNonTicketAction = () => {
             activeOpacity={0.8}
           >
             <View style={styles.viewVenueContent}>
-              <MaterialIcons name="store" size={20} color="#1976D2" />
+              <MaterialIcons name="store" size={20} color="#62B5FF" />
               <View style={styles.viewVenueTextContainer}>
-                <Text style={styles.viewVenueLabel}>View all events at</Text>
+                <Text style={styles.viewVenueLabel}>More at</Text>
                 <Text style={styles.viewVenueName} numberOfLines={1}>
                   {venue.venue}
                 </Text>
               </View>
-              <MaterialIcons name="chevron-right" size={24} color="#1976D2" />
+              <MaterialIcons name="chevron-right" size={24} color="#62B5FF" />
             </View>
           </TouchableOpacity>
         )}
@@ -2552,12 +2639,14 @@ const styles = StyleSheet.create({
   },
   eventHeading: {
     paddingHorizontal: 16,
-    paddingTop: 10,
-    paddingBottom: 2,
+    paddingTop: 12,
+    paddingBottom: 8,
+    backgroundColor: '#2C2F33',
     flexShrink: 0,
   },
   titleScroll: {
     maxWidth: '100%',
+    maxHeight: 136,
     flexGrow: 0,
     flexShrink: 1,
   },
@@ -2565,11 +2654,17 @@ const styles = StyleSheet.create({
     paddingRight: 4,
   },
   title: {
-    fontSize: 18,
-    lineHeight: 24,
+    fontSize: 24,
+    lineHeight: 29,
     fontWeight: 'bold',
     color: '#FFFFFF',
     flexShrink: 0,
+  },
+  titleSubtitle: {
+    color: '#E5E7EB',
+    fontSize: 14,
+    lineHeight: 19,
+    marginTop: 3,
   },
   closeButton: {
     width: 44,
@@ -2802,8 +2897,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     paddingHorizontal: 16,
-    paddingTop: 8,
-    paddingBottom: 4,
+    paddingTop: 0,
+    paddingBottom: 2,
+    backgroundColor: '#2C2F33',
+    flexShrink: 0,
   },
   nowBadge: {
     backgroundColor: '#34A853',
@@ -3183,9 +3280,9 @@ const styles = StyleSheet.create({
   lightboxFriendPresenceMessage: { color: '#6941C6', fontSize: 10.5 },
   infoContainer: {
     paddingHorizontal: 16,
-    paddingTop: 8,
-    paddingBottom: 8,
-    gap: 6,
+    paddingVertical: 2,
+    flexShrink: 0,
+    gap: 2,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: 'rgba(255, 255, 255, 0.08)',
   },
@@ -3211,7 +3308,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   timingSummaryText: {
-    flex: 0,
+    flex: 1,
     flexShrink: 1,
     minWidth: 0,
   },
@@ -3221,15 +3318,37 @@ const styles = StyleSheet.create({
     flexShrink: 1,
   },
   timingInfoButton: {
-    width: 28,
-    height: 28,
-    marginLeft: 2,
+    width: 44,
+    height: 44,
     alignItems: 'center',
     justifyContent: 'center',
   },
   seriesContextLine: {
-    marginLeft: 4,
-    marginTop: -2,
+    marginLeft: 0,
+  },
+  scheduleDetails: {
+    paddingLeft: 26,
+    paddingBottom: 8,
+  },
+  scheduleDetailsText: {
+    color: '#BFC5CD',
+    fontSize: 12,
+    lineHeight: 17,
+  },
+  restoreDetailsButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    minHeight: 44,
+    flexShrink: 0,
+    paddingHorizontal: 16,
+    gap: 8,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: 'rgba(255,255,255,0.08)',
+  },
+  restoreDetailsText: {
+    flex: 1,
+    color: '#E5E7EB',
+    fontSize: 13,
   },
   timingDisclosureContainer: {
     marginLeft: 26,
@@ -3299,15 +3418,18 @@ description: {
   flexDirection: 'row',
   justifyContent: 'space-around',
   alignItems: 'center',
-  paddingVertical: 2,
+  paddingVertical: 0,
+  flexShrink: 0,
   backgroundColor: '#111111',
 },
 
 
   actionButton: {
+  flexDirection: 'row',
+  gap: 8,
   alignItems: 'center',
   justifyContent: 'center',
-  minHeight: 48,
+  minHeight: 44,
   minWidth: 72,
   paddingHorizontal: 8,
   paddingVertical: 4,
@@ -3351,11 +3473,13 @@ description: {
     color: '#666666',
   },
   viewVenueButton: {
-    backgroundColor: '#FFFFFF',
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(0, 0, 0, 0.1)',
-    paddingVertical: 12,
+    backgroundColor: '#151515',
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: 'rgba(255, 255, 255, 0.12)',
+    paddingVertical: 8,
     paddingHorizontal: 20,
+    minHeight: 48,
+    flexShrink: 0,
   },
   viewVenueContent: {
     flexDirection: 'row',
@@ -3366,14 +3490,14 @@ description: {
     flex: 1,
   },
   viewVenueLabel: {
-    fontSize: 12,
-    color: '#5F6368',
+    fontSize: 11,
+    color: '#BFC5CD',
     marginBottom: 2,
   },
   viewVenueName: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: '600',
-    color: '#1A1A1A',
+    color: '#FFFFFF',
   },
   // Navigation arrow styles for swipe between events
   navArrowLeft: {
