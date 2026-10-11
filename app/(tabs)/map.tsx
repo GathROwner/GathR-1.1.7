@@ -13280,7 +13280,7 @@ countText: {
   },
   mapLogoContainer: {
     position: 'absolute',
-    left: 10,
+    left: 0,
     bottom: 34, // sits just above the Mapbox logo area
     zIndex: 6,
   },
@@ -13296,9 +13296,10 @@ countText: {
     elevation: 200,
   },
   mapLogo: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
+    // Match the Mapbox circle's 21-point diameter and left-edge centerline.
+    width: 21,
+    height: 21,
+    borderRadius: 10.5,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.25,
