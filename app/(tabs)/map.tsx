@@ -3254,7 +3254,11 @@ useEffect(() => {
   const floatingHeaderTop = safeAreaInsets.top + 8;
   const mapChromeTopReserve = safeAreaInsets.top + 56;
   const floatingNavLift = 56;
-  const mapboxOrnamentBottomOffset = Math.max(safeAreaInsets.bottom, 8) + 60 + 2 + 8;
+  const floatingSideControlLift = 100;
+  const floatingDockBottomOffset = Platform.OS === 'ios'
+    ? Math.max(safeAreaInsets.bottom - 24, 4)
+    : Math.max(safeAreaInsets.bottom, 8) + 2;
+  const mapboxOrnamentBottomOffset = floatingDockBottomOffset + 60 + 8;
 
   // Guest limitation hook - only for guests
   const { trackInteraction } = useGuestInteraction();
@@ -11835,14 +11839,14 @@ onDidFinishLoadingMap={() => {
           onPress={handleRecenterPress}
           disabled={!location} 
           rightOffset={sideControlRightOffset}
-          bottomOffset={floatingNavLift}
+          bottomOffset={floatingSideControlLift}
         />
       )}
 
       <ContextualCheckInControl
         enabled={Boolean(!isCalloutOpen)}
         rightOffset={sideControlRightOffset}
-        bottomOffset={floatingNavLift}
+        bottomOffset={floatingSideControlLift}
       />
       <FriendEventsMapToggle
           hidden={Boolean(isCalloutOpen)}

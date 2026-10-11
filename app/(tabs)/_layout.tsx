@@ -552,6 +552,9 @@ export default function TabLayout() {
   const triggerScrollToTop = useMapStore((state) => state.triggerScrollToTop);
   const analytics = useAnalytics(); // RE-ENABLED
   const insets = useSafeAreaInsets();
+  const floatingDockBottom = Platform.OS === 'ios'
+    ? Math.max(insets.bottom - 24, 4)
+    : Math.max(insets.bottom, 8) + 2;
   const androidTabletTabBarBottomPadding = IS_ANDROID_TABLET
     ? Math.max(insets.bottom, ANDROID_TABLET_TASKBAR_RESERVE)
     : 0;
@@ -727,9 +730,9 @@ export default function TabLayout() {
       tabBarStyle: route.name === 'map' && !isHeaderSearchActive
         ? {
             position: 'absolute',
-            left: '8%',
-            right: '8%',
-            bottom: Math.max(insets.bottom, 8) + 2,
+            left: '12%',
+            right: '12%',
+            bottom: floatingDockBottom,
             height: 60,
             paddingBottom: 2,
             paddingTop: 2,
