@@ -14,7 +14,7 @@
  */
 
 import React, { useEffect, useLayoutEffect, useRef, useState, useMemo, useCallback } from 'react';
-import { View, Text, StyleSheet, Animated, Dimensions, PixelRatio, TouchableOpacity, Easing, Keyboard, Pressable, Image, Modal, InteractionManager, GestureResponderEvent, LayoutChangeEvent, StatusBar } from 'react-native';
+import { View, Text, StyleSheet, Animated, Dimensions, PixelRatio, TouchableOpacity, Easing, Pressable, Image, Modal, InteractionManager, GestureResponderEvent, LayoutChangeEvent, StatusBar } from 'react-native';
 import * as Location from 'expo-location';
 import * as Haptics from 'expo-haptics';
 import MapboxGL from '@rnmapbox/maps';
@@ -51,6 +51,7 @@ import { isFriendEventDetailPath } from '../../utils/friendEventLightbox';
 
 // Import components
 import FilterPills from '../../components/map/FilterPills';
+import FloatingMapSearchHeader from '../../components/map/FloatingMapSearchHeader';
 import MapLegend, {
   type MapLightPreset,
   type MapPerspective,
@@ -3364,8 +3365,6 @@ useEffect(() => {
   const setActiveFilterPanel = useMapStore((state) => state.setActiveFilterPanel);
   const closeCalloutTrigger = useMapStore((state) => state.closeCalloutTrigger);
   const triggerCloseCallout = useMapStore((state) => state.triggerCloseCallout);
-  const isHeaderSearchActive = useMapStore((state) => state.isHeaderSearchActive);
-  const setHeaderSearchActive = useMapStore((state) => state.setHeaderSearchActive);
   const profileButtonHighlighted = useTutorialUiStore((state) => state.currentStepId === 'profile-facebook');
   const setTypeFiltersBatch = useMapStore((state) => state.setTypeFiltersBatch);
   const pendingRouteEvent = useMapStore((state) => state.pendingRouteEvent);
@@ -11042,43 +11041,16 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
       style={styles.container}
       onLayout={handleRootLayout}
     >
-      {isFocused && !isHeaderSearchActive && (
+      {isFocused && (
         <StatusBar barStyle="dark-content" backgroundColor="transparent" translucent />
       )}
-      {!isHeaderSearchActive && !profileButtonHighlighted && (
-        <View style={[styles.floatingMapHeader, { top: floatingHeaderTop }]} pointerEvents="box-none">
-          <TouchableOpacity
-            accessibilityRole="button"
-            accessibilityLabel="Search"
-            onPress={() => {
-              analytics.trackUserAction('header_search_activated', {});
-              setHeaderSearchActive(true);
-            }}
-            style={styles.floatingSearchButton}
-          >
-            <Ionicons name="search" size={20} color="#202124" />
-          </TouchableOpacity>
-          <View pointerEvents="none" style={styles.floatingBrandPill}>
-            <Image source={require('../../assets/GathR Text Logo.png')} style={styles.floatingBrandLogo} resizeMode="contain" />
-          </View>
-          <TouchableOpacity
-            accessibilityRole="button"
-            accessibilityLabel="Settings"
-            testID="floating-profile-button"
-            onPress={() => {
-              analytics.trackUserAction('profile_access', { access_method: 'header_button' });
-              router.push('/profile');
-            }}
-            style={styles.floatingSettingsButton}
-          >
-            <Ionicons name="settings-outline" size={20} color="#202124" />
-          </TouchableOpacity>
-        </View>
-      )}
-      {isHeaderSearchActive && (
-        <Pressable
-          onPress={() => { setHeaderSearchActive(false); Keyboard.dismiss(); }}
-          style={[StyleSheet.absoluteFillObject, { zIndex: 9999 }]}
+      {isFocused && !profileButtonHighlighted && (
+        <FloatingMapSearchHeader
+          top={floatingHeaderTop}
+          onSettings={() => {
+            analytics.trackUserAction('profile_access', { access_method: 'header_button' });
+            router.push('/profile');
+          }}
         />
       )}
       {activeFilterPanel && shouldRenderAncillaryOverlays && (
@@ -12267,62 +12239,6 @@ Owner: Map UX stability on Android • Last validated: 2025-09-04
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-  },
-  floatingMapHeader: {
-    position: 'absolute',
-    left: 16,
-    right: 16,
-    height: 44,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    zIndex: 28,
-    elevation: 28,
-  },
-  floatingSearchButton: {
-    width: 40,
-    height: 40,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: 22,
-    backgroundColor: 'rgba(255,255,255,0.96)',
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    elevation: 6,
-  },
-  floatingBrandPill: {
-    position: 'absolute',
-    left: '50%',
-    width: 116,
-    height: 42,
-    marginLeft: -58,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: 24,
-    backgroundColor: '#1E90FF',
-    overflow: 'hidden',
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.22,
-    shadowRadius: 8,
-    elevation: 7,
-  },
-  floatingBrandLogo: { width: 110, height: 72 },
-  floatingSettingsButton: {
-    width: 40,
-    height: 40,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: 22,
-    backgroundColor: 'rgba(255,255,255,0.96)',
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    elevation: 6,
   },
   map: {
     flex: 1,

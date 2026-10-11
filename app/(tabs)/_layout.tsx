@@ -115,7 +115,6 @@ const pauseMapAnimationsForTabHandoff = (targetTab: InstrumentedTabName, isSelec
 const InstrumentedTabBarButton = (props: InstrumentedTabBarButtonProps) => {
   const { children, onPress, onLongPress, targetTab, accessibilityState, 'aria-selected': ariaSelected } = props;
   const isSelected = Boolean(ariaSelected ?? accessibilityState?.selected);
-  const isHeaderSearchActive = useMapStore((state) => state.isHeaderSearchActive);
 
   useEffect(() => {
     if (isSelected) {
@@ -142,7 +141,7 @@ const InstrumentedTabBarButton = (props: InstrumentedTabBarButtonProps) => {
       android_ripple={TAB_PRESS_RIPPLE}
       style={{ flex: 1, position: 'relative' }}
     >
-      {targetTab === 'map' && isSelected && !isHeaderSearchActive && <View pointerEvents="none" style={{ ...StyleSheet.absoluteFillObject, margin: 5, borderRadius: 26, backgroundColor: 'rgba(255,255,255,0.92)' }} />}
+      {targetTab === 'map' && isSelected && <View pointerEvents="none" style={{ ...StyleSheet.absoluteFillObject, margin: 5, borderRadius: 26, backgroundColor: 'rgba(255,255,255,0.92)' }} />}
       <ActiveTabIndicator targetTab={targetTab} visible={isSelected} />
       <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
         {children}
@@ -727,7 +726,7 @@ export default function TabLayout() {
       // but mount them after startup so later tab switches do not pay that cost.
       lazy: !prewarmInactiveTabs,
       freezeOnBlur: Platform.OS === 'android' ? true : false,
-      tabBarStyle: route.name === 'map' && !isHeaderSearchActive
+      tabBarStyle: route.name === 'map'
         ? {
             position: 'absolute',
             start: '12%',
@@ -813,12 +812,12 @@ export default function TabLayout() {
         name="map"
         options={({ route }) => ({
           title: 'Map',
-          headerShown: isHeaderSearchActive || profileButtonHighlighted,
+          headerShown: profileButtonHighlighted,
           headerTitle: () => <HeaderTitle route={route} />,
           tabBarActiveTintColor: '#1E90FF',
-          tabBarInactiveTintColor: isHeaderSearchActive ? '#202124' : 'rgba(255,255,255,0.78)',
-          tabBarLabelStyle: isHeaderSearchActive ? undefined : { fontSize: 10, fontWeight: '600', marginTop: -2 },
-          tabBarIconStyle: isHeaderSearchActive ? undefined : { marginTop: -1 },
+          tabBarInactiveTintColor: 'rgba(255,255,255,0.78)',
+          tabBarLabelStyle: { fontSize: 10, fontWeight: '600', marginTop: -2 },
+          tabBarIconStyle: { marginTop: -1 },
           headerLeft: () => (
             !isHeaderSearchActive ? (
               <TouchableOpacity onPress={handleSearchActivation} style={{ marginLeft: 16 }}>
@@ -852,7 +851,7 @@ export default function TabLayout() {
               </TouchableOpacity>
             ) : null
           ),
-          tabBarIcon: ({ color, focused }) => <Ionicons name={focused ? "map" : "map-outline"} size={isHeaderSearchActive ? 24 : 20} color={color} />,
+          tabBarIcon: ({ color, focused }) => <Ionicons name={focused ? "map" : "map-outline"} size={20} color={color} />,
           tabBarButton: renderMapTabBarButton,
         })}
         listeners={({ navigation }) => ({
