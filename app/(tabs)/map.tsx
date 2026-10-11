@@ -3254,7 +3254,7 @@ useEffect(() => {
   const floatingHeaderTop = safeAreaInsets.top + 8;
   const mapChromeTopReserve = safeAreaInsets.top + 56;
   const floatingNavLift = 56;
-  const mapboxOrnamentBottomOffset = Math.max(safeAreaInsets.bottom, 8) + 60 + 10 + 16;
+  const mapboxOrnamentBottomOffset = Math.max(safeAreaInsets.bottom, 8) + 60 + 2 + 8;
 
   // Guest limitation hook - only for guests
   const { trackInteraction } = useGuestInteraction();
@@ -11041,8 +11041,7 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
             }}
             style={styles.floatingSearchButton}
           >
-            <Ionicons name="search" size={18} color="#202124" />
-            <Text style={styles.floatingSearchText}>Search</Text>
+            <Ionicons name="search" size={20} color="#202124" />
           </TouchableOpacity>
           <View pointerEvents="none" style={styles.floatingBrandPill}>
             <Image source={require('../../assets/GathR Text Logo.png')} style={styles.floatingBrandLogo} resizeMode="contain" />
@@ -11057,7 +11056,7 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
             }}
             style={styles.floatingSettingsButton}
           >
-            <Ionicons name="settings-outline" size={23} color="#202124" />
+            <Ionicons name="settings-outline" size={20} color="#202124" />
           </TouchableOpacity>
         </View>
       )}
@@ -11123,20 +11122,12 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
         style={styles.map}
         styleURL={mapStyleChoice === 'current' ? GATHR_MAPBOX_STYLE_URL : GATHR_MAPBOX_STANDARD_STYLE_URL}
         scaleBarEnabled={true}
-        logoPosition={{ bottom: mapboxOrnamentBottomOffset, left: 8 }}
+        logoPosition={{ bottom: mapboxOrnamentBottomOffset, left: 38 }}
         attributionPosition={{ bottom: mapboxOrnamentBottomOffset, right: 8 }}
-        scaleBarPosition={
-          mapDimensions?.height
-            ? {
-                // Keep the scale bar visible above the floating navigation dock.
-                top: Math.max(0, Math.round(mapDimensions.height - mapboxOrnamentBottomOffset - 16)),
-                left: Math.round((Dimensions.get('window').width / 2) - 50),
-            }
-            : {
-                bottom: mapboxOrnamentBottomOffset + 16,
-                left: Math.round((Dimensions.get('window').width / 2) - 50),
-              }
-        }
+        scaleBarPosition={{
+          bottom: mapboxOrnamentBottomOffset,
+          left: Math.round((Dimensions.get('window').width / 2) - 50),
+        }}
         surfaceView={Platform.OS === 'android' ? false : undefined}
 onLayout={(event) => {
   const { width, height, x, y } = event.nativeEvent.layout;
@@ -11784,7 +11775,7 @@ onDidFinishLoadingMap={() => {
 
       {/* Keep the app's globe mark visible above Mapbox's required attribution. */}
       {!MAP_TRACE_UI_ENABLED && (
-        <View style={[styles.mapLogoContainer, { bottom: mapboxOrnamentBottomOffset + 22 }]} pointerEvents="none">
+        <View style={[styles.mapLogoContainer, { bottom: mapboxOrnamentBottomOffset }]} pointerEvents="none">
           <Image
             source={require('../../assets/images/icon.png')}
             style={styles.mapLogo}
@@ -12258,14 +12249,12 @@ const styles = StyleSheet.create({
     elevation: 28,
   },
   floatingSearchButton: {
-    height: 42,
-    minWidth: 112,
+    width: 40,
+    height: 40,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
-    paddingHorizontal: 14,
-    borderRadius: 24,
+    borderRadius: 22,
     backgroundColor: 'rgba(255,255,255,0.96)',
     shadowColor: '#000000',
     shadowOffset: { width: 0, height: 3 },
@@ -12273,12 +12262,11 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 6,
   },
-  floatingSearchText: { color: '#202124', fontSize: 15, fontWeight: '600' },
   floatingBrandPill: {
     position: 'absolute',
     left: '50%',
     width: 116,
-    height: 44,
+    height: 42,
     marginLeft: -58,
     alignItems: 'center',
     justifyContent: 'center',
@@ -12293,8 +12281,8 @@ const styles = StyleSheet.create({
   },
   floatingBrandLogo: { width: 110, height: 72 },
   floatingSettingsButton: {
-    width: 42,
-    height: 42,
+    width: 40,
+    height: 40,
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: 22,
