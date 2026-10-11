@@ -1,10 +1,12 @@
 import React from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View, type DimensionValue } from 'react-native';
 
 export type CalloutModalTabTarget = 'events' | 'map' | 'specials';
 
 interface CalloutModalTabBarTouchLayerProps {
   height: number;
+  bottomOffset?: number;
+  edgeInset?: DimensionValue;
   onSelect: (target: CalloutModalTabTarget) => void;
 }
 
@@ -12,12 +14,14 @@ const TAB_TARGETS: readonly CalloutModalTabTarget[] = ['events', 'map', 'special
 
 export default function CalloutModalTabBarTouchLayer({
   height,
+  bottomOffset = 0,
+  edgeInset = 0,
   onSelect,
 }: CalloutModalTabBarTouchLayerProps) {
   return (
     <View
       pointerEvents="auto"
-      style={[styles.container, { height }]}
+      style={[styles.container, { height, bottom: bottomOffset, left: edgeInset, right: edgeInset }]}
       testID="callout-modal-tab-touch-layer"
     >
       {TAB_TARGETS.map((target) => (

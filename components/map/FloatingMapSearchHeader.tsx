@@ -84,21 +84,24 @@ export default function FloatingMapSearchHeader({ top, onSettings }: Props) {
         {!active && (
           <>
             <TouchableOpacity accessibilityRole="button" accessibilityLabel="Search"
-              testID="floating-map-search-button" onPress={open} style={styles.circle}>
-              <Ionicons name="search" size={20} color="#202124" />
+              testID="floating-map-search-button" onPress={open} style={styles.circle} hitSlop={4}>
+              <Ionicons name="search" size={18} color="#202124" />
               {hasQuery && <View pointerEvents="none" style={styles.activeDot} />}
             </TouchableOpacity>
             <View pointerEvents="box-none" style={styles.titleSlot}>
               {hasQuery ? (
                 <View style={styles.queryPill} testID="map-search-query-pill">
                   <TouchableOpacity accessibilityRole="button" accessibilityLabel={`Edit search: ${query}`}
-                    onPress={open} style={styles.queryEdit}>
-                    <Ionicons name="search" size={16} color="#FFFFFF" />
+                    onPress={open} style={styles.queryEdit} hitSlop={{ top: 5, bottom: 5 }}>
+                    <Ionicons name="search" size={14} color="#FFFFFF" />
                     <Text style={styles.queryText} numberOfLines={1} ellipsizeMode="tail">{query}</Text>
                   </TouchableOpacity>
                   <TouchableOpacity accessibilityRole="button" accessibilityLabel="Clear search"
-                    testID="map-search-query-clear" onPress={clear} style={styles.queryClear}>
-                    <Ionicons name="close" size={16} color="#FF3B30" />
+                    testID="map-search-query-clear" onPress={clear} style={styles.queryClear}
+                    hitSlop={{ top: 5, bottom: 5 }}>
+                    <View style={styles.queryClearCircle}>
+                      <Ionicons name="close" size={13} color="#E33B38" />
+                    </View>
                   </TouchableOpacity>
                 </View>
               ) : (
@@ -109,19 +112,19 @@ export default function FloatingMapSearchHeader({ top, onSettings }: Props) {
               )}
             </View>
             <TouchableOpacity accessibilityRole="button" accessibilityLabel="Settings"
-              testID="floating-profile-button" onPress={onSettings} style={styles.circle}>
-              <Ionicons name="settings-outline" size={20} color="#202124" />
+              testID="floating-profile-button" onPress={onSettings} style={styles.circle} hitSlop={4}>
+              <Ionicons name="settings-outline" size={18} color="#202124" />
             </TouchableOpacity>
           </>
         )}
         {active && width > 0 && (
           <Animated.View testID="map-search-dock" style={[styles.searchDock, {
-            width: expansion.interpolate({ inputRange: [0, 1], outputRange: [40, width] }),
+            width: expansion.interpolate({ inputRange: [0, 1], outputRange: [36, width] }),
           }]}>
             <View style={styles.searchDockContent}>
             <TouchableOpacity accessibilityRole="button" accessibilityLabel="Cancel search"
               onPress={() => { clear(); close(); }} style={styles.dockButton}>
-              <Ionicons name="arrow-back" size={24} color="#1E90FF" />
+              <Ionicons name="arrow-back" size={22} color="#1E90FF" />
             </TouchableOpacity>
             <TextInput
               ref={input}
@@ -166,45 +169,50 @@ const styles = StyleSheet.create({
   },
   activeHeader: { zIndex: 10000, elevation: 30 },
   circle: {
-    width: 40, height: 40, alignItems: 'center', justifyContent: 'center',
-    borderRadius: 22, backgroundColor: 'rgba(255,255,255,0.96)',
+    width: 36, height: 36, alignItems: 'center', justifyContent: 'center',
+    borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.96)',
     shadowColor: '#000000', shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.2, shadowRadius: 8, elevation: 6,
+    shadowOpacity: 0.16, shadowRadius: 6, elevation: 5,
   },
   activeDot: {
-    position: 'absolute', right: 8, top: 7, width: 7, height: 7,
+    position: 'absolute', right: 6, top: 5, width: 7, height: 7,
     borderRadius: 4, backgroundColor: '#FF6B35', borderWidth: 1, borderColor: '#FFFFFF',
   },
   titleSlot: {
-    position: 'absolute', left: 56, right: 56, height: 44,
+    position: 'absolute', left: 52, right: 52, height: 44,
     alignItems: 'center', justifyContent: 'center',
   },
   brandPill: {
-    width: 116, height: 42, alignItems: 'center', justifyContent: 'center',
-    borderRadius: 24, backgroundColor: '#1E90FF', overflow: 'hidden',
+    width: 108, height: 34, alignItems: 'center', justifyContent: 'center',
+    borderRadius: 18, backgroundColor: '#1E90FF', overflow: 'hidden',
     shadowColor: '#000000', shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.22, shadowRadius: 8, elevation: 7,
+    shadowOpacity: 0.18, shadowRadius: 6, elevation: 5,
   },
-  brandLogo: { width: 110, height: 72 },
+  brandLogo: { width: 100, height: 64 },
   queryPill: {
-    maxWidth: '100%', height: 42, paddingLeft: 12, paddingRight: 4,
-    flexDirection: 'row', alignItems: 'center', borderRadius: 24,
+    maxWidth: '100%', height: 34, paddingLeft: 10, paddingRight: 2,
+    flexDirection: 'row', alignItems: 'center', borderRadius: 18,
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.95)',
     backgroundColor: '#1E90FF', shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.22, shadowRadius: 8, elevation: 7,
+    shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.18, shadowRadius: 6, elevation: 5,
   },
-  queryEdit: { flexDirection: 'row', alignItems: 'center', flexShrink: 1, height: 42 },
-  queryText: { color: '#FFFFFF', fontSize: 14, fontWeight: '700', marginLeft: 6, flexShrink: 1 },
-  queryClear: { width: 32, height: 42, alignItems: 'center', justifyContent: 'center', marginLeft: 2 },
+  queryEdit: { flexDirection: 'row', alignItems: 'center', flexShrink: 1, height: 32 },
+  queryText: { color: '#FFFFFF', fontSize: 13, fontWeight: '600', marginLeft: 6, flexShrink: 1 },
+  queryClear: { width: 32, height: 32, alignItems: 'center', justifyContent: 'center', marginLeft: 2 },
+  queryClearCircle: {
+    width: 20, height: 20, borderRadius: 10,
+    alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.95)',
+  },
   searchDock: {
-    height: 44, flexDirection: 'row', alignItems: 'center',
-    borderRadius: 24, backgroundColor: '#FFFFFF',
+    height: 40, flexDirection: 'row', alignItems: 'center',
+    borderRadius: 20, backgroundColor: '#FFFFFF',
     shadowColor: '#000000', shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.2, shadowRadius: 8, elevation: 6,
   },
   searchDockContent: {
-    width: '100%', height: 44, flexDirection: 'row', alignItems: 'center',
-    borderRadius: 24, overflow: 'hidden',
+    width: '100%', height: 40, flexDirection: 'row', alignItems: 'center',
+    borderRadius: 20, overflow: 'hidden',
   },
-  dockButton: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
-  input: { flex: 1, minWidth: 0, height: 44, paddingVertical: 0, paddingLeft: 4, paddingRight: 12, fontSize: 16, color: '#202124' },
+  dockButton: { width: 44, height: 40, alignItems: 'center', justifyContent: 'center' },
+  input: { flex: 1, minWidth: 0, height: 40, paddingVertical: 0, paddingLeft: 4, paddingRight: 12, fontSize: 15, color: '#202124' },
 });

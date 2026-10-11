@@ -20,9 +20,9 @@ import * as Haptics from 'expo-haptics';
 import MapboxGL from '@rnmapbox/maps';
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import { useIsFocused } from '@react-navigation/native';
-import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Platform } from 'react-native';
+import { getMapDockBottom, MAP_DOCK_EDGE_INSET, MAP_DOCK_HEIGHT } from '../../constants/mapChrome';
 import { usePathname, useRouter } from 'expo-router';
 
 
@@ -3250,15 +3250,12 @@ useEffect(() => {
   const { user } = useAuth(); // Adjust import path as needed
   const isGuest = !user;
   const router = useRouter();
-  const modalTabBarHeight = useBottomTabBarHeight();
   const safeAreaInsets = useSafeAreaInsets();
-  const floatingHeaderTop = safeAreaInsets.top + 8;
-  const mapChromeTopReserve = safeAreaInsets.top + 56;
+  const floatingHeaderTop = safeAreaInsets.top;
+  const mapChromeTopReserve = safeAreaInsets.top + 34;
   const floatingSideControlLift = 100;
-  const floatingDockBottomOffset = Platform.OS === 'ios'
-    ? Math.max(safeAreaInsets.bottom - 24, 4)
-    : Math.max(safeAreaInsets.bottom, 8) + 2;
-  const mapboxOrnamentBottomOffset = floatingDockBottomOffset + 60 + 8;
+  const floatingDockBottomOffset = getMapDockBottom(Platform.OS, safeAreaInsets.bottom);
+  const mapboxOrnamentBottomOffset = floatingDockBottomOffset + MAP_DOCK_HEIGHT + 8;
   // Native iOS ornaments measure from the safe area; React overlays measure
   // from the map edge. Keep both branding corners on the ruler's lower row.
   const mapboxBrandingBottomOffset = Platform.OS === 'ios'
@@ -11021,7 +11018,9 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
           {content}
           <CalloutTutorialOverlayHost />
           <CalloutModalTabBarTouchLayer
-            height={modalTabBarHeight}
+            height={MAP_DOCK_HEIGHT}
+            bottomOffset={floatingDockBottomOffset}
+            edgeInset={MAP_DOCK_EDGE_INSET}
             onSelect={handleCalloutModalTabSelect}
           />
         </View>

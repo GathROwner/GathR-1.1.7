@@ -10,7 +10,7 @@ describe('CalloutModalTabBarTouchLayer', () => {
 
     act(() => {
       component = renderer.create(
-        <CalloutModalTabBarTouchLayer height={82} onSelect={onSelect} />
+        <CalloutModalTabBarTouchLayer height={52} bottomOffset={28} edgeInset="7%" onSelect={onSelect} />
       );
     });
 
@@ -20,7 +20,7 @@ describe('CalloutModalTabBarTouchLayer', () => {
 
     expect(onSelect.mock.calls).toEqual([['events'], ['map'], ['specials']]);
     expect(component!.root.findByProps({ testID: 'callout-modal-tab-touch-layer' }).props.style).toEqual(
-      expect.arrayContaining([expect.objectContaining({ height: 82 })])
+      expect.arrayContaining([expect.objectContaining({ height: 52, bottom: 28, left: '7%', right: '7%' })])
     );
     expect(component!.root.findByProps({ testID: 'callout-modal-tab-touch-layer' }).props.pointerEvents)
       .toBe('auto');

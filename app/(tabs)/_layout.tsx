@@ -22,6 +22,7 @@ import useAnalytics from '../../hooks/useAnalytics';
 import { runAfterTabPaint } from '../../utils/tabFocusEffects';
 import { publishTutorialMeasurement } from '../../utils/tutorialReadiness';
 import { useTutorialUiStore } from '../../store/tutorialUiStore';
+import { getMapDockBottom, MAP_DOCK_EDGE_INSET, MAP_DOCK_HEIGHT } from '../../constants/mapChrome';
 import {
   markTabBarSelected,
   markTabButtonPressReturned,
@@ -141,7 +142,7 @@ const InstrumentedTabBarButton = (props: InstrumentedTabBarButtonProps) => {
       android_ripple={TAB_PRESS_RIPPLE}
       style={{ flex: 1, position: 'relative' }}
     >
-      {targetTab === 'map' && isSelected && <View pointerEvents="none" style={{ ...StyleSheet.absoluteFillObject, margin: 5, borderRadius: 26, backgroundColor: 'rgba(255,255,255,0.92)' }} />}
+      {targetTab === 'map' && isSelected && <View pointerEvents="none" style={{ ...StyleSheet.absoluteFillObject, margin: 5, borderRadius: 22, backgroundColor: 'rgba(255,255,255,0.92)' }} />}
       <ActiveTabIndicator targetTab={targetTab} visible={isSelected} />
       <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
         {children}
@@ -551,9 +552,7 @@ export default function TabLayout() {
   const triggerScrollToTop = useMapStore((state) => state.triggerScrollToTop);
   const analytics = useAnalytics(); // RE-ENABLED
   const insets = useSafeAreaInsets();
-  const floatingDockBottom = Platform.OS === 'ios'
-    ? Math.max(insets.bottom - 24, 4)
-    : Math.max(insets.bottom, 8) + 2;
+  const floatingDockBottom = getMapDockBottom(Platform.OS, insets.bottom);
   const androidTabletTabBarBottomPadding = IS_ANDROID_TABLET
     ? Math.max(insets.bottom, ANDROID_TABLET_TASKBAR_RESERVE)
     : 0;
@@ -729,14 +728,14 @@ export default function TabLayout() {
       tabBarStyle: route.name === 'map'
         ? {
             position: 'absolute',
-            start: '12%',
-            end: '12%',
+            start: MAP_DOCK_EDGE_INSET,
+            end: MAP_DOCK_EDGE_INSET,
             bottom: floatingDockBottom,
-            height: 60,
+            height: MAP_DOCK_HEIGHT,
             paddingBottom: 2,
             paddingTop: 2,
             borderTopWidth: 0,
-            borderRadius: 30,
+            borderRadius: MAP_DOCK_HEIGHT / 2,
             backgroundColor: 'rgba(24, 27, 33, 0.78)',
             shadowColor: '#000000',
             shadowOffset: { width: 0, height: 6 },
