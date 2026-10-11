@@ -730,8 +730,8 @@ export default function TabLayout() {
       tabBarStyle: route.name === 'map' && !isHeaderSearchActive
         ? {
             position: 'absolute',
-            left: '12%',
-            right: '12%',
+            start: '12%',
+            end: '12%',
             bottom: floatingDockBottom,
             height: 60,
             paddingBottom: 2,

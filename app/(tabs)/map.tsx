@@ -11128,7 +11128,15 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
         scaleBarEnabled={true}
         logoPosition={{ bottom: mapboxOrnamentBottomOffset, left: 38 }}
         attributionPosition={{ bottom: mapboxOrnamentBottomOffset, right: 8 }}
-        scaleBarPosition={{
+        scaleBarPosition={
+          // iOS stacks ornaments sharing a corner, ignoring the scale's bottom
+          // margin. A separate top anchor keeps its lower edge above the dock.
+          Platform.OS === 'ios' ? {
+          top: Math.max(0,
+            (mapDimensions?.height ?? Dimensions.get('window').height)
+              - safeAreaInsets.top - mapboxOrnamentBottomOffset - 16),
+          left: Math.round((Dimensions.get('window').width / 2) - 50),
+        } : {
           bottom: mapboxOrnamentBottomOffset,
           left: Math.round((Dimensions.get('window').width / 2) - 50),
         }}
