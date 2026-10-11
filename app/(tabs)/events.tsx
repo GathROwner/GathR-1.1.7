@@ -27,6 +27,8 @@ import { ScrollView as GestureScrollView } from 'react-native-gesture-handler';
 
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { getTabDockContentInset } from '../../constants/tabDock';
 import FallbackImage from '../../components/common/FallbackImage';
 import TicketCtaPill from '../../components/common/TicketCtaPill';
 import EventActionLinkPill from '../../components/common/EventActionLinkPill';
@@ -1345,6 +1347,8 @@ const MemoizedEventListItem = React.memo(EventListItem, (prevProps, nextProps) =
 
 // Main Events Screen component
 function EventsScreen() {
+  const safeAreaInsets = useSafeAreaInsets();
+  const dockContentInset = getTabDockContentInset(Platform.OS, safeAreaInsets.bottom);
   const router = useRouter();
   const pathname = usePathname();
   const isFriendEventDetailRoute = isFriendEventDetailPath(pathname);
@@ -2468,8 +2472,11 @@ setSelectedImageData({ imageUrl, event });
 
   const contentContainerStyleMemo = useMemo(() => [
     styles.listContent,
-    { paddingTop: effectiveHeaderStackHeight + (showBanner ? 35 : 0) + 8 }
-  ], [effectiveHeaderStackHeight, showBanner]);
+    {
+      paddingTop: effectiveHeaderStackHeight + (showBanner ? 35 : 0) + 8,
+      paddingBottom: dockContentInset,
+    }
+  ], [effectiveHeaderStackHeight, showBanner, dockContentInset]);
 
   // Track priority effectiveness
   useEffect(() => {

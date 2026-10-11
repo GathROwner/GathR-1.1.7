@@ -14,15 +14,16 @@
  */
 
 import React, { useEffect, useLayoutEffect, useRef, useState, useMemo, useCallback } from 'react';
-import { View, Text, StyleSheet, Animated, Dimensions, PixelRatio, TouchableOpacity, Easing, Pressable, Image, Modal, InteractionManager, GestureResponderEvent, LayoutChangeEvent, StatusBar } from 'react-native';
+import { View, Text, StyleSheet, Animated, Dimensions, PixelRatio, TouchableOpacity, Easing, Pressable, Image, Modal, InteractionManager, GestureResponderEvent, LayoutChangeEvent, StatusBar, useWindowDimensions } from 'react-native';
 import * as Location from 'expo-location';
 import * as Haptics from 'expo-haptics';
 import MapboxGL from '@rnmapbox/maps';
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import { useIsFocused } from '@react-navigation/native';
+import { getDefaultHeaderHeight } from '@react-navigation/elements';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Platform } from 'react-native';
-import { getMapDockBottom, MAP_DOCK_EDGE_INSET, MAP_DOCK_HEIGHT } from '../../constants/mapChrome';
+import { getTabDockBottom, TAB_DOCK_EDGE_INSET, TAB_DOCK_HEIGHT } from '../../constants/tabDock';
 import { usePathname, useRouter } from 'expo-router';
 
 
@@ -3251,11 +3252,15 @@ useEffect(() => {
   const isGuest = !user;
   const router = useRouter();
   const safeAreaInsets = useSafeAreaInsets();
-  const floatingHeaderTop = safeAreaInsets.top + 4;
+  const windowDimensions = useWindowDimensions();
+  // Center the floating row on the same body as the Events/Specials header,
+  // including React Navigation's Dynamic Island adjustment.
+  const floatingHeaderTop = (getDefaultHeaderHeight(windowDimensions, false, safeAreaInsets.top)
+    + safeAreaInsets.top - 44) / 2;
   const mapChromeTopReserve = floatingHeaderTop + 34;
   const floatingSideControlLift = 100;
-  const floatingDockBottomOffset = getMapDockBottom(Platform.OS, safeAreaInsets.bottom);
-  const mapboxOrnamentBottomOffset = floatingDockBottomOffset + MAP_DOCK_HEIGHT + 8;
+  const floatingDockBottomOffset = getTabDockBottom(Platform.OS, safeAreaInsets.bottom);
+  const mapboxOrnamentBottomOffset = floatingDockBottomOffset + TAB_DOCK_HEIGHT + 8;
   // Native iOS ornaments measure from the safe area; React overlays measure
   // from the map edge. Keep both branding corners on the ruler's lower row.
   const mapboxBrandingBottomOffset = Platform.OS === 'ios'
@@ -11018,9 +11023,9 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
           {content}
           <CalloutTutorialOverlayHost />
           <CalloutModalTabBarTouchLayer
-            height={MAP_DOCK_HEIGHT}
+            height={TAB_DOCK_HEIGHT}
             bottomOffset={floatingDockBottomOffset}
-            edgeInset={MAP_DOCK_EDGE_INSET}
+            edgeInset={TAB_DOCK_EDGE_INSET}
             onSelect={handleCalloutModalTabSelect}
           />
         </View>

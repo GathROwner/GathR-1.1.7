@@ -22,7 +22,7 @@ import useAnalytics from '../../hooks/useAnalytics';
 import { runAfterTabPaint } from '../../utils/tabFocusEffects';
 import { publishTutorialMeasurement } from '../../utils/tutorialReadiness';
 import { useTutorialUiStore } from '../../store/tutorialUiStore';
-import { getMapDockBottom, MAP_DOCK_EDGE_INSET, MAP_DOCK_HEIGHT } from '../../constants/mapChrome';
+import { getTabDockBottom, TAB_DOCK_EDGE_INSET, TAB_DOCK_EDGE_RATIO, TAB_DOCK_HEIGHT } from '../../constants/tabDock';
 import {
   markTabBarSelected,
   markTabButtonPressReturned,
@@ -37,10 +37,6 @@ type InstrumentedTabName = 'events' | 'map' | 'specials';
 const TAB_PRESS_RIPPLE = Platform.OS === 'android'
   ? { color: 'rgba(0, 0, 0, 0.08)', borderless: false }
   : undefined;
-const { width: WINDOW_WIDTH, height: WINDOW_HEIGHT } = Dimensions.get('window');
-const IS_ANDROID_TABLET = Platform.OS === 'android' && Math.min(WINDOW_WIDTH, WINDOW_HEIGHT) >= 600;
-const BASE_TAB_BAR_HEIGHT = 56;
-const ANDROID_TABLET_TASKBAR_RESERVE = 52;
 type InstrumentedTabBarButtonProps = any & {
   targetTab: InstrumentedTabName;
 };
@@ -53,17 +49,18 @@ const getTutorialTabMeasurement = (
   if (Platform.OS !== 'android') return measured;
 
   const window = Dimensions.get('window');
-  const width = window.width / 3;
-  const tabBarHeight = BASE_TAB_BAR_HEIGHT + bottomInset;
+  const edge = window.width * TAB_DOCK_EDGE_RATIO;
+  const width = (window.width - edge * 2) / 3;
+  const bottom = getTabDockBottom(Platform.OS, bottomInset);
   // TutorialSpotlight adds 12 px around every target. Inset the measured tab
   // by the same amount so its aperture begins at the tab bar—not in feed or
   // Mapbox content immediately above it.
   const spotlightPaddingCompensation = 12;
   return {
-    x: targetTab === 'events' ? 0 : window.width - width,
-    y: Math.max(0, window.height - tabBarHeight + spotlightPaddingCompensation),
+    x: targetTab === 'events' ? edge : window.width - edge - width,
+    y: Math.max(0, window.height - bottom - TAB_DOCK_HEIGHT + spotlightPaddingCompensation),
     width,
-    height: Math.max(1, tabBarHeight - spotlightPaddingCompensation),
+    height: Math.max(1, TAB_DOCK_HEIGHT - spotlightPaddingCompensation),
   };
 };
 
@@ -101,6 +98,13 @@ const ActiveTabIndicator = ({ targetTab, visible }: { targetTab: InstrumentedTab
     />
   ) : null
 );
+
+const SelectedTabPill = ({ visible }: { visible: boolean }) => visible ? (
+  <View pointerEvents="none" style={{
+    ...StyleSheet.absoluteFillObject, margin: 5, borderRadius: 22,
+    backgroundColor: 'rgba(255,255,255,0.92)',
+  }} />
+) : null;
 
 const pauseMapAnimationsForTabHandoff = (targetTab: InstrumentedTabName, isSelected: boolean) => {
   if (Platform.OS !== 'android' || isSelected || targetTab === 'map') {
@@ -142,7 +146,7 @@ const InstrumentedTabBarButton = (props: InstrumentedTabBarButtonProps) => {
       android_ripple={TAB_PRESS_RIPPLE}
       style={{ flex: 1, position: 'relative' }}
     >
-      {targetTab === 'map' && isSelected && <View pointerEvents="none" style={{ ...StyleSheet.absoluteFillObject, margin: 5, borderRadius: 22, backgroundColor: 'rgba(255,255,255,0.92)' }} />}
+      <SelectedTabPill visible={isSelected} />
       <ActiveTabIndicator targetTab={targetTab} visible={isSelected} />
       <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
         {children}
@@ -200,6 +204,7 @@ const TutorialAwareTabBarButton = (props: InstrumentedTabBarButtonProps) => {
       android_ripple={TAB_PRESS_RIPPLE}
       style={{ flex: 1, position: 'relative' }}
     >
+      <SelectedTabPill visible={isSelected} />
       <ActiveTabIndicator targetTab={targetTab} visible={isSelected} />
       <View
         ref={viewRef}
@@ -261,6 +266,7 @@ const TutorialAwareSpecialsTabBarButton = (props: InstrumentedTabBarButtonProps)
       android_ripple={TAB_PRESS_RIPPLE}
       style={{ flex: 1, position: 'relative' }}
     >
+      <SelectedTabPill visible={isSelected} />
       <ActiveTabIndicator targetTab={targetTab} visible={isSelected} />
       <View
         ref={viewRef}
@@ -552,16 +558,7 @@ export default function TabLayout() {
   const triggerScrollToTop = useMapStore((state) => state.triggerScrollToTop);
   const analytics = useAnalytics(); // RE-ENABLED
   const insets = useSafeAreaInsets();
-  const floatingDockBottom = getMapDockBottom(Platform.OS, insets.bottom);
-  const androidTabletTabBarBottomPadding = IS_ANDROID_TABLET
-    ? Math.max(insets.bottom, ANDROID_TABLET_TASKBAR_RESERVE)
-    : 0;
-  const androidTabletTabBarStyle = androidTabletTabBarBottomPadding
-    ? {
-        height: BASE_TAB_BAR_HEIGHT + androidTabletTabBarBottomPadding,
-        paddingBottom: androidTabletTabBarBottomPadding,
-      }
-    : undefined;
+  const floatingDockBottom = getTabDockBottom(Platform.OS, insets.bottom);
   
   const { user } = useAuth();
   const isGuest = !user;
@@ -725,25 +722,26 @@ export default function TabLayout() {
       // but mount them after startup so later tab switches do not pay that cost.
       lazy: !prewarmInactiveTabs,
       freezeOnBlur: Platform.OS === 'android' ? true : false,
-      tabBarStyle: route.name === 'map'
-        ? {
-            position: 'absolute',
-            start: MAP_DOCK_EDGE_INSET,
-            end: MAP_DOCK_EDGE_INSET,
-            bottom: floatingDockBottom,
-            height: MAP_DOCK_HEIGHT,
-            paddingBottom: 2,
-            paddingTop: 2,
-            borderTopWidth: 0,
-            borderRadius: MAP_DOCK_HEIGHT / 2,
-            backgroundColor: 'rgba(24, 27, 33, 0.78)',
-            shadowColor: '#000000',
-            shadowOffset: { width: 0, height: 6 },
-            shadowOpacity: 0.18,
-            shadowRadius: 12,
-            elevation: 9,
-          }
-        : androidTabletTabBarStyle,
+      tabBarInactiveTintColor: 'rgba(255,255,255,0.78)',
+      tabBarLabelStyle: { fontSize: 10, fontWeight: '600', marginTop: -2 },
+      tabBarIconStyle: { marginTop: -1 },
+      tabBarStyle: {
+        position: 'absolute',
+        start: TAB_DOCK_EDGE_INSET,
+        end: TAB_DOCK_EDGE_INSET,
+        bottom: floatingDockBottom,
+        height: TAB_DOCK_HEIGHT,
+        paddingBottom: 2,
+        paddingTop: 2,
+        borderTopWidth: 0,
+        borderRadius: TAB_DOCK_HEIGHT / 2,
+        backgroundColor: 'rgba(24, 27, 33, 0.78)',
+        shadowColor: '#000000',
+        shadowOffset: { width: 0, height: 6 },
+        shadowOpacity: 0.18,
+        shadowRadius: 12,
+        elevation: 9,
+      },
     })}>
       <Tabs.Screen
         name="events"
@@ -755,7 +753,6 @@ export default function TabLayout() {
           // invalid-surface behavior from disabling freeze globally.
           freezeOnBlur: false,
           tabBarActiveTintColor: '#007AFF',
-          tabBarInactiveTintColor: '#202124',
           tabBarIcon: ({ color, focused }) => <Ionicons name={focused ? "calendar" : "calendar-outline"} size={24} color={color} />,
           tabBarButton: renderEventsTabBarButton,
            headerLeft: () => (
@@ -814,9 +811,6 @@ export default function TabLayout() {
           headerShown: profileButtonHighlighted,
           headerTitle: () => <HeaderTitle route={route} />,
           tabBarActiveTintColor: '#1E90FF',
-          tabBarInactiveTintColor: 'rgba(255,255,255,0.78)',
-          tabBarLabelStyle: { fontSize: 10, fontWeight: '600', marginTop: -2 },
-          tabBarIconStyle: { marginTop: -1 },
           headerLeft: () => (
             !isHeaderSearchActive ? (
               <TouchableOpacity onPress={handleSearchActivation} style={{ marginLeft: 16 }}>
@@ -886,7 +880,6 @@ export default function TabLayout() {
           // invalid-surface behavior from disabling freeze globally.
           freezeOnBlur: false,
           tabBarActiveTintColor: '#34A853',
-          tabBarInactiveTintColor: '#202124',
           tabBarIcon: ({ color, focused }) => <Ionicons name={focused ? "restaurant" : "restaurant-outline"} size={24} color={color} />,
           tabBarButton: renderSpecialsTabBarButton,
           headerLeft: () => (

@@ -184,6 +184,8 @@ const styles = StyleSheet.create({
   },
   brandPill: {
     width: 108, height: 34, alignItems: 'center', justifyContent: 'center',
+    // Match the optical lift from the shared header logo's marginTop: -6.
+    transform: [{ translateY: -3 }],
     borderRadius: 18, backgroundColor: '#1E90FF', overflow: 'hidden',
     shadowColor: '#000000', shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.18, shadowRadius: 6, elevation: 5,
