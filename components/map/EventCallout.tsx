@@ -19,6 +19,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
+import { getTabDockContentInset } from '../../constants/tabDock';
 import { toggleSavedEvent as toggleSavedEventSvc } from '../../services/userService';
 import { amplitudeTrack } from '../../lib/amplitudeAnalytics';
 import { publishTutorialMeasurement as registerTutorialMeasurement } from '../../utils/tutorialReadiness';
@@ -3458,8 +3459,8 @@ try {
 
   const getCalloutHeightForState = (state: CalloutState) => {
     if (state === 'expanded') return expandedCalloutHeight;
-    if (state === 'minimized') return CALLOUT_MIN_HEIGHT;
-    return CALLOUT_NORMAL_HEIGHT;
+    if (state === 'minimized') return CALLOUT_MIN_HEIGHT + tabBarHeight;
+    return CALLOUT_NORMAL_HEIGHT + tabBarHeight;
   };
 
   useEffect(() => {
@@ -3605,12 +3606,12 @@ if (lastDefaultIdRef.current !== newId) {
   
 const insets = useSafeAreaInsets();
 const tabBarHeight = useBottomTabBarHeight();
-// The modal spans the full screen, but the sheet should meet the top of the
-// app's tab bar so the real Events / Map / Specials navigation remains visible.
-const navBarOffset = tabBarHeight;
+// The floating dock overlays the sheet; its background reaches the device edge.
+// Preserve the normal/minimized top positions by reclaiming the old tab reserve.
+const navBarOffset = 0;
 const calloutBottomOffset = navBarOffset;
-const bottomInset = 16;
-// Fill the space between the status bar and the bottom tab bar.
+const bottomInset = getTabDockContentInset(Platform.OS, insets.bottom);
+// Fill the space from the status bar to the bottom of the screen.
 const expandedCalloutHeight = Math.max(
   CALLOUT_NORMAL_HEIGHT,
   SCREEN_HEIGHT - Math.max(0, insets?.top ?? 0) - calloutBottomOffset,
@@ -4795,7 +4796,7 @@ useEffect(() => {
                 styles.backToTopButton,
                 {
                   opacity: backToTopOpacity,
-                  bottom: calloutState === 'expanded' ? 1 : 15,
+                  bottom: bottomInset - 16 + (calloutState === 'expanded' ? 1 : 15),
                 }
               ]}
             >

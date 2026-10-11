@@ -3,6 +3,8 @@ import renderer, { act } from 'react-test-renderer';
 
 import CalloutModalTabBarTouchLayer from '../CalloutModalTabBarTouchLayer';
 
+jest.mock('@expo/vector-icons', () => ({ Ionicons: 'Ionicons' }));
+
 describe('CalloutModalTabBarTouchLayer', () => {
   it('forwards all three visible tab targets while a native callout modal is open', () => {
     const onSelect = jest.fn();
@@ -24,5 +26,8 @@ describe('CalloutModalTabBarTouchLayer', () => {
     );
     expect(component!.root.findByProps({ testID: 'callout-modal-tab-touch-layer' }).props.pointerEvents)
       .toBe('auto');
+    expect(component!.root.findByProps({ testID: 'callout-modal-tab-map' }).props.accessibilityState)
+      .toEqual({ selected: true });
+    expect(component!.root.findAllByType('Ionicons' as any)).toHaveLength(3);
   });
 });
