@@ -3328,7 +3328,8 @@ const styles = StyleSheet.create({
   },
   scheduleDetails: {
     paddingLeft: 26,
-    paddingBottom: 8,
+    marginTop: -4,
+    paddingBottom: 4,
   },
   scheduleDetailsText: {
     color: '#BFC5CD',
@@ -3351,17 +3352,19 @@ const styles = StyleSheet.create({
     fontSize: 13,
   },
   timingDisclosureContainer: {
-    marginLeft: 26,
+    marginLeft: 20,
+    marginTop: -2,
   },
   timingDisclosureBody: {
     backgroundColor: 'rgba(255,255,255,0.07)',
     borderRadius: 8,
-    padding: 9,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
   },
   timingDisclosureText: {
     color: '#E5E7EB',
     fontSize: 12,
-    lineHeight: 17,
+    lineHeight: 16,
   },
   descriptionContainer: {
     flex: 1,
