@@ -90,7 +90,7 @@ export default function FloatingMapSearchHeader({ top, onSettings }: Props) {
             </TouchableOpacity>
             <View pointerEvents="box-none" style={styles.titleSlot}>
               {hasQuery ? (
-                <View style={styles.queryPill} testID="map-search-query-pill">
+                <View key="query" style={styles.queryPill} testID="map-search-query-pill">
                   <TouchableOpacity accessibilityRole="button" accessibilityLabel={`Edit search: ${query}`}
                     onPress={open} style={styles.queryEdit} hitSlop={{ top: 5, bottom: 5 }}>
                     <Ionicons name="search" size={14} color="#FFFFFF" />
@@ -105,7 +105,7 @@ export default function FloatingMapSearchHeader({ top, onSettings }: Props) {
                   </TouchableOpacity>
                 </View>
               ) : (
-                <View pointerEvents="none" style={styles.brandPill}>
+                <View key="brand" pointerEvents="none" style={styles.brandPill}>
                   <Image source={require('../../assets/GathR Text Logo.png')}
                     style={styles.brandLogo} resizeMode="contain" />
                 </View>
