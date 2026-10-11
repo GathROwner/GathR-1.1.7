@@ -119,10 +119,12 @@ export default function FriendEventsMapToggle({
   hidden = false,
   onOpenExternal,
   bottomOffset = 0,
+  centerRightOffset,
 }: {
   hidden?: boolean;
   onOpenExternal?: (activity: FriendActivityProjection) => void;
   bottomOffset?: number;
+  centerRightOffset?: number;
 }) {
   const isFocused = useIsFocused();
   const activity = useSocialStore((state) => state.activity);
@@ -134,6 +136,7 @@ export default function FriendEventsMapToggle({
   const setShowFriendEvents = useMapStore((state) => state.setShowFriendEvents);
   const savedEvents = useUserPrefsStore((state) => state.savedEvents);
   const [open, setOpen] = useState(false);
+  const [pillWidth, setPillWidth] = useState(68);
 
   const destinations = useMemo(() => buildFriendDestinations({
     activities: activity,
@@ -206,7 +209,11 @@ export default function FriendEventsMapToggle({
             void Haptics.selectionAsync().catch(() => undefined);
             setOpen(true);
           }}
-          style={[styles.pill, { bottom: 136 + bottomOffset }]}
+          onLayout={({ nativeEvent }) => setPillWidth(nativeEvent.layout.width)}
+          style={[styles.pill, {
+            bottom: 136 + bottomOffset,
+            ...(centerRightOffset === undefined ? {} : { right: centerRightOffset - pillWidth / 2 }),
+          }]}
         >
           <Ionicons name="people" size={18} color="#FFFFFF" />
           <View style={styles.placeCountBadge}>

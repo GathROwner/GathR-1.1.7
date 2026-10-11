@@ -3253,12 +3253,19 @@ useEffect(() => {
   const safeAreaInsets = useSafeAreaInsets();
   const floatingHeaderTop = safeAreaInsets.top + 8;
   const mapChromeTopReserve = safeAreaInsets.top + 56;
-  const floatingNavLift = 56;
   const floatingSideControlLift = 100;
   const floatingDockBottomOffset = Platform.OS === 'ios'
     ? Math.max(safeAreaInsets.bottom - 24, 4)
     : Math.max(safeAreaInsets.bottom, 8) + 2;
   const mapboxOrnamentBottomOffset = floatingDockBottomOffset + 60 + 8;
+  // Native iOS ornaments measure from the safe area; React overlays measure
+  // from the map edge. Keep both branding corners on the ruler's lower row.
+  const mapboxBrandingBottomOffset = Platform.OS === 'ios'
+    ? Math.max(0, mapboxOrnamentBottomOffset - safeAreaInsets.bottom)
+    : mapboxOrnamentBottomOffset;
+  const globeBottomOffset = mapboxOrnamentBottomOffset + 21 + 8;
+  const friendsPillBottomOffset = 88 + floatingSideControlLift + 36 + 12;
+  const interestRailBottomOffset = friendsPillBottomOffset + 30 + 10;
 
   // Guest limitation hook - only for guests
   const { trackInteraction } = useGuestInteraction();
@@ -3459,6 +3466,10 @@ useEffect(() => {
   const sideControlRightOffset = measuredRailWidth >= 36 && measuredRailWidth <= 220
     ? 10 + (measuredRailWidth - 36) / 2
     : 27;
+  const sideControlCenterRightOffset = sideControlRightOffset + 18;
+  // iOS's info glyph sits at the bottom of a 44-point native touch target.
+  const mapboxAttributionRightOffset = sideControlCenterRightOffset
+    - (Platform.OS === 'ios' ? 22 : 10);
   const [routeFeatureCallout, setRouteFeatureCallout] = useState<{
     data: RouteFeatureCalloutData;
     anchorX: number;
@@ -11126,8 +11137,8 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
         style={styles.map}
         styleURL={mapStyleChoice === 'current' ? GATHR_MAPBOX_STYLE_URL : GATHR_MAPBOX_STANDARD_STYLE_URL}
         scaleBarEnabled={true}
-        logoPosition={{ bottom: mapboxOrnamentBottomOffset, left: 38 }}
-        attributionPosition={{ bottom: mapboxOrnamentBottomOffset, right: 8 }}
+        logoPosition={{ bottom: mapboxBrandingBottomOffset, left: 0 }}
+        attributionPosition={{ bottom: mapboxBrandingBottomOffset, right: mapboxAttributionRightOffset }}
         scaleBarPosition={
           // iOS stacks ornaments sharing a corner, ignoring the scale's bottom
           // margin. A separate top anchor keeps its lower edge above the dock.
@@ -11787,7 +11798,7 @@ onDidFinishLoadingMap={() => {
 
       {/* Keep the app's globe mark visible above Mapbox's required attribution. */}
       {!MAP_TRACE_UI_ENABLED && (
-        <View style={[styles.mapLogoContainer, { bottom: mapboxOrnamentBottomOffset }]} pointerEvents="none">
+        <View style={[styles.mapLogoContainer, { bottom: globeBottomOffset }]} pointerEvents="none">
           <Image
             source={require('../../assets/images/icon.png')}
             style={styles.mapLogo}
@@ -11831,7 +11842,10 @@ onDidFinishLoadingMap={() => {
           <View
             pointerEvents="box-none"
             onLayout={handleInterestRailLayout}
-            style={[styles.interestPillsContainer, { top: 170 + mapChromeTopReserve }]}
+            style={[styles.interestPillsContainer, {
+              top: 170 + mapChromeTopReserve,
+              bottom: interestRailBottomOffset,
+            }]}
           >
             <InterestFilterPills availableHeight={interestRailLayout.height || undefined} />
           </View>
@@ -11858,7 +11872,8 @@ onDidFinishLoadingMap={() => {
       />
       <FriendEventsMapToggle
           hidden={Boolean(isCalloutOpen)}
-          bottomOffset={floatingNavLift}
+          bottomOffset={friendsPillBottomOffset - 136}
+          centerRightOffset={sideControlCenterRightOffset}
         onOpenExternal={(activity) => {
           const group = externalFriendPlaces.find(
             (candidate) => candidate.locationKey === activity.venueLocationKey
@@ -13244,7 +13259,6 @@ countText: {
     position: 'absolute',
     right: 10,
     top: 170, // Keep the wheel tucked below the raised Trending control.
-    bottom: 182, // Leave a compact gap above the separate Friends Checked In pill.
     justifyContent: 'center',
     alignItems: 'flex-end',
     zIndex: 11,

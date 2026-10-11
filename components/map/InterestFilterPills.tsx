@@ -35,9 +35,9 @@ type InterestPillEventContext = {
   venueEventIds: string[];
 };
 
-const ITEM_HEIGHT = 42; // 30px pills with a compact 12px row pitch; full row remains tappable
+const ITEM_HEIGHT = 36; // 30-point pills with a consistent 6-point gap.
 const MAX_VISIBLE_ITEMS = 7;
-const MIN_VISIBLE_ITEMS = 3;
+const MIN_VISIBLE_ITEMS = 1;
 const CLEAR_HOLD_TO_ARM_MS = 850;
 const CLEAR_ARMED_AUTO_CANCEL_MS = 4000;
 
@@ -417,7 +417,7 @@ const InterestFilterPills: React.FC<{ availableHeight?: number }> = ({ available
     requestAnimationFrame(() => {
       scrollToCenteredIndex(selectedIndexFromFilters, false);
     });
-  }, [selectedIndexFromFilters, scrollToCenteredIndex]);
+  }, [selectedIndexFromFilters, scrollToCenteredIndex, visibleItems]);
 
   const cancelClearArmed = useCallback(() => {
     if (clearArmedTimeoutRef.current) {
@@ -770,7 +770,7 @@ const InterestFilterPills: React.FC<{ availableHeight?: number }> = ({ available
         <View style={styles.cityPillWrapper}>
           <TouchableOpacity
             activeOpacity={0.85}
-            hitSlop={{ top: 6, bottom: 6 }}
+            hitSlop={{ top: 3, bottom: 3 }}
             onPress={handleCityPress}
             style={[
               styles.pill,
@@ -837,7 +837,11 @@ const InterestFilterPills: React.FC<{ availableHeight?: number }> = ({ available
         })}
         contentContainerStyle={[
           styles.listContent,
-          needsScrolling ? { paddingVertical: (visibleItems * ITEM_HEIGHT - ITEM_HEIGHT) / 2 } : {},
+          needsScrolling ? {
+            // Whole rows keep both end pills fully visible with an even count.
+            paddingTop: Math.floor((visibleItems - 1) / 2) * ITEM_HEIGHT,
+            paddingBottom: Math.ceil((visibleItems - 1) / 2) * ITEM_HEIGHT,
+          } : {},
         ]}
         onMomentumScrollEnd={(event) => {
           handleMomentumEnd(event.nativeEvent.contentOffset.y);
@@ -895,7 +899,7 @@ const InterestFilterPills: React.FC<{ availableHeight?: number }> = ({ available
             <Animated.View style={[styles.itemWrapper, { transform: [{ scale }] }]}>
               <AnimatedTouchableOpacity
                 activeOpacity={0.85}
-                hitSlop={{ top: 6, bottom: 6 }}
+                hitSlop={{ top: 3, bottom: 3 }}
                 onPress={() => handlePress(item, baseIndex)}
                 onPressIn={() => {
                   if (!hasActiveFilter || !selected) return;
@@ -1069,22 +1073,24 @@ const InterestFilterPills: React.FC<{ availableHeight?: number }> = ({ available
 
 const styles = StyleSheet.create({
   stack: {
-    alignItems: 'flex-end',
+    alignItems: 'center',
   },
   cityPillWrapper: {
     height: ITEM_HEIGHT,
     justifyContent: 'center',
+    alignItems: 'center',
   },
   container: {
-    alignItems: 'flex-end',
+    alignItems: 'center',
     position: 'relative',
   },
   listContent: {
-    alignItems: 'flex-end',
+    alignItems: 'center',
   },
   itemWrapper: {
     height: ITEM_HEIGHT,
     justifyContent: 'center',
+    alignItems: 'center',
   },
   pill: {
     flexDirection: 'row',
