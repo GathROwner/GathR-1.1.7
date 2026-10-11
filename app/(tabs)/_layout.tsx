@@ -115,6 +115,7 @@ const pauseMapAnimationsForTabHandoff = (targetTab: InstrumentedTabName, isSelec
 const InstrumentedTabBarButton = (props: InstrumentedTabBarButtonProps) => {
   const { children, onPress, onLongPress, targetTab, accessibilityState, 'aria-selected': ariaSelected } = props;
   const isSelected = Boolean(ariaSelected ?? accessibilityState?.selected);
+  const isHeaderSearchActive = useMapStore((state) => state.isHeaderSearchActive);
 
   useEffect(() => {
     if (isSelected) {
@@ -141,7 +142,7 @@ const InstrumentedTabBarButton = (props: InstrumentedTabBarButtonProps) => {
       android_ripple={TAB_PRESS_RIPPLE}
       style={{ flex: 1, position: 'relative' }}
     >
-      {targetTab === 'map' && isSelected && <View pointerEvents="none" style={{ ...StyleSheet.absoluteFillObject, margin: 5, borderRadius: 28, backgroundColor: 'rgba(255,255,255,0.94)' }} />}
+      {targetTab === 'map' && isSelected && !isHeaderSearchActive && <View pointerEvents="none" style={{ ...StyleSheet.absoluteFillObject, margin: 5, borderRadius: 26, backgroundColor: 'rgba(255,255,255,0.92)' }} />}
       <ActiveTabIndicator targetTab={targetTab} visible={isSelected} />
       <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
         {children}
@@ -726,20 +727,20 @@ export default function TabLayout() {
       tabBarStyle: route.name === 'map' && !isHeaderSearchActive
         ? {
             position: 'absolute',
-            left: 16,
-            right: 16,
-            bottom: Math.max(insets.bottom, 8) + 8,
-            height: 66,
-            paddingBottom: 4,
-            paddingTop: 4,
+            left: 22,
+            right: 22,
+            bottom: Math.max(insets.bottom, 8) + 10,
+            height: 60,
+            paddingBottom: 2,
+            paddingTop: 2,
             borderTopWidth: 0,
-            borderRadius: 34,
-            backgroundColor: 'rgba(20, 22, 27, 0.90)',
+            borderRadius: 30,
+            backgroundColor: 'rgba(24, 27, 33, 0.78)',
             shadowColor: '#000000',
             shadowOffset: { width: 0, height: 6 },
-            shadowOpacity: 0.24,
-            shadowRadius: 16,
-            elevation: 12,
+            shadowOpacity: 0.18,
+            shadowRadius: 12,
+            elevation: 9,
           }
         : androidTabletTabBarStyle,
     })}>
@@ -813,6 +814,8 @@ export default function TabLayout() {
           headerTitle: () => <HeaderTitle route={route} />,
           tabBarActiveTintColor: '#1E90FF',
           tabBarInactiveTintColor: isHeaderSearchActive ? '#202124' : 'rgba(255,255,255,0.78)',
+          tabBarLabelStyle: isHeaderSearchActive ? undefined : { fontSize: 10, fontWeight: '600', marginTop: -2 },
+          tabBarIconStyle: isHeaderSearchActive ? undefined : { marginTop: -1 },
           headerLeft: () => (
             !isHeaderSearchActive ? (
               <TouchableOpacity onPress={handleSearchActivation} style={{ marginLeft: 16 }}>
@@ -846,7 +849,7 @@ export default function TabLayout() {
               </TouchableOpacity>
             ) : null
           ),
-          tabBarIcon: ({ color, focused }) => <Ionicons name={focused ? "map" : "map-outline"} size={24} color={color} />,
+          tabBarIcon: ({ color, focused }) => <Ionicons name={focused ? "map" : "map-outline"} size={isHeaderSearchActive ? 24 : 20} color={color} />,
           tabBarButton: renderMapTabBarButton,
         })}
         listeners={({ navigation }) => ({

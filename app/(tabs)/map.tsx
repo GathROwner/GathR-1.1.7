@@ -3254,6 +3254,7 @@ useEffect(() => {
   const floatingHeaderTop = safeAreaInsets.top + 8;
   const mapChromeTopReserve = safeAreaInsets.top + 56;
   const floatingNavLift = 56;
+  const mapboxOrnamentBottomOffset = Math.max(safeAreaInsets.bottom, 8) + 60 + 10 + 16;
 
   // Guest limitation hook - only for guests
   const { trackInteraction } = useGuestInteraction();
@@ -11122,16 +11123,17 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
         style={styles.map}
         styleURL={mapStyleChoice === 'current' ? GATHR_MAPBOX_STYLE_URL : GATHR_MAPBOX_STANDARD_STYLE_URL}
         scaleBarEnabled={true}
+        logoPosition={{ bottom: mapboxOrnamentBottomOffset, left: 8 }}
+        attributionPosition={{ bottom: mapboxOrnamentBottomOffset, right: 8 }}
         scaleBarPosition={
           mapDimensions?.height
             ? {
-                // Bottom margins reserve ornament clearance. Anchor from the
-                // measured top so the visible rule shares the attribution row.
-                top: Math.max(0, Math.round(mapDimensions.height - 28)),
+                // Keep the scale bar visible above the floating navigation dock.
+                top: Math.max(0, Math.round(mapDimensions.height - mapboxOrnamentBottomOffset - 16)),
                 left: Math.round((Dimensions.get('window').width / 2) - 50),
-              }
+            }
             : {
-                bottom: 12,
+                bottom: mapboxOrnamentBottomOffset + 16,
                 left: Math.round((Dimensions.get('window').width / 2) - 50),
               }
         }
@@ -11780,9 +11782,9 @@ onDidFinishLoadingMap={() => {
         </View>
       )}
 
-      {/* GathR logo above Mapbox logo */}
+      {/* Keep the app's globe mark visible above Mapbox's required attribution. */}
       {!MAP_TRACE_UI_ENABLED && (
-        <View style={styles.mapLogoContainer} pointerEvents="none">
+        <View style={[styles.mapLogoContainer, { bottom: mapboxOrnamentBottomOffset + 22 }]} pointerEvents="none">
           <Image
             source={require('../../assets/images/icon.png')}
             style={styles.mapLogo}
@@ -11836,14 +11838,6 @@ onDidFinishLoadingMap={() => {
         </View>
       )}
 
-      <View style={styles.mapLogoContainer} pointerEvents="none">
-        <Image
-          source={require('../../assets/images/icon.png')}
-          style={styles.mapLogo}
-          resizeMode="contain"
-        />
-      </View>
-      
       {/* Add the Re-center button */}
       {location && locationPermissionGranted && (
         <RecenterButton 
@@ -13288,9 +13282,9 @@ countText: {
     elevation: 200,
   },
   mapLogo: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.25,
