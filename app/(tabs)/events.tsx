@@ -28,7 +28,10 @@ import { ScrollView as GestureScrollView } from 'react-native-gesture-handler';
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { getTabDockContentInset } from '../../constants/tabDock';
+import { getTabDockContentInset, getTabDockBottom } from '../../constants/tabDock';
+import { useHeaderHeight } from '@react-navigation/elements';
+import { useFeedScrollChrome } from '../../hooks/useFeedScrollChrome';
+import { useFeedBackToTop } from '../../hooks/useFeedBackToTop';
 import FallbackImage from '../../components/common/FallbackImage';
 import TicketCtaPill from '../../components/common/TicketCtaPill';
 import EventActionLinkPill from '../../components/common/EventActionLinkPill';
@@ -1515,8 +1518,7 @@ useEffect(() => {
   // State management
   const [scrollY] = useState(new Animated.Value(0));
   const [headerHeight, setHeaderHeight] = useState(INITIAL_FILTER_HEADER_HEIGHT);
-  const [isHeaderCollapsed, setIsHeaderCollapsed] = useState(false);
-  const headerTranslateY = useRef(new Animated.Value(0)).current;
+  const navigationHeaderHeight = useHeaderHeight();
   const lastScrollY = useRef(0);
   const flatListRef = useRef<FlatList>(null);
   const handleFlatListLayout = useCallback(() => {
@@ -1530,18 +1532,26 @@ useEffect(() => {
   }, []);
   
   // Back to top button state
-  const [showBackToTop, setShowBackToTop] = useState(false);
-  const backToTopOpacity = useRef(new Animated.Value(0)).current;
+  const backToTop = useFeedBackToTop(SCREEN_HEIGHT);
+  const { visible: showBackToTop, opacity: backToTopOpacity } = backToTop;
   
   // Performance tracking
   const [listLoadTime, setListLoadTime] = useState<number | null>(null);
   const [scrollStartTime, setScrollStartTime] = useState<number | null>(null);
-  const collapsibleHeaderTop = COLLAPSIBLE_HEADER_TOP_MARGIN;
+  const collapsibleHeaderTop = navigationHeaderHeight;
   const effectiveHeaderStackHeight = collapsibleHeaderTop + Math.max(headerHeight, 120);
+
+  const chromeTutorialVisible = useTutorialUiStore((state) => state.isVisible);
+  const feedChrome = useFeedScrollChrome('events', isHeaderSearchActive || chromeTutorialVisible);
+  const headerTranslateY = feedChrome.progress.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, -(collapsibleHeaderTop + headerHeight)],
+  });
 
   // Scroll to top functionality
   useEffect(() => {
     if (scrollTriggers.events > 0) {
+      feedChrome.reveal();
       console.log('[EventsScreen] Scroll trigger detected, scrolling to top');
       
       // Track scroll to top interaction
@@ -1989,16 +1999,7 @@ setSelectedImageData({ imageUrl, event });
           trackScrollInteraction('events');
         }
         
-        // Back to top button visibility logic
-        const shouldShowBackToTop = currentScrollY > SCREEN_HEIGHT;
-        if (shouldShowBackToTop !== showBackToTop) {
-          setShowBackToTop(shouldShowBackToTop);
-          Animated.timing(backToTopOpacity, {
-            toValue: shouldShowBackToTop ? 1 : 0,
-            duration: 300,
-            useNativeDriver: true,
-          }).start();
-        }
+        backToTop.onScroll(currentScrollY);
         
         // Track scroll depth for engagement analytics (every 25% of content)
         const contentHeight = (sortedViewportEvents.length + sortedOutsideViewportEvents.length) * 200; // Approximate item height
@@ -2013,24 +2014,7 @@ setSelectedImageData({ imageUrl, event });
           });
         }
         
-        // Header collapse animation
-        if (headerHeight > 0 && Math.abs(scrollDiff) > 5) {
-          if (scrollDiff > 0 && currentScrollY > 50 && !isHeaderCollapsed) {
-            setIsHeaderCollapsed(true);
-            Animated.timing(headerTranslateY, {
-              toValue: -headerHeight,
-              duration: 300,
-              useNativeDriver: true,
-            }).start();
-          } else if (scrollDiff < 0 && isHeaderCollapsed) {
-            setIsHeaderCollapsed(false);
-            Animated.timing(headerTranslateY, {
-              toValue: 0,
-              duration: 300,
-              useNativeDriver: true,
-            }).start();
-          }
-        }
+        feedChrome.onScroll(event.nativeEvent);
         
         lastScrollY.current = currentScrollY;
       },
@@ -2039,6 +2023,8 @@ setSelectedImageData({ imageUrl, event });
 
   // Handle back to top button press
   const handleBackToTop = () => {
+    backToTop.hide();
+    feedChrome.reveal();
     analytics?.trackUserAction('back_to_top_pressed', {
       screen: 'events',
       scroll_position: lastScrollY.current
@@ -2566,6 +2552,7 @@ setSelectedImageData({ imageUrl, event });
       )}
       {/* Collapsible Header */}
       <Animated.View 
+        pointerEvents={feedChrome.hidden ? 'none' : 'auto'}
         style={[
           styles.collapsibleHeader,
           { top: collapsibleHeaderTop },
@@ -2745,8 +2732,9 @@ setSelectedImageData({ imageUrl, event });
         <Animated.View style={[
           styles.preferencesBar, 
           { 
-            opacity: fadeAnim,
-            top: effectiveHeaderStackHeight
+            opacity: Animated.multiply(fadeAnim, feedChrome.progress.interpolate({ inputRange: [0, 1], outputRange: [1, 0] })),
+            top: effectiveHeaderStackHeight,
+            transform: [{ translateY: headerTranslateY }]
           }
         ]}>
           <Text style={styles.preferencesText}>
@@ -2763,6 +2751,10 @@ setSelectedImageData({ imageUrl, event });
           data={isFocusedContentReady ? eventsWithAds : []}
           keyExtractor={keyExtractor}
           onScroll={handleScroll}
+          onScrollBeginDrag={backToTop.onScrollBeginDrag}
+          onScrollEndDrag={backToTop.onScrollEndDrag}
+          onMomentumScrollBegin={backToTop.onMomentumScrollBegin}
+          onMomentumScrollEnd={backToTop.onMomentumScrollEnd}
           onLayout={handleFlatListLayout}
           scrollEventThrottle={16}
           contentContainerStyle={contentContainerStyleMemo}
@@ -2886,11 +2878,18 @@ setSelectedImageData({ imageUrl, event });
             styles.backToTopButton,
             {
               opacity: backToTopOpacity,
+              bottom: dockContentInset,
+              transform: [{ translateY: feedChrome.progress.interpolate({
+                inputRange: [0, 1],
+                outputRange: [0, dockContentInset - getTabDockBottom(Platform.OS, safeAreaInsets.bottom) - 12],
+              }) }],
             }
           ]}
         >
           <TouchableOpacity
             style={styles.backToTopButtonInner}
+            accessibilityRole="button"
+            accessibilityLabel="Back to top"
             onPress={handleBackToTop}
             activeOpacity={0.8}
           >
@@ -2920,6 +2919,7 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   collapsibleHeader: {
+    paddingTop: COLLAPSIBLE_HEADER_TOP_MARGIN,
     position: 'absolute',
     left: 0,
     right: 0,
@@ -3567,7 +3567,7 @@ const styles = StyleSheet.create({
   },
   backToTopButton: {
     position: 'absolute',
-    bottom: 15, // Positioned above the tab bar
+    // The shared dock inset keeps this control clear of the floating tabs.
     alignSelf: 'center',
     zIndex: 1000,
   },

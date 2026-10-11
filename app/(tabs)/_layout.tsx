@@ -1,6 +1,8 @@
 // app\(tabs)\_layout.tsx
 
 import { Tabs } from 'expo-router';
+import { FeedChromeProvider, useFeedChrome } from '../../contexts/FeedChromeContext';
+import SlidingFeedHeader from '../../components/common/SlidingFeedHeader';
 import { TouchableOpacity, View, TextInput, Text, Image, InteractionManager, Pressable, Platform, Dimensions, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useRouter } from 'expo-router';
@@ -549,6 +551,12 @@ const HeaderTitle = ({ route }: { route: any }) => {
 };
 
 export default function TabLayout() {
+  return <FeedChromeProvider><TabNavigator /></FeedChromeProvider>;
+}
+
+function TabNavigator() {
+  const eventsChrome = useFeedChrome('events');
+  const specialsChrome = useFeedChrome('specials');
   const router = useRouter();
   const navigation = useNavigation<any>();
   // Select only state values, get setters/actions directly
@@ -713,6 +721,9 @@ export default function TabLayout() {
           </View>
         ) : null
       ),
+      ...(route.name === 'events' || route.name === 'specials' ? {
+        headerTransparent: true, header: (props) => <SlidingFeedHeader {...props} />,
+      } : {}),
       headerStyle: { backgroundColor: '#1E90FF' },
       headerTintColor: '#FFFFFF',
       headerTitleAlign: 'center', // This fixes the Android centering issue
@@ -741,6 +752,10 @@ export default function TabLayout() {
         shadowOpacity: 0.18,
         shadowRadius: 12,
         elevation: 9,
+        transform: [{ translateY: route.name === 'events' || route.name === 'specials'
+          ? (route.name === 'events' ? eventsChrome : specialsChrome).progress.interpolate({
+            inputRange: [0, 1], outputRange: [0, floatingDockBottom + TAB_DOCK_HEIGHT + 20],
+          }) : 0 }],
       },
     })}>
       <Tabs.Screen

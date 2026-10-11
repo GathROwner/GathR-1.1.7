@@ -53,6 +53,7 @@ import { isFriendEventDetailPath } from '../../utils/friendEventLightbox';
 // Import components
 import FilterPills from '../../components/map/FilterPills';
 import FloatingMapSearchHeader from '../../components/map/FloatingMapSearchHeader';
+import StatusBarBlur from '../../components/common/StatusBarBlur';
 import MapLegend, {
   type MapLightPreset,
   type MapPerspective,
@@ -11673,6 +11674,9 @@ onDidFinishLoadingMap={() => {
         {!isLoading && !ANDROID_CLUSTER_MARKERVIEW_ISOLATION_DEBUG && renderClusterMarkers()}
       </MapboxGL.MapView>
       )}
+      {/* Android's Mapbox texture cannot be sampled by a view blur. Preserve
+          the map beneath a translucent tint there; iOS uses the native blur. */}
+      {isFocused && !profileButtonHighlighted && <StatusBarBlur tint="light" androidBlurEnabled={false} />}
 
       {activeMapExperienceEvent && (
         <Pressable
