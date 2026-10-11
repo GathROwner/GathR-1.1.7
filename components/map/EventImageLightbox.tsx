@@ -13,6 +13,7 @@ import {
   ActivityIndicator,
   Easing,
   Modal,
+  StatusBar,
   useWindowDimensions,
 } from 'react-native';
 import { useReduceMotion } from '../../hooks/useReduceMotion';
@@ -99,6 +100,7 @@ import { useSocialStore } from '../../store/socialStore';
 import { inviteToFriendEvent, respondToFriendEvent } from '../../services/socialService';
 import type { FriendEventRsvp } from '../../types/social';
 import { getEventLightboxLayout } from '../../utils/eventLightboxLayout';
+import { formatLightboxAddress } from '../../utils/lightboxAddress';
 
 // Store imports for like/share functionality
 import * as userService from '../../services/userService';
@@ -238,11 +240,7 @@ const EventImageLightbox: React.FC<EventImageLightboxProps> = ({
   const router = useRouter();
   const safeAreaInsets = useSafeAreaInsets();
   const tabBarHeight = useBottomTabBarHeight();
-  const { height: windowHeight, width: windowWidth } = useWindowDimensions();
-  const headerIdentityMaxWidth = Math.max(
-    0,
-    windowWidth - safeAreaInsets.left - safeAreaInsets.right - 24 - 50
-  );
+  const { height: windowHeight } = useWindowDimensions();
   const {
     panelTop: lightboxTop,
     panelBottom: lightboxBottom,
@@ -291,6 +289,7 @@ const EventImageLightbox: React.FC<EventImageLightboxProps> = ({
     || updatedEvent.venue?.trim()
     || venue?.venue?.trim()
     || '';
+  const headerAddress = scopedLocationSummary ? '' : formatLightboxAddress(updatedEvent.address);
   const friendEventId = updatedEvent.friendEvent?.eventId || null;
   const friendEventProjection = useSocialStore((state) => (
     friendEventId
@@ -1069,6 +1068,18 @@ const handleDirections = () => {
   }
 };
 
+  const handleAddressPress = () => {
+    if (isGuest || !privateDirectionsAvailable || isCityEvent || isAreaExperienceEvent(updatedEvent)) return;
+    Alert.alert(
+      'Open in Maps?',
+      `Get directions to ${headerVenueName || 'this location'}?\n\n${headerAddress}`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Open Maps', onPress: handleDirections },
+      ]
+    );
+  };
+
   const handleOpenPrivateContext = () => {
     if (!friendEventId) return;
 
@@ -1422,6 +1433,7 @@ const handleNonTicketAction = () => {
 
   return (
   <GestureHandlerRootView style={{ flex: 1 }}>
+    <StatusBar barStyle="light-content" backgroundColor="#000000" translucent />
     <PanGestureHandler
       ref={verticalPanRef}
       enabled={!isImageViewerVisible && !justClosedImageViewer}
@@ -1468,6 +1480,71 @@ const handleNonTicketAction = () => {
           { transform: [{ translateY: translateY }, { translateX: translateX }] }
         ]}
       >
+        {/* Venue identity stays below the camera safe area, above the media. */}
+        <View testID="event-lightbox-header" style={[
+          styles.header,
+          {
+            paddingTop: safeAreaInsets.top + 10,
+            paddingLeft: Math.max(12, safeAreaInsets.left + 12),
+            paddingRight: Math.max(12, safeAreaInsets.right + 12),
+          },
+        ]}>
+          <View style={styles.headerIdentitySurface}>
+            <View style={styles.headerVenueAvatarContainer}>
+              <FallbackImage
+                imageUrl={updatedEvent.profileUrl}
+                category={updatedEvent.category}
+                type={updatedEvent.type}
+                style={styles.headerVenueAvatar}
+                fallbackType="profile"
+                item={updatedEvent}
+                resizeMode="cover"
+              />
+              {!provinceScopeEvent && (!isPrivateFriendEvent || friendEventProjection?.locationType === 'recognized_venue') && (
+                <View style={styles.headerVenueFavoriteOverlay}>
+                  <VenueFavoriteButton
+                    locationKey={createLocationKeyFromEvent(updatedEvent)}
+                    venueName={updatedEvent.venue}
+                    size={12}
+                    source="event_image_lightbox"
+                    style={styles.headerVenueFavoriteButton}
+                  />
+                </View>
+              )}
+            </View>
+            <View style={styles.headerTextContainer}>
+              <Text style={styles.headerVenueName} numberOfLines={1} accessibilityLabel={headerVenueName}>
+                {headerVenueName}
+              </Text>
+              {headerAddress ? (
+                !showAreaExperience && privateDirectionsAvailable ? (
+                  <TouchableOpacity
+                    testID="event-lightbox-address"
+                    hitSlop={10}
+                    accessibilityRole="link"
+                    accessibilityLabel={`Get directions to ${headerAddress}`}
+                    accessibilityHint="Asks before opening Maps"
+                    accessibilityState={{ disabled: isGuest }}
+                    disabled={isGuest}
+                    onPress={handleAddressPress}
+                    style={styles.headerAddressButton}
+                  >
+                    <Text style={[styles.headerAddress, styles.headerAddressLink]}>{headerAddress}</Text>
+                  </TouchableOpacity>
+                ) : <Text style={styles.headerAddress}>{headerAddress}</Text>
+              ) : null}
+            </View>
+          </View>
+          <TouchableOpacity
+            accessibilityLabel="Close event details"
+            accessibilityRole="button"
+            onPress={handleCloseButton}
+            style={styles.closeButton}
+          >
+            <MaterialIcons name="close" size={24} color="#FFFFFF" />
+          </TouchableOpacity>
+        </View>
+
         {/* Tappable Image */}
         <View style={[styles.imageWrapper, { height: imageHeight }]}>
           <View style={styles.imageGrid}>
@@ -1525,81 +1602,6 @@ const handleNonTicketAction = () => {
                 })}
               </View>
             )}
-          </View>
-
-          <LinearGradient
-            colors={['rgba(0, 0, 0, 0.42)', 'rgba(0, 0, 0, 0.14)', 'rgba(0, 0, 0, 0)']}
-            locations={[0, 0.62, 1]}
-            pointerEvents="none"
-            style={styles.headerGradient}
-          />
-
-          {/* Event and venue identity share the image plane, matching list cards. */}
-          <View style={[styles.header, { top: safeAreaInsets.top }]}>
-            <View
-              style={[
-                styles.headerIdentitySurface,
-                {
-                  maxWidth: headerIdentityMaxWidth,
-                  transform: [{ translateY: -5 }],
-                },
-              ]}
-            >
-              <View style={styles.headerVenueAvatarContainer}>
-                <FallbackImage
-                  imageUrl={updatedEvent.profileUrl}
-                  category={updatedEvent.category}
-                  type={updatedEvent.type}
-                  style={styles.headerVenueAvatar}
-                  fallbackType="profile"
-                  item={updatedEvent}
-                  resizeMode="cover"
-                />
-                {!provinceScopeEvent && (!isPrivateFriendEvent || friendEventProjection?.locationType === 'recognized_venue') && (
-                  <View style={styles.headerVenueFavoriteOverlay}>
-                    <VenueFavoriteButton
-                      locationKey={createLocationKeyFromEvent(updatedEvent)}
-                      venueName={updatedEvent.venue}
-                      size={12}
-                      source="event_image_lightbox"
-                      style={styles.headerVenueFavoriteButton}
-                    />
-                  </View>
-                )}
-              </View>
-              <View style={styles.headerTextContainer}>
-                <GestureScrollView
-                  ref={titleScrollRef}
-                  horizontal
-                  nestedScrollEnabled
-                  bounces={false}
-                  showsHorizontalScrollIndicator={false}
-                  overScrollMode="never"
-                  style={styles.titleScroll}
-                  contentContainerStyle={styles.titleScrollContent}
-                >
-                  <Text
-                    style={styles.title}
-                    numberOfLines={1}
-                    accessibilityLabel={updatedEvent.title}
-                  >
-                    {updatedEvent.title}
-                  </Text>
-                </GestureScrollView>
-                <Text style={styles.subtitle} numberOfLines={1} accessibilityLabel={headerVenueName}>
-                  {headerVenueName}
-                </Text>
-              </View>
-            </View>
-            <TouchableOpacity
-              accessibilityLabel="Close event details"
-              accessibilityRole="button"
-              hitSlop={4}
-              onPress={handleCloseButton}
-              style={styles.closeButton}
-            >
-              <MaterialIcons name="close" size={24} color="#FFFFFF" />
-            </TouchableOpacity>
           </View>
 
           {/* The whole image opens full-screen; this is only a visual affordance. */}
@@ -1777,6 +1779,23 @@ const handleNonTicketAction = () => {
           )}
         </View>
         
+        <View style={styles.eventHeading}>
+          <GestureScrollView
+            ref={titleScrollRef}
+            horizontal
+            nestedScrollEnabled
+            bounces={false}
+            showsHorizontalScrollIndicator={false}
+            overScrollMode="never"
+            style={styles.titleScroll}
+            contentContainerStyle={styles.titleScrollContent}
+          >
+            <Text style={styles.title} numberOfLines={1} accessibilityLabel={updatedEvent.title}>
+              {updatedEvent.title}
+            </Text>
+          </GestureScrollView>
+        </View>
+
         {/* Status badges */}
         <View style={styles.badgeContainer}>
           {isHappeningNow && (
@@ -2037,12 +2056,6 @@ const handleNonTicketAction = () => {
             </View>
           )}
 
-          <View style={styles.infoRow}>
-            <MaterialIcons name="place" size={20} color="#FFFFFF" />
-            <Text style={styles.infoText}>
-              {scopedLocationSummary || updatedEvent.address}
-            </Text>
-          </View>
         </View>
 
         {/* Description — fixed flexible area; scrolls internally for long copy */}
@@ -2130,7 +2143,10 @@ const handleNonTicketAction = () => {
 
                   
         {/* Actions */}
-        <View style={styles.actionContainer}>
+        <View style={[
+          styles.actionContainer,
+          !venue && Platform.OS === 'ios' && { paddingBottom: Math.max(2, safeAreaInsets.bottom) },
+        ]}>
           <TouchableOpacity
             style={[
               styles.actionButton,
@@ -2254,7 +2270,10 @@ const handleNonTicketAction = () => {
         {/* View Venue Button - Opens EventCallout with all events at venue */}
         {venue && (
           <TouchableOpacity
-            style={styles.viewVenueButton}
+            style={[
+              styles.viewVenueButton,
+              Platform.OS === 'ios' && { paddingBottom: Math.max(12, safeAreaInsets.bottom) },
+            ]}
             onPress={handleViewVenue}
             activeOpacity={0.8}
           >
@@ -2489,46 +2508,53 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   header: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    flexShrink: 0,
+    backgroundColor: '#000000',
     paddingHorizontal: 12,
-    paddingTop: 8,
-    paddingBottom: 8,
+    paddingBottom: 10,
     zIndex: 30,
   },
-  headerGradient: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    height: 82,
-    zIndex: 24,
-  },
   headerIdentitySurface: {
-    flexGrow: 0,
+    flex: 1,
     flexShrink: 1,
     minWidth: 0,
-    minHeight: 40,
+    minHeight: 44,
     flexDirection: 'row',
     alignItems: 'center',
-    paddingLeft: 4,
-    paddingRight: 6,
-    paddingVertical: 4,
-    borderRadius: 22,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(255, 255, 255, 0.18)',
-    backgroundColor: 'rgba(17, 17, 17, 0.74)',
   },
   headerTextContainer: {
-    flexGrow: 0,
+    flex: 1,
     flexShrink: 1,
     minWidth: 0,
     marginRight: 0,
+  },
+  headerVenueName: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    lineHeight: 21,
+    fontWeight: '600',
+  },
+  headerAddressButton: {
+    paddingVertical: 3,
+    alignSelf: 'flex-start',
+    maxWidth: '100%',
+  },
+  headerAddress: {
+    color: '#D1D5DB',
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  headerAddressLink: {
+    textDecorationLine: 'underline',
+  },
+  eventHeading: {
+    paddingHorizontal: 16,
+    paddingTop: 10,
+    paddingBottom: 2,
+    flexShrink: 0,
   },
   titleScroll: {
     maxWidth: '100%',
@@ -2539,20 +2565,15 @@ const styles = StyleSheet.create({
     paddingRight: 4,
   },
   title: {
-    fontSize: 14,
+    fontSize: 18,
+    lineHeight: 24,
     fontWeight: 'bold',
     color: '#FFFFFF',
     flexShrink: 0,
   },
-  subtitle: {
-    fontSize: 11,
-    color: '#CCCCCC',
-  },
   closeButton: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    backgroundColor: 'rgba(17, 17, 17, 0.66)',
+    width: 44,
+    height: 44,
     justifyContent: 'center',
     alignItems: 'center',
     marginLeft: 8,
@@ -2610,11 +2631,11 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   headerVenueAvatarContainer: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     backgroundColor: '#FFFFFF',
-    marginRight: 8,
+    marginRight: 10,
     flexShrink: 0,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
@@ -2623,9 +2644,9 @@ const styles = StyleSheet.create({
     elevation: 4,
   },
   headerVenueAvatar: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     borderWidth: 2,
     borderColor: '#FFFFFF',
   },
@@ -2642,7 +2663,7 @@ const styles = StyleSheet.create({
   },
   zoomIconOverlay: {
     position: 'absolute',
-    top: 70,
+    top: 10,
     right: 12,
     backgroundColor: 'rgba(0, 0, 0, 0.52)',
     borderRadius: 14,
@@ -3333,7 +3354,7 @@ description: {
     backgroundColor: '#FFFFFF',
     borderTopWidth: 1,
     borderTopColor: 'rgba(0, 0, 0, 0.1)',
-    paddingVertical: 16,
+    paddingVertical: 12,
     paddingHorizontal: 20,
   },
   viewVenueContent: {
