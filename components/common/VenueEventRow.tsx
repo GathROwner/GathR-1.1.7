@@ -9,6 +9,7 @@ import { TimeFilterType } from '../../types/filter';
 import FallbackImage from './FallbackImage';
 import { VenueFavoriteButton } from './VenueFavoriteButton';
 import { useReduceMotion } from '../../hooks/useReduceMotion';
+import VenueEventCount from './VenueEventCount';
 
 export const VENUE_FEED_HERO_HEIGHT = 300;
 
@@ -16,12 +17,13 @@ type Props = {
   group: VenueFeedGroup;
   timeFilter: TimeFilterType;
   selectedEventId?: string;
+  countCueActive?: boolean;
   onSelectEvent: (event: Event) => void;
   renderEvent: (event: Event, grouped: boolean) => React.ReactNode;
 };
 
 /** Native paging exposes the real adjacent card while dragging; one shared venue header stays still. */
-export default function VenueEventRow({ group, timeFilter, selectedEventId, onSelectEvent, renderEvent }: Props) {
+export default function VenueEventRow({ group, timeFilter, selectedEventId, countCueActive = false, onSelectEvent, renderEvent }: Props) {
   const { width: windowWidth } = useWindowDimensions();
   // Mount content immediately; the viewport measurement refines this estimate for safe areas/resizing.
   const [width, setWidth] = useState(() => Math.max(1, windowWidth - 14));
@@ -66,7 +68,7 @@ export default function VenueEventRow({ group, timeFilter, selectedEventId, onSe
           onPress={() => setAddressExpanded(value => !value)} accessibilityRole="button"
           accessibilityLabel={`${active.venue}${active.address?.trim() ? ', show or hide address' : ''}`}>
           <Text style={styles.name} numberOfLines={2}>{active.venue}</Text>
-          <Text style={styles.count}>{group.events.length} {noun}{period}</Text>
+          <VenueEventCount active={countCueActive}>{`${group.events.length} ${noun}${period}`}</VenueEventCount>
         </TouchableOpacity>
         <View style={styles.pagination} accessibilityLabel={`${noun}, ${index + 1} of ${group.events.length}`}>
           <Text style={styles.counter}>{index + 1} of {group.events.length}</Text>
@@ -123,7 +125,7 @@ const styles = StyleSheet.create({
   avatarWrap: { width: 42, height: 42 }, avatar: { width: 42, height: 42, borderRadius: 21, borderWidth: 1, borderColor: '#E1E4E8' },
   favorite: { position: 'absolute', right: -4, bottom: -4, backgroundColor: '#FFF', borderRadius: 12 },
   identity: { flex: 1, minWidth: 0 }, name: { fontSize: 15, fontWeight: '700', color: '#171A20' },
-  count: { fontSize: 12, color: '#626973', marginTop: 2 }, pagination: { alignItems: 'center' },
+  pagination: { alignItems: 'center' },
   counter: { fontSize: 11, color: '#626973', fontVariant: ['tabular-nums'] }, dots: { flexDirection: 'row' },
   dotTarget: { width: 18, height: 20, alignItems: 'center', justifyContent: 'center' },
   dot: { width: 7, height: 7, borderRadius: 4, backgroundColor: '#CED3D9' }, activeDot: { backgroundColor: '#1E90FF' },

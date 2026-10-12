@@ -51,4 +51,39 @@ describe('feed chrome coordination', () => {
     act(() => tree.update(render()));
     expect(channels.events.hidden).toBe(false);
   });
+
+  it('returns compact filters after hiding, expands on demand, and restores full controls at the top', () => {
+    expect(channels.events.compactFilters).toBe(false);
+    scroll('events', 300);
+    scroll('events', 280);
+    expect(channels.events.hidden).toBe(false);
+    expect(channels.events.compactFilters).toBe(true);
+    expect(channels.events.filtersExpanded).toBe(false);
+    expect(channels.specials.compactFilters).toBe(false);
+    act(() => channels.events.toggleFilters());
+    expect(channels.events.filtersExpanded).toBe(true);
+    act(() => channels.events.dismissFilters());
+    expect(channels.events.filtersExpanded).toBe(false);
+    expect(channels.events.compactFilters).toBe(true);
+    act(() => channels.events.toggleFilters());
+    scroll('events', 240);
+    expect(channels.events.filtersExpanded).toBe(false);
+    scroll('events', -20);
+    expect(channels.events.compactFilters).toBe(false);
+    expect(channels.events.hidden).toBe(false);
+  });
+
+  it('search/tutorial and explicit back-to-top reset an expanded filter overlay', () => {
+    scroll('events', 300); scroll('events', 280);
+    act(() => channels.events.toggleFilters());
+    act(() => tree.update(render(true)));
+    expect(channels.events.compactFilters).toBe(false);
+    expect(channels.events.filtersExpanded).toBe(false);
+    act(() => tree.update(render()));
+    scroll('events', 700); scroll('events', 680);
+    act(() => channels.events.toggleFilters());
+    act(() => channels.events.reveal());
+    expect(channels.events.compactFilters).toBe(false);
+    expect(channels.events.filtersExpanded).toBe(false);
+  });
 });

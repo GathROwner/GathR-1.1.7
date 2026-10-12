@@ -31,6 +31,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { getTabDockContentInset, getTabDockBottom } from '../../constants/tabDock';
 import { useHeaderHeight } from '@react-navigation/elements';
 import { useFeedScrollChrome } from '../../hooks/useFeedScrollChrome';
+import { useVisibleVenueGroups } from '../../hooks/useVisibleVenueGroups';
+import FeedFilterSummary, { FEED_FILTER_SUMMARY_HEIGHT } from '../../components/common/FeedFilterSummary';
 import { useFeedBackToTop } from '../../hooks/useFeedBackToTop';
 import FallbackImage from '../../components/common/FallbackImage';
 import TicketCtaPill from '../../components/common/TicketCtaPill';
@@ -1554,9 +1556,13 @@ useEffect(() => {
 
   const chromeTutorialVisible = useTutorialUiStore((state) => state.isVisible);
   const feedChrome = useFeedScrollChrome('events', isHeaderSearchActive || chromeTutorialVisible);
+  const visibleVenueGroups = useVisibleVenueGroups();
+  const showFullFilters = !feedChrome.compactFilters || feedChrome.filtersExpanded;
+  const visibleFilterHeight = feedChrome.compactFilters
+    ? FEED_FILTER_SUMMARY_HEIGHT + (feedChrome.filtersExpanded ? headerHeight : 0) : headerHeight;
   const headerTranslateY = feedChrome.progress.interpolate({
     inputRange: [0, 1],
-    outputRange: [0, -(collapsibleHeaderTop + headerHeight)],
+    outputRange: [0, -(collapsibleHeaderTop + visibleFilterHeight)],
   });
 
   // Scroll to top functionality
@@ -2578,6 +2584,9 @@ setSelectedImageData({ imageUrl, event, events: groupEvents });
         />
       )}
       {/* Collapsible Header */}
+      {feedChrome.filtersExpanded && !feedChrome.hidden && <Pressable testID="feed-filter-backdrop"
+        accessibilityRole="button" accessibilityLabel="Close filters" onPress={feedChrome.dismissFilters}
+        style={[StyleSheet.absoluteFillObject, { top: collapsibleHeaderTop + FEED_FILTER_SUMMARY_HEIGHT, zIndex: 9, backgroundColor: 'rgba(0,0,0,0.25)' }]} />}
       <Animated.View 
         pointerEvents={feedChrome.hidden ? 'none' : 'auto'}
         style={[
@@ -2585,13 +2594,17 @@ setSelectedImageData({ imageUrl, event, events: groupEvents });
           { top: collapsibleHeaderTop },
           { transform: [{ translateY: headerTranslateY }] }
         ]}
-        onLayout={(event) => {
-          const nextHeight = event.nativeEvent.layout.height + 5;
-          setHeaderHeight((previousHeight) =>
-            Math.abs(previousHeight - nextHeight) > 1 ? nextHeight : previousHeight
-          );
-        }}
       >
+        {feedChrome.compactFilters && <FeedFilterSummary filters={filterCriteria.eventFilters}
+          expanded={feedChrome.filtersExpanded} onPress={feedChrome.toggleFilters} />}
+        <View testID="feed-full-filters" style={!showFullFilters && { display: 'none' }}
+          accessibilityElementsHidden={!showFullFilters} importantForAccessibility={showFullFilters ? 'auto' : 'no-hide-descendants'}
+          onLayout={event => {
+            // Keep the original full-panel inset stable while the compact row/overlay changes.
+            if (!showFullFilters || event.nativeEvent.layout.height <= 0) return;
+            const nextHeight = event.nativeEvent.layout.height + COLLAPSIBLE_HEADER_TOP_MARGIN + 5;
+            setHeaderHeight(previous => Math.abs(previous - nextHeight) > 1 ? nextHeight : previous);
+          }}>
         {/* Filtering section */}
         <Animated.View 
           style={[
@@ -2752,6 +2765,7 @@ setSelectedImageData({ imageUrl, event, events: groupEvents });
         })()}
           </View>
         </Animated.View>
+        </View>
       </Animated.View>
       
       {/* User preferences banner */}
@@ -2760,7 +2774,7 @@ setSelectedImageData({ imageUrl, event, events: groupEvents });
           styles.preferencesBar, 
           { 
             opacity: Animated.multiply(fadeAnim, feedChrome.progress.interpolate({ inputRange: [0, 1], outputRange: [1, 0] })),
-            top: effectiveHeaderStackHeight,
+            top: collapsibleHeaderTop + visibleFilterHeight,
             transform: [{ translateY: headerTranslateY }]
           }
         ]}>
@@ -2777,6 +2791,8 @@ setSelectedImageData({ imageUrl, event, events: groupEvents });
           style={styles.eventList}
           data={isFocusedContentReady ? eventsWithAds : []}
           keyExtractor={keyExtractor}
+          onViewableItemsChanged={visibleVenueGroups.onViewableItemsChanged}
+          viewabilityConfig={visibleVenueGroups.viewabilityConfig}
           onScroll={handleScroll}
           onScrollBeginDrag={backToTop.onScrollBeginDrag}
           onScrollEndDrag={backToTop.onScrollEndDrag}
@@ -2825,6 +2841,7 @@ setSelectedImageData({ imageUrl, event, events: groupEvents });
             const eventListItem = (
               <VenueEventRow group={item.group} timeFilter={filterCriteria.eventFilters.timeFilter}
                 selectedEventId={selectedVenueEvents[item.group.key]}
+                countCueActive={visibleVenueGroups.focused && visibleVenueGroups.keys.has(item.group.key)}
                 onSelectEvent={event => setSelectedVenueEvents(previous => ({ ...previous, [item.group.key]: String(event.id) }))}
                 renderEvent={(page, grouped) => {
                   const eventData = getUpdatedEvent(page.id) || page;
