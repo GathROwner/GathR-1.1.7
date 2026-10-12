@@ -35,7 +35,8 @@ import { useTutorialUiStore } from '../../store/tutorialUiStore';
 
 // 🌀 Use GH ScrollView (not RN ScrollView) so scrolling works inside animated/gesture containers on Android.
 // Requires app wrapped in <GestureHandlerRootView /> (see app/_layout.tsx).
-import { ScrollView } from 'react-native-gesture-handler';
+import { GestureHandlerRootView, PanGestureHandler, ScrollView, State, type PanGestureHandlerStateChangeEvent } from 'react-native-gesture-handler';
+import { getAdjacentCalloutPage, getCalloutBrowsePages, getCalloutSwipeDirection, type CalloutBrowseTab } from '../../utils/calloutSwipeNavigation';
 
 
 // TypeScript fix for global tutorial manager
@@ -849,6 +850,21 @@ const VenueSelector: React.FC<VenueSelectorProps> = ({
   isGuest,
   deferInactiveVisuals = false
 }) => {
+  const selectorScrollRef = useRef<ScrollView>(null);
+  const selectorWidthRef = useRef(0);
+  const venueLayoutsRef = useRef(new Map<string, { x: number; width: number }>());
+  const revealActiveVenue = useCallback((animated = true) => {
+    const venue = venues[activeVenueIndex];
+    const layout = venue && venueLayoutsRef.current.get(venue.locationKey);
+    if (!layout || !selectorWidthRef.current) return;
+    selectorScrollRef.current?.scrollTo({
+      x: Math.max(0, layout.x + layout.width / 2 - selectorWidthRef.current / 2),
+      animated,
+    });
+  }, [activeVenueIndex, venues]);
+
+  useEffect(() => { revealActiveVenue(); }, [revealActiveVenue]);
+
   // LOG: VenueSelector rendering - tracks venues count and active index for debugging selector state
   // console.log("VenueSelector rendering with venues:", venues.length, 
   //            "activeIndex:", activeVenueIndex);
@@ -856,7 +872,13 @@ const VenueSelector: React.FC<VenueSelectorProps> = ({
   return (
     <View style={styles.venueSelectorWrapper}>
       <ScrollView 
+        ref={selectorScrollRef}
         horizontal
+        onLayout={(event) => {
+          selectorWidthRef.current = event.nativeEvent.layout.width;
+          revealActiveVenue(false);
+        }}
+        onContentSizeChange={() => revealActiveVenue(false)}
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={[
           styles.venueSelectorContainer,
@@ -878,6 +900,13 @@ const VenueSelector: React.FC<VenueSelectorProps> = ({
           return (
             <TouchableOpacity 
               key={`venue-${venue.locationKey}-${index}`}
+              accessibilityRole="tab"
+              accessibilityState={{ selected: activeVenueIndex === index }}
+              onLayout={(event) => {
+                const { x, width } = event.nativeEvent.layout;
+                venueLayoutsRef.current.set(venue.locationKey, { x, width });
+                if (activeVenueIndex === index) revealActiveVenue(false);
+              }}
               style={[
                 styles.venueOption,
                 activeVenueIndex === index && styles.venueOptionActive,
@@ -2572,7 +2601,7 @@ const EventCallout: React.FC<EventCalloutProps> = ({
   onPresentationReady,
   readinessEpoch,
 }) => {
-  useEventTimingMinute();
+  const timingMinute = useEventTimingMinute();
   const pathname = usePathname();
   const isFriendEventDetailRoute = isFriendEventDetailPath(pathname);
   // Add store subscription to get fresh event data
@@ -2888,7 +2917,7 @@ const activeVenueFriendPresence = getVenueFriendPresence(cluster, activeVenue);
     () => sortEventsByTimeStatus(
       activeVenue.events.filter(event => event.type === 'event' && !isEventPast(event))
     ),
-    [activeVenue.events]
+    [activeVenue.events, timingMinute]
   );
   const specials = activeVenue.events.filter(event => event.type === 'special');
   // LOG: Active venue content counts - shows events and specials count for debugging content display
@@ -2897,6 +2926,10 @@ const activeVenueFriendPresence = getVenueFriendPresence(cluster, activeVenue);
   
   const hasEvents = events.length > 0;
   const hasSpecials = specials.length > 0;
+  const browsePages = useMemo(() => getCalloutBrowsePages(reorderedVenues.map((venue) => ({
+    hasEvents: venue.events.some((event) => event.type === 'event' && !isEventPast(event)),
+    hasSpecials: venue.events.some((event) => event.type === 'special'),
+  }))), [reorderedVenues, timingMinute]);
   
   const getInitialActiveTab = (): TabType => {
     const hasNowEvents = events.some(event => 
@@ -2914,6 +2947,9 @@ const activeVenueFriendPresence = getVenueFriendPresence(cluster, activeVenue);
   };
   
 const [activeTab, setActiveTab] = useState<TabType>(getInitialActiveTab());
+const canSwipeBrowse = activeTab !== 'venue' && browsePages.some((page) =>
+  page.venueIndex !== activeVenueIndex || page.tab !== activeTab
+);
 const initialAutoOpenTabRef = useRef<TabType>(getInitialActiveTab());
 const [selectedEvent, setSelectedEvent] = useState<Event | null>(
   hasEvents ? events[0] : (hasSpecials ? specials[0] : null)
@@ -3153,10 +3189,17 @@ console.log('ATTEMPTING to set selectedImageData state...');
   // GUEST LIMITATION INTERACTION HANDLERS
   // ===============================================================
   
-  /**
-   * Handle venue selection with guest limitation tracking
-   */
-const handleVenueSelect = (index: number) => {
+const resetContentScroll = () => {
+  scrollViewRef.current?.scrollTo({ y: 0, animated: false });
+  scrollYRef.current = 0;
+  setScrollProgress(0);
+  setCanScrollMore(false);
+  setShowBackToTop(false);
+  backToTopOpacity.setValue(0);
+};
+
+/** Handle venue selection with guest limitation tracking. */
+const handleVenueSelect = (index: number, requestedTab?: CalloutBrowseTab) => {
   console.log(`[GuestLimitation] Venue change: ${activeVenueIndex} → ${index}`);
   
   unlockCompactSdk();
@@ -3197,7 +3240,7 @@ const handleVenueSelect = (index: number) => {
   venueActivatedAtRef.current = now;
   
   // Clear scroll tracking for the new venue+tab combination
-  const newScrollKey = `venue_${index}_tab_${activeTab}`;
+  const newScrollKey = `venue_${index}_tab_${requestedTab ?? activeTab}`;
   setScrolledCombinations(prev => {
     const newSet = new Set(prev);
     newSet.delete(newScrollKey); // Remove if exists so first scroll in new venue counts
@@ -3211,10 +3254,7 @@ const handleVenueSelect = (index: number) => {
   const shouldSkipAutoScroll = tutorialActive && tutorialStep === 'callout-venue-selector';
 
   if (!shouldSkipAutoScroll) {
-    scrollViewRef.current?.scrollTo({
-      y: 0,
-      animated: false
-    });
+    resetContentScroll();
   }
   // Reset progress/affordances immediately so UI doesn't flash stale state
   setScrollProgress(0);
@@ -3238,6 +3278,10 @@ const handleVenueSelect = (index: number) => {
   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 
   // Proceed with venue change
+  if (requestedTab) {
+    setCompactTabRenderMode(null);
+    setActiveTab(requestedTab);
+  }
   setActiveVenueIndex(index);
 };
 
@@ -3440,8 +3484,10 @@ try {
   const closeAnimationStartedRef = useRef(false);
   const indicatorRotation = useRef(new Animated.Value(0)).current;
   
-  const touchStartX = useRef(0);
-  const touchStartY = useRef(0);
+  const browsePanRef = useRef<PanGestureHandler>(null);
+  const browseTransition = useRef(new Animated.Value(0)).current;
+  const browseTransitionRunningRef = useRef(false);
+  useEffect(() => () => { browseTransition.stopAnimation(); }, [browseTransition]);
 
   const readAnimatedNumeric = (value: Animated.Value): number | null => {
     try {
@@ -4393,35 +4439,25 @@ useEffect(() => {
 
 
 
-  const handleTouchStart = (e: NativeSyntheticEvent<any>) => {
-    touchStartX.current = e.nativeEvent.pageX;
-    touchStartY.current = e.nativeEvent.pageY;
-  };
+  const handleBrowseSwipe = ({ nativeEvent }: PanGestureHandlerStateChangeEvent) => {
+    if (nativeEvent.state !== State.END || browseTransitionRunningRef.current) return;
+    const direction = getCalloutSwipeDirection(nativeEvent.translationX, nativeEvent.translationY);
+    if (!direction) return;
+    const next = getAdjacentCalloutPage(browsePages, { venueIndex: activeVenueIndex, tab: activeTab }, direction);
+    if (!next) return;
 
-  const handleTouchEnd = (e: NativeSyntheticEvent<any>) => {
-    const touchEndX = e.nativeEvent.pageX;
-    const touchEndY = e.nativeEvent.pageY;
-    
-    const swipeX = touchStartX.current - touchEndX;
-    const swipeY = Math.abs(touchStartY.current - touchEndY);
-    
-    if (Math.abs(swipeX) > 50 && swipeY < 50) {
-      if (swipeX > 0) {
-        if (activeTab === 'events' && hasSpecials) {
-          handleTabChange('specials');
-        } else if ((activeTab === 'events' || activeTab === 'specials')) {
-          handleTabChange('venue');
-        }
-      } else {
-        if (activeTab === 'venue' && hasSpecials) {
-          handleTabChange('specials');
-        } else if (activeTab === 'venue' && hasEvents) {
-          handleTabChange('events');
-        } else if (activeTab === 'specials' && hasEvents) {
-          handleTabChange('events');
-        }
-      }
+    browseTransitionRunningRef.current = true;
+    if (next.venueIndex !== activeVenueIndex) {
+      // Commit venue and tab together so the venue fallback effect sees the target list.
+      handleVenueSelect(next.venueIndex, next.tab);
+    } else {
+      handleTabChange(next.tab);
     }
+    resetContentScroll();
+    browseTransition.setValue(direction === 'next' ? 24 : -24);
+    Animated.timing(browseTransition, { toValue: 0, duration: 180, useNativeDriver: true }).start(() => {
+      browseTransitionRunningRef.current = false;
+    });
   };
 
   // Enhanced render function for content items (events and ads)
@@ -4724,13 +4760,22 @@ useEffect(() => {
           />
         </Animated.View>
         
-        <View style={styles.contentContainer}>
+        <GestureHandlerRootView style={styles.contentContainer}>
+        <PanGestureHandler
+          ref={browsePanRef}
+          enabled={canSwipeBrowse && calloutState !== 'minimized' && !isLightboxOpen}
+          activeOffsetX={[-24, 24]}
+          failOffsetY={[-14, 14]}
+          maxPointers={1}
+          simultaneousHandlers={scrollViewRef}
+          onHandlerStateChange={handleBrowseSwipe}
+        >
+        <Animated.View style={{ flex: 1, overflow: 'hidden', transform: [{ translateX: browseTransition }] }}>
         <ScrollView 
             ref={scrollViewRef}
             style={styles.calloutContent}
             showsVerticalScrollIndicator={false}
-            onTouchStart={handleTouchStart}
-            onTouchEnd={handleTouchEnd}
+            simultaneousHandlers={browsePanRef}
             scrollEventThrottle={16}
             scrollEnabled={calloutState !== 'minimized'}
             bounces={false}
@@ -4781,6 +4826,8 @@ useEffect(() => {
             
             {/* bottom spacer replaced by dynamic paddingBottom */}
           </ScrollView>
+        </Animated.View>
+        </PanGestureHandler>
           
           {/* Vertical Scroll Progress Bar */}
           {canScrollMore && (
@@ -4813,7 +4860,7 @@ useEffect(() => {
               </TouchableOpacity>
             </Animated.View>
           )}
-        </View>
+        </GestureHandlerRootView>
       </CalloutContainerComponent>
 
       {/* Render the lightbox modal when needed - supports both local and global state */}
