@@ -89,6 +89,7 @@ import { useTutorialUiStore } from '../../store/tutorialUiStore';
 import { areEventIdsEquivalent } from '../../lib/api/firestoreEvents';
 import { doesEventMatchAnyInterest } from '../../utils/familyFriendly';
 import { useEventTimingMinute } from '../../hooks/useEventTimingMinute';
+import { useTapOnlyPress } from '../../hooks/useTapOnlyPress';
 import { getEventScheduleState } from '../../utils/eventTiming';
 
 // Import for loading native ads
@@ -342,6 +343,7 @@ const EventListItem: React.FC<EventListItemProps> = ({
   isFirstItem = false
 }) => {
   useEventTimingMinute();
+  const lightboxTap = useTapOnlyPress();
   const timingState = getEventScheduleState(event);
   const [expanded, setExpanded] = useState(false);
   const [bookmarked, setBookmarked] = useState(isSaved);
@@ -952,11 +954,12 @@ const result = await userService.toggleSavedEvent(event.id, {
   const showBuyTicketsButton = hasTicketLink && paid;
   const showRegisterButton = hasTicketLink && !paid;
   return (
-    <View>
+    <View {...lightboxTap.touchHandlers}>
       <TouchableOpacity 
         ref={tutorialRef as any}
         style={[styles.eventCard, grouped && styles.groupedEventCard, timingState.muted && styles.mutedEventCard]}
-        onPress={onPress}
+        onPress={event => { if (lightboxTap.isTap(event)) onPress(); }}
+        onAccessibilityTap={onPress}
         activeOpacity={0.7}
       >
       {/* Hero Image Section - NEW LAYOUT */}
@@ -965,7 +968,8 @@ const result = await userService.toggleSavedEvent(event.id, {
           <View>
             <TouchableOpacity
               activeOpacity={0.9}
-              onPress={() => onImagePress(event.imageUrl || event.profileUrl, event)}
+              onPress={touch => { if (lightboxTap.isTap(touch)) onImagePress(event.imageUrl || event.profileUrl, event); }}
+              onAccessibilityTap={() => onImagePress(event.imageUrl || event.profileUrl, event)}
             >
               <FallbackImage
               imageUrl={event.imageUrl || event.profileUrl}
