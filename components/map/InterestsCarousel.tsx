@@ -8,7 +8,10 @@ import {
   Animated,
   Modal,
   PanResponder,
+  Platform,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { getTabDockContentInset } from '../../constants/tabDock';
 import { MaterialIcons, Ionicons } from '@expo/vector-icons';
 import { useIsFocused } from '@react-navigation/native';
 import { useMapStore } from '../../store';
@@ -51,8 +54,6 @@ const CARD_WIDTH = 160;
 const CARD_HEIGHT = 112;
 const CARD_GAP = 12;
 const VENUE_AVATAR_SIZE = 30;
-const BOTTOM_SPACING = 0; // Above tab bar
-const TAB_BAR_HEIGHT = 40; // Tab bar height (24px icon + padding)
 
 // Pagination dot sizes
 const DOT_SIZE_LARGE = 10;   // Fully visible cards
@@ -357,6 +358,8 @@ type CarouselEventContext = {
 
 // Main Carousel Component
 const InterestsCarousel: React.FC = () => {
+  const insets = useSafeAreaInsets();
+  const bottomOffset = getTabDockContentInset(Platform.OS, insets.bottom);
   const isFocused = useIsFocused();
   const pathname = usePathname();
   const isFriendEventDetailRoute = isFriendEventDetailPath(pathname);
@@ -788,6 +791,7 @@ const InterestsCarousel: React.FC = () => {
         style={[
           styles.container,
           {
+            bottom: bottomOffset,
             transform: [{ translateY: slideAnim }],
             opacity: opacityAnim,
           },
@@ -899,7 +903,6 @@ const InterestsCarousel: React.FC = () => {
 const styles = StyleSheet.create({
   container: {
     position: 'absolute',
-    bottom: BOTTOM_SPACING + TAB_BAR_HEIGHT - PAGINATION_HEIGHT,
     left: 0,
     right: 0,
     zIndex: 12,
