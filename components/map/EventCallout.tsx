@@ -4832,7 +4832,7 @@ useEffect(() => {
           
           {/* Vertical Scroll Progress Bar */}
           {canScrollMore && (
-            <View style={styles.verticalProgressContainer}>
+            <View pointerEvents="none" style={styles.verticalProgressContainer}>
               <View style={[styles.verticalProgressBar, { height: `${scrollProgress * 100}%` }]} />
             </View>
           )}
