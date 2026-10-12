@@ -35,8 +35,10 @@ import { useTutorialUiStore } from '../../store/tutorialUiStore';
 
 // 🌀 Use GH ScrollView (not RN ScrollView) so scrolling works inside animated/gesture containers on Android.
 // Requires app wrapped in <GestureHandlerRootView /> (see app/_layout.tsx).
-import { GestureHandlerRootView, PanGestureHandler, ScrollView, State, type PanGestureHandlerStateChangeEvent } from 'react-native-gesture-handler';
-import { getAdjacentCalloutPage, getCalloutBrowsePages, getCalloutSwipeDirection, type CalloutBrowseTab } from '../../utils/calloutSwipeNavigation';
+import { GestureHandlerRootView, PanGestureHandler, ScrollView } from 'react-native-gesture-handler';
+import { getCalloutBrowsePages, type CalloutBrowseTab } from '../../utils/calloutSwipeNavigation';
+import { useCalloutSwipeTransition } from '../../hooks/useCalloutSwipeTransition';
+import { useReduceMotion } from '../../hooks/useReduceMotion';
 
 
 // TypeScript fix for global tutorial manager
@@ -3200,7 +3202,7 @@ const resetContentScroll = () => {
 };
 
 /** Handle venue selection with guest limitation tracking. */
-const handleVenueSelect = (index: number, requestedTab?: CalloutBrowseTab) => {
+const handleVenueSelect = (index: number, requestedTab?: CalloutBrowseTab, animateLayout = true) => {
   console.log(`[GuestLimitation] Venue change: ${activeVenueIndex} → ${index}`);
   
   unlockCompactSdk();
@@ -3275,7 +3277,7 @@ const handleVenueSelect = (index: number, requestedTab?: CalloutBrowseTab) => {
   }
   
   // Animate the layout change and provide haptic feedback
-  LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+  if (animateLayout) LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 
   // Proceed with venue change
@@ -3289,7 +3291,7 @@ const handleVenueSelect = (index: number, requestedTab?: CalloutBrowseTab) => {
   /**
    * Handle tab change with guest limitation tracking
    */
-const handleTabChange = (tab: TabType) => {
+const handleTabChange = (tab: TabType, animateLayout = true) => {
   console.log(`[GuestLimitation] Tab change: ${activeTab} → ${tab}`);
   setCompactTabRenderMode(null);
   
@@ -3354,7 +3356,7 @@ try {
   });
 
   // Animate the layout change and provide haptic feedback
-  LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+  if (animateLayout) LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 
   // Proceed with tab change
@@ -3486,9 +3488,26 @@ try {
   const indicatorRotation = useRef(new Animated.Value(0)).current;
   
   const browsePanRef = useRef<PanGestureHandler>(null);
-  const browseTransition = useRef(new Animated.Value(0)).current;
-  const browseTransitionRunningRef = useRef(false);
-  useEffect(() => () => { browseTransition.stopAnimation(); }, [browseTransition]);
+  const [browseWidth, setBrowseWidth] = useState(SCREEN_WIDTH);
+  const reduceMotion = useReduceMotion();
+  const browseSwipe = useCalloutSwipeTransition({
+    pages: browsePages,
+    current: { venueIndex: activeVenueIndex, tab: activeTab },
+    width: browseWidth,
+    enabled: canSwipeBrowse && calloutState !== 'minimized' && !isLightboxOpen,
+    reduceMotion,
+    onNavigate: (next) => {
+      if (next.venueIndex !== activeVenueIndex) {
+        handleVenueSelect(next.venueIndex, next.tab, false);
+      } else {
+        handleTabChange(next.tab, false);
+      }
+      // A second accepted swipe may precede the prior React commit. Always
+      // assign its destination venue, even if this render still has the old one.
+      setActiveVenueIndex(next.venueIndex);
+      resetContentScroll();
+    },
+  });
 
   const readAnimatedNumeric = (value: Animated.Value): number | null => {
     try {
@@ -4440,27 +4459,6 @@ useEffect(() => {
 
 
 
-  const handleBrowseSwipe = ({ nativeEvent }: PanGestureHandlerStateChangeEvent) => {
-    if (nativeEvent.state !== State.END || browseTransitionRunningRef.current) return;
-    const direction = getCalloutSwipeDirection(nativeEvent.translationX, nativeEvent.translationY);
-    if (!direction) return;
-    const next = getAdjacentCalloutPage(browsePages, { venueIndex: activeVenueIndex, tab: activeTab }, direction);
-    if (!next) return;
-
-    browseTransitionRunningRef.current = true;
-    if (next.venueIndex !== activeVenueIndex) {
-      // Commit venue and tab together so the venue fallback effect sees the target list.
-      handleVenueSelect(next.venueIndex, next.tab);
-    } else {
-      handleTabChange(next.tab);
-    }
-    resetContentScroll();
-    browseTransition.setValue(direction === 'next' ? 24 : -24);
-    Animated.timing(browseTransition, { toValue: 0, duration: 180, useNativeDriver: true }).start(() => {
-      browseTransitionRunningRef.current = false;
-    });
-  };
-
   // Enhanced render function for content items (events and ads)
   const renderContentItem = (item: ContentItem, index: number) => {
     if (item.type === 'ad') {
@@ -4682,7 +4680,7 @@ useEffect(() => {
           <VenueSelector
             venues={visibleVenueSelectorVenues}
             activeVenueIndex={activeVenueIndex}
-            onSelectVenue={handleVenueSelect}
+            onSelectVenue={(index) => { browseSwipe.reset(); handleVenueSelect(index); }}
             onScroll={handleVenueScroll}
             venueHasNewContent={venueHasNewContent}
             favoriteVenues={favoriteVenues}
@@ -4754,24 +4752,25 @@ useEffect(() => {
         >
           <EventTabs 
             activeTab={activeTab} 
-            onChangeTab={handleTabChange}
+            onChangeTab={(tab) => { browseSwipe.reset(); handleTabChange(tab); }}
             eventCount={events.length}
             specialCount={specials.length}
             venueCount={venues.length}
           />
         </Animated.View>
         
-        <GestureHandlerRootView style={styles.contentContainer}>
+        <GestureHandlerRootView style={styles.contentContainer} onLayout={(event) => setBrowseWidth(event.nativeEvent.layout.width)}>
         <PanGestureHandler
           ref={browsePanRef}
           enabled={canSwipeBrowse && calloutState !== 'minimized' && !isLightboxOpen}
-          activeOffsetX={[-24, 24]}
-          failOffsetY={[-14, 14]}
+          activeOffsetX={[-12, 12]}
+          failOffsetY={[-22, 22]}
           maxPointers={1}
           simultaneousHandlers={scrollViewRef}
-          onHandlerStateChange={handleBrowseSwipe}
+          onGestureEvent={browseSwipe.onGestureEvent}
+          onHandlerStateChange={browseSwipe.onStateChange}
         >
-        <Animated.View style={{ flex: 1, overflow: 'hidden', transform: [{ translateX: browseTransition }] }}>
+        <Animated.View style={{ flex: 1, overflow: 'hidden', transform: [{ translateX: browseSwipe.translateX }] }}>
         <ScrollView 
             ref={scrollViewRef}
             style={styles.calloutContent}

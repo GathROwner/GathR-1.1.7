@@ -53,9 +53,25 @@ describe('callout browsing loop', () => {
 describe('deliberate horizontal swipes', () => {
   it.each([
     [-100, 0, 'next'], [100, 0, 'previous'], [-60, 10, 'next'],
-    [0, 100, null], [40, 0, null], [-100, 80, null], [100, -40, null],
+    [0, 100, null], [40, 0, null], [-100, 80, null], [100, -40, 'previous'],
     [NaN, 0, null], [100, Infinity, null],
   ])('classifies (%s, %s) as %s', (x, y, expected) => {
     expect(getCalloutSwipeDirection(x as number, y as number)).toBe(expected);
+  });
+
+  it('accepts a deliberate drag with natural vertical drift', () => {
+    expect(getCalloutSwipeDirection(-120, 60)).toBe('next');
+    expect(getCalloutSwipeDirection(48, 20)).toBe('previous');
+    expect(getCalloutSwipeDirection(80, 90, 1000, 1200)).toBeNull();
+  });
+
+  it('accepts short horizontal flicks without treating taps or vertical flicks as navigation', () => {
+    expect(getCalloutSwipeDirection(-24, 5, -900, 80)).toBe('next');
+    expect(getCalloutSwipeDirection(20, 3, 800, 100)).toBe('previous');
+    expect(getCalloutSwipeDirection(12, 0, 1000, 0)).toBeNull();
+    expect(getCalloutSwipeDirection(24, 0, 300, 0)).toBeNull();
+    expect(getCalloutSwipeDirection(24, 5, -900, 0)).toBeNull();
+    expect(getCalloutSwipeDirection(24, 5, 900, 1000)).toBeNull();
+    expect(getCalloutSwipeDirection(80, 0, NaN, 0)).toBeNull();
   });
 });

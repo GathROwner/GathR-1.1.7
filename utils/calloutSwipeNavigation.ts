@@ -35,10 +35,16 @@ export function getAdjacentCalloutPage(
   return pages[(index + step + pages.length) % pages.length];
 }
 
-/** Native axis locking also rejects gestures that first travel vertically. */
-export function getCalloutSwipeDirection(x: number, y: number): CalloutSwipeDirection | null {
-  if (!Number.isFinite(x) || !Number.isFinite(y) || Math.abs(x) < 60 || Math.abs(y) > 32 || Math.abs(x) < Math.abs(y) * 1.8) {
+/** Once native axis locking selects horizontal intent, allow natural drift and short flicks. */
+export function getCalloutSwipeDirection(
+  x: number, y: number, velocityX = 0, velocityY = 0,
+): CalloutSwipeDirection | null {
+  if (![x, y, velocityX, velocityY].every(Number.isFinite) || Math.abs(x) < Math.abs(y) * 1.35) {
     return null;
   }
+  const isDrag = Math.abs(x) >= 48;
+  const isFlick = Math.abs(x) >= 16 && Math.abs(velocityX) >= 650 &&
+    Math.sign(velocityX) === Math.sign(x) && Math.abs(velocityX) > Math.abs(velocityY) * 1.35;
+  if (!isDrag && !isFlick) return null;
   return x < 0 ? 'next' : 'previous';
 }
