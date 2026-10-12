@@ -51,7 +51,7 @@ import CategoryFilterOptions from '../../components/map/CategoryFilterOptions';
 
 // Import components
 import EventImageLightbox from '../../components/map/EventImageLightbox';
-import VenueEventRow from '../../components/common/VenueEventRow';
+import VenueEventRow, { VENUE_FEED_HERO_HEIGHT } from '../../components/common/VenueEventRow';
 import { groupVenueFeedEvents, getVenueFeedKey, type VenueFeedGroup } from '../../utils/venueFeedGroups';
 import FullSizeSdkAdCard, { FULL_SIZE_SDK_AD_ROW_HEIGHT } from '../../components/ads/FullSizeSdkAdCard';
 import { AdColors } from '../../constants/AdTheme';
@@ -3289,7 +3289,7 @@ const styles = StyleSheet.create({
   },
   heroImage: {
     width: '100%',
-    height: 300, // Reduced from 200px to be less imposing
+    height: VENUE_FEED_HERO_HEIGHT,
     backgroundColor: '#F0F0F0',
     borderRadius: 12, // Add rounded corners like other cards
     // Strong border to create "photo frame" effect

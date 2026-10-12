@@ -11,6 +11,8 @@ import FallbackImage from './FallbackImage';
 import { VenueFavoriteButton } from './VenueFavoriteButton';
 import { useReduceMotion } from '../../hooks/useReduceMotion';
 
+export const VENUE_FEED_HERO_HEIGHT = 300;
+
 type Props = {
   group: VenueFeedGroup;
   timeFilter: TimeFilterType;
@@ -99,6 +101,18 @@ export default function VenueEventRow({ group, timeFilter, selectedEventId, onSe
             }}>{renderEvent(event, true)}</View> : <View style={{ height: pageHeight || 520 }} />}
           </View>)}
         </ScrollView>}
+        <View style={styles.heroNavigation} pointerEvents="box-none">
+          {index > 0 && <TouchableOpacity testID="venue-event-previous" style={[styles.heroArrow, styles.heroPrevious]}
+            onPress={() => goTo(index - 1)} activeOpacity={0.8} accessibilityRole="button"
+            accessibilityLabel={`Show previous ${active.type === 'special' ? 'special' : 'event'} at this venue`}>
+            <MaterialIcons name="chevron-left" size={30} color="#FFFFFF" />
+          </TouchableOpacity>}
+          {index < group.events.length - 1 && <TouchableOpacity testID="venue-event-next" style={[styles.heroArrow, styles.heroNext]}
+            onPress={() => goTo(index + 1)} activeOpacity={0.8} accessibilityRole="button"
+            accessibilityLabel={`Show next ${active.type === 'special' ? 'special' : 'event'} at this venue`}>
+            <MaterialIcons name="chevron-right" size={30} color="#FFFFFF" />
+          </TouchableOpacity>}
+        </View>
       </View>
       <View style={styles.footer}>
         <TouchableOpacity disabled={index === 0} onPress={() => goTo(index - 1)} style={styles.arrow}
@@ -130,6 +144,9 @@ const styles = StyleSheet.create({
   chevron: { minHeight: 36, width: 24, justifyContent: 'center', alignItems: 'center' },
   address: { flexDirection: 'row', gap: 5, paddingHorizontal: 12, paddingBottom: 10 }, addressText: { flex: 1, fontSize: 12, color: '#626973' },
   viewport: { overflow: 'hidden' }, pages: { alignItems: 'flex-start' },
+  heroNavigation: { position: 'absolute', top: 0, left: 0, right: 0, height: VENUE_FEED_HERO_HEIGHT },
+  heroArrow: { position: 'absolute', top: '50%', marginTop: -22, width: 44, height: 44, borderRadius: 22, backgroundColor: 'rgba(0,0,0,0.38)', alignItems: 'center', justifyContent: 'center' },
+  heroPrevious: { left: 10 }, heroNext: { right: 10 },
   footer: { minHeight: 38, flexDirection: 'row', alignItems: 'center', borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#E6E9ED', paddingHorizontal: 4 },
   arrow: { width: 40, minHeight: 38, alignItems: 'center', justifyContent: 'center' },
   next: { flex: 1, alignItems: 'center', paddingVertical: 5 }, nextLabel: { fontSize: 10, color: '#737B85' }, nextTime: { fontSize: 11, color: '#526174', textAlign: 'center' },

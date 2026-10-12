@@ -70,3 +70,17 @@ it('renders a single matching event with the existing normal-card treatment', ()
   expect(rendered).toHaveBeenCalledWith(events[0], false);
   expect(tree.root.findAllByProps({ testID: 'venue-event-row' })).toHaveLength(0);
 });
+
+it('shows only available hero arrows and taps use the same animated pager as swipes', () => {
+  mount({ records: events.slice(0, 3) });
+  expect(tree.root.findAllByProps({ testID: 'venue-event-previous' })).toHaveLength(0);
+  act(() => tree.root.findAllByProps({ testID: 'venue-event-next' })[0].props.onPress());
+  expect(mockScrollTo).toHaveBeenLastCalledWith({ x: 360, animated: true });
+  settle(360);
+  act(() => tree.root.findAllByProps({ testID: 'venue-event-previous' })[0].props.onPress());
+  expect(mockScrollTo).toHaveBeenLastCalledWith({ x: 0, animated: true });
+  expect(tree.root.findAllByProps({ testID: 'venue-event-next' }).length).toBeGreaterThan(0);
+  settle(720);
+  expect(tree.root.findAllByProps({ testID: 'venue-event-next' })).toHaveLength(0);
+  expect(tree.root.findAllByProps({ testID: 'venue-event-previous' }).length).toBeGreaterThan(0);
+});
