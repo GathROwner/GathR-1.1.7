@@ -9,6 +9,9 @@ import {
   Modal,
   PanResponder,
   Platform,
+  useWindowDimensions,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { getTabDockContentInset } from '../../constants/tabDock';
@@ -25,6 +28,11 @@ import { EventTimingBadge } from '../common/EventTimingBadge';
 import EventImageLightbox from './EventImageLightbox';
 import { useClusterInteractionStore } from '../../store/clusterInteractionStore';
 import { getInterestCarouselEvents } from '../../utils/interestCarouselOrder';
+import {
+  createLoopingCarouselItems, getLoopingCarouselStartIndex,
+  getLoopingCarouselLogicalOffset, getLoopingCarouselRestoredOffset,
+  getLoopingCarouselDotStops,
+} from '../../utils/loopingCarousel';
 import { isFamilyFriendlyInterest } from '../../utils/familyFriendly';
 import { registerMapTraceSampler, traceMapEvent } from '../../utils/mapTrace';
 import {
@@ -278,27 +286,20 @@ const PaginationDots = memo(({
   // Create animated dots with size interpolation based on scroll position
   const dots = useMemo(() => {
     return Array.from({ length: itemCount }, (_, index) => {
-      // Create input range centered around this dot's position
-      // Each dot transitions through: small -> medium -> large -> medium -> small
-      const inputRange = [
-        (index - 2) * itemWidth,
-        (index - 1) * itemWidth,
-        index * itemWidth,
-        (index + 1) * itemWidth,
-        (index + 2) * itemWidth,
-      ];
+      const { inputRange, distances } = getLoopingCarouselDotStops(index, itemCount, itemWidth);
 
       // Interpolate dot size based on scroll position
       const dotSize = scrollX.interpolate({
         inputRange,
-        outputRange: [DOT_SIZE_SMALL, DOT_SIZE_MEDIUM, DOT_SIZE_LARGE, DOT_SIZE_MEDIUM, DOT_SIZE_SMALL],
+        outputRange: distances.map(distance => itemCount <= 3 || distance === 0
+          ? DOT_SIZE_LARGE : distance === 1 ? DOT_SIZE_MEDIUM : DOT_SIZE_SMALL),
         extrapolate: 'clamp',
       });
 
       // Interpolate opacity - larger dots are more visible
       const dotOpacity = scrollX.interpolate({
         inputRange,
-        outputRange: [0.4, 0.6, 0.9, 0.6, 0.4],
+        outputRange: distances.map(distance => distance === 0 ? 0.9 : distance === 1 ? 0.6 : 0.4),
         extrapolate: 'clamp',
       });
 
@@ -319,8 +320,8 @@ const PaginationDots = memo(({
     });
   }, [itemCount, scrollX, itemWidth]);
 
-  // For 3 or fewer items, show all dots as large (all visible)
-  if (itemCount <= 3) {
+  // A single card has no scrolling or repeated copies.
+  if (itemCount <= 1) {
     return (
       <View style={styles.paginationContainer}>
         {Array.from({ length: itemCount }, (_, index) => (
@@ -358,6 +359,7 @@ type CarouselEventContext = {
 
 // Main Carousel Component
 const InterestsCarousel: React.FC = () => {
+  const { width: viewportWidth } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const bottomOffset = getTabDockContentInset(Platform.OS, insets.bottom);
   const isFocused = useIsFocused();
@@ -452,6 +454,13 @@ const InterestsCarousel: React.FC = () => {
   const activeMode: 'category' | null = hasInterestPillCategoryFilter ? 'category' : null;
 
   const carouselEvents = categoryCarouselEvents;
+  const loopingItems = useMemo(() => createLoopingCarouselItems(carouselEvents), [carouselEvents]);
+  const loopStartIndex = getLoopingCarouselStartIndex(carouselEvents.length);
+  const carouselListKey = JSON.stringify([
+    carouselFilterCriteria.eventFilters.category,
+    carouselFilterCriteria.specialFilters.category,
+    ...carouselEvents.map(event => String(event.id)),
+  ]);
 
   // Determine which events have new content
   // Map from event.id to boolean indicating if event is new
@@ -493,7 +502,38 @@ const InterestsCarousel: React.FC = () => {
   const slideAnim = useRef(new Animated.Value(150)).current; // Start off-screen
   const opacityAnim = useRef(new Animated.Value(0)).current;
   const scrollX = useRef(new Animated.Value(0)).current; // Track horizontal scroll position
-  const flatListRef = useRef<FlatList<Event>>(null); // Ref for scrolling carousel
+  const flatListRef = useRef<FlatList<(typeof loopingItems)[number]>>(null);
+  const physicalOffsetRef = useRef(loopStartIndex * (CARD_WIDTH + CARD_GAP));
+  const settleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const clearSettleTimer = useCallback(() => {
+    if (settleTimerRef.current) clearTimeout(settleTimerRef.current);
+    settleTimerRef.current = null;
+  }, []);
+  const restoreLoopPosition = useCallback(() => {
+    clearSettleTimer();
+    if (carouselEvents.length <= 1) return;
+    const offset = physicalOffsetRef.current;
+    const restored = getLoopingCarouselRestoredOffset(offset, carouselEvents.length, CARD_WIDTH + CARD_GAP);
+    if (Math.abs(restored - offset) < 0.5) return;
+    physicalOffsetRef.current = restored;
+    flatListRef.current?.scrollToOffset({ offset: restored, animated: false });
+  }, [carouselEvents.length, clearSettleTimer]);
+  useLayoutEffect(() => {
+    clearSettleTimer();
+    physicalOffsetRef.current = loopStartIndex * (CARD_WIDTH + CARD_GAP);
+    scrollX.setValue(0);
+    return clearSettleTimer;
+  }, [carouselListKey, loopStartIndex, scrollX, clearSettleTimer]);
+  const handleCarouselScroll = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const offset = event.nativeEvent.contentOffset.x;
+    physicalOffsetRef.current = offset;
+    scrollX.setValue(getLoopingCarouselLogicalOffset(offset, carouselEvents.length, CARD_WIDTH + CARD_GAP));
+    // A drag without momentum also settles, but never restore while snap scrolling continues.
+    if (settleTimerRef.current) {
+      clearSettleTimer();
+      settleTimerRef.current = setTimeout(restoreLoopPosition, 120);
+    }
+  }, [carouselEvents.length, scrollX, clearSettleTimer, restoreLoopPosition]);
   const carouselVisibleRef = useRef(false);
 
   // Dismissal handler - clears the category carousel UI state.
@@ -756,13 +796,13 @@ const InterestsCarousel: React.FC = () => {
       currentIndex: newIndex,
     });
 
-    // Scroll carousel to match lightbox position
-    flatListRef.current?.scrollToIndex({
-      index: newIndex,
-      animated: true,
-      viewPosition: 0.5, // Center the card in view
-    });
-  }, [carouselEvents, getEventContext, markCarouselEventViewed]);
+    // Only original indices enter the lightbox; repeated slots are private to the list.
+    clearSettleTimer();
+    const offset = (getLoopingCarouselStartIndex(carouselEvents.length) + newIndex) * (CARD_WIDTH + CARD_GAP);
+    physicalOffsetRef.current = offset;
+    scrollX.setValue(newIndex * (CARD_WIDTH + CARD_GAP));
+    flatListRef.current?.scrollToOffset({ offset, animated: false });
+  }, [carouselEvents, getEventContext, markCarouselEventViewed, clearSettleTimer, scrollX]);
 
   // Handle when user clicks "View Venue" in lightbox
   // This should record venue-level interaction to clear all red dots for that venue
@@ -815,19 +855,23 @@ const InterestsCarousel: React.FC = () => {
 
         {/* Carousel - no wrapper background */}
         <FlatList
+          key={carouselListKey}
           ref={flatListRef}
-          data={carouselEvents}
+          data={loopingItems}
           horizontal
+          initialScrollIndex={loopStartIndex}
           showsHorizontalScrollIndicator={false}
-          snapToInterval={carouselEvents.length > 2 ? CARD_WIDTH + CARD_GAP : undefined}
+          snapToInterval={carouselEvents.length > 1 ? CARD_WIDTH + CARD_GAP : undefined}
+          disableIntervalMomentum
+          bounces={false}
           decelerationRate="fast"
           contentContainerStyle={[
             styles.listContent,
-            carouselEvents.length <= 2 && { flexGrow: 1, justifyContent: 'center' }
+            carouselEvents.length <= 1 && { flexGrow: 1, justifyContent: 'center' }
           ]}
-          keyExtractor={(item) => `carousel-${item.id}`}
+          keyExtractor={({ item, slot }) => `carousel-${item.id}-${slot}`}
           initialNumToRender={4}
-          renderItem={({ item, index }) => {
+          renderItem={({ item: { item, index } }) => {
             // Check if this event has new content and hasn't been viewed yet
             const hasNew = eventNewContentMap.get(item.id) || false;
 
@@ -857,14 +901,19 @@ const InterestsCarousel: React.FC = () => {
             offset: (CARD_WIDTH + CARD_GAP) * index,
             index,
           })}
-          onScroll={Animated.event(
-            [{ nativeEvent: { contentOffset: { x: scrollX } } }],
-            { useNativeDriver: false }
-          )}
+          onScroll={handleCarouselScroll}
+          onScrollBeginDrag={clearSettleTimer}
+          onMomentumScrollBegin={clearSettleTimer}
+          onMomentumScrollEnd={restoreLoopPosition}
+          onScrollEndDrag={() => {
+            clearSettleTimer();
+            settleTimerRef.current = setTimeout(restoreLoopPosition, 120);
+          }}
           scrollEventThrottle={16}
-          windowSize={3}
-          maxToRenderPerBatch={3}
-          removeClippedSubviews={true}
+          // Keep the equivalent neighboring cycle mounted before an invisible restore.
+          windowSize={Math.max(5, 3 + 2 * Math.ceil(carouselEvents.length * (CARD_WIDTH + CARD_GAP) / viewportWidth))}
+          maxToRenderPerBatch={10}
+          removeClippedSubviews={false}
         />
 
         {/* Pagination Dots */}
