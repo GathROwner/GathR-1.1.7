@@ -53,6 +53,8 @@ import CategoryFilterOptions from '../../components/map/CategoryFilterOptions';
 
 // Import components
 import EventImageLightbox from '../../components/map/EventImageLightbox';
+import VenueEventRow from '../../components/common/VenueEventRow';
+import { groupVenueFeedEvents, getVenueFeedKey, type VenueFeedGroup } from '../../utils/venueFeedGroups';
 import FullSizeSdkAdCard, { FULL_SIZE_SDK_AD_ROW_HEIGHT } from '../../components/ads/FullSizeSdkAdCard';
 import { AdColors } from '../../constants/AdTheme';
 
@@ -331,6 +333,8 @@ interface EventListItemProps {
   isSaved: boolean;
   isGuest: boolean;
   analytics: any; // Analytics hook - TEMPORARILY DISABLED
+  grouped?: boolean;
+  browseEvents?: Event[];
   isFirstItem?: boolean; // NEW: Tutorial awareness only for first item
 }
 
@@ -342,6 +346,7 @@ const EventListItem: React.FC<EventListItemProps> = ({
   isSaved,
   isGuest,
   analytics,
+  grouped = false,
   isFirstItem = false
 }) => {
   useEventTimingMinute();
@@ -950,7 +955,7 @@ const result = await userService.toggleSavedEvent(event.id, {
     <View>
       <TouchableOpacity
         ref={tutorialRef}
-        style={[styles.eventCard, timingState.muted && styles.mutedEventCard]}
+        style={[styles.eventCard, grouped && styles.groupedEventCard, timingState.muted && styles.mutedEventCard]}
         onPress={onPress}
         activeOpacity={0.7}
       >
@@ -982,7 +987,7 @@ const result = await userService.toggleSavedEvent(event.id, {
             />
 
             {/* Venue identity and address disclosure - top left */}
-            <View style={styles.venueIdentityOverlay}>
+            {!grouped && <View style={styles.venueIdentityOverlay}>
               <View style={styles.venueIdentityPill}>
                 <View style={styles.venueProfileImageContainer}>
                   <FallbackImage
@@ -1045,7 +1050,7 @@ const result = await userService.toggleSavedEvent(event.id, {
                   </Text>
                 </View>
               )}
-            </View>
+            </View>}
 
             {showHeroEngagementOverlay && (
               <View style={styles.heroEngagementOverlay} pointerEvents="box-none">
@@ -1339,7 +1344,9 @@ const result = await userService.toggleSavedEvent(event.id, {
 const MemoizedEventListItem = React.memo(EventListItem, (prevProps, nextProps) => {
   // Only re-render if these specific props change
   return (
-    prevProps.event.id === nextProps.event.id &&
+    prevProps.event === nextProps.event &&
+    prevProps.grouped === nextProps.grouped &&
+    prevProps.browseEvents === nextProps.browseEvents &&
     prevProps.event.familyFriendlyScore === nextProps.event.familyFriendlyScore &&
     prevProps.matchesUserInterests === nextProps.matchesUserInterests &&
     prevProps.isSaved === nextProps.isSaved &&
@@ -1596,8 +1603,11 @@ useEffect(() => {
   const [selectedImageData, setSelectedImageData] = useState<{
     imageUrl: string;
     event: Event;
+    events: Event[];
   } | null>(null);
   
+  const [selectedVenueEvents, setSelectedVenueEvents] = useState<Record<string, string>>({});
+
   // Read saved events, interests, and favorite venues from the centralized cache
   const savedEvents = useUserPrefsStore((s: UserPrefsState) => s.savedEvents);
   const userInterests = useUserPrefsStore((s: UserPrefsState) => s.interests);
@@ -1845,7 +1855,7 @@ useEffect(() => {
   // ANALYTICS-ENHANCED EVENT HANDLERS
   // ===============================================================
   
-  const handleEventPress = (event: Event) => {
+  const handleEventPress = (event: Event, groupEvents: Event[] = [event]) => {
     if (event.friendEvent) {
       router.push(`/friend-event/${event.friendEvent.eventId}`);
       return;
@@ -1885,7 +1895,7 @@ useEffect(() => {
     
     if (imageUrl) {
       console.log('CARD PRESSED - Opening lightbox for:', imageUrl);
-      handleImagePress(imageUrl, event);
+      handleImagePress(imageUrl, event, groupEvents);
     } else {
       setSelectedEvent(event);
       setDetailsVisible(true);
@@ -1899,7 +1909,7 @@ useEffect(() => {
     }
   };
 
-  const handleImagePress = (imageUrl: string, event: Event) => {
+  const handleImagePress = (imageUrl: string, event: Event, groupEvents: Event[] = [event]) => {
     if (event.friendEvent) {
       router.push(`/friend-event/${event.friendEvent.eventId}`);
       return;
@@ -1931,7 +1941,7 @@ try {
   });
 } catch {}
 
-setSelectedImageData({ imageUrl, event });
+setSelectedImageData({ imageUrl, event, events: groupEvents });
 
   };
 
@@ -2245,18 +2255,28 @@ setSelectedImageData({ imageUrl, event });
     });
   }, [filteredOutsideViewportEvents, outsideViewportLoadCount, userLocation, userInterestLowerSet, savedEventSet, favoriteVenueSet, eventTimeContext]);
 
+  // Group only already-filtered records; preserve ranked venue order and expose every matching sibling.
+  const viewportVenueGroups = useMemo(() => groupVenueFeedEvents(sortedViewportEvents,
+    [...filteredViewportEvents, ...filteredOutsideViewportEvents]),
+    [sortedViewportEvents, filteredViewportEvents, filteredOutsideViewportEvents]);
+  const outsideVenueGroups = useMemo(() => {
+    const visibleKeys = new Set(viewportVenueGroups.map(group => group.key));
+    return groupVenueFeedEvents([...sortedOutsideViewportEvents, ...filteredOutsideViewportEvents])
+      .filter(group => !visibleKeys.has(group.key));
+  }, [sortedOutsideViewportEvents, filteredOutsideViewportEvents, viewportVenueGroups]);
+
   // Request one distinct NativeAd instance for every placement in the currently
   // exposed page. The target grows with pagination instead of stopping at four.
   const displayedOutsideViewportEventCount = Math.min(
-    sortedOutsideViewportEvents.length,
+    outsideVenueGroups.length,
     outsideViewportLoadCount
   );
   const regularEventAdPlacements =
-    Math.floor(sortedViewportEvents.length / 4) +
+    Math.floor(viewportVenueGroups.length / 4) +
     Math.floor(displayedOutsideViewportEventCount / 4);
   const lowCountEventAdPlacement =
-    sortedViewportEvents.length > 0 &&
-    sortedViewportEvents.length < 4 &&
+    viewportVenueGroups.length > 0 &&
+    viewportVenueGroups.length < 4 &&
     displayedOutsideViewportEventCount === 0
       ? 1
       : 0;
@@ -2267,6 +2287,7 @@ setSelectedImageData({ imageUrl, event });
   type EventListItem = {
     type: 'event';
     data: Event;
+    group: VenueFeedGroup;
   };
 
   type DividerItem = {
@@ -2305,8 +2326,8 @@ setSelectedImageData({ imageUrl, event });
   const eventsWithAds = useMemo<ListItem[]>(() => {
     return measureListTabStage('events', 'build_list_with_ads', {
       ready: isFocusedContentReady,
-      viewportCount: sortedViewportEvents.length,
-      outsideViewportCount: sortedOutsideViewportEvents.length,
+      viewportCount: viewportVenueGroups.length,
+      outsideViewportCount: outsideVenueGroups.length,
       nativeAdsCount: nativeAds.length,
     }, () => {
       if (!isFocusedContentReady) {
@@ -2319,8 +2340,8 @@ setSelectedImageData({ imageUrl, event });
       const validAds = nativeAds.filter(ad => ad.ad !== null && !ad.loading);
 
     // Add viewport events with ads
-    sortedViewportEvents.forEach((event, index) => {
-      result.push({ type: 'event', data: event });
+    viewportVenueGroups.forEach((group, index) => {
+      result.push({ type: 'event', data: group.events[0], group });
 
       // Insert ad every 4 events
       if ((index + 1) % adFrequency === 0 && nativeAds.length > 0) {
@@ -2352,9 +2373,9 @@ setSelectedImageData({ imageUrl, event });
     }
 
     // Add outside-viewport events (paginated) with ads interspersed
-    const outsideViewportToShow = sortedOutsideViewportEvents.slice(0, outsideViewportLoadCount);
-    outsideViewportToShow.forEach((event, index) => {
-      result.push({ type: 'event', data: event });
+    const outsideViewportToShow = outsideVenueGroups.slice(0, outsideViewportLoadCount);
+    outsideViewportToShow.forEach((group, index) => {
+      result.push({ type: 'event', data: group.events[0], group });
 
       // Continue inserting ads every 4 events in outside-viewport section
       if ((index + 1) % adFrequency === 0 && nativeAds.length > 0) {
@@ -2374,7 +2395,7 @@ setSelectedImageData({ imageUrl, event });
     });
 
     // Low-count fallback for viewport section: if 1–3 events, append one ad at the end of viewport section
-    if (sortedViewportEvents.length > 0 && sortedViewportEvents.length < adFrequency && nativeAds.length > 0 && sortedOutsideViewportEvents.length === 0) {
+    if (viewportVenueGroups.length > 0 && viewportVenueGroups.length < adFrequency && nativeAds.length > 0 && outsideVenueGroups.length === 0) {
       const selectedAd = validAds[0];
       if (selectedAd) {
         result.push({
@@ -2391,14 +2412,14 @@ setSelectedImageData({ imageUrl, event });
       markTabListDataReady('events', {
         ready: true,
         itemCount: result.length,
-        viewportCount: sortedViewportEvents.length,
-        outsideViewportCount: sortedOutsideViewportEvents.length,
+        viewportCount: viewportVenueGroups.length,
+        outsideViewportCount: outsideVenueGroups.length,
         nativeAdsCount: nativeAds.length,
       });
 
       return result;
     });
-  }, [getAdListKey, isFocusedContentReady, sortedViewportEvents, sortedOutsideViewportEvents, filteredOutsideViewportEvents.length, nativeAds, outsideViewportLoadCount]);
+  }, [getAdListKey, isFocusedContentReady, viewportVenueGroups, outsideVenueGroups, filteredOutsideViewportEvents.length, nativeAds, outsideViewportLoadCount]);
 
   // Pre-compute lookup Sets for O(1) access during render
   const interestMatchSet = useMemo(() => {
@@ -2409,8 +2430,10 @@ setSelectedImageData({ imageUrl, event });
       if (userInterestLowerSet.size === 0) return new Set<string>();
       const matchingIds = new Set<string>();
       eventsWithAds.forEach(item => {
-        if (item.type === 'event' && doesEventMatchAnyInterest(item.data, userInterestLowerSet)) {
-          matchingIds.add(String(item.data.id));
+        if (item.type === 'event') {
+          item.group.events.forEach(event => {
+            if (doesEventMatchAnyInterest(event, userInterestLowerSet)) matchingIds.add(String(event.id));
+          });
         }
       });
       return matchingIds;
@@ -2433,7 +2456,7 @@ setSelectedImageData({ imageUrl, event });
 
   // Memoized FlatList callbacks to prevent unnecessary re-renders
   const keyExtractor = useCallback((item: any, index: number) => {
-    if (item.type === 'event') return `event-${item.data.id}`;
+    if (item.type === 'event') return item.group.key;
     if (item.type === 'ad') return item.data.key;
     if (item.type === 'divider') return `divider-${index}`;
     return `item-${index}`;
@@ -2795,21 +2818,19 @@ setSelectedImageData({ imageUrl, event });
               );
             }
 
-            // item.type === 'event'
-            // Use pre-computed firstEventIndex (O(1)) instead of slice+filter (O(n))
-            const isFirstEventItem = index === firstEventIndex;
-            const eventId = String(item.data.id);
-            const eventData = getUpdatedEvent(item.data.id) || item.data;
             const eventListItem = (
-              <MemoizedEventListItem
-                event={eventData}
-                onPress={() => handleEventPress(eventData)}
-                onImagePress={handleImagePress}
-                matchesUserInterests={interestMatchSet.has(eventId)}
-                isSaved={savedEventSet.has(eventId)}
-                isGuest={isGuest}
-                analytics={analytics || {}}
-                isFirstItem={isFirstEventItem}
+              <VenueEventRow group={item.group} timeFilter={filterCriteria.eventFilters.timeFilter}
+                selectedEventId={selectedVenueEvents[item.group.key]}
+                onSelectEvent={event => setSelectedVenueEvents(previous => ({ ...previous, [item.group.key]: String(event.id) }))}
+                renderEvent={(page, grouped) => {
+                  const eventData = getUpdatedEvent(page.id) || page;
+                  const eventId = String(eventData.id);
+                  return <MemoizedEventListItem key={eventId} event={eventData} grouped={grouped} browseEvents={item.group.events}
+                    onPress={() => handleEventPress(eventData, item.group.events)}
+                    onImagePress={(url, event) => handleImagePress(url, event, item.group.events)}
+                    matchesUserInterests={interestMatchSet.has(eventId)} isSaved={savedEventSet.has(eventId)}
+                    isGuest={isGuest} analytics={analytics || {}} isFirstItem={index === firstEventIndex} />;
+                }}
               />
             );
 
@@ -2866,6 +2887,14 @@ setSelectedImageData({ imageUrl, event });
           <EventImageLightbox
             imageUrl={selectedImageData.imageUrl}
             event={selectedImageData.event}
+            events={selectedImageData.events}
+            currentIndex={selectedImageData.events.findIndex(event => String(event.id) === String(selectedImageData.event.id))}
+            onNavigate={index => {
+              const next = selectedImageData.events[index];
+              if (!next) return;
+              setSelectedVenueEvents(previous => ({ ...previous, [getVenueFeedKey(next)]: String(next.id) }));
+              setSelectedImageData({ imageUrl: next.imageUrl || next.profileUrl, event: next, events: selectedImageData.events });
+            }}
             onClose={handleModalClose}
           />
         </Modal>
@@ -3086,6 +3115,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   // NEW: Updated card styles with framing
+  groupedEventCard: { marginHorizontal: 0, marginBottom: 0, borderWidth: 0, borderRadius: 0 },
   eventCard: {
     backgroundColor: '#FFFFFF',
     paddingBottom: 0,
