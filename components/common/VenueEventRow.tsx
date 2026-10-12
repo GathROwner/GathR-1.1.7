@@ -6,7 +6,6 @@ import type { Event } from '../../types/events';
 import type { VenueFeedGroup } from '../../utils/venueFeedGroups';
 import { createLocationKeyFromEvent } from '../../utils/priorityUtils';
 import { TimeFilterType } from '../../types/filter';
-import { EventTimingSummaryText } from './EventTimingSummaryText';
 import FallbackImage from './FallbackImage';
 import { VenueFavoriteButton } from './VenueFavoriteButton';
 import { useReduceMotion } from '../../hooks/useReduceMotion';
@@ -114,19 +113,6 @@ export default function VenueEventRow({ group, timeFilter, selectedEventId, onSe
           </TouchableOpacity>}
         </View>
       </View>
-      <View style={styles.footer}>
-        <TouchableOpacity disabled={index === 0} onPress={() => goTo(index - 1)} style={styles.arrow}
-          accessibilityRole="button" accessibilityLabel="Previous event at this venue" accessibilityState={{ disabled: index === 0 }}>
-          <MaterialIcons name="chevron-left" size={24} color={index === 0 ? '#D8DCE1' : '#1E90FF'} />
-        </TouchableOpacity>
-        <View style={styles.next}><Text style={styles.nextLabel}>{index < group.events.length - 1 ? 'Next here' : 'Last in these filters'}</Text>
-          {index < group.events.length - 1 && <EventTimingSummaryText event={group.events[index + 1]}
-            style={styles.nextTime} numberOfLines={1} />}</View>
-        <TouchableOpacity disabled={index === group.events.length - 1} onPress={() => goTo(index + 1)} style={styles.arrow}
-          accessibilityRole="button" accessibilityLabel="Next event at this venue" accessibilityState={{ disabled: index === group.events.length - 1 }}>
-          <MaterialIcons name="chevron-right" size={24} color={index === group.events.length - 1 ? '#D8DCE1' : '#1E90FF'} />
-        </TouchableOpacity>
-      </View>
     </View>
   );
 }
@@ -147,7 +133,4 @@ const styles = StyleSheet.create({
   heroNavigation: { position: 'absolute', top: 0, left: 0, right: 0, height: VENUE_FEED_HERO_HEIGHT },
   heroArrow: { position: 'absolute', top: '50%', marginTop: -22, width: 44, height: 44, borderRadius: 22, backgroundColor: 'rgba(0,0,0,0.38)', alignItems: 'center', justifyContent: 'center' },
   heroPrevious: { left: 10 }, heroNext: { right: 10 },
-  footer: { minHeight: 38, flexDirection: 'row', alignItems: 'center', borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#E6E9ED', paddingHorizontal: 4 },
-  arrow: { width: 40, minHeight: 38, alignItems: 'center', justifyContent: 'center' },
-  next: { flex: 1, alignItems: 'center', paddingVertical: 5 }, nextLabel: { fontSize: 10, color: '#737B85' }, nextTime: { fontSize: 11, color: '#526174', textAlign: 'center' },
 });

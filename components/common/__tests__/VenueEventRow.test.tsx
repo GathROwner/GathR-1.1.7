@@ -17,7 +17,6 @@ jest.mock('react-native-gesture-handler', () => {
 jest.mock('@expo/vector-icons', () => ({ MaterialIcons: () => null }));
 jest.mock('../FallbackImage', () => () => null);
 jest.mock('../VenueFavoriteButton', () => ({ VenueFavoriteButton: () => null }));
-jest.mock('../EventTimingSummaryText', () => ({ EventTimingSummaryText: () => null }));
 jest.mock('../../../hooks/useReduceMotion', () => ({ useReduceMotion: () => false }));
 
 const events = Array.from({ length: 8 }, (_, index) => ({
@@ -54,8 +53,7 @@ it('settles to matching events, clamps both ends, and does not loop', () => {
   mount(); settle(-20); expect(selection).not.toHaveBeenCalled();
   settle(360); expect(selection).toHaveBeenLastCalledWith('event-1');
   settle(9999); expect(selection).toHaveBeenLastCalledWith('event-7');
-  const next = tree.root.findAllByProps({ accessibilityLabel: 'Next event at this venue' })[0];
-  expect(next.props.disabled).toBe(true);
+  expect(tree.root.findAllByProps({ testID: 'venue-event-next' })).toHaveLength(0);
 });
 
 it('restores a selected event by ID and falls back to the first when filters remove it', () => {
