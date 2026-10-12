@@ -47,6 +47,7 @@ import type { Event, Venue, Cluster } from '../../types/events';
 import { useMapStore } from '../../store/mapStore';
 import { addEventToCalendarWithTiming } from '../../utils/calendarUtils';
 import { getCategoryFallbackImage } from '../../utils/imageUtils';
+import { getAdjacentLightboxIndex } from '../../utils/lightboxNavigation';
 import {
   buildEventImageGallery,
   getEventImageGalleryHeroUrl,
@@ -214,6 +215,7 @@ interface EventImageLightboxProps {
   events?: Event[];
   currentIndex?: number;
   onNavigate?: (index: number) => void;
+  loopNavigation?: boolean;
   isTrending?: boolean;
   preferRelevantHero?: boolean;
   // City-level (festival) event opened from its map marker
@@ -233,6 +235,7 @@ const EventImageLightbox: React.FC<EventImageLightboxProps> = ({
   events,
   currentIndex,
   onNavigate,
+  loopNavigation = false,
   isTrending = false,
   preferRelevantHero = false,
   isCityEvent = false,
@@ -479,8 +482,8 @@ try {
   const horizontalPanRef = useRef(null);
 
   // Navigation state
-  const canNavigatePrev = events && currentIndex !== undefined && currentIndex > 0;
-  const canNavigateNext = events && currentIndex !== undefined && currentIndex < events.length - 1;
+  const previousIndex = getAdjacentLightboxIndex(currentIndex, events?.length ?? 0, -1, loopNavigation);
+  const nextIndex = getAdjacentLightboxIndex(currentIndex, events?.length ?? 0, 1, loopNavigation);
   const showTrendingOverlay = Boolean(isTrending && events && currentIndex !== undefined);
   const trendingPositionLabel =
     events && currentIndex !== undefined ? `${currentIndex + 1} / ${events.length}` : '';
@@ -489,13 +492,15 @@ try {
   const currentIndexRef = useRef(currentIndex);
   const onNavigateRef = useRef(onNavigate);
   const eventsLengthRef = useRef(events?.length ?? 0);
+  const loopNavigationRef = useRef(loopNavigation);
 
   // Keep refs updated
   useEffect(() => {
     currentIndexRef.current = currentIndex;
     onNavigateRef.current = onNavigate;
     eventsLengthRef.current = events?.length ?? 0;
-  }, [currentIndex, onNavigate, events?.length]);
+    loopNavigationRef.current = loopNavigation;
+  }, [currentIndex, onNavigate, events?.length, loopNavigation]);
 
   // Reset the selected page when navigating between events.
   useEffect(() => {
@@ -726,31 +731,31 @@ const [readingMode, setReadingMode] = useState(false);
       const navigate = onNavigateRef.current;
       const length = eventsLengthRef.current;
 
-      const canGoNext = idx !== undefined && idx < length - 1;
-      const canGoPrev = idx !== undefined && idx > 0;
+      const next = getAdjacentLightboxIndex(idx, length, 1, loopNavigationRef.current);
+      const previous = getAdjacentLightboxIndex(idx, length, -1, loopNavigationRef.current);
 
       // Swipe left = go to next (translationX < -threshold)
-      if ((tx < -threshold || velocityX < -velocityThreshold) && canGoNext && navigate && idx !== undefined) {
+      if ((tx < -threshold || velocityX < -velocityThreshold) && next !== null && navigate) {
         // Animate out to left, then navigate
         Animated.timing(translateX, {
           toValue: -SCREEN_WIDTH,
           duration: 200,
           useNativeDriver: true,
         }).start(() => {
-          navigate(idx + 1);
+          navigate(next);
           // Reset position for next event
           translateX.setValue(0);
         });
       }
       // Swipe right = go to previous (translationX > threshold)
-      else if ((tx > threshold || velocityX > velocityThreshold) && canGoPrev && navigate && idx !== undefined) {
+      else if ((tx > threshold || velocityX > velocityThreshold) && previous !== null && navigate) {
         // Animate out to right, then navigate
         Animated.timing(translateX, {
           toValue: SCREEN_WIDTH,
           duration: 200,
           useNativeDriver: true,
         }).start(() => {
-          navigate(idx - 1);
+          navigate(previous);
           // Reset position for next event
           translateX.setValue(0);
         });
@@ -1740,10 +1745,11 @@ const handleNonTicketAction = () => {
 
           {navigationEnabled && (
             <>
-              {canNavigatePrev && (
+              {previousIndex !== null && (
                 <TouchableOpacity
                   style={styles.navArrowLeft}
-                  onPress={() => onNavigate && currentIndex !== undefined && onNavigate(currentIndex - 1)}
+                  accessibilityLabel="Previous event"
+                  onPress={() => onNavigate?.(previousIndex)}
                   activeOpacity={0.7}
                 >
                   <View style={styles.navArrowContainer}>
@@ -1751,10 +1757,11 @@ const handleNonTicketAction = () => {
                   </View>
                 </TouchableOpacity>
               )}
-              {canNavigateNext && (
+              {nextIndex !== null && (
                 <TouchableOpacity
                   style={styles.navArrowRight}
-                  onPress={() => onNavigate && currentIndex !== undefined && onNavigate(currentIndex + 1)}
+                  accessibilityLabel="Next event"
+                  onPress={() => onNavigate?.(nextIndex)}
                   activeOpacity={0.7}
                 >
                   <View style={styles.navArrowContainer}>

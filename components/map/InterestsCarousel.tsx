@@ -940,6 +940,7 @@ const InterestsCarousel: React.FC = () => {
             events={carouselEvents}
             currentIndex={selectedImageData.currentIndex}
             onNavigate={handleNavigate}
+            loopNavigation
             onViewVenue={handleViewVenueFromLightbox}
             isCityEvent={isAreaExperienceEvent(selectedImageData.event)}
           />
