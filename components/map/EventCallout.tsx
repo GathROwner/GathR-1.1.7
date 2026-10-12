@@ -2602,6 +2602,7 @@ const EventCallout: React.FC<EventCalloutProps> = ({
   readinessEpoch,
 }) => {
   const timingMinute = useEventTimingMinute();
+  const expiryNow = useMemo(() => new Date(timingMinute * 60000), [timingMinute]);
   const pathname = usePathname();
   const isFriendEventDetailRoute = isFriendEventDetailPath(pathname);
   // Add store subscription to get fresh event data
@@ -2915,9 +2916,9 @@ const activeVenueFriendPresence = getVenueFriendPresence(cluster, activeVenue);
   // each card, but must not place a later event above an earlier one.
   const events = useMemo(
     () => sortEventsByTimeStatus(
-      activeVenue.events.filter(event => event.type === 'event' && !isEventPast(event))
+      activeVenue.events.filter(event => event.type === 'event' && !isEventPast(event, expiryNow))
     ),
-    [activeVenue.events, timingMinute]
+    [activeVenue.events, expiryNow]
   );
   const specials = activeVenue.events.filter(event => event.type === 'special');
   // LOG: Active venue content counts - shows events and specials count for debugging content display
@@ -2927,9 +2928,9 @@ const activeVenueFriendPresence = getVenueFriendPresence(cluster, activeVenue);
   const hasEvents = events.length > 0;
   const hasSpecials = specials.length > 0;
   const browsePages = useMemo(() => getCalloutBrowsePages(reorderedVenues.map((venue) => ({
-    hasEvents: venue.events.some((event) => event.type === 'event' && !isEventPast(event)),
+    hasEvents: venue.events.some((event) => event.type === 'event' && !isEventPast(event, expiryNow)),
     hasSpecials: venue.events.some((event) => event.type === 'special'),
-  }))), [reorderedVenues, timingMinute]);
+  }))), [reorderedVenues, expiryNow]);
   
   const getInitialActiveTab = (): TabType => {
     const hasNowEvents = events.some(event => 
