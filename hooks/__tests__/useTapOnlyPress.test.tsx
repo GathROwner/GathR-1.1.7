@@ -75,3 +75,10 @@ it('keeps explicit accessibility activation available after a cancelled gesture'
   act(() => tree.root.findAllByProps({ testID: 'image' })[0].props.onAccessibilityTap());
   expect(openImage).toHaveBeenCalledTimes(1);
 });
+
+it('allows a native accessibility click without touch coordinates after a swipe', () => {
+  act(() => observer().props.onTouchStart(touch(100, 100)));
+  act(() => observer().props.onTouchMove(touch(180, 100)));
+  press('image', { nativeEvent: { target: 1 } } as GestureResponderEvent);
+  expect(openImage).toHaveBeenCalledTimes(1);
+});
