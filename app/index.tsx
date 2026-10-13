@@ -22,7 +22,7 @@ import { requestCurrentUserVerificationEmail } from '../lib/accountVerification'
 import { auth, firestore, storage } from '../config/firebaseConfig';
 import { setDoc, doc } from 'firebase/firestore';
 import * as ImagePicker from 'expo-image-picker';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import { amplitudeMarkManualLogin } from '../lib/amplitudeAnalytics';
 // Import analytics hook

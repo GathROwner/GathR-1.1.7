@@ -1,6 +1,6 @@
 import React from 'react';
 import { StyleSheet, Text, TouchableOpacity } from 'react-native';
-import { MaterialIcons } from '@expo/vector-icons';
+import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { TimeFilterType, type TypeFilterCriteria } from '../../types/filter';
 import { formatUpcomingDateLabel } from '../../utils/upcomingDateWindow';
 

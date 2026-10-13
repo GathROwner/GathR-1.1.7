@@ -16,6 +16,9 @@
  *   Reliable vertical scrolling in the callout on Android, with header drag + tutorial behaviors intact.
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import MaterialIcons from '@expo/vector-icons/MaterialIcons';
+import Ionicons from '@expo/vector-icons/Ionicons';
+import FontAwesome from '@expo/vector-icons/FontAwesome';
 
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
@@ -97,7 +100,6 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import * as Calendar from 'expo-calendar';
-import { MaterialIcons, Ionicons, FontAwesome } from '@expo/vector-icons';
 import FallbackImage from '../common/FallbackImage';
 import { VenueFavoriteButton } from '../common/VenueFavoriteButton';
 import Autolink from 'react-native-autolink';

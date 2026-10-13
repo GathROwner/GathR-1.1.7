@@ -1,0 +1,30 @@
+[
+  {
+    "family": "Ionicons",
+    "fontBytes": 389724,
+    "fontSha256": "fa2ab7d2557819b2bfe5009e46844efa7170cf177be7735d43aa2ac1295f1d54",
+    "glyphMapSha256": "08748792dfb29fca9705664b6b54973bd305e4f3f9d59aedf380e985df840ef6",
+    "glyphs": 1357
+  },
+  {
+    "family": "MaterialIcons",
+    "fontBytes": 356840,
+    "fontSha256": "ef149f08bdd2ff09a4e2c8573476b7b0f3fbb15b623954ade59899e7175bedda",
+    "glyphMapSha256": "3ff308d5ff464db98175b00507929b54c688836421685eb5cab925b135ec795b",
+    "glyphs": 2234
+  },
+  {
+    "family": "MaterialCommunityIcons",
+    "fontBytes": 1307660,
+    "fontSha256": "61e8aba5a4e981fe22cf7c8e8bcdbea00476e75c62c37f01bf7ee33361d68428",
+    "glyphMapSha256": "f9bfcef0eb31e71d9f5c0801949020877a5fbe35964ce3ed60566dd5d7c8be8b",
+    "glyphs": 7448
+  },
+  {
+    "family": "FontAwesome",
+    "fontBytes": 165548,
+    "fontSha256": "aa58f33f239a0fb02f5c7a6c45c043d7a9ac9a093335806694ecd6d4edc0d6a8",
+    "glyphMapSha256": "97c498d5cb685ed27cae4e7b4eeac6db9f6c8d04ac1d958b70fc6dbc1769ea2f",
+    "glyphs": 786
+  }
+]

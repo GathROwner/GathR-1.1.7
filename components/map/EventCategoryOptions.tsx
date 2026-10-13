@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { MaterialIcons } from '@expo/vector-icons';
+import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { LinearGradient } from 'expo-linear-gradient';
 import {
   Animated, NativeScrollEvent, NativeSyntheticEvent, Pressable, StyleSheet, Text, View,

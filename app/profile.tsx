@@ -51,7 +51,8 @@ import {
   subscribeTutorialModalOverlay,
 } from '../utils/tutorialModalOverlay';
 import * as ImagePicker from 'expo-image-picker';
-import { Ionicons, MaterialIcons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
+import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { 
   ref, 
   uploadBytesResumable, 

@@ -3,7 +3,7 @@ import renderer, { act } from 'react-test-renderer';
 
 import CalloutModalTabBarTouchLayer from '../CalloutModalTabBarTouchLayer';
 
-jest.mock('@expo/vector-icons', () => ({ Ionicons: 'Ionicons' }));
+jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');
 
 describe('CalloutModalTabBarTouchLayer', () => {
   it('forwards all three visible tab targets while a native callout modal is open', () => {

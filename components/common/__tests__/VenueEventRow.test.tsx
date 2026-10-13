@@ -14,7 +14,7 @@ jest.mock('react-native-gesture-handler', () => {
     return <View {...props} />;
   }) };
 });
-jest.mock('@expo/vector-icons', () => ({ MaterialIcons: () => null }));
+jest.mock('@expo/vector-icons/MaterialIcons', () => () => null);
 jest.mock('../FallbackImage', () => () => null);
 jest.mock('../VenueFavoriteButton', () => ({ VenueFavoriteButton: () => null }));
 jest.mock('../../../hooks/useReduceMotion', () => ({ useReduceMotion: () => false }));

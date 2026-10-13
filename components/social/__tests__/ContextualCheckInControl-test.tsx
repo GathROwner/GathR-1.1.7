@@ -17,9 +17,7 @@ const mockPush = jest.fn();
 jest.mock('@react-native-async-storage/async-storage', () => ({ getItem: jest.fn(), setItem: jest.fn().mockResolvedValue(undefined) }));
 jest.mock('expo-haptics', () => ({ selectionAsync: jest.fn().mockResolvedValue(undefined) }));
 
-jest.mock('@expo/vector-icons', () => ({
-  Ionicons: () => null,
-}));
+jest.mock('@expo/vector-icons/Ionicons', () => () => null);
 
 jest.mock('expo-location', () => ({
   Accuracy: { High: 4 },

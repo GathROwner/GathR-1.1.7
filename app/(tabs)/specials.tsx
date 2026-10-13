@@ -22,7 +22,8 @@ import {
   useColorScheme
 } from 'react-native';
 import { ScrollView as GestureScrollView } from 'react-native-gesture-handler';
-import { MaterialIcons, MaterialCommunityIcons } from '@expo/vector-icons';
+import MaterialIcons from '@expo/vector-icons/MaterialIcons';
+import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { getTabDockContentInset, getTabDockBottom } from '../../constants/tabDock';

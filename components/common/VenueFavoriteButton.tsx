@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { TouchableOpacity, View, Text, StyleSheet, Alert } from 'react-native';
-import { MaterialIcons } from '@expo/vector-icons';
+import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { toggleFavoriteVenue } from '../../services/userService';
 import { useUserPrefsStore } from '../../store/userPrefsStore';
 import { useAuth } from '../../contexts/AuthContext';

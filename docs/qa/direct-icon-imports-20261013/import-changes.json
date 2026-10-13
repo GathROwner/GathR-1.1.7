@@ -1,0 +1,591 @@
+{
+  "baseline": "2dc3eaa",
+  "filesChanged": 53,
+  "bindingsChanged": 65,
+  "families": [
+    "Ionicons",
+    "MaterialIcons",
+    "MaterialCommunityIcons",
+    "FontAwesome"
+  ],
+  "changes": [
+    {
+      "path": "app/(tabs)/_layout.tsx",
+      "imports": [
+        {
+          "family": "Ionicons",
+          "localName": "Ionicons"
+        }
+      ],
+      "componentBodyUnchanged": true
+    },
+    {
+      "path": "app/(tabs)/events.tsx",
+      "imports": [
+        {
+          "family": "Ionicons",
+          "localName": "Ionicons"
+        },
+        {
+          "family": "MaterialIcons",
+          "localName": "MaterialIcons"
+        }
+      ],
+      "componentBodyUnchanged": true
+    },
+    {
+      "path": "app/(tabs)/map.tsx",
+      "imports": [
+        {
+          "family": "Ionicons",
+          "localName": "Ionicons"
+        },
+        {
+          "family": "MaterialIcons",
+          "localName": "MaterialIcons"
+        }
+      ],
+      "componentBodyUnchanged": true
+    },
+    {
+      "path": "app/(tabs)/specials.tsx",
+      "imports": [
+        {
+          "family": "MaterialIcons",
+          "localName": "MaterialIcons"
+        },
+        {
+          "family": "MaterialCommunityIcons",
+          "localName": "MaterialCommunityIcons"
+        }
+      ],
+      "componentBodyUnchanged": true
+    },
+    {
+      "path": "app/attendance-survey.tsx",
+      "imports": [
+        {
+          "family": "MaterialIcons",
+          "localName": "MaterialIcons"
+        }
+      ],
+      "componentBodyUnchanged": true
+    },
+    {
+      "path": "app/check-in-settings.tsx",
+      "imports": [
+        {
+          "family": "Ionicons",
+          "localName": "Ionicons"
+        }
+      ],
+      "componentBodyUnchanged": true
+    },
+    {
+      "path": "app/check-in.tsx",
+      "imports": [
+        {
+          "family": "Ionicons",
+          "localName": "Ionicons"
+        }
+      ],
+      "componentBodyUnchanged": true
+    },
+    {
+      "path": "app/create-event.tsx",
+      "imports": [
+        {
+          "family": "Ionicons",
+          "localName": "Ionicons"
+        }
+      ],
+      "componentBodyUnchanged": true
+    },
+    {
+      "path": "app/friend-event/[id].tsx",
+      "imports": [
+        {
+          "family": "Ionicons",
+          "localName": "Ionicons"
+        }
+      ],
+      "componentBodyUnchanged": true
+    },
+    {
+      "path": "app/friends.tsx",
+      "imports": [
+        {
+          "family": "Ionicons",
+          "localName": "Ionicons"
+        }
+      ],
+      "componentBodyUnchanged": true
+    },
+    {
+      "path": "app/index.tsx",
+      "imports": [
+        {
+          "family": "Ionicons",
+          "localName": "Ionicons"
+        }
+      ],
+      "componentBodyUnchanged": true
+    },
+    {
+      "path": "app/interest-selection.tsx",
+      "imports": [
+        {
+          "family": "Ionicons",
+          "localName": "Ionicons"
+        },
+        {
+          "family": "MaterialIcons",
+          "localName": "MaterialIcons"
+        }
+      ],
+      "componentBodyUnchanged": true
+    },
+    {
+      "path": "app/my-events.tsx",
+      "imports": [
+        {
+          "family": "Ionicons",
+          "localName": "Ionicons"
+        }
+      ],
+      "componentBodyUnchanged": true
+    },
+    {
+      "path": "app/native-ad-lab.tsx",
+      "imports": [
+        {
+          "family": "Ionicons",
+          "localName": "Ionicons"
+        }
+      ],
+      "componentBodyUnchanged": true
+    },
+    {
+      "path": "app/profile.tsx",
+      "imports": [
+        {
+          "family": "Ionicons",
+          "localName": "Ionicons"
+        },
+        {
+          "family": "MaterialIcons",
+          "localName": "MaterialIcons"
+        }
+      ],
+      "componentBodyUnchanged": true
+    },
+    {
+      "path": "app/shared-event.tsx",
+      "imports": [
+        {
+          "family": "Ionicons",
+          "localName": "Ionicons"
+        }
+      ],
+      "componentBodyUnchanged": true
+    },
+    {
+      "path": "app/social-profile.tsx",
+      "imports": [
+        {
+          "family": "Ionicons",
+          "localName": "Ionicons"
+        }
+      ],
+      "componentBodyUnchanged": true
+    },
+    {
+      "path": "components/LockIcon.tsx",
+      "imports": [
+        {
+          "family": "Ionicons",
+          "localName": "Ionicons"
+        }
+      ],
+      "componentBodyUnchanged": true
+    },
+    {
+      "path": "components/RegistrationPrompt.tsx",
+      "imports": [
+        {
+          "family": "Ionicons",
+          "localName": "Ionicons"
+        }
+      ],
+      "componentBodyUnchanged": true
+    },
+    {
+      "path": "components/common/EventActionLinkPill.tsx",
+      "imports": [
+        {
+          "family": "MaterialIcons",
+          "localName": "MaterialIcons"
+        }
+      ],
+      "componentBodyUnchanged": true
+    },
+    {
+      "path": "components/common/EventSeriesContextLine.tsx",
+      "imports": [
+        {
+          "family": "MaterialIcons",
+          "localName": "MaterialIcons"
+        }
+      ],
+      "componentBodyUnchanged": true
+    },
+    {
+      "path": "components/common/FamilyFriendlyBadge.tsx",
+      "imports": [
+        {
+          "family": "MaterialIcons",
+          "localName": "MaterialIcons"
+        }
+      ],
+      "componentBodyUnchanged": true
+    },
+    {
+      "path": "components/common/FeedFilterSummary.tsx",
+      "imports": [
+        {
+          "family": "MaterialIcons",
+          "localName": "MaterialIcons"
+        }
+      ],
+      "componentBodyUnchanged": true
+    },
+    {
+      "path": "components/common/GathRShimmerPill.tsx",
+      "imports": [
+        {
+          "family": "MaterialIcons",
+          "localName": "MaterialIcons"
+        }
+      ],
+      "componentBodyUnchanged": true
+    },
+    {
+      "path": "components/common/VenueEventRow.tsx",
+      "imports": [
+        {
+          "family": "MaterialIcons",
+          "localName": "MaterialIcons"
+        }
+      ],
+      "componentBodyUnchanged": true
+    },
+    {
+      "path": "components/common/VenueFavoriteButton.tsx",
+      "imports": [
+        {
+          "family": "MaterialIcons",
+          "localName": "MaterialIcons"
+        }
+      ],
+      "componentBodyUnchanged": true
+    },
+    {
+      "path": "components/map/CalloutModalTabBarTouchLayer.tsx",
+      "imports": [
+        {
+          "family": "Ionicons",
+          "localName": "Ionicons"
+        }
+      ],
+      "componentBodyUnchanged": true
+    },
+    {
+      "path": "components/map/CategoryFilterOptions.tsx",
+      "imports": [
+        {
+          "family": "MaterialIcons",
+          "localName": "MaterialIcons"
+        }
+      ],
+      "componentBodyUnchanged": true
+    },
+    {
+      "path": "components/map/EventCallout.tsx",
+      "imports": [
+        {
+          "family": "MaterialIcons",
+          "localName": "MaterialIcons"
+        },
+        {
+          "family": "Ionicons",
+          "localName": "Ionicons"
+        },
+        {
+          "family": "FontAwesome",
+          "localName": "FontAwesome"
+        }
+      ],
+      "componentBodyUnchanged": true
+    },
+    {
+      "path": "components/map/EventCategoryOptions.tsx",
+      "imports": [
+        {
+          "family": "MaterialIcons",
+          "localName": "MaterialIcons"
+        }
+      ],
+      "componentBodyUnchanged": true
+    },
+    {
+      "path": "components/map/EventImageLightbox.tsx",
+      "imports": [
+        {
+          "family": "MaterialIcons",
+          "localName": "MaterialIcons"
+        }
+      ],
+      "componentBodyUnchanged": true
+    },
+    {
+      "path": "components/map/EventTimeOptions.tsx",
+      "imports": [
+        {
+          "family": "Ionicons",
+          "localName": "Ionicons"
+        }
+      ],
+      "componentBodyUnchanged": true
+    },
+    {
+      "path": "components/map/FilterPills.tsx",
+      "imports": [
+        {
+          "family": "Ionicons",
+          "localName": "Ionicons"
+        },
+        {
+          "family": "MaterialIcons",
+          "localName": "MaterialIcons"
+        }
+      ],
+      "componentBodyUnchanged": true
+    },
+    {
+      "path": "components/map/FloatingMapSearchHeader.tsx",
+      "imports": [
+        {
+          "family": "Ionicons",
+          "localName": "Ionicons"
+        }
+      ],
+      "componentBodyUnchanged": true
+    },
+    {
+      "path": "components/map/HotFlamePill.tsx",
+      "imports": [
+        {
+          "family": "MaterialIcons",
+          "localName": "MaterialIcons"
+        }
+      ],
+      "componentBodyUnchanged": true
+    },
+    {
+      "path": "components/map/HotspotHighlight.tsx",
+      "imports": [
+        {
+          "family": "Ionicons",
+          "localName": "Ionicons"
+        }
+      ],
+      "componentBodyUnchanged": true
+    },
+    {
+      "path": "components/map/InterestFilterPills.tsx",
+      "imports": [
+        {
+          "family": "MaterialIcons",
+          "localName": "MaterialIcons"
+        },
+        {
+          "family": "Ionicons",
+          "localName": "Ionicons"
+        }
+      ],
+      "componentBodyUnchanged": true
+    },
+    {
+      "path": "components/map/InterestsCarousel.tsx",
+      "imports": [
+        {
+          "family": "MaterialIcons",
+          "localName": "MaterialIcons"
+        },
+        {
+          "family": "Ionicons",
+          "localName": "Ionicons"
+        }
+      ],
+      "componentBodyUnchanged": true
+    },
+    {
+      "path": "components/map/MapLegend.tsx",
+      "imports": [
+        {
+          "family": "MaterialIcons",
+          "localName": "MaterialIcons"
+        }
+      ],
+      "componentBodyUnchanged": true
+    },
+    {
+      "path": "components/map/RouteFeatureCallout.tsx",
+      "imports": [
+        {
+          "family": "MaterialIcons",
+          "localName": "MaterialIcons"
+        }
+      ],
+      "componentBodyUnchanged": true
+    },
+    {
+      "path": "components/map/TimeFilterOptions.tsx",
+      "imports": [
+        {
+          "family": "MaterialIcons",
+          "localName": "MaterialIcons"
+        },
+        {
+          "family": "Ionicons",
+          "localName": "Ionicons"
+        }
+      ],
+      "componentBodyUnchanged": true
+    },
+    {
+      "path": "components/map/UpcomingDateOptions.tsx",
+      "imports": [
+        {
+          "family": "Ionicons",
+          "localName": "Ionicons"
+        }
+      ],
+      "componentBodyUnchanged": true
+    },
+    {
+      "path": "components/sharedEvent/SharedEventProcessingBanner.tsx",
+      "imports": [
+        {
+          "family": "Ionicons",
+          "localName": "Ionicons"
+        }
+      ],
+      "componentBodyUnchanged": true
+    },
+    {
+      "path": "components/social/CheckInExitMonitor.tsx",
+      "imports": [
+        {
+          "family": "Ionicons",
+          "localName": "Ionicons"
+        }
+      ],
+      "componentBodyUnchanged": true
+    },
+    {
+      "path": "components/social/ContextualCheckInControl.tsx",
+      "imports": [
+        {
+          "family": "Ionicons",
+          "localName": "Ionicons"
+        }
+      ],
+      "componentBodyUnchanged": true
+    },
+    {
+      "path": "components/social/ExternalFriendCheckInMarkers.tsx",
+      "imports": [
+        {
+          "family": "Ionicons",
+          "localName": "Ionicons"
+        }
+      ],
+      "componentBodyUnchanged": true
+    },
+    {
+      "path": "components/social/FriendCheckInBadge.tsx",
+      "imports": [
+        {
+          "family": "Ionicons",
+          "localName": "Ionicons"
+        }
+      ],
+      "componentBodyUnchanged": true
+    },
+    {
+      "path": "components/social/FriendEventsMapToggle.tsx",
+      "imports": [
+        {
+          "family": "Ionicons",
+          "localName": "Ionicons"
+        },
+        {
+          "family": "MaterialIcons",
+          "localName": "MaterialIcons"
+        }
+      ],
+      "componentBodyUnchanged": true
+    },
+    {
+      "path": "components/social/FriendsHandleCard.tsx",
+      "imports": [
+        {
+          "family": "Ionicons",
+          "localName": "Ionicons"
+        }
+      ],
+      "componentBodyUnchanged": true
+    },
+    {
+      "path": "components/tutorial/TutorialBottomSheet.tsx",
+      "imports": [
+        {
+          "family": "Ionicons",
+          "localName": "Ionicons"
+        }
+      ],
+      "componentBodyUnchanged": true
+    },
+    {
+      "path": "components/tutorial/TutorialDemoComponents.tsx",
+      "imports": [
+        {
+          "family": "MaterialIcons",
+          "localName": "MaterialIcons"
+        }
+      ],
+      "componentBodyUnchanged": true
+    },
+    {
+      "path": "components/tutorial/TutorialTooltip.tsx",
+      "imports": [
+        {
+          "family": "MaterialIcons",
+          "localName": "MaterialIcons"
+        }
+      ],
+      "componentBodyUnchanged": true
+    },
+    {
+      "path": "components/tutorial/WelcomeScreen.tsx",
+      "imports": [
+        {
+          "family": "Ionicons",
+          "localName": "Ionicons"
+        }
+      ],
+      "componentBodyUnchanged": true
+    }
+  ]
+}

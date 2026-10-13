@@ -8,7 +8,7 @@ import type { Event } from '../../../types/events';
 jest.mock('react-native-safe-area-context', () => ({
   useSafeAreaInsets: () => ({ top: 0, bottom: 24, left: 0, right: 0 }),
 }));
-jest.mock('@expo/vector-icons', () => ({ Ionicons: 'Icon' }));
+jest.mock('@expo/vector-icons/Ionicons', () => 'Icon');
 
 describe.each(['event', 'special'] as const)('Upcoming %s date controls', type => {
   let tree: renderer.ReactTestRenderer;

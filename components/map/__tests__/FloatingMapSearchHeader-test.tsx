@@ -4,7 +4,7 @@ import renderer, { act } from 'react-test-renderer';
 import { useMapStore } from '../../../store';
 import FloatingMapSearchHeader from '../FloatingMapSearchHeader';
 
-jest.mock('@expo/vector-icons', () => ({ Ionicons: () => null }));
+jest.mock('@expo/vector-icons/Ionicons', () => () => null);
 jest.mock('../../../hooks/useAnalytics', () => ({
   __esModule: true, default: () => ({ trackUserAction: jest.fn() }),
 }));

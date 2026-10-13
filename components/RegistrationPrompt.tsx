@@ -20,7 +20,7 @@ import {
   ScrollView,
   SafeAreaView
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { useRouter, usePathname } from 'expo-router';
 import { useGuestLimitationStore } from '../store/guestLimitationStore';
 import { DEFAULT_REGISTRATION_PROMPT_CONFIG } from '../types/guestLimitations';

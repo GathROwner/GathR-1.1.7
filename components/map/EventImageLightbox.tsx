@@ -26,7 +26,7 @@ import { usePathname, useRouter } from 'expo-router';
 import { amplitudeTrack } from '../../lib/amplitudeAnalytics';
 import { GestureHandlerRootView, PanGestureHandler, ScrollView as GestureScrollView, State } from 'react-native-gesture-handler';
 
-import { MaterialIcons } from '@expo/vector-icons';
+import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { LinearGradient } from 'expo-linear-gradient';
 
 

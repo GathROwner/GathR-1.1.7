@@ -19,7 +19,7 @@ import {
   Animated,
   Dimensions
 } from 'react-native';
-import { MaterialIcons } from '@expo/vector-icons';
+import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { TutorialTooltipProps } from '../../types/tutorial';
 import { TUTORIAL_CONFIG } from '../../config/tutorialSteps';
 

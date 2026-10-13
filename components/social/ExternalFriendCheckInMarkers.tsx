@@ -1,4 +1,4 @@
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import MapboxGL from '@rnmapbox/maps';
 import * as Haptics from 'expo-haptics';
 import React, { useMemo } from 'react';

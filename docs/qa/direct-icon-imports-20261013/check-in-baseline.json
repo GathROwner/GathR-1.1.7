@@ -1,0 +1,94 @@
+{
+  "baselineCommit": "6007d550e62a3ab1ed0f3f478c024a606afc6fc2",
+  "baselineFailed": 21,
+  "baselinePassed": 1,
+  "candidateFailed": 21,
+  "candidatePassed": 1,
+  "identicalFailureNamesAndMessages": true,
+  "failures": [
+    {
+      "name": "ContextualCheckInControl › keeps check-in discoverable before a nearby venue becomes eligible",
+      "message": "Couldn't find a navigation object. Is your component inside NavigationContainer?"
+    },
+    {
+      "name": "ContextualCheckInControl › binds prequalified Here evidence and opens private privacy confirmation immediately, without a second dwell",
+      "message": "Couldn't find a navigation object. Is your component inside NavigationContainer?"
+    },
+    {
+      "name": "ContextualCheckInControl › enables private check-in at Here readiness while public check-in waits for Place readiness",
+      "message": "Couldn't find a navigation object. Is your component inside NavigationContainer?"
+    },
+    {
+      "name": "ContextualCheckInControl › does not switch an explicitly selected venue on refresh when another result is closer",
+      "message": "Couldn't find a navigation object. Is your component inside NavigationContainer?"
+    },
+    {
+      "name": "ContextualCheckInControl › keeps the projected full Here ring open until the server confirms, then updates the hint and opens immediately",
+      "message": "Couldn't find a navigation object. Is your component inside NavigationContainer?"
+    },
+    {
+      "name": "ContextualCheckInControl › completes the blue ring independently at server-backed Place readiness and removes completion when the receipt is lost",
+      "message": "Couldn't find a navigation object. Is your component inside NavigationContainer?"
+    },
+    {
+      "name": "ContextualCheckInControl › keeps a visible gap and check-in locked until return validation finishes",
+      "message": "Couldn't find a navigation object. Is your component inside NavigationContainer?"
+    },
+    {
+      "name": "ContextualCheckInControl › fails closed if the bind endpoint is absent and does not manufacture eligibility",
+      "message": "Couldn't find a navigation object. Is your component inside NavigationContainer?"
+    },
+    {
+      "name": "ContextualCheckInControl › preserves gathr_venue selection and binds before audience confirmation",
+      "message": "Couldn't find a navigation object. Is your component inside NavigationContainer?"
+    },
+    {
+      "name": "ContextualCheckInControl › preserves external_place selection and binds before audience confirmation",
+      "message": "Couldn't find a navigation object. Is your component inside NavigationContainer?"
+    },
+    {
+      "name": "ContextualCheckInControl › keeps a successful empty public-place lookup distinct from an outage",
+      "message": "Couldn't find a navigation object. Is your component inside NavigationContainer?"
+    },
+    {
+      "name": "ContextualCheckInControl › keeps canonical public places selectable when additional nearby results are unavailable",
+      "message": "Couldn't find a navigation object. Is your component inside NavigationContainer?"
+    },
+    {
+      "name": "ContextualCheckInControl › shows nearby-public-place retry copy for the typed external lookup outage",
+      "message": "Couldn't find a navigation object. Is your component inside NavigationContainer?"
+    },
+    {
+      "name": "ContextualCheckInControl › retains the generic social/network message for an ordinary transport outage",
+      "message": "Couldn't find a navigation object. Is your component inside NavigationContainer?"
+    },
+    {
+      "name": "ContextualCheckInControl › keeps the selected public place after a bind failure and retries without rediscovery",
+      "message": "Couldn't find a navigation object. Is your component inside NavigationContainer?"
+    },
+    {
+      "name": "ContextualCheckInControl › does not open a modal or navigate when the outer ring automatically becomes ready",
+      "message": "Couldn't find a navigation object. Is your component inside NavigationContainer?"
+    },
+    {
+      "name": "ContextualCheckInControl › ignores a late bind result after the user dismisses the flow",
+      "message": "Couldn't find a navigation object. Is your component inside NavigationContainer?"
+    },
+    {
+      "name": "ContextualCheckInControl › stays hidden while a map callout owns the interaction surface",
+      "message": "Couldn't find a navigation object. Is your component inside NavigationContainer?"
+    },
+    {
+      "name": "ContextualCheckInControl › uses the detected venue avatar and preserves every server-approved nearby option",
+      "message": "expect(received).toEqual(expected) // deep equality"
+    },
+    {
+      "name": "ContextualCheckInControl › passes only the opaque external candidate and display snapshot to check-in",
+      "message": "expect(received).toEqual(expected) // deep equality"
+    },
+    {
+      "name": "ContextualCheckInControl › routes a private candidate without an address snapshot",
+      "message": "expect(received).toEqual(expected) // deep equality"
+    }
+  ]
+}

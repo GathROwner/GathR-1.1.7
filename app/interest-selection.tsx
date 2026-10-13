@@ -11,7 +11,8 @@ import {
 import { Stack, useRouter, useLocalSearchParams } from 'expo-router';
 import { auth, firestore } from '../config/firebaseConfig';
 import { doc, getDoc, updateDoc } from 'firebase/firestore';
-import { Ionicons, MaterialIcons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
+import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { EVENT_CATEGORIES, SPECIAL_CATEGORIES } from '../constants/eventCategories';
 import { normalizeUserInterests } from '../utils/interestSelectionUtils';
 

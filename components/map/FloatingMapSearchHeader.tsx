@@ -3,7 +3,7 @@ import {
   Animated, BackHandler, Easing, Image, Keyboard, Pressable,
   StyleSheet, Text, TextInput, TouchableOpacity, View,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { useMapStore } from '../../store';
 import useAnalytics from '../../hooks/useAnalytics';
 

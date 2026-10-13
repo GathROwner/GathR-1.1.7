@@ -25,7 +25,8 @@ import {
 import { usePathname, useRouter } from 'expo-router';
 import { ScrollView as GestureScrollView } from 'react-native-gesture-handler';
 
-import { Ionicons, MaterialIcons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
+import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { getTabDockContentInset, getTabDockBottom } from '../../constants/tabDock';

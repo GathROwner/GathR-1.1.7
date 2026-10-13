@@ -3,9 +3,7 @@ import renderer, { act } from 'react-test-renderer';
 
 import { FriendsHandleCard } from '../FriendsHandleCard';
 
-jest.mock('@expo/vector-icons', () => ({
-  Ionicons: () => null,
-}));
+jest.mock('@expo/vector-icons/Ionicons', () => () => null);
 
 jest.mock('../ProfileAvatar', () => ({
   ProfileAvatar: () => null,

@@ -5,7 +5,7 @@ import { FeedChromeProvider, useFeedChrome } from '../../contexts/FeedChromeCont
 import SlidingFeedHeader from '../../components/common/SlidingFeedHeader';
 import ScrollingTabBar from '../../components/common/ScrollingTabBar';
 import { TouchableOpacity, View, TextInput, Text, Image, InteractionManager, Pressable, Platform, Dimensions, StyleSheet } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { useNavigation, useRouter } from 'expo-router';
 import { useMapStore } from '../../store/mapStore';
 import { Alert, Keyboard } from 'react-native';

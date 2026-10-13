@@ -1,5 +1,5 @@
 import React from 'react';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { TimeFilterType } from '../../types';
 import { EVENT_TIME_OPTIONS, formatFilterCount } from './eventFilterPanelModel';

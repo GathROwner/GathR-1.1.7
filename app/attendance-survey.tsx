@@ -19,7 +19,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import * as Haptics from 'expo-haptics';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { MaterialIcons } from '@expo/vector-icons';
+import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { amplitudeTrack } from '../lib/amplitudeAnalytics';
 import { useMapStore } from '../store';
 import { format, parseISO } from 'date-fns';
