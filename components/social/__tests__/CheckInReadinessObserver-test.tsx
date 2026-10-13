@@ -9,14 +9,29 @@ import { resetCheckInReadinessOwner, useCheckInReadinessStore } from '../../../s
 import type { CheckInReadinessSampleInput } from '../../../types/social';
 import { CHECK_IN_READINESS } from '../../../utils/checkInReadiness';
 import { readinessLevels } from '../../../utils/checkInReadinessContract';
+import { useMapStore } from '../../../store/mapStore';
 import CheckInReadinessObserver from '../CheckInReadinessObserver';
 
 let mockUid: string | null = 'observer-user';
 let mockMode: 'standard' | 'basic' = 'standard';
 let mockChangeState: (state: AppStateStatus) => void;
 let mockOperationSequence = 0;
+let mockPathname = '/(tabs)/events';
+jest.mock('expo-router', () => ({ usePathname: () => mockPathname }));
+// Real subscription behavior, without loading the native map or its I/O.
+jest.mock('../../../store/mapStore', () => ({
+  useMapStore: require('zustand').create(() => ({
+    hasInitialViewportSettled: true,
+    userLocation: null,
+  })),
+}));
 jest.mock('../../../contexts/AuthContext', () => ({ useAuth: () => ({ user: mockUid ? { uid: mockUid } : null }) }));
-jest.mock('../../../store/socialStore', () => ({ useSocialStore: (select: (state: { ownCheckIn: null }) => unknown) => select({ ownCheckIn: null }) }));
+jest.mock('../../../store/socialStore', () => ({
+  useSocialStore: Object.assign(
+    (select: (state: { ownCheckIn: null }) => unknown) => select({ ownCheckIn: null }),
+    { getState: () => ({ ownCheckIn: null }) }
+  ),
+}));
 jest.mock('../../../types/social', () => ({ SOCIAL_FEATURE_ENABLED: true, SOCIAL_RELEASE_TWO_ENABLED: true }));
 jest.mock('../../../services/checkInReadinessPreferences', () => ({ loadReadinessPreferences: jest.fn() }));
 jest.mock('../../../services/socialService', () => ({
@@ -38,6 +53,8 @@ describe('foreground readiness observer lifecycle', () => {
     mockUid = 'observer-user';
     mockMode = 'standard';
     mockOperationSequence = 0;
+    mockPathname = '/(tabs)/events';
+    useMapStore.setState({ hasInitialViewportSettled: true, userLocation: null });
     AppState.currentState = 'active';
     resetCheckInReadinessOwner(null);
     jest.spyOn(AppState, 'addEventListener').mockImplementation((_event, callback) => {
@@ -196,11 +213,16 @@ describe('foreground readiness observer lifecycle', () => {
       evidence: { hereMs: 10_000 },
     });
 
+    const calls = (Location.getCurrentPositionAsync as jest.Mock).mock.calls.length;
     await advance(CHECK_IN_READINESS.resumeRetryMs);
+    // The accepted observer caps every retry at the 2s sampling floor.
+    expect(Location.getCurrentPositionAsync).toHaveBeenCalledTimes(calls);
+    expect(useCheckInReadinessStore.getState().interruptedAtMs).not.toBeNull();
+    await advance(CHECK_IN_READINESS.nearReadySampleIntervalMs - CHECK_IN_READINESS.resumeRetryMs);
     expect(useCheckInReadinessStore.getState()).toMatchObject({
       sessionId: before.sessionId,
       interruptedAtMs: null,
-      evidence: { hereMs: 11_000 },
+      evidence: { hereMs: 12_000 },
     });
   });
   it('credits a longer interruption only after a fresh return fix matches the same anchor', async () => {
@@ -284,5 +306,47 @@ describe('foreground readiness observer lifecycle', () => {
       hereQualifyingMs: 30_000, placeQualifyingMs: 90_000, expiresAtMs: Date.now() + 20_000 });
     await advance(10_000);
     expect(useCheckInReadinessStore.getState().receipt).toBeNull();
+  });
+
+  it('waits for the initial viewport before collecting during map startup', async () => {
+    mockPathname = '/(tabs)/map';
+    useMapStore.setState({ hasInitialViewportSettled: false });
+    await mount();
+    await advance(30_000);
+    expect(Location.getCurrentPositionAsync).not.toHaveBeenCalled();
+    expect(recordCheckInReadinessSample).not.toHaveBeenCalled();
+    await act(async () => useMapStore.setState({ hasInitialViewportSettled: true }));
+    expect(Location.getCurrentPositionAsync).toHaveBeenCalledTimes(1);
+    expect(recordCheckInReadinessSample).toHaveBeenCalledTimes(1);
+  });
+
+  it('reuses a fresh accurate shared location without a second GPS request', async () => {
+    const location = { timestamp: Date.now(), coords: {
+      latitude: 46.235, longitude: -63.129, accuracy: 10, speed: 0, altitude: null, altitudeAccuracy: null, heading: null,
+    } };
+    useMapStore.setState({ userLocation: location });
+    await mount();
+    expect(Location.getCurrentPositionAsync).not.toHaveBeenCalled();
+    expect(recordCheckInReadinessSample).toHaveBeenCalledTimes(1);
+    expect(recordCheckInReadinessSample).toHaveBeenCalledWith(expect.objectContaining({
+      capturedAtMs: location.timestamp, accuracyMeters: 10, sequence: 1,
+    }), expect.anything());
+  });
+
+  it('accepts a shared location during a pending fallback and ignores the later fallback result', async () => {
+    let resolveFallback!: (location: unknown) => void;
+    (Location.getCurrentPositionAsync as jest.Mock).mockImplementationOnce(() => new Promise((resolve) => { resolveFallback = resolve; }));
+    await mount();
+    expect(recordCheckInReadinessSample).not.toHaveBeenCalled();
+    await act(async () => useMapStore.setState({ userLocation: { timestamp: Date.now(), coords: {
+      latitude: 46.235, longitude: -63.129, accuracy: 10, speed: 0, altitude: null, altitudeAccuracy: null, heading: null,
+    } } }));
+    expect(recordCheckInReadinessSample).toHaveBeenCalledTimes(1);
+    const sessionId = useCheckInReadinessStore.getState().sessionId;
+    await act(async () => resolveFallback({ timestamp: Date.now() - 1_000, coords: {
+      latitude: 46.24, longitude: -63.129, accuracy: 10, speed: 2,
+    } }));
+    expect(recordCheckInReadinessSample).toHaveBeenCalledTimes(1);
+    expect(useCheckInReadinessStore.getState().sessionId).toBe(sessionId);
   });
 });
