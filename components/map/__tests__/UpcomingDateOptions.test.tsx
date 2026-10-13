@@ -62,4 +62,26 @@ describe.each(['event', 'special'] as const)('Upcoming %s date controls', type =
     expect(onSelect).toHaveBeenCalledWith({ kind: 'custom', startDate: '2026-10-14', endDate: '2026-10-18' });
     expect(button('Close date picker')).toBeUndefined();
   });
+
+  it.each(['light', 'dark'] as const)('previews only applied custom dates in the %s appearance', appearance => {
+    const props = tree.root.findByType(UpcomingDateOptions).props;
+    const filterKey = type === 'event' ? 'eventFilters' : 'specialFilters';
+    const updateSelection = (upcomingDate: { kind: 'custom'; startDate: string; endDate: string } | { kind: 'next7' }) => {
+      act(() => tree.update(<UpcomingDateOptions type={type} events={props.events} onSelect={onSelect} appearance={appearance} criteria={{
+        ...props.criteria, [filterKey]: { ...props.criteria[filterKey], upcomingDate },
+      }} />));
+    };
+    const preview = (label: string) => tree.root.findAllByType(Text).filter(node => node.props.children === label);
+    expect(preview('Oct 16–18')).toHaveLength(0);
+    updateSelection({ kind: 'custom', startDate: '2026-10-16', endDate: '2026-10-18' });
+    expect(preview('Oct 16–18')).toHaveLength(1);
+    expect(button('Choose date').props.accessibilityLabel).toContain('Oct 16–18');
+    updateSelection({ kind: 'custom', startDate: '2026-10-16', endDate: '2026-10-16' });
+    expect(preview('Oct 16')).toHaveLength(1);
+    updateSelection({ kind: 'custom', startDate: '2026-10-28', endDate: '2026-11-02' });
+    expect(preview('Oct 28–Nov 2')).toHaveLength(1);
+    updateSelection({ kind: 'next7' });
+    expect(preview('Oct 16')).toHaveLength(0);
+    expect(preview('Oct 28–Nov 2')).toHaveLength(0);
+  });
 });

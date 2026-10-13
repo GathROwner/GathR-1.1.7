@@ -153,17 +153,25 @@ export default function UpcomingDateOptions({ type = 'event', appearance = 'ligh
       {options.map(option => {
         const active = selection.kind === option.selection.kind;
         const count = countUpcomingDateItems(events, criteria, option.selection, type, context);
+        const datePreview = active && selection.kind === 'custom' ? formatUpcomingDateLabel(selection, today) : null;
+        const textStyle = [styles.optionText, active && styles.selectedText, active && isSpecial && styles.selectedSpecialText,
+          dark && styles.darkText, dark && active && styles.white];
         return <Pressable key={option.selection.kind} accessibilityRole="button" accessibilityState={{ selected: active }}
-          accessibilityLabel={`${option.label}, ${count} ${isSpecial ? 'specials' : 'events'}`}
+          accessibilityLabel={`${datePreview ? `Choose date, ${datePreview}` : option.label}, ${count} ${isSpecial ? 'specials' : 'events'}`}
           onPress={() => option.selection.kind === 'custom' ? setCalendarOpen(true) : onSelect(option.selection)}
           style={[styles.option, active && styles.activeOption, active && isSpecial && styles.activeSpecialOption,
             dark && styles.darkOption, dark && active && styles.darkActiveOption]}>
           <Ionicons name={option.icon} size={17} color={dark ? active ? '#FFFFFF' : '#D5DAE2' : active ? (isSpecial ? '#248542' : '#0874D5') : '#263F68'} />
-          <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}
-            style={[styles.optionText, active && styles.selectedText, active && isSpecial && styles.selectedSpecialText,
-              dark && styles.darkText, dark && active && styles.white]}>
+          {datePreview ? <View style={styles.customOptionContent}>
+            <View style={styles.customDateColumn}>
+              <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8} style={[textStyle, styles.customTitle]}>Choose date</Text>
+              <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}
+                style={[styles.datePreview, isSpecial && styles.specialDatePreview, dark && styles.darkDatePreview]}>{datePreview}</Text>
+            </View>
+            <Text numberOfLines={1} style={[textStyle, styles.customTitle, styles.customCount]}>({count})</Text>
+          </View> : <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8} style={textStyle}>
             {`${option.label} (${count})`}
-          </Text>
+          </Text>}
         </Pressable>;
       })}
     </View>
@@ -185,6 +193,14 @@ const styles = StyleSheet.create({
   optionText: { color: '#263F68', fontSize: 12, fontWeight: '500', flexShrink: 1 },
   selectedText: { color: '#0874D5', fontWeight: '700' },
   selectedSpecialText: { color: '#248542' },
+  customOptionContent: { flexDirection: 'row', alignItems: 'flex-start', gap: 4, flexShrink: 1, minWidth: 0 },
+  // The date and words share a centered column; icon and count cannot skew its alignment.
+  customDateColumn: { alignItems: 'center', flexShrink: 1, minWidth: 0 },
+  customTitle: { lineHeight: 16 },
+  customCount: { flexShrink: 0 },
+  datePreview: { fontSize: 10, lineHeight: 13, color: '#376C9B', textAlign: 'center' },
+  specialDatePreview: { color: '#3D7650' },
+  darkDatePreview: { color: '#E7F3FF' },
   white: { color: 'white' },
   modal: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(15, 30, 50, 0.42)' },
   sheet: { backgroundColor: '#FFFFFF', borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingHorizontal: 22, paddingTop: 10 },
