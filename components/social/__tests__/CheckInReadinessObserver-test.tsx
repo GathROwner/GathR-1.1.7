@@ -20,7 +20,7 @@ let mockPathname = '/(tabs)/events';
 jest.mock('expo-router', () => ({ usePathname: () => mockPathname }));
 // Real subscription behavior, without loading the native map or its I/O.
 jest.mock('../../../store/mapStore', () => ({
-  useMapStore: require('zustand').create(() => ({
+  useMapStore: jest.requireActual('zustand').create(() => ({
     hasInitialViewportSettled: true,
     userLocation: null,
   })),
@@ -215,7 +215,7 @@ describe('foreground readiness observer lifecycle', () => {
 
     const calls = (Location.getCurrentPositionAsync as jest.Mock).mock.calls.length;
     await advance(CHECK_IN_READINESS.resumeRetryMs);
-    // The accepted observer caps every retry at the 2s sampling floor.
+    // Every retry uses at least the accepted 2s sampling interval.
     expect(Location.getCurrentPositionAsync).toHaveBeenCalledTimes(calls);
     expect(useCheckInReadinessStore.getState().interruptedAtMs).not.toBeNull();
     await advance(CHECK_IN_READINESS.nearReadySampleIntervalMs - CHECK_IN_READINESS.resumeRetryMs);

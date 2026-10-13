@@ -1,0 +1,100 @@
+{
+  "baselineCommit": "dfef992",
+  "baselineSourceSha256": "0620047762be33417510ceda3146396b3218dc439d46141de64df91159a56b72",
+  "scope": "Local Node/Jest, synthetic full detail operations; not phone latency, network or FPS",
+  "results": [
+    {
+      "collectionRows": 500,
+      "collections": 2,
+      "details": 20,
+      "before": {
+        "medianMs": 200.34349999999995,
+        "samplesMs": [
+          165.02479999999923,
+          192.6773000000003,
+          200.34349999999995,
+          244.74069999999847,
+          256.6309999999994
+        ],
+        "comparisons": 270300,
+        "idKeys": 0
+      },
+      "after": {
+        "medianMs": 165.4437999999991,
+        "samplesMs": [
+          159.67489999999998,
+          163.63310000000092,
+          165.4437999999991,
+          172.5601000000006,
+          177.71090000000004
+        ],
+        "comparisons": 270300,
+        "idKeys": 0
+      },
+      "fullResultsEqual": true,
+      "outputSha256": "2926f743e13fcb854e83ab25d1179d67b68fd37ee9ec60d262c8677268f4ba5a"
+    },
+    {
+      "collectionRows": 1000,
+      "collections": 2,
+      "details": 100,
+      "before": {
+        "medianMs": 701.0622999999996,
+        "samplesMs": [
+          686.2616000000016,
+          700.1913999999997,
+          701.0622999999996,
+          749.8780000000006,
+          760.3137000000006
+        ],
+        "comparisons": 1219000,
+        "idKeys": 0
+      },
+      "after": {
+        "medianMs": 749.9759000000013,
+        "samplesMs": [
+          706.2038999999986,
+          711.0846999999994,
+          749.9759000000013,
+          779.5476999999992,
+          808.2063000000016
+        ],
+        "comparisons": 1219000,
+        "idKeys": 0
+      },
+      "fullResultsEqual": true,
+      "outputSha256": "abbab9ac40b07e57f1abe30140a82e4808048f28d10b9005515dd650f6cb4715"
+    },
+    {
+      "collectionRows": 3000,
+      "collections": 2,
+      "details": 300,
+      "before": {
+        "medianMs": 7418.3272,
+        "samplesMs": [
+          7162.7413000000015,
+          7177.726800000004,
+          7418.3272,
+          8215.132400000002,
+          11197.134400000003
+        ],
+        "comparisons": 10977000,
+        "idKeys": 0
+      },
+      "after": {
+        "medianMs": 6695.164499999999,
+        "samplesMs": [
+          6590.301399999997,
+          6668.8842,
+          6695.164499999999,
+          6763.718600000007,
+          7184.531699999992
+        ],
+        "comparisons": 10977000,
+        "idKeys": 0
+      },
+      "fullResultsEqual": true,
+      "outputSha256": "80955e14c020a97e5aa8386c7a0794ccb69f0552e9b6b0e4741bfeb0fb9e292f"
+    }
+  ]
+}

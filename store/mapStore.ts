@@ -102,9 +102,9 @@ import {
   type FetchMinimalEventsOptions,
 } from '../lib/api/events';
 import {
-  areEventIdsEquivalent,
   fetchFirestoreEventDetailsBatch,
   toAppEventId,
+  toFirestoreEventId,
 } from '../lib/api/firestoreEvents';
 import {
   fetchPrivateSharedEventsForCurrentUser,
@@ -2147,13 +2147,16 @@ fetchEventDetails: async (
 
   const dedupeByEquivalentId = (items: Event[]): Event[] => {
     const deduped: Event[] = [];
+    const positions = new Map<string, number>();
     for (const item of items) {
-      const existingIndex = deduped.findIndex((candidate) =>
-        areEventIdsEquivalent(candidate.id, item.id)
-      );
-      if (existingIndex >= 0) {
+      // Nullish IDs never match, even each other. Blank IDs do match, as in
+      // areEventIdsEquivalent; use the same single-prefix normalization.
+      const key = item.id == null ? null : toFirestoreEventId(item.id);
+      const existingIndex = key === null ? undefined : positions.get(key);
+      if (existingIndex !== undefined) {
         deduped[existingIndex] = item;
       } else {
+        if (key !== null) positions.set(key, deduped.length);
         deduped.push(item);
       }
     }
@@ -2291,11 +2294,20 @@ fetchEventDetails: async (
 
     if (normalizedDetails.length === 0) return;
 
+    // Match Array.find's first-detail-wins rule. Reuse this lookup for both
+    // collections instead of rescanning every detail for every event.
+    const detailsById = new Map<string, any>();
+    for (const detail of normalizedDetails) {
+      const key = toFirestoreEventId(detail.id);
+      if (!detailsById.has(key)) detailsById.set(key, detail);
+    }
+
     const mergeCollection = (collection: Event[]): Event[] => {
+      const existingIds = new Set<string>();
       const merged = collection.map((event) => {
-        const detail = normalizedDetails.find((candidate) =>
-          areEventIdsEquivalent(candidate.id, event.id)
-        );
+        const key = event.id == null ? null : toFirestoreEventId(event.id);
+        if (key !== null) existingIds.add(key);
+        const detail = key === null ? undefined : detailsById.get(key);
         if (!detail) return event;
 
         return {
@@ -2319,10 +2331,7 @@ fetchEventDetails: async (
       });
 
       const extras = normalizedDetails
-        .filter(
-          (detail) =>
-            !merged.some((event) => areEventIdsEquivalent(event.id, detail.id))
-        )
+        .filter((detail) => !existingIds.has(toFirestoreEventId(detail.id)))
         .map((detail) => coerceDetailToEvent(detail));
 
       return dedupeByEquivalentId([...merged, ...extras]);

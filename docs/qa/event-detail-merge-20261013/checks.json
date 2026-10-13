@@ -1,0 +1,230 @@
+{
+  "utc": {
+    "passedSuites": 21,
+    "failedSuites": 0,
+    "passedTests": 222,
+    "failedTests": 0,
+    "skippedTests": 1,
+    "suites": [
+      {
+        "path": "lib/api/__tests__/privateSharedEvents-test.ts",
+        "status": "passed",
+        "tests": 11
+      },
+      {
+        "path": "lib/api/__tests__/privateSharedEventMerge-test.ts",
+        "status": "passed",
+        "tests": 3
+      },
+      {
+        "path": "store/__tests__/eventDetailMerge-test.ts",
+        "status": "focused",
+        "tests": 11
+      },
+      {
+        "path": "components/social/__tests__/ContextualCheckInControl-test.tsx",
+        "status": "passed",
+        "tests": 24
+      },
+      {
+        "path": "components/social/__tests__/CheckInReadinessObserver-test.tsx",
+        "status": "passed",
+        "tests": 15
+      },
+      {
+        "path": "components/map/__tests__/UpcomingDateOptions.test.tsx",
+        "status": "passed",
+        "tests": 8
+      },
+      {
+        "path": "store/__tests__/mainNavigatorSubscription-test.tsx",
+        "status": "passed",
+        "tests": 2
+      },
+      {
+        "path": "store/__tests__/mapStoreExpiryGate-test.ts",
+        "status": "passed",
+        "tests": 29
+      },
+      {
+        "path": "components/common/__tests__/EventTimingBadge-test.tsx",
+        "status": "passed",
+        "tests": 4
+      },
+      {
+        "path": "components/common/__tests__/EventTimingSummaryText-test.tsx",
+        "status": "passed",
+        "tests": 4
+      },
+      {
+        "path": "utils/__tests__/eventSeries-test.ts",
+        "status": "passed",
+        "tests": 7
+      },
+      {
+        "path": "utils/__tests__/eventTiming-test.ts",
+        "status": "passed",
+        "tests": 12
+      },
+      {
+        "path": "utils/__tests__/dateUtils-test.ts",
+        "status": "passed",
+        "tests": 15
+      },
+      {
+        "path": "store/__tests__/mapStoreCalloutSelection-test.ts",
+        "status": "passed",
+        "tests": 2
+      },
+      {
+        "path": "utils/__tests__/checkInReadiness-test.ts",
+        "status": "passed",
+        "tests": 19
+      },
+      {
+        "path": "lib/api/__tests__/firestoreTimingFields-test.ts",
+        "status": "passed",
+        "tests": 6
+      },
+      {
+        "path": "utils/__tests__/upcomingDateWindow-test.ts",
+        "status": "passed",
+        "tests": 13
+      },
+      {
+        "path": "utils/__tests__/authenticatedAppRoute-test.ts",
+        "status": "passed",
+        "tests": 9
+      },
+      {
+        "path": "components/map/__tests__/eventFilterPanelModel-test.ts",
+        "status": "passed",
+        "tests": 8
+      },
+      {
+        "path": "utils/__tests__/eventExpiry-test.ts",
+        "status": "passed",
+        "tests": 14
+      },
+      {
+        "path": "utils/__tests__/eventScheduleStateCache-test.ts",
+        "status": "passed",
+        "tests": 7
+      }
+    ]
+  },
+  "halifax": {
+    "passedSuites": 21,
+    "failedSuites": 0,
+    "passedTests": 222,
+    "failedTests": 0,
+    "skippedTests": 1,
+    "suites": [
+      {
+        "path": "components/social/__tests__/ContextualCheckInControl-test.tsx",
+        "status": "passed",
+        "tests": 24
+      },
+      {
+        "path": "lib/api/__tests__/privateSharedEvents-test.ts",
+        "status": "passed",
+        "tests": 11
+      },
+      {
+        "path": "store/__tests__/eventDetailMerge-test.ts",
+        "status": "focused",
+        "tests": 11
+      },
+      {
+        "path": "components/map/__tests__/UpcomingDateOptions.test.tsx",
+        "status": "passed",
+        "tests": 8
+      },
+      {
+        "path": "store/__tests__/mapStoreExpiryGate-test.ts",
+        "status": "passed",
+        "tests": 29
+      },
+      {
+        "path": "lib/api/__tests__/privateSharedEventMerge-test.ts",
+        "status": "passed",
+        "tests": 3
+      },
+      {
+        "path": "components/common/__tests__/EventTimingSummaryText-test.tsx",
+        "status": "passed",
+        "tests": 4
+      },
+      {
+        "path": "store/__tests__/mainNavigatorSubscription-test.tsx",
+        "status": "passed",
+        "tests": 2
+      },
+      {
+        "path": "components/common/__tests__/EventTimingBadge-test.tsx",
+        "status": "passed",
+        "tests": 4
+      },
+      {
+        "path": "components/social/__tests__/CheckInReadinessObserver-test.tsx",
+        "status": "passed",
+        "tests": 15
+      },
+      {
+        "path": "utils/__tests__/eventTiming-test.ts",
+        "status": "passed",
+        "tests": 12
+      },
+      {
+        "path": "store/__tests__/mapStoreCalloutSelection-test.ts",
+        "status": "passed",
+        "tests": 2
+      },
+      {
+        "path": "utils/__tests__/dateUtils-test.ts",
+        "status": "passed",
+        "tests": 15
+      },
+      {
+        "path": "utils/__tests__/eventScheduleStateCache-test.ts",
+        "status": "passed",
+        "tests": 7
+      },
+      {
+        "path": "lib/api/__tests__/firestoreTimingFields-test.ts",
+        "status": "passed",
+        "tests": 6
+      },
+      {
+        "path": "utils/__tests__/eventSeries-test.ts",
+        "status": "passed",
+        "tests": 7
+      },
+      {
+        "path": "utils/__tests__/upcomingDateWindow-test.ts",
+        "status": "passed",
+        "tests": 13
+      },
+      {
+        "path": "utils/__tests__/checkInReadiness-test.ts",
+        "status": "passed",
+        "tests": 19
+      },
+      {
+        "path": "utils/__tests__/authenticatedAppRoute-test.ts",
+        "status": "passed",
+        "tests": 9
+      },
+      {
+        "path": "utils/__tests__/eventExpiry-test.ts",
+        "status": "passed",
+        "tests": 14
+      },
+      {
+        "path": "components/map/__tests__/eventFilterPanelModel-test.ts",
+        "status": "passed",
+        "tests": 8
+      }
+    ]
+  }
+}
