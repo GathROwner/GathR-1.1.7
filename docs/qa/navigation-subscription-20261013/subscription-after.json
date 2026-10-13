@@ -1,0 +1,12 @@
+{
+  "declaration": "const setAllEvents = useMapStore((state) => state.setAllEvents);",
+  "updates": 60,
+  "initialRenders": 1,
+  "renders": {
+    "wholeStore": 61,
+    "navigator": 1,
+    "search": 21
+  },
+  "actionIdentityPreserved": true,
+  "latestSearch": "query-20"
+}

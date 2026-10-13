@@ -16,8 +16,9 @@ import {
 } from '../dateUtils';
 import { createLegacyTimingContract } from '../eventTiming';
 
-// Freeze "now" at 2026-07-10 20:00 local - inside a 7 PM-11 PM event window.
-const NOW = new Date(2026, 6, 10, 20, 0, 0);
+// Events default to Halifax. Explicit ADT offsets keep the simulated clock
+// inside the same event window regardless of the test runner's timezone.
+const NOW = new Date('2026-07-10T20:00:00-03:00');
 
 const timeFormats: Array<[string, string, string]> = [
   ['12h without seconds', '7:00 PM', '11:00 PM'],
@@ -45,7 +46,7 @@ describe('isEventNow time-format handling', () => {
   it.each(timeFormats)(
     'does not report a %s event as live before it starts',
     (_label, startTime, endTime) => {
-      jest.setSystemTime(new Date(2026, 6, 10, 15, 0, 0));
+      jest.setSystemTime(new Date('2026-07-10T15:00:00-03:00'));
       expect(isEventNow('2026-07-10', startTime, '2026-07-10', endTime)).toBe(false);
     }
   );
@@ -69,7 +70,7 @@ describe('getEventTimeStatus time-format handling', () => {
 
 describe('sortEventsByTimeStatus', () => {
   it('puts the earliest upcoming event first within today', () => {
-    jest.setSystemTime(new Date(2026, 7, 31, 8, 15, 0));
+    jest.setSystemTime(new Date('2026-08-31T08:15:00-03:00'));
 
     const events = [
       {
@@ -95,7 +96,7 @@ describe('sortEventsByTimeStatus', () => {
   });
 
   it('keeps an event happening now ahead of upcoming events', () => {
-    jest.setSystemTime(new Date(2026, 7, 31, 8, 15, 0));
+    jest.setSystemTime(new Date('2026-08-31T08:15:00-03:00'));
 
     const events = [
       {
@@ -121,7 +122,7 @@ describe('sortEventsByTimeStatus', () => {
   });
 
   it('orders expected-current ahead of unknown-current, later today, and muted today', () => {
-    jest.setSystemTime(new Date(2026, 7, 31, 20, 0, 0));
+    jest.setSystemTime(new Date('2026-08-31T20:00:00-03:00'));
     const unknownTiming = createLegacyTimingContract(
       { startDate: '2026-08-31', startTime: '7:00 PM', endDate: '2026-08-31', endTime: '' },
       { endStatus: 'unknown' }

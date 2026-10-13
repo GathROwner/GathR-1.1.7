@@ -630,7 +630,7 @@ useEffect(() => {
 
     // ðŸš€ PERFORMANCE: Start preloading with React Query as soon as the app starts
     const queryClient = useQueryClient();
-    const { setAllEvents } = useMapStore();
+    const setAllEvents = useMapStore((state) => state.setAllEvents);
 
     // 📢 AdMob SDK initialization (moved from index.tsx to ensure it runs regardless of auth state)
     // This must run before ad preloading can work
