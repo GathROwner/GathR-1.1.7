@@ -4,14 +4,12 @@
  * to ensure consistent time handling across all components.
  */
 
-import {
-  format,
-  parseISO,
-  parse,
-  isValid,
-  isWithinInterval,
-  isSameDay
-} from 'date-fns';
+import { format } from 'date-fns/format';
+import { parseISO } from 'date-fns/parseISO';
+import { parse } from 'date-fns/parse';
+import { isValid } from 'date-fns/isValid';
+import { isWithinInterval } from 'date-fns/isWithinInterval';
+import { isSameDay } from 'date-fns/isSameDay';
 import type { TimeStatus } from '../types/events';
 import {
   getEventScheduleState,

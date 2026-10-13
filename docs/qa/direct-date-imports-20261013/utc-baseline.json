@@ -1,0 +1,41 @@
+{
+  "baselineCommit": "51508b8a559145c0c6e8863326ab5848a2ed9fed",
+  "timezone": "UTC",
+  "baselineDateUtilsFailed": 7,
+  "baselineDateUtilsPassed": 8,
+  "candidateFailed": 7,
+  "candidatePassed": 91,
+  "identicalFailureNamesAndFirstDiagnostics": true,
+  "halifaxSuitesPassed": 11,
+  "halifaxTestsPassed": 98,
+  "failures": [
+    {
+      "name": "isEventNow time-format handling › detects a live event with 12h without seconds times",
+      "diagnostic": "expect(received).toBe(expected) // Object.is equality"
+    },
+    {
+      "name": "isEventNow time-format handling › detects a live event with 12h with seconds (backend format) times",
+      "diagnostic": "expect(received).toBe(expected) // Object.is equality"
+    },
+    {
+      "name": "isEventNow time-format handling › detects a live event with 24h times",
+      "diagnostic": "expect(received).toBe(expected) // Object.is equality"
+    },
+    {
+      "name": "getEventTimeStatus time-format handling › returns \"now\" during a 12h without seconds event",
+      "diagnostic": "expect(received).toBe(expected) // Object.is equality"
+    },
+    {
+      "name": "getEventTimeStatus time-format handling › returns \"now\" during a 12h with seconds (backend format) event",
+      "diagnostic": "expect(received).toBe(expected) // Object.is equality"
+    },
+    {
+      "name": "getEventTimeStatus time-format handling › returns \"now\" during a 24h event",
+      "diagnostic": "expect(received).toBe(expected) // Object.is equality"
+    },
+    {
+      "name": "sortEventsByTimeStatus › orders expected-current ahead of unknown-current, later today, and muted today",
+      "diagnostic": "expect(received).toEqual(expected) // deep equality"
+    }
+  ]
+}
