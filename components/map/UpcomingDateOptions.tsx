@@ -10,8 +10,10 @@ import { formatLocalDateKey, formatUpcomingDateLabel, localDateFromKey, normaliz
 
 type CustomDate = Extract<UpcomingDateFilter, { kind: 'custom' }>;
 type ContentType = 'event' | 'special';
+type Appearance = 'light' | 'dark';
 type Props = {
   type?: ContentType;
+  appearance?: Appearance;
   events: Event[];
   criteria: FilterCriteria;
   onSelect: (selection: UpcomingDateFilter) => void;
@@ -22,12 +24,14 @@ const defaultCustomDate = (today: string): CustomDate => {
   return { kind: 'custom', startDate: tomorrow, endDate: tomorrow };
 };
 
-const CalendarSheet = ({ type, events, criteria, initial, onApply, onClose }: Omit<Props, 'onSelect'> & {
+const CalendarSheet = ({ type, appearance = 'light', events, criteria, initial, onApply, onClose }: Omit<Props, 'onSelect'> & {
   type: ContentType;
   initial: CustomDate; onApply: (selection: CustomDate) => void; onClose: () => void;
 }) => {
   const isSpecial = type === 'special';
-  const accent = isSpecial ? '#248542' : '#1976D2';
+  const dark = appearance === 'dark';
+  const accent = dark ? '#64B5F6' : isSpecial ? '#248542' : '#1976D2';
+  const iconColor = dark ? '#D5DAE2' : '#334155';
   const insets = useSafeAreaInsets();
   const today = formatLocalDateKey(new Date());
   const [mode, setMode] = useState<'day' | 'range'>(initial.startDate === initial.endDate ? 'day' : 'range');
@@ -58,24 +62,24 @@ const CalendarSheet = ({ type, events, criteria, initial, onApply, onClose }: Om
     <Modal transparent visible animationType="slide" onRequestClose={onClose} statusBarTranslucent>
       <View style={styles.modal}>
         <Pressable style={StyleSheet.absoluteFill} onPress={onClose} accessibilityLabel="Dismiss date picker" />
-        <View style={[styles.sheet, { paddingBottom: Math.max(insets.bottom, 16), maxHeight: '90%' }]} accessibilityViewIsModal>
+        <View style={[styles.sheet, dark && styles.darkSheet, { paddingBottom: Math.max(insets.bottom, 16), maxHeight: '90%' }]} accessibilityViewIsModal>
           <View style={styles.handle} />
           <View style={styles.sheetHeader}>
             <View>
-              <Text style={styles.title}>Choose a date</Text>
-              <Text style={styles.subtitle}>{isSpecial ? 'Find your next special' : 'Find your next outing'}</Text>
+              <Text style={[styles.title, dark && styles.darkText]}>Choose a date</Text>
+              <Text style={[styles.subtitle, dark && styles.darkMutedText]}>{isSpecial ? 'Find your next special' : 'Find your next outing'}</Text>
             </View>
             <Pressable accessibilityRole="button" accessibilityLabel="Close date picker" onPress={onClose} style={styles.iconButton}>
-              <Ionicons name="close" size={22} color="#334155" />
+              <Ionicons name="close" size={22} color={iconColor} />
             </Pressable>
           </View>
           <ScrollView showsVerticalScrollIndicator={false}>
-            <View style={styles.segment}>
+            <View style={[styles.segment, dark && styles.darkSegment]}>
               {(['day', 'range'] as const).map(value => (
                 <Pressable key={value} accessibilityRole="button" accessibilityState={{ selected: mode === value }}
                   onPress={() => { setMode(value); setEnd(value === 'day' ? start : null); }}
-                  style={[styles.segmentButton, mode === value && styles.segmentActive]}>
-                  <Text style={[styles.segmentText, mode === value && (isSpecial ? styles.green : styles.blue)]}>
+                  style={[styles.segmentButton, mode === value && styles.segmentActive, dark && mode === value && styles.darkSegmentActive]}>
+                  <Text style={[styles.segmentText, mode === value && (isSpecial ? styles.green : styles.blue), dark && styles.darkMutedText, dark && mode === value && styles.darkAccentText]}>
                     {value === 'day' ? 'Single day' : 'Date range'}
                   </Text>
                 </Pressable>
@@ -84,16 +88,16 @@ const CalendarSheet = ({ type, events, criteria, initial, onApply, onClose }: Om
             <View style={styles.monthHeader}>
               <Pressable accessibilityRole="button" accessibilityLabel="Previous month" disabled={!canGoBack}
                 style={styles.iconButton} onPress={() => setMonth(new Date(month.getFullYear(), month.getMonth() - 1, 1, 12))}>
-                <Ionicons name="chevron-back" size={22} color={canGoBack ? '#334155' : '#CBD5E1'} />
+                <Ionicons name="chevron-back" size={22} color={canGoBack ? iconColor : dark ? '#545D6B' : '#CBD5E1'} />
               </Pressable>
-              <Text style={styles.month}>{month.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}</Text>
+              <Text style={[styles.month, dark && styles.darkText]}>{month.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}</Text>
               <Pressable accessibilityRole="button" accessibilityLabel="Next month" style={styles.iconButton}
                 onPress={() => setMonth(new Date(month.getFullYear(), month.getMonth() + 1, 1, 12))}>
-                <Ionicons name="chevron-forward" size={22} color="#334155" />
+                <Ionicons name="chevron-forward" size={22} color={iconColor} />
               </Pressable>
             </View>
             <View style={styles.week}>
-              {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((day, index) => <Text key={index} style={styles.weekday}>{day}</Text>)}
+              {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((day, index) => <Text key={index} style={[styles.weekday, dark && styles.darkMutedText]}>{day}</Text>)}
             </View>
             <View style={styles.grid}>
               {cells.map((key, index) => {
@@ -101,24 +105,24 @@ const CalendarSheet = ({ type, events, criteria, initial, onApply, onClose }: Om
                 const inside = !!key && !!end && key > start && key < end;
                 const disabled = !key || key <= today;
                 return <View key={key || `blank-${index}`}
-                  style={[styles.cell, inside && styles.rangeCell, inside && isSpecial && styles.specialRangeCell]}>
+                  style={[styles.cell, inside && styles.rangeCell, inside && isSpecial && styles.specialRangeCell, inside && dark && styles.darkRangeCell]}>
                   {key && <Pressable accessibilityRole="button" accessibilityState={{ selected: selected || inside, disabled }}
                     accessibilityLabel={localDateFromKey(key).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}
                     disabled={disabled} onPress={() => selectDay(key)}
-                    style={[styles.day, selected && styles.selectedDay, selected && isSpecial && styles.specialSelectedDay]}>
-                    <Text style={[styles.dayText, disabled && styles.disabledText, selected && styles.white]}>{Number(key.slice(-2))}</Text>
+                    style={[styles.day, selected && styles.selectedDay, selected && isSpecial && styles.specialSelectedDay, selected && dark && styles.darkSelectedDay]}>
+                    <Text style={[styles.dayText, dark && styles.darkText, disabled && styles.disabledText, disabled && dark && styles.darkDisabledText, selected && styles.white]}>{Number(key.slice(-2))}</Text>
                   </Pressable>}
                 </View>;
               })}
             </View>
-            <View style={[styles.selectionSummary, isSpecial && styles.specialSelectionSummary]}>
+            <View style={[styles.selectionSummary, isSpecial && styles.specialSelectionSummary, dark && styles.darkSegment]}>
               <Ionicons name="calendar-outline" size={19} color={accent} />
-              <Text style={styles.selectionText}>{!end ? 'Choose an end date' : formatUpcomingDateLabel(pending)}</Text>
+              <Text style={[styles.selectionText, dark && styles.darkText]}>{!end ? 'Choose an end date' : formatUpcomingDateLabel(pending)}</Text>
             </View>
-            <Text style={styles.note}>Upcoming starts tomorrow. Your other {type} filters still apply.</Text>
+            <Text style={[styles.note, dark && styles.darkMutedText]}>Upcoming starts tomorrow. Your other {type} filters still apply.</Text>
           </ScrollView>
           <Pressable accessibilityRole="button" disabled={!valid} onPress={() => onApply(pending)}
-            style={[styles.apply, isSpecial && styles.specialApply, !valid && styles.disabledButton]}>
+            style={[styles.apply, isSpecial && styles.specialApply, dark && styles.darkSelectedDay, !valid && styles.disabledButton, !valid && dark && styles.darkDisabledButton]}>
             <Text style={styles.applyText}>{!valid ? 'Choose an end date' : `Show ${count} ${isSpecial ? 'specials' : 'events'}`}</Text>
             <Ionicons name="arrow-forward" size={20} color="white" />
           </Pressable>
@@ -128,9 +132,10 @@ const CalendarSheet = ({ type, events, criteria, initial, onApply, onClose }: Om
   );
 };
 
-export default function UpcomingDateOptions({ type = 'event', events, criteria, onSelect }: Props) {
+export default function UpcomingDateOptions({ type = 'event', appearance = 'light', events, criteria, onSelect }: Props) {
   const [calendarOpen, setCalendarOpen] = useState(false);
   const isSpecial = type === 'special';
+  const dark = appearance === 'dark';
   const today = formatLocalDateKey(new Date());
   const typeFilters = type === 'event' ? criteria.eventFilters : criteria.specialFilters;
   const selection = normalizeUpcomingDate(typeFilters.upcomingDate, today);
@@ -142,8 +147,8 @@ export default function UpcomingDateOptions({ type = 'event', events, criteria, 
     { label: 'Choose date…', icon: 'calendar-clear-outline', selection: custom },
   ];
   const context = createEventTimeContext();
-  return <View style={styles.refinement}>
-    <Text style={styles.refinementTitle}>Upcoming dates</Text>
+  return <View style={[styles.refinement, dark && styles.darkRefinement]}>
+    <Text style={[styles.refinementTitle, dark && styles.darkRefinementTitle]}>Upcoming dates</Text>
     <View style={styles.options}>
       {options.map(option => {
         const active = selection.kind === option.selection.kind;
@@ -151,16 +156,18 @@ export default function UpcomingDateOptions({ type = 'event', events, criteria, 
         return <Pressable key={option.selection.kind} accessibilityRole="button" accessibilityState={{ selected: active }}
           accessibilityLabel={`${option.label}, ${count} ${isSpecial ? 'specials' : 'events'}`}
           onPress={() => option.selection.kind === 'custom' ? setCalendarOpen(true) : onSelect(option.selection)}
-          style={[styles.option, active && styles.activeOption, active && isSpecial && styles.activeSpecialOption]}>
-          <Ionicons name={option.icon} size={17} color={active ? (isSpecial ? '#248542' : '#0874D5') : '#263F68'} />
+          style={[styles.option, active && styles.activeOption, active && isSpecial && styles.activeSpecialOption,
+            dark && styles.darkOption, dark && active && styles.darkActiveOption]}>
+          <Ionicons name={option.icon} size={17} color={dark ? active ? '#FFFFFF' : '#D5DAE2' : active ? (isSpecial ? '#248542' : '#0874D5') : '#263F68'} />
           <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}
-            style={[styles.optionText, active && styles.selectedText, active && isSpecial && styles.selectedSpecialText]}>
+            style={[styles.optionText, active && styles.selectedText, active && isSpecial && styles.selectedSpecialText,
+              dark && styles.darkText, dark && active && styles.white]}>
             {`${option.label} (${count})`}
           </Text>
         </Pressable>;
       })}
     </View>
-    {calendarOpen && <CalendarSheet type={type} events={events} criteria={criteria} initial={custom}
+    {calendarOpen && <CalendarSheet type={type} appearance={appearance} events={events} criteria={criteria} initial={custom}
       onClose={() => setCalendarOpen(false)} onApply={value => { onSelect(value); setCalendarOpen(false); }} />}
   </View>;
 }
@@ -213,4 +220,18 @@ const styles = StyleSheet.create({
   specialApply: { backgroundColor: '#34A853' },
   disabledButton: { backgroundColor: '#93ABC0' },
   applyText: { color: 'white', fontSize: 16, fontWeight: '700' },
+  darkRefinement: { marginHorizontal: 12, marginTop: 6, marginBottom: 6 },
+  darkRefinementTitle: { fontSize: 11, fontWeight: '600', color: '#F2F4F7', marginBottom: 6 },
+  darkOption: { backgroundColor: '#1A1D22', borderColor: '#343A43', borderRadius: 16, elevation: 0, shadowOpacity: 0 },
+  darkActiveOption: { backgroundColor: '#2196F3', borderColor: '#2196F3' },
+  darkSheet: { backgroundColor: '#15191F' },
+  darkText: { color: '#F2F4F7' },
+  darkMutedText: { color: '#ADB6C5' },
+  darkAccentText: { color: '#64B5F6' },
+  darkSegment: { backgroundColor: '#222830' },
+  darkSegmentActive: { backgroundColor: '#153B5E' },
+  darkRangeCell: { backgroundColor: '#153B5E' },
+  darkSelectedDay: { backgroundColor: '#2196F3' },
+  darkDisabledText: { color: '#545D6B' },
+  darkDisabledButton: { backgroundColor: '#414C5B' },
 });

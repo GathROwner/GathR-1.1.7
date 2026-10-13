@@ -33,6 +33,7 @@ import { useHeaderHeight } from '@react-navigation/elements';
 import { useFeedScrollChrome } from '../../hooks/useFeedScrollChrome';
 import { useVisibleVenueGroups } from '../../hooks/useVisibleVenueGroups';
 import FeedFilterSummary, { FEED_FILTER_SUMMARY_HEIGHT } from '../../components/common/FeedFilterSummary';
+import UpcomingDateOptions from '../../components/map/UpcomingDateOptions';
 import { useFeedBackToTop } from '../../hooks/useFeedBackToTop';
 import FallbackImage from '../../components/common/FallbackImage';
 import TicketCtaPill from '../../components/common/TicketCtaPill';
@@ -1491,6 +1492,7 @@ useEffect(() => {
   // Store integration - individual selectors to prevent infinite loops
   // (Combined object selectors with shallow cause getSnapshot caching issues)
   const events = useMapStore((state) => state.events);
+  const onScreenEvents = useMapStore((state) => state.onScreenEvents);
   const viewportEvents = useMapStore((state) => state.viewportEvents);
   const outsideViewportEvents = useMapStore((state) => state.outsideViewportEvents);
   const isLoading = useMapStore((state) => state.isLoading);
@@ -2738,6 +2740,13 @@ setSelectedImageData({ imageUrl, event, events: groupEvents });
           </ScrollView>
 
         
+        {filterCriteria.eventFilters.timeFilter === TimeFilterType.UPCOMING && (
+          <UpcomingDateOptions appearance="dark" events={onScreenEvents} criteria={filterCriteria}
+            onSelect={upcomingDate => {
+              if (isGuest) trackInteraction(InteractionType.LIST_FILTER);
+              setTypeFilters('event', { upcomingDate });
+            }} />
+        )}
         <View style={styles.filterDivider} />
         <View style={styles.sectionHeaderContainer}>
           <Text style={styles.filterSectionTitle}>Category</Text>
