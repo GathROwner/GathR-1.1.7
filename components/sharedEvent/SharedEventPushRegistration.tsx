@@ -17,8 +17,8 @@ export default function SharedEventPushRegistration() {
         void registerSharedEventPushNotifications();
       }
     });
-    const tokenSubscription = Notifications.addPushTokenListener(() => {
-      void registerSharedEventPushNotifications(true);
+    const tokenSubscription = Notifications.addPushTokenListener((devicePushToken) => {
+      void registerSharedEventPushNotifications(true, devicePushToken);
     });
 
     return () => {
