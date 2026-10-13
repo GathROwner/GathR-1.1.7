@@ -1,0 +1,216 @@
+{
+  "applied": true,
+  "assets": [
+    {
+      "path": "assets/fallbacks/categories/Cinema.webp",
+      "dimensions": [
+        1024,
+        1024
+      ],
+      "mode": "RGBA",
+      "beforeBytes": 1826930,
+      "afterBytes": 1652161,
+      "savedBytes": 174769,
+      "pixelsIdentical": true,
+      "metadataIdentical": true,
+      "beforeSha256": "a2572fa6f999a50bdac4fd6a740bee60a1bf516da39ac23faf7d92e138084f44",
+      "afterSha256": "02fba113e0af97373235c709b2ee7dcb0ae8506d213bc01b1e904191cd8ca5e9",
+      "decodedPixelSha256": "cd0a3b90a8424126a1c4dfc7bfb288375465a5fb3a8f8729389403a18423b986"
+    },
+    {
+      "path": "assets/fallbacks/categories/comedy.webp",
+      "dimensions": [
+        1024,
+        1024
+      ],
+      "mode": "RGBA",
+      "beforeBytes": 1822171,
+      "afterBytes": 1650974,
+      "savedBytes": 171197,
+      "pixelsIdentical": true,
+      "metadataIdentical": true,
+      "beforeSha256": "7f88531c518a9408cfba3f1226a301d8618d928eeaf6722625af9de0b2cbfbb0",
+      "afterSha256": "058b563990b91e2311691ef196e4cd35fe6d082c86b0ce4306f4007d5b72d3e7",
+      "decodedPixelSha256": "6d1ddb865ced8ee4f704aa431f4e09099d96305e39e02ee4246307c9739862a5"
+    },
+    {
+      "path": "assets/fallbacks/categories/drink-special.webp",
+      "dimensions": [
+        1024,
+        1024
+      ],
+      "mode": "RGBA",
+      "beforeBytes": 1941961,
+      "afterBytes": 1763141,
+      "savedBytes": 178820,
+      "pixelsIdentical": true,
+      "metadataIdentical": true,
+      "beforeSha256": "0bc0c312488d753eb99177a6c2f96f9d3cda062caebf509ee66ee951c2768b19",
+      "afterSha256": "b05256b0b66bf4311ac3a962f02ff61e9f89128e8bcec6bf5d9cff96f76f0f91",
+      "decodedPixelSha256": "d6faead8f76c9de3e8216097a1432101304bec257db64611b660eb89f521ff49"
+    },
+    {
+      "path": "assets/fallbacks/categories/family-friendly.webp",
+      "dimensions": [
+        1024,
+        1024
+      ],
+      "mode": "RGBA",
+      "beforeBytes": 2360551,
+      "afterBytes": 2180929,
+      "savedBytes": 179622,
+      "pixelsIdentical": true,
+      "metadataIdentical": true,
+      "beforeSha256": "2271da066a786ccdeeff3b0788b0acf4c2cd139fb5405534b8e5433fd5df7b0a",
+      "afterSha256": "ed7a9d87b9e126c84065bda14b022756cdfe737521c6a7a3db09fa6d230043a3",
+      "decodedPixelSha256": "8faf416904d021e576b08ad98f3ecf18e33c64a8375e8899a3802b45ee2c8847"
+    },
+    {
+      "path": "assets/fallbacks/categories/happy-hour.webp",
+      "dimensions": [
+        1024,
+        1024
+      ],
+      "mode": "RGBA",
+      "beforeBytes": 2005781,
+      "afterBytes": 1807882,
+      "savedBytes": 197899,
+      "pixelsIdentical": true,
+      "metadataIdentical": true,
+      "beforeSha256": "4982dbbdee308182fcbc60afd71ee02798de16ebfc7847d7443c913cc1149fcd",
+      "afterSha256": "32c8e03a4f6eed5bb93deff2a7faacad2819397fab901c98538c2c59435a2c52",
+      "decodedPixelSha256": "407a172e9aef0c514e5271046e54e2e3e69f33a25c88bfc6f6970e4d052f9cc3"
+    },
+    {
+      "path": "assets/fallbacks/categories/live-music.webp",
+      "dimensions": [
+        1024,
+        1024
+      ],
+      "mode": "RGBA",
+      "beforeBytes": 1832429,
+      "afterBytes": 1683415,
+      "savedBytes": 149014,
+      "pixelsIdentical": true,
+      "metadataIdentical": true,
+      "beforeSha256": "d4b91086a80018c79c0317edea04f90e94113ccb7a41260e4f691c17526a307a",
+      "afterSha256": "4e926f7256a29a7569474132dd328890fd46ca8d7a1e2c3fe688fe6a4b9b1d40",
+      "decodedPixelSha256": "66916b9d8610fd6dc9aa999fd513405bb3100f444fb37d3a1c9a42c924fb2533"
+    },
+    {
+      "path": "assets/fallbacks/categories/religious.webp",
+      "dimensions": [
+        1024,
+        1024
+      ],
+      "mode": "RGBA",
+      "beforeBytes": 1761754,
+      "afterBytes": 1480637,
+      "savedBytes": 281117,
+      "pixelsIdentical": true,
+      "metadataIdentical": true,
+      "beforeSha256": "18c148b552983ff07e567ec7f3a72fef9c1a85fadd1e95ced06e302be28edb19",
+      "afterSha256": "bce6aa2269207d63d4400880b63558b9c01becd06595f9dda404255df4fd5a10",
+      "decodedPixelSha256": "38980d33f0d6fa5544c7aea0905d9e5258d63189b6f64e66ab23489197dd9446"
+    },
+    {
+      "path": "assets/fallbacks/categories/social-gatherings.webp",
+      "dimensions": [
+        1024,
+        1024
+      ],
+      "mode": "RGBA",
+      "beforeBytes": 1984060,
+      "afterBytes": 1796924,
+      "savedBytes": 187136,
+      "pixelsIdentical": true,
+      "metadataIdentical": true,
+      "beforeSha256": "3141932298c76b01b21fff7e6adeaf3233fedf3110f7d0fdb4bded33dc453143",
+      "afterSha256": "a09cba2fd4be088e260e52be4c9f78ee1cb289d4c12e13c354ea71b0f3ee0d15",
+      "decodedPixelSha256": "85b8f8107b3d4f2c98268259eaee5e8a4028fafb5a061874b8ebff241d7bf7ec"
+    },
+    {
+      "path": "assets/fallbacks/categories/sports.webp",
+      "dimensions": [
+        1024,
+        1024
+      ],
+      "mode": "RGBA",
+      "beforeBytes": 2126193,
+      "afterBytes": 1964971,
+      "savedBytes": 161222,
+      "pixelsIdentical": true,
+      "metadataIdentical": true,
+      "beforeSha256": "2af4a765d2ae3b53c436fd1de50323289827ae2d10f0cc954471243945dd110e",
+      "afterSha256": "9a4045c00e49a64f6d73d2c0e796a6ae942405d12f7df22a91d7140f64c3d333",
+      "decodedPixelSha256": "df560ae90675f023fc73b7c546726807fa1debfa7c0f8d4fd3a1688e83f67e75"
+    },
+    {
+      "path": "assets/fallbacks/categories/trivia-night.webp",
+      "dimensions": [
+        1024,
+        1024
+      ],
+      "mode": "RGBA",
+      "beforeBytes": 1916059,
+      "afterBytes": 1720944,
+      "savedBytes": 195115,
+      "pixelsIdentical": true,
+      "metadataIdentical": true,
+      "beforeSha256": "bbb1694df7c3e56565ea6d593fa0c460b8d3c230d5c70976fcd3a3719ffd5295",
+      "afterSha256": "6e79ebd6135ad17b4e005d4303a480c74d25103ba97d9c89b0ec7278671134ef",
+      "decodedPixelSha256": "8ec7ec32125175111e3f32fd935251431441b8dfbd62fc170d372d495a5af04a"
+    },
+    {
+      "path": "assets/fallbacks/categories/wing-night.webp",
+      "dimensions": [
+        1024,
+        1024
+      ],
+      "mode": "RGBA",
+      "beforeBytes": 1760979,
+      "afterBytes": 1605950,
+      "savedBytes": 155029,
+      "pixelsIdentical": true,
+      "metadataIdentical": true,
+      "beforeSha256": "a4cc28918dd207ff3519c8327ae3fe3e073da3f534e37635c6a0d983b66708fa",
+      "afterSha256": "fb4015f0247cf4fb48c07074714339fc2e748fc672b996caf357c1f4838ab754",
+      "decodedPixelSha256": "8259f44a22446273ee6d0594ab8224795bb8d26bd920018c5e638bdc0b1df118"
+    },
+    {
+      "path": "assets/fallbacks/categories/workshops.webp",
+      "dimensions": [
+        1024,
+        1024
+      ],
+      "mode": "RGBA",
+      "beforeBytes": 2202399,
+      "afterBytes": 1925097,
+      "savedBytes": 277302,
+      "pixelsIdentical": true,
+      "metadataIdentical": true,
+      "beforeSha256": "83d4a83804fdced45d3486e6c733515053ee8b577f2c37f4e5db62fbc2044e5a",
+      "afterSha256": "a71ffb8dc36057cf53dcc019da094268f9296626c87ae7891a0ec8616d509651",
+      "decodedPixelSha256": "32ecc5e7cf0bc7e10d314b8641c5a57060b0f5b2a7633604aa047a1c3cc65954"
+    },
+    {
+      "path": "assets/GathR Text Logo.png",
+      "dimensions": [
+        1536,
+        1024
+      ],
+      "mode": "RGBA",
+      "beforeBytes": 2082930,
+      "afterBytes": 1911510,
+      "savedBytes": 171420,
+      "pixelsIdentical": true,
+      "metadataIdentical": true,
+      "beforeSha256": "5f641c227e393e9e38910eb17707e1a892f869784ed5645b8a142e42e63ce00d",
+      "afterSha256": "08d2571f95e4c5d5a8350edc8fe41b8b49a0baa0e44445cd8209ff292de24095",
+      "decodedPixelSha256": "1c94c039b504c60284c167025eb5d7a259bd7ea96590918c18920dd047227be4"
+    }
+  ],
+  "beforeBytes": 25624197,
+  "afterBytes": 23144535,
+  "savedBytes": 2479662
+}
