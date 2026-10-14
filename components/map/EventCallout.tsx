@@ -19,6 +19,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
+import { openCalloutLightbox, navigateCalloutLightbox, type CalloutLightboxSelection } from '../../utils/calloutLightbox';
 
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
@@ -2997,10 +2998,7 @@ const [calloutState, setCalloutState] = useState<CalloutState>('expanded');
   const [showBackToTop, setShowBackToTop] = useState(false);
   const backToTopOpacity = useRef(new Animated.Value(0)).current;
   
-  const [selectedImageData, setSelectedImageData] = useState<{
-    imageUrl: string;
-    event: Event;
-  } | null>(null);
+  const [selectedImageData, setSelectedImageData] = useState<CalloutLightboxSelection | null>(null);
   const unlockCompactSdk = () => {
     compactSdkUnlockedForSession = true;
     setCompactSdkUnlocked(true);
@@ -3165,13 +3163,8 @@ try {
   });
 } catch {}
 
-// Just set the selectedImageData - don't hide the callout
-setSelectedImageData({ imageUrl, event });
-console.log('ATTEMPTING to set selectedImageData state...');
-
-    
     // Just set the selectedImageData - don't hide the callout
-    setSelectedImageData({ imageUrl, event });
+    setSelectedImageData(openCalloutLightbox(imageUrl, event, event.type === 'special' ? specials : events));
     console.log('ATTEMPTING to set selectedImageData state...');
   };
   
@@ -3180,6 +3173,10 @@ console.log('ATTEMPTING to set selectedImageData state...');
     setSelectedImageData(null);
     setGlobalSelectedImageData(null);
   }, [setGlobalSelectedImageData]);
+
+  const handleLocalLightboxNavigate = useCallback((index: number) => {
+    setSelectedImageData((current) => current ? navigateCalloutLightbox(current, index) : current);
+  }, []);
 
   const handleShowRoute = useCallback((event: Event) => {
     // A lightbox opened from a cluster is nested above that cluster's
@@ -3472,7 +3469,7 @@ try {
       });
 
       // Use the existing state variables
-      setSelectedImageData({ imageUrl, event });
+      setSelectedImageData(openCalloutLightbox(imageUrl, event, event.type === 'special' ? specials : events));
     }
   };
   
@@ -4884,12 +4881,15 @@ useEffect(() => {
             venue={globalSelectedImageData?.venue}
             cluster={globalSelectedImageData?.cluster}
             onClose={handleModalClose}
-            events={globalSelectedImageData?.events}
+            calloutPaging={!globalSelectedImageData && !!selectedImageData}
+            events={globalSelectedImageData ? globalSelectedImageData.events : selectedImageData?.events}
             currentIndex={
-              globalSelectedImageData?.events ? globalSelectedImageData.currentIndex : undefined
+              globalSelectedImageData ? globalSelectedImageData.currentIndex : selectedImageData?.currentIndex
             }
             onNavigate={
-              globalSelectedImageData?.events ? handleGlobalLightboxNavigate : undefined
+              globalSelectedImageData
+                ? globalSelectedImageData.events ? handleGlobalLightboxNavigate : undefined
+                : handleLocalLightboxNavigate
             }
             isCityEvent={globalSelectedImageData?.source === 'city_event_marker'}
             onShowRoute={onShowRoute ? handleShowRoute : undefined}
