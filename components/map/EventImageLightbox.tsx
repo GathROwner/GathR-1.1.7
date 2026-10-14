@@ -494,6 +494,7 @@ try {
   // Refs for gesture handler coordination
   const verticalPanRef = useRef(null);
   const horizontalPanRef = useRef(null);
+  const calloutHorizontalPanRef = useRef<PanGestureHandler>(null);
 
   // Navigation state
   const previousIndex = getAdjacentLightboxIndex(currentIndex, events?.length ?? 0, -1, loopNavigation);
@@ -1618,7 +1619,7 @@ const handleNonTicketAction = () => {
           </TouchableOpacity>
         </View>
 
-        <CalloutLightboxPages enabled={calloutPaging} paging={calloutPager}
+        <CalloutLightboxPages enabled={calloutPaging} paging={calloutPager} horizontalRef={calloutHorizontalPanRef}
           previous={previousIndex === null ? undefined : events?.[previousIndex]}
           next={nextIndex === null ? undefined : events?.[nextIndex]}
           handoff={calloutPager.handoffIndex === null ? undefined : events?.[calloutPager.handoffIndex]}
@@ -1626,7 +1627,7 @@ const handleNonTicketAction = () => {
           width={calloutPageWidth} imageHeight={imageHeight} onWidth={setCalloutPageWidth}
           index={currentIndex ?? 0} count={events?.length ?? 0}>
         <CalloutLightboxMediaGestures callout={calloutPaging}
-          enabled={!isImageViewerVisible && !justClosedImageViewer} paging={calloutPager}
+          enabled={!isImageViewerVisible && !justClosedImageViewer}
           onVerticalGesture={calloutDismiss.onGestureEvent} onVerticalState={calloutDismiss.onStateChange}>
         {/* Tappable Image */}
         <View style={[styles.imageWrapper, { height: imageHeight }]}>
@@ -1871,6 +1872,9 @@ const handleNonTicketAction = () => {
         <View style={styles.eventHeading}>
           <GestureScrollView
             ref={titleScrollRef}
+            {...(calloutPaging ? {
+              waitFor: calloutHorizontalPanRef, disallowInterruption: false, directionalLockEnabled: true,
+            } : {})}
             nestedScrollEnabled
             bounces={false}
             showsHorizontalScrollIndicator={false}
@@ -2197,6 +2201,11 @@ const handleNonTicketAction = () => {
 >
   <GestureScrollView
     ref={descriptionScrollRef}
+    // Resolve the horizontal axis first, then let vertical scrolling own its
+    // gesture. This also protects reading mode and links from sideways drags.
+    {...(calloutPaging ? {
+      waitFor: calloutHorizontalPanRef, disallowInterruption: false, directionalLockEnabled: true,
+    } : {})}
     style={styles.descriptionScroll}
     contentContainerStyle={styles.descriptionContent}
     showsVerticalScrollIndicator={true}

@@ -14,12 +14,11 @@ import { EventTimingSummaryText } from '../common/EventTimingSummaryText';
 type Paging = ReturnType<typeof useCalloutLightboxPaging>;
 type PanProps = React.ComponentProps<typeof PanGestureHandler>;
 
-/** These recognizers only surround media: description/title scrolling cannot close or page. */
-export function CalloutLightboxMediaGestures({ children, callout, enabled, paging, onVerticalGesture, onVerticalState }: {
+/** Dismissal stays on media; horizontal paging surrounds the whole page below. */
+export function CalloutLightboxMediaGestures({ children, callout, enabled, onVerticalGesture, onVerticalState }: {
   children: React.ReactNode;
   callout: boolean;
   enabled: boolean;
-  paging: Paging;
   onVerticalGesture: PanProps['onGestureEvent'];
   onVerticalState: PanProps['onHandlerStateChange'];
 }) {
@@ -30,11 +29,7 @@ export function CalloutLightboxMediaGestures({ children, callout, enabled, pagin
     activeOffsetY={12} failOffsetX={[-22, 22]}
     onGestureEvent={onVerticalGesture} onHandlerStateChange={onVerticalState}>
     <Animated.View style={styles.mediaSurface}>
-      <PanGestureHandler enabled={enabled && paging.enabled}
-        activeOffsetX={[-12, 12]} failOffsetY={[-22, 22]}
-        onGestureEvent={paging.onGestureEvent} onHandlerStateChange={paging.onStateChange}>
-        <Animated.View>{children}</Animated.View>
-      </PanGestureHandler>
+      {children}
     </Animated.View>
   </PanGestureHandler>;
 }
@@ -90,8 +85,9 @@ function PagePreview({ event, imageHeight, index, count, categoryColor }: { even
   </View>;
 }
 
-export function CalloutLightboxPages({ enabled, children, paging, previous, next, handoff, categoryColor, width, imageHeight, onWidth, index, count }: {
+export function CalloutLightboxPages({ enabled, children, paging, horizontalRef, previous, next, handoff, categoryColor, width, imageHeight, onWidth, index, count }: {
   enabled: boolean; children: React.ReactNode; paging: Paging; previous?: Event; next?: Event;
+  horizontalRef: React.RefObject<PanGestureHandler | null>;
   width: number; imageHeight: number; onWidth: (width: number) => void; index: number; count: number;
   handoff?: Event; categoryColor: (category: string) => string;
 }) {
@@ -109,7 +105,11 @@ export function CalloutLightboxPages({ enabled, children, paging, previous, next
         {event && <PagePreview event={event} imageHeight={imageHeight} index={index + side} count={count} categoryColor={categoryColor(event.category)} />}
       </Animated.View>;
     })}
-    <Animated.View style={[styles.page, styles.currentPage, { transform: [{ translateX: paging.offsetX }] }]}>{children}</Animated.View>
+    <PanGestureHandler ref={horizontalRef} enabled={paging.enabled}
+      activeOffsetX={[-12, 12]} failOffsetY={[-22, 22]}
+      onGestureEvent={paging.onGestureEvent} onHandlerStateChange={paging.onStateChange}>
+      <Animated.View style={[styles.page, styles.currentPage, { transform: [{ translateX: paging.offsetX }] }]}>{children}</Animated.View>
+    </PanGestureHandler>
     <Animated.View pointerEvents="none" accessible={false} accessibilityElementsHidden importantForAccessibility="no-hide-descendants"
       style={[styles.adjacent, { zIndex: 2, opacity: paging.handoffOpacity }]}>
       {handoff && paging.handoffIndex !== null && <PagePreview event={handoff} imageHeight={imageHeight}
