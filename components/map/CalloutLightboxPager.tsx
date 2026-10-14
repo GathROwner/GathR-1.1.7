@@ -1,4 +1,4 @@
-import React, { useMemo, useRef } from 'react';
+import React, { useMemo } from 'react';
 import { Animated, StyleSheet, Text, View } from 'react-native';
 import { PanGestureHandler } from 'react-native-gesture-handler';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
@@ -23,14 +23,14 @@ export function CalloutLightboxMediaGestures({ children, callout, enabled, pagin
   onVerticalGesture: PanProps['onGestureEvent'];
   onVerticalState: PanProps['onHandlerStateChange'];
 }) {
-  const vertical = useRef<PanGestureHandler>(null);
-  const horizontal = useRef<PanGestureHandler>(null);
   if (!callout) return <>{children}</>;
-  return <PanGestureHandler ref={vertical} enabled={enabled} simultaneousHandlers={horizontal}
+  // Native recognizers compete for one axis; a diagonal drag must not activate
+  // both paging and dismissal and let one reset the other's animation.
+  return <PanGestureHandler enabled={enabled}
     activeOffsetY={12} failOffsetX={[-22, 22]}
     onGestureEvent={onVerticalGesture} onHandlerStateChange={onVerticalState}>
     <Animated.View style={styles.mediaSurface}>
-      <PanGestureHandler ref={horizontal} enabled={enabled && paging.enabled} simultaneousHandlers={vertical}
+      <PanGestureHandler enabled={enabled && paging.enabled}
         activeOffsetX={[-12, 12]} failOffsetY={[-22, 22]}
         onGestureEvent={paging.onGestureEvent} onHandlerStateChange={paging.onStateChange}>
         <Animated.View>{children}</Animated.View>
@@ -48,7 +48,7 @@ export function CalloutLightboxCounter({ index, count, special = false }: { inde
 }
 
 /** Read-only adjacent content: no engagement subscriptions, tracking or interactive overlays. */
-function PagePreview({ event, imageHeight, index, count }: { event: Event; imageHeight: number; index: number; count: number }) {
+function PagePreview({ event, imageHeight, index, count, categoryColor }: { event: Event; imageHeight: number; index: number; count: number; categoryColor: string }) {
   const images = buildEventImageGallery(event.imageUrl || event.profileUrl || '', event.mediaUrls);
   const sides = getEventImageGallerySideTileIndexes(images);
   const hidden = getEventImageGalleryHiddenCount(images);
@@ -78,7 +78,7 @@ function PagePreview({ event, imageHeight, index, count }: { event: Event; image
       {titleParts && <Text style={styles.subtitle}>{titleParts[2]}</Text>}
     </View>
     <View style={styles.badges}><FamilyFriendlyBadge event={event} />
-      <View style={styles.category}><Text style={styles.categoryText}>{event.category}</Text></View>
+      <View style={[styles.category, { backgroundColor: categoryColor }]}><Text style={styles.categoryText}>{event.category}</Text></View>
     </View>
     <View style={styles.timing}><MaterialIcons name="access-time" size={18} color="#FFFFFF" />
       <EventTimingSummaryText event={event} style={styles.timingText} containerStyle={styles.timingSentence} showInfoMarker={false} />
@@ -90,9 +90,10 @@ function PagePreview({ event, imageHeight, index, count }: { event: Event; image
   </View>;
 }
 
-export function CalloutLightboxPages({ enabled, children, paging, previous, next, width, imageHeight, onWidth, index, count }: {
+export function CalloutLightboxPages({ enabled, children, paging, previous, next, handoff, categoryColor, width, imageHeight, onWidth, index, count }: {
   enabled: boolean; children: React.ReactNode; paging: Paging; previous?: Event; next?: Event;
   width: number; imageHeight: number; onWidth: (width: number) => void; index: number; count: number;
+  handoff?: Event; categoryColor: (category: string) => string;
 }) {
   const translations = useMemo(() => ({
     previous: Animated.add(paging.offsetX, -width),
@@ -105,10 +106,15 @@ export function CalloutLightboxPages({ enabled, children, paging, previous, next
       const event = side === -1 ? previous : next;
       return <Animated.View key={side} pointerEvents="none" accessible={false} accessibilityElementsHidden
         importantForAccessibility="no-hide-descendants" style={[styles.adjacent, { transform: [{ translateX: side === -1 ? translations.previous : translations.next }] }]}>
-        {event && <PagePreview event={event} imageHeight={imageHeight} index={index + side} count={count} />}
+        {event && <PagePreview event={event} imageHeight={imageHeight} index={index + side} count={count} categoryColor={categoryColor(event.category)} />}
       </Animated.View>;
     })}
     <Animated.View style={[styles.page, styles.currentPage, { transform: [{ translateX: paging.offsetX }] }]}>{children}</Animated.View>
+    <Animated.View pointerEvents="none" accessible={false} accessibilityElementsHidden importantForAccessibility="no-hide-descendants"
+      style={[styles.adjacent, { zIndex: 2, opacity: paging.handoffOpacity }]}>
+      {handoff && paging.handoffIndex !== null && <PagePreview event={handoff} imageHeight={imageHeight}
+        index={paging.handoffIndex} count={count} categoryColor={categoryColor(handoff.category)} />}
+    </Animated.View>
   </View>;
 }
 

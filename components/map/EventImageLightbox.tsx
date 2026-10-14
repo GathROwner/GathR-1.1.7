@@ -667,7 +667,7 @@ const [readingMode, setReadingMode] = useState(false);
 
   const calloutDismiss = useCalloutLightboxDismiss({
     translateY, backgroundOpacity, height: SCREEN_HEIGHT, reduceMotion: isReduceMotionEnabled,
-    onBegin: calloutPager.reset, onClose,
+    onActivate: calloutPager.reset, onClose,
   });
 
   const onPanGestureEvent = useRef(
@@ -1621,6 +1621,8 @@ const handleNonTicketAction = () => {
         <CalloutLightboxPages enabled={calloutPaging} paging={calloutPager}
           previous={previousIndex === null ? undefined : events?.[previousIndex]}
           next={nextIndex === null ? undefined : events?.[nextIndex]}
+          handoff={calloutPager.handoffIndex === null ? undefined : events?.[calloutPager.handoffIndex]}
+          categoryColor={getCategoryColor}
           width={calloutPageWidth} imageHeight={imageHeight} onWidth={setCalloutPageWidth}
           index={currentIndex ?? 0} count={events?.length ?? 0}>
         <CalloutLightboxMediaGestures callout={calloutPaging}

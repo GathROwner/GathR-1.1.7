@@ -10,6 +10,8 @@ describe('callout-only lightbox paging', () => {
   let index: number;
   let choose: React.Dispatch<React.SetStateAction<number>>;
   let completions: ((result: { finished: boolean }) => void)[];
+  let centers: ((result: { finished: boolean }) => void)[];
+  let deferCenter: boolean;
   const navigate = jest.fn();
   function Probe({ enabled = true, reduceMotion = false, count = 4 }) {
     [index, choose] = useState(0);
@@ -26,9 +28,14 @@ describe('callout-only lightbox paging', () => {
   function drag(x = -100) { state(State.BEGAN); state(State.ACTIVE); state(State.END, x); }
   const finish = (index: number) => act(() => completions[index]({ finished: true }));
   beforeEach(() => {
-    completions = []; navigate.mockClear();
-    jest.spyOn(Animated, 'timing').mockImplementation(() => ({
-      start: (callback?: (result: { finished: boolean }) => void) => { if (callback) completions.push(callback); },
+    completions = []; centers = []; deferCenter = false; navigate.mockClear();
+    jest.spyOn(Animated, 'timing').mockImplementation((_value, config) => ({
+      start: (callback?: (result: { finished: boolean }) => void) => {
+        if (callback) {
+          if (config.duration === 0) { if (deferCenter) centers.push(callback); else callback({ finished: true }); }
+          else completions.push(callback);
+        }
+      },
       stop: jest.fn(), reset: jest.fn(),
     }));
     jest.spyOn(Animated, 'spring').mockImplementation(() => ({ start: jest.fn(), stop: jest.fn(), reset: jest.fn() }));
@@ -44,9 +51,9 @@ describe('callout-only lightbox paging', () => {
     expect(index).toBe(1);
     expect(navigate).toHaveBeenCalledTimes(1);
   });
-  it('does not navigate on cancelled, failed, short or vertical gestures', () => {
-    drag(-20);
-    state(State.BEGAN); state(State.ACTIVE); state(State.CANCELLED, -100);
+  it('does not navigate on failed, short, vertically dominant or cancelled short gestures', () => {
+    drag(-12);
+    state(State.BEGAN); state(State.ACTIVE); state(State.CANCELLED, -12);
     state(State.BEGAN); state(State.FAILED, -100);
     state(State.BEGAN); state(State.ACTIVE); state(State.END, 10, 100);
     expect(navigate).not.toHaveBeenCalled(); expect(completions).toHaveLength(0);
@@ -76,10 +83,54 @@ describe('callout-only lightbox paging', () => {
   it('does not let an unrecognized pan failure cancel an arrow tap', () => {
     state(State.BEGAN);
     act(() => paging.step(1));
+    jest.mocked(Animated.timing).mockClear();
     state(State.FAILED);
+    expect(Animated.timing).not.toHaveBeenCalled();
     expect(Animated.spring).not.toHaveBeenCalled();
     finish(0);
     expect(index).toBe(1);
+  });
+  it('accepts natural drift and a moderate short flick, once per release', () => {
+    state(State.BEGAN); state(State.ACTIVE); state(State.END, -36, 30); finish(0);
+    expect(index).toBe(1);
+    state(State.BEGAN); state(State.ACTIVE); state(State.END, -18, 8, -350);
+    state(State.CANCELLED, -60); state(State.END, -60); finish(1);
+    expect(index).toBe(2); expect(navigate).toHaveBeenCalledTimes(2);
+  });
+  it('accepts a recognized cancelled long drag without depending on release velocity', () => {
+    state(State.BEGAN); state(State.ACTIVE); state(State.CANCELLED, -60, 12, NaN);
+    state(State.END, -60); finish(0);
+    expect(index).toBe(1); expect(navigate).toHaveBeenCalledTimes(1);
+  });
+  it('uses eased timing for page completion and a gentle return', () => {
+    drag(-12);
+    expect(Animated.timing).toHaveBeenLastCalledWith(paging.offsetX,
+      expect.objectContaining({ toValue: 0, duration: 240, easing: expect.any(Function), useNativeDriver: true }));
+    drag();
+    expect(Animated.timing).toHaveBeenLastCalledWith(paging.offsetX,
+      expect.objectContaining({ toValue: -360, duration: 250, easing: expect.any(Function), useNativeDriver: true }));
+  });
+  it('covers native view mutations until the destination recenter completes', () => {
+    deferCenter = true;
+    const opacity = jest.spyOn(paging.handoffOpacity, 'setValue');
+    drag(); finish(0);
+    expect(index).toBe(1); expect(paging.handoffIndex).toBe(1);
+    expect(opacity).toHaveBeenLastCalledWith(1);
+    act(() => centers[0]({ finished: true }));
+    expect(paging.handoffIndex).toBe(1);
+    expect(Animated.timing).toHaveBeenLastCalledWith(paging.handoffOpacity,
+      expect.objectContaining({ toValue: 0, duration: 120, useNativeDriver: true }));
+  });
+  it('does not let an old native recenter hide a newer arriving page', () => {
+    deferCenter = true;
+    drag(); finish(0);
+    drag();
+    expect(paging.handoffIndex).toBe(2);
+    act(() => centers[0]({ finished: true }));
+    expect(paging.handoffIndex).toBe(2);
+    finish(1);
+    act(() => centers[1]({ finished: true }));
+    expect(index).toBe(2); expect(paging.handoffIndex).toBe(2);
   });
   it('snaps back at both ends without looping, dismissing or changing venue/tab', () => {
     drag(100); expect(completions).toHaveLength(0);

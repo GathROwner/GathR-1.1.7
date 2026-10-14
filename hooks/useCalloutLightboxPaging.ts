@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
-import { Animated } from 'react-native';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { Animated, Easing } from 'react-native';
 import { State, type PanGestureHandlerStateChangeEvent } from 'react-native-gesture-handler';
 import { getAdjacentLightboxIndex } from '../utils/lightboxNavigation';
-import { getCalloutSwipeDirection } from '../utils/calloutSwipeNavigation';
+import { getCalloutLightboxSwipeDirection } from '../utils/calloutLightbox';
 
 type Options = {
   index: number;
@@ -16,12 +16,15 @@ type Options = {
 /** Callout-only bounded pages. Adjacent previews arrive as the current page exits. */
 export function useCalloutLightboxPaging(options: Options) {
   const dragX = useRef(new Animated.Value(0)).current;
+  const handoffOpacity = useRef(new Animated.Value(0)).current;
+  const [handoffIndex, setHandoffIndex] = useState<number | null>(null);
   const latest = useRef(options);
   const cursor = useRef(options.index);
   const pending = useRef<-1 | 1 | null>(null);
   const committed = useRef<number | null>(null);
   const generation = useRef(0);
   const active = useRef(false);
+  const released = useRef(true);
   useLayoutEffect(() => { latest.current = options; });
 
   const reset = useCallback(() => {
@@ -29,14 +32,16 @@ export function useCalloutLightboxPaging(options: Options) {
     pending.current = null;
     committed.current = null;
     active.current = false;
+    released.current = true;
+    handoffOpacity.setValue(0);
+    setHandoffIndex(null);
     dragX.stopAnimation();
     dragX.setValue(0);
-  }, [dragX]);
+  }, [dragX, handoffOpacity]);
   const settle = useCallback(() => {
     if (latest.current.reduceMotion) { dragX.setValue(0); return; }
-    Animated.spring(dragX, {
-      toValue: 0, stiffness: 260, damping: 30, mass: 0.8,
-      overshootClamping: true, useNativeDriver: true,
+    Animated.timing(dragX, {
+      toValue: 0, duration: 240, easing: Easing.out(Easing.cubic), useNativeDriver: true,
     }).start();
   }, [dragX]);
   const commit = useCallback((direction: -1 | 1) => {
@@ -45,11 +50,16 @@ export function useCalloutLightboxPaging(options: Options) {
     if (next === null) { settle(); return; }
     cursor.current = next;
     committed.current = next;
+    setHandoffIndex(next);
+    // Hold the arriving preview above the native view mutations until the
+    // zero-duration native recenter actually completes. JS layout timing alone
+    // can expose the old page or an updated neighbor for a frame on Fabric.
+    handoffOpacity.setValue(1);
     // Keep the JS value centered while React commits the destination page.
     dragX.stopAnimation();
     dragX.setValue(0);
     latest.current.onNavigate(next);
-  }, [dragX, settle]);
+  }, [dragX, handoffOpacity, settle]);
 
   useLayoutEffect(() => {
     if (committed.current === options.index) {
@@ -57,13 +67,23 @@ export function useCalloutLightboxPaging(options: Options) {
       if (!active.current && pending.current === null) {
         // Explicitly center on the native driver after the new page commits.
         // A JS-only setValue can leave an adjacent preview visible on Fabric.
-        Animated.timing(dragX, { toValue: 0, duration: 0, useNativeDriver: true }).start();
+        const epoch = generation.current;
+        Animated.timing(dragX, { toValue: 0, duration: 0, useNativeDriver: true }).start(({ finished }) => {
+          if (finished && epoch === generation.current) {
+            // Keep the snapshot mounted until the next interaction: unmounting
+            // it here recreates native animated props during the handoff.
+            if (latest.current.reduceMotion) handoffOpacity.setValue(0);
+            else Animated.timing(handoffOpacity, {
+              toValue: 0, duration: 120, easing: Easing.out(Easing.cubic), useNativeDriver: true,
+            }).start();
+          }
+        });
       }
     } else {
       cursor.current = options.index;
       reset();
     }
-  }, [options.index, options.count, reset, dragX]);
+  }, [options.index, options.count, reset, dragX, handoffOpacity]);
   useEffect(() => { if (!options.enabled) reset(); }, [options.enabled, reset]);
   useEffect(() => reset, [reset]);
 
@@ -72,10 +92,11 @@ export function useCalloutLightboxPaging(options: Options) {
       settle(); return;
     }
     pending.current = direction;
+    setHandoffIndex(getAdjacentLightboxIndex(cursor.current, latest.current.count, direction));
     if (latest.current.reduceMotion) { commit(direction); return; }
     const epoch = ++generation.current;
     Animated.timing(dragX, {
-      toValue: -direction * latest.current.width, duration: 160, useNativeDriver: true,
+      toValue: -direction * latest.current.width, duration: 250, easing: Easing.out(Easing.cubic), useNativeDriver: true,
     }).start(({ finished }) => {
       if (finished && epoch === generation.current) commit(direction);
     });
@@ -87,24 +108,30 @@ export function useCalloutLightboxPaging(options: Options) {
       reset();
       committed.current = destination;
       if (accepted && latest.current.enabled) commit(accepted);
+      released.current = false;
       return;
     }
     if (!latest.current.enabled) { reset(); return; }
     if (nativeEvent.state === State.ACTIVE) { active.current = true; return; }
-    if (nativeEvent.state === State.CANCELLED || nativeEvent.state === State.FAILED) {
+    if (nativeEvent.state === State.FAILED) {
       const wasActive = active.current;
       active.current = false;
       // Tapping an arrow makes its surrounding pan fail. That failure must
       // not cancel the button's newly-started page transition.
       if (wasActive) settle();
+      released.current = true;
       return;
     }
-    if (nativeEvent.state !== State.END || !active.current) return;
+    if (nativeEvent.state !== State.END && nativeEvent.state !== State.CANCELLED) return;
+    if (released.current) return;
+    if (nativeEvent.state === State.CANCELLED && !active.current) { released.current = true; return; }
+    released.current = true;
     active.current = false;
-    const direction = getCalloutSwipeDirection(nativeEvent.translationX, nativeEvent.translationY,
-      nativeEvent.velocityX, nativeEvent.velocityY);
+    const direction = getCalloutLightboxSwipeDirection({ x: nativeEvent.translationX, y: nativeEvent.translationY,
+      velocityX: nativeEvent.velocityX, velocityY: nativeEvent.velocityY, width: latest.current.width,
+      allowFlick: nativeEvent.state === State.END });
     if (!direction) { settle(); return; }
-    navigate(direction === 'next' ? 1 : -1);
+    navigate(direction);
   }, [commit, navigate, reset, settle]);
   const onGestureEvent = useMemo(() => Animated.event(
     [{ nativeEvent: { translationX: dragX } }], { useNativeDriver: true },
@@ -116,5 +143,5 @@ export function useCalloutLightboxPaging(options: Options) {
     if (accepted) commit(accepted);
     navigate(direction);
   }, [commit, navigate, reset]);
-  return { enabled: options.enabled, offsetX, onGestureEvent, onStateChange, step, reset };
+  return { enabled: options.enabled, offsetX, onGestureEvent, onStateChange, step, reset, handoffIndex, handoffOpacity };
 }

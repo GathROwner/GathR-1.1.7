@@ -8,7 +8,7 @@ type Options = {
   backgroundOpacity: Animated.Value;
   height: number;
   reduceMotion: boolean;
-  onBegin: () => void;
+  onActivate: () => void;
   onClose: () => void;
 };
 
@@ -48,13 +48,18 @@ export function useCalloutLightboxDismiss(options: Options) {
       generation.current++;
       animation.current?.stop();
       active.current = false;
-      current.onBegin();
       current.translateY.stopAnimation();
       current.translateY.setValue(0);
       current.backgroundOpacity.setValue(1);
       return;
     }
-    if (state === State.ACTIVE) { active.current = true; return; }
+    if (state === State.ACTIVE) {
+      active.current = true;
+      // A possible vertical gesture begins on horizontal swipes and arrow
+      // taps too. Only a recognized downward gesture may stop page motion.
+      current.onActivate();
+      return;
+    }
     if (state !== State.END && state !== State.CANCELLED && state !== State.FAILED) return;
     // A pan that fails on an ordinary tap has never moved the panel.
     if (state === State.FAILED && !active.current) return;

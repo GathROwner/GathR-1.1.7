@@ -1,5 +1,5 @@
 import type { Event } from '../../types/events';
-import { openCalloutLightbox, navigateCalloutLightbox, shouldDismissCalloutLightbox } from '../calloutLightbox';
+import { openCalloutLightbox, navigateCalloutLightbox, shouldDismissCalloutLightbox, getCalloutLightboxSwipeDirection } from '../calloutLightbox';
 
 const event = (id: string | number, type = 'event') => ({ id, type, imageUrl: `image-${id}`, title: String(id) } as Event);
 
@@ -11,6 +11,19 @@ it('opens at the tapped item in displayed order and keeps its refreshed fields',
   expect(selected.events.map((item) => item.id)).toEqual(['later', 2, 'earlier']);
   expect(selected.events[1]).toBe(refreshed);
   expect(list[1].title).toBe('2');
+});
+
+it('recognizes lighter horizontal drags and flicks while rejecting vertical intent and jitter', () => {
+  const swipe = { x: -36, y: 30, width: 393, velocityX: 0, velocityY: 0 };
+  expect(getCalloutLightboxSwipeDirection(swipe)).toBe(1);
+  expect(getCalloutLightboxSwipeDirection({ ...swipe, x: 36 })).toBe(-1);
+  expect(getCalloutLightboxSwipeDirection({ ...swipe, x: -23.5, y: 0, width: 360 })).toBe(1);
+  expect(getCalloutLightboxSwipeDirection({ ...swipe, velocityX: NaN, velocityY: NaN })).toBe(1);
+  expect(getCalloutLightboxSwipeDirection({ ...swipe, x: -18, y: 4, velocityX: -350 })).toBe(1);
+  for (const change of [{ x: -12, y: 0, velocityX: -900 }, { x: -36, y: 50 }, { x: NaN }, { width: 0 },
+    { x: -18, y: 4, velocityX: 350 }, { x: -18, y: 4, velocityX: -350, allowFlick: false }]) {
+    expect(getCalloutLightboxSwipeDirection({ ...swipe, ...change })).toBeNull();
+  }
 });
 
 it('keeps events and specials separate and supports string/numeric IDs', () => {

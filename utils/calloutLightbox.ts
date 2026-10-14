@@ -33,3 +33,17 @@ export function shouldDismissCalloutLightbox({ ended, allowFlick = true, x, y, v
   return ended && [x, y].every(Number.isFinite) && y > Math.abs(x) * 1.35
     && (y >= 80 || (allowFlick && y >= 20 && Number.isFinite(velocityY) && velocityY >= 300));
 }
+
+/** Media paging is already axis-locked by native recognition; allow normal drift. */
+export function getCalloutLightboxSwipeDirection({ x, y, width, velocityX, velocityY, allowFlick = true }: {
+  x: number; y: number; width: number; velocityX: number; velocityY: number; allowFlick?: boolean;
+}): -1 | 1 | null {
+  if (![x, y, width].every(Number.isFinite) || width <= 0 || Math.abs(x) < Math.abs(y) * 1.1) return null;
+  // Native activation has already consumed part of the finger's travel.
+  const distance = Math.max(20, Math.min(32, width * 0.05));
+  const drag = Math.abs(x) >= distance;
+  const flick = allowFlick && Math.abs(x) >= 16 && Number.isFinite(velocityX)
+    && Math.abs(velocityX) >= 300 && Math.sign(velocityX) === Math.sign(x)
+    && (!Number.isFinite(velocityY) || Math.abs(velocityX) > Math.abs(velocityY));
+  return drag || flick ? x < 0 ? 1 : -1 : null;
+}

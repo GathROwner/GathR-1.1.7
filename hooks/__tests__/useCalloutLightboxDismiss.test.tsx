@@ -15,7 +15,7 @@ describe('callout media swipe-down dismissal', () => {
   const opacity = new Animated.Value(1);
   function Probe({ onClose = close, reduceMotion = false }) {
     handler = useCalloutLightboxDismiss({ translateY: y, backgroundOpacity: opacity,
-      height: 800, reduceMotion, onBegin: begin, onClose });
+      height: 800, reduceMotion, onActivate: begin, onClose });
     return null;
   }
   function state(state: State, translationY = 0, velocityY = 0, translationX = 0) {
@@ -40,6 +40,12 @@ describe('callout media swipe-down dismissal', () => {
     expect(completions).toHaveLength(1);
     act(() => completions[0]({ finished: true }));
     expect(close).toHaveBeenCalledTimes(1);
+  });
+  it('does not reset horizontal paging when a vertical candidate begins and fails', () => {
+    state(State.BEGAN); state(State.FAILED);
+    expect(begin).not.toHaveBeenCalled();
+    state(State.BEGAN); state(State.ACTIVE);
+    expect(begin).toHaveBeenCalledTimes(1);
   });
   it('preserves dismissal after a long native-cancelled pull', () => {
     pull(State.CANCELLED, 180);
