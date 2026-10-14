@@ -25,9 +25,11 @@ export function navigateCalloutLightbox(selection: CalloutLightboxSelection, ind
   return { ...selection, event, imageUrl: event.imageUrl || event.profileUrl || '', currentIndex: index };
 }
 
-export function shouldDismissCalloutLightbox({ ended, wasActive, x, y, velocityY }: {
-  ended: boolean; wasActive: boolean; x: number; y: number; velocityY: number;
+export function shouldDismissCalloutLightbox({ ended, allowFlick = true, x, y, velocityY }: {
+  ended: boolean; allowFlick?: boolean; x: number; y: number; velocityY: number;
 }): boolean {
-  return ended && wasActive && [x, y, velocityY].every(Number.isFinite)
-    && y > Math.abs(x) * 1.35 && (y >= 150 || (y >= 16 && velocityY >= 650));
+  // Native translations are points, not screen pixels. A deliberate pull is
+  // enough even if iOS ends it with CANCELLED or has no usable final velocity.
+  return ended && [x, y].every(Number.isFinite) && y > Math.abs(x) * 1.35
+    && (y >= 80 || (allowFlick && y >= 20 && Number.isFinite(velocityY) && velocityY >= 300));
 }

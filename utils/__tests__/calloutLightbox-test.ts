@@ -38,12 +38,14 @@ it('navigates event and image together and never wraps or exits the provided lis
   expect(navigateCalloutLightbox(second, 0).event).toBe(list[0]);
 });
 
-it('only dismisses a completed, recognized downward gesture with deliberate distance or speed', () => {
-  const input = { ended: true, wasActive: true, x: 4, y: 160, velocityY: 0 };
+it('dismisses deliberate downward pulls without depending on a valid release velocity', () => {
+  const input = { ended: true, x: 4, y: 80, velocityY: 0 };
   expect(shouldDismissCalloutLightbox(input)).toBe(true);
-  expect(shouldDismissCalloutLightbox({ ...input, y: 24, velocityY: 900 })).toBe(true);
-  for (const change of [{ ended: false }, { wasActive: false }, { y: -180 }, { y: 24 },
-    { y: 4, velocityY: 900 }, { x: 180 }, { velocityY: NaN }]) {
+  expect(shouldDismissCalloutLightbox({ ...input, velocityY: NaN })).toBe(true);
+  expect(shouldDismissCalloutLightbox({ ...input, y: 24, velocityY: 350 })).toBe(true);
+  expect(shouldDismissCalloutLightbox({ ...input, y: 24, velocityY: 350, allowFlick: false })).toBe(false);
+  for (const change of [{ ended: false }, { y: -180 }, { y: 24 },
+    { y: 4, velocityY: 900 }, { x: 180 }, { y: NaN }]) {
     expect(shouldDismissCalloutLightbox({ ...input, ...change })).toBe(false);
   }
 });

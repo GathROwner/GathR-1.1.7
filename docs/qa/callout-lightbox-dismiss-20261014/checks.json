@@ -1,0 +1,13 @@
+{
+  "sourceBase": "3d995784b809a6f4ad3a7ef1930c0b5c877b5f89",
+  "iosPreviewBase": "0fb543a141a768ffeea08fe60a146a75f0805abe",
+  "typescriptExit": 0,
+  "lintExit": 0,
+  "lintErrors": 0,
+  "lintWarnings": 213,
+  "testSuites": 9,
+  "tests": 77,
+  "success": true,
+  "nativeQa": "Android Metro isolated EventCallout; media pulls close, description protected, horizontal pages",
+  "iosDeviceVerification": "pending"
+}

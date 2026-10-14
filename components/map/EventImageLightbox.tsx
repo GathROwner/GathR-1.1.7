@@ -20,13 +20,14 @@ import {
 } from 'react-native';
 import { useReduceMotion } from '../../hooks/useReduceMotion';
 import { useCalloutLightboxPaging } from '../../hooks/useCalloutLightboxPaging';
+import { useCalloutLightboxDismiss } from '../../hooks/useCalloutLightboxDismiss';
 import { CalloutLightboxCounter, CalloutLightboxMediaGestures, CalloutLightboxPages } from './CalloutLightboxPager';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 
 import { usePathname, useRouter } from 'expo-router';
 import { amplitudeTrack } from '../../lib/amplitudeAnalytics';
-import { GestureHandlerRootView, PanGestureHandler, ScrollView as GestureScrollView, State, type PanGestureHandlerStateChangeEvent } from 'react-native-gesture-handler';
+import { GestureHandlerRootView, PanGestureHandler, ScrollView as GestureScrollView, State } from 'react-native-gesture-handler';
 
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -50,7 +51,6 @@ import { useMapStore } from '../../store/mapStore';
 import { addEventToCalendarWithTiming } from '../../utils/calendarUtils';
 import { getCategoryFallbackImage } from '../../utils/imageUtils';
 import { getAdjacentLightboxIndex } from '../../utils/lightboxNavigation';
-import { shouldDismissCalloutLightbox } from '../../utils/calloutLightbox';
 import {
   buildEventImageGallery,
   getEventImageGalleryHeroUrl,
@@ -665,35 +665,10 @@ const [readingMode, setReadingMode] = useState(false);
     descriptionScrollRef.current?.scrollTo({ y: 0, animated: false });
   }, [updatedEvent.id]);
 
-  useEffect(() => {
-    if (calloutPaging) {
-      setTimingDisclosureExpanded(false);
-      setScheduleExpanded(false);
-    }
-  }, [updatedEvent.id, calloutPaging]);
-
-  const onCalloutVerticalStateChange = ({ nativeEvent }: PanGestureHandlerStateChangeEvent) => {
-    const { state, oldState, translationX: dx, translationY: dy, velocityY: vy } = nativeEvent;
-    if (state === State.BEGAN) {
-      calloutPager.reset();
-      translateY.stopAnimation();
-      translateY.setValue(0);
-      backgroundOpacity.setValue(1);
-      return;
-    }
-    if (state !== State.END && state !== State.CANCELLED && state !== State.FAILED) return;
-    const close = shouldDismissCalloutLightbox({ ended: state === State.END, wasActive: oldState === State.ACTIVE,
-      x: dx, y: dy, velocityY: vy });
-    if (close) {
-      Animated.parallel([
-        Animated.timing(translateY, { toValue: SCREEN_HEIGHT, duration: isReduceMotionEnabled ? 0 : 250, useNativeDriver: true }),
-        Animated.timing(backgroundOpacity, { toValue: 0, duration: isReduceMotionEnabled ? 0 : 250, useNativeDriver: true }),
-      ]).start(({ finished }) => { if (finished) onClose(); });
-    } else {
-      Animated.spring(translateY, { toValue: 0, useNativeDriver: true, tension: 100, friction: 8 }).start();
-      Animated.timing(backgroundOpacity, { toValue: 1, duration: 160, useNativeDriver: true }).start();
-    }
-  };
+  const calloutDismiss = useCalloutLightboxDismiss({
+    translateY, backgroundOpacity, height: SCREEN_HEIGHT, reduceMotion: isReduceMotionEnabled,
+    onBegin: calloutPager.reset, onClose,
+  });
 
   const onPanGestureEvent = useRef(
     Animated.event(
@@ -1650,7 +1625,7 @@ const handleNonTicketAction = () => {
           index={currentIndex ?? 0} count={events?.length ?? 0}>
         <CalloutLightboxMediaGestures callout={calloutPaging}
           enabled={!isImageViewerVisible && !justClosedImageViewer} paging={calloutPager}
-          onVerticalGesture={onPanGestureEvent} onVerticalState={onCalloutVerticalStateChange}>
+          onVerticalGesture={calloutDismiss.onGestureEvent} onVerticalState={calloutDismiss.onStateChange}>
         {/* Tappable Image */}
         <View style={[styles.imageWrapper, { height: imageHeight }]}>
           <View style={styles.imageGrid}>
