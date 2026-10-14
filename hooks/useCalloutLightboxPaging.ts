@@ -22,6 +22,7 @@ export function useCalloutLightboxPaging(options: Options) {
   const cursor = useRef(options.index);
   const pending = useRef<-1 | 1 | null>(null);
   const committed = useRef<number | null>(null);
+  const handoffReady = useRef<{ index: number; centered: boolean; mounted: boolean } | null>(null);
   const generation = useRef(0);
   const active = useRef(false);
   const released = useRef(true);
@@ -31,6 +32,7 @@ export function useCalloutLightboxPaging(options: Options) {
     generation.current++;
     pending.current = null;
     committed.current = null;
+    handoffReady.current = null;
     active.current = false;
     released.current = true;
     handoffOpacity.setValue(0);
@@ -41,7 +43,7 @@ export function useCalloutLightboxPaging(options: Options) {
   const settle = useCallback(() => {
     if (latest.current.reduceMotion) { dragX.setValue(0); return; }
     Animated.timing(dragX, {
-      toValue: 0, duration: 240, easing: Easing.out(Easing.cubic), useNativeDriver: true,
+      toValue: 0, duration: 300, easing: Easing.out(Easing.cubic), useNativeDriver: true,
     }).start();
   }, [dragX]);
   const commit = useCallback((direction: -1 | 1) => {
@@ -50,16 +52,33 @@ export function useCalloutLightboxPaging(options: Options) {
     if (next === null) { settle(); return; }
     cursor.current = next;
     committed.current = next;
+    handoffReady.current = { index: next, centered: false, mounted: false };
     setHandoffIndex(next);
     // Hold the arriving preview above the native view mutations until the
     // zero-duration native recenter actually completes. JS layout timing alone
     // can expose the old page or an updated neighbor for a frame on Fabric.
     handoffOpacity.setValue(1);
-    // Keep the JS value centered while React commits the destination page.
+    // The completion stack has synchronized before this runs, so React and
+    // the native recenter start from the same centered value under the cover.
     dragX.stopAnimation();
     dragX.setValue(0);
     latest.current.onNavigate(next);
   }, [dragX, handoffOpacity, settle]);
+
+  const revealPage = useCallback(() => {
+    const ready = handoffReady.current;
+    if (!ready?.centered || !ready.mounted) return;
+    handoffReady.current = null;
+    if (latest.current.reduceMotion) handoffOpacity.setValue(0);
+    else Animated.timing(handoffOpacity, {
+      toValue: 0, duration: 120, easing: Easing.out(Easing.cubic), useNativeDriver: true,
+    }).start();
+  }, [handoffOpacity]);
+  const onPageLayout = useCallback((index: number) => {
+    if (handoffReady.current?.index !== index) return;
+    handoffReady.current.mounted = true;
+    revealPage();
+  }, [revealPage]);
 
   useLayoutEffect(() => {
     if (committed.current === options.index) {
@@ -70,12 +89,10 @@ export function useCalloutLightboxPaging(options: Options) {
         const epoch = generation.current;
         Animated.timing(dragX, { toValue: 0, duration: 0, useNativeDriver: true }).start(({ finished }) => {
           if (finished && epoch === generation.current) {
-            // Keep the snapshot mounted until the next interaction: unmounting
-            // it here recreates native animated props during the handoff.
-            if (latest.current.reduceMotion) handoffOpacity.setValue(0);
-            else Animated.timing(handoffOpacity, {
-              toValue: 0, duration: 120, easing: Easing.out(Easing.cubic), useNativeDriver: true,
-            }).start();
+            // Layout effects can precede Fabric's native mounting. Keep the
+            // cover until the new page acknowledges layout AND recenter ends.
+            if (handoffReady.current) handoffReady.current.centered = true;
+            revealPage();
           }
         });
       }
@@ -83,7 +100,7 @@ export function useCalloutLightboxPaging(options: Options) {
       cursor.current = options.index;
       reset();
     }
-  }, [options.index, options.count, reset, dragX, handoffOpacity]);
+  }, [options.index, options.count, reset, dragX, revealPage]);
   useEffect(() => { if (!options.enabled) reset(); }, [options.enabled, reset]);
   useEffect(() => reset, [reset]);
 
@@ -96,9 +113,14 @@ export function useCalloutLightboxPaging(options: Options) {
     if (latest.current.reduceMotion) { commit(direction); return; }
     const epoch = ++generation.current;
     Animated.timing(dragX, {
-      toValue: -direction * latest.current.width, duration: 250, easing: Easing.out(Easing.cubic), useNativeDriver: true,
+      toValue: -direction * latest.current.width, duration: 340, easing: Easing.out(Easing.cubic), useNativeDriver: true,
     }).start(({ finished }) => {
-      if (finished && epoch === generation.current) commit(direction);
+      if (finished && epoch === generation.current) {
+        // RN invokes completion before synchronizing the native end value back
+        // to JS. Let that stack finish before rendering/recentering a new page,
+        // or its trailing prop update can restore the outgoing position.
+        queueMicrotask(() => { if (epoch === generation.current) commit(direction); });
+      }
     });
   }, [commit, dragX, settle]);
   const onStateChange = useCallback(({ nativeEvent }: PanGestureHandlerStateChangeEvent) => {
@@ -143,5 +165,5 @@ export function useCalloutLightboxPaging(options: Options) {
     if (accepted) commit(accepted);
     navigate(direction);
   }, [commit, navigate, reset]);
-  return { enabled: options.enabled, offsetX, onGestureEvent, onStateChange, step, reset, handoffIndex, handoffOpacity };
+  return { enabled: options.enabled, offsetX, onGestureEvent, onStateChange, step, reset, handoffIndex, handoffOpacity, onPageLayout };
 }

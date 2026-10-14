@@ -12,7 +12,7 @@ type Options = {
   onClose: () => void;
 };
 
-/** Media-only dismissal. Once accepted, unrelated terminal events cannot undo it. */
+/** Explicit-surface dismissal. Once accepted, unrelated terminal events cannot undo it. */
 export function useCalloutLightboxDismiss(options: Options) {
   const latest = useRef(options);
   const closing = useRef(false);

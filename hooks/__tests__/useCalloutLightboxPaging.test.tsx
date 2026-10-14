@@ -12,6 +12,7 @@ describe('callout-only lightbox paging', () => {
   let completions: ((result: { finished: boolean }) => void)[];
   let centers: ((result: { finished: boolean }) => void)[];
   let deferCenter: boolean;
+  let commits: (() => void)[];
   const navigate = jest.fn();
   function Probe({ enabled = true, reduceMotion = false, count = 4 }) {
     [index, choose] = useState(0);
@@ -26,9 +27,14 @@ describe('callout-only lightbox paging', () => {
     } } as PanGestureHandlerStateChangeEvent));
   }
   function drag(x = -100) { state(State.BEGAN); state(State.ACTIVE); state(State.END, x); }
-  const finish = (index: number) => act(() => completions[index]({ finished: true }));
+  const flushCommits = () => commits.splice(0).forEach((commit) => commit());
+  const finish = (completion: number) => {
+    act(() => { completions[completion]({ finished: true }); flushCommits(); });
+    act(() => paging.onPageLayout(index));
+  };
   beforeEach(() => {
-    completions = []; centers = []; deferCenter = false; navigate.mockClear();
+    completions = []; centers = []; commits = []; deferCenter = false; navigate.mockClear();
+    jest.spyOn(global, 'queueMicrotask').mockImplementation((commit) => commits.push(commit));
     jest.spyOn(Animated, 'timing').mockImplementation((_value, config) => ({
       start: (callback?: (result: { finished: boolean }) => void) => {
         if (callback) {
@@ -49,6 +55,16 @@ describe('callout-only lightbox paging', () => {
     expect(navigate).not.toHaveBeenCalled();
     finish(0);
     expect(index).toBe(1);
+    expect(navigate).toHaveBeenCalledTimes(1);
+  });
+  it('waits for the native completion stack and invalidates a queued commit on reset', () => {
+    drag();
+    act(() => completions[0]({ finished: true }));
+    expect(navigate).not.toHaveBeenCalled();
+    expect(commits).toHaveLength(1);
+    act(() => { paging.reset(); flushCommits(); });
+    expect(navigate).not.toHaveBeenCalled();
+    drag(); finish(1);
     expect(navigate).toHaveBeenCalledTimes(1);
   });
   it('does not navigate on failed, short, vertically dominant or cancelled short gestures', () => {
@@ -105,10 +121,10 @@ describe('callout-only lightbox paging', () => {
   it('uses eased timing for page completion and a gentle return', () => {
     drag(-12);
     expect(Animated.timing).toHaveBeenLastCalledWith(paging.offsetX,
-      expect.objectContaining({ toValue: 0, duration: 240, easing: expect.any(Function), useNativeDriver: true }));
+      expect.objectContaining({ toValue: 0, duration: 300, easing: expect.any(Function), useNativeDriver: true }));
     drag();
     expect(Animated.timing).toHaveBeenLastCalledWith(paging.offsetX,
-      expect.objectContaining({ toValue: -360, duration: 250, easing: expect.any(Function), useNativeDriver: true }));
+      expect.objectContaining({ toValue: -360, duration: 340, easing: expect.any(Function), useNativeDriver: true }));
   });
   it('covers native view mutations until the destination recenter completes', () => {
     deferCenter = true;
@@ -120,6 +136,18 @@ describe('callout-only lightbox paging', () => {
     expect(paging.handoffIndex).toBe(1);
     expect(Animated.timing).toHaveBeenLastCalledWith(paging.handoffOpacity,
       expect.objectContaining({ toValue: 0, duration: 120, useNativeDriver: true }));
+  });
+  it('keeps the cover until the target native page mounts, ignoring old layouts', () => {
+    const opacity = jest.spyOn(paging.handoffOpacity, 'setValue');
+    drag();
+    act(() => { completions[0]({ finished: true }); flushCommits(); });
+    expect(opacity).toHaveBeenLastCalledWith(1);
+    const count = (Animated.timing as jest.Mock).mock.calls.length;
+    act(() => paging.onPageLayout(0));
+    expect(Animated.timing).toHaveBeenCalledTimes(count);
+    act(() => paging.onPageLayout(1));
+    expect(Animated.timing).toHaveBeenLastCalledWith(paging.handoffOpacity,
+      expect.objectContaining({ toValue: 0, duration: 120 }));
   });
   it('does not let an old native recenter hide a newer arriving page', () => {
     deferCenter = true;

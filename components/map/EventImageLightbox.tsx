@@ -21,7 +21,7 @@ import {
 import { useReduceMotion } from '../../hooks/useReduceMotion';
 import { useCalloutLightboxPaging } from '../../hooks/useCalloutLightboxPaging';
 import { useCalloutLightboxDismiss } from '../../hooks/useCalloutLightboxDismiss';
-import { CalloutLightboxCounter, CalloutLightboxMediaGestures, CalloutLightboxPages } from './CalloutLightboxPager';
+import { CalloutLightboxCounter, CalloutLightboxDismissSurface, CalloutLightboxPages } from './CalloutLightboxPager';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 
@@ -495,6 +495,7 @@ try {
   const verticalPanRef = useRef(null);
   const horizontalPanRef = useRef(null);
   const calloutHorizontalPanRef = useRef<PanGestureHandler>(null);
+  const calloutTitleDismissRef = useRef<PanGestureHandler>(null);
 
   // Navigation state
   const previousIndex = getAdjacentLightboxIndex(currentIndex, events?.length ?? 0, -1, loopNavigation);
@@ -655,7 +656,8 @@ const [readingMode, setReadingMode] = useState(false);
 
 
   // Gesture-handler setup: scroll in description; swipe-to-close elsewhere
-  const titleScrollRef = useRef(null);
+  const titleScrollRef = useRef<React.ElementRef<typeof GestureScrollView>>(null);
+  const [titleAtTop, setTitleAtTop] = useState(true);
   const descriptionScrollRef = useRef<React.ElementRef<typeof GestureScrollView>>(null);
 
   useEffect(() => {
@@ -664,7 +666,11 @@ const [readingMode, setReadingMode] = useState(false);
     descMetrics.current.y = 0;
     setDescAtTop(true);
     descriptionScrollRef.current?.scrollTo({ y: 0, animated: false });
-  }, [updatedEvent.id]);
+    if (calloutPaging) {
+      setTitleAtTop(true);
+      titleScrollRef.current?.scrollTo({ y: 0, animated: false });
+    }
+  }, [updatedEvent.id, calloutPaging]);
 
   const calloutDismiss = useCalloutLightboxDismiss({
     translateY, backgroundOpacity, height: SCREEN_HEIGHT, reduceMotion: isReduceMotionEnabled,
@@ -1555,6 +1561,9 @@ const handleNonTicketAction = () => {
         ]}
       >
         {/* Venue identity stays below the camera safe area, above the media. */}
+        <CalloutLightboxDismissSurface callout={calloutPaging}
+          enabled={!isImageViewerVisible && !justClosedImageViewer}
+          onVerticalGesture={calloutDismiss.onGestureEvent} onVerticalState={calloutDismiss.onStateChange}>
         <View testID="event-lightbox-header" style={[
           styles.header,
           {
@@ -1618,6 +1627,7 @@ const handleNonTicketAction = () => {
             <MaterialIcons name="close" size={24} color="#FFFFFF" />
           </TouchableOpacity>
         </View>
+        </CalloutLightboxDismissSurface>
 
         <CalloutLightboxPages enabled={calloutPaging} paging={calloutPager} horizontalRef={calloutHorizontalPanRef}
           previous={previousIndex === null ? undefined : events?.[previousIndex]}
@@ -1626,7 +1636,7 @@ const handleNonTicketAction = () => {
           categoryColor={getCategoryColor}
           width={calloutPageWidth} imageHeight={imageHeight} onWidth={setCalloutPageWidth}
           index={currentIndex ?? 0} count={events?.length ?? 0}>
-        <CalloutLightboxMediaGestures callout={calloutPaging}
+        <CalloutLightboxDismissSurface callout={calloutPaging}
           enabled={!isImageViewerVisible && !justClosedImageViewer}
           onVerticalGesture={calloutDismiss.onGestureEvent} onVerticalState={calloutDismiss.onStateChange}>
         {/* Tappable Image */}
@@ -1868,12 +1878,20 @@ const handleNonTicketAction = () => {
           )}
         </View>
         
-        </CalloutLightboxMediaGestures>
+        </CalloutLightboxDismissSurface>
+        <CalloutLightboxDismissSurface callout={calloutPaging} gestureRef={calloutTitleDismissRef}
+          enabled={titleAtTop && !isImageViewerVisible && !justClosedImageViewer}
+          onVerticalGesture={calloutDismiss.onGestureEvent} onVerticalState={calloutDismiss.onStateChange}>
         <View style={styles.eventHeading}>
           <GestureScrollView
             ref={titleScrollRef}
             {...(calloutPaging ? {
-              waitFor: calloutHorizontalPanRef, disallowInterruption: false, directionalLockEnabled: true,
+              waitFor: [calloutHorizontalPanRef, calloutTitleDismissRef],
+              disallowInterruption: false, directionalLockEnabled: true,
+              // Update only after scrolling ends: reaching the top mid-drag
+              // must not transfer an existing scroll into a close gesture.
+              onScrollEndDrag: (e) => setTitleAtTop(e.nativeEvent.contentOffset.y <= 4),
+              onMomentumScrollEnd: (e) => setTitleAtTop(e.nativeEvent.contentOffset.y <= 4),
             } : {})}
             nestedScrollEnabled
             bounces={false}
@@ -1964,6 +1982,7 @@ const handleNonTicketAction = () => {
           )}
         </View>}
 
+        </CalloutLightboxDismissSurface>
         {isPrivateFriendEvent && (
           <View style={styles.privateEventContext}>
             <View style={styles.privateEventContextHeader}>

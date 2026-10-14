@@ -14,21 +14,22 @@ import { EventTimingSummaryText } from '../common/EventTimingSummaryText';
 type Paging = ReturnType<typeof useCalloutLightboxPaging>;
 type PanProps = React.ComponentProps<typeof PanGestureHandler>;
 
-/** Dismissal stays on media; horizontal paging surrounds the whole page below. */
-export function CalloutLightboxMediaGestures({ children, callout, enabled, onVerticalGesture, onVerticalState }: {
+/** Explicit dismiss surfaces keep description scrolling outside swipe-to-close. */
+export function CalloutLightboxDismissSurface({ children, callout, enabled, gestureRef, onVerticalGesture, onVerticalState }: {
   children: React.ReactNode;
   callout: boolean;
   enabled: boolean;
+  gestureRef?: React.RefObject<PanGestureHandler | null>;
   onVerticalGesture: PanProps['onGestureEvent'];
   onVerticalState: PanProps['onHandlerStateChange'];
 }) {
   if (!callout) return <>{children}</>;
   // Native recognizers compete for one axis; a diagonal drag must not activate
   // both paging and dismissal and let one reset the other's animation.
-  return <PanGestureHandler enabled={enabled}
-    activeOffsetY={12} failOffsetX={[-22, 22]}
+  return <PanGestureHandler ref={gestureRef} enabled={enabled}
+    activeOffsetY={12} failOffsetY={-12} failOffsetX={[-22, 22]}
     onGestureEvent={onVerticalGesture} onHandlerStateChange={onVerticalState}>
-    <Animated.View style={styles.mediaSurface}>
+    <Animated.View style={styles.dismissSurface}>
       {children}
     </Animated.View>
   </PanGestureHandler>;
@@ -108,7 +109,9 @@ export function CalloutLightboxPages({ enabled, children, paging, horizontalRef,
     <PanGestureHandler ref={horizontalRef} enabled={paging.enabled}
       activeOffsetX={[-12, 12]} failOffsetY={[-22, 22]}
       onGestureEvent={paging.onGestureEvent} onHandlerStateChange={paging.onStateChange}>
-      <Animated.View style={[styles.page, styles.currentPage, { transform: [{ translateX: paging.offsetX }] }]}>{children}</Animated.View>
+      <Animated.View style={[styles.page, styles.currentPage, { transform: [{ translateX: paging.offsetX }] }]}>
+        <View key={index} style={styles.page} onLayout={() => paging.onPageLayout(index)}>{children}</View>
+      </Animated.View>
     </PanGestureHandler>
     <Animated.View pointerEvents="none" accessible={false} accessibilityElementsHidden importantForAccessibility="no-hide-descendants"
       style={[styles.adjacent, { zIndex: 2, opacity: paging.handoffOpacity }]}>
@@ -119,7 +122,7 @@ export function CalloutLightboxPages({ enabled, children, paging, horizontalRef,
 }
 
 const styles = StyleSheet.create({
-  mediaSurface: { flexShrink: 0 },
+  dismissSurface: { flexShrink: 0 },
   counter: { position: 'absolute', top: 12, left: 12, zIndex: 15, paddingHorizontal: 10, paddingVertical: 5,
     borderRadius: 14, backgroundColor: 'rgba(17,17,17,0.82)' },
   counterText: { color: '#FFFFFF', fontSize: 12, lineHeight: 16, fontWeight: '600' },
