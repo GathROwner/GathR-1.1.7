@@ -1,5 +1,6 @@
 import { normalizeFirestoreEvent } from '../../lib/api/firestoreEvents';
 import type { FirestoreEvent } from '../../types/firestore';
+import type { Event } from '../../types/events';
 import { dateOnlyActivity } from './fixtures/dateOnlyActivity';
 import { createLegacyTimingContract, getDateOnlyScheduleRange, getEventScheduleState, getEventTimeRangeText,
   getEventTimingBadge, getEventTimingDisclosure } from '../eventTiming';
@@ -25,6 +26,40 @@ it.each(['event', 'special'] as const)('retains normalized %s date-only metadata
   expect(formatEventTimingSummary(normalized)).toBe('Today • Time not provided');
   expect(getEventTimingDisclosure(normalized)).toContain('no start or end time');
   expect(getEventTimingBadge(normalized)?.text).toBe('TIMES\nUNKNOWN');
+});
+
+it.each(['top', 'metadata'] as const)('normalizes saved Yes/No recurrence flags from %s feed fields', (placement) => {
+  for (const type of ['event', 'special'] as const) {
+    for (const field of ['isRecurring', 'isRecurringInstance'] as const) {
+      for (const flag of ['No', 'Yes'] as const) {
+        const source = dateOnlyActivity({ type });
+        const flags = { isRecurring: 'No', isRecurringInstance: 'No', [field]: flag };
+        const normalized = normalizeFirestoreEvent({ ...source, isEvent: type === 'event',
+          isRecurring: undefined, isRecurringInstance: undefined,
+          ...(placement === 'top' ? flags : {}),
+          metadata: { timing: source.timing, ...(placement === 'metadata' ? flags : {}) },
+        } as unknown as FirestoreEvent);
+        expect(normalized[field]).toBe(flag === 'Yes');
+        expect(Boolean(getDateOnlyScheduleRange(normalized))).toBe(flag === 'No');
+        if (flag === 'No') expect(formatEventTimingSummary(normalized)).toBe('Today • Time not provided');
+      }
+    }
+  }
+});
+
+it('handles persisted string flags in the schedule cache without promoting recurring records', () => {
+  const event = { ...dateOnlyActivity(), isRecurring: 'No', isRecurringInstance: 'No' } as unknown as Event;
+  expect(getCachedEventScheduleState(event).code).toBe('date_only_today');
+  (event as unknown as { isRecurring: string }).isRecurring = 'Yes';
+  expect(getCachedEventScheduleState(event).code).toBe('started_unknown_end');
+  (event as unknown as { isRecurring: string }).isRecurring = ' false ';
+  expect(getCachedEventScheduleState(event).code).toBe('date_only_today');
+  (event as unknown as { isRecurringInstance: string }).isRecurringInstance = 'Yes';
+  expect(getCachedEventScheduleState(event).code).toBe('started_unknown_end');
+  (event as unknown as { isRecurringInstance: string }).isRecurringInstance = 'No';
+  expect(getCachedEventScheduleState(event).code).toBe('date_only_today');
+  (event as unknown as { isRecurring: string }).isRecurring = 'unrecognized';
+  expect(getDateOnlyScheduleRange(event)).toBeNull();
 });
 
 it('matches future/tomorrow/today filters without Now, and expires at local midnight after its date', () => {

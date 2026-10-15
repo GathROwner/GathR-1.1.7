@@ -49,10 +49,10 @@ export interface FirestoreEventMetadata {
   establishment?: string;
   venueName?: string;
   // Legacy location for recurrence fields (backend now returns these top-level)
-  isRecurring?: boolean;
+  isRecurring?: boolean | string | number | null;
   recurringPattern?: string;
   recurrenceUntilDate?: string;
-  isRecurringInstance?: boolean;
+  isRecurringInstance?: boolean | string | number | null;
   originalEventId?: string | null;
   isFoodSpecial?: boolean;
   matchType?: string;
@@ -179,10 +179,10 @@ export interface FirestoreEvent {
   familyFriendlyScoringVersion?: string | null;
   isEvent: boolean | null;  // Can be null - default to true
   // Top-level recurrence fields (materialized recurring instances)
-  isRecurring?: boolean;
+  isRecurring?: boolean | string | number | null;
   recurringPattern?: string;
   recurrenceUntilDate?: string;
-  isRecurringInstance?: boolean;
+  isRecurringInstance?: boolean | string | number | null;
   originalEventId?: string | null;
   price?: string | null;
   ticketLinkPosts?: string;

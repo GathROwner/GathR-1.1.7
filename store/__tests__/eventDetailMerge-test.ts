@@ -87,6 +87,19 @@ async function run(fixture: Fixture, baseline = false) {
 }
 
 describe('event detail merge parity', () => {
+  it.each(['No', 'Yes'])('normalizes saved %s flags in raw refreshes and detail-only reconstruction', async (flag) => {
+    const source = dateOnlyActivity();
+    const detail = (id: string) => ({ ...source, id, timing: undefined, isRecurring: undefined,
+      isRecurringInstance: undefined, metadata: { timing: source.timing, isRecurring: flag, isRecurringInstance: 'No' } });
+    const existing = { ...detail('existing'), metadata: { timing: source.timing }, isRecurring: flag, isRecurringInstance: 'No' };
+    const actual = await run({ events: [event('fb_existing')], allEvents: [event('fb_existing')], ids: ['existing', 'new'],
+      raw: [existing, detail('new')], force: true });
+    for (const item of [...actual.events, ...actual.allEvents]) {
+      expect(item.isRecurring).toBe(flag === 'Yes');
+      expect(item.isRecurringInstance).toBe(false);
+      expect(Boolean(getDateOnlyScheduleRange(item))).toBe(flag === 'No');
+    }
+  });
   it('retains the date-only producer contract in metadata refreshes and detail-only reconstruction', async () => {
     const source = dateOnlyActivity();
     const detail = (id: string) => ({ ...source, id, timing: undefined, metadata: { timing: source.timing } });

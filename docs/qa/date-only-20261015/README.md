@@ -62,3 +62,13 @@ Native `s24` / `emulator-5554`, existing debuggable `com.craigb.gathr`, runtime 
 These frames were visually inspected for hierarchy, alignment and clipping. They prove native shared-component rendering, not a complete feed/lightbox interaction pass or iOS device adoption. The existing feed/lightbox components consume these same timing helpers/components and have no source edits here. Coordinator must independently review this evidence before any release.
 
 Temporary root/index/map files were restored byte-for-byte and their hashes checked. Fixture source/data are retained as `.txt` documentation, not imported by runtime routes. Metro/emulator were stopped and the copied QA environment removed after hash verification. No OTA or new native build was performed.
+
+## Recurrence string compatibility correction
+
+Independent coordinator review found that saved one-offs use `isRecurring: "No"`; the original API mapping passed that string through, and the date-only guard rejected its truthiness. This was corrected before publication.
+
+`utils/eventRecurrence.ts` now normalizes boolean/numeric flags and the legacy string false tokens (`No`, `false`, `0`, blank; trimmed, case-insensitive). Yes/true and other nonempty values remain true, preserving conservative handling of ambiguous flags. Feed normalization and raw detail refresh/reconstruction apply this to both `isRecurring` and `isRecurringInstance`, retaining absent detail flags rather than overwriting existing state. The date-only guard also uses it for already-persisted cached strings. The raw Firestore types now admit those saved representations; normalized app records remain boolean.
+
+New synthetic tests cover top-level/metadata feed flags for events and specials, raw detail refresh/reconstruction, cached No→Yes→false and instance flag transitions, unknown-token exclusion, calendar protection for string No, and confirmed timed recurring calendar behaviour for string Yes. Ten focused suites pass: **82 tests**, with the existing opt-in benchmark skipped. TypeScript, focused lint (zero errors) and diff checks pass.
+
+The coordinator independently reviewed and accepted the four shared-component screenshots. This correction changes data interpretation only; no layout/style change or repeat emulator run was needed. No OTA or backend/data change was performed. Broad backend enablement remains gated for all consuming clients.

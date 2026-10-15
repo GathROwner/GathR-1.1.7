@@ -21,6 +21,7 @@ import {
 } from '../../utils/ticketUrls';
 import { createLegacyTimingContract, getEventTiming } from '../../utils/eventTiming';
 import { readEventAreaData, isExplicitTrue } from '../../utils/eventAreaData';
+import { normalizeRecurrenceFlag } from '../../utils/eventRecurrence';
 import { toFirestoreEventId, toAppEventId } from '../../utils/firestoreEventIds';
 export { toFirestoreEventId, toAppEventId, areEventIdsEquivalent } from '../../utils/firestoreEventIds';
 
@@ -418,12 +419,12 @@ export function normalizeFirestoreEvent(fsEvent: FirestoreEvent): Event {
     ageRestriction: fsEvent.metadata?.ageRestriction || '',
 
     // Recurrence metadata (top-level backend contract, metadata fallback for safety)
-    isRecurring: fsEvent.isRecurring ?? fsEvent.metadata?.isRecurring ?? false,
+    isRecurring: normalizeRecurrenceFlag(fsEvent.isRecurring ?? fsEvent.metadata?.isRecurring),
     recurringPattern: fsEvent.recurringPattern ?? fsEvent.metadata?.recurringPattern,
     recurrenceUntilDate:
       fsEvent.recurrenceUntilDate ?? fsEvent.metadata?.recurrenceUntilDate,
     isRecurringInstance:
-      fsEvent.isRecurringInstance ?? fsEvent.metadata?.isRecurringInstance ?? false,
+      normalizeRecurrenceFlag(fsEvent.isRecurringInstance ?? fsEvent.metadata?.isRecurringInstance),
     originalEventId: rawOriginalEventId ? toAppEventId(rawOriginalEventId) : null,
 
     // Venue details

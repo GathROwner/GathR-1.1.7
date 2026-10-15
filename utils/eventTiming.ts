@@ -7,6 +7,7 @@ import type {
   EventTimingPoint,
   TimeStatus,
 } from '../types/events';
+import { normalizeRecurrenceFlag } from './eventRecurrence';
 
 export const EVENT_TIMING_POLICY_VERSION = 'honest-end-times-v2';
 export const DEFAULT_UNKNOWN_END_CUTOFF_MINUTES = 120;
@@ -374,7 +375,7 @@ export const getDateOnlyScheduleRange = (
     || estimate.displayEndDate || estimate.displayEndTime) return null;
   if (timing.version !== 2 || timing.scheduleKind === 'date_range_overview'
     || timing.scheduleKind === 'all_day' || timing.scheduleKind === 'until_close'
-    || event.isRecurring || event.isRecurringInstance
+    || normalizeRecurrenceFlag(event.isRecurring) || normalizeRecurrenceFlag(event.isRecurringInstance)
     || (event.recurringPattern && event.recurringPattern !== 'none')
     || event.startTime?.trim() || event.endTime?.trim()
     || timing.schedule.start.status !== 'unknown' || timing.schedule.end.status !== 'unknown'

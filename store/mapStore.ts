@@ -119,6 +119,7 @@ import { EVENT_DETAILS_SCHEMA_VERSION, EVENTS_MINIMAL } from '../lib/queryKeys';
 import { normalizeVenueIdentityText } from '../utils/venueIdentity';
 import { createLegacyTimingContract, readVersion2EventTiming } from '../utils/eventTiming';
 import { readEventAreaData } from '../utils/eventAreaData';
+import { normalizeRecurrenceFlag } from '../utils/eventRecurrence';
 import {
   isEventPastFast,
 } from '../utils/eventExpiry';
@@ -2247,6 +2248,8 @@ fetchEventDetails: async (
     if (!detail || detail.id == null) return null;
     const rawOriginalId =
       detail.originalEventId ?? detail.metadata?.originalEventId ?? null;
+    const isRecurring = detail.isRecurring ?? detail.metadata?.isRecurring;
+    const isRecurringInstance = detail.isRecurringInstance ?? detail.metadata?.isRecurringInstance;
     return {
       ...detail,
       ...(readVersion2EventTiming(detail) ? { timing: readVersion2EventTiming(detail) } : {}),
@@ -2258,10 +2261,10 @@ fetchEventDetails: async (
         ? { mapMode: detail.mapMode ?? detail.metadata?.mapMode ?? null } : {}),
       id: toAppEventId(detail.id),
       description: detail.fullDescription || detail.description || '',
-      isRecurring: detail.isRecurring ?? detail.metadata?.isRecurring,
+      isRecurring: isRecurring == null ? undefined : normalizeRecurrenceFlag(isRecurring),
       recurringPattern: detail.recurringPattern ?? detail.metadata?.recurringPattern,
       isRecurringInstance:
-        detail.isRecurringInstance ?? detail.metadata?.isRecurringInstance,
+        isRecurringInstance == null ? undefined : normalizeRecurrenceFlag(isRecurringInstance),
       originalEventId: rawOriginalId ? toAppEventId(rawOriginalId) : null,
     };
   };
