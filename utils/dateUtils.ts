@@ -17,6 +17,7 @@ import {
   getEventTimeStatusFromTiming,
   isEventConfirmedNow,
   getEventTiming,
+  getDateOnlyScheduleRange,
 } from './eventTiming';
 
 // ===============================================================
@@ -283,13 +284,15 @@ export const formatEventDateTime = (date: string, time: string, event?: any): st
     // Parse date with reliable method
     const eventDate = parseISO(date);
     
+    const clock = formatTime(time);
+    const timeSuffix = clock ? ` at ${clock}` : '';
     // Use our enhanced isToday and isTomorrow functions
     if (isToday(eventDate)) {
-      return `Today at ${formatTime(time)}`;
+      return `Today${timeSuffix}`;
     } else if (isTomorrow(eventDate)) {
-      return `Tomorrow at ${formatTime(time)}`;
+      return `Tomorrow${timeSuffix}`;
     } else {
-      return `${format(eventDate, 'EEE, MMM d')} at ${formatTime(time)}`;
+      return `${format(eventDate, 'EEE, MMM d')}${timeSuffix}`;
     }
   } catch (error) {
     console.error(`Error formatting event date/time: ${error}`);
@@ -439,6 +442,10 @@ export const formatEventTimingSummary = (event: {
     endDate: event.endDate || event.startDate,
     endTime: event.endTime || '',
   };
+  const dateOnly = getDateOnlyScheduleRange(normalized);
+  if (dateOnly && dateOnly.endDate !== dateOnly.startDate) {
+    return `${format(parseISO(dateOnly.startDate), 'MMM d')} – ${format(parseISO(dateOnly.endDate), 'MMM d')} • Time not provided`;
+  }
   const scheduleState = getEventScheduleState(normalized);
   const base = formatEventDateTime(event.startDate, event.startTime, normalized);
   const range = getEventTimeRangeText(normalized);

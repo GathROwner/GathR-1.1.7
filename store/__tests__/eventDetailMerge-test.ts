@@ -33,8 +33,9 @@ import { areEventIdsEquivalent, fetchFirestoreEventDetailsBatch, toAppEventId } 
 import { isPrivateSharedEventId } from '../../lib/api/privateSharedEvents';
 import { ENABLE_LEGACY_DETAILS_FALLBACK, LEGACY_EVENTS_API_BASE } from '../../lib/config/backend';
 import { EVENT_DETAILS_SCHEMA_VERSION } from '../../lib/queryKeys';
-import { createLegacyTimingContract } from '../../utils/eventTiming';
+import { createLegacyTimingContract, getDateOnlyScheduleRange } from '../../utils/eventTiming';
 import type { Event } from '../../types/events';
+import { dateOnlyActivity } from '../../utils/__tests__/fixtures/dateOnlyActivity';
 
 type Fixture = { events: Event[]; allEvents: Event[]; raw: any[]; ids: (string | number)[]; cached?: any[]; force?: boolean };
 type Collections = Pick<Fixture, 'events' | 'allEvents'>;
@@ -86,6 +87,16 @@ async function run(fixture: Fixture, baseline = false) {
 }
 
 describe('event detail merge parity', () => {
+  it('retains the date-only producer contract in metadata refreshes and detail-only reconstruction', async () => {
+    const source = dateOnlyActivity();
+    const detail = (id: string) => ({ ...source, id, timing: undefined, metadata: { timing: source.timing } });
+    const actual = await run({ events: [event('fb_existing')], allEvents: [event('fb_existing')], ids: ['existing', 'new'],
+      raw: [detail('existing'), detail('new')], force: true });
+    for (const item of [...actual.events, ...actual.allEvents]) {
+      expect(getDateOnlyScheduleRange(item)).toEqual({ startDate: source.startDate, endDate: source.endDate });
+      expect(item.startTime).toBe(''); expect(item.endTime).toBe('');
+    }
+  });
   it('preserves authoritative metadata v2 timing and timezone in refreshes and detail-only reconstruction', async () => {
     const timing = createLegacyTimingContract({ startDate: '2040-10-13', endDate: '2040-10-18', startTime: '19:00', endTime: '23:00' },
       { timeZone: 'America/Toronto' });

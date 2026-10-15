@@ -1,0 +1,9 @@
+import React from 'react';
+import { Stack } from 'expo-router';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
+import * as SplashScreen from 'expo-splash-screen';
+export default function FixtureRoot() {
+ React.useEffect(()=>{void SplashScreen.hideAsync()},[]);
+ return <GestureHandlerRootView style={{flex:1}}><SafeAreaProvider><Stack screenOptions={{headerShown:false}} /></SafeAreaProvider></GestureHandlerRootView>;
+}

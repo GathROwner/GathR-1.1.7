@@ -23,6 +23,8 @@ export type EventScheduleStateCode =
   | 'all_day_today'
   | 'multi_day_today'
   | 'date_range_overview'
+  | 'date_only_upcoming'
+  | 'date_only_today'
   | 'estimate_passed'
   | 'unknown_cutoff_passed'
   | 'confirmed_ended';
@@ -58,7 +60,8 @@ export interface EventTimeRangeParts {
   text: string;
 }
 
-type LegacyTimingInput = Pick<Event, 'startDate' | 'startTime' | 'endDate' | 'endTime'> & Partial<Pick<Event, 'locationScope'>>;
+type LegacyTimingInput = Pick<Event, 'startDate' | 'startTime' | 'endDate' | 'endTime'>
+  & Partial<Pick<Event, 'locationScope' | 'isRecurring' | 'isRecurringInstance' | 'recurringPattern'>>;
 
 export const isDateOnlyAreaOverview = (event: LegacyTimingInput): boolean =>
   event.locationScope === 'area' && !event.startTime?.trim() && !event.endTime?.trim()
@@ -359,6 +362,38 @@ export const readVersion2EventTiming = (record: { timing?: EventTiming | null; m
   return timing?.version === 2 && timing.schedule?.start && timing.schedule?.end ? timing : null;
 };
 
+/** A source date is a discovery window, never evidence of opening/start hours. */
+export const getDateOnlyScheduleRange = (
+  event: LegacyTimingInput & { timing?: EventTiming | null },
+  timing = getEventTiming(event)
+): { startDate: string; endDate: string } | null => {
+  const estimate = timing.estimate;
+  if (!estimate || estimate.method !== 'source_dated_activity_unknown_clock'
+    || estimate.estimateVersion !== 'date-only-activity-v1' || estimate.confidence !== 'low'
+    || estimate.invalidatedAt || estimate.displayEndAt || estimate.endAt
+    || estimate.displayEndDate || estimate.displayEndTime) return null;
+  if (timing.version !== 2 || timing.scheduleKind === 'date_range_overview'
+    || timing.scheduleKind === 'all_day' || timing.scheduleKind === 'until_close'
+    || event.isRecurring || event.isRecurringInstance
+    || (event.recurringPattern && event.recurringPattern !== 'none')
+    || event.startTime?.trim() || event.endTime?.trim()
+    || timing.schedule.start.status !== 'unknown' || timing.schedule.end.status !== 'unknown'
+    || timing.schedule.start.localTime || timing.schedule.start.at
+    || timing.schedule.end.localTime || timing.schedule.end.at) return null;
+  const startDate = normalizeDateKey(timing.schedule.start.localDate);
+  const endDate = normalizeDateKey(timing.schedule.end.localDate);
+  const isRealDate = (value: string) => {
+    const parsed = new Date(`${value}T00:00:00Z`);
+    return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+  };
+  if (!startDate || !endDate || endDate < startDate
+    || !isRealDate(startDate) || !isRealDate(endDate)
+    || normalizeDateKey(event.startDate) !== startDate || normalizeDateKey(event.endDate) !== endDate
+    || normalizeDateKey(estimate.discoveryCutoffDate) !== endDate
+    || parseEventTimeMinutes(estimate.discoveryCutoffTime) !== 1439) return null;
+  return { startDate, endDate };
+};
+
 const scheduleStartLocalScalar = (event: LegacyTimingInput, timing: EventTiming): number => {
   const startDate = normalizeDateKey(timing.schedule.start.localDate || event.startDate);
   const startMinutes = parseEventTimeMinutes(timing.schedule.start.localTime || event.startTime) ?? 0;
@@ -438,6 +473,16 @@ export const getEventScheduleState = (
     return { code: 'date_range_overview', nowEligibility: 'none', defaultMapEligible: true,
       todayEligible: active, muted: false,
       nextTransitionLocalScalar: localScalar(active ? addDays(endDate, 1) : startDate, 0) };
+  }
+
+  const dateOnly = getDateOnlyScheduleRange(event, timing);
+  if (dateOnly) {
+    if (zonedNow.dateKey > dateOnly.endDate) return { code: 'confirmed_ended', nowEligibility: 'none',
+      defaultMapEligible: false, todayEligible: false, muted: true };
+    const today = zonedNow.dateKey >= dateOnly.startDate;
+    return { code: today ? 'date_only_today' : 'date_only_upcoming', nowEligibility: 'none',
+      defaultMapEligible: true, todayEligible: today, muted: false,
+      nextTransitionLocalScalar: localScalar(today ? addDays(dateOnly.endDate, 1) : dateOnly.startDate, 0) };
   }
 
   if (nowScalar < startScalar) {
@@ -589,6 +634,8 @@ export const getEventTimingBadge = (
 ): EventTimingBadge | null => {
   const timing = getEventTiming(event);
   if (timing.scheduleKind === 'date_range_overview') return null;
+  if (getDateOnlyScheduleRange(event, timing)) return { text: 'TIMES\nUNKNOWN',
+    accessibilityLabel: 'Start and end times not provided', tone: 'caution', infoTitle: 'Times not provided' };
   const startEstimated = isStartEstimated(timing);
   const endEstimated = isEndEstimated(timing);
   if (startEstimated && endEstimated) {
@@ -662,6 +709,8 @@ export const getEventTimeRangeParts = (
   if (timing.scheduleKind === 'date_range_overview') {
     return { prefix: 'See individual event times', start: '', separator: '', end: '', startEstimated: false, endEstimated: false, text: 'See individual event times' };
   }
+  if (getDateOnlyScheduleRange(event, timing)) return { prefix: 'Time not provided', start: '', separator: '',
+    end: '', startEstimated: false, endEstimated: false, text: 'Time not provided' };
   const start = formatClock(timing.schedule.start.localTime || event.startTime);
   const observedEnd = formatClock(timing.schedule.end.localTime || '');
   const estimateEnd = getEstimateDisplayTime(timing);
@@ -712,6 +761,9 @@ export const getEventTimingDisclosure = (
 ): string | null => {
   const timing = getEventTiming(event);
   const state = getEventScheduleState(event, now);
+  if (getDateOnlyScheduleRange(event, timing)) {
+    return 'The organizer provided dates but no start or end time. Check the original source for details.';
+  }
   const estimateEnd = getEstimateDisplayTime(timing);
   const start = formatClock(timing.schedule.start.localTime || event.startTime);
   const startEstimated = isStartEstimated(timing);

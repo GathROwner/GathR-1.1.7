@@ -1,0 +1,20 @@
+import React from 'react';
+import { ScrollView, Text, View, Pressable, StyleSheet } from 'react-native';
+import { EventTimingSummaryText } from '../components/common/EventTimingSummaryText';
+import { EventTimingBadge } from '../components/common/EventTimingBadge';
+import { dateOnlyActivity } from '../docs/qa/date-only-20261015/fixture-data';
+import { formatLocalDateKey, addDaysToDateKey } from '../utils/eventExpiry';
+import { addEventToCalendarWithTiming } from '../utils/calendarUtils';
+const today = formatLocalDateKey(new Date());
+const events = [dateOnlyActivity({startDate:today,title:'Community supper'}),
+ dateOnlyActivity({id:'qa_lunch',type:'special',startDate:addDaysToDateKey(today,1),title:'Lunch special',category:'Food Special'}),
+ dateOnlyActivity({id:'qa_offer',type:'special',startDate:today,endDate:addDaysToDateKey(today,2),title:'Stay & play offer',category:'Food Special'})];
+export default function DateOnlyFixture(){return <View style={s.screen}>
+ <View style={s.header}><Text style={s.heading}>Timing preview</Text><Text style={s.subtitle}>Synthetic fixtures · No map or live records</Text></View>
+ <ScrollView contentContainerStyle={s.content}>{events.map((event)=><View key={event.id} style={s.card}>
+  <Text style={s.kind}>{event.type==='special'?'SPECIAL':'EVENT'}</Text><Text style={s.title}>{event.title}</Text>
+  <View style={s.timing}><EventTimingSummaryText event={event} style={s.time} containerStyle={{flex:1}} numberOfLines={2}/><EventTimingBadge event={event}/></View>
+  <Text style={s.description}>{event.description}</Text>
+  <Pressable onPress={()=>void addEventToCalendarWithTiming(event,event.venue)} style={s.button}><Text style={s.buttonText}>Add to calendar</Text></Pressable>
+ </View>)}</ScrollView></View>}
+const s=StyleSheet.create({screen:{flex:1,backgroundColor:'#0B0D10'},header:{backgroundColor:'#218CFF',paddingTop:60,padding:22},heading:{color:'white',fontSize:26,fontWeight:'700'},subtitle:{color:'white',fontSize:13,marginTop:8},content:{padding:12,gap:14,paddingBottom:30},card:{backgroundColor:'white',borderRadius:20,padding:20,gap:15},kind:{color:'#6B7280',fontSize:11,fontWeight:'700'},title:{fontSize:23,fontWeight:'700',color:'#1D2430'},timing:{flexDirection:'row',gap:14,alignItems:'center'},time:{fontSize:16,fontWeight:'600',color:'#267DBD',lineHeight:23},description:{fontSize:16,color:'#667180',lineHeight:23},button:{alignSelf:'flex-start',borderRadius:12,backgroundColor:'#EEF5FC',padding:12},buttonText:{color:'#267DBD',fontWeight:'600'}});

@@ -8,6 +8,7 @@ import {
 type ScheduleEvent = Pick<
   Event,
   'startDate' | 'startTime' | 'endDate' | 'endTime' | 'timing' | 'locationScope'
+  | 'isRecurring' | 'isRecurringInstance' | 'recurringPattern'
 >;
 
 type ScheduleStateCacheEntry = {
@@ -18,6 +19,9 @@ type ScheduleStateCacheEntry = {
   endTime: string;
   timing: EventTiming | null | undefined;
   locationScope: Event['locationScope'];
+  isRecurring: Event['isRecurring'];
+  isRecurringInstance: Event['isRecurringInstance'];
+  recurringPattern: Event['recurringPattern'];
   state: EventScheduleState;
 };
 
@@ -50,6 +54,9 @@ export const getCachedEventScheduleState = (
     cached.endDate === event.endDate &&
     cached.endTime === event.endTime &&
     cached.locationScope === event.locationScope &&
+    cached.isRecurring === event.isRecurring &&
+    cached.isRecurringInstance === event.isRecurringInstance &&
+    cached.recurringPattern === event.recurringPattern &&
     cached.timing === event.timing
   ) {
     return cached.state;
@@ -64,6 +71,9 @@ export const getCachedEventScheduleState = (
     endTime: event.endTime,
     timing: event.timing,
     locationScope: event.locationScope,
+    isRecurring: event.isRecurring,
+    isRecurringInstance: event.isRecurringInstance,
+    recurringPattern: event.recurringPattern,
     state,
   });
   return state;
