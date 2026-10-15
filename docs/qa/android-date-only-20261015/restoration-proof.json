@@ -1,0 +1,30 @@
+{
+  "sourceCommit": "6de059b108ee60e7ff5fd64bbe4f87870ea3eaa6",
+  "baseline": "8ce23bf9186e91a3282d9071eae668a5c1077bd2",
+  "restored": {
+    "app/_layout.tsx": {
+      "sha256": "73bb30848c05d3c1d707ee565697f07b2f59a04f13b75b73b095b23e8adcc959",
+      "byteForByte": true,
+      "gitBlob": "9b73b5d916edef5b61f8f5ce3b4392d875665b9d"
+    },
+    "app/index.tsx": {
+      "sha256": "1d9d58e690ec7b4acd72ce3103703c481ccb6473c8c7c53f8e51e6162332bc67",
+      "byteForByte": true,
+      "gitBlob": "263bde0b5175729a6c4185bec399e3fabab6b2d0"
+    },
+    "app/(tabs)/map.tsx": {
+      "sha256": "6dad7a38fe1f91f6b6b8146d678d7e88faca752cd92b8b76b7111f1f5ed5f5e8",
+      "byteForByte": true,
+      "gitBlob": "e437b127a91b7c9fb0a8e1ab98efef619bde7a40"
+    }
+  },
+  "appRouteDiff": "",
+  "fixturesRemoved": true,
+  "screenshots": {
+    "01-today-tomorrow.png": "3ebde6a28c6f6ec34f667cebd4b612fc953a9d83f38b883ca736914e4b428e40",
+    "02-disclosure.png": "6260aae6ddb210502469a168e229b63ea8864dd841c1414807a20bbb38403e8f",
+    "03-calendar-guard.png": "3f57c106bf23fba4ee04c7e2ac03fcb73b07b31e627684f170bf83500a0dd025",
+    "04-auditions.png": "1484976a899984d60e26dffad331d8ed79894482128d3e62d92144fa446bb563",
+    "05-timed-overnight.png": "506f8112279fcfb4f7796a20bd6f0dcf2f370bfc487b2fb7204605f7a8405e93"
+  }
+}
