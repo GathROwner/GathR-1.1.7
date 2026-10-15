@@ -452,6 +452,8 @@ async function fetchFirestorePage({
 }: FirestorePageRequest): Promise<FirestoreEventsResponse> {
   const params = new URLSearchParams();
   params.set('limit', String(limit ?? FIRESTORE_PAGE_LIMIT));
+  // Declare only alongside the reviewed date-only UI and calendar safeguards.
+  params.set('dateOnlyActivities', 'v1');
 
   if (startAfter) {
     params.set('startAfter', startAfter);
@@ -522,7 +524,7 @@ export async function fetchFirestoreEventById(
   const firestoreId = toFirestoreEventId(eventId);
   if (!firestoreId) return null;
 
-  const url = `${FIRESTORE_API_BASE}/events/${encodeURIComponent(firestoreId)}`;
+  const url = `${FIRESTORE_API_BASE}/events/${encodeURIComponent(firestoreId)}?dateOnlyActivities=v1`;
 
   try {
     const t0 = Date.now();
