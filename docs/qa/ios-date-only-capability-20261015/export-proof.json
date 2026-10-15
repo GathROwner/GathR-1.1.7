@@ -1,0 +1,57 @@
+{
+  "commit": "8df8c2595b73a121c4255d8294f9b71dcd7b1c36",
+  "platform": "ios",
+  "bundle": "_expo/static/js/ios/entry-40acf9d059810574b0b23672aa2ed5f7.hbc",
+  "bundleBytes": 5680484,
+  "bundleSha256": "cbfce8e44c95e794910decc776330587f26e7240133eae75bada2c23168b9f62",
+  "sourceCount": 2451,
+  "assetMetadataCount": 111,
+  "forbiddenSources": [],
+  "fixtureMarkerAbsent": true,
+  "requiredSources": {
+    "app/_layout.tsx": {
+      "sha256": "b053fd448eab0207827d2dc372d9d63753f7893cbda255032b6f32e100f18380",
+      "sourceMapMatchesWorkingFile": true
+    },
+    "app/index.tsx": {
+      "sha256": "ff9025b6838702589bde23f9d3adebfcb42e00c3023bfcece080a75e4cdff030",
+      "sourceMapMatchesWorkingFile": true
+    },
+    "app/(tabs)/map.tsx": {
+      "sha256": "d8abb400edfb8a63bdc4f68dfe0c134e2557ce3ea994b091debbd0fe16750921",
+      "sourceMapMatchesWorkingFile": true
+    },
+    "components/common/EventTimingSummaryText.tsx": {
+      "sha256": "d92947aa11cd23e4502cafe802052989991a5e0d5ed8e9d7331cde9e286ebd68",
+      "sourceMapMatchesWorkingFile": true
+    },
+    "components/common/EventTimingBadge.tsx": {
+      "sha256": "0c46cd7bbf53b3bd73571dcdd45fccd14c63cd21266755b32e105c8f262c5467",
+      "sourceMapMatchesWorkingFile": true
+    },
+    "utils/eventTiming.ts": {
+      "sha256": "17548eaa0e08f1742476557a2865fdd9ce5a4bc68651be256d2cb8c86e6c67b7",
+      "sourceMapMatchesWorkingFile": true
+    },
+    "utils/calendarUtils.ts": {
+      "sha256": "7302558f42ac399382449729ac3c2c138b0b756a4a7b0d22d9c3741f09ca9f1e",
+      "sourceMapMatchesWorkingFile": true
+    },
+    "utils/eventRecurrence.ts": {
+      "sha256": "690132d3231b2b971adcbf4311e04db4dafd07c1df060bd42e0f91f734d49688",
+      "sourceMapMatchesWorkingFile": true
+    },
+    "lib/queryKeys.ts": {
+      "sha256": "dd508c1bc7553bf9442915fa7c0bf35f6a0d1b9d2a8d1532222d8ae64c418acc",
+      "sourceMapMatchesWorkingFile": true
+    },
+    "lib/api/firestoreEvents.ts": {
+      "sha256": "f99abad415ddc0c37be655c97ce7cc40ce3fa214cb41b9566a9acf121091b3e5",
+      "sourceMapMatchesWorkingFile": true
+    },
+    "store/mapStore.ts": {
+      "sha256": "e8276a97cbdf063e6ea77592ba544b5522cdac881db61af118bfa603afa92036",
+      "sourceMapMatchesWorkingFile": true
+    }
+  }
+}
