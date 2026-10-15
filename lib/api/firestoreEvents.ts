@@ -19,7 +19,10 @@ import {
   normalizeTicketPurchaseUrl,
   normalizeTicketUrl,
 } from '../../utils/ticketUrls';
-import { createLegacyTimingContract } from '../../utils/eventTiming';
+import { createLegacyTimingContract, getEventTiming } from '../../utils/eventTiming';
+import { readEventAreaData, isExplicitTrue } from '../../utils/eventAreaData';
+import { toFirestoreEventId, toAppEventId } from '../../utils/firestoreEventIds';
+export { toFirestoreEventId, toAppEventId, areEventIdsEquivalent } from '../../utils/firestoreEventIds';
 
 // Debug flag for logging
 const DEBUG_FIRESTORE = __DEV__ ?? true;
@@ -41,26 +44,6 @@ export interface EventFeedVersion {
   version: number | null;
   updatedAt: string | null;
 }
-
-export const toFirestoreEventId = (eventId: string | number): string => {
-  const raw = String(eventId ?? '').trim();
-  if (!raw) return '';
-  return raw.startsWith('fb_') ? raw.slice(3) : raw;
-};
-
-export const toAppEventId = (eventId: string | number): string => {
-  const raw = String(eventId ?? '').trim();
-  if (!raw) return '';
-  return raw.startsWith('fb_') ? raw : `fb_${raw}`;
-};
-
-export const areEventIdsEquivalent = (
-  a: string | number | null | undefined,
-  b: string | number | null | undefined
-): boolean => {
-  if (a == null || b == null) return false;
-  return toFirestoreEventId(a) === toFirestoreEventId(b);
-};
 
 /**
  * Convert 24-hour time format to 12-hour format with AM/PM
@@ -373,14 +356,19 @@ export function normalizeFirestoreEvent(fsEvent: FirestoreEvent): Event {
       fsEvent.locationReviewStatus ?? fsEvent.metadata?.locationReviewStatus ?? null,
     mapMode: provinceScoped ? 'none' : fsEvent.mapMode ?? fsEvent.metadata?.mapMode ?? null,
     routeData: fsEvent.routeData ?? fsEvent.metadata?.routeData ?? null,
-    areaData: fsEvent.areaData ?? fsEvent.metadata?.areaData ?? null,
+    areaData: readEventAreaData(fsEvent),
+    status: fsEvent.status ?? fsEvent.metadata?.status,
+    isCancelled: [fsEvent.isCancelled, fsEvent.cancelled, fsEvent.canceled, fsEvent.metadata?.isCancelled, fsEvent.metadata?.cancelled, fsEvent.metadata?.canceled].some(isExplicitTrue),
+    isExpired: [fsEvent.isExpired, fsEvent.metadata?.isExpired].some(isExplicitTrue),
 
     // Date/time
     startDate: fsEvent.startDate || '',
     startTime: convert24to12Hour(fsEvent.startTime),
     endDate: fsEvent.endDate || fsEvent.startDate || '',
     endTime: fsEvent.endTime ? convert24to12Hour(fsEvent.endTime) : '',
-    timing: normalizeFirestoreTiming(fsEvent),
+    timing: getEventTiming({ startDate: fsEvent.startDate || '', startTime: fsEvent.startTime || '',
+      endDate: fsEvent.endDate || fsEvent.startDate || '', endTime: fsEvent.endTime || '',
+      locationScope, timing: normalizeFirestoreTiming(fsEvent) }),
 
     // Media
     imageUrl: eventImageUrl,

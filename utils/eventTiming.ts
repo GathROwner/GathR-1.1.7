@@ -22,6 +22,7 @@ export type EventScheduleStateCode =
   | 'until_close_active'
   | 'all_day_today'
   | 'multi_day_today'
+  | 'date_range_overview'
   | 'estimate_passed'
   | 'unknown_cutoff_passed'
   | 'confirmed_ended';
@@ -57,7 +58,12 @@ export interface EventTimeRangeParts {
   text: string;
 }
 
-type LegacyTimingInput = Pick<Event, 'startDate' | 'startTime' | 'endDate' | 'endTime'>;
+type LegacyTimingInput = Pick<Event, 'startDate' | 'startTime' | 'endDate' | 'endTime'> & Partial<Pick<Event, 'locationScope'>>;
+
+export const isDateOnlyAreaOverview = (event: LegacyTimingInput): boolean =>
+  event.locationScope === 'area' && !event.startTime?.trim() && !event.endTime?.trim()
+  && Boolean(normalizeDateKey(event.startDate) && normalizeDateKey(event.endDate)
+    && normalizeDateKey(event.endDate) > normalizeDateKey(event.startDate));
 
 const TIME_PATTERN = /^(\d{1,2})(?::(\d{2}))?(?::\d{2})?\s*(AM|PM)?$/i;
 
@@ -268,6 +274,9 @@ export const createLegacyTimingContract = (
   } = {}
 ): EventTiming => {
   const startDate = normalizeDateKey(event.startDate);
+  const dateOverview = isDateOnlyAreaOverview(event)
+    && options.scheduleKind !== 'all_day' && options.scheduleKind !== 'until_close'
+    && options.endStatus !== 'until_close';
   const startTime = String(event.startTime || '').trim();
   const rawEndDate = normalizeDateKey(event.endDate) || startDate;
   const rawEndTime = String(event.endTime || '').trim();
@@ -304,7 +313,7 @@ export const createLegacyTimingContract = (
     version: 2,
     timeZone: options.timeZone || 'America/Halifax',
     scheduleKind:
-      options.scheduleKind ||
+      (dateOverview ? 'date_range_overview' : options.scheduleKind) ||
       (endStatus === 'until_close'
         ? 'until_close'
         : rawEndDate && rawEndDate !== startDate
@@ -318,7 +327,7 @@ export const createLegacyTimingContract = (
         status: startTime ? 'observed' : 'unknown',
       },
       end: {
-        localDate: endStatus === 'unknown' ? null : resolvedEndDate,
+        localDate: endStatus === 'unknown' && !dateOverview ? null : resolvedEndDate,
         localTime: endStatus === 'unknown' ? null : rawEndTime || null,
         timeZone: options.timeZone || 'America/Halifax',
         status: endStatus,
@@ -331,8 +340,24 @@ export const createLegacyTimingContract = (
   };
 };
 
-export const getEventTiming = (event: LegacyTimingInput & { timing?: EventTiming | null }): EventTiming =>
-  event.timing?.version === 2 ? event.timing : createLegacyTimingContract(event);
+export const getEventTiming = (event: LegacyTimingInput & { timing?: EventTiming | null }): EventTiming => {
+  const timing = event.timing?.version === 2 ? event.timing : null;
+  const richSchedule = timing && (timing.scheduleKind === 'all_day' || timing.scheduleKind === 'until_close'
+    || timing.schedule.start.status === 'all_day' || timing.schedule.end.status === 'all_day'
+    || timing.schedule.end.status === 'until_close'
+    || timing.schedule.start.at || timing.schedule.start.localTime
+    || timing.schedule.end.at || timing.schedule.end.localTime
+    || hasDisplayableEstimate(timing.estimate));
+  if (isDateOnlyAreaOverview(event) && !richSchedule) {
+    return createLegacyTimingContract(event, { timeZone: timing?.timeZone });
+  }
+  return timing || createLegacyTimingContract(event);
+};
+
+export const readVersion2EventTiming = (record: { timing?: EventTiming | null; metadata?: { timing?: EventTiming | null } }): EventTiming | null => {
+  const timing = record.timing ?? record.metadata?.timing;
+  return timing?.version === 2 && timing.schedule?.start && timing.schedule?.end ? timing : null;
+};
 
 const scheduleStartLocalScalar = (event: LegacyTimingInput, timing: EventTiming): number => {
   const startDate = normalizeDateKey(timing.schedule.start.localDate || event.startDate);
@@ -358,7 +383,9 @@ export const getEventScheduleSpanLocalScalars = (
   const start = scheduleStartLocalScalar(event, timing);
   const point = timing.schedule.end;
   let end: number | null = null;
-  if (timing.scheduleKind === 'all_day' || point.status === 'all_day') {
+  if (timing.scheduleKind === 'date_range_overview') {
+    end = localScalar(point.localDate || event.endDate || event.startDate, 1439);
+  } else if (timing.scheduleKind === 'all_day' || point.status === 'all_day') {
     const date = estimateLocalDate(timing.estimate, 'display', timing.timeZone,
       timing.schedule.start.localDate || event.startDate);
     end = localScalar(date, 1439);
@@ -403,6 +430,15 @@ export const getEventScheduleState = (
     : displayEstimateScalar;
   const startEstimated = isStartEstimated(timing);
   const endEstimated = isEndEstimated(timing);
+
+  if (timing.scheduleKind === 'date_range_overview') {
+    const endDate = normalizeDateKey(timing.schedule.end.localDate || event.endDate);
+    if (zonedNow.dateKey > endDate) return { code: 'confirmed_ended', nowEligibility: 'none', defaultMapEligible: false, todayEligible: false, muted: true };
+    const active = zonedNow.dateKey >= startDate;
+    return { code: 'date_range_overview', nowEligibility: 'none', defaultMapEligible: true,
+      todayEligible: active, muted: false,
+      nextTransitionLocalScalar: localScalar(active ? addDays(endDate, 1) : startDate, 0) };
+  }
 
   if (nowScalar < startScalar) {
     const code: EventScheduleStateCode = startEstimated || endEstimated
@@ -552,6 +588,7 @@ export const getEventTimingBadge = (
   now = new Date()
 ): EventTimingBadge | null => {
   const timing = getEventTiming(event);
+  if (timing.scheduleKind === 'date_range_overview') return null;
   const startEstimated = isStartEstimated(timing);
   const endEstimated = isEndEstimated(timing);
   if (startEstimated && endEstimated) {
@@ -622,6 +659,9 @@ export const getEventTimeRangeParts = (
 ): EventTimeRangeParts => {
   const timing = getEventTiming(event);
   const state = getEventScheduleState(event, now);
+  if (timing.scheduleKind === 'date_range_overview') {
+    return { prefix: 'See individual event times', start: '', separator: '', end: '', startEstimated: false, endEstimated: false, text: 'See individual event times' };
+  }
   const start = formatClock(timing.schedule.start.localTime || event.startTime);
   const observedEnd = formatClock(timing.schedule.end.localTime || '');
   const estimateEnd = getEstimateDisplayTime(timing);

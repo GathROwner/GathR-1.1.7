@@ -7,7 +7,7 @@ import {
 
 type ScheduleEvent = Pick<
   Event,
-  'startDate' | 'startTime' | 'endDate' | 'endTime' | 'timing'
+  'startDate' | 'startTime' | 'endDate' | 'endTime' | 'timing' | 'locationScope'
 >;
 
 type ScheduleStateCacheEntry = {
@@ -17,6 +17,7 @@ type ScheduleStateCacheEntry = {
   endDate: string;
   endTime: string;
   timing: EventTiming | null | undefined;
+  locationScope: Event['locationScope'];
   state: EventScheduleState;
 };
 
@@ -48,6 +49,7 @@ export const getCachedEventScheduleState = (
     cached.startTime === event.startTime &&
     cached.endDate === event.endDate &&
     cached.endTime === event.endTime &&
+    cached.locationScope === event.locationScope &&
     cached.timing === event.timing
   ) {
     return cached.state;
@@ -61,6 +63,7 @@ export const getCachedEventScheduleState = (
     endDate: event.endDate,
     endTime: event.endTime,
     timing: event.timing,
+    locationScope: event.locationScope,
     state,
   });
   return state;

@@ -16,6 +16,7 @@ import {
   getEventTimeRangeText,
   getEventTimeStatusFromTiming,
   isEventConfirmedNow,
+  getEventTiming,
 } from './eventTiming';
 
 // ===============================================================
@@ -430,6 +431,9 @@ export const formatEventTimingSummary = (event: {
   endTime?: string;
   timing?: import('../types/events').EventTiming | null;
 }): string => {
+  if (getEventTiming({ ...event, endDate: event.endDate || event.startDate, endTime: event.endTime || '' }).scheduleKind === 'date_range_overview') {
+    return `${format(parseISO(event.startDate), 'MMM d')} – ${format(parseISO(event.endDate || event.startDate), 'MMM d')} • See individual event times`;
+  }
   const normalized = {
     ...event,
     endDate: event.endDate || event.startDate,

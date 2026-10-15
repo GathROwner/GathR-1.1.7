@@ -1,0 +1,52 @@
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { Modal, Pressable, Text, View } from 'react-native';
+import MapboxGL from '@rnmapbox/maps';
+import AreaLocationLayer from '../components/map/AreaLocationLayer';
+import { initializeMapboxAccessToken, GATHR_MAPBOX_STYLE_URL } from '../utils/mapboxAccessToken';
+import EventImageLightbox from '../components/map/EventImageLightbox';
+import AreaLocationBrowser from '../components/map/AreaLocationBrowser';
+import { getAreaLocationGroups, getAreaLocationGroupForPress, type AreaLocationGroup } from '../utils/areaEvent';
+import { getEventTiming } from '../utils/eventTiming';
+import { areEventIdsEquivalent } from '../utils/firestoreEventIds';
+import { useMapStore } from '../store/mapStore';
+import type { Event } from '../types/events';
+const data = require('../docs/qa/anchor-area-20261014/fixture-data.json');
+const umbrella = { ...data.umbrella, timing: getEventTiming(data.umbrella) } as Event;
+const children = data.children.map((event: Event) => ({ ...event, timing: getEventTiming(event) })) as Event[];
+const loadEvent = async (id: string | number) => children.find((event) => areEventIdsEquivalent(event.id, id)) || null;
+initializeMapboxAccessToken(MapboxGL);
+export default function AnchorFixture() {
+ const [summary, setSummary] = useState(true);
+ const [group, setGroup] = useState<AreaLocationGroup | null>(null);
+ const [ready, setReady] = useState(false);
+ const map = useRef<MapboxGL.MapView>(null);
+ const groups = useMemo(() => getAreaLocationGroups(umbrella), []);
+ useEffect(() => {
+  useMapStore.setState({ events: [umbrella,...children], allEvents: [umbrella,...children], fetchEventDetails: async () => {} });
+  setReady(true);
+ }, []);
+ return <View style={{ flex:1, backgroundColor:'#101923', paddingTop:60 }}>
+ <View style={{paddingHorizontal:22}}>
+  <Text style={{ color:'#F6C84C',fontSize:23,fontWeight:'700',marginBottom:10 }}>Anchor Fest 2026</Text>
+  <Text style={{ color:'#FFFFFF',fontSize:17,marginBottom:12 }}>Oct 14–18 · Festival locations</Text>
+  <Text style={{ color:'#AEBCCA',fontSize:13,marginBottom:20 }}>Proposed-state fixture · fixed camera · map gestures disabled</Text>
+  <Pressable onPress={()=>setSummary(true)} style={{padding:16,backgroundColor:'#233445',borderRadius:12,marginBottom:14}}><Text style={{color:'#FFFFFF'}}>Open festival overview</Text></Pressable>
+ </View>
+  {ready && !summary && <MapboxGL.MapView ref={map} style={{flex:1}} styleURL={GATHR_MAPBOX_STYLE_URL}
+    onDidFinishLoadingMap={() => { void Promise.all(groups.map(async (item) => {
+      const point = await map.current?.getPointInView([item.coordinates.longitude,item.coordinates.latitude]);
+      console.warn('[AnchorFixturePin]',item.locations.map(v=>v.label),point);
+    })); }}
+    scrollEnabled={false} zoomEnabled={false} rotateEnabled={false} pitchEnabled={false}>
+    <MapboxGL.Camera defaultSettings={{centerCoordinate:[-63.1287,46.2348],zoomLevel:14.6}} />
+    <AreaLocationLayer event={umbrella} onPress={(event) => {
+      console.warn('[AnchorFixturePress]',event.features.map((f:any)=>f.properties?.id),event.point);
+      const found = getAreaLocationGroupForPress(umbrella, event);
+      if (found) setGroup(found);
+    }} />
+  </MapboxGL.MapView>}
+  {ready && summary && <Modal visible transparent statusBarTranslucent><EventImageLightbox event={umbrella} imageUrl={umbrella.imageUrl}
+    onClose={()=>setSummary(false)} onShowRoute={()=>setSummary(false)} isCityEvent /></Modal>}
+  {group && <AreaLocationBrowser key={group.id} umbrella={umbrella} group={group} loadEvent={loadEvent} onClose={()=>setGroup(null)} />}
+ </View>;
+}

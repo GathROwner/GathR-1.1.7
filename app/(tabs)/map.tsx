@@ -73,6 +73,8 @@ import HotspotHighlight from '../../components/map/HotspotHighlight';
 import MapTracePanel from '../../components/debug/MapTracePanel';
 import StaticDebugCallout from '../../components/map/StaticDebugCallout';
 import RouteFeatureCallout from '../../components/map/RouteFeatureCallout';
+import AreaLocationBrowser from '../../components/map/AreaLocationBrowser';
+import AreaLocationLayer from '../../components/map/AreaLocationLayer';
 import ContextualCheckInControl from '../../components/social/ContextualCheckInControl';
 import CheckInRadiusOverlay from '../../components/social/CheckInRadiusOverlay';
 import FriendCheckInBadge from '../../components/social/FriendCheckInBadge';
@@ -215,11 +217,12 @@ import {
   type RouteFeatureCalloutData,
 } from '../../utils/routeEvent';
 import {
-  buildAreaLocationFeatureCollection,
   getAreaLocationBounds,
   getAreaLocationCallout,
   getAreaLocations,
   getAreaLocationsLabel,
+  getAreaLocationGroupForPress,
+  type AreaLocationGroup,
   hasDrawableAreaLocations,
 } from '../../utils/areaEvent';
 import { buildRouteSummaryLightboxSelection } from '../../utils/routeEventLightbox';
@@ -3457,6 +3460,7 @@ useEffect(() => {
   const [mapTabOverlaysReady, setMapTabOverlaysReady] = useState<boolean>(Platform.OS !== 'android');
   const [activeRouteEvent, setActiveRouteEvent] = useState<Event | null>(null);
   const [activeAreaEvent, setActiveAreaEvent] = useState<Event | null>(null);
+  const [areaLocationGroup, setAreaLocationGroup] = useState<AreaLocationGroup | null>(null);
   const activeMapExperienceEvent = activeRouteEvent || activeAreaEvent;
   const [routeOverlayHeight, setRouteOverlayHeight] = useState(0);
   const [interestRailLayout, setInterestRailLayout] = useState({ width: 0, height: 0 });
@@ -3717,6 +3721,7 @@ useEffect(() => {
     useMapStore.getState().setSelectedImageData(null);
     routeFeatureCalloutRequestRef.current += 1;
     setRouteFeatureCallout(null);
+    setAreaLocationGroup(null);
     setActiveRouteEvent(routeExperience ? event : null);
     setActiveAreaEvent(areaExperience ? event : null);
 
@@ -3753,6 +3758,7 @@ useEffect(() => {
     }
     routeFeatureCalloutRequestRef.current += 1;
     setRouteFeatureCallout(null);
+    setAreaLocationGroup(null);
     setActiveRouteEvent(null);
     setActiveAreaEvent(null);
   }, [activeMapExperienceEvent, activeRouteEvent]);
@@ -3763,6 +3769,7 @@ useEffect(() => {
 
     routeFeatureCalloutRequestRef.current += 1;
     setRouteFeatureCallout(null);
+    setAreaLocationGroup(null);
     useMapStore.getState().setSelectedImageData(selection);
     amplitudeTrack('route_summary_lightbox_reopened', {
       event_id: String(activeMapExperienceEvent?.id || ''),
@@ -8169,8 +8176,17 @@ lastOpenedClusterIdRef.current = cluster.id;
   const handleAreaLocationPress = async (pressEvent: any) => {
     if (!activeAreaEvent) return;
 
-    const featureId = String(pressEvent?.features?.[0]?.properties?.id || '').trim();
+    const group = getAreaLocationGroupForPress(activeAreaEvent, pressEvent);
+    const featureId = group?.id || String(pressEvent?.features?.[0]?.properties?.id || '').trim();
     if (!featureId) return;
+
+    if (group && (group.locations.length > 1 || group.locations.some((location) => location.venueId))) {
+      routeFeatureCalloutRequestRef.current += 1;
+      routeFeaturePressGuardUntilRef.current = Date.now() + 500;
+      setRouteFeatureCallout(null);
+      setAreaLocationGroup(group);
+      return;
+    }
 
     const data = getAreaLocationCallout(activeAreaEvent, featureId);
     if (!data) return;
@@ -11577,54 +11593,7 @@ onDidFinishLoadingMap={() => {
 
         {activeAreaEvent && (
           <>
-            <MapboxGL.ShapeSource
-              id="active-area-locations-source"
-              shape={buildAreaLocationFeatureCollection(activeAreaEvent) as any}
-              hitbox={{ width: 52, height: 52 }}
-              onPress={(event: any) => void handleAreaLocationPress(event)}
-            >
-              <MapboxGL.CircleLayer
-                id="active-area-location-halos"
-                style={{
-                  circleColor: '#FFFFFF',
-                  circleRadius: 10,
-                  circleOpacity: 0.98,
-                }}
-              />
-              <MapboxGL.CircleLayer
-                id="active-area-confirmed-locations"
-                filter={['==', ['get', 'certainty'], 'confirmed'] as any}
-                style={{
-                  circleColor: '#F6C84C',
-                  circleRadius: 7,
-                  circleStrokeColor: '#6B4E16',
-                  circleStrokeWidth: 2,
-                }}
-              />
-              <MapboxGL.CircleLayer
-                id="active-area-possible-locations"
-                filter={['==', ['get', 'certainty'], 'approximate'] as any}
-                style={{
-                  circleColor: '#FFFFFF',
-                  circleRadius: 7,
-                  circleStrokeColor: '#D98700',
-                  circleStrokeWidth: 3,
-                }}
-              />
-              <MapboxGL.SymbolLayer
-                id="active-area-location-labels"
-                style={{
-                  textField: ['get', 'label'] as any,
-                  textSize: 12,
-                  textColor: '#4E342E',
-                  textHaloColor: '#FFFFFF',
-                  textHaloWidth: 2,
-                  textOffset: [0, 1.65],
-                  textAnchor: 'top',
-                  textAllowOverlap: true,
-                }}
-              />
-            </MapboxGL.ShapeSource>
+            <AreaLocationLayer event={activeAreaEvent} onPress={(event) => void handleAreaLocationPress(event)} />
 
             {routeFeatureCallout && (
               <MapboxGL.MarkerView
@@ -11688,6 +11657,11 @@ onDidFinishLoadingMap={() => {
           <EdgeBlur edge="top" androidBlurEnabled={false}
             topFadeStart={safeAreaInsets.top * 0.6 / mapTopFadeHeight} />
         </View>
+      )}
+
+      {activeAreaEvent && areaLocationGroup && (
+        <AreaLocationBrowser key={`${activeAreaEvent.id}-${areaLocationGroup.id}`} umbrella={activeAreaEvent}
+          group={areaLocationGroup} onClose={() => setAreaLocationGroup(null)} />
       )}
 
       {activeMapExperienceEvent && (

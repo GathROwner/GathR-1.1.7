@@ -5,8 +5,31 @@ jest.mock('../../../config/firebaseConfig', () => ({
 
 import { normalizeFirestoreEvent } from '../firestoreEvents';
 import type { FirestoreEvent } from '../../../types/firestore';
+import { getEventScheduleState } from '../../../utils/eventTiming';
+import { formatEventTimingSummary } from '../../../utils/dateUtils';
 
 describe('Firestore multi-location area field mapping', () => {
+  it.each(['2026-10-15T15:00:00Z', '2026-10-18T22:00:00Z'])('keeps a normalized date-only area overview discoverable on %s', (instant) => {
+    const event = normalizeFirestoreEvent({ id: 'festival', title: 'Festival', startDate: '2026-10-14', endDate: '2026-10-18',
+      startTime: '', endTime: '', metadata: { locationScope: 'area', mapMode: 'area', timing: {
+        version: 2, timeZone: 'America/Halifax', scheduleKind: 'multi_day',
+        schedule: { start: { localDate: '2026-10-14', localTime: null, status: 'unknown' },
+          end: { localDate: '2026-10-18', localTime: null, status: 'unknown' } },
+        estimate: { confidence: 'low', discoveryCutoffDate: '2026-10-18', discoveryCutoffTime: '23:59',
+          method: 'reviewed_area_date_range_discovery_cutoff' },
+      } } } as FirestoreEvent);
+    expect(getEventScheduleState(event, new Date(instant))).toMatchObject({ todayEligible: true, defaultMapEligible: true, nowEligibility: 'none' });
+    expect(formatEventTimingSummary(event)).toBe('Oct 14 – Oct 18 • See individual event times');
+    expect(event.startTime).toBe(''); expect(event.endTime).toBe('');
+  });
+  it('keeps healthy string-false flags visible and normalizes explicit cancellation/expiry metadata', () => {
+    const raw = { id: 'healthy', title: 'Film', startDate: '2026-10-16', startTime: '19:00', endDate: '2026-10-16', endTime: '21:00',
+      metadata: { isCancelled: 'false', canceled: 'No', isExpired: '0' } } as FirestoreEvent;
+    expect(normalizeFirestoreEvent(raw)).toMatchObject({ isCancelled: false, isExpired: false });
+    expect(normalizeFirestoreEvent({ ...raw, metadata: { isCancelled: 'YES', isExpired: true } } as FirestoreEvent))
+      .toMatchObject({ isCancelled: true, isExpired: true });
+  });
+
   it('normalizes unordered area locations delivered through API metadata', () => {
     const normalized = normalizeFirestoreEvent({
       id: 'busker-festival',

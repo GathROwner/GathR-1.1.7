@@ -37,6 +37,11 @@ export interface FirestoreVenueInfo {
  * Event metadata from Firestore
  */
 export interface FirestoreEventMetadata {
+  status?: string;
+  isCancelled?: boolean | string | number;
+  cancelled?: boolean | string | number;
+  canceled?: boolean | string | number;
+  isExpired?: boolean | string | number;
   icon?: string;
   image?: string;
   relevantImageUrl?: string;
@@ -137,6 +142,11 @@ export interface FirestoreVenue {
  * Single event from Firestore API
  */
 export interface FirestoreEvent {
+  status?: string;
+  isCancelled?: boolean | string | number;
+  cancelled?: boolean | string | number;
+  canceled?: boolean | string | number;
+  isExpired?: boolean | string | number;
   id: string;
   title: string;
   description: string;

@@ -43,6 +43,15 @@ const makeEvent = (): Event => {
 describe('event schedule state cache', () => {
   beforeEach(resetEventScheduleStateCache);
 
+  it('invalidates a blank-clock date overview when location scope changes', () => {
+    const event = { ...makeEvent(), startDate: '2026-10-14', endDate: '2026-10-18', startTime: '', endTime: '',
+      locationScope: 'area' as Event['locationScope'], timing: undefined };
+    const now = new Date('2026-10-15T15:00:00Z');
+    expect(getCachedEventScheduleState(event, now).code).toBe('date_range_overview');
+    event.locationScope = 'venue';
+    expect(getCachedEventScheduleState(event, now).code).toBe('confirmed_ended');
+  });
+
   it('evaluates an unchanged event only once before its next transition', () => {
     const event = makeEvent();
     const transitionAt = getEventScheduleLocalScalar(

@@ -117,7 +117,8 @@ import {
 } from '../lib/config/backend';
 import { EVENT_DETAILS_SCHEMA_VERSION, EVENTS_MINIMAL } from '../lib/queryKeys';
 import { normalizeVenueIdentityText } from '../utils/venueIdentity';
-import { createLegacyTimingContract } from '../utils/eventTiming';
+import { createLegacyTimingContract, readVersion2EventTiming } from '../utils/eventTiming';
+import { readEventAreaData } from '../utils/eventAreaData';
 import {
   isEventPastFast,
 } from '../utils/eventExpiry';
@@ -2178,14 +2179,15 @@ fetchEventDetails: async (
       endDate: detail?.endDate || detail?.startDate || '',
       startTime: detail?.startTime || '',
       endTime: detail?.endTime || '',
-      timing: detail?.timing?.version === 2
-        ? detail.timing
-        : createLegacyTimingContract(
+      timing: readVersion2EventTiming(detail ?? {})
+        ??
+        createLegacyTimingContract(
             {
               startDate: detail?.startDate || '',
               startTime: detail?.startTime || '',
               endDate: detail?.endDate || detail?.startDate || '',
               endTime: detail?.endTime || '',
+              locationScope: detail?.locationScope ?? detail?.metadata?.locationScope,
             },
             {
               endStatus: 'unknown',
@@ -2200,15 +2202,15 @@ fetchEventDetails: async (
       SharedPostThumbnail: detail?.SharedPostThumbnail || '',
       latitude: Number(detail?.latitude) || 0,
       longitude: Number(detail?.longitude) || 0,
-      locationScope: detail?.locationScope ?? null,
+      locationScope: detail?.locationScope ?? detail?.metadata?.locationScope ?? null,
       locationLabel: detail?.locationLabel ?? null,
       locationCity: detail?.locationCity ?? null,
       locationProvince: detail?.locationProvince ?? null,
       locationPrecision: detail?.locationPrecision ?? null,
       locationReviewStatus: detail?.locationReviewStatus ?? null,
-      mapMode: detail?.mapMode ?? null,
+      mapMode: detail?.mapMode ?? detail?.metadata?.mapMode ?? null,
       routeData: detail?.routeData ?? null,
-      areaData: detail?.areaData ?? null,
+      areaData: readEventAreaData(detail ?? {}),
       ticketLinkPosts: detail?.ticketLinkPosts || '',
       ticketLinkEvents: detail?.ticketLinkEvents || '',
       ticketsBuyUrl: detail?.ticketsBuyUrl || '',
@@ -2247,6 +2249,13 @@ fetchEventDetails: async (
       detail.originalEventId ?? detail.metadata?.originalEventId ?? null;
     return {
       ...detail,
+      ...(readVersion2EventTiming(detail) ? { timing: readVersion2EventTiming(detail) } : {}),
+      ...((detail.areaData !== undefined || detail.metadata?.areaData !== undefined)
+        ? { areaData: readEventAreaData(detail) } : {}),
+      ...((detail.locationScope !== undefined || detail.metadata?.locationScope !== undefined)
+        ? { locationScope: detail.locationScope ?? detail.metadata?.locationScope ?? null } : {}),
+      ...((detail.mapMode !== undefined || detail.metadata?.mapMode !== undefined)
+        ? { mapMode: detail.mapMode ?? detail.metadata?.mapMode ?? null } : {}),
       id: toAppEventId(detail.id),
       description: detail.fullDescription || detail.description || '',
       isRecurring: detail.isRecurring ?? detail.metadata?.isRecurring,

@@ -33,6 +33,7 @@ export type EventScheduleKind =
   | 'availability_window'
   | 'all_day'
   | 'multi_day'
+  | 'date_range_overview'
   | 'until_close'
   | 'unknown';
 
@@ -174,6 +175,8 @@ export interface EventAreaLocation {
   label: string;
   coordinates: RouteCoordinate;
   certainty: 'confirmed' | 'approximate';
+  venueId?: string;
+  linkedEventIds?: string[];
   address?: string;
   description?: string;
   timeLabel?: string;
@@ -199,6 +202,9 @@ export interface EventAreaData {
  * Main Event interface representing event data from the API
  */
 export interface Event {
+  status?: string;
+  isCancelled?: boolean;
+  isExpired?: boolean;
   id: string | number;
   type: 'event' | 'special';
   category: string;

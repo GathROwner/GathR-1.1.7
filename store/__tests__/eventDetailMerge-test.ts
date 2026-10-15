@@ -86,6 +86,27 @@ async function run(fixture: Fixture, baseline = false) {
 }
 
 describe('event detail merge parity', () => {
+  it('preserves authoritative metadata v2 timing and timezone in refreshes and detail-only reconstruction', async () => {
+    const timing = createLegacyTimingContract({ startDate: '2040-10-13', endDate: '2040-10-18', startTime: '19:00', endTime: '23:00' },
+      { timeZone: 'America/Toronto' });
+    const details = (id: string) => ({ id, startDate: '2040-10-13', endDate: '2040-10-18', startTime: '', endTime: '',
+      metadata: { locationScope: 'area', mapMode: 'area', timing } });
+    const actual = await run({ events: [event('fb_existing')], allEvents: [event('fb_existing')], ids: ['existing', 'new'],
+      raw: [details('existing'), details('new')], force: true });
+    expect(actual.events.map((item) => item.timing)).toEqual([timing, timing]);
+    expect(actual.allEvents.map((item) => item.timing)).toEqual([timing, timing]);
+    expect(actual.events.map((item) => [item.locationScope, item.mapMode])).toEqual([['area', 'area'], ['area', 'area']]);
+  });
+  it('retains metadata area points/links for both existing refreshes and reconstructed detail-only events', async () => {
+    const areaData = { version: 1, status: 'partial', locations: [{ id: 'venue', label: 'Venue', certainty: 'confirmed', venueId: 'v',
+      coordinates: { latitude: 46.2, longitude: -63.1 }, linkedEventIds: ['canonical-child'] }] };
+    const actual = await run({ events: [event('fb_existing')], allEvents: [event('fb_existing')], ids: ['existing', 'new'],
+      raw: [{ id: 'existing', metadata: { areaData } }, { id: 'new', startDate: '2040-10-13', startTime: '', endDate: '2040-10-18', endTime: '',
+        metadata: { areaData, locationScope: 'area', mapMode: 'area' } }], force: true });
+    expect(actual.events[0].areaData).toEqual(areaData);
+    expect(actual.events[1]).toMatchObject({ areaData, locationScope: 'area', mapMode: 'area', timing: { scheduleKind: 'date_range_overview' } });
+    expect(actual.allEvents.map((item) => item.areaData)).toEqual([areaData, areaData]);
+  });
   beforeEach(() => {
     jest.spyOn(console, 'warn').mockImplementation(() => undefined);
     jest.spyOn(console, 'error').mockImplementation(() => undefined);

@@ -62,6 +62,8 @@ const makeEvent = (overrides: Partial<Event>): Event =>
   } as Event);
 
 describe('buildCityEventLightboxEvents', () => {
+  beforeEach(() => { jest.useFakeTimers(); jest.setSystemTime(new Date('2026-09-13T15:00:00Z')); });
+  afterEach(() => { jest.useRealTimers(); });
   it('keeps only city-level events that match the active base filters', () => {
     const cityEvent = makeEvent({
       id: 'city-1',
