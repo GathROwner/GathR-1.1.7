@@ -1,0 +1,49 @@
+{
+  "validatedSourceCommit": "e020360f2124fdf991b741b59d0afe196cf14625",
+  "runtime": "1.1.10",
+  "published": false,
+  "deviceAdoption": "Not tested: native debug harness only",
+  "typeScript": "passed",
+  "tests": {
+    "suites": 14,
+    "passed": 136,
+    "skipped": 0
+  },
+  "lint": {
+    "errors": 0,
+    "warnings": 219,
+    "changedWarningFiles": []
+  },
+  "preflight": {
+    "cleanWorktree": true,
+    "ancestorOfCandidate": "8ce23bf9186e91a3282d9071eae668a5c1077bd2",
+    "target": "Android Preview",
+    "firebase": "staging",
+    "bothSocialFlags": true,
+    "mapbox": true,
+    "nativeConfiguration": "unchanged"
+  },
+  "localExport": {
+    "platform": "android",
+    "metroModules": 2727,
+    "bundleBytes": 5962824,
+    "sourceMapSources": 2669,
+    "assetMetadataEntries": 127,
+    "fixtureOrTestSources": 0,
+    "requiredSourceFilesMatch": 11
+  },
+  "parity": {
+    "healthyBaselineChecks": 20,
+    "dateOnlyComparedWithIos": 16,
+    "scope": "offline synthetic"
+  },
+  "sourceCodeCommits": [
+    "6de059b108ee60e7ff5fd64bbe4f87870ea3eaa6",
+    "67019c6"
+  ],
+  "appComponentsAssetsNativeDependenciesDiff": "",
+  "noPaidCalls": true,
+  "noBackendOrDataWrites": true,
+  "noMapMountOrInteraction": true,
+  "logs": "artifacts/android-date-only-20261015/"
+}
