@@ -20,6 +20,7 @@ import {
   normalizeTicketUrl,
 } from '../../utils/ticketUrls';
 import { createLegacyTimingContract } from '../../utils/eventTiming';
+import { normalizeRecurrenceFlag } from '../../utils/eventRecurrence';
 
 // Debug flag for logging
 const DEBUG_FIRESTORE = __DEV__ ?? true;
@@ -422,12 +423,12 @@ export function normalizeFirestoreEvent(fsEvent: FirestoreEvent): Event {
     ageRestriction: fsEvent.metadata?.ageRestriction || '',
 
     // Recurrence metadata (top-level backend contract, metadata fallback for safety)
-    isRecurring: fsEvent.isRecurring ?? fsEvent.metadata?.isRecurring ?? false,
+    isRecurring: normalizeRecurrenceFlag(fsEvent.isRecurring ?? fsEvent.metadata?.isRecurring),
     recurringPattern: fsEvent.recurringPattern ?? fsEvent.metadata?.recurringPattern,
     recurrenceUntilDate:
       fsEvent.recurrenceUntilDate ?? fsEvent.metadata?.recurrenceUntilDate,
     isRecurringInstance:
-      fsEvent.isRecurringInstance ?? fsEvent.metadata?.isRecurringInstance ?? false,
+      normalizeRecurrenceFlag(fsEvent.isRecurringInstance ?? fsEvent.metadata?.isRecurringInstance),
     originalEventId: rawOriginalEventId ? toAppEventId(rawOriginalEventId) : null,
 
     // Venue details
@@ -455,6 +456,8 @@ async function fetchFirestorePage({
 }: FirestorePageRequest): Promise<FirestoreEventsResponse> {
   const params = new URLSearchParams();
   params.set('limit', String(limit ?? FIRESTORE_PAGE_LIMIT));
+  // Declare only alongside the reviewed date-only UI and calendar safeguards.
+  params.set('dateOnlyActivities', 'v1');
 
   if (startAfter) {
     params.set('startAfter', startAfter);
@@ -506,7 +509,7 @@ export async function fetchFirestoreEventById(
   const firestoreId = toFirestoreEventId(eventId);
   if (!firestoreId) return null;
 
-  const url = `${FIRESTORE_API_BASE}/events/${encodeURIComponent(firestoreId)}`;
+  const url = `${FIRESTORE_API_BASE}/events/${encodeURIComponent(firestoreId)}?dateOnlyActivities=v1`;
 
   try {
     const t0 = Date.now();

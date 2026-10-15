@@ -113,7 +113,8 @@ import {
 } from '../lib/config/backend';
 import { EVENT_DETAILS_SCHEMA_VERSION, EVENTS_MINIMAL } from '../lib/queryKeys';
 import { normalizeVenueIdentityText } from '../utils/venueIdentity';
-import { createLegacyTimingContract } from '../utils/eventTiming';
+import { createLegacyTimingContract, readVersion2EventTiming } from '../utils/eventTiming';
+import { normalizeRecurrenceFlag } from '../utils/eventRecurrence';
 import {
   getEventDateKey,
   isEventPastFast,
@@ -2244,9 +2245,7 @@ fetchEventDetails: async (eventIds: (string | number)[]) => {
       endDate: detail?.endDate || detail?.startDate || '',
       startTime: detail?.startTime || '',
       endTime: detail?.endTime || '',
-      timing: detail?.timing?.version === 2
-        ? detail.timing
-        : createLegacyTimingContract(
+      timing: readVersion2EventTiming(detail ?? {}) ?? createLegacyTimingContract(
             {
               startDate: detail?.startDate || '',
               startTime: detail?.startTime || '',
@@ -2311,14 +2310,17 @@ fetchEventDetails: async (eventIds: (string | number)[]) => {
     if (!detail || detail.id == null) return null;
     const rawOriginalId =
       detail.originalEventId ?? detail.metadata?.originalEventId ?? null;
+    const isRecurring = detail.isRecurring ?? detail.metadata?.isRecurring;
+    const isRecurringInstance = detail.isRecurringInstance ?? detail.metadata?.isRecurringInstance;
     return {
       ...detail,
+      ...(readVersion2EventTiming(detail) ? { timing: readVersion2EventTiming(detail) } : {}),
       id: toAppEventId(detail.id),
       description: detail.fullDescription || detail.description || '',
-      isRecurring: detail.isRecurring ?? detail.metadata?.isRecurring,
+      isRecurring: isRecurring == null ? undefined : normalizeRecurrenceFlag(isRecurring),
       recurringPattern: detail.recurringPattern ?? detail.metadata?.recurringPattern,
       isRecurringInstance:
-        detail.isRecurringInstance ?? detail.metadata?.isRecurringInstance,
+        isRecurringInstance == null ? undefined : normalizeRecurrenceFlag(isRecurringInstance),
       originalEventId: rawOriginalId ? toAppEventId(rawOriginalId) : null,
     };
   };

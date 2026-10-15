@@ -2,7 +2,7 @@ import * as Linking from 'expo-linking';
 import { Platform, Alert } from 'react-native';
 import type { Event } from '../types/events';
 import { combineDateAndTime } from './dateUtils';
-import { getCalendarEndDecision, getEventTiming } from './eventTiming';
+import { getCalendarEndDecision, getEventTiming, getDateOnlyScheduleRange } from './eventTiming';
 
 interface CalendarEvent {
   title: string;
@@ -113,6 +113,16 @@ export const addEventToCalendarWithTiming = async (
   >,
   location: string
 ): Promise<boolean> => {
+  if (getDateOnlyScheduleRange(event)) {
+    const sourceUrl = event.facebookUrl || event.sharedEventProvenance?.sourceUrl
+      || event.timing?.schedule.start.sourceUrl || event.timing?.schedule.end.sourceUrl;
+    const choice = await ask('Time not provided',
+      'The organizer did not provide a start time. Check the original source before adding a timed calendar entry.',
+      [{ text: 'Cancel', value: 'cancel', style: 'cancel' },
+        ...(sourceUrl ? [{ text: 'View original post', value: 'source' }] : [])]);
+    if (choice === 'source' && sourceUrl) await Linking.openURL(sourceUrl);
+    return false;
+  }
   const startDate = combineDateAndTime(event.startDate, event.startTime);
   const decision = getCalendarEndDecision(event);
   let endDate: Date;

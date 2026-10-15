@@ -7,6 +7,7 @@ import type {
   EventTimingPoint,
   TimeStatus,
 } from '../types/events';
+import { normalizeRecurrenceFlag } from './eventRecurrence';
 
 export const EVENT_TIMING_POLICY_VERSION = 'honest-end-times-v2';
 export const DEFAULT_UNKNOWN_END_CUTOFF_MINUTES = 120;
@@ -22,6 +23,8 @@ export type EventScheduleStateCode =
   | 'until_close_active'
   | 'all_day_today'
   | 'multi_day_today'
+  | 'date_only_upcoming'
+  | 'date_only_today'
   | 'estimate_passed'
   | 'unknown_cutoff_passed'
   | 'confirmed_ended';
@@ -57,7 +60,8 @@ export interface EventTimeRangeParts {
   text: string;
 }
 
-type LegacyTimingInput = Pick<Event, 'startDate' | 'startTime' | 'endDate' | 'endTime'>;
+type LegacyTimingInput = Pick<Event, 'startDate' | 'startTime' | 'endDate' | 'endTime'>
+  & Partial<Pick<Event, 'isRecurring' | 'isRecurringInstance' | 'recurringPattern'>>;
 
 const TIME_PATTERN = /^(\d{1,2})(?::(\d{2}))?(?::\d{2})?\s*(AM|PM)?$/i;
 
@@ -334,6 +338,43 @@ export const createLegacyTimingContract = (
 export const getEventTiming = (event: LegacyTimingInput & { timing?: EventTiming | null }): EventTiming =>
   event.timing?.version === 2 ? event.timing : createLegacyTimingContract(event);
 
+export const readVersion2EventTiming = (record: { timing?: EventTiming | null; metadata?: { timing?: EventTiming | null } }): EventTiming | null => {
+  const timing = record.timing ?? record.metadata?.timing;
+  return timing?.version === 2 && timing.schedule?.start && timing.schedule?.end ? timing : null;
+};
+
+/** A source date is a discovery window, never evidence of opening/start hours. */
+export const getDateOnlyScheduleRange = (
+  event: LegacyTimingInput & { timing?: EventTiming | null },
+  timing = getEventTiming(event)
+): { startDate: string; endDate: string } | null => {
+  const estimate = timing.estimate;
+  if (!estimate || estimate.method !== 'source_dated_activity_unknown_clock'
+    || estimate.estimateVersion !== 'date-only-activity-v1' || estimate.confidence !== 'low'
+    || estimate.invalidatedAt || estimate.displayEndAt || estimate.endAt
+    || estimate.displayEndDate || estimate.displayEndTime) return null;
+  if (timing.version !== 2 || String(timing.scheduleKind) === 'date_range_overview'
+    || timing.scheduleKind === 'all_day' || timing.scheduleKind === 'until_close'
+    || normalizeRecurrenceFlag(event.isRecurring) || normalizeRecurrenceFlag(event.isRecurringInstance)
+    || (event.recurringPattern && event.recurringPattern !== 'none')
+    || event.startTime?.trim() || event.endTime?.trim()
+    || timing.schedule.start.status !== 'unknown' || timing.schedule.end.status !== 'unknown'
+    || timing.schedule.start.localTime || timing.schedule.start.at
+    || timing.schedule.end.localTime || timing.schedule.end.at) return null;
+  const startDate = normalizeDateKey(timing.schedule.start.localDate);
+  const endDate = normalizeDateKey(timing.schedule.end.localDate);
+  const isRealDate = (value: string) => {
+    const parsed = new Date(`${value}T00:00:00Z`);
+    return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+  };
+  if (!startDate || !endDate || endDate < startDate
+    || !isRealDate(startDate) || !isRealDate(endDate)
+    || normalizeDateKey(event.startDate) !== startDate || normalizeDateKey(event.endDate) !== endDate
+    || normalizeDateKey(estimate.discoveryCutoffDate) !== endDate
+    || parseEventTimeMinutes(estimate.discoveryCutoffTime) !== 1439) return null;
+  return { startDate, endDate };
+};
+
 const scheduleStartLocalScalar = (event: LegacyTimingInput, timing: EventTiming): number => {
   const startDate = normalizeDateKey(timing.schedule.start.localDate || event.startDate);
   const startMinutes = parseEventTimeMinutes(timing.schedule.start.localTime || event.startTime) ?? 0;
@@ -379,6 +420,16 @@ export const getEventScheduleState = (
     : displayEstimateScalar;
   const startEstimated = isStartEstimated(timing);
   const endEstimated = isEndEstimated(timing);
+
+  const dateOnly = getDateOnlyScheduleRange(event, timing);
+  if (dateOnly) {
+    if (zonedNow.dateKey > dateOnly.endDate) return { code: 'confirmed_ended', nowEligibility: 'none',
+      defaultMapEligible: false, todayEligible: false, muted: true };
+    const today = zonedNow.dateKey >= dateOnly.startDate;
+    return { code: today ? 'date_only_today' : 'date_only_upcoming', nowEligibility: 'none',
+      defaultMapEligible: true, todayEligible: today, muted: false,
+      nextTransitionLocalScalar: localScalar(today ? addDays(dateOnly.endDate, 1) : dateOnly.startDate, 0) };
+  }
 
   if (nowScalar < startScalar) {
     const code: EventScheduleStateCode = startEstimated || endEstimated
@@ -528,6 +579,8 @@ export const getEventTimingBadge = (
   now = new Date()
 ): EventTimingBadge | null => {
   const timing = getEventTiming(event);
+  if (getDateOnlyScheduleRange(event, timing)) return { text: 'TIMES\nUNKNOWN',
+    accessibilityLabel: 'Start and end times not provided', tone: 'caution', infoTitle: 'Times not provided' };
   const startEstimated = isStartEstimated(timing);
   const endEstimated = isEndEstimated(timing);
   if (startEstimated && endEstimated) {
@@ -597,6 +650,8 @@ export const getEventTimeRangeParts = (
   now = new Date()
 ): EventTimeRangeParts => {
   const timing = getEventTiming(event);
+  if (getDateOnlyScheduleRange(event, timing)) return { prefix: 'Time not provided', start: '', separator: '',
+    end: '', startEstimated: false, endEstimated: false, text: 'Time not provided' };
   const state = getEventScheduleState(event, now);
   const start = formatClock(timing.schedule.start.localTime || event.startTime);
   const observedEnd = formatClock(timing.schedule.end.localTime || '');
@@ -647,6 +702,9 @@ export const getEventTimingDisclosure = (
   now = new Date()
 ): string | null => {
   const timing = getEventTiming(event);
+  if (getDateOnlyScheduleRange(event, timing)) {
+    return 'The organizer provided dates but no start or end time. Check the original source for details.';
+  }
   const state = getEventScheduleState(event, now);
   const estimateEnd = getEstimateDisplayTime(timing);
   const start = formatClock(timing.schedule.start.localTime || event.startTime);
