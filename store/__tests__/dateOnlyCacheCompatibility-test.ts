@@ -21,9 +21,9 @@ const queryGlobal = global as typeof global & { __RQ_CLIENT?: unknown };
 const previousClient = queryGlobal.__RQ_CLIENT;
 const initial = useMapStore.getState();
 let client: QueryClient;
-beforeEach(() => { client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: Infinity } } });
+beforeEach(() => { jest.useFakeTimers(); jest.setSystemTime(new Date('2026-10-15T15:00:00Z')); client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: Infinity } } });
   queryGlobal.__RQ_CLIENT = client; jest.clearAllMocks(); });
-afterEach(() => { client.clear(); useMapStore.setState(initial); queryGlobal.__RQ_CLIENT = previousClient; });
+afterEach(() => { client.clear(); useMapStore.setState(initial); queryGlobal.__RQ_CLIENT = previousClient; jest.useRealTimers(); });
 it('isolates both directions across persisted-cache upgrade and rollback without deleting old data', () => {
   expect(EVENTS_MINIMAL).not.toEqual(oldFeed);
   expect(EVENT_DETAILS_SCHEMA_VERSION).not.toBe('original-source-v2');
