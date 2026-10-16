@@ -32,4 +32,16 @@ Owned Metro and app were stopped; existing emulator and app data retained. QA mo
 
 `fixture.tsx.txt` preserves the reproducible harness as documentation only; it is not imported into the production app. No backend checkout, Firestore/schema/model, account, native dependency/build, Android/Production release or live map was changed. Android shared-component evidence does not prove iOS adoption. Publication remains held.
 
-Contract requirements and safeguards: [CONTRACT.md](CONTRACT.md). Final test/preflight/export evidence will be recorded separately after completion.
+Contract requirements and safeguards: [CONTRACT.md](CONTRACT.md).
+
+## Final validation and export
+
+The clean source/native-proof candidate `70d41d172f41fa21f129550be291136970446312` passed 188 tests across 15 suites, with one existing opt-in detail-merge benchmark skipped. TypeScript passes; full lint has 0 errors and the same 215 existing warnings. The first combined run timed out at the default 5-second Jest limit while TypeScript/lint ran concurrently; the focused browser suite passed independently and final full coverage passed with a 15-second per-test limit. No assertions were removed.
+
+Normal iOS Preview social/auth/account-continuity and Mapbox preflight passed without Publish. Fresh list/view JSON confirmed the baseline remains `2d40cb7c7f1b69d50074fe0343a233f1c32eb787`, group `3b237578-33e4-49e6-9c85-191f1815391a`, update `01a14538-c839-782f-a845-87e89f643ed9`, runtime 1.1.10; candidate ancestry was explicitly checked.
+
+The clean iOS export has 2,504 modules, 2,460 source-map sources, unchanged 111 asset metadata entries and a 5,730,028-byte Hermes bundle. SHA256: `2aea047e837babe6bf8603d4d90ef275d3e267e1139db9cbc87806172a3f0ae4`. This is 3,452 bytes more than the accepted baseline; no new imagery/assets were added.
+
+`export-check.json` records all 13 required runtime sources matching disk, all three restored route hashes, and zero QA/docs/test imports. The two contract declaration files are type-only and erased from the runtime graph; TypeScript validates them. Existing API loaders are byte-identical after removing the two additive programme adapter lines. Protected timing/calendar/expiry, shared child-cache hook, area/hunt presentation, callout, accepted backlink UI/navigation, auth/social/native/dependency/release configuration remain unchanged. Query-generation suffixes intentionally isolate older normalized records while preserving storage/auth/preferences.
+
+The final evidence commit changes documentation only; its runtime tree is identical to the exported source candidate. No OTA or backend/data change has been made. Coordinator independent review and the consolidated release/data decision remain outstanding; iPhone adoption is unverified.
