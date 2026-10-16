@@ -40,6 +40,8 @@ The original root, index and map routes were restored byte-for-byte and their SH
 - Full Expo lint passes: zero errors, 213 pre-existing warnings.
 - `git diff --check` passes.
 - One existing date-only cache fixture had expired relative to October 16. Its test clock is now fixed to October 15; no runtime behavior was changed for that test repair.
-- Local iOS Preview auth/social/Mapbox preflight and production export are recorded in `export-check.json` after completion. Publication remains prohibited for this handoff.
+- Local iOS Preview auth/social/Mapbox preflight passes without the Publish switch. The clean production-mode iOS export passes: 2,497 modules, 111 asset metadata entries (Expo display list: 108), 5,688,520-byte Hermes bundle. SHA256: `247facf91ba411d5a670b49f2cf6506ab5bd0d063f117d6e8c03aedf12f35215`.
+- `export-check.json` verifies all four runtime sources plus normal root/index/map route contents against the source map. No QA fixture, QA documentation or test source is included. Export source is evidence commit `fac6c7d`; subsequent changes only record this export evidence.
+- Publication remains prohibited for this handoff. No iOS device adoption or live festival performance is claimed. Independent coordinator review is the next gate.
 
 Raw local command logs and export files are under ignored `artifacts/festival-cache-first-20261016/`.

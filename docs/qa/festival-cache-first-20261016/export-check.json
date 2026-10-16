@@ -1,0 +1,66 @@
+{
+  "checkedAt": "2026-10-16T12:47:32.126Z",
+  "candidateCommit": "fac6c7dfa410aae5cc2182d0017ccbd95c002c31",
+  "baselineCommit": "7473c3e17b607a3c82595ee0b71b60331144bf97",
+  "platform": "ios",
+  "runtime": "1.1.10",
+  "published": false,
+  "previewAuthSocialMapboxPreflight": "passed; no Publish switch",
+  "jest": {
+    "suites": 9,
+    "tests": 83,
+    "passed": true
+  },
+  "typescript": "passed",
+  "lint": {
+    "errors": 0,
+    "existingWarnings": 213
+  },
+  "bundle": {
+    "path": "artifacts/festival-cache-first-20261016/export/_expo/static/js/ios/entry-101dd7e78e87ef9fc559a24d41109c4c.hbc",
+    "bytes": 5688520,
+    "sha256": "247facf91ba411d5a670b49f2cf6506ab5bd0d063f117d6e8c03aedf12f35215",
+    "modules": 2497
+  },
+  "iosExportAssets": 111,
+  "sourceMapSources": 2453,
+  "unexpectedQaSources": [],
+  "sourceChecks": [
+    {
+      "path": "app/_layout.tsx",
+      "matches": true,
+      "sha256": "8b104231c9cbaaff80091cc481a194e5bac332600c967024775f22cc79da4dd7"
+    },
+    {
+      "path": "app/index.tsx",
+      "matches": true,
+      "sha256": "ffda86346355942c39d49b980d558f1c87ccda3642729d83039b52b8afc95f35"
+    },
+    {
+      "path": "app/(tabs)/map.tsx",
+      "matches": true,
+      "sha256": "ae0ce18c8092cba590e1b5427af5eff06e57d352dfa442e1e8a69d6460c0bcdb"
+    },
+    {
+      "path": "components/map/AreaLocationBrowser.tsx",
+      "matches": true,
+      "sha256": "b72ccd6ace3bbecfc6c74d07f188a775a3799a5b5f9026206bfbdee08fb579fa"
+    },
+    {
+      "path": "hooks/useAreaActivities.ts",
+      "matches": true,
+      "sha256": "62efac073ec6c88a4efcdcc531d9a95ab0a39b096b8b2eb7dc768525b4143740"
+    },
+    {
+      "path": "utils/areaActivityCache.ts",
+      "matches": true,
+      "sha256": "d0b53aefa79ecf936c266f36ef18357a8c9005dc5b32021be76bc6ec0cbba9d9"
+    },
+    {
+      "path": "lib/api/firestoreEvents.ts",
+      "matches": true,
+      "sha256": "3602cce56fdf0dd39ad70e5ea553b3305235a553b16696656d58b04b04feeb20"
+    }
+  ],
+  "nativeEvidence": "Android debug client with synthetic standalone fixture; no iOS adoption claim"
+}
