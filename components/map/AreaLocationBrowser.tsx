@@ -1,12 +1,12 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { Event } from '../../types/events';
-import { fetchFirestoreEventById } from '../../lib/api/firestoreEvents';
+import { fetchFirestoreEventStatus } from '../../lib/api/firestoreEvents';
+import { useAreaActivities, type AreaActivityLoader } from '../../hooks/useAreaActivities';
 import { areEventIdsEquivalent } from '../../utils/firestoreEventIds';
-import { getAreaLinkedEventIds, getAvailableAreaLinkedEvents, type AreaLocationGroup } from '../../utils/areaEvent';
+import { getAreaLinkedEventIds, type AreaLocationGroup } from '../../utils/areaEvent';
 import { formatEventTimingSummary } from '../../utils/dateUtils';
 import { formatLightboxAddress } from '../../utils/lightboxAddress';
 import { getLightboxImageUrl } from '../../utils/lightboxImageUrl';
@@ -16,27 +16,24 @@ import FallbackImage from '../common/FallbackImage';
 import EventImageLightbox from './EventImageLightbox';
 
 type Props = { umbrella: Event; group: AreaLocationGroup; onClose: () => void;
-  loadEvent?: (id: string | number) => Promise<Event | null> };
+  loadEvent?: (id: string | number) => Promise<Event | null>; loadActivity?: AreaActivityLoader };
 
 /** Owns a small return stack: shared pin -> venue -> exact linked activity -> venue. */
-export default function AreaLocationBrowser({ umbrella, group, onClose, loadEvent = fetchFirestoreEventById }: Props) {
+export default function AreaLocationBrowser({ umbrella, group, onClose, loadEvent, loadActivity }: Props) {
   const insets = useSafeAreaInsets();
-  const queryClient = useQueryClient();
   const [locationId, setLocationId] = useState<string | null>(group.locations.length === 1 ? group.locations[0].id : null);
   const [selectedId, setSelectedId] = useState<string | number | null>(null);
-  const [opening, setOpening] = useState(false);
   const [notice, setNotice] = useState('');
-  const request = useRef(0);
-  const busy = useRef(false);
-  useEffect(() => () => { request.current++; }, []);
   useEventTimingMinute();
   const location = group.locations.find((candidate) => candidate.id === locationId);
+  const loader = useMemo<AreaActivityLoader>(() => loadActivity || (loadEvent ? async id => {
+    const event = await loadEvent(id);
+    // Legacy/custom null is ambiguous, so retain known cards and offer retry.
+    if (!event) throw new Error('Activity could not be confirmed');
+    return { status: 'found', event };
+  } : fetchFirestoreEventStatus), [loadActivity, loadEvent]);
+  const { activities, unresolved, isFetching, hasError, refresh, currentActivities } = useAreaActivities(umbrella, location, loader);
   const ids = useMemo(() => location ? getAreaLinkedEventIds(location) : [], [location]);
-  const queryKey = ['area-linked-events', String(umbrella.id), location?.id, ids.join(',')];
-  const query = useQuery({ queryKey, enabled: Boolean(location && ids.length), staleTime: 0, retry: 1,
-    queryFn: async () => (await Promise.all(ids.map(loadEvent))).filter((event): event is Event => Boolean(event)),
-  });
-  const activities = location ? getAvailableAreaLinkedEvents(umbrella, location, query.data || []) : [];
   const selectedIndex = activities.findIndex((event) => areEventIdsEquivalent(event.id, selectedId));
   const selected = selectedIndex < 0 ? null : activities[selectedIndex];
 
@@ -48,38 +45,17 @@ export default function AreaLocationBrowser({ umbrella, group, onClose, loadEven
     setSelectedId(valid.id);
   };
 
-  const openActivity = async (event: Event) => {
-    if (!location || busy.current) return;
-    busy.current = true;
-    setOpening(true); setNotice('');
-    const epoch = ++request.current;
-    try {
-      const fresh = await loadEvent(event.id);
-      if (epoch !== request.current) return;
-      const valid = fresh && getAvailableAreaLinkedEvents(umbrella, location, [fresh])
-        .find((candidate) => areEventIdsEquivalent(candidate.id, event.id));
-      queryClient.setQueryData<Event[]>(queryKey, (current = []) => [
-        ...current.filter((candidate) => !areEventIdsEquivalent(candidate.id, event.id)), ...(valid ? [valid] : []),
-      ]);
-      if (!valid) {
-        setSelectedId(null);
-        setNotice('Could not confirm this activity here. Check your connection or refresh the programme.');
-        return;
-      }
-      // Replace only an existing client-cache copy with this exact canonical
-      // response, so the standard lightbox cannot prefer an older store record.
-      adoptActivity(valid);
-    } catch {
-      if (epoch === request.current) setNotice('Could not refresh this activity. Please try again.');
-    } finally {
-      if (epoch === request.current) { busy.current = false; setOpening(false); }
-    }
+  const openActivity = (event: Event) => {
+    const valid = currentActivities().find(candidate => areEventIdsEquivalent(candidate.id, event.id));
+    if (!valid) { setSelectedId(null); setNotice('This activity is no longer available here. Refresh the programme.'); return; }
+    setNotice('');
+    adoptActivity(valid);
   };
-
-  const closeActivity = () => { request.current++; busy.current = false; setOpening(false); setSelectedId(null); };
+  const closeActivity = () => setSelectedId(null);
   const chooseLocation = (id: string | null) => {
-    request.current++; busy.current = false; setOpening(false); setNotice(''); setSelectedId(null); setLocationId(id);
+    setNotice(''); setSelectedId(null); setLocationId(id);
   };
+  useEffect(() => { if (selectedId !== null && !selected) setSelectedId(null); }, [selectedId, selected]);
   return <Modal transparent visible animationType="slide" statusBarTranslucent onRequestClose={onClose}>
     <View style={styles.scrim}>
       <Pressable style={StyleSheet.absoluteFill} accessibilityLabel="Close festival locations" onPress={onClose} />
@@ -112,19 +88,19 @@ export default function AreaLocationBrowser({ umbrella, group, onClose, loadEven
             {!!location.description && <Text style={styles.intro}>{location.description}</Text>}
             {!!location.timeLabel && <Text style={styles.secondary}>{location.timeLabel}</Text>}
             <View style={styles.sectionRow}><Text style={styles.sectionTitle}>Festival activities</Text>
-              <Text style={styles.count}>{activities.length}</Text></View>
+              <Text testID="festival-activity-count" style={styles.count}>{unresolved ? (activities.length ? activities.length + '+' : '…') : activities.length}</Text></View>
             <Text style={styles.secondary}>Upcoming activities from this festival’s linked programme.</Text>
-            {query.isFetching && !!ids.length && <View style={styles.loading}><ActivityIndicator color="#F6C84C" /><Text style={styles.secondary}>Checking programme…</Text></View>}
-            {!!notice && <Text accessibilityRole="alert" style={styles.notice}>{notice}</Text>}
-            {!query.isFetching && activities.length === 0 && <View style={styles.empty}>
+            {isFetching && unresolved && activities.length === 0 && !!ids.length && <View style={styles.loading}><ActivityIndicator color="#F6C84C" /><Text style={styles.secondary}>Loading activities…</Text></View>}
+            {!!(notice || hasError) && <Text accessibilityRole="alert" style={styles.notice}>{notice || (activities.length ? 'Some activities could not be refreshed. Available cards are still ready to open; try refreshing again.' : 'Activities could not be loaded. Check your connection and refresh the programme.')}</Text>}
+            {!unresolved && activities.length === 0 && <View style={styles.empty}>
               <MaterialIcons name="event-note" size={32} color="#F6C84C" />
               <Text style={styles.emptyTitle}>No linked activities available</Text>
               <Text style={styles.secondary}>{ids.length ? 'Activities may have ended or become unavailable. Check the festival programme for the latest details.'
                 : 'This is a festival location, but no upcoming activities have been linked here yet.'}</Text>
             </View>}
-            {activities.map((event) => <Pressable key={event.id} accessibilityRole="button" disabled={opening || query.isFetching}
+            {activities.map((event) => <Pressable key={event.id} accessibilityRole="button"
               accessibilityLabel={`Open ${event.title}, ${formatEventTimingSummary(event)}, ${event.venue}`}
-              onPress={() => void openActivity(event)} style={({ pressed }) => [styles.activity, pressed && styles.pressed]}>
+              onPress={() => openActivity(event)} style={({ pressed }) => [styles.activity, pressed && styles.pressed]}>
               <FallbackImage imageUrl={getLightboxImageUrl(event)} category={event.category} type={event.type} item={event}
                 fallbackType="post" resizeMode="cover" style={styles.poster} />
               <View style={styles.rowText}><Text style={styles.activityTime}>{formatEventTimingSummary(event)}</Text>
@@ -132,8 +108,8 @@ export default function AreaLocationBrowser({ umbrella, group, onClose, loadEven
                 <Text style={styles.secondary} numberOfLines={1}>{event.venue}</Text></View>
               <MaterialIcons name="chevron-right" size={22} color="#B9C7D6" />
             </Pressable>)}
-            {!!ids.length && <Pressable accessibilityRole="button" disabled={query.isFetching} onPress={() => void query.refetch()} style={styles.refresh}>
-              <MaterialIcons name="refresh" size={18} color="#8BC5FF" /><Text style={styles.linkHint}>Refresh programme</Text></Pressable>}
+            {!!ids.length && <Pressable accessibilityRole="button" disabled={isFetching} accessibilityLabel="Refresh festival programme" onPress={() => void refresh()} style={styles.refresh}>
+              <MaterialIcons name="refresh" size={18} color="#8BC5FF" /><Text style={styles.linkHint}>{isFetching ? 'Refreshing programme…' : 'Refresh programme'}</Text></Pressable>}
             {!!location.sourceLabel && <Text style={styles.source}>Source: {location.sourceLabel}</Text>}
           </>}
         </ScrollView>
@@ -141,7 +117,7 @@ export default function AreaLocationBrowser({ umbrella, group, onClose, loadEven
     </View>
     {selected && <Modal transparent visible animationType="fade" statusBarTranslucent presentationStyle="overFullScreen" onRequestClose={closeActivity}>
       <EventImageLightbox imageUrl={getLightboxImageUrl(selected)} event={selected} events={activities} currentIndex={selectedIndex}
-        calloutPaging onNavigate={(index) => { if (activities[index]) adoptActivity(activities[index]); }} onClose={closeActivity} />
+        calloutPaging onNavigate={(index) => { if (activities[index]) openActivity(activities[index]); }} onClose={closeActivity} />
     </Modal>}
   </Modal>;
 }

@@ -773,3 +773,23 @@ export async function fetchAllFirestoreEvents(
     return [];
   }
 }
+
+export type FirestoreEventStatus = { status: 'found'; event: Event } | { status: 'unavailable' };
+
+/** Only explicit absence may remove a cached activity; transient failures must throw. */
+export async function fetchFirestoreEventStatus(eventId: string | number, signal?: AbortSignal): Promise<FirestoreEventStatus> {
+  const id = toFirestoreEventId(eventId);
+  if (!id) throw new Error('Invalid event identity');
+  const response = await fetch(`${FIRESTORE_API_BASE}/events/${encodeURIComponent(id)}?dateOnlyActivities=v1`, { signal });
+  if (response.status === 404 || response.status === 410) return { status: 'unavailable' };
+  if (!response.ok) throw new Error('Event detail request failed: ' + response.status);
+  const payload = await response.json();
+  const raw = payload?.event || payload;
+  const validDate = (value: unknown) => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)
+    && Number.isFinite(new Date(value + 'T00:00:00Z').getTime())
+    && new Date(value + 'T00:00:00Z').toISOString().slice(0, 10) === value;
+  if (!raw || toFirestoreEventId(raw.id) !== id || typeof raw.title !== 'string' || !raw.title.trim()
+    || typeof raw.venueId !== 'string' || !raw.venueId.trim() || !validDate(raw.startDate)
+    || (raw.endDate && !validDate(raw.endDate))) throw new Error('Malformed event detail response');
+  return { status: 'found', event: normalizeFirestoreEvent(raw as FirestoreEvent) };
+}
