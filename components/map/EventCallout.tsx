@@ -118,6 +118,8 @@ declare global {
 }
 import { addEventToCalendarWithTiming } from '../../utils/calendarUtils';
 import EventImageLightbox from './EventImageLightbox';
+import { AreaMembershipNavigationProvider } from '../area/AreaMembershipNavigation';
+import { AreaEventMembershipLinks, VenueHuntMembershipLinks } from '../area/AreaMembershipLinks';
 
 import * as userService from '../../services/userService';
 import { useUserPrefsStore, updateSavedEvents } from '../../store/userPrefsStore';
@@ -845,7 +847,7 @@ interface VenueSelectorProps {
   deferInactiveVisuals?: boolean;
 }
 
-const VenueSelector: React.FC<VenueSelectorProps> = ({
+export const VenueSelector: React.FC<VenueSelectorProps> = ({
   venues,
   activeVenueIndex,
   onSelectVenue,
@@ -1020,7 +1022,7 @@ interface EventTabsProps {
   venueCount: number;
 }
 
-const EventTabs: React.FC<EventTabsProps> = ({ 
+export const EventTabs: React.FC<EventTabsProps> = ({
   activeTab, 
   onChangeTab, 
   eventCount, 
@@ -1799,7 +1801,7 @@ interface SpecialCardProps {
   testID?: string;
 }
 
-const SpecialCard: React.FC<SpecialCardProps> = ({ 
+export const SpecialCard: React.FC<SpecialCardProps> = ({
   event, 
   onSelectEvent,
   showVenueName = false,
@@ -2408,6 +2410,7 @@ return (
           })()}
         </View>
 
+        <AreaEventMembershipLinks event={event} />
         <EventSeriesContextLine event={event} containerStyle={styles.seriesContextLine} />
 
 
@@ -4543,7 +4546,7 @@ useEffect(() => {
     //                              `NORMAL`);
 
   return (
-    <>
+    <AreaMembershipNavigationProvider onShowRoute={onShowRoute}>
       {shouldRenderInternalDimOverlay && (
         <Animated.View 
           style={[
@@ -4736,6 +4739,7 @@ useEffect(() => {
           </View>
         )}
         
+        <VenueHuntMembershipLinks venue={activeVenue} filterType={activeTab === 'specials' || (!hasEvents && hasSpecials) ? 'special' : 'event'} />
         <Animated.View
           {...shellPanHandlers}
           collapsable={false}
@@ -4901,7 +4905,7 @@ useEffect(() => {
       {/* GUEST LIMITATION REGISTRATION PROMPT - ONLY FOR GUESTS */}
       {/* =============================================================== */}
       {isGuest && <RegistrationPrompt />}
-    </>
+    </AreaMembershipNavigationProvider>
   );
 };
 

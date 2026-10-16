@@ -231,6 +231,8 @@ interface EventImageLightboxProps {
   onShowRoute?: (event: Event) => void;
   // Optional callback when "View Venue" button is clicked
   onViewVenue?: () => void;
+  /** A parent-membership host supplies authoritative data and owns background validation. */
+  managedEventDetails?: boolean;
 }
 
 const EventImageLightbox: React.FC<EventImageLightboxProps> = ({
@@ -249,6 +251,7 @@ const EventImageLightbox: React.FC<EventImageLightboxProps> = ({
   isCityEvent = false,
   onShowRoute,
   onViewVenue,
+  managedEventDetails = false,
 }) => {
   useEventTimingMinute();
   const router = useRouter();
@@ -279,7 +282,7 @@ const EventImageLightbox: React.FC<EventImageLightboxProps> = ({
 
 
 // Use updated event data with fallback to original prop (keep prop fields!)
-  const updatedFromStore = getUpdatedEvent(event.id);
+  const updatedFromStore = managedEventDetails ? undefined : getUpdatedEvent(event.id);
   const updatedEvent = { ...event, ...(updatedFromStore || {}) };
   const galleryHeroUrl = getEventImageGalleryHeroUrl(
     imageUrl,
@@ -357,6 +360,7 @@ const EventImageLightbox: React.FC<EventImageLightboxProps> = ({
   const setPendingRouteEvent = useMapStore(s => s.setPendingRouteEvent);
 
   useEffect(() => {
+    if (managedEventDetails) return;
     const hasKnownMediaUrls = Array.isArray(updatedEvent?.mediaUrls);
     const shouldRefreshTrendingGallery =
       isTrending &&
@@ -374,6 +378,7 @@ const EventImageLightbox: React.FC<EventImageLightboxProps> = ({
     }
   }, [
     event.id,
+    managedEventDetails,
     fetchEventDetails,
     galleryImageUrls.length,
     isTrending,

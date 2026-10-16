@@ -793,3 +793,24 @@ export async function fetchFirestoreEventStatus(eventId: string | number, signal
     || (raw.endDate && !validDate(raw.endDate))) throw new Error('Malformed event detail response');
   return { status: 'found', event: normalizeFirestoreEvent(raw as FirestoreEvent) };
 }
+
+/** Parent detail validation accepts area roots without a venue ID. Child loader contract stays unchanged. */
+export async function fetchFirestoreMembershipRoot(eventId: string | number, signal?: AbortSignal): Promise<FirestoreEventStatus> {
+  const id = toFirestoreEventId(eventId);
+  if (!id) throw new Error('Invalid parent identity');
+  const response = await fetch(`${FIRESTORE_API_BASE}/events/${encodeURIComponent(id)}?dateOnlyActivities=v1`, { signal });
+  if (response.status === 404 || response.status === 410) return { status: 'unavailable' };
+  if (!response.ok) throw new Error('Parent detail request failed: ' + response.status);
+  const payload = await response.json();
+  const raw = payload?.event || payload;
+  const scope = raw?.locationScope ?? raw?.metadata?.locationScope;
+  const area = raw ? readEventAreaData(raw) : null;
+  const date = (value: unknown) => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)
+    && Number.isFinite(new Date(value + 'T00:00:00Z').getTime())
+    && new Date(value + 'T00:00:00Z').toISOString().slice(0, 10) === value;
+  if (!raw || toFirestoreEventId(raw.id) !== id || typeof raw.title !== 'string' || !raw.title.trim()
+    || !date(raw.startDate) || raw.endDate && !date(raw.endDate)
+    || !(['area', 'city', 'venue', 'route', 'province'].includes(scope) || typeof raw.venueId === 'string' && raw.venueId.trim())
+    || area != null && (typeof area !== 'object' || area.version !== 1 || !Array.isArray(area.locations))) throw new Error('Malformed parent detail response');
+  return { status: 'found', event: normalizeFirestoreEvent(raw as FirestoreEvent) };
+}
