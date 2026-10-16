@@ -1,0 +1,80 @@
+{
+  "checkedAt": "2026-10-16T13:32:20.733Z",
+  "candidateCommit": "07464b40993787215d2d0e5856b9f05b54c4fb6a",
+  "baselineCommit": "3f7659d10bc6952d4004b2d507b999db3c87cbd7",
+  "platform": "ios",
+  "runtime": "1.1.10",
+  "published": false,
+  "jest": {
+    "suites": 9,
+    "tests": 105,
+    "passed": true
+  },
+  "typescript": "passed",
+  "lint": {
+    "errors": 0,
+    "warnings": 213
+  },
+  "previewAuthSocialMapbox": "passed; no Publish switch",
+  "bundle": {
+    "path": "artifacts/area-hunt-presentation-20261016/export/_expo/static/js/ios/entry-82512d495dbac5d413d2e2f1ba3dd375.hbc",
+    "bytes": 5710656,
+    "sha256": "abae89ed036ee0c3be9c0ac34ca93b0fe4ff0f1eb80233e494d6edbf5bcb94f4",
+    "modules": 2498
+  },
+  "iosAssetMetadataEntries": 111,
+  "assetsEqualToBaseline": true,
+  "sourceMapSources": 2454,
+  "unexpectedQaSources": [],
+  "sourceChecks": [
+    {
+      "path": "app/_layout.tsx",
+      "matches": true,
+      "sha256": "8b104231c9cbaaff80091cc481a194e5bac332600c967024775f22cc79da4dd7"
+    },
+    {
+      "path": "app/index.tsx",
+      "matches": true,
+      "sha256": "ffda86346355942c39d49b980d558f1c87ccda3642729d83039b52b8afc95f35"
+    },
+    {
+      "path": "app/(tabs)/map.tsx",
+      "matches": true,
+      "sha256": "ae0ce18c8092cba590e1b5427af5eff06e57d352dfa442e1e8a69d6460c0bcdb"
+    },
+    {
+      "path": "utils/areaEventPresentation.ts",
+      "matches": true,
+      "sha256": "70dd1dc4fd8b040d8e2d1f63b0881f759a24f3e799e304192de63f9ce913ef46"
+    },
+    {
+      "path": "components/map/AreaLocationBrowser.tsx",
+      "matches": true,
+      "sha256": "d641ee109158462a35d1fe7025dec2161688797b23355f81acab72421dc022f0"
+    },
+    {
+      "path": "components/common/EventTimingSummaryText.tsx",
+      "matches": true,
+      "sha256": "27d348e7ea3e5f51205785efa3f89e434c4fa76f5729e4e55036b176d616c164"
+    },
+    {
+      "path": "components/map/EventImageLightbox.tsx",
+      "matches": true,
+      "sha256": "90563154512394bf239e4bcae891b24c6d490769fbec7b356b07cd2a672bd5b8"
+    }
+  ],
+  "unchangedProtectedFiles": [
+    "utils/dateUtils.ts",
+    "utils/eventTiming.ts",
+    "utils/calendarUtils.ts",
+    "hooks/useAreaActivities.ts",
+    "utils/areaActivityCache.ts",
+    "lib/api/firestoreEvents.ts",
+    "store/mapStore.ts",
+    "app.config.js",
+    "package.json",
+    "package-lock.json",
+    "eas.json"
+  ],
+  "visualEvidence": "Standalone Android native PNGs; shared JavaScript only; iOS device adoption unverified"
+}

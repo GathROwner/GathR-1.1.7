@@ -40,6 +40,9 @@ The saved `fixture.tsx.txt` is documentation only. The temporary runtime module 
 
 - Final restored-route Jest run: **9 suites / 105 tests pass**, covering new classifier/UI/normalization cases and existing cached loading, request limits, precedence, removals, paging, timing and route behavior.
 - Source normalization tests cover both top-level and `metadata.areaData` API shapes, preserving the full public instruction text and locations. Existing minimal/detail/store paths retain those fields; no normalization implementation was changed.
-- TypeScript, full lint and iOS Preview auth/social/Mapbox/export evidence are recorded in the final export report after completion. Command logs live under ignored `artifacts/area-hunt-presentation-20261016/`.
+- TypeScript passes; full lint passes with zero errors and 213 existing warnings. `git diff --check` passes. iOS Preview auth/account-continuity, both Social flags and Mapbox preflight pass without the Publish switch.
+- Clean production-mode iOS export passes: **2,498 modules**, **2,454 source-map sources**, **111 asset metadata entries**, assets identical to the accepted baseline. Hermes bundle: **5,710,656 bytes**, SHA256 `abae89ed036ee0c3be9c0ac34ca93b0fe4ff0f1eb80233e494d6edbf5bcb94f4`.
+- `export-check.json` verifies all four runtime files plus all three normal entrypoints against source-map contents/hashes, with zero QA/test sources. Protected timing/calendar/cache/API/store/native configuration files are unchanged. Export source is evidence commit `07464b4`; the later handoff commit only records export evidence.
+- Final live Preview list still shows the accepted iOS base group `6d7b29a3-e089-4d91-8374-6f88a7d6e506`, runtime `1.1.10`. Command logs/export live under ignored `artifacts/area-hunt-presentation-20261016/`.
 - Family-friendly labels and reverse festival/hunt membership navigation remain separate follow-ups.
 - No publication is authorized at this preparation gate; parent must independently review the clean export/source map first.
