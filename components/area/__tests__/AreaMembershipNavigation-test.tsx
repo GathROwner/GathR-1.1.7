@@ -41,6 +41,23 @@ const mount = async (content = <AreaEventMembershipLinks event={child} />) => {
 const button = () => tree.root.findAll(node => typeof node.props.onPress === 'function'
   && String(node.props.accessibilityLabel || '').startsWith('View '))[0];
 const details = () => tree.root.findAllByType('ParentDetails' as any);
+it('does not synchronously update mounted membership cards when a programme hook constructs a seeded query during render', async () => {
+  seed(); const error = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+  const Builder = () => {
+    client.getQueryCache().build(client, { queryKey: areaActivityKey(child.id),
+      initialData: { status: 'found', event: { ...child, title: 'Current child' }, checkedAt: instant } });
+    return null;
+  };
+  let enable!: () => void;
+  const Host = () => { const [build, setBuild] = React.useState(false); enable = () => setBuild(true);
+    return <><AreaEventMembershipLinks event={child} />{build && <Builder />}</>; };
+  await mount(<Host />);
+  act(() => enable()); await pump();
+  expect(button()).toBeTruthy();
+  expect(getAreaMembershipSnapshot(client).records.get('qa_child')?.event.title).toBe('Current child');
+  expect(error.mock.calls.flat().join(' ')).not.toContain('Cannot update a component');
+  error.mockRestore();
+});
 beforeEach(() => { jest.spyOn(Date, 'now').mockReturnValue(instant); client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: Infinity } } });
   useMapStore.setState({ events: [], allEvents: [], lastFetchedAt: null, filterCriteria: DEFAULT_FILTER_CRITERIA }); loader.mockReset(); });
 afterEach(() => { act(() => tree?.unmount()); client.clear(); jest.restoreAllMocks(); });

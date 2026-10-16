@@ -96,7 +96,16 @@ function createReader(client: QueryClient) {
   const listeners = new Set<() => void>(), tombstones = new Map<string, number>(), retained = new Map<string, RootAuthority>();
   let snapshot: ReturnType<typeof readAreaMembershipIndex> | undefined;
   let stopStore: (() => void) | undefined, stopCache: (() => void) | undefined;
-  const invalidate = () => { snapshot = undefined; listeners.forEach(listener => listener()); };
+  let queued = false;
+  const invalidate = (duringQueryBuild = false) => {
+    snapshot = undefined;
+    if (!duringQueryBuild) { queued = false; listeners.forEach(listener => listener()); return; }
+    // useQueries can construct a seeded query during render. Invalidate immediately,
+    // but notify other mounted cards after that render rather than setting their state inside it.
+    if (!queued) { queued = true; void Promise.resolve().then(() => {
+      if (queued) { queued = false; listeners.forEach(listener => listener()); }
+    }); }
+  };
   const getSnapshot = () => snapshot ||= readAreaMembershipIndex(client, useMapStore.getState(), tombstones, retained);
   const getLatest = () => { if (!listeners.size) snapshot = undefined; return getSnapshot(); };
   const subscribe = (listener: () => void) => {
@@ -109,7 +118,7 @@ function createReader(client: QueryClient) {
       });
       stopCache = client.getQueryCache().subscribe(event => {
         if (currentFeed(event.query.queryKey) || currentDetails(event.query.queryKey) || currentRoot(event.query.queryKey)) {
-          if (event.type === 'added' || event.type === 'removed' || event.type === 'updated' && event.action.type === 'success') invalidate();
+          if (event.type === 'added' || event.type === 'removed' || event.type === 'updated' && event.action.type === 'success') invalidate(event.type === 'added');
         }
       });
     }
