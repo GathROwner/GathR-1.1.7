@@ -27,4 +27,16 @@ After capture, the app and task-owned Metro were stopped; the emulator remains r
 - `app/index.tsx`: `FFDA86346355942C39D49B980D558F1C87CCDA3642729D83039B52B8AFC95F35`
 - `app/(tabs)/map.tsx`: `AE0CE18C8092CBA590E1B5427AF5EFF06E57D352DFA442E1E8A69D6460C0BCDB`
 
-The original 9513 checkout remains unchanged. No OTA has been published by this task. Final checks and iOS export are recorded separately after completion.
+The original 9513 checkout remains unchanged. No OTA has been published by this task.
+
+## Final validation and release candidate
+
+The clean source-and-QA candidate `62d09f584becf3d7ca0b56b1974396c281f3f322` passed all 139 focused tests in 12 suites, TypeScript, whitespace checking and full lint (0 errors, 215 existing warnings). The normal iOS Preview social/auth/account-continuity and Mapbox preflight passed without `-Publish`.
+
+Fresh EAS list and view captures separated stdout JSON from CLI warnings and parsed successfully. Latest iOS Preview remains group `a2233c4b-d417-40d6-ba6c-31871f66ed44`, update `01a144ee-6772-7448-bfa8-49054339dae9`, commit `896f6a53600ddac69f503c89d307e4d75bdf2f8c`, runtime `1.1.10`. Candidate ancestry was explicitly asserted.
+
+The clean production-mode iOS export contains 2,502 modules, 111 unchanged asset metadata entries and a 5,726,576-byte Hermes bundle. SHA256: `f2cc5596fb537f742be836e07cca13b83f3af3e00689bf71786937076ceaf850`.
+
+`export-check.json` records exact source-map matches for all seven runtime files and all three normal entry points. No QA fixture, docs or tests enter the graph. Existing API loaders are unchanged; the membership parent loader is appended. Protected timing, calendar, expiry, area-browser/cache, store, dependency, native and release configuration files remain unchanged. The final evidence commit only adds this report and the source/export manifest, so runtime source is identical to the exported candidate.
+
+Publication is intentionally held for independent coordinator review and a separate exact iOS Preview dispatch. Android shared-component screenshots do not establish iOS device adoption.
