@@ -87,6 +87,17 @@ async function run(fixture: Fixture, baseline = false) {
 }
 
 describe('event detail merge parity', () => {
+  it('retains reviewed venue programme membership on refresh/reconstruction and clears it when a new detail omits it', async () => {
+    const programmeData = { version: 1, status: 'verified', venueId: 'venue-1', linkedEventIds: ['child'],
+      sourceUrl: 'https://example.com/events/harvest-fest' };
+    const result = await run({ events: [event('fb_existing')], allEvents: [event('fb_existing')], ids: ['existing', 'new'],
+      raw: [{ id: 'existing', metadata: { programmeData } }, { id: 'new', venueId: 'venue-1', locationScope: 'venue',
+        startDate: '2040-10-13', startTime: '15:00', metadata: { programmeData } }], force: true });
+    expect(result.events.map(item => item.programmeData)).toEqual([programmeData, programmeData]);
+    const cleared = await run({ events: result.events, allEvents: result.allEvents, ids: ['existing'], raw: [{ id: 'existing' }], force: true });
+    expect(cleared.events[0].programmeData).toBeUndefined(); expect(cleared.allEvents[0].programmeData).toBeUndefined();
+    expect(cleared.events[1].programmeData).toEqual(programmeData);
+  });
   it.each(['No', 'Yes'])('normalizes saved %s flags in raw refreshes and detail-only reconstruction', async (flag) => {
     const source = dateOnlyActivity();
     const detail = (id: string) => ({ ...source, id, timing: undefined, isRecurring: undefined,

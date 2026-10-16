@@ -39,6 +39,8 @@ import GathRShimmerPill from '../common/GathRShimmerPill';
 import TicketCtaPill from '../common/TicketCtaPill';
 import EventActionLinkPill from '../common/EventActionLinkPill';
 import FamilyFriendlyBadge from '../common/FamilyFriendlyBadge';
+import VenueProgrammeBrowser from '../area/VenueProgrammeBrowser';
+import { getVenueProgrammeLocation } from '../../utils/eventProgramme';
 import { EventTimingBadge } from '../common/EventTimingBadge';
 import { EventTimingSummaryText } from '../common/EventTimingSummaryText';
 import { EventSeriesContextLine } from '../common/EventSeriesContextLine';
@@ -339,6 +341,7 @@ const EventImageLightbox: React.FC<EventImageLightboxProps> = ({
   const [friendListExpanded, setFriendListExpanded] = useState(false);
   const [timingDisclosureExpanded, setTimingDisclosureExpanded] = useState(false);
   const [scheduleExpanded, setScheduleExpanded] = useState(false);
+  const [programmeOpen, setProgrammeOpen] = useState(false);
 
   useEffect(() => {
     setTimingDisclosureExpanded(false);
@@ -1222,6 +1225,9 @@ const handleDirections = () => {
   const routeEvent = updatedEvent.locationScope === 'route';
   const routeMapExperience = hasRouteMapExperience(updatedEvent);
   const areaLocationsEvent = hasDrawableAreaLocations(updatedEvent);
+  const programmeLocation = getVenueProgrammeLocation(updatedEvent);
+  useEffect(() => { setProgrammeOpen(false); }, [updatedEvent.id]);
+  useEffect(() => { if (!programmeLocation) setProgrammeOpen(false); }, [programmeLocation]);
   const showAreaExperience = isCityEvent || isAreaExperienceEvent(updatedEvent);
   const drawableMapExperience = routeMapExperience || areaLocationsEvent;
   const routeSourceUrl = getRouteSourceUrl(updatedEvent);
@@ -2347,6 +2353,11 @@ const handleNonTicketAction = () => {
             </Text>
           </TouchableOpacity>
           
+          {programmeLocation && <TouchableOpacity accessibilityRole="button" accessibilityLabel="View programme"
+            style={styles.actionButton} onPress={() => setProgrammeOpen(true)}>
+            <MaterialIcons name="event-note" size={22} color="#F6C84C" />
+            <Text style={[styles.actionText, { color: '#F6C84C', fontWeight: '700' }]}>View programme</Text>
+          </TouchableOpacity>}
           {showAreaExperience ? (
             <View style={styles.routeActionSlot}>
               <GathRShimmerPill
@@ -2488,6 +2499,7 @@ const handleNonTicketAction = () => {
       )}
 
       {/* Full-Screen Image Viewer */}
+      {programmeOpen && programmeLocation && <VenueProgrammeBrowser key={updatedEvent.id} event={updatedEvent} onClose={() => setProgrammeOpen(false)} />}
       <ImageView
         images={images}
         imageIndex={galleryImageUrls.length > 0 ? selectedGalleryImageIndex : 0}

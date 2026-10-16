@@ -8,6 +8,7 @@ import { useMapStore } from '../../../store/mapStore';
 import { areaActivityKey } from '../../../utils/areaActivityCache';
 import { EVENTS_MINIMAL, EVENT_DETAILS_SCHEMA_VERSION } from '../../../lib/queryKeys';
 import { participationArea } from '../../../utils/__tests__/fixtures/areaParticipation';
+import { getVenueProgrammeLocation } from '../../../utils/eventProgramme';
 
 jest.mock('../../../config/firebaseConfig', () => ({ auth: { currentUser: null }, firestore: {} }));
 jest.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ top: 24, bottom: 24, left: 0, right: 0 }) }));
@@ -45,6 +46,25 @@ const text = () => JSON.stringify(tree.toJSON());
 const count = () => tree.root.findByProps({ testID: 'festival-activity-count' }).props.children;
 beforeEach(() => { seed([]); load.mockReset(); close.mockReset(); load.mockImplementation(async id => ({ status: 'found', event: id === 'second' ? second : film })); });
 afterEach(() => { act(() => tree?.unmount()); client?.clear(); });
+
+it('reuses immediate cached schedule, canonical child paging and return for a single venue without an area event or filter mutation', async () => {
+  const root = { ...umbrella, id: 'fb_harvest', type: 'event', title: 'Harvest Fest', venueId: 'tivoli', venue: 'Tivoli',
+    locationScope: 'venue', locationPrecision: 'exact', areaData: null,
+    programmeData: { version: 1, status: 'partial', venueId: 'tivoli', linkedEventIds: ['film', 'second'],
+      sourceUrl: 'https://example.com/events/harvest-fest', sourceLabel: 'Organiser programme' } } as Event;
+  const point = getVenueProgrammeLocation(root)!;
+  seed([film, second]); const before = useMapStore.getState();
+  await mount({ umbrella: root, venueProgramme: true, group: { id: point.id, coordinates: point.coordinates, locations: [point] } });
+  expect(count()).toBe(2); expect(load).not.toHaveBeenCalled(); expect(text()).toContain('Programme at this venue');
+  expect(text()).toContain('Festival activities'); expect(text()).not.toContain('Confirmed festival location');
+  act(() => rows()[0].props.onPress()); expect(tree.root.findByType('StandardLightbox' as any).props.event.id).toBe(film.id);
+  act(() => tree.root.findByType('StandardLightbox' as any).props.onNavigate(1));
+  expect(tree.root.findByType('StandardLightbox' as any).props.event.id).toBe(second.id);
+  act(() => tree.root.findByType('StandardLightbox' as any).props.onClose()); expect(count()).toBe(2);
+  expect(root.locationScope).toBe('venue'); expect(root.areaData).toBeNull();
+  expect(useMapStore.getState().events.map(item => item.id)).toEqual(before.events.map(item => item.id));
+  expect(close).not.toHaveBeenCalled(); expect(load).not.toHaveBeenCalled();
+});
 
 it('shows instructions, address and source for a public-shaped participation hunt without a fake missing programme', async () => {
   const hunt = participationArea(); const point = hunt.areaData!.locations[0];

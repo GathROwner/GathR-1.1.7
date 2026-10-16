@@ -119,6 +119,7 @@ import { EVENT_DETAILS_SCHEMA_VERSION, EVENTS_MINIMAL } from '../lib/queryKeys';
 import { normalizeVenueIdentityText } from '../utils/venueIdentity';
 import { createLegacyTimingContract, readVersion2EventTiming } from '../utils/eventTiming';
 import { readEventAreaData } from '../utils/eventAreaData';
+import { readEventProgrammeData } from '../utils/eventProgramme';
 import { normalizeRecurrenceFlag } from '../utils/eventRecurrence';
 import {
   isEventPastFast,
@@ -2212,6 +2213,7 @@ fetchEventDetails: async (
       mapMode: detail?.mapMode ?? detail?.metadata?.mapMode ?? null,
       routeData: detail?.routeData ?? null,
       areaData: readEventAreaData(detail ?? {}),
+      programmeData: readEventProgrammeData(detail ?? {}) ?? undefined,
       ticketLinkPosts: detail?.ticketLinkPosts || '',
       ticketLinkEvents: detail?.ticketLinkEvents || '',
       ticketsBuyUrl: detail?.ticketsBuyUrl || '',
@@ -2252,6 +2254,7 @@ fetchEventDetails: async (
     const isRecurringInstance = detail.isRecurringInstance ?? detail.metadata?.isRecurringInstance;
     return {
       ...detail,
+      programmeData: readEventProgrammeData(detail) ?? undefined,
       ...(readVersion2EventTiming(detail) ? { timing: readVersion2EventTiming(detail) } : {}),
       ...((detail.areaData !== undefined || detail.metadata?.areaData !== undefined)
         ? { areaData: readEventAreaData(detail) } : {}),

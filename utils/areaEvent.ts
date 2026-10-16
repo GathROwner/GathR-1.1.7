@@ -125,7 +125,8 @@ export const getAvailableAreaLinkedEvents = (umbrella: Event, location: EventAre
     if (!ids.has(id) || seen.has(id) || !start || !end || !childStart || !childEnd
       || childStart < start || childEnd > end || childEnd < childStart
       || event.venueId !== location.venueId || event.type !== 'event'
-      || event.friendEvent || event.isRecurring || event.isRecurringInstance || event.originalEventId
+      || event.friendEvent || ['private_shared', 'friend_event'].includes(event.source || '')
+      || event.isRecurring || event.isRecurringInstance || event.originalEventId
       || event.isCancelled || event.isExpired
       || ['cancelled', 'canceled', 'deleted', 'expired'].includes(String(event.status || '').trim().toLowerCase())
       || isEventPast(event, now) || (event.timing && !isEventDefaultMapEligible(event, now))) return false;

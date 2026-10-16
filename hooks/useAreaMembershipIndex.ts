@@ -5,6 +5,7 @@ import { useMapStore } from '../store/mapStore';
 import { EVENTS_MINIMAL, EVENT_DETAILS_SCHEMA_VERSION } from '../lib/queryKeys';
 import { normalizeFirestoreEvent } from '../lib/api/firestoreEvents';
 import { readEventAreaData, isExplicitTrue } from '../utils/eventAreaData';
+import { readEventProgrammeData } from '../utils/eventProgramme';
 import { readVersion2EventTiming } from '../utils/eventTiming';
 import { normalizeRecurrenceFlag } from '../utils/eventRecurrence';
 import { toFirestoreEventId } from '../utils/firestoreEventIds';
@@ -27,6 +28,7 @@ export function readAreaMembershipIndex(client: QueryClient, store: ActivityStor
     if (!raw || raw.id == null) return;
     const event: Event = raw.type === 'event' || raw.type === 'special' ? { ...raw,
       areaData: readEventAreaData(raw), description: raw.fullDescription || raw.metadata?.fullDescription || raw.description || '',
+      programmeData: readEventProgrammeData(raw),
       locationScope: raw.locationScope ?? raw.metadata?.locationScope,
       status: raw.status ?? raw.metadata?.status,
       originalEventId: raw.originalEventId ?? raw.metadata?.originalEventId,
@@ -76,12 +78,12 @@ export function readAreaMembershipIndex(client: QueryClient, store: ActivityStor
     const omitted = feed && feedTime > 0 && (!best || best.checkedAt <= feedTime) && !feedIds.has(id);
     if (!best || omitted || priorAbsence?.event === null && best.checkedAt <= priorAbsence.checkedAt) {
       unavailable.add(id);
-      if (omitted && (retained.has(id) || choices.some(choice => choice.event.locationScope === 'area')))
+      if (omitted && (retained.has(id) || choices.some(choice => choice.event.locationScope === 'area' || choice.event.programmeData)))
         retained.set(id, { event: null, checkedAt: feedTime, rank: 0 });
       continue;
     }
     records.set(id, best);
-    if (best.event.locationScope === 'area' || retained.has(id)) retained.set(id, best);
+    if (best.event.locationScope === 'area' || best.event.programmeData || retained.has(id)) retained.set(id, best);
   }
   for (const id of tombstones.keys()) if (!records.has(id)) unavailable.add(id);
   const unavailableAt = new Map([...unavailable].map(id => [id, Math.max(feedTime, tombstones.get(id) || 0,

@@ -21,6 +21,7 @@ import {
 } from '../../utils/ticketUrls';
 import { createLegacyTimingContract, getEventTiming } from '../../utils/eventTiming';
 import { readEventAreaData, isExplicitTrue } from '../../utils/eventAreaData';
+import { readEventProgrammeData } from '../../utils/eventProgramme';
 import { normalizeRecurrenceFlag } from '../../utils/eventRecurrence';
 import { toFirestoreEventId, toAppEventId } from '../../utils/firestoreEventIds';
 export { toFirestoreEventId, toAppEventId, areEventIdsEquivalent } from '../../utils/firestoreEventIds';
@@ -358,6 +359,7 @@ export function normalizeFirestoreEvent(fsEvent: FirestoreEvent): Event {
     mapMode: provinceScoped ? 'none' : fsEvent.mapMode ?? fsEvent.metadata?.mapMode ?? null,
     routeData: fsEvent.routeData ?? fsEvent.metadata?.routeData ?? null,
     areaData: readEventAreaData(fsEvent),
+    programmeData: readEventProgrammeData(fsEvent),
     status: fsEvent.status ?? fsEvent.metadata?.status,
     isCancelled: [fsEvent.isCancelled, fsEvent.cancelled, fsEvent.canceled, fsEvent.metadata?.isCancelled, fsEvent.metadata?.cancelled, fsEvent.metadata?.canceled].some(isExplicitTrue),
     isExpired: [fsEvent.isExpired, fsEvent.metadata?.isExpired].some(isExplicitTrue),

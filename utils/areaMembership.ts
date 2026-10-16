@@ -6,6 +6,7 @@ import { toFirestoreEventId } from './firestoreEventIds';
 import { addDaysToDateKey, formatLocalDateKey, getEventDateKey, isEventPast } from './eventExpiry';
 import { getUpcomingDateWindow } from './upcomingDateWindow';
 import { getEventOriginalSourceUrl, isOriginalEventSourceUrl } from './eventSourceUrl';
+import { getVenueProgrammeLocation } from './eventProgramme';
 
 export type MembershipRecord = { event: Event; checkedAt: number };
 export type AreaMembership = { parent: Event; checkedAt: number; venueId: string; childId?: string; childEvent?: Event; kind: 'programme' | 'hunt' };
@@ -47,15 +48,16 @@ export function buildAreaMembershipIndex(records: Map<string, MembershipRecord>,
   const byChild = new Map<string, AreaMembership[]>(), byVenue = new Map<string, AreaMembership[]>();
   for (const record of records.values()) {
     const root = record.event;
+    const venueProgramme = getVenueProgrammeLocation(root);
     if (unavailable.has(toFirestoreEventId(root.id)) || !isPublicMembershipEvent(root) || root.type !== 'event'
-      || root.locationScope !== 'area' || terminal(root) || !root.title?.trim()
-      || !Array.isArray(root.areaData?.locations) || root.areaData.locations.some(location => !location || typeof location !== 'object')
+      || (root.locationScope !== 'area' && !venueProgramme) || terminal(root) || !root.title?.trim()
+      || (!venueProgramme && (!Array.isArray(root.areaData?.locations) || root.areaData.locations.some(location => !location || typeof location !== 'object')))
       || typeof root.startDate !== 'string' || typeof (root.endDate || root.startDate) !== 'string'
       || !getEventDateKey(root.startDate) || !getEventDateKey(root.endDate || root.startDate)
       || root.endDate < root.startDate
-      || ![root.areaData?.sourceUrl, getEventOriginalSourceUrl(root)].some(url => typeof url === 'string' && isOriginalEventSourceUrl(url))) continue;
-    const hunt = getAreaEventPresentation(root) === 'hunt';
-    for (const location of getAreaLocations(root)) {
+      || ![root.programmeData?.sourceUrl, root.areaData?.sourceUrl, getEventOriginalSourceUrl(root)].some(url => typeof url === 'string' && isOriginalEventSourceUrl(url))) continue;
+    const hunt = !venueProgramme && getAreaEventPresentation(root) === 'hunt';
+    for (const location of venueProgramme ? [venueProgramme] : getAreaLocations(root)) {
       const venueId = location.venueId?.trim();
       if (location.certainty !== 'confirmed' || !venueId) continue;
       const base: AreaMembership = { parent: root, checkedAt: record.checkedAt, venueId, kind: hunt ? 'hunt' : 'programme' };
@@ -75,7 +77,7 @@ export function buildAreaMembershipIndex(records: Map<string, MembershipRecord>,
       if (!isPublicMembershipEvent(event) || !isPublicMembershipEvent(child) || event.type !== 'event'
         || child.type !== 'event' || !child.venueId || event.venueId !== child.venueId) return [];
       return sorted((byChild.get(pairKey(id, child.venueId)) || []).filter(item => currentRoot(item.parent, now)
-        && getAreaLocations(item.parent).some(location => location.venueId === child.venueId
+        && (item.parent.locationScope === 'venue' ? [getVenueProgrammeLocation(item.parent, now)].filter((point): point is NonNullable<typeof point> => !!point) : getAreaLocations(item.parent)).some(location => location.venueId === child.venueId
           && getAvailableAreaLinkedEvents(item.parent, location, [child], now).length > 0
           && getAvailableAreaLinkedEvents(item.parent, location, [event], now).length > 0))).map(item => ({ ...item, childEvent: child }));
     },

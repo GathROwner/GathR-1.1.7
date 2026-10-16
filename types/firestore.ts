@@ -100,6 +100,7 @@ export interface FirestoreEventMetadata {
   mapMode?: 'venue' | 'area' | 'route' | 'none' | null;
   routeData?: import('./events').EventRouteData | null;
   areaData?: import('./events').EventAreaData | null;
+  programmeData?: import('./events').EventProgrammeData | null;
   timing?: import('./events').EventTiming | null;
   timingContractVersion?: number;
   timeFlags?: unknown;
@@ -168,6 +169,7 @@ export interface FirestoreEvent {
   mapMode?: 'venue' | 'area' | 'route' | 'none' | null;
   routeData?: import('./events').EventRouteData | null;
   areaData?: import('./events').EventAreaData | null;
+  programmeData?: import('./events').EventProgrammeData | null;
   timing?: import('./events').EventTiming | null;
   timingContractVersion?: number;
   timeFlags?: unknown;

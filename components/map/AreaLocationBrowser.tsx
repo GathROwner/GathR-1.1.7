@@ -17,10 +17,10 @@ import FallbackImage from '../common/FallbackImage';
 import EventImageLightbox from './EventImageLightbox';
 
 type Props = { umbrella: Event; group: AreaLocationGroup; onClose: () => void;
-  loadEvent?: (id: string | number) => Promise<Event | null>; loadActivity?: AreaActivityLoader };
+  venueProgramme?: boolean; loadEvent?: (id: string | number) => Promise<Event | null>; loadActivity?: AreaActivityLoader };
 
 /** Owns a small return stack: shared pin -> venue -> exact linked activity -> venue. */
-export default function AreaLocationBrowser({ umbrella, group, onClose, loadEvent, loadActivity }: Props) {
+export default function AreaLocationBrowser({ umbrella, group, onClose, loadEvent, loadActivity, venueProgramme = false }: Props) {
   const insets = useSafeAreaInsets();
   const [locationId, setLocationId] = useState<string | null>(group.locations.length === 1 ? group.locations[0].id : null);
   const [selectedId, setSelectedId] = useState<string | number | null>(null);
@@ -28,7 +28,7 @@ export default function AreaLocationBrowser({ umbrella, group, onClose, loadEven
   useEventTimingMinute();
   const location = group.locations.find((candidate) => candidate.id === locationId);
   const presentation = getAreaEventPresentation(umbrella);
-  const programme = presentation === 'programme';
+  const programme = venueProgramme || presentation === 'programme';
   const hunt = presentation === 'hunt';
   const loader = useMemo<AreaActivityLoader>(() => loadActivity || (loadEvent ? async id => {
     const event = await loadEvent(id);
@@ -90,7 +90,7 @@ export default function AreaLocationBrowser({ umbrella, group, onClose, loadEven
           </> : <>
             {!!location.address && <View style={styles.contextRow}><MaterialIcons name="place" size={18} color="#F6C84C" />
               <Text style={styles.secondary}>{formatLightboxAddress(location.address)}</Text></View>}
-            <Text style={styles.certainty}>{hunt ? (location.certainty === 'confirmed' ? 'Participating hunt location' : 'Possible hunt location')
+            <Text style={styles.certainty}>{venueProgramme ? 'Programme at this venue' : hunt ? (location.certainty === 'confirmed' ? 'Participating hunt location' : 'Possible hunt location')
               : programme ? (location.certainty === 'confirmed' ? 'Confirmed festival location' : 'Possible festival location')
                 : (location.certainty === 'confirmed' ? 'Confirmed event location' : 'Possible event location')}</Text>
             {programme ? <>

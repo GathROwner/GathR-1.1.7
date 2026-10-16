@@ -301,6 +301,7 @@ export interface Event {
   mapMode?: 'venue' | 'area' | 'route' | 'none' | null;
   routeData?: EventRouteData | null;
   areaData?: EventAreaData | null;
+  programmeData?: EventProgrammeData | null;
 
   // Venue details (from Firestore venue object)
   venueRating?: number;
@@ -309,6 +310,17 @@ export interface Event {
   venueFacebookUrl?: string;
   venueInstagramUrl?: string;
   venueCategories?: string[];
+}
+
+/** Explicit reviewed membership at one canonical venue; never inferred occurrences. */
+export interface EventProgrammeData {
+  version: 1;
+  status: 'verified' | 'partial';
+  venueId: string;
+  linkedEventIds: string[];
+  sourceUrl: string;
+  sourceLabel?: string;
+  verifiedAt?: string;
 }
 
 /**
