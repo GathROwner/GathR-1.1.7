@@ -3,6 +3,7 @@ import renderer, { act } from 'react-test-renderer';
 
 import { createLegacyTimingContract } from '../../../utils/eventTiming';
 import { EventTimingSummaryText } from '../EventTimingSummaryText';
+import { participationArea } from '../../../utils/__tests__/fixtures/areaParticipation';
 
 const estimatedEndEvent = () => {
   const timing = createLegacyTimingContract(
@@ -27,6 +28,16 @@ const estimatedEndEvent = () => {
 };
 
 describe('EventTimingSummaryText', () => {
+  it('shows the original date range and an opening-hours check only for an affirmative unknown-clock hunt', () => {
+    let component: renderer.ReactTestRenderer;
+    act(() => { component = renderer.create(<EventTimingSummaryText event={participationArea()} />); });
+    const display = JSON.stringify(component!.toJSON());
+    expect(display).toContain('Oct 14 – Oct 18'); expect(display).toContain('Check location opening hours');
+    expect(display).not.toContain('See individual event times');
+    act(() => component!.update(<EventTimingSummaryText event={participationArea({ title: 'Autumn Festival' })} />));
+    expect(JSON.stringify(component!.toJSON())).toContain('See individual event times');
+    act(() => component!.unmount());
+  });
   it('puts the info control after the estimated end and expands its explanation', () => {
     let component: renderer.ReactTestRenderer;
     act(() => {

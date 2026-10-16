@@ -1,14 +1,26 @@
+import { normalizeFirestoreEvent } from '../firestoreEvents';
+import type { FirestoreEvent } from '../../../types/firestore';
+import { getEventScheduleState } from '../../../utils/eventTiming';
+import { formatEventTimingSummary } from '../../../utils/dateUtils';
+import { participationArea } from '../../../utils/__tests__/fixtures/areaParticipation';
+import { getAreaEventPresentation } from '../../../utils/areaEventPresentation';
+
 jest.mock('../../../config/firebaseConfig', () => ({
   auth: { currentUser: null },
   firestore: {},
 }));
 
-import { normalizeFirestoreEvent } from '../firestoreEvents';
-import type { FirestoreEvent } from '../../../types/firestore';
-import { getEventScheduleState } from '../../../utils/eventTiming';
-import { formatEventTimingSummary } from '../../../utils/dateUtils';
-
 describe('Firestore multi-location area field mapping', () => {
+  it.each(['top-level', 'metadata'])('preserves public participation evidence through %s area normalization', placement => {
+    const source = participationArea();
+    const record = { id: 'qa_normalization', title: source.title, description: 'Short listing.', fullDescription: source.description,
+      startDate: source.startDate, endDate: source.endDate, startTime: '', endTime: '', isEvent: true,
+      ...(placement === 'top-level' ? { locationScope: 'area', areaData: source.areaData }
+        : { metadata: { locationScope: 'area', areaData: source.areaData } }) } as FirestoreEvent;
+    const event = normalizeFirestoreEvent(record);
+    expect(event.description).toBe(source.description); expect(event.areaData).toEqual(source.areaData);
+    expect(getAreaEventPresentation(event)).toBe('hunt');
+  });
   it.each(['2026-10-15T15:00:00Z', '2026-10-18T22:00:00Z'])('keeps a normalized date-only area overview discoverable on %s', (instant) => {
     const event = normalizeFirestoreEvent({ id: 'festival', title: 'Festival', startDate: '2026-10-14', endDate: '2026-10-18',
       startTime: '', endTime: '', metadata: { locationScope: 'area', mapMode: 'area', timing: {

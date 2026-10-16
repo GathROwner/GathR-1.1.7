@@ -7,6 +7,7 @@ import AreaLocationBrowser from '../AreaLocationBrowser';
 import { useMapStore } from '../../../store/mapStore';
 import { areaActivityKey } from '../../../utils/areaActivityCache';
 import { EVENTS_MINIMAL, EVENT_DETAILS_SCHEMA_VERSION } from '../../../lib/queryKeys';
+import { participationArea } from '../../../utils/__tests__/fixtures/areaParticipation';
 
 jest.mock('../../../config/firebaseConfig', () => ({ auth: { currentUser: null }, firestore: {} }));
 jest.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ top: 24, bottom: 24, left: 0, right: 0 }) }));
@@ -20,7 +21,8 @@ const venue = { id: 'tivoli', label: 'Tivoli', venueId: 'tivoli', certainty: 'co
   coordinates: { latitude: 46.23, longitude: -63.12 }, linkedEventIds: ['film', 'second'] };
 const group = { id: 'shared', coordinates: venue.coordinates, locations: [venue,
   { ...venue, id: 'dali', label: 'Dali', venueId: 'dali', linkedEventIds: [] }] };
-const umbrella = { id: 'festival', title: 'Anchor Fest', startDate: '2040-10-14', endDate: '2040-10-18', startTime: '', endTime: '' } as Event;
+const umbrella = { id: 'festival', title: 'Anchor Fest', startDate: '2040-10-14', endDate: '2040-10-18', startTime: '', endTime: '',
+  locationScope: 'area', areaData: { version: 1, status: 'verified', locations: group.locations } } as Event;
 const film = { id: 'fb_film', type: 'event', title: 'Film One', venue: 'Tivoli', venueId: 'tivoli', category: 'Cinema',
   startDate: '2040-10-16', endDate: '2040-10-16', startTime: '19:00', endTime: '21:00' } as Event;
 const second = { ...film, id: 'fb_second', title: 'Film Two', startTime: '22:00', endTime: '23:00' };
@@ -43,6 +45,41 @@ const text = () => JSON.stringify(tree.toJSON());
 const count = () => tree.root.findByProps({ testID: 'festival-activity-count' }).props.children;
 beforeEach(() => { seed([]); load.mockReset(); close.mockReset(); load.mockImplementation(async id => ({ status: 'found', event: id === 'second' ? second : film })); });
 afterEach(() => { act(() => tree?.unmount()); client?.clear(); });
+
+it('shows instructions, address and source for a public-shaped participation hunt without a fake missing programme', async () => {
+  const hunt = participationArea(); const point = hunt.areaData!.locations[0];
+  await mount({ umbrella: hunt, group: { id: point.id, coordinates: point.coordinates, locations: [point] } });
+  expect(text()).toContain('Participating hunt location'); expect(text()).toContain('Take part here');
+  expect(text()).toContain('Take a selfie'); expect(text()).toContain('Check location opening hours before visiting.');
+  expect(text()).toContain(point.address!); expect(text()).toContain(hunt.areaData!.sourceLabel!);
+  expect(text()).not.toContain('Festival activities'); expect(text()).not.toContain('No linked activities');
+  expect(tree.root.findAllByProps({ testID: 'festival-activity-count' })).toHaveLength(0);
+  expect(tree.root.findAllByProps({ accessibilityLabel: 'Refresh festival programme' })).toHaveLength(0);
+  expect(load).not.toHaveBeenCalled();
+});
+it('keeps a genuinely unlinked festival programme honest', async () => {
+  const festival = participationArea({ title: 'Autumn Arts Festival', description: 'A festival across local venues.' });
+  const point = festival.areaData!.locations[0];
+  await mount({ umbrella: festival, group: { id: point.id, coordinates: point.coordinates, locations: [point] } });
+  expect(count()).toBe(0); expect(text()).toContain('Confirmed festival location');
+  expect(text()).toContain('no upcoming activities have been linked here yet'); expect(text()).not.toContain('Take part here');
+});
+it('uses neutral details for an unrelated area instead of festival assumptions', async () => {
+  const generic = participationArea({ title: 'Outdoor Art Walk', description: 'Artwork around the neighbourhood.' });
+  const point = generic.areaData!.locations[0];
+  await mount({ umbrella: generic, group: { id: point.id, coordinates: point.coordinates, locations: [point] } });
+  expect(text()).toContain('Confirmed event location'); expect(text()).toContain('About this location');
+  expect(text()).not.toContain('Festival activities'); expect(text()).not.toContain('Take part here');
+});
+it.each(['unavailable', 'expired'])('keeps explicit hunt-title links in programme mode even when every linked child is %s', async status => {
+  const hunt = participationArea(); const point = { ...hunt.areaData!.locations[0], linkedEventIds: ['qa_missing'] };
+  hunt.areaData!.locations[0] = point;
+  load.mockResolvedValue(status === 'unavailable' ? { status: 'unavailable' }
+    : { status: 'found', event: { ...film, id: 'fb_qa_missing', venueId: point.venueId, isExpired: true } });
+  await mount({ umbrella: hunt, group: { id: point.id, coordinates: point.coordinates, locations: [point] } });
+  expect(load).toHaveBeenCalledTimes(1); expect(count()).toBe(0); expect(text()).toContain('No linked activities available');
+  expect(text()).not.toContain('Take part here'); expect(tree.root.findByProps({ accessibilityLabel: 'Refresh festival programme' })).toBeTruthy();
+});
 
 it('requires a venue choice and fetches only its explicit IDs', async () => {
   await mount(); expect(load).not.toHaveBeenCalled(); await press('View festival activities at Tivoli');

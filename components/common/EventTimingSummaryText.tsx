@@ -12,8 +12,10 @@ import {
 import type { Event } from '../../types/events';
 import { formatEventTimingSummary } from '../../utils/dateUtils';
 import { getEventTimeRangeParts, getEventTimingDisclosure } from '../../utils/eventTiming';
+import { getAreaParticipationTimingLabel } from '../../utils/areaEventPresentation';
 
-type TimingEvent = Pick<Event, 'startDate' | 'startTime' | 'endDate' | 'endTime' | 'timing'>;
+type TimingEvent = Pick<Event, 'startDate' | 'startTime' | 'endDate' | 'endTime' | 'timing'>
+  & Partial<Pick<Event, 'title' | 'description' | 'locationScope' | 'areaData'>>;
 
 interface EventTimingSummaryTextProps {
   event: TimingEvent;
@@ -48,11 +50,13 @@ export function EventTimingSummaryText({
   showStatusPrefix = true,
 }: EventTimingSummaryTextProps) {
   const [expanded, setExpanded] = useState(false);
-  const parts = getEventTimeRangeParts(event);
+  const originalParts = getEventTimeRangeParts(event);
+  const participationLabel = getAreaParticipationTimingLabel(event, originalParts.text);
+  const parts = participationLabel ? { ...originalParts, prefix: participationLabel, text: participationLabel } : originalParts;
   const disclosure = getEventTimingDisclosure(event);
   const summary = formatEventTimingSummary(event);
-  const summaryPrefix = summary.endsWith(parts.text)
-    ? summary.slice(0, -parts.text.length)
+  const summaryPrefix = summary.endsWith(originalParts.text)
+    ? summary.slice(0, -originalParts.text.length)
     : '';
   const hasEstimateMarker = showInfoMarker && (parts.startEstimated || parts.endEstimated);
   const flattenedTextStyle = StyleSheet.flatten(style);

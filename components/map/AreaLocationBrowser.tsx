@@ -7,6 +7,7 @@ import { fetchFirestoreEventStatus } from '../../lib/api/firestoreEvents';
 import { useAreaActivities, type AreaActivityLoader } from '../../hooks/useAreaActivities';
 import { areEventIdsEquivalent } from '../../utils/firestoreEventIds';
 import { getAreaLinkedEventIds, type AreaLocationGroup } from '../../utils/areaEvent';
+import { cleanAreaPresentationText, getAreaEventPresentation, getAreaParticipationInstructions } from '../../utils/areaEventPresentation';
 import { formatEventTimingSummary } from '../../utils/dateUtils';
 import { formatLightboxAddress } from '../../utils/lightboxAddress';
 import { getLightboxImageUrl } from '../../utils/lightboxImageUrl';
@@ -26,6 +27,9 @@ export default function AreaLocationBrowser({ umbrella, group, onClose, loadEven
   const [notice, setNotice] = useState('');
   useEventTimingMinute();
   const location = group.locations.find((candidate) => candidate.id === locationId);
+  const presentation = getAreaEventPresentation(umbrella);
+  const programme = presentation === 'programme';
+  const hunt = presentation === 'hunt';
   const loader = useMemo<AreaActivityLoader>(() => loadActivity || (loadEvent ? async id => {
     const event = await loadEvent(id);
     // Legacy/custom null is ambiguous, so retain known cards and offer retry.
@@ -58,7 +62,7 @@ export default function AreaLocationBrowser({ umbrella, group, onClose, loadEven
   useEffect(() => { if (selectedId !== null && !selected) setSelectedId(null); }, [selectedId, selected]);
   return <Modal transparent visible animationType="slide" statusBarTranslucent onRequestClose={onClose}>
     <View style={styles.scrim}>
-      <Pressable style={StyleSheet.absoluteFill} accessibilityLabel="Close festival locations" onPress={onClose} />
+      <Pressable style={StyleSheet.absoluteFill} accessibilityLabel="Close event locations" onPress={onClose} />
       <View style={[styles.sheet, { marginTop: insets.top + 24, paddingBottom: Math.max(16, insets.bottom) }]}>
         <View style={styles.grabber} />
         <View style={styles.header}>
@@ -66,25 +70,30 @@ export default function AreaLocationBrowser({ umbrella, group, onClose, loadEven
             onPress={() => chooseLocation(null)} style={styles.iconButton}><MaterialIcons name="arrow-back" size={23} color="#FFFFFF" /></Pressable>}
           <View style={styles.heading}><Text style={styles.festival} numberOfLines={1}>{umbrella.title}</Text>
             <Text style={styles.title}>{location?.label || `${group.locations.length} venues at this location`}</Text></View>
-          <Pressable accessibilityRole="button" accessibilityLabel="Close festival locations" onPress={onClose} style={styles.iconButton}>
+          <Pressable accessibilityRole="button" accessibilityLabel="Close event locations" onPress={onClose} style={styles.iconButton}>
             <MaterialIcons name="close" size={23} color="#FFFFFF" /></Pressable>
         </View>
         <ScrollView style={styles.body} contentContainerStyle={styles.bodyContent}>
           {!location ? <>
-            <Text style={styles.intro}>These venues share the same map location. Choose a venue to see its festival programme.</Text>
+            <Text style={styles.intro}>{programme ? 'These venues share the same map location. Choose a venue to see its festival programme.'
+              : hunt ? 'These participating venues share the same location. Choose one to see how to take part.'
+                : 'These venues share the same location. Choose one to see its details.'}</Text>
             {group.locations.map((candidate) => <Pressable key={candidate.id} accessibilityRole="button"
-              accessibilityLabel={`View festival activities at ${candidate.label}`} onPress={() => chooseLocation(candidate.id)}
+              accessibilityLabel={`${programme ? 'View festival activities at' : 'View location details at'} ${candidate.label}`} onPress={() => chooseLocation(candidate.id)}
               style={({ pressed }) => [styles.venueRow, pressed && styles.pressed]}>
               <View style={styles.pin}><MaterialIcons name="place" size={24} color="#F6C84C" /></View>
               <View style={styles.rowText}><Text style={styles.rowTitle}>{candidate.label}</Text>
                 {!!candidate.address && <Text style={styles.secondary}>{formatLightboxAddress(candidate.address)}</Text>}
-                <Text style={styles.linkHint}>{getAreaLinkedEventIds(candidate).length ? 'View festival activities' : 'View location details'}</Text></View>
+                <Text style={styles.linkHint}>{getAreaLinkedEventIds(candidate).length ? 'View festival activities' : hunt ? 'See how to take part' : 'View location details'}</Text></View>
               <MaterialIcons name="chevron-right" size={24} color="#B9C7D6" />
             </Pressable>)}
           </> : <>
             {!!location.address && <View style={styles.contextRow}><MaterialIcons name="place" size={18} color="#F6C84C" />
               <Text style={styles.secondary}>{formatLightboxAddress(location.address)}</Text></View>}
-            <Text style={styles.certainty}>{location.certainty === 'confirmed' ? 'Confirmed festival location' : 'Possible festival location'}</Text>
+            <Text style={styles.certainty}>{hunt ? (location.certainty === 'confirmed' ? 'Participating hunt location' : 'Possible hunt location')
+              : programme ? (location.certainty === 'confirmed' ? 'Confirmed festival location' : 'Possible festival location')
+                : (location.certainty === 'confirmed' ? 'Confirmed event location' : 'Possible event location')}</Text>
+            {programme ? <>
             {!!location.description && <Text style={styles.intro}>{location.description}</Text>}
             {!!location.timeLabel && <Text style={styles.secondary}>{location.timeLabel}</Text>}
             <View style={styles.sectionRow}><Text style={styles.sectionTitle}>Festival activities</Text>
@@ -110,7 +119,18 @@ export default function AreaLocationBrowser({ umbrella, group, onClose, loadEven
             </Pressable>)}
             {!!ids.length && <Pressable accessibilityRole="button" disabled={isFetching} accessibilityLabel="Refresh festival programme" onPress={() => void refresh()} style={styles.refresh}>
               <MaterialIcons name="refresh" size={18} color="#8BC5FF" /><Text style={styles.linkHint}>{isFetching ? 'Refreshing programme…' : 'Refresh programme'}</Text></Pressable>}
-            {!!location.sourceLabel && <Text style={styles.source}>Source: {location.sourceLabel}</Text>}
+            </> : <View style={styles.participation} testID="area-location-instructions">
+              <View style={styles.contextRow}><MaterialIcons name={hunt ? 'photo-camera' : 'info-outline'} size={23} color="#F6C84C" />
+                <Text style={styles.sectionTitle}>{hunt ? 'Take part here' : 'About this location'}</Text></View>
+              {(hunt ? getAreaParticipationInstructions(umbrella, location)
+                : [cleanAreaPresentationText(location.description || umbrella.description || umbrella.areaData?.description)
+                  || 'This is one of the event’s listed locations. Check the source for visit details.'])
+                .map((instruction, index) => <Text key={index} style={styles.intro}>{instruction}</Text>)}
+              {!!location.timeLabel && <Text style={styles.secondary}>{cleanAreaPresentationText(location.timeLabel)}</Text>}
+              {hunt && <View style={styles.accessAdvice}><MaterialIcons name="schedule" size={18} color="#AEBCCA" />
+                <Text style={styles.secondary}>Check location opening hours before visiting.</Text></View>}
+            </View>}
+            {!!(location.sourceLabel || umbrella.areaData?.sourceLabel) && <Text style={styles.source}>Source: {cleanAreaPresentationText(location.sourceLabel || umbrella.areaData?.sourceLabel)}</Text>}
           </>}
         </ScrollView>
       </View>
@@ -142,6 +162,8 @@ const styles = StyleSheet.create({
   poster: { width: 68, height: 86, borderRadius: 9 }, activityTime: { color: '#F6C84C', fontSize: 12, fontWeight: '600', lineHeight: 17 },
   loading: { flexDirection: 'row', gap: 10, paddingVertical: 12, alignItems: 'center' }, notice: { color: '#FFE4A2', fontSize: 13, lineHeight: 20 },
   empty: { borderRadius: 16, padding: 22, gap: 12, backgroundColor: '#1C2937' }, emptyTitle: { color: '#FFFFFF', fontSize: 17, fontWeight: '600' },
+  participation: { borderRadius: 16, padding: 18, gap: 14, backgroundColor: '#1C2937', marginTop: 4 },
+  accessAdvice: { flexDirection: 'row', alignItems: 'center', gap: 8, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#405063', paddingTop: 12 },
   refresh: { alignSelf: 'center', minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 7, marginTop: 8 },
   source: { color: '#8D9EAE', fontSize: 11, lineHeight: 16, marginTop: 8 },
 });

@@ -78,6 +78,7 @@ import {
   getAreaSourceUrl,
   hasDrawableAreaLocations,
 } from '../../utils/areaEvent';
+import { getAreaParticipationTimingLabel } from '../../utils/areaEventPresentation';
 import { getVenueFriendPresence } from '../../utils/friendPresence';
 import { formatFriendsHere } from '../../utils/friendDestinations';
 import {
@@ -91,6 +92,7 @@ import {
 import {
   getEventScheduleState,
   getEventTimingDisclosure,
+  getEventTimeRangeParts,
 } from '../../utils/eventTiming';
 import { getEventScheduleContext } from '../../utils/eventSeries';
 import { getEventOriginalSourceUrl } from '../../utils/eventSourceUrl';
@@ -1391,7 +1393,11 @@ const handleNonTicketAction = () => {
   const isHappeningNow = timeStatus === 'now';
 
   // One shared provenance-aware time sentence across every app surface.
-  const baseDateText = formatEventTimingSummary(updatedEvent);
+  const standardDateText = formatEventTimingSummary(updatedEvent);
+  const timeRangeText = getEventTimeRangeParts(updatedEvent).text;
+  const participationTimeLabel = getAreaParticipationTimingLabel(updatedEvent, timeRangeText);
+  const baseDateText = participationTimeLabel && standardDateText.endsWith(timeRangeText)
+    ? standardDateText.slice(0, -timeRangeText.length) + participationTimeLabel : standardDateText;
   const scheduleContext = getEventScheduleContext(updatedEvent);
   const displayUntilDate = scheduleContext ? undefined : getEventDisplayUntilDate(updatedEvent);
   const endDateSuffix =
