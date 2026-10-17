@@ -35,3 +35,5 @@ The emulator's qemu process crashed twice with Windows exception0xc0000005 while
 Original root/index restored byte-for-byte. Map restored to the exact intended candidate snapshot (baseline plus the four-line prop), with no QA route stub retained. Both temporary fixture root modules and QA environment removed; owned Metro stopped. `restoration.json` records matching hashes and the exact intentional map delta. Installed application/data preserved, no backend/Firestore/Production/Android publication or native build.
 
 Final restored-source validation:7suites /65tests pass, TypeScript passes, lint0errors /215existing warnings, diff check passes. The existing accepted runtime implementation is unchanged outside the four-line global host prop.
+
+Expanded release preparation subsequently passed23suites /269tests /1existing benchmark skip and a clean iOS-only export audit; see RELEASE-PREP.md and export-check.json. Publication remains held for independent review and the unresolved visual acceptance gate.
