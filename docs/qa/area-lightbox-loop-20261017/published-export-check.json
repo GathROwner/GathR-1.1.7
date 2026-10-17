@@ -1,0 +1,66 @@
+{
+  "checkedAt": "2026-10-17T15:06:06.726Z",
+  "head": "d4a058cefe61ea503b785a6cd2cca4d3df14b372",
+  "clean": true,
+  "platform": "ios",
+  "runtime": "1.1.10",
+  "bundleBytes": 5736488,
+  "sha256": "7538dce13b5c88cf851068d6affd44a261c1c4595bee2cacdcf7b042c11429c3",
+  "byteEqualToReviewedExport": true,
+  "modules": 2505,
+  "assets": 111,
+  "assetMetadataAndBytesEqualToReviewedExport": true,
+  "sourceMapSources": 2461,
+  "allRuntimeSourceContentsEqualToReviewedExport": true,
+  "unexpectedQaSources": [],
+  "checks": [
+    {
+      "path": "app/(tabs)/map.tsx",
+      "matches": true
+    },
+    {
+      "path": "components/map/EventCallout.tsx",
+      "matches": true
+    },
+    {
+      "path": "utils/lightboxNavigation.ts",
+      "matches": true
+    },
+    {
+      "path": "app/_layout.tsx",
+      "matches": true
+    },
+    {
+      "path": "app/index.tsx",
+      "matches": true
+    },
+    {
+      "path": "components/map/EventImageLightbox.tsx",
+      "matches": true
+    },
+    {
+      "path": "components/map/InterestsCarousel.tsx",
+      "matches": true
+    },
+    {
+      "path": "components/map/AreaLocationBrowser.tsx",
+      "matches": true
+    },
+    {
+      "path": "components/area/VenueProgrammeBrowser.tsx",
+      "matches": true
+    },
+    {
+      "path": "utils/calloutLightbox.ts",
+      "matches": true
+    }
+  ],
+  "authorization": {
+    "directUserReply": "Yes you may publish it, I am sick of you asking. Amend the skill to say that you can publish it if you have confidence that you have completed the task.",
+    "scope": "Reviewed area overview loop patch, iOS Preview only; unavailable post-fix native visual check disclosed",
+    "relayedByCoordinator": true
+  },
+  "emulatorReconnectAttempted": false,
+  "afterFixNativeVisuallyVerified": false,
+  "iPhoneAdoptionVerified": false
+}

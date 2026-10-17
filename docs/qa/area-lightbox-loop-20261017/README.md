@@ -1,6 +1,6 @@
 # Area overview lightbox looping — candidate for review
 
-**Not published. No new native visual verification or visual-gate waiver.**
+**Published to iOS Preview as OTA01a14a65 under Craig's explicit authorization. Native post-fix visual verification and iPhone adoption remain pending.** See RELEASE.md; prepublication evidence below is retained.
 
 Functional/tested export commit: `9afa0df43dab2a9576e2b955e376472631f820f3`, branch `codex/carousel-boundaries-20261017`, checkout `C:\Users\craig\.codex\worktrees\carousel-boundaries\GathR-upgrade-sdk54`. Documentation-only evidence commits follow without changing that runtime tree.
 
@@ -42,8 +42,8 @@ Local artifacts: `artifacts/area-lightbox-loop-20261017/` contains before/focuse
 
 ## Visual/release gate
 
-No genuinely available post-fix native screenshot exists for this patch. Previous emulator reconnect/local-manifest requests were policy-blocked even after connection approval; this task did not retry them through any tool or method. The permitted prior read-only capture showed Android launcher/System UI ANR, not a loaded GathR client, and is not offered as area-fix acceptance. Craig's earlier visual waiver covered only the Trending patch; it is not applied here.
+No genuinely available post-fix native screenshot exists for this patch. Previous emulator reconnect/local-manifest requests were policy-blocked even after connection approval; this task did not retry them through any tool or method. The permitted prior read-only capture showed Android launcher/System UI ANR, not a loaded GathR client, and is not offered as area-fix acceptance. Craig's earlier Trending waiver was not inherited during preparation. He subsequently explicitly authorized this area publication after disclosure of the gap; see RELEASE.md.
 
-**Stop before publication.** Root must independently review the concrete source/export and make one new scoped visual-gap/iOSPreview release decision with Craig. No Android/Production publication, native build, backend/data change or map interaction is authorized or performed. iPhone adoption of this area candidate is not claimed.
+Publication was initially held for independent review and the visual-evidence gap. Root reviewed the concrete source/export, and Craig explicitly authorized iOSPreview publication despite the gap. No Android/Production publication, native build, backend/data change or map interaction was authorized or performed. iPhone adoption is not claimed.
 
-Root subsequently independently accepted the source/tests/export comparison, including all2461sources, all111asset bytes and the exact candidate bundle hash. The separate scoped visual-gap/publication decision remains pending; no release has occurred.
+Root independently accepted the source/tests/export comparison, then independently verified published live metadata and actual remote bundle bytes. Exact release/readback evidence and Craig's standing confidence-based Preview authority are recorded in RELEASE.md.
