@@ -1,0 +1,149 @@
+{
+  "checkedAt": "2026-10-17T14:56:38.163Z",
+  "candidateCommit": "9afa0df43dab2a9576e2b955e376472631f820f3",
+  "baselineCommit": "12025d15da05f4d5832cd3ff5129c5fdbdd9b553",
+  "platform": "ios",
+  "runtime": "1.1.10",
+  "published": false,
+  "tests": {
+    "suites": 25,
+    "passed": 294,
+    "skipped": 1
+  },
+  "typescript": "passed",
+  "lint": {
+    "errors": 0,
+    "warnings": 215
+  },
+  "authSocialMapbox": "passed; preflight only",
+  "bundle": {
+    "path": "artifacts/area-lightbox-loop-20261017/export/_expo/static/js/ios/entry-a0096b39b4d57326dd413303ce3239a2.hbc",
+    "bytes": 5736488,
+    "sha256": "7538dce13b5c88cf851068d6affd44a261c1c4595bee2cacdcf7b042c11429c3",
+    "modules": 2505,
+    "deltaBytesFromBaseline": 144
+  },
+  "assets": 111,
+  "assetSetEqualToBaseline": true,
+  "assetMetadataOrderEqual": true,
+  "allAssetBytesEqualToBaseline": true,
+  "sourceMapSources": 2461,
+  "sourceSetEqualToBaseline": true,
+  "changedRuntimeSources": [
+    "/utils/lightboxNavigation.ts",
+    "/app/(tabs)/map.tsx",
+    "/components/map/EventCallout.tsx"
+  ],
+  "allOtherRuntimeSourceContentsEqual": true,
+  "unexpectedQaSources": [],
+  "sourceChecks": [
+    {
+      "path": "app/(tabs)/map.tsx",
+      "matches": true,
+      "sha256": "1c643fc2fcb12e64f30e6eccbb04803b8398cdf41de21bfddb418ab9814ef39d"
+    },
+    {
+      "path": "components/map/EventCallout.tsx",
+      "matches": true,
+      "sha256": "bd1d7acc19332328637537aefdcc5b17fb042aa989283c0cdf5ffe24a7630624"
+    },
+    {
+      "path": "utils/lightboxNavigation.ts",
+      "matches": true,
+      "sha256": "1017c9c3af1e4ec0ba672930ac6969df5aa00ee6571c2c84ea3adaacf083b2d2"
+    },
+    {
+      "path": "app/_layout.tsx",
+      "matches": true,
+      "sha256": "8b104231c9cbaaff80091cc481a194e5bac332600c967024775f22cc79da4dd7"
+    },
+    {
+      "path": "app/index.tsx",
+      "matches": true,
+      "sha256": "ffda86346355942c39d49b980d558f1c87ccda3642729d83039b52b8afc95f35"
+    },
+    {
+      "path": "components/map/EventImageLightbox.tsx",
+      "matches": true,
+      "sha256": "94181279e3eb006cc4773eb6f115d5e59ead5059f29b83c1ff38a399b78a3807"
+    },
+    {
+      "path": "components/map/InterestsCarousel.tsx",
+      "matches": true,
+      "sha256": "6aeb567d5f8d623ab6072518c40632fcec8253b8c1fc58180984e339828ec849"
+    },
+    {
+      "path": "components/map/AreaLocationBrowser.tsx",
+      "matches": true,
+      "sha256": "fb48a7099b4435248c66efe79d88784e5e4cc309318a9f2c38c95914c674e080"
+    },
+    {
+      "path": "components/area/VenueProgrammeBrowser.tsx",
+      "matches": true,
+      "sha256": "b447dc23b18e69be95a0474388bef0a3eecfb8112970fddeb14ef9a363b48e1e"
+    },
+    {
+      "path": "utils/calloutLightbox.ts",
+      "matches": true,
+      "sha256": "786b4a106d2942d58239e8cd928800da538f9a4ba6d997835f2c165c3dfa61f8"
+    }
+  ],
+  "unchangedProtectedFiles": [
+    "app/_layout.tsx",
+    "app/index.tsx",
+    "components/map/EventImageLightbox.tsx",
+    "components/map/InterestsCarousel.tsx",
+    "components/map/AreaLocationBrowser.tsx",
+    "components/area/VenueProgrammeBrowser.tsx",
+    "utils/calloutLightbox.ts",
+    "lib/api/firestoreEvents.ts",
+    "lib/queryKeys.ts",
+    "store/mapStore.ts",
+    "types/events.ts",
+    "utils/eventProgramme.ts",
+    "utils/areaMembership.ts",
+    "utils/areaActivityCache.ts",
+    "utils/eventTiming.ts",
+    "utils/calendarUtils.ts",
+    "app.config.js",
+    "package.json",
+    "package-lock.json",
+    "eas.json",
+    "types/social.ts"
+  ],
+  "temporaryQaRootsAbsent": true,
+  "normalRoutesNeverReplacedThisBatch": true,
+  "actualCallerRegression": {
+    "beforeFix": {
+      "failedBoundaryCases": 8,
+      "passedOtherCases": 10
+    },
+    "afterFix": {
+      "areaHostCases": 20,
+      "arrowAndSwipeCode": "Actual EventImageLightbox callbacks evaluated with actual caller props; deterministic animation adapter",
+      "eventCounts": [
+        1,
+        2,
+        3
+      ],
+      "owners": [
+        "GlobalEventLightbox fallback",
+        "EventCallout native modal owner"
+      ],
+      "preserves": [
+        "IDs/order/event object/media/location count",
+        "Trending loops",
+        "other global/local callout finite navigation",
+        "single-owner suppression"
+      ]
+    }
+  },
+  "visualVerification": {
+    "afterFixNativeVerified": false,
+    "newScreenshotAvailable": false,
+    "emulatorReconnectAttempted": false,
+    "reason": "Prior emulator connection was policy-blocked; this batch did not retry or claim the earlier Trending waiver",
+    "iOSAdoption": false
+  },
+  "releaseGate": "Held before publication; root independent review and new scoped visual-gap/publication decision required"
+}
