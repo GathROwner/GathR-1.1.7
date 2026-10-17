@@ -1,0 +1,6 @@
+{
+  "source": "app/(tabs)/map.tsx",
+  "sourceBodySha256": "1d7c3155d9ec3205ee39835bdf259868a258624038e789d33d40957ba3409c10",
+  "exactBody": true,
+  "noMapMounted": true
+}
