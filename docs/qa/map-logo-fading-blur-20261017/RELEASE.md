@@ -17,3 +17,7 @@ Checked bundle5,744,416bytes, SHA256 `55fb1fc5f91e0594925d83b82627700102e8126d98
 Unchanged native fingerprint `9ee0b973a2f53ed5647ccafe1599ef64f1580ffb` emits the existing compatible-build advisory; all native modules were already installed, no dependency/config change. Independently reviewed isolated actual-path/mask render against conflicting labels and pale/blue backgrounds. Browser blur is an approximation of UIKit material. **Native compositing, final iPhone appearance and device adoption remain pending.** Existing status-bar implementation supplies the proven native approach; standing confidence-based iOS Preview release authority applies. Reopen twice if needed and confirm Profile OTA `01a14b4f`.
 
 No map interaction, emulator reconnect, Production/Android release, native build, backend deployment or data mutation. Following commit contains release evidence only.
+
+## Post-publication acceptance — October 17, 2026
+
+Craig subsequently confirmed “That is perfectly it . Love it” and requested a committed/documented baseline. Treat palette E, the fading blur and current logo size as accepted. This user-reported native appearance feedback supersedes the earlier pending-appearance statement above. No assistant-operated iPhone inspection or independent Profile-ID capture is claimed. See [accepted baseline](../../ACCEPTED_BASELINE_20261017.md) for resume location, retained work and parked follow-ups. No new OTA was published for this documentation checkpoint.

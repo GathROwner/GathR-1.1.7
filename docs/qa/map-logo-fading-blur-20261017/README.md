@@ -1,5 +1,7 @@
 # Fading logo backdrop with palette E
 
+**Accepted by Craig after iOS Preview publication on October 17, 2026:** “That is perfectly it . Love it”. The preparation-stage visual limits below remain historical evidence; final appearance now has user acceptance. See [accepted baseline](../../ACCEPTED_BASELINE_20261017.md). No assistant-operated device inspection is claimed.
+
 Craig selected palette E (`#1B5C9F` lettering / `#96232B` pin and arcs) and approved mockup A's fading blur, rejecting a frosted pill/button silhouette. Preserve accepted 70x26 wordmark dimensions and geometry. Native code changes are limited to MapBrandWordmark colour, a new decorative MapLogoBackdrop, and mounting it behind the idle brand in FloatingMapSearchHeader.
 
 Baseline independently read with EAS list/view: iOS Preview runtime1.1.10, update `01a14ad9-c577-78ec-9d18-a52f4f20082d`, group `be9ee1bb-1e66-404d-966c-227c970e91ab`, source `4484ccae1f1768a049f5dc3b7199f388b9e358b8`. Current branch retains that source and its evidence-only successor.
