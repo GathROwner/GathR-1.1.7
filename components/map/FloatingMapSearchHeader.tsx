@@ -7,6 +7,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { useMapStore } from '../../store';
 import useAnalytics from '../../hooks/useAnalytics';
 import MapBrandWordmark from './MapBrandWordmark';
+import MapLogoBackdrop from './MapLogoBackdrop';
 
 type Props = { top: number; onSettings: () => void };
 
@@ -107,6 +108,7 @@ export default function FloatingMapSearchHeader({ top, onSettings }: Props) {
                 </View>
               ) : (
                 <View key="brand" pointerEvents="none" style={styles.brandWordmark}>
+                  <MapLogoBackdrop />
                   <MapBrandWordmark />
                 </View>
               )}

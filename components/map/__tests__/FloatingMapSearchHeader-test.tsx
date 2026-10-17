@@ -1,5 +1,5 @@
 import React from 'react';
-import { Keyboard, View } from 'react-native';
+import { AccessibilityInfo, Keyboard, View } from 'react-native';
 import renderer, { act } from 'react-test-renderer';
 import { useMapStore } from '../../../store';
 import FloatingMapSearchHeader from '../FloatingMapSearchHeader';
@@ -23,6 +23,7 @@ describe('floating map search lifecycle', () => {
     jest.useFakeTimers();
     useMapStore.setState({ isHeaderSearchActive: false, searchQuery: '' });
     jest.spyOn(Keyboard, 'dismiss').mockImplementation(() => {});
+    jest.spyOn(AccessibilityInfo, 'isReduceTransparencyEnabled').mockResolvedValue(false);
     act(() => { tree = renderer.create(<FloatingMapSearchHeader top={60} onSettings={() => {}} />); });
     act(() => {
       tree.root.findAllByType(View).find((node) => node.props.onLayout)?.props.onLayout({
@@ -77,5 +78,18 @@ describe('floating map search lifecycle', () => {
     act(() => hideListener?.({} as any));
     expect(useMapStore.getState().isHeaderSearchActive).toBe(false);
     expect(useMapStore.getState().searchQuery).toBe('Test');
+  });
+
+  it('keeps the decorative backdrop out of active and submitted search states', () => {
+    const backdrop = () => tree.root.findAllByProps({ testID: 'map-logo-backdrop' });
+    expect(backdrop().length).toBeGreaterThan(0);
+    expect(backdrop()[0].props.pointerEvents).toBe('none');
+    press('floating-map-search-button');
+    expect(backdrop()).toHaveLength(0);
+    act(() => tree.root.findByProps({ testID: 'map-search-input' }).props.onChangeText('Live music'));
+    act(() => tree.root.findByProps({ testID: 'map-search-input' }).props.onSubmitEditing());
+    expect(backdrop()).toHaveLength(0);
+    press('map-search-query-clear');
+    expect(backdrop().length).toBeGreaterThan(0);
   });
 });
