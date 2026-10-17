@@ -1,6 +1,6 @@
 # iOS Production 1.1.20 — build preparation
 
-Craig authorized one new iOS Production native build, requesting version 1.1.20 and an incremented build number. He explicitly prohibited repeated paid builds. This task does not authorize App Store Connect submission, review submission, public release, another build attempt, Android builds, new OTAs, or backend/data changes.
+Current authority: Craig authorized one iOS Production native build, version 1.1.20 with an incremented build number, then extended the task to uploading that successful build to App Store Connect and preparing its metadata ready for review. He explicitly prohibited repeated paid builds. Public release, another build attempt, Android builds, new OTAs, and backend/data changes are not authorized by this scope. Earlier preparation checkpoints below retain their original narrower authority for historical clarity.
 
 ## Baselines and continuity
 
