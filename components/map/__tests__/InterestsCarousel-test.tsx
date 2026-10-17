@@ -60,3 +60,11 @@ it('keeps the seam passive, snap offsets on real cards, clone taps on original I
   act(() => seed(3)); expect(tree.root.findByType(FlatList).props.data.filter((item: any) => item.kind === 'seam')).toHaveLength(5);
   act(() => seed(2)); expect(tree.root.findByType(FlatList).props.data.every((item: any) => item.kind === 'event')).toBe(true);
 });
+it('gives the first real drag ownership even if native omitted its initial-offset notification', () => {
+  act(() => seed(13)); const list = tree.root.findByType(FlatList).props;
+  const lastSlot = list.initialScrollIndex + 12;
+  act(() => { list.onScrollBeginDrag(); list.onScroll({ nativeEvent: { contentOffset: { x: list.getItemLayout(null, lastSlot).offset + 30 } } }); });
+  const surface = tree.root.findAll(node => node.props.pointerEvents === 'box-none' && typeof node.props.onLayout === 'function')[0];
+  act(() => surface.props.onLayout({ nativeEvent: { layout: { width: 320 } } }));
+  expect(tree.root.findByType(FlatList).props.initialScrollIndex).toBe(lastSlot);
+});

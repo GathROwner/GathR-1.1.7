@@ -575,6 +575,12 @@ const InterestsCarousel: React.FC = () => {
       settleTimerRef.current = setTimeout(restoreLoopPosition, 120);
     }
   }, [carouselEvents, stride, seamSpan, scrollX, clearSettleTimer, restoreLoopPosition]);
+  const beginCarouselDrag = useCallback(() => {
+    clearSettleTimer();
+    expectedLayoutOffsetRef.current = null;
+    restoreLayoutRef.current = null;
+    if (layoutFrameRef.current !== null) cancelAnimationFrame(layoutFrameRef.current);
+  }, [clearSettleTimer]);
   const carouselVisibleRef = useRef(false);
 
   // Dismissal handler - clears the category carousel UI state.
@@ -964,7 +970,7 @@ const InterestsCarousel: React.FC = () => {
           onLayout={restoreLayout}
           onContentSizeChange={restoreLayout}
           onScroll={handleCarouselScroll}
-          onScrollBeginDrag={clearSettleTimer}
+          onScrollBeginDrag={beginCarouselDrag}
           onMomentumScrollBegin={clearSettleTimer}
           onMomentumScrollEnd={restoreLoopPosition}
           onScrollEndDrag={() => {
