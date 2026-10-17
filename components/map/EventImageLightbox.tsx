@@ -52,7 +52,8 @@ import type { Event, Venue, Cluster } from '../../types/events';
 import { useMapStore } from '../../store/mapStore';
 import { addEventToCalendarWithTiming } from '../../utils/calendarUtils';
 import { getCategoryFallbackImage } from '../../utils/imageUtils';
-import { getAdjacentLightboxIndex } from '../../utils/lightboxNavigation';
+import { getAdjacentLightboxIndex, getLightboxEventPosition } from '../../utils/lightboxNavigation';
+import InterestLightboxCounter from './InterestLightboxCounter';
 import {
   buildEventImageGallery,
   getEventImageGalleryHeroUrl,
@@ -223,6 +224,7 @@ interface EventImageLightboxProps {
   currentIndex?: number;
   onNavigate?: (index: number) => void;
   loopNavigation?: boolean;
+  interestCarouselPaging?: boolean;
   // Only local callout lists opt in; global carousel/list behavior is retained.
   calloutPaging?: boolean;
   isTrending?: boolean;
@@ -247,6 +249,7 @@ const EventImageLightbox: React.FC<EventImageLightboxProps> = ({
   currentIndex,
   onNavigate,
   loopNavigation = false,
+  interestCarouselPaging = false,
   calloutPaging = false,
   isTrending = false,
   preferRelevantHero = false,
@@ -510,6 +513,7 @@ try {
   // Navigation state
   const previousIndex = getAdjacentLightboxIndex(currentIndex, events?.length ?? 0, -1, loopNavigation);
   const nextIndex = getAdjacentLightboxIndex(currentIndex, events?.length ?? 0, 1, loopNavigation);
+  const interestPosition = interestCarouselPaging ? getLightboxEventPosition(currentIndex, events?.length ?? 0, loopNavigation) : null;
   const showTrendingOverlay = Boolean(isTrending && events && currentIndex !== undefined);
   const trendingPositionLabel =
     events && currentIndex !== undefined ? `${currentIndex + 1} / ${events.length}` : '';
@@ -1722,6 +1726,7 @@ const handleNonTicketAction = () => {
 
           {calloutPaging && <CalloutLightboxCounter index={currentIndex ?? 0} count={events?.length ?? 0}
             special={updatedEvent.type === 'special'} />}
+          {interestCarouselPaging && !calloutPaging && <InterestLightboxCounter index={currentIndex} count={events?.length ?? 0} />}
 
           {showTrendingOverlay && (
             <View style={styles.trendingOverlay} pointerEvents="none">
@@ -1793,7 +1798,7 @@ const handleNonTicketAction = () => {
                     : areaScopeBadge?.label || 'Area-wide'}
                 </Text>
               </View>
-              {events && currentIndex !== undefined && (
+              {!interestCarouselPaging && events && currentIndex !== undefined && (
                 <View style={styles.trendingPositionPill}>
                   <Text style={styles.trendingPositionText}>
                     {`${currentIndex + 1} / ${events.length}`}
@@ -1807,26 +1812,28 @@ const handleNonTicketAction = () => {
             <>
               {previousIndex !== null && (
                 <TouchableOpacity
-                  style={styles.navArrowLeft}
-                  accessibilityLabel="Previous event"
+                  style={[styles.navArrowLeft, !!interestPosition?.previousLabel && styles.wrapArrow]}
+                  accessibilityLabel={interestPosition?.previousLabel || 'Previous event'}
                   onPress={() => calloutPaging ? calloutPager.step(-1) : onNavigate?.(previousIndex)}
                   activeOpacity={0.7}
                 >
                   <View style={styles.navArrowContainer}>
                     <MaterialIcons name="chevron-left" size={38} color="#FFFFFF" />
                   </View>
+                  {!!interestPosition?.previousLabel && <Text style={styles.wrapLabel}>{interestPosition.previousLabel}</Text>}
                 </TouchableOpacity>
               )}
               {nextIndex !== null && (
                 <TouchableOpacity
-                  style={styles.navArrowRight}
-                  accessibilityLabel="Next event"
+                  style={[styles.navArrowRight, !!interestPosition?.nextLabel && styles.wrapArrow]}
+                  accessibilityLabel={interestPosition?.nextLabel || 'Next event'}
                   onPress={() => calloutPaging ? calloutPager.step(1) : onNavigate?.(nextIndex)}
                   activeOpacity={0.7}
                 >
                   <View style={styles.navArrowContainer}>
                     <MaterialIcons name="chevron-right" size={38} color="#FFFFFF" />
                   </View>
+                  {!!interestPosition?.nextLabel && <Text style={styles.wrapLabel}>{interestPosition.nextLabel}</Text>}
                 </TouchableOpacity>
               )}
             </>
@@ -2472,7 +2479,7 @@ const handleNonTicketAction = () => {
         {navigationEnabled && (
           <>
             {/* Position indicator */}
-            {!calloutPaging && !isTrending && !showAreaExperience && events && currentIndex !== undefined && (
+            {!interestCarouselPaging && !calloutPaging && !isTrending && !showAreaExperience && events && currentIndex !== undefined && (
               <View style={styles.positionIndicator}>
                 <Text style={styles.positionText}>
                   {currentIndex + 1} / {events.length}
@@ -3617,6 +3624,9 @@ description: {
     justifyContent: 'center',
     alignItems: 'center',
   },
+  wrapArrow: { alignItems: 'center', transform: [{ translateY: -36 }] },
+  wrapLabel: { color: '#FFFFFF', fontSize: 10, lineHeight: 13, fontWeight: '600', marginTop: 4, paddingHorizontal: 5,
+    paddingVertical: 4, borderRadius: 7, overflow: 'hidden', backgroundColor: 'rgba(12,18,25,0.84)' },
   positionIndicator: {
     position: 'absolute',
     bottom: -30,

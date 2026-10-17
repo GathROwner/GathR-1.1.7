@@ -1,6 +1,17 @@
-import { getAdjacentLightboxIndex } from '../lightboxNavigation';
+import { getAdjacentLightboxIndex, getLightboxEventPosition } from '../lightboxNavigation';
 
 describe('lightbox item navigation', () => {
+  it.each([2, 5, 13])('labels actual wrap destinations and event-list count for %i events', count => {
+    expect(getLightboxEventPosition(0, count, true)).toEqual({ label: `Event 1 of ${count}`, previousLabel: 'Last event', nextLabel: null });
+    expect(getLightboxEventPosition(count - 1, count, true)).toEqual({ label: `Event ${count} of ${count}`, previousLabel: null, nextLabel: 'First event' });
+    expect(getLightboxEventPosition(0, count, false)?.previousLabel).toBeNull();
+    expect(getLightboxEventPosition(count - 1, count, false)?.nextLabel).toBeNull();
+  });
+  it('keeps interior arrows normal, one event honest and invalid source positions hidden', () => {
+    expect(getLightboxEventPosition(2, 5, true)).toEqual({ label: 'Event 3 of 5', previousLabel: null, nextLabel: null });
+    expect(getLightboxEventPosition(0, 1, true)).toEqual({ label: 'Event 1 of 1', previousLabel: null, nextLabel: null });
+    expect(getLightboxEventPosition(5, 5, true)).toBeNull(); expect(getLightboxEventPosition(undefined, 5, true)).toBeNull();
+  });
   it('wraps first to last and last to first for carousel lightboxes', () => {
     expect(getAdjacentLightboxIndex(0, 20, -1, true)).toBe(19);
     expect(getAdjacentLightboxIndex(19, 20, 1, true)).toBe(0);
