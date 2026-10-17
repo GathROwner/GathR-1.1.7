@@ -1,0 +1,77 @@
+import React from 'react';
+import { Image, Platform, Pressable, Text, View, useWindowDimensions } from 'react-native';
+import { Stack } from 'expo-router';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { BottomTabBarHeightContext } from '@react-navigation/bottom-tabs';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import * as SplashScreen from 'expo-splash-screen';
+import MaterialIcons from '@expo/vector-icons/MaterialIcons';
+import InterestsCarousel from './components/map/InterestsCarousel';
+import ScrollingTabBar from './components/common/ScrollingTabBar';
+import { FeedChromeProvider } from './contexts/FeedChromeContext';
+import { useMapStore } from './store/mapStore';
+import { useClusterInteractionStore } from './store/clusterInteractionStore';
+import { useInterestCarouselUiStore } from './store/interestCarouselUiStore';
+import { DEFAULT_FILTER_CRITERIA, TimeFilterType } from './types/filter';
+import { addDaysToDateKey, formatLocalDateKey } from './utils/eventExpiry';
+import { getCarouselMetrics } from './utils/loopingCarousel';
+import { getTabDockBottom, TAB_DOCK_HEIGHT } from './constants/tabDock';
+import type { Event, Venue, Cluster } from './types/events';
+const client=new QueryClient({defaultOptions:{queries:{retry:false,gcTime:Infinity}}});
+export function FixtureRoot(){React.useEffect(()=>{void SplashScreen.hideAsync()},[]);
+ return <GestureHandlerRootView style={{flex:1}}><SafeAreaProvider><QueryClientProvider client={client}>
+ <FeedChromeProvider><BottomTabBarHeightContext.Provider value={0}><Stack screenOptions={{headerShown:false}}/></BottomTabBarHeightContext.Provider></FeedChromeProvider>
+ </QueryClientProvider></SafeAreaProvider></GestureHandlerRootView>}
+// QA-only storage adapter prevents fixture interactions from modifying retained app data.
+useClusterInteractionStore.persist.setOptions({storage:{getItem:async()=>null,setItem:async()=>{},removeItem:async()=>{}}});
+const uri=(path:any)=>Image.resolveAssetSource(path).uri;
+const posters=[uri(require('./assets/fallbacks/categories/workshops.webp')),uri(require('./assets/fallbacks/categories/live-music.webp')),
+ uri(require('./assets/fallbacks/categories/food-special.webp')),uri(require('./assets/fallbacks/categories/wing-night.webp'))];
+const profile=uri(require('./assets/fallbacks/profiles/event-default.webp'));
+const day=addDaysToDateKey(formatLocalDateKey(new Date()),1);
+const all:Event[]=Array.from({length:13},(_,index)=>({id:'fb_qa_boundary_'+index,type:'event',category:'Workshops & Classes',
+ title:index===0?'Beginner Step & Tap (Ages 6–8)':index===12?'Exploring Visual Arts (Ages 6–8)':'Community Workshop '+(index+1),
+ description:'Synthetic UI fixture for the interest carousel. Each card represents one distinct event. Swipe between events; the separate gallery contains four source images.',
+ venueId:'qa_arts',venue:'Community Arts Centre',address:'10 Example St, Exampletown',latitude:46.23,longitude:-63.12,
+ startDate:day,endDate:day,startTime:'09:00',endTime:'10:00',ticketPrice:'',profileUrl:profile,imageUrl:posters[index%2],
+ mediaUrls:posters,SharedPostThumbnail:'',ticketLinkPosts:'',ticketLinkEvents:'',sourceUrl:'https://example.com/qa/events/'+index,source:'firestore'}));
+const nav={emit:()=>({defaultPrevented:true}),navigate:()=>{},dispatch:()=>{}};
+const routes=['events','map','specials'].map(name=>({key:'qa-'+name,name}));
+export default function Fixture(){
+ const {width,height}=useWindowDimensions(),insets=useSafeAreaInsets();const [count,setCount]=React.useState(2),[narrow,setNarrow]=React.useState(false);
+ const actualWidth=narrow?Math.min(320,width):width,m=getCarouselMetrics(actualWidth,count),dockBottom=getTabDockBottom(Platform.OS,insets.bottom);
+ React.useEffect(()=>{const events=all.slice(0,count),venue:Venue={locationKey:'qa_arts',venue:events[0].venue,address:events[0].address,
+  latitude:46.23,longitude:-63.12,events};const cluster={id:'qa_cluster',clusterType:'single',venues:[venue],eventCount:count,specialCount:0,categories:['Workshops & Classes']} as Cluster;
+  useMapStore.setState({events,allEvents:events,onScreenEvents:events,clusters:[cluster],activeFilterPanel:null,
+   fetchEventDetails:async()=>{},filterCriteria:{...DEFAULT_FILTER_CRITERIA,eventFilters:{...DEFAULT_FILTER_CRITERIA.eventFilters,timeFilter:TimeFilterType.ALL}}});
+  useInterestCarouselUiStore.getState().setInterestCarouselFilter({status:'active',type:'event',category:'Workshops & Classes'});
+ },[count]);
+ const descriptors=Object.fromEntries(routes.map(route=>[route.key,{route,navigation:nav,options:{title:route.name==='events'?'Events':route.name==='map'?'Map':'Specials',
+  tabBarShowLabel:true,tabBarActiveTintColor:'#168EFA',tabBarInactiveTintColor:'rgba(255,255,255,.8)',
+  tabBarItemStyle:{margin:5,borderRadius:22},tabBarLabelStyle:{fontSize:10,fontWeight:'600',marginTop:-2},
+  tabBarIcon:({color,focused}:any)=><View style={{alignItems:'center',justifyContent:'center'}}>{focused&&<View style={{position:'absolute',width:width*.86/3-10,height:42,top:-6,borderRadius:22,backgroundColor:'#F3F4F5'}}/>}<MaterialIcons name={route.name==='events'?'event':route.name==='map'?'map':'restaurant'} color={color} size={24}/></View>,
+  tabBarStyle:{position:'absolute',start:'7%',end:'7%',bottom:dockBottom,height:TAB_DOCK_HEIGHT,paddingBottom:2,paddingTop:2,
+   borderTopWidth:0,borderRadius:TAB_DOCK_HEIGHT/2,backgroundColor:'rgba(24,27,33,.78)',elevation:9}}}])) as any;
+ return <View style={{flex:1,backgroundColor:'#ABE0EB'}}>
+  <Image source={require('./artifacts/carousel-boundaries-20261017/map-reference.jpg')} resizeMode="stretch" style={{position:'absolute',width,height}}/>
+  <View pointerEvents="none" style={{position:'absolute',left:0,right:0,top:0,height:144,backgroundColor:'#102331'}}/>
+  <View pointerEvents="none" style={{position:'absolute',left:0,right:0,top:height*.63,bottom:112,backgroundColor:'#ABE0EB'}}/>
+  <View pointerEvents="none" style={{position:'absolute',left:0,right:0,bottom:0,height:dockBottom+TAB_DOCK_HEIGHT+38,backgroundColor:'#ABE0EB'}}/>
+  <Text pointerEvents="none" style={{position:'absolute',left:11.5,bottom:dockBottom+TAB_DOCK_HEIGHT+8,color:'white',fontSize:14,fontWeight:'700',textShadowColor:'#5689AB',textShadowRadius:2}}>◉ mapbox</Text>
+  <MaterialIcons name="info-outline" size={25} color="#168EFA" style={{position:'absolute',right:12,bottom:dockBottom+TAB_DOCK_HEIGHT+7}}/>
+  <View pointerEvents="none" style={{position:'absolute',alignSelf:'center',bottom:dockBottom+TAB_DOCK_HEIGHT+3,width:100,height:10}}>
+   <View style={{flexDirection:'row',justifyContent:'space-between'}}><Text style={{fontSize:7,lineHeight:8,color:'#101923'}}>0</Text><Text style={{fontSize:7,lineHeight:8,color:'#101923'}}>750 m</Text><Text style={{fontSize:7,lineHeight:8,color:'#101923'}}>1.5 km</Text></View>
+   <View style={{height:1,backgroundColor:'#101923'}}/>
+  </View>
+  <View style={{paddingTop:insets.top+8,marginHorizontal:8,padding:8,borderRadius:8,backgroundColor:'rgba(8,17,28,.88)'}}>
+   <Text style={{color:'white',fontWeight:'700',fontSize:12}}>Carousel QA · 171c296 · static map reference</Text>
+   <Text style={{color:'#C7DBEC',fontSize:10}}>{width}dp window · {actualWidth}dp rail · {m.cardWidth}dp card · {m.seamWidth}dp separator · native1.1.10(13)</Text>
+   <View style={{flexDirection:'row',gap:8,marginTop:6}}>{[2,3,13].map(n=><Pressable key={n} onPress={()=>setCount(n)} style={{backgroundColor:'#274666',padding:8,borderRadius:6}}><Text style={{color:'white'}}>{n} items</Text></Pressable>)}
+    <Pressable onPress={()=>setNarrow(value=>!value)} style={{backgroundColor:'#274666',padding:8,borderRadius:6}}><Text style={{color:'white'}}>{narrow?'Window':'320 dp'}</Text></Pressable></View>
+  </View>
+  <View pointerEvents="box-none" style={{position:'absolute',top:0,bottom:0,width:actualWidth,alignSelf:'center'}}><InterestsCarousel/></View>
+  <ScrollingTabBar {...({state:{key:'qa-tabs',type:'tab',stale:false,index:1,routeNames:routes.map(r=>r.name),routes},navigation:nav,descriptors,insets} as any)}/>
+ </View>
+}
+

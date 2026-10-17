@@ -222,6 +222,22 @@ describe('friend presence projection', () => {
     expect(merged).toEqual(original);
   });
 
+  it('never turns an external public-place check-in into an event cluster', () => {
+    const externalActivity = {
+      ...activity('alice', 'unused', now + 60_000),
+      venueId: undefined,
+      locationType: 'external_place' as const,
+      venueLocationKey: 'external:oak',
+      venueName: 'The Oak Downtown',
+      placeAddress: '161 Kent St',
+      placeCategory: 'Pub',
+      latitude: 46.235,
+      longitude: -63.129,
+    };
+
+    expect(mergeFriendPresenceIntoMapClusters([], [externalActivity], [], now)).toEqual([]);
+  });
+
   it('prefers a nearby friend marker when native map layers overlap', () => {
     const friendCluster = mergeFriendPresenceIntoMapClusters(
       [],

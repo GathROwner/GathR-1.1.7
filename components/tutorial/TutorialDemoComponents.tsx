@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, Animated, Easing } from 'react-native';
-import { MaterialIcons } from '@expo/vector-icons';
+import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 
 // Mini version of the broadcasting effect for tutorial with complete tree structure - COMPACT
 export const TutorialBroadcastingEffect: React.FC = () => {

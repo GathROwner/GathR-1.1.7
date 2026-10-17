@@ -16,9 +16,15 @@
  *   Reliable vertical scrolling in the callout on Android, with header drag + tutorial behaviors intact.
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import MaterialIcons from '@expo/vector-icons/MaterialIcons';
+import Ionicons from '@expo/vector-icons/Ionicons';
+import FontAwesome from '@expo/vector-icons/FontAwesome';
+import { openCalloutLightbox, navigateCalloutLightbox, type CalloutLightboxSelection } from '../../utils/calloutLightbox';
+import { shouldLoopGlobalLightbox } from '../../utils/lightboxNavigation';
 
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
+import { getTabDockContentInset } from '../../constants/tabDock';
 import { toggleSavedEvent as toggleSavedEventSvc } from '../../services/userService';
 import { amplitudeTrack } from '../../lib/amplitudeAnalytics';
 import { publishTutorialMeasurement as registerTutorialMeasurement } from '../../utils/tutorialReadiness';
@@ -27,13 +33,17 @@ import { shouldRepublishTutorialCalloutReadiness } from '../../utils/tutorialCal
 import { createTutorialPresentationSettler } from '../../utils/tutorialPresentationSettler';
 import { runTutorialAction } from '../../utils/tutorialActions';
 import { shouldRouteTutorialCalloutBack } from '../../utils/tutorialCalloutClosing';
+import { settleCalloutCloseAttempt } from '../../utils/calloutInteractionSafety';
 import { useTutorialUiStore } from '../../store/tutorialUiStore';
 
 
 
 // 🌀 Use GH ScrollView (not RN ScrollView) so scrolling works inside animated/gesture containers on Android.
 // Requires app wrapped in <GestureHandlerRootView /> (see app/_layout.tsx).
-import { ScrollView } from 'react-native-gesture-handler';
+import { GestureHandlerRootView, PanGestureHandler, ScrollView } from 'react-native-gesture-handler';
+import { getCalloutBrowsePages, type CalloutBrowseTab } from '../../utils/calloutSwipeNavigation';
+import { useCalloutSwipeTransition } from '../../hooks/useCalloutSwipeTransition';
+import { useReduceMotion } from '../../hooks/useReduceMotion';
 
 
 // TypeScript fix for global tutorial manager
@@ -92,7 +102,6 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import * as Calendar from 'expo-calendar';
-import { MaterialIcons, Ionicons, FontAwesome } from '@expo/vector-icons';
 import FallbackImage from '../common/FallbackImage';
 import { VenueFavoriteButton } from '../common/VenueFavoriteButton';
 import Autolink from 'react-native-autolink';
@@ -108,8 +117,10 @@ declare global {
     getCurrentSubStep?: () => number;
   } | undefined;
 }
-import { addToCalendar } from '../../utils/calendarUtils';
+import { addEventToCalendarWithTiming } from '../../utils/calendarUtils';
 import EventImageLightbox from './EventImageLightbox';
+import { AreaMembershipNavigationProvider } from '../area/AreaMembershipNavigation';
+import { AreaEventMembershipLinks, VenueHuntMembershipLinks } from '../area/AreaMembershipLinks';
 
 import * as userService from '../../services/userService';
 import { useUserPrefsStore, updateSavedEvents } from '../../store/userPrefsStore';
@@ -119,16 +130,16 @@ import { useEventInterestedCount, setEventInterestedCount, startEventInterestedL
 import { useMapStore } from '../../store/mapStore';
 import { auth } from '../../config/firebaseConfig';
 import { useClusterInteractionStore } from '../../store/clusterInteractionStore';
+import { usePathname } from 'expo-router';
+import { isFriendEventDetailPath } from '../../utils/friendEventLightbox';
+import { prioritizeCalloutVenues } from '../../utils/calloutVenueSelection';
 
 // Import the centralized date utilities
 import {
-  formatTime,
   formatEventDateTime,
-  isEventNow,
-  isEventHappeningToday,
+  isEventNowWithTiming,
   getEventTimeStatus,
   sortEventsByTimeStatus,
-  getRelativeTimeDescription,
   getEventDisplayUntilDate,
   combineDateAndTime
 } from '../../utils/dateUtils';
@@ -137,6 +148,11 @@ import { buildGathrSharePayload } from '../../utils/shareUtils';
 import { getTicketUrl, isValidTicketUrl, normalizeTicketUrl } from '../../utils/ticketUrls';
 import { getPrimaryNonTicketAction } from '../../utils/eventActionLinks';
 import { getTrendingLightboxImageUrl } from '../../utils/trendingLightbox';
+import { getRouteCalloutBadgeLabel } from '../../utils/routeEvent';
+import {
+  getAreaScopeBadgePresentation,
+  getScopedLocationSummary,
+} from '../../utils/locationScope';
 import * as Haptics from 'expo-haptics';
 
 // Import for lazy-loading venue details
@@ -149,9 +165,19 @@ import CompactSdkAdCard from '../ads/CompactSdkAdCard';
 import TicketCtaPill from '../common/TicketCtaPill';
 import EventActionLinkPill from '../common/EventActionLinkPill';
 import FamilyFriendlyBadge from '../common/FamilyFriendlyBadge';
-import { traceMapEvent } from '../../utils/mapTrace';
+import { EventTimingBadge } from '../common/EventTimingBadge';
+import { EventTimingSummaryText } from '../common/EventTimingSummaryText';
+import { EventSeriesContextLine } from '../common/EventSeriesContextLine';
+import { MAP_TRACE_ENABLED, traceMapEvent } from '../../utils/mapTrace';
 import { doesEventMatchAnyInterest } from '../../utils/familyFriendly';
 import { getVenueFriendPresence } from '../../utils/friendPresence';
+import {
+  getEventScheduleState,
+  getEventTimeRangeParts,
+  getEventTimingDisclosure,
+} from '../../utils/eventTiming';
+import { getEventScheduleContext } from '../../utils/eventSeries';
+import { useEventTimingMinute } from '../../hooks/useEventTimingMinute';
 
 const EVENT_CALLOUT_SHELL_ISOLATION_DEBUG = false;
 const EVENT_CALLOUT_DISABLE_NATIVE_ADS_DEBUG = false;
@@ -203,44 +229,6 @@ type UserPrefsState = {
   likedEvents: string[];
   interestedEvents: string[];
 };
-
-// --- Local helper to derive label/start/end from the already-formatted strings ---
-// Returns { label } (base without trailing " at <start>" if present), { start }, { end }, and { labelWithTime } (original base).
-function partsFrom(base: string, range?: string) {
-  const result = {
-    label: base,
-    start: undefined as string | undefined,
-    end: undefined as string | undefined,
-    labelWithTime: base,
-  };
-  if (!range) return result;
-
-  // Detect common separators: en dash, spaced hyphen, plain hyphen, and " to "
-  const rLower = range.toLowerCase();
-  const sep =
-    range.includes(' – ') ? ' – ' :
-    range.includes('–')    ? '–'    :
-    rLower.includes(' to ') ? ' to ' :
-    range.includes(' - ')  ? ' - '  :
-    range.includes('-')    ? '-'    :
-    null;
-
-  if (sep) {
-    const [startRaw, endRaw] = range.split(sep).map(s => s?.trim());
-    result.start = startRaw || undefined;
-    result.end = endRaw || undefined;
-  }
-
-  // Trim trailing " at <start>" only if it matches, case-insensitively.
-  if (result.start) {
-    const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const tailRe = new RegExp(`\\s+at\\s+${esc(result.start)}$`, 'i');
-    if (tailRe.test(base)) {
-      result.label = base.replace(tailRe, '');
-    }
-  }
-  return result;
-}
 
 function getEventStartDateSortKey(event: Event): number {
   const dateValue = String(event?.startDate || '').trim();
@@ -860,7 +848,7 @@ interface VenueSelectorProps {
   deferInactiveVisuals?: boolean;
 }
 
-const VenueSelector: React.FC<VenueSelectorProps> = ({
+export const VenueSelector: React.FC<VenueSelectorProps> = ({
   venues,
   activeVenueIndex,
   onSelectVenue,
@@ -870,6 +858,21 @@ const VenueSelector: React.FC<VenueSelectorProps> = ({
   isGuest,
   deferInactiveVisuals = false
 }) => {
+  const selectorScrollRef = useRef<ScrollView>(null);
+  const selectorWidthRef = useRef(0);
+  const venueLayoutsRef = useRef(new Map<string, { x: number; width: number }>());
+  const revealActiveVenue = useCallback((animated = true) => {
+    const venue = venues[activeVenueIndex];
+    const layout = venue && venueLayoutsRef.current.get(venue.locationKey);
+    if (!layout || !selectorWidthRef.current) return;
+    selectorScrollRef.current?.scrollTo({
+      x: Math.max(0, layout.x + layout.width / 2 - selectorWidthRef.current / 2),
+      animated,
+    });
+  }, [activeVenueIndex, venues]);
+
+  useEffect(() => { revealActiveVenue(); }, [revealActiveVenue]);
+
   // LOG: VenueSelector rendering - tracks venues count and active index for debugging selector state
   // console.log("VenueSelector rendering with venues:", venues.length, 
   //            "activeIndex:", activeVenueIndex);
@@ -877,7 +880,13 @@ const VenueSelector: React.FC<VenueSelectorProps> = ({
   return (
     <View style={styles.venueSelectorWrapper}>
       <ScrollView 
+        ref={selectorScrollRef}
         horizontal
+        onLayout={(event) => {
+          selectorWidthRef.current = event.nativeEvent.layout.width;
+          revealActiveVenue(false);
+        }}
+        onContentSizeChange={() => revealActiveVenue(false)}
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={[
           styles.venueSelectorContainer,
@@ -899,6 +908,13 @@ const VenueSelector: React.FC<VenueSelectorProps> = ({
           return (
             <TouchableOpacity 
               key={`venue-${venue.locationKey}-${index}`}
+              accessibilityRole="tab"
+              accessibilityState={{ selected: activeVenueIndex === index }}
+              onLayout={(event) => {
+                const { x, width } = event.nativeEvent.layout;
+                venueLayoutsRef.current.set(venue.locationKey, { x, width });
+                if (activeVenueIndex === index) revealActiveVenue(false);
+              }}
               style={[
                 styles.venueOption,
                 activeVenueIndex === index && styles.venueOptionActive,
@@ -909,7 +925,7 @@ const VenueSelector: React.FC<VenueSelectorProps> = ({
             >
             <View style={styles.venueTopContent}>
   {/* NOW indicator - positioned in top-right corner of the card */}
-  {venue.events.some(event => isEventNow(event.startDate, event.startTime, event.endDate, event.endTime)) && (
+  {venue.events.some(event => isEventNowWithTiming(event)) && (
     <View style={styles.venueNowIndicator}>
       <Text style={styles.venueNowText}>NOW</Text>
     </View>
@@ -1007,7 +1023,7 @@ interface EventTabsProps {
   venueCount: number;
 }
 
-const EventTabs: React.FC<EventTabsProps> = ({ 
+export const EventTabs: React.FC<EventTabsProps> = ({
   activeTab, 
   onChangeTab, 
   eventCount, 
@@ -1110,13 +1126,7 @@ const EventActions: React.FC<EventActionsProps> = ({ event }) => {
 
   const addEventToCalendar = async () => {
     try {
-      await addToCalendar({
-        title: event.title,
-        startDate: combineDateAndTime(event.startDate, event.startTime),
-        endDate: combineDateAndTime(event.endDate || event.startDate, event.endTime || '11:59 PM'),
-        location: `${event.venue}, ${event.address}`,
-        notes: event.description
-      });
+      await addEventToCalendarWithTiming(event, `${event.venue}, ${event.address}`);
     } catch (error) {
       console.error('Failed to add event to calendar', error);
     }
@@ -1220,11 +1230,13 @@ interface EventCardProps {
 
 const EventCard: React.FC<EventCardProps> = ({ event, isSelected, onPress }) => {
   const timeStatus = getEventTimeStatus(event);
+  const timingState = getEventScheduleState(event);
   
   return (
     <TouchableOpacity 
       style={[
         styles.eventCard,
+        timingState.muted && styles.mutedTimingCard,
         isSelected && styles.selectedEventCard,
         timeStatus === 'now' && styles.nowEventCard
       ]} 
@@ -1246,9 +1258,10 @@ const EventCard: React.FC<EventCardProps> = ({ event, isSelected, onPress }) => 
         {event.title}
       </Text>
       
-      <Text style={styles.cardDateTime}>
-        {formatEventDateTime(event.startDate, event.startTime, event)}
-      </Text>
+      <View style={styles.compactTimingRow}>
+        <EventTimingSummaryText event={event} style={styles.cardDateTime} numberOfLines={2} />
+        <EventTimingBadge event={event} compact />
+      </View>
       
       <GuestLimitedContent 
         contentType="description" 
@@ -1273,6 +1286,9 @@ const EventDetailsContent: React.FC<EventDetailsProps> = ({ event, onImagePress 
   const [expanded, setExpanded] = useState(false);
   const needsReadMore = event.description.length > 120;
   const timeStatus = getEventTimeStatus(event);
+  const timingDisclosure = getEventTimingDisclosure(event);
+  const timingRangeParts = getEventTimeRangeParts(event);
+  const hasEstimatedEndpoint = timingRangeParts.startEstimated || timingRangeParts.endEstimated;
   
   return (
     <View style={styles.detailsContainer}>
@@ -1310,11 +1326,15 @@ const EventDetailsContent: React.FC<EventDetailsProps> = ({ event, onImagePress 
         
         <View style={styles.timeContainer}>
           <MaterialIcons name="access-time" size={16} color="#666666" />
-          <Text style={styles.eventTime}>
-            {formatEventDateTime(event.startDate, event.startTime, event)}
-          </Text>
+          <EventTimingSummaryText event={event} style={styles.eventTime} />
+          <EventTimingBadge event={event} compact style={styles.timingBadge} />
         </View>
+        {timingDisclosure && !hasEstimatedEndpoint && (
+          <Text style={styles.timingDisclosure}>{timingDisclosure}</Text>
+        )}
       </View>
+
+      <EventSeriesContextLine event={event} containerStyle={styles.seriesContextLine} />
       
       {hasDisplayableTicketPrice(event.ticketPrice) && (
         <View style={styles.priceContainer}>
@@ -1736,7 +1756,11 @@ const VenueInfoContent: React.FC<VenueInfoProps> = ({ venue }) => {
                       { backgroundColor: getCategoryColor(event.category) }
                     ]} />
                     <View style={styles.venueEventDetails}>
-                      <Text style={styles.venueEventTime}>{formatTime(event.startTime)}</Text>
+                      <EventTimingSummaryText
+                        event={event}
+                        style={styles.venueEventTime}
+                        numberOfLines={2}
+                      />
                       <Text
                         style={[
                           styles.venueEventTitle,
@@ -1751,6 +1775,7 @@ const VenueInfoContent: React.FC<VenueInfoProps> = ({ venue }) => {
                           <Text style={styles.venueEventNowText}>LIVE</Text>
                         </View>
                       )}
+                      <EventTimingBadge event={event} compact style={styles.timingBadge} />
                     </View>
                   </View>
                 );
@@ -1766,7 +1791,7 @@ const VenueInfoContent: React.FC<VenueInfoProps> = ({ venue }) => {
 // Special card component for multiple specials
 interface SpecialCardProps {
   event: Event;
-  onSelectEvent?: (event: Event) => void;
+  onSelectEvent: (event: Event) => void;
   showVenueName?: boolean;
   onImagePress: (imageUrl: string, event: Event) => void;
   isSaved?: boolean;
@@ -1774,9 +1799,10 @@ interface SpecialCardProps {
   userInterests?: string[];
   isGuest?: boolean;
   isTutorialTarget?: boolean; // Add this new prop for the tutorial
+  testID?: string;
 }
 
-const SpecialCard: React.FC<SpecialCardProps> = ({ 
+export const SpecialCard: React.FC<SpecialCardProps> = ({
   event, 
   onSelectEvent,
   showVenueName = false,
@@ -1786,12 +1812,29 @@ const SpecialCard: React.FC<SpecialCardProps> = ({
   userInterests = [],
   isGuest = false,
   isTutorialTarget = false, // Default to false
+  testID,
 }) => {
   const [expanded, setExpanded] = useState(false);
   const [bookmarked, setBookmarked] = useState(isSaved);
   const [isToggling, setIsToggling] = useState(false);
   const [isHeroLikeToggling, setIsHeroLikeToggling] = useState(false);
   const timeStatus = getEventTimeStatus(event);
+  const friendEventBadgeLabel = event.friendEvent
+    ? event.friendEvent.viewerRole === 'host'
+      ? 'PRIVATE · HOSTING'
+      : event.friendEvent.ownRsvp === 'going'
+        ? 'PRIVATE · GOING'
+        : event.friendEvent.ownRsvp === 'maybe'
+          ? 'PRIVATE · MAYBE'
+          : event.friendEvent.ownRsvp === 'cant_go'
+            ? "PRIVATE · CAN'T GO"
+            : 'PRIVATE · INVITED'
+    : null;
+  const routeBadgeLabel = getRouteCalloutBadgeLabel(event);
+  const areaScopeBadge = getAreaScopeBadgePresentation(event);
+  const spatialBadgeLabel = routeBadgeLabel || areaScopeBadge?.label || null;
+  const spatialBadgeIcon = routeBadgeLabel ? 'alt-route' : areaScopeBadge?.iconName;
+  const scopedLocationSummary = getScopedLocationSummary(event);
 
   // --- Start of Tutorial Logic ---
   const viewRef = useRef<View | null>(null);
@@ -1894,7 +1937,7 @@ const SpecialCard: React.FC<SpecialCardProps> = ({
 
   const heroUsersRespondedCount = isGreaterThanZero(event.usersResponded) ? safeNumberToString(event.usersResponded) : null;
   useEffect(() => {
-    if (!event.id) return;
+    if (!event.id || event.friendEvent) return;
     startEventLikesListener(event.id);
     startEventSharesListener(event.id);
     startEventInterestedListener(event.id);
@@ -1903,7 +1946,7 @@ const SpecialCard: React.FC<SpecialCardProps> = ({
       stopEventSharesListener(event.id);
       stopEventInterestedListener(event.id);
     };
-  }, [event.id]);
+  }, [event.friendEvent, event.id]);
   // Combine usersResponded (Facebook) with interested (GathR) for the person icon badge
   const facebookUsersResponded = isGreaterThanZero(event.usersResponded) ? Number(event.usersResponded) : 0;
   const combinedInterestedValue = facebookUsersResponded + interestedValue;
@@ -1924,8 +1967,9 @@ const SpecialCard: React.FC<SpecialCardProps> = ({
     makeHeroMetric('shares', 'share', heroShareText),
     makeHeroMetric('interested', 'person', combinedInterestedText),
   ];
-  // Always show overlay - share button should always be visible
-  const showHeroEngagementOverlay = true;
+  // Private friend events use the normal event-card layout, but public
+  // like/share/interested actions must not cross their authorized audience.
+  const showHeroEngagementOverlay = !event.friendEvent;
 
   const handleHeroLikePress = async (e: GestureResponderEvent) => {
     e.stopPropagation();
@@ -2012,13 +2056,7 @@ const SpecialCard: React.FC<SpecialCardProps> = ({
 
       // If marking interested (not unmarking), also open calendar
       if (result.interested) {
-        await addToCalendar({
-          title: event.title,
-          startDate: combineDateAndTime(event.startDate, event.startTime),
-          endDate: combineDateAndTime(event.endDate || event.startDate, event.endTime || '11:59 PM'),
-          location: `${event.venue}, ${event.address}`,
-          notes: event.description
-        });
+        await addEventToCalendarWithTiming(event, `${event.venue}, ${event.address}`);
       }
     } catch (error) {
       setUserPrefs({ interestedEvents: previousInterestedEvents });
@@ -2033,6 +2071,15 @@ const SpecialCard: React.FC<SpecialCardProps> = ({
     e.stopPropagation();
     if (isGuest) return;
 
+    if (event.friendEvent) {
+      try {
+        await addEventToCalendarWithTiming(event, `${event.venue}, ${event.address}`);
+      } catch (error) {
+        console.error('Failed to add private friend event to calendar', error);
+      }
+      return;
+    }
+
     // If not already interested, mark as interested (which will also add to calendar)
     if (!isInterested) {
       await handleInterestedPress(e);
@@ -2041,13 +2088,7 @@ const SpecialCard: React.FC<SpecialCardProps> = ({
 
     // Already interested, just add to calendar again
     try {
-      await addToCalendar({
-        title: event.title,
-        startDate: combineDateAndTime(event.startDate, event.startTime),
-        endDate: combineDateAndTime(event.endDate || event.startDate, event.endTime || '11:59 PM'),
-        location: `${event.venue}, ${event.address}`,
-        notes: event.description
-      });
+      await addEventToCalendarWithTiming(event, `${event.venue}, ${event.address}`);
     } catch (error) {
       console.error('Failed to add event to calendar', error);
     }
@@ -2185,14 +2226,17 @@ useUserPrefsStore.getState().setAll({ savedEvents: next });
   
   const hasTicketLink = Boolean(getTicketUrl(event));
   const paid = isPaidEvent(event.ticketPrice);
+  const timingState = getEventScheduleState(event);
   
   return (
     <Animated.View
+      testID={testID}
       ref={(node) => {
         viewRef.current = node as View | null;
       }}
       style={[
         styles.specialCard,
+        timingState.muted && styles.mutedTimingCard,
         isHighlighted && tutorialStyle, // Apply tutorial style when highlighted
         isHighlighted && { zIndex: 99999 } // Lift the card above the tutorial overlay
       ]}
@@ -2201,7 +2245,10 @@ useUserPrefsStore.getState().setAll({ savedEvents: next });
         <View style={styles.heroImageContainer}>
           <TouchableOpacity
             activeOpacity={0.9}
-            onPress={() => onImagePress(event.imageUrl || event.profileUrl, event)}
+            onPress={(pressEvent) => {
+              pressEvent.stopPropagation();
+              onImagePress(event.imageUrl || event.profileUrl, event);
+            }}
           >
             <FallbackImage 
               imageUrl={event.imageUrl || event.profileUrl}
@@ -2219,6 +2266,24 @@ useUserPrefsStore.getState().setAll({ savedEvents: next });
               isSaved={isSaved}
               isSharedByUser={event.sharedEventProvenance?.sharedByCurrentUser === true}
             />
+
+            {friendEventBadgeLabel && (
+              <View style={styles.friendEventHeroBadge}>
+                <Ionicons name="people" size={13} color="#FFFFFF" />
+                <Text style={styles.friendEventHeroBadgeText}>{friendEventBadgeLabel}</Text>
+              </View>
+            )}
+
+            {spatialBadgeLabel && spatialBadgeIcon && (
+              <View
+                accessibilityLabel={spatialBadgeLabel}
+                pointerEvents="none"
+                style={styles.routeEventHeroBadge}
+              >
+                <MaterialIcons name={spatialBadgeIcon} size={14} color="#4E342E" />
+                <Text style={styles.routeEventHeroBadgeText}>{spatialBadgeLabel}</Text>
+              </View>
+            )}
             
             {showHeroEngagementOverlay && (
               <View style={styles.heroEngagementOverlay} pointerEvents="box-none">
@@ -2302,7 +2367,13 @@ useUserPrefsStore.getState().setAll({ savedEvents: next });
         </View>
       </View>
       
-      <View style={styles.contentSection}>
+      <TouchableOpacity
+        accessibilityLabel={`Open details for ${event.title}`}
+        accessibilityRole="button"
+        activeOpacity={0.82}
+        onPress={() => onImagePress(event.imageUrl || event.profileUrl, event)}
+        style={styles.contentSection}
+      >
         <Text 
           style={styles.cardTitle} 
           numberOfLines={2}
@@ -2312,56 +2383,41 @@ useUserPrefsStore.getState().setAll({ savedEvents: next });
         </Text>
         
         {showVenueName && (
-          <Text style={styles.venueNameText}>{event.venue}</Text>
+          <Text style={styles.venueNameText}>{scopedLocationSummary || event.venue}</Text>
         )}
         
         <View style={styles.dateTimeRow}>
           <MaterialIcons name="access-time" size={14} color="#666666" />
           {(() => {
-            const base = formatEventDateTime(event.startDate, event.startTime, event);
-            const timeStatus = getEventTimeStatus(event);
-
-            const startRaw = event?.startTime;
-            const endRaw   = event?.endTime;
-
-            const start = startRaw && startRaw !== 'N/A' ? formatTime(startRaw) : null;
-            const end   = endRaw   && endRaw   !== 'N/A' ? formatTime(endRaw)   : null;
-
-            const range =
-              start && end ? `${start} – ${end}` :
-              start        ? `${start} – late`  :
-              end          ? `until ${end}`     :
-                            '';
-
-            const rangeOrUndefined = range && range.trim() ? range : undefined;
-            const { label, start: s, end: e, labelWithTime } = partsFrom(base, rangeOrUndefined);
-            const showRange = (timeStatus === 'now' || timeStatus === 'today' || timeStatus === 'future') && !!rangeOrUndefined;
-
-            const suffix = showRange ? ` • ${s}${e ? ` – ${e}` : ''}` : '';
-            const displayUntilDate = getEventDisplayUntilDate(event);
+            const scheduleContext = getEventScheduleContext(event);
+            const displayUntilDate = scheduleContext ? undefined : getEventDisplayUntilDate(event);
             const endDateSuffix =
-              showRange && isFutureDate(displayUntilDate) ? ` • (Until ${formatEndDateLabel(displayUntilDate!)})` : '';
-
-const display = showRange ? `${label}${suffix}${endDateSuffix}` : labelWithTime;
+              isFutureDate(displayUntilDate) ? ` • (Until ${formatEndDateLabel(displayUntilDate!)})` : '';
 
 return (
-  <Text
-    style={styles.dateTimeText}
-    numberOfLines={1}
-    adjustsFontSizeToFit={true}
-    minimumFontScale={0.7}
-  >
-    {display}
-  </Text>
+  <>
+    <EventTimingSummaryText
+      event={event}
+      suffix={endDateSuffix}
+      style={styles.dateTimeText}
+      numberOfLines={2}
+      adjustsFontSizeToFit={true}
+      minimumFontScale={0.75}
+    />
+    <EventTimingBadge event={event} compact style={styles.timingBadge} />
+  </>
 );
 
           })()}
         </View>
 
+        <AreaEventMembershipLinks event={event} />
+        <EventSeriesContextLine event={event} containerStyle={styles.seriesContextLine} />
+
 
 
         
-      </View>
+      </TouchableOpacity>
       
       <View style={styles.descriptionSection}>
         <GuestLimitedContent 
@@ -2396,7 +2452,7 @@ return (
             <Text style={styles.categoryText}>{getCategoryTag()}</Text>
           </View>
           
-          {hasDisplayableTicketPrice(event.ticketPrice) && event.ticketPrice !== "0" && event.ticketPrice !== "Ticketed Event" && !(hasTicketLink && paid) && !(event.ticketPrice.toLowerCase() === "free" && hasTicketLink && !paid) && (
+          {!event.friendEvent && hasDisplayableTicketPrice(event.ticketPrice) && event.ticketPrice !== "0" && event.ticketPrice !== "Ticketed Event" && !(hasTicketLink && paid) && !(event.ticketPrice.toLowerCase() === "free" && hasTicketLink && !paid) && (
             <View style={styles.priceTag}><Text style={styles.priceText}>{event.ticketPrice}</Text></View>
           )}
           
@@ -2451,6 +2507,9 @@ return (
 // NEW: Memoized wrapper to prevent unnecessary re-renders of SpecialCard
 const MemoSpecialCard = React.memo(SpecialCard, (prev, next) => {
   return prev.event.id === next.event.id &&
+    prev.event.friendEvent?.viewerRole === next.event.friendEvent?.viewerRole &&
+    prev.event.friendEvent?.ownRsvp === next.event.friendEvent?.ownRsvp &&
+    prev.event.friendEvent?.addressRevealed === next.event.friendEvent?.addressRevealed &&
     prev.event.familyFriendlyScore === next.event.familyFriendlyScore &&
     prev.event.ticketLinkPosts === next.event.ticketLinkPosts &&  // Add this
     prev.event.ticketLinkEvents === next.event.ticketLinkEvents && // Add this
@@ -2507,23 +2566,17 @@ const sortedEvents = useMemo(() => {
   return (
     <View style={styles.multiEventsContainer}>
       {sortedEvents.map((event, index) => (
-        <TouchableOpacity
+        <MemoSpecialCard
           key={`multiple-event-${event.id}-${index}`}
-          style={styles.multiEventCard}
-          onPress={() => onSelectEvent(event)}
-          activeOpacity={0.7}
-        >
-           <MemoSpecialCard 
-             event={getUpdatedEvent(event.id) || event}  // Uses fresh event data from store, falls back to original if not found
-             showVenueName={isMultiVenue}
-             onImagePress={onImagePress}
-             isSaved={savedEvents.includes(event.id.toString())}
-             matchesUserInterests={doesEventMatchAnyInterest(event, userInterests)}
-             userInterests={userInterests}
-             isGuest={isGuest}
-           />
-
-        </TouchableOpacity>
+          event={getUpdatedEvent(event.id) || event}  // Uses fresh event data from store, falls back to original if not found
+          onSelectEvent={onSelectEvent}
+          showVenueName={isMultiVenue}
+          onImagePress={onImagePress}
+          isSaved={savedEvents.includes(event.id.toString())}
+          matchesUserInterests={doesEventMatchAnyInterest(event, userInterests)}
+          userInterests={userInterests}
+          isGuest={isGuest}
+        />
       ))}
     </View>
   );
@@ -2535,9 +2588,11 @@ type CalloutState = 'expanded' | 'normal' | 'minimized';
 interface EventCalloutProps {
   venues: Venue[];
   cluster: Cluster | null;
-  onClose: () => void;
+  preferredVenueLocationKey?: string | null;
+  onClose: () => boolean | void;
   onCloseStart?: () => void;
   onEventSelected?: (event: Event) => void;
+  onShowRoute?: (event: Event) => void;
   onLayoutReady?: () => void;
   onPresentationReady?: () => void;
   readinessEpoch: number;
@@ -2546,13 +2601,19 @@ interface EventCalloutProps {
 const EventCallout: React.FC<EventCalloutProps> = ({ 
   venues, 
   cluster,
+  preferredVenueLocationKey,
   onClose,
   onCloseStart,
   onEventSelected,
+  onShowRoute,
   onLayoutReady,
   onPresentationReady,
   readinessEpoch,
 }) => {
+  const timingMinute = useEventTimingMinute();
+  const expiryNow = useMemo(() => new Date(timingMinute * 60000), [timingMinute]);
+  const pathname = usePathname();
+  const isFriendEventDetailRoute = isFriendEventDetailPath(pathname);
   // Add store subscription to get fresh event data
   const storeEvents = useMapStore((state) => state.events);
 
@@ -2787,7 +2848,7 @@ const [userLocation, setUserLocation] = useState<{ coords: { latitude: number; l
     const venueInfo = venues.map((venue, index) => {
       const isFavorite = userFavoriteVenues.includes(venue.locationKey);
       const hasNowEvents = venue.events.some(event =>
-        isEventNow(event.startDate, event.startTime, event.endDate, event.endTime)
+        isEventNowWithTiming(event)
       );
       return { index, isFavorite, hasNowEvents };
     });
@@ -2837,19 +2898,15 @@ const [userLocation, setUserLocation] = useState<{ coords: { latitude: number; l
   
 const { reorderedVenues, initialVenueIndex } = useMemo(() => {
   const mostRelevantIndex = findMostRelevantVenueIndex(venues, favoriteVenues);
-
-  if (mostRelevantIndex === 0) {
-    // Most relevant venue is already first, no reordering needed
-    return { reorderedVenues: venues, initialVenueIndex: 0 };
-  }
-
-  // Move the most relevant venue to position 0
-  const reordered = [...venues];
-  const [mostRelevantVenue] = reordered.splice(mostRelevantIndex, 1);
-  reordered.unshift(mostRelevantVenue);
-
-  return { reorderedVenues: reordered, initialVenueIndex: 0 };
-}, [venues, favoriteVenues]);
+  return {
+    reorderedVenues: prioritizeCalloutVenues(
+      venues,
+      mostRelevantIndex,
+      preferredVenueLocationKey,
+    ),
+    initialVenueIndex: 0,
+  };
+}, [venues, favoriteVenues, preferredVenueLocationKey]);
 
 const [activeVenueIndex, setActiveVenueIndex] = useState(initialVenueIndex);
 const activeVenue = reorderedVenues[activeVenueIndex];
@@ -2863,7 +2920,15 @@ const activeVenueFriendPresence = getVenueFriendPresence(cluster, activeVenue);
   // console.log("Is multi-venue:", isMultiVenue, 
   //             "Total venues:", venues.length);
   
-  const events = activeVenue.events.filter(event => event.type === 'event');
+  // A venue callout is a schedule: show what is happening now first, followed
+  // by the earliest upcoming event. Interest/saved state remains visible on
+  // each card, but must not place a later event above an earlier one.
+  const events = useMemo(
+    () => sortEventsByTimeStatus(
+      activeVenue.events.filter(event => event.type === 'event' && !isEventPast(event, expiryNow))
+    ),
+    [activeVenue.events, expiryNow]
+  );
   const specials = activeVenue.events.filter(event => event.type === 'special');
   // LOG: Active venue content counts - shows events and specials count for debugging content display
   // console.log("Active venue events:", events.length, 
@@ -2871,13 +2936,17 @@ const activeVenueFriendPresence = getVenueFriendPresence(cluster, activeVenue);
   
   const hasEvents = events.length > 0;
   const hasSpecials = specials.length > 0;
+  const browsePages = useMemo(() => getCalloutBrowsePages(reorderedVenues.map((venue) => ({
+    hasEvents: venue.events.some((event) => event.type === 'event' && !isEventPast(event, expiryNow)),
+    hasSpecials: venue.events.some((event) => event.type === 'special'),
+  }))), [reorderedVenues, expiryNow]);
   
   const getInitialActiveTab = (): TabType => {
     const hasNowEvents = events.some(event => 
-      isEventNow(event.startDate, event.startTime, event.endDate, event.endTime)
+      isEventNowWithTiming(event)
     );
     const hasNowSpecials = specials.some(special => 
-      isEventNow(special.startDate, special.startTime, special.endDate, special.endTime)
+      isEventNowWithTiming(special)
     );
     
     if (hasNowSpecials) return 'specials';
@@ -2888,6 +2957,9 @@ const activeVenueFriendPresence = getVenueFriendPresence(cluster, activeVenue);
   };
   
 const [activeTab, setActiveTab] = useState<TabType>(getInitialActiveTab());
+const canSwipeBrowse = activeTab !== 'venue' && browsePages.some((page) =>
+  page.venueIndex !== activeVenueIndex || page.tab !== activeTab
+);
 const initialAutoOpenTabRef = useRef<TabType>(getInitialActiveTab());
 const [selectedEvent, setSelectedEvent] = useState<Event | null>(
   hasEvents ? events[0] : (hasSpecials ? specials[0] : null)
@@ -2896,8 +2968,6 @@ const [selectedEvent, setSelectedEvent] = useState<Event | null>(
 const lastDefaultIdRef = useRef<string | number | null>(selectedEvent?.id ?? null);
 const [calloutState, setCalloutState] = useState<CalloutState>('expanded');
 
-  const [scrollEnabled, setScrollEnabled] = useState(true);
-  
   // Track when current venue was activated for duration tracking
   const venueActivatedAtRef = useRef<number>(Date.now());
 
@@ -2932,10 +3002,7 @@ const [calloutState, setCalloutState] = useState<CalloutState>('expanded');
   const [showBackToTop, setShowBackToTop] = useState(false);
   const backToTopOpacity = useRef(new Animated.Value(0)).current;
   
-  const [selectedImageData, setSelectedImageData] = useState<{
-    imageUrl: string;
-    event: Event;
-  } | null>(null);
+  const [selectedImageData, setSelectedImageData] = useState<CalloutLightboxSelection | null>(null);
   const unlockCompactSdk = () => {
     compactSdkUnlockedForSession = true;
     setCompactSdkUnlocked(true);
@@ -3100,30 +3167,45 @@ try {
   });
 } catch {}
 
-// Just set the selectedImageData - don't hide the callout
-setSelectedImageData({ imageUrl, event });
-console.log('ATTEMPTING to set selectedImageData state...');
-
-    
     // Just set the selectedImageData - don't hide the callout
-    setSelectedImageData({ imageUrl, event });
+    setSelectedImageData(openCalloutLightbox(imageUrl, event, event.type === 'special' ? specials : events));
     console.log('ATTEMPTING to set selectedImageData state...');
   };
   
-  const handleModalClose = () => {
+  const handleModalClose = useCallback(() => {
     console.log('LIGHTBOX CLOSE triggered');
     setSelectedImageData(null);
     setGlobalSelectedImageData(null);
-  };
+  }, [setGlobalSelectedImageData]);
+
+  const handleLocalLightboxNavigate = useCallback((index: number) => {
+    setSelectedImageData((current) => current ? navigateCalloutLightbox(current, index) : current);
+  }, []);
+
+  const handleShowRoute = useCallback((event: Event) => {
+    // A lightbox opened from a cluster is nested above that cluster's
+    // callout. Let MapScreen commit the route underneath the still-opaque
+    // lightbox first. Closing this modal on the next frame prevents the
+    // parent callout from flashing between the lightbox and route map.
+    onShowRoute?.(event);
+    requestAnimationFrame(handleModalClose);
+  }, [handleModalClose, onShowRoute]);
   
   // ===============================================================
   // GUEST LIMITATION INTERACTION HANDLERS
   // ===============================================================
   
-  /**
-   * Handle venue selection with guest limitation tracking
-   */
-const handleVenueSelect = (index: number) => {
+const resetContentScroll = () => {
+  scrollViewRef.current?.scrollTo({ y: 0, animated: false });
+  scrollYRef.current = 0;
+  setScrollProgress(0);
+  setCanScrollMore(false);
+  setShowBackToTop(false);
+  backToTopOpacity.setValue(0);
+};
+
+/** Handle venue selection with guest limitation tracking. */
+const handleVenueSelect = (index: number, requestedTab?: CalloutBrowseTab, animateLayout = true) => {
   console.log(`[GuestLimitation] Venue change: ${activeVenueIndex} → ${index}`);
   
   unlockCompactSdk();
@@ -3164,7 +3246,7 @@ const handleVenueSelect = (index: number) => {
   venueActivatedAtRef.current = now;
   
   // Clear scroll tracking for the new venue+tab combination
-  const newScrollKey = `venue_${index}_tab_${activeTab}`;
+  const newScrollKey = `venue_${index}_tab_${requestedTab ?? activeTab}`;
   setScrolledCombinations(prev => {
     const newSet = new Set(prev);
     newSet.delete(newScrollKey); // Remove if exists so first scroll in new venue counts
@@ -3178,10 +3260,7 @@ const handleVenueSelect = (index: number) => {
   const shouldSkipAutoScroll = tutorialActive && tutorialStep === 'callout-venue-selector';
 
   if (!shouldSkipAutoScroll) {
-    scrollViewRef.current?.scrollTo({
-      y: 0,
-      animated: false
-    });
+    resetContentScroll();
   }
   // Reset progress/affordances immediately so UI doesn't flash stale state
   setScrollProgress(0);
@@ -3201,17 +3280,21 @@ const handleVenueSelect = (index: number) => {
   }
   
   // Animate the layout change and provide haptic feedback
-  LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+  if (animateLayout) LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 
   // Proceed with venue change
+  if (requestedTab) {
+    setCompactTabRenderMode(null);
+    setActiveTab(requestedTab);
+  }
   setActiveVenueIndex(index);
 };
 
   /**
    * Handle tab change with guest limitation tracking
    */
-const handleTabChange = (tab: TabType) => {
+const handleTabChange = (tab: TabType, animateLayout = true) => {
   console.log(`[GuestLimitation] Tab change: ${activeTab} → ${tab}`);
   setCompactTabRenderMode(null);
   
@@ -3276,7 +3359,7 @@ try {
   });
 
   // Animate the layout change and provide haptic feedback
-  LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+  if (animateLayout) LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 
   // Proceed with tab change
@@ -3390,7 +3473,7 @@ try {
       });
 
       // Use the existing state variables
-      setSelectedImageData({ imageUrl, event });
+      setSelectedImageData(openCalloutLightbox(imageUrl, event, event.type === 'special' ? specials : events));
     }
   };
   
@@ -3407,8 +3490,27 @@ try {
   const closeAnimationStartedRef = useRef(false);
   const indicatorRotation = useRef(new Animated.Value(0)).current;
   
-  const touchStartX = useRef(0);
-  const touchStartY = useRef(0);
+  const browsePanRef = useRef<PanGestureHandler>(null);
+  const [browseWidth, setBrowseWidth] = useState(SCREEN_WIDTH);
+  const reduceMotion = useReduceMotion();
+  const browseSwipe = useCalloutSwipeTransition({
+    pages: browsePages,
+    current: { venueIndex: activeVenueIndex, tab: activeTab },
+    width: browseWidth,
+    enabled: canSwipeBrowse && calloutState !== 'minimized' && !isLightboxOpen,
+    reduceMotion,
+    onNavigate: (next) => {
+      if (next.venueIndex !== activeVenueIndex) {
+        handleVenueSelect(next.venueIndex, next.tab, false);
+      } else {
+        handleTabChange(next.tab, false);
+      }
+      // A second accepted swipe may precede the prior React commit. Always
+      // assign its destination venue, even if this render still has the old one.
+      setActiveVenueIndex(next.venueIndex);
+      resetContentScroll();
+    },
+  });
 
   const readAnimatedNumeric = (value: Animated.Value): number | null => {
     try {
@@ -3426,8 +3528,8 @@ try {
 
   const getCalloutHeightForState = (state: CalloutState) => {
     if (state === 'expanded') return expandedCalloutHeight;
-    if (state === 'minimized') return CALLOUT_MIN_HEIGHT;
-    return CALLOUT_NORMAL_HEIGHT;
+    if (state === 'minimized') return CALLOUT_MIN_HEIGHT + tabBarHeight;
+    return CALLOUT_NORMAL_HEIGHT + tabBarHeight;
   };
 
   useEffect(() => {
@@ -3463,7 +3565,7 @@ useEffect(() => {
   // Interaction is recorded when the user:
   // 1. Swipes to a different venue (handled in handleVenueSelect)
   // 2. Clicks on an event in the venue (handled in handleEventSelect)
-}, [venues]);
+}, [preferredVenueLocationKey, venues]);
   
   useEffect(() => {
   console.log("Venue change effect triggered - activeVenueIndex:", activeVenueIndex);
@@ -3573,12 +3675,12 @@ if (lastDefaultIdRef.current !== newId) {
   
 const insets = useSafeAreaInsets();
 const tabBarHeight = useBottomTabBarHeight();
-// The modal spans the full screen, but the sheet should meet the top of the
-// app's tab bar so the real Events / Map / Specials navigation remains visible.
-const navBarOffset = tabBarHeight;
+// The floating dock overlays the sheet; its background reaches the device edge.
+// Preserve the normal/minimized top positions by reclaiming the old tab reserve.
+const navBarOffset = 0;
 const calloutBottomOffset = navBarOffset;
-const bottomInset = 16;
-// Fill the space between the status bar and the bottom tab bar.
+const bottomInset = getTabDockContentInset(Platform.OS, insets.bottom);
+// Fill the space from the status bar to the bottom of the screen.
 const expandedCalloutHeight = Math.max(
   CALLOUT_NORMAL_HEIGHT,
   SCREEN_HEIGHT - Math.max(0, insets?.top ?? 0) - calloutBottomOffset,
@@ -3904,9 +4006,32 @@ const setCalloutStateWithAnimation = (state: CalloutState) => {
   // Animated close function - slides callout down before unmounting
   const animateClose = useCallback(() => {
     if (closeAnimationStartedRef.current) {
+      traceMapEvent('event_callout_close_attempt_ignored', {
+        reason: 'close_already_started',
+        clusterId: cluster?.id ?? 'none',
+        venueCount: venues.length,
+      });
       return;
     }
     closeAnimationStartedRef.current = true;
+    traceMapEvent('event_callout_close_attempt_started', {
+      clusterId: cluster?.id ?? 'none',
+      venueCount: venues.length,
+      calloutState: currentStateRef.current,
+      staticIosPresentation: useStaticIosCalloutPresentation,
+    });
+
+    const settleCloseRequest = (result: boolean | void) => {
+      const accepted = settleCalloutCloseAttempt(result, () => {
+        closeAnimationStartedRef.current = false;
+      });
+      traceMapEvent('event_callout_close_request_settled', {
+        accepted,
+        clusterId: cluster?.id ?? 'none',
+        venueCount: venues.length,
+      });
+    };
+
     if (Platform.OS === 'android') {
       (calloutRootRef.current as any)?.setNativeProps?.({
         pointerEvents: 'none',
@@ -3921,7 +4046,7 @@ const setCalloutStateWithAnimation = (state: CalloutState) => {
     if (useStaticIosCalloutPresentation) {
       console.log('ANIMATE CLOSE - static iOS close path');
       setCompactTabRenderMode(null);
-      onClose();
+      settleCloseRequest(onClose());
       return;
     }
 
@@ -3930,7 +4055,7 @@ const setCalloutStateWithAnimation = (state: CalloutState) => {
       translateY.setValue(SCREEN_HEIGHT);
       backgroundOpacity.setValue(0);
       setCompactTabRenderMode(null);
-      onClose();
+      settleCloseRequest(onClose());
       return;
     }
 
@@ -3949,10 +4074,24 @@ const setCalloutStateWithAnimation = (state: CalloutState) => {
     ]).start(({ finished }) => {
       if (finished) {
         setCompactTabRenderMode(null);
-        onClose();
+        settleCloseRequest(onClose());
+      } else {
+        closeAnimationStartedRef.current = false;
+        traceMapEvent('event_callout_close_attempt_cancelled', {
+          clusterId: cluster?.id ?? 'none',
+          venueCount: venues.length,
+        });
       }
     });
-  }, [backgroundOpacity, onClose, onCloseStart, translateY, useStaticIosCalloutPresentation]);
+  }, [
+    backgroundOpacity,
+    cluster?.id,
+    onClose,
+    onCloseStart,
+    translateY,
+    useStaticIosCalloutPresentation,
+    venues.length,
+  ]);
 
   const isShellVerticalDrag = useCallback((gestureState: { dx: number; dy: number }) => {
     const { dx, dy } = gestureState;
@@ -4003,12 +4142,13 @@ const setCalloutStateWithAnimation = (state: CalloutState) => {
         return false;
       },
       onPanResponderGrant: () => {
-  // ⚠️ Do NOT toggle ScrollView enable/disable here.
-  // On Android, if a gesture terminates without 'release', the list can get stuck non-scrollable.
-
         translateY.stopAnimation();
         translateY.extractOffset();
-        setScrollEnabled(false);
+        traceMapEvent('event_callout_shell_pan_granted', {
+          clusterId: cluster?.id ?? 'none',
+          venueCount: venues.length,
+          calloutState: currentStateRef.current,
+        });
       },
       onPanResponderMove: (_, gestureState) => {
         // LOG: Pan gesture movement tracking
@@ -4027,11 +4167,15 @@ const setCalloutStateWithAnimation = (state: CalloutState) => {
         indicatorRotation.setValue(rotation);
       },
       onPanResponderRelease: (_, gestureState) => {
-  // Keep ScrollView state untouched; header pan shouldn't globally enable/disable inner scrolling
-
         translateY.flattenOffset();
-        setScrollEnabled(true);
         const { dy, vy } = gestureState;
+        traceMapEvent('event_callout_shell_pan_released', {
+          clusterId: cluster?.id ?? 'none',
+          venueCount: venues.length,
+          calloutState: currentStateRef.current,
+          dy,
+          vy,
+        });
         console.log('RELEASE - dy:', dy.toFixed(2), 'vy:', vy.toFixed(2), 'current state:', currentStateRef.current);
 
         // === LARGE SWIPE DOWN from ANY state → dismiss callout ===
@@ -4083,13 +4227,27 @@ const setCalloutStateWithAnimation = (state: CalloutState) => {
         }
         console.log('TARGET STATE decided:', targetState);
         setCalloutStateRef.current(targetState);
-      }
+      },
+      onPanResponderTerminationRequest: () => true,
+      onPanResponderTerminate: (_, gestureState) => {
+        translateY.flattenOffset();
+        traceMapEvent('event_callout_shell_pan_terminated', {
+          clusterId: cluster?.id ?? 'none',
+          venueCount: venues.length,
+          calloutState: currentStateRef.current,
+          dx: gestureState.dx,
+          dy: gestureState.dy,
+        });
+        setCalloutStateRef.current(currentStateRef.current);
+      },
     }),
     [
       backgroundOpacity,
+      cluster?.id,
       indicatorRotation,
       isShellVerticalDrag,
       translateY,
+      venues.length,
     ]
   );
   const panResponder = useMemo(
@@ -4150,6 +4308,22 @@ useEffect(() => {
 useEffect(() => {
   console.log("Initial callout animation effect");
   let cancelled = false;
+  let firstVisibleFrameId: number | null = null;
+  const scheduleFirstVisibleFrameTrace = (presentation: 'static' | 'animated') => {
+    if (!MAP_TRACE_ENABLED) return;
+
+    firstVisibleFrameId = requestAnimationFrame(() => {
+      firstVisibleFrameId = null;
+      if (cancelled) return;
+      traceMapEvent('event_callout_first_visible_frame', {
+        clusterId: cluster?.id ?? 'none',
+        venueCount: venues.length,
+        presentation,
+        currentTranslateY: readAnimatedNumeric(translateY),
+        currentBackgroundOpacity: readAnimatedNumeric(backgroundOpacity),
+      });
+    });
+  };
   setCalloutPresentationSettled(false);
   const markPresentationSettled = () => {
     if (cancelled) return;
@@ -4197,9 +4371,16 @@ useEffect(() => {
       animatedEntrance: false,
       staticIosPresentation: true,
     });
+    traceMapEvent('event_callout_native_presentation_dispatched', {
+      clusterId: cluster?.id ?? 'none',
+      venueCount: venues.length,
+      presentation: 'static',
+    });
+    scheduleFirstVisibleFrameTrace('static');
     presentationSettler.animationComplete(true);
     return () => {
       cancelled = true;
+      if (firstVisibleFrameId !== null) cancelAnimationFrame(firstVisibleFrameId);
       presentationSettler.cancel();
     };
   }
@@ -4239,6 +4420,13 @@ useEffect(() => {
     });
   }
 
+  traceMapEvent('event_callout_native_presentation_dispatched', {
+    clusterId: cluster?.id ?? 'none',
+    venueCount: venues.length,
+    presentation: 'animated',
+  });
+  scheduleFirstVisibleFrameTrace('animated');
+
   traceMapEvent('event_callout_initial_position_applied', {
     clusterId: cluster?.id ?? 'none',
     venueCount: venues.length,
@@ -4253,6 +4441,7 @@ useEffect(() => {
   });
   return () => {
     cancelled = true;
+    if (firstVisibleFrameId !== null) cancelAnimationFrame(firstVisibleFrameId);
     presentationSettler.cancel();
     sheetEntranceAnimation.stop();
   };
@@ -4272,37 +4461,6 @@ useEffect(() => {
 }, [calloutLayoutReady, calloutPresentationSettled, readinessEpoch]);
 
 
-
-  const handleTouchStart = (e: NativeSyntheticEvent<any>) => {
-    touchStartX.current = e.nativeEvent.pageX;
-    touchStartY.current = e.nativeEvent.pageY;
-  };
-
-  const handleTouchEnd = (e: NativeSyntheticEvent<any>) => {
-    const touchEndX = e.nativeEvent.pageX;
-    const touchEndY = e.nativeEvent.pageY;
-    
-    const swipeX = touchStartX.current - touchEndX;
-    const swipeY = Math.abs(touchStartY.current - touchEndY);
-    
-    if (Math.abs(swipeX) > 50 && swipeY < 50) {
-      if (swipeX > 0) {
-        if (activeTab === 'events' && hasSpecials) {
-          handleTabChange('specials');
-        } else if ((activeTab === 'events' || activeTab === 'specials')) {
-          handleTabChange('venue');
-        }
-      } else {
-        if (activeTab === 'venue' && hasSpecials) {
-          handleTabChange('specials');
-        } else if (activeTab === 'venue' && hasEvents) {
-          handleTabChange('events');
-        } else if (activeTab === 'specials' && hasEvents) {
-          handleTabChange('events');
-        }
-      }
-    }
-  };
 
   // Enhanced render function for content items (events and ads)
   const renderContentItem = (item: ContentItem, index: number) => {
@@ -4358,24 +4516,20 @@ useEffect(() => {
       // Render event/special card
       const event = item.data as Event;
       return (
-        <TouchableOpacity 
+        <MemoSpecialCard
           key={`event-${event.id}-${index}`}
-          onPress={() => handleEventSelect(event)}
-          activeOpacity={0.7}
           testID={index === 0 ? "event-list-item" : undefined}
-        >
-          <MemoSpecialCard 
-            event={getUpdatedEvent(event.id) || event}  // Uses fresh event data from store, falls back to original if not found
-            showVenueName={isMultiVenue}
-            onImagePress={handleImagePress}
-            isSaved={savedEvents.includes(event.id.toString())}
-            matchesUserInterests={doesEventMatchAnyInterest(event, userInterests)}
-            userInterests={userInterests}
-            isGuest={isGuest}
-            // Pass the prop to the first card in the list
-            isTutorialTarget={index === 0}
-          />
-        </TouchableOpacity>
+          event={getUpdatedEvent(event.id) || event}  // Uses fresh event data from store, falls back to original if not found
+          onSelectEvent={handleEventSelect}
+          showVenueName={isMultiVenue}
+          onImagePress={handleImagePress}
+          isSaved={savedEvents.includes(event.id.toString())}
+          matchesUserInterests={doesEventMatchAnyInterest(event, userInterests)}
+          userInterests={userInterests}
+          isGuest={isGuest}
+          // Pass the prop to the first card in the list
+          isTutorialTarget={index === 0}
+        />
       );
     }
   };
@@ -4393,7 +4547,7 @@ useEffect(() => {
     //                              `NORMAL`);
 
   return (
-    <>
+    <AreaMembershipNavigationProvider onShowRoute={onShowRoute}>
       {shouldRenderInternalDimOverlay && (
         <Animated.View 
           style={[
@@ -4529,7 +4683,7 @@ useEffect(() => {
           <VenueSelector
             venues={visibleVenueSelectorVenues}
             activeVenueIndex={activeVenueIndex}
-            onSelectVenue={handleVenueSelect}
+            onSelectVenue={(index) => { browseSwipe.reset(); handleVenueSelect(index); }}
             onScroll={handleVenueScroll}
             venueHasNewContent={venueHasNewContent}
             favoriteVenues={favoriteVenues}
@@ -4570,9 +4724,23 @@ useEffect(() => {
                   .join(' · ')}
               </Text>
             </View>
+            {Number.isFinite(Number(activeVenue.latitude)) && Number.isFinite(Number(activeVenue.longitude)) && (
+              <TouchableOpacity
+                accessibilityLabel={`Get directions to join friends at ${activeVenue.venue}`}
+                onPress={() => {
+                  const url = `https://www.google.com/maps/search/?api=1&query=${Number(activeVenue.latitude)},${Number(activeVenue.longitude)}`;
+                  void Linking.openURL(url);
+                }}
+                style={styles.joinFriendsButton}
+              >
+                <Ionicons name="navigate" size={14} color="#0F766E" />
+                <Text style={styles.joinFriendsButtonText}>Join them</Text>
+              </TouchableOpacity>
+            )}
           </View>
         )}
         
+        <VenueHuntMembershipLinks venue={activeVenue} filterType={activeTab === 'specials' || (!hasEvents && hasSpecials) ? 'special' : 'event'} />
         <Animated.View
           {...shellPanHandlers}
           collapsable={false}
@@ -4588,24 +4756,52 @@ useEffect(() => {
         >
           <EventTabs 
             activeTab={activeTab} 
-            onChangeTab={handleTabChange}
+            onChangeTab={(tab) => { browseSwipe.reset(); handleTabChange(tab); }}
             eventCount={events.length}
             specialCount={specials.length}
             venueCount={venues.length}
           />
         </Animated.View>
         
-        <View style={styles.contentContainer}>
+        <GestureHandlerRootView style={styles.contentContainer} onLayout={(event) => setBrowseWidth(event.nativeEvent.layout.width)}>
+        <PanGestureHandler
+          ref={browsePanRef}
+          enabled={canSwipeBrowse && calloutState !== 'minimized' && !isLightboxOpen}
+          activeOffsetX={[-12, 12]}
+          failOffsetY={[-22, 22]}
+          maxPointers={1}
+          simultaneousHandlers={scrollViewRef}
+          onGestureEvent={browseSwipe.onGestureEvent}
+          onHandlerStateChange={browseSwipe.onStateChange}
+        >
+        <Animated.View style={{ flex: 1, overflow: 'hidden', transform: [{ translateX: browseSwipe.translateX }] }}>
         <ScrollView 
             ref={scrollViewRef}
             style={styles.calloutContent}
             showsVerticalScrollIndicator={false}
-            onTouchStart={handleTouchStart}
-            onTouchEnd={handleTouchEnd}
+            simultaneousHandlers={browsePanRef}
             scrollEventThrottle={16}
-            scrollEnabled={scrollEnabled && calloutState !== 'minimized'}
+            scrollEnabled={calloutState !== 'minimized'}
             bounces={false}
             contentContainerStyle={[styles.scrollContentContainer, { paddingBottom: bottomInset }]}
+            onScrollBeginDrag={() => {
+              traceMapEvent('event_callout_content_scroll_started', {
+                clusterId: cluster?.id ?? 'none',
+                venueCount: venues.length,
+                activeTab,
+                calloutState,
+                scrollY: scrollYRef.current,
+              });
+            }}
+            onScrollEndDrag={() => {
+              traceMapEvent('event_callout_content_scroll_ended', {
+                clusterId: cluster?.id ?? 'none',
+                venueCount: venues.length,
+                activeTab,
+                calloutState,
+                scrollY: scrollYRef.current,
+              });
+            }}
             onScroll={handleContentScroll}
           >
             {activeTab === 'events' && (
@@ -4634,10 +4830,12 @@ useEffect(() => {
             
             {/* bottom spacer replaced by dynamic paddingBottom */}
           </ScrollView>
+        </Animated.View>
+        </PanGestureHandler>
           
           {/* Vertical Scroll Progress Bar */}
           {canScrollMore && (
-            <View style={styles.verticalProgressContainer}>
+            <View pointerEvents="none" style={styles.verticalProgressContainer}>
               <View style={[styles.verticalProgressBar, { height: `${scrollProgress * 100}%` }]} />
             </View>
           )}
@@ -4649,7 +4847,7 @@ useEffect(() => {
                 styles.backToTopButton,
                 {
                   opacity: backToTopOpacity,
-                  bottom: calloutState === 'expanded' ? 1 : 15,
+                  bottom: bottomInset - 16 + (calloutState === 'expanded' ? 1 : 15),
                 }
               ]}
             >
@@ -4666,11 +4864,13 @@ useEffect(() => {
               </TouchableOpacity>
             </Animated.View>
           )}
-        </View>
+        </GestureHandlerRootView>
       </CalloutContainerComponent>
 
       {/* Render the lightbox modal when needed - supports both local and global state */}
-      {!EVENT_CALLOUT_SHELL_ISOLATION_DEBUG && (selectedImageData || globalSelectedImageData) && (
+      {!EVENT_CALLOUT_SHELL_ISOLATION_DEBUG &&
+        !isFriendEventDetailRoute &&
+        (selectedImageData || globalSelectedImageData) && (
         <Modal
           transparent={true}
           visible={true}
@@ -4686,14 +4886,19 @@ useEffect(() => {
             venue={globalSelectedImageData?.venue}
             cluster={globalSelectedImageData?.cluster}
             onClose={handleModalClose}
-            events={globalSelectedImageData?.events}
+            calloutPaging={!globalSelectedImageData && !!selectedImageData}
+            loopNavigation={shouldLoopGlobalLightbox(globalSelectedImageData?.source)}
+            events={globalSelectedImageData ? globalSelectedImageData.events : selectedImageData?.events}
             currentIndex={
-              globalSelectedImageData?.events ? globalSelectedImageData.currentIndex : undefined
+              globalSelectedImageData ? globalSelectedImageData.currentIndex : selectedImageData?.currentIndex
             }
             onNavigate={
-              globalSelectedImageData?.events ? handleGlobalLightboxNavigate : undefined
+              globalSelectedImageData
+                ? globalSelectedImageData.events ? handleGlobalLightboxNavigate : undefined
+                : handleLocalLightboxNavigate
             }
             isCityEvent={globalSelectedImageData?.source === 'city_event_marker'}
+            onShowRoute={onShowRoute ? handleShowRoute : undefined}
           />
         </Modal>
       )}
@@ -4702,7 +4907,7 @@ useEffect(() => {
       {/* GUEST LIMITATION REGISTRATION PROMPT - ONLY FOR GUESTS */}
       {/* =============================================================== */}
       {isGuest && <RegistrationPrompt />}
-    </>
+    </AreaMembershipNavigationProvider>
   );
 };
 
@@ -4965,6 +5170,16 @@ const styles = StyleSheet.create({
     fontSize: 12,
     lineHeight: 16,
   },
+  joinFriendsButton: {
+    minHeight: 34,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 9,
+    borderRadius: 10,
+    backgroundColor: '#CCFBF1',
+  },
+  joinFriendsButtonText: { color: '#0F766E', fontSize: 11, fontWeight: '900' },
   venueTopContent: {
   alignItems: 'center',
 },
@@ -5205,10 +5420,19 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   cardDateTime: {
+    flex: 1,
     fontSize: 12,
     color: '#666666',
     marginLeft: 8,
+  },
+  mutedTimingCard: {
+    opacity: 0.68,
+  },
+  compactTimingRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
     marginBottom: 6,
+    paddingRight: 8,
   },
   cardDescription: {
     fontSize: 14,
@@ -5478,6 +5702,33 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#333333',
   },
+  friendEventHeroBadge: {
+    position: 'absolute',
+    top: 9,
+    left: 9,
+    zIndex: 11,
+    minHeight: 27,
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+    borderRadius: 9,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(105, 65, 198, 0.94)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.42)',
+    shadowColor: '#42307D',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.24,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  friendEventHeroBadgeText: {
+    marginLeft: 5,
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.3,
+  },
   // Add new style for image container background
   heroImageContainer: {
     backgroundColor: 'rgba(255, 255, 255, 0.5)', // Soft glass frame
@@ -5523,6 +5774,10 @@ const styles = StyleSheet.create({
     color: '#666666',
     marginLeft: 4,
     flex: 1, // Allow text to take available space
+  },
+  seriesContextLine: {
+    marginBottom: 4,
+    marginTop: -1,
   },
   nowBannerTime: {
   marginLeft: 6,
@@ -5635,6 +5890,32 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 12,
     fontWeight: '500',
+  },
+  routeEventHeroBadge: {
+    position: 'absolute',
+    bottom: 16,
+    left: 16,
+    zIndex: 12,
+    minHeight: 28,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 9,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(244, 197, 66, 0.96)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.58)',
+    shadowColor: '#4E342E',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.22,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  routeEventHeroBadgeText: {
+    marginLeft: 5,
+    color: '#4E342E',
+    fontSize: 12,
+    fontWeight: '700',
   },
   priceTag: {
     backgroundColor: '#FFFFFF',
@@ -5795,9 +6076,20 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   eventTime: {
+    flex: 1,
     fontSize: 14,
     color: '#666666',
     marginLeft: 6,
+  },
+  timingBadge: {
+    marginLeft: 6,
+  },
+  timingDisclosure: {
+    color: '#6B7280',
+    fontSize: 12,
+    lineHeight: 17,
+    marginBottom: 8,
+    marginLeft: 22,
   },
   priceContainer: {
     flexDirection: 'row',

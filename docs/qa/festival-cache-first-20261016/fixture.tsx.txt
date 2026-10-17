@@ -1,0 +1,85 @@
+import React from 'react';
+import { Image, Pressable, Text, View } from 'react-native';
+import { Stack } from 'expo-router';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { BottomTabBarHeightContext } from '@react-navigation/bottom-tabs';
+import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query';
+import * as SplashScreen from 'expo-splash-screen';
+import AreaLocationBrowser from './components/map/AreaLocationBrowser';
+import { useMapStore } from './store/mapStore';
+import type { Event } from './types/events';
+import type { AreaActivityLoader } from './hooks/useAreaActivities';
+import { EVENTS_MINIMAL } from './lib/queryKeys';
+import { formatLocalDateKey, addDaysToDateKey } from './utils/eventExpiry';
+
+const client = new QueryClient({defaultOptions:{queries:{retry:false,gcTime:600000}}});
+export function FixtureRoot() {
+  React.useEffect(()=>{void SplashScreen.hideAsync()},[]);
+  return <GestureHandlerRootView style={{flex:1}}><SafeAreaProvider><QueryClientProvider client={client}>
+    <BottomTabBarHeightContext.Provider value={0}><Stack screenOptions={{headerShown:false}}/></BottomTabBarHeightContext.Provider>
+  </QueryClientProvider></SafeAreaProvider></GestureHandlerRootView>;
+}
+const day = addDaysToDateKey(formatLocalDateKey(new Date()),2);
+const image = Image.resolveAssetSource(require('./assets/fallbacks/categories/workshops.webp')).uri;
+const music = Image.resolveAssetSource(require('./assets/fallbacks/categories/live-music.webp')).uri;
+const profile = Image.resolveAssetSource(require('./assets/fallbacks/profiles/event-default.webp')).uri;
+const titles = ['Pumpkin decorating workshop','Family music and stories','Creative autumn crafts','Community harvest gathering',
+  'Painting together','Learn a new dance','Family concert','Art and imagination','Storytelling afternoon',
+  'Autumn cooking class','Make a festive lantern','Festival closing celebration'];
+const records: Event[] = titles.map((title,index)=>({id:'fb_qa_festival_'+(index+1),type:'event',
+  category:index%2?'Live Music':'Workshops & Classes',title,
+  description:'Synthetic local fixture. This activity is already available in the app cache; no live festival record is used.',
+  venueId:'qa_centre',venue:'Centre Belle-Alliance',address:'123 Example Street, Summerside',latitude:46.4,longitude:-63.7,
+  startDate:day,endDate:day,startTime:String(10+index).padStart(2,'0')+':00',endTime:String(11+index).padStart(2,'0')+':00',
+  imageUrl:index%2?music:image,profileUrl:profile,mediaUrls:[index%2?music:image],
+  sourceUrl:'https://example.com/synthetic/festival',facebookUrl:'https://example.com/synthetic/festival',
+  isRecurring:false,isRecurringInstance:false,likes:3,shares:2}));
+const umbrella = {...records[0],id:'qa_festival_root',title:'Festival activity preview',startDate:formatLocalDateKey(new Date()),
+  endDate:addDaysToDateKey(day,3),startTime:'',endTime:''} as Event;
+type Mode = 'cached'|'cold'|'partial'|'refresh';
+export default function Fixture() {
+  const query = useQueryClient();
+  const [open,setOpen] = React.useState(false);
+  const [mode,setMode] = React.useState<Mode>('cached');
+  const [run,setRun] = React.useState(0);
+  const [requests,setRequests] = React.useState(0);
+  const [hydrations,setHydrations] = React.useState(0);
+  const phase = React.useRef<Mode>('cached');
+  const choose = React.useCallback((next:Mode)=>{
+    query.clear(); phase.current=next; setMode(next); setRequests(0); setHydrations(0);
+    const known=next==='cold'?[]:next==='cached'?records:records.slice(0,2);
+    const fetchedAt=Date.now();
+    useMapStore.setState({events:known,allEvents:known,lastFetchedAt:fetchedAt,
+      fetchEventDetails:async()=>{setHydrations(n=>n+1)}});
+    query.setQueryData(EVENTS_MINIMAL,{combinedData:known,fetchedAt});
+    setRun(n=>n+1); setOpen(true);
+  },[query]);
+  React.useEffect(()=>{choose('cached')},[choose]);
+  const loader = React.useCallback<AreaActivityLoader>((id,signal)=>{
+    setRequests(n=>n+1); const current=phase.current;
+    return new Promise((resolve,reject)=>{
+      const timer=setTimeout(()=>{
+        if(current==='refresh'&&id==='qa_festival_2') resolve({status:'unavailable'});
+        else {
+          const event=records.find(e=>e.id==='fb_'+id)!;
+          resolve({status:'found',event:current==='refresh'?{...event,title:'Updated pumpkin workshop'}:event});
+        }
+      },current==='refresh'?10000:90000);
+      signal.addEventListener('abort',()=>{clearTimeout(timer);reject(new Error('Fixture cancelled'))},{once:true});
+    });
+  },[]);
+  const amount=mode==='cached'?12:mode==='refresh'?2:4;
+  const location={id:'qa_centre_location',label:'Centre Belle-Alliance',venueId:'qa_centre',certainty:'confirmed' as const,
+    coordinates:{latitude:46.4,longitude:-63.7},address:'123 Example Street, Summerside',
+    linkedEventIds:records.slice(0,amount).map(e=>String(e.id).replace('fb_','')),description:'Local synthetic programme preview.'};
+  const group={id:'qa_group',coordinates:location.coordinates,locations:[location]};
+  return <View style={{flex:1,backgroundColor:'#223346',paddingTop:32,paddingHorizontal:16}}>
+    <Text style={{color:'white',fontSize:18,fontWeight:'700'}}>Festival cache QA · 1ade792</Text>
+    <Text style={{color:'#D0E2F3',fontSize:12,marginTop:6}}>Synthetic · {mode} · requests {requests} · detail hydration {hydrations}</Text>
+    <View style={{flexDirection:'row',gap:8,marginTop:9}}>{(['cached','cold','partial','refresh'] as Mode[]).map(next=>
+      <Pressable key={next} onPress={()=>choose(next)} style={{padding:10,borderRadius:9,backgroundColor:'#395779'}}>
+        <Text style={{color:'white',fontWeight:'600',fontSize:12}}>{next}</Text></Pressable>)}</View>
+    {open&&<AreaLocationBrowser key={run} umbrella={umbrella} group={group} loadActivity={loader} onClose={()=>setOpen(false)}/>}
+  </View>;
+}

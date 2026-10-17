@@ -1,0 +1,44 @@
+{
+  "validatedSourceCommit": "8df8c2595b73a121c4255d8294f9b71dcd7b1c36",
+  "runtime": "1.1.10",
+  "published": false,
+  "deviceAdoption": "Unverified",
+  "typeScript": "passed",
+  "tests": {
+    "suites": 5,
+    "passed": 38,
+    "skipped": 1,
+    "skip": "existing opt-in synthetic detail benchmark"
+  },
+  "lint": {
+    "errors": 0,
+    "warnings": 213
+  },
+  "preflight": {
+    "cleanWorktree": true,
+    "ancestorOfCandidate": "3d2f4f729242b0a306a1917b053a6576a22deaed",
+    "target": "iOS Preview",
+    "firebase": "Production account continuity; staging native shell",
+    "appCheckCompatibilityOverride": true,
+    "bothSocialFlags": true,
+    "mapbox": true,
+    "nativeConfiguration": "unchanged"
+  },
+  "localExport": {
+    "platform": "ios",
+    "metroModules": 2495,
+    "bundleBytes": 5680484,
+    "sourceMapSources": 2451,
+    "assetMetadataEntries": 111,
+    "fixtureOrTestSources": 0,
+    "requiredSourceFilesMatch": 11
+  },
+  "sourceCodeCommits": [
+    "a1d268ea5d914696262444ce66972dfdba5bfcad",
+    "8df8c2595b73a121c4255d8294f9b71dcd7b1c36"
+  ],
+  "noPaidCalls": true,
+  "noBackendOrDataWrites": true,
+  "noMapOrEmulatorInteraction": true,
+  "logs": "artifacts/ios-date-only-capability-20261015/"
+}

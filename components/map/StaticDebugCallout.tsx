@@ -7,11 +7,13 @@ import { traceMapEvent } from '../../utils/mapTrace';
 interface StaticDebugCalloutProps {
   venues: Venue[];
   cluster: Cluster | null;
+  preferredVenueLocationKey?: string | null;
   onClose: () => void;
   onLayoutReady?: () => void;
   onPresentationReady?: () => void;
   readinessEpoch?: number;
   onEventSelected?: (event: Event) => void;
+  onShowRoute?: (event: Event) => void;
 }
 
 const StaticDebugCallout: React.FC<StaticDebugCalloutProps> = ({

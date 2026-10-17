@@ -5,6 +5,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { firestore } from '../config/firebaseConfig';
 import { doc, getDoc, onSnapshot, updateDoc } from 'firebase/firestore';
 import { getLocalDateKey } from '../utils/localDateKey';
+import { normalizeUserInterests } from '../utils/interestSelectionUtils';
 
 type UserPrefsState = {
   interests: string[];
@@ -113,7 +114,7 @@ export async function startUserPrefsListener(userId: string) {
     if (snap.exists()) {
       const data = snap.data() || {};
       useUserPrefsStore.getState().setAll({
-        interests: data.userInterests || [],
+        interests: normalizeUserInterests(data.userInterests),
         savedEvents: data.savedEvents || [],
         favoriteVenues: data.favoriteVenues || [],
         likedEvents: data.likedEvents || [],
@@ -131,7 +132,7 @@ export async function startUserPrefsListener(userId: string) {
     if (snap.exists()) {
       const data = snap.data() || {};
       useUserPrefsStore.getState().setAll({
-        interests: data.userInterests || [],
+        interests: normalizeUserInterests(data.userInterests),
         savedEvents: data.savedEvents || [],
         favoriteVenues: data.favoriteVenues || [],
         likedEvents: data.likedEvents || [],
@@ -153,7 +154,9 @@ export function stopUserPrefsListener() {
 // Optional helpers for when the user updates settings in-app:
 export async function updateUserInterests(userId: string, interests: string[]) {
   const ref = doc(firestore, 'users', userId);
-  await updateDoc(ref, { userInterests: interests });
+  const normalizedInterests = normalizeUserInterests(interests);
+  await updateDoc(ref, { userInterests: normalizedInterests });
+  useUserPrefsStore.getState().setAll({ interests: normalizedInterests });
 }
 export async function updateSavedEvents(userId: string, savedEvents: string[]) {
   const ref = doc(firestore, 'users', userId);

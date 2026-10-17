@@ -3,7 +3,7 @@
  * Handles fetching, filtering, and pagination for Firestore-sourced events.
  */
 
-import { Event } from '../../types/events';
+import { Event, EventTiming } from '../../types/events';
 import { FirestoreEvent, FirestoreEventsResponse } from '../../types/firestore';
 import { auth } from '../../config/firebaseConfig';
 import {
@@ -14,7 +14,17 @@ import {
 } from '../config/backend';
 import { isScopedLocationScope } from '../../utils/locationScope';
 import { resolvePeiCityCentroid } from '../../utils/peiCityCentroids';
-import { getTicketUrl, normalizeTicketUrl } from '../../utils/ticketUrls';
+import {
+  getTicketUrl,
+  normalizeTicketPurchaseUrl,
+  normalizeTicketUrl,
+} from '../../utils/ticketUrls';
+import { createLegacyTimingContract, getEventTiming } from '../../utils/eventTiming';
+import { readEventAreaData, isExplicitTrue } from '../../utils/eventAreaData';
+import { readEventProgrammeData } from '../../utils/eventProgramme';
+import { normalizeRecurrenceFlag } from '../../utils/eventRecurrence';
+import { toFirestoreEventId, toAppEventId } from '../../utils/firestoreEventIds';
+export { toFirestoreEventId, toAppEventId, areEventIdsEquivalent } from '../../utils/firestoreEventIds';
 
 // Debug flag for logging
 const DEBUG_FIRESTORE = __DEV__ ?? true;
@@ -32,25 +42,10 @@ interface FirestorePageRequest extends FirestoreFetchOptions {
   startAfter?: string;
 }
 
-export const toFirestoreEventId = (eventId: string | number): string => {
-  const raw = String(eventId ?? '').trim();
-  if (!raw) return '';
-  return raw.startsWith('fb_') ? raw.slice(3) : raw;
-};
-
-export const toAppEventId = (eventId: string | number): string => {
-  const raw = String(eventId ?? '').trim();
-  if (!raw) return '';
-  return raw.startsWith('fb_') ? raw : `fb_${raw}`;
-};
-
-export const areEventIdsEquivalent = (
-  a: string | number | null | undefined,
-  b: string | number | null | undefined
-): boolean => {
-  if (a == null || b == null) return false;
-  return toFirestoreEventId(a) === toFirestoreEventId(b);
-};
+export interface EventFeedVersion {
+  version: number | null;
+  updatedAt: string | null;
+}
 
 /**
  * Convert 24-hour time format to 12-hour format with AM/PM
@@ -99,6 +94,85 @@ const firstText = (...values: Array<unknown>): string => {
 
 const isRecord = (value: unknown): value is Record<string, any> =>
   Boolean(value && typeof value === 'object' && !Array.isArray(value));
+
+const normalizeContractTime = (value: unknown): string | null => {
+  const raw = firstText(value);
+  return raw ? convert24to12Hour(raw) : null;
+};
+
+export const normalizeFirestoreTiming = (fsEvent: FirestoreEvent): EventTiming => {
+  const metadata = fsEvent.metadata || {};
+  const rawTiming = fsEvent.timing ?? metadata.timing;
+  if (rawTiming?.version === 2 && rawTiming.schedule?.start && rawTiming.schedule?.end) {
+    return {
+      ...rawTiming,
+      timeZone: rawTiming.timeZone || 'America/Halifax',
+      schedule: {
+        start: {
+          ...rawTiming.schedule.start,
+          localDate: rawTiming.schedule.start.localDate || fsEvent.startDate,
+          localTime: normalizeContractTime(rawTiming.schedule.start.localTime || fsEvent.startTime),
+          timeZone: rawTiming.schedule.start.timeZone || rawTiming.timeZone || 'America/Halifax',
+        },
+        end: {
+          ...rawTiming.schedule.end,
+          localDate: rawTiming.schedule.end.localDate || null,
+          localTime: normalizeContractTime(rawTiming.schedule.end.localTime),
+          timeZone: rawTiming.schedule.end.timeZone || rawTiming.timeZone || 'America/Halifax',
+        },
+      },
+      estimate: rawTiming.estimate
+        ? {
+            ...rawTiming.estimate,
+            displayEndTime: normalizeContractTime(rawTiming.estimate.displayEndTime),
+            discoveryCutoffTime: normalizeContractTime(rawTiming.estimate.discoveryCutoffTime),
+          }
+        : null,
+    };
+  }
+
+  const timeFlags = isRecord(fsEvent.timeFlags)
+    ? fsEvent.timeFlags
+    : isRecord(metadata.timeFlags)
+      ? metadata.timeFlags
+      : null;
+  const timeResolution = isRecord(fsEvent.timeResolution)
+    ? fsEvent.timeResolution
+    : isRecord(metadata.timeResolution)
+      ? metadata.timeResolution
+      : null;
+  const endFlags = isRecord(timeFlags?.end) ? timeFlags.end : null;
+  const endFlagSource = firstText(endFlags?.source).toLowerCase();
+  const endResolutionMethod = firstText(timeResolution?.endFromHours);
+  const inferredByLegacyResolver =
+    endResolutionMethod === 'category_default' || endResolutionMethod === 'duration_default';
+  const untilClose = endFlags?.toClose === true || endResolutionMethod === 'to_close';
+  const explicitEnd =
+    !inferredByLegacyResolver &&
+    (endFlagSource === 'explicit' || Boolean(timeResolution?.endFromFacebookEvent));
+  const endStatus = untilClose
+    ? 'until_close'
+    : explicitEnd
+      ? 'observed'
+      : 'unknown';
+
+  return createLegacyTimingContract(
+    {
+      startDate: fsEvent.startDate || '',
+      startTime: convert24to12Hour(fsEvent.startTime),
+      endDate: fsEvent.endDate || fsEvent.startDate || '',
+      endTime: fsEvent.endTime ? convert24to12Hour(fsEvent.endTime) : '',
+    },
+    {
+      endStatus,
+      scheduleKind: untilClose ? 'until_close' : undefined,
+      endResolutionMethod: endResolutionMethod || null,
+      endEvidence: firstText(endFlags?.evidence) || null,
+      sourceUrl: firstText(fsEvent.sourceUrl, metadata.sourceUrl, metadata.facebookUrl) || null,
+      estimateConfidence: 'low',
+    }
+  );
+};
 
 const normalizeSourcePlatform = (
   value: unknown
@@ -193,10 +267,17 @@ export function normalizeFirestoreEvent(fsEvent: FirestoreEvent): Event {
   const locationLabel = fsEvent.locationLabel ?? fsEvent.metadata?.locationLabel ?? null;
   const locationCity = fsEvent.locationCity ?? fsEvent.metadata?.locationCity ?? null;
   const scopedLocation = isScopedLocationScope(locationScope);
+  const provinceScoped = locationScope === 'province';
 
-  // Legacy city-level events were published without coordinates; place them
-  // at the canonical PEI centroid so they can reach the map and clusters.
-  if (scopedLocation && latitude === 0 && longitude === 0) {
+  // A province projection can carry an internal discovery anchor, but that is
+  // not a physical event destination. Keep it coordinate-less in app state;
+  // the viewport partition handles province-wide discovery explicitly.
+  if (provinceScoped) {
+    latitude = 0;
+    longitude = 0;
+  } else if (scopedLocation && latitude === 0 && longitude === 0) {
+    // Legacy city/area events were published without coordinates; place them
+    // at their canonical local centroid so they can reach the Area experience.
     const centroid = resolvePeiCityCentroid({ locationScope, locationCity, locationLabel });
     if (centroid) {
       latitude = centroid.latitude;
@@ -231,8 +312,8 @@ export function normalizeFirestoreEvent(fsEvent: FirestoreEvent): Event {
     ? firstText(fsEvent.address, locationLabel, fsEvent.metadata?.address, venueRecord?.address)
     : firstText(fsEvent.venueInfo?.address, fsEvent.metadata?.address, fsEvent.address, venueRecord?.address);
   const ticketsBuyUrl =
-    normalizeTicketUrl(fsEvent.ticketsBuyUrl) ||
-    normalizeTicketUrl(fsEvent.metadata?.ticketsBuyUrl);
+    normalizeTicketPurchaseUrl(fsEvent.ticketsBuyUrl) ||
+    normalizeTicketPurchaseUrl(fsEvent.metadata?.ticketsBuyUrl);
   const resolvedTicketUrl = getTicketUrl(fsEvent);
 
   return {
@@ -259,7 +340,9 @@ export function normalizeFirestoreEvent(fsEvent: FirestoreEvent): Event {
       null,
     title: fsEvent.title || '',
     description: rawDescription,
-    venueId: fsEvent.venueId ?? null,
+    // The collection-group endpoint derives a parent key such as
+    // "province_pei" for feed projections. It is not a claimable venue.
+    venueId: provinceScoped ? null : fsEvent.venueId ?? null,
 
     // Venue info (flattened from nested structure)
     venue: venueName,
@@ -273,18 +356,26 @@ export function normalizeFirestoreEvent(fsEvent: FirestoreEvent): Event {
     locationPrecision: fsEvent.locationPrecision ?? fsEvent.metadata?.locationPrecision ?? null,
     locationReviewStatus:
       fsEvent.locationReviewStatus ?? fsEvent.metadata?.locationReviewStatus ?? null,
-    mapMode: fsEvent.mapMode ?? fsEvent.metadata?.mapMode ?? null,
+    mapMode: provinceScoped ? 'none' : fsEvent.mapMode ?? fsEvent.metadata?.mapMode ?? null,
     routeData: fsEvent.routeData ?? fsEvent.metadata?.routeData ?? null,
-    areaData: fsEvent.areaData ?? fsEvent.metadata?.areaData ?? null,
+    areaData: readEventAreaData(fsEvent),
+    programmeData: readEventProgrammeData(fsEvent),
+    status: fsEvent.status ?? fsEvent.metadata?.status,
+    isCancelled: [fsEvent.isCancelled, fsEvent.cancelled, fsEvent.canceled, fsEvent.metadata?.isCancelled, fsEvent.metadata?.cancelled, fsEvent.metadata?.canceled].some(isExplicitTrue),
+    isExpired: [fsEvent.isExpired, fsEvent.metadata?.isExpired].some(isExplicitTrue),
 
     // Date/time
     startDate: fsEvent.startDate || '',
     startTime: convert24to12Hour(fsEvent.startTime),
     endDate: fsEvent.endDate || fsEvent.startDate || '',
     endTime: fsEvent.endTime ? convert24to12Hour(fsEvent.endTime) : '',
+    timing: getEventTiming({ startDate: fsEvent.startDate || '', startTime: fsEvent.startTime || '',
+      endDate: fsEvent.endDate || fsEvent.startDate || '', endTime: fsEvent.endTime || '',
+      locationScope, timing: normalizeFirestoreTiming(fsEvent) }),
 
     // Media
     imageUrl: eventImageUrl,
+    relevantImageUrl: fsEvent.relevantImageUrl || fsEvent.metadata?.relevantImageUrl,
     profileUrl: eventProfileUrl,
     SharedPostThumbnail: sharedPostThumbnail,
 
@@ -317,18 +408,25 @@ export function normalizeFirestoreEvent(fsEvent: FirestoreEvent): Event {
         : [],
 
     // Additional media/details
-    mediaUrls: fsEvent.metadata?.mediaUrls || [],
-    facebookUrl: fsEvent.metadata?.facebookUrl || '',
+    mediaUrls: Array.isArray(fsEvent.mediaUrls)
+      ? fsEvent.mediaUrls
+      : fsEvent.metadata?.mediaUrls || [],
+    sourceUrl: firstText(fsEvent.sourceUrl, fsEvent.metadata?.sourceUrl) || undefined,
+    sourceUniqueId: firstText(fsEvent.metadata?.uniqueId) || undefined,
+    facebookUrl: firstText(
+      fsEvent.metadata?.facebookUrl,
+      fsEvent.metadata?.cleanedFacebookUrl
+    ),
     eventType: fsEvent.metadata?.eventType || '',
     ageRestriction: fsEvent.metadata?.ageRestriction || '',
 
     // Recurrence metadata (top-level backend contract, metadata fallback for safety)
-    isRecurring: fsEvent.isRecurring ?? fsEvent.metadata?.isRecurring ?? false,
+    isRecurring: normalizeRecurrenceFlag(fsEvent.isRecurring ?? fsEvent.metadata?.isRecurring),
     recurringPattern: fsEvent.recurringPattern ?? fsEvent.metadata?.recurringPattern,
     recurrenceUntilDate:
       fsEvent.recurrenceUntilDate ?? fsEvent.metadata?.recurrenceUntilDate,
     isRecurringInstance:
-      fsEvent.isRecurringInstance ?? fsEvent.metadata?.isRecurringInstance ?? false,
+      normalizeRecurrenceFlag(fsEvent.isRecurringInstance ?? fsEvent.metadata?.isRecurringInstance),
     originalEventId: rawOriginalEventId ? toAppEventId(rawOriginalEventId) : null,
 
     // Venue details
@@ -356,6 +454,8 @@ async function fetchFirestorePage({
 }: FirestorePageRequest): Promise<FirestoreEventsResponse> {
   const params = new URLSearchParams();
   params.set('limit', String(limit ?? FIRESTORE_PAGE_LIMIT));
+  // Declare only alongside the reviewed date-only UI and calendar safeguards.
+  params.set('dateOnlyActivities', 'v1');
 
   if (startAfter) {
     params.set('startAfter', startAfter);
@@ -399,6 +499,25 @@ async function fetchFirestorePage({
 }
 
 /**
+ * Fetch the compact parser-maintained feed marker. This is used by the active
+ * 10-minute refresh loop to avoid re-downloading every event when nothing has
+ * changed. Callers must fall back to a full fetch if it is unavailable.
+ */
+export async function fetchEventFeedVersion(): Promise<EventFeedVersion> {
+  const response = await fetch(`${FIRESTORE_API_BASE}/events/version`);
+  if (!response.ok) {
+    throw new Error(`Firestore event feed version error: ${response.status}`);
+  }
+
+  const payload = await response.json();
+  const version = Number(payload?.version);
+  return {
+    version: Number.isFinite(version) ? version : null,
+    updatedAt: typeof payload?.updatedAt === 'string' ? payload.updatedAt : null,
+  };
+}
+
+/**
  * Fetch a single Firestore event by ID using the detail endpoint.
  */
 export async function fetchFirestoreEventById(
@@ -407,7 +526,7 @@ export async function fetchFirestoreEventById(
   const firestoreId = toFirestoreEventId(eventId);
   if (!firestoreId) return null;
 
-  const url = `${FIRESTORE_API_BASE}/events/${encodeURIComponent(firestoreId)}`;
+  const url = `${FIRESTORE_API_BASE}/events/${encodeURIComponent(firestoreId)}?dateOnlyActivities=v1`;
 
   try {
     const t0 = Date.now();
@@ -655,4 +774,45 @@ export async function fetchAllFirestoreEvents(
     console.error('[Firestore] Error fetching events:', error);
     return [];
   }
+}
+
+export type FirestoreEventStatus = { status: 'found'; event: Event } | { status: 'unavailable' };
+
+/** Only explicit absence may remove a cached activity; transient failures must throw. */
+export async function fetchFirestoreEventStatus(eventId: string | number, signal?: AbortSignal): Promise<FirestoreEventStatus> {
+  const id = toFirestoreEventId(eventId);
+  if (!id) throw new Error('Invalid event identity');
+  const response = await fetch(`${FIRESTORE_API_BASE}/events/${encodeURIComponent(id)}?dateOnlyActivities=v1`, { signal });
+  if (response.status === 404 || response.status === 410) return { status: 'unavailable' };
+  if (!response.ok) throw new Error('Event detail request failed: ' + response.status);
+  const payload = await response.json();
+  const raw = payload?.event || payload;
+  const validDate = (value: unknown) => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)
+    && Number.isFinite(new Date(value + 'T00:00:00Z').getTime())
+    && new Date(value + 'T00:00:00Z').toISOString().slice(0, 10) === value;
+  if (!raw || toFirestoreEventId(raw.id) !== id || typeof raw.title !== 'string' || !raw.title.trim()
+    || typeof raw.venueId !== 'string' || !raw.venueId.trim() || !validDate(raw.startDate)
+    || (raw.endDate && !validDate(raw.endDate))) throw new Error('Malformed event detail response');
+  return { status: 'found', event: normalizeFirestoreEvent(raw as FirestoreEvent) };
+}
+
+/** Parent detail validation accepts area roots without a venue ID. Child loader contract stays unchanged. */
+export async function fetchFirestoreMembershipRoot(eventId: string | number, signal?: AbortSignal): Promise<FirestoreEventStatus> {
+  const id = toFirestoreEventId(eventId);
+  if (!id) throw new Error('Invalid parent identity');
+  const response = await fetch(`${FIRESTORE_API_BASE}/events/${encodeURIComponent(id)}?dateOnlyActivities=v1`, { signal });
+  if (response.status === 404 || response.status === 410) return { status: 'unavailable' };
+  if (!response.ok) throw new Error('Parent detail request failed: ' + response.status);
+  const payload = await response.json();
+  const raw = payload?.event || payload;
+  const scope = raw?.locationScope ?? raw?.metadata?.locationScope;
+  const area = raw ? readEventAreaData(raw) : null;
+  const date = (value: unknown) => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)
+    && Number.isFinite(new Date(value + 'T00:00:00Z').getTime())
+    && new Date(value + 'T00:00:00Z').toISOString().slice(0, 10) === value;
+  if (!raw || toFirestoreEventId(raw.id) !== id || typeof raw.title !== 'string' || !raw.title.trim()
+    || !date(raw.startDate) || raw.endDate && !date(raw.endDate)
+    || !(['area', 'city', 'venue', 'route', 'province'].includes(scope) || typeof raw.venueId === 'string' && raw.venueId.trim())
+    || area != null && (typeof area !== 'object' || area.version !== 1 || !Array.isArray(area.locations))) throw new Error('Malformed parent detail response');
+  return { status: 'found', event: normalizeFirestoreEvent(raw as FirestoreEvent) };
 }

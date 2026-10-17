@@ -62,6 +62,8 @@ const makeEvent = (overrides: Partial<Event>): Event =>
   } as Event);
 
 describe('buildCityEventLightboxEvents', () => {
+  beforeEach(() => { jest.useFakeTimers(); jest.setSystemTime(new Date('2026-09-13T15:00:00Z')); });
+  afterEach(() => { jest.useRealTimers(); });
   it('keeps only city-level events that match the active base filters', () => {
     const cityEvent = makeEvent({
       id: 'city-1',
@@ -101,6 +103,34 @@ describe('buildCityEventLightboxEvents', () => {
     });
 
     expect(events).toEqual([cityEvent]);
+  });
+
+  it('shows province coverage in the Area experience only when its time filter matches', () => {
+    const future = new Date();
+    future.setHours(12, 0, 0, 0);
+    future.setDate(future.getDate() + 12);
+    const futureDate = [
+      future.getFullYear(),
+      String(future.getMonth() + 1).padStart(2, '0'),
+      String(future.getDate()).padStart(2, '0'),
+    ].join('-');
+    const provinceEvent = makeEvent({
+      id: 'province-1',
+      locationScope: 'province',
+      locationLabel: 'Across Prince Edward Island',
+      mapMode: 'none',
+      startDate: futureDate,
+      endDate: futureDate,
+    });
+
+    expect(buildCityEventLightboxEvents({
+      onScreenEvents: [provinceEvent],
+      filterCriteria: criteria({ eventFilters: { timeFilter: TimeFilterType.TODAY } }),
+    })).toEqual([]);
+    expect(buildCityEventLightboxEvents({
+      onScreenEvents: [provinceEvent],
+      filterCriteria: criteria({ eventFilters: { timeFilter: TimeFilterType.UPCOMING } }),
+    })).toEqual([provinceEvent]);
   });
 });
 

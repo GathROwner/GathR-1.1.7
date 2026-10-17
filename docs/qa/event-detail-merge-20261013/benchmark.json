@@ -1,0 +1,100 @@
+{
+  "baselineCommit": "dfef992",
+  "baselineSourceSha256": "0620047762be33417510ceda3146396b3218dc439d46141de64df91159a56b72",
+  "scope": "Local Node/Jest, synthetic full detail operations; not phone latency, network or FPS",
+  "results": [
+    {
+      "collectionRows": 500,
+      "collections": 2,
+      "details": 20,
+      "before": {
+        "medianMs": 181.15630000000056,
+        "samplesMs": [
+          157.77180000000044,
+          176.3044000000009,
+          181.15630000000056,
+          187.10579999999936,
+          194.92360000000008
+        ],
+        "comparisons": 270300,
+        "idKeys": 0
+      },
+      "after": {
+        "medianMs": 1.4431000000004133,
+        "samplesMs": [
+          1.3443000000006577,
+          1.4279999999998836,
+          1.4431000000004133,
+          1.4735000000000582,
+          1.6743999999998778
+        ],
+        "comparisons": 0,
+        "idKeys": 2060
+      },
+      "fullResultsEqual": true,
+      "outputSha256": "2926f743e13fcb854e83ab25d1179d67b68fd37ee9ec60d262c8677268f4ba5a"
+    },
+    {
+      "collectionRows": 1000,
+      "collections": 2,
+      "details": 100,
+      "before": {
+        "medianMs": 746.4966999999997,
+        "samplesMs": [
+          711.5307999999986,
+          716.2372000000014,
+          746.4966999999997,
+          788.0355,
+          788.9593000000004
+        ],
+        "comparisons": 1219000,
+        "idKeys": 0
+      },
+      "after": {
+        "medianMs": 2.708199999999124,
+        "samplesMs": [
+          2.597200000000157,
+          2.6728000000002794,
+          2.708199999999124,
+          2.8837000000003172,
+          3.0511999999998807
+        ],
+        "comparisons": 0,
+        "idKeys": 4300
+      },
+      "fullResultsEqual": true,
+      "outputSha256": "abbab9ac40b07e57f1abe30140a82e4808048f28d10b9005515dd650f6cb4715"
+    },
+    {
+      "collectionRows": 3000,
+      "collections": 2,
+      "details": 300,
+      "before": {
+        "medianMs": 6772.5844,
+        "samplesMs": [
+          6247.6204,
+          6324.5357,
+          6772.5844,
+          7014.0306000000055,
+          7066.3341999999975
+        ],
+        "comparisons": 10977000,
+        "idKeys": 0
+      },
+      "after": {
+        "medianMs": 8.663999999997031,
+        "samplesMs": [
+          7.663899999999558,
+          7.743999999998778,
+          8.663999999997031,
+          8.739999999997963,
+          9.309900000000198
+        ],
+        "comparisons": 0,
+        "idKeys": 12900
+      },
+      "fullResultsEqual": true,
+      "outputSha256": "80955e14c020a97e5aa8386c7a0794ccb69f0552e9b6b0e4741bfeb0fb9e292f"
+    }
+  ]
+}

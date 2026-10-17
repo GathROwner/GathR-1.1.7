@@ -22,15 +22,27 @@ import {
   Platform,
   useColorScheme
 } from 'react-native';
-import { usePathname } from 'expo-router';
+import { usePathname, useRouter } from 'expo-router';
 import { ScrollView as GestureScrollView } from 'react-native-gesture-handler';
 
-import { MaterialIcons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
+import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { useFocusEffect } from '@react-navigation/native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { getTabDockContentInset, getTabDockBottom } from '../../constants/tabDock';
+import { useHeaderHeight } from '@react-navigation/elements';
+import { useFeedScrollChrome } from '../../hooks/useFeedScrollChrome';
+import { useVisibleVenueGroups } from '../../hooks/useVisibleVenueGroups';
+import FeedFilterSummary, { FEED_FILTER_SUMMARY_HEIGHT } from '../../components/common/FeedFilterSummary';
+import UpcomingDateOptions from '../../components/map/UpcomingDateOptions';
+import { useFeedBackToTop } from '../../hooks/useFeedBackToTop';
 import FallbackImage from '../../components/common/FallbackImage';
 import TicketCtaPill from '../../components/common/TicketCtaPill';
 import EventActionLinkPill from '../../components/common/EventActionLinkPill';
 import FamilyFriendlyBadge from '../../components/common/FamilyFriendlyBadge';
+import { EventTimingBadge } from '../../components/common/EventTimingBadge';
+import { EventTimingSummaryText } from '../../components/common/EventTimingSummaryText';
+import { EventSeriesContextLine } from '../../components/common/EventSeriesContextLine';
 import { VenueFavoriteButton } from '../../components/common/VenueFavoriteButton';
 import Autolink from 'react-native-autolink';
 
@@ -45,27 +57,23 @@ import CategoryFilterOptions from '../../components/map/CategoryFilterOptions';
 
 // Import components
 import EventImageLightbox from '../../components/map/EventImageLightbox';
+import VenueEventRow, { VENUE_FEED_HERO_HEIGHT } from '../../components/common/VenueEventRow';
+import { groupVenueFeedEvents, getVenueFeedKey, type VenueFeedGroup } from '../../utils/venueFeedGroups';
 import FullSizeSdkAdCard, { FULL_SIZE_SDK_AD_ROW_HEIGHT } from '../../components/ads/FullSizeSdkAdCard';
 import { AdColors } from '../../constants/AdTheme';
 
 // Import utilities
-import { 
-  formatEventDateTime, 
-  getEventTimeStatus, 
-  sortEventsByTimeStatus,
-  combineDateAndTime,
-  isEventNow,
-  isEventHappeningToday,
-  formatTime,
+import {
+  getEventTimeStatus,
   getEventDisplayUntilDate,
-  parseISO,
-  format
 } from '../../utils/dateUtils';
-import { addToCalendar } from '../../utils/calendarUtils';
+import { getEventScheduleContext } from '../../utils/eventSeries';
+import { addEventToCalendarWithTiming } from '../../utils/calendarUtils';
 import { buildGathrSharePayload } from '../../utils/shareUtils';
 import { getTicketUrl, normalizeTicketUrl } from '../../utils/ticketUrls';
 import { getPrimaryNonTicketAction } from '../../utils/eventActionLinks';
 import { publishTutorialMeasurement } from '../../utils/tutorialReadiness';
+import { isFriendEventDetailPath } from '../../utils/friendEventLightbox';
 
 // Import priority utilities, user service, and distance calculation
 import {
@@ -87,6 +95,10 @@ import { useUserPrefsStore } from '../../store/userPrefsStore';
 import { useTutorialUiStore } from '../../store/tutorialUiStore';
 import { areEventIdsEquivalent } from '../../lib/api/firestoreEvents';
 import { doesEventMatchAnyInterest } from '../../utils/familyFriendly';
+import { isProvinceScopeEvent } from '../../utils/locationScope';
+import { useEventTimingMinute } from '../../hooks/useEventTimingMinute';
+import { useTapOnlyPress } from '../../hooks/useTapOnlyPress';
+import { getEventScheduleState } from '../../utils/eventTiming';
 
 // Import for loading native ads
 import useNativeAds from '../../hooks/useNativeAds';
@@ -142,46 +154,6 @@ type UserPrefsState = {
   likedEvents: string[];
   interestedEvents: string[];
 };
-
-// --- Local helper to derive label/start/end from the already-formatted strings ---
-// Returns { label } (base without trailing " at <start>" if present),
-// { start }, { end }, and { labelWithTime } (original base).
-function partsFrom(base: string, range?: string) {
-  const result = {
-    label: base,
-    start: undefined as string | undefined,
-    end: undefined as string | undefined,
-    labelWithTime: base,
-  };
-  if (!range) return result;
-
-  // Detect common separators: en dash, spaced hyphen, plain hyphen, and " to "
-  const rLower = range.toLowerCase();
-  const sep =
-    range.includes(' – ') ? ' – ' :
-    range.includes('–')    ? '–'    :
-    rLower.includes(' to ') ? ' to ' :
-    range.includes(' - ')  ? ' - '  :
-    range.includes('-')    ? '-'    :
-    null;
-
-  if (sep) {
-    const [startRaw, endRaw] = range.split(sep).map(s => s?.trim());
-    result.start = startRaw || undefined;
-    result.end = endRaw || undefined;
-  }
-
-  // Trim trailing " at <start>" only if it matches, case-insensitively.
-  if (result.start) {
-    const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const tailRe = new RegExp(`\\s+at\\s+${esc(result.start)}$`, 'i');
-    if (tailRe.test(base)) {
-      result.label = base.replace(tailRe, '');
-    }
-  }
-  return result;
-}
-
 
 function isFutureDate(dateStr?: string) {
   if (!dateStr) return false;
@@ -366,6 +338,8 @@ interface EventListItemProps {
   isSaved: boolean;
   isGuest: boolean;
   analytics: any; // Analytics hook - TEMPORARILY DISABLED
+  grouped?: boolean;
+  browseEvents?: Event[];
   isFirstItem?: boolean; // NEW: Tutorial awareness only for first item
 }
 
@@ -377,8 +351,12 @@ const EventListItem: React.FC<EventListItemProps> = ({
   isSaved,
   isGuest,
   analytics,
+  grouped = false,
   isFirstItem = false
 }) => {
+  useEventTimingMinute();
+  const lightboxTap = useTapOnlyPress();
+  const timingState = getEventScheduleState(event);
   const [expanded, setExpanded] = useState(false);
   const [bookmarked, setBookmarked] = useState(isSaved);
   const [isToggling, setIsToggling] = useState(false);
@@ -435,7 +413,7 @@ const EventListItem: React.FC<EventListItemProps> = ({
   }, [event.id]);
   
   useEffect(() => {
-    if (!event.id || isGuest) return;
+    if (!event.id || isGuest || event.friendEvent) return;
 
     let started = false;
     let cancelled = false;
@@ -528,13 +506,8 @@ const EventListItem: React.FC<EventListItemProps> = ({
 
       // If marking interested (not unmarking), also open calendar
       if (result.interested) {
-        await addToCalendar({
-          title: event.title,
-          startDate: combineDateAndTime(event.startDate, event.startTime),
-          endDate: combineDateAndTime(event.endDate || event.startDate, event.endTime || '11:59 PM'),
-          location: `${event.venue}, ${event.address}`,
-          notes: event.description
-        });
+        const calendarAdded = await addEventToCalendarWithTiming(event, `${event.venue}, ${event.address}`);
+        if (!calendarAdded) return;
 
         // Track successful calendar addition
         analytics?.trackUserAction('calendar_add_success', {
@@ -578,13 +551,8 @@ const EventListItem: React.FC<EventListItemProps> = ({
     try {
       const startTime = Date.now();
 
-      await addToCalendar({
-        title: event.title,
-        startDate: combineDateAndTime(event.startDate, event.startTime),
-        endDate: combineDateAndTime(event.endDate || event.startDate, event.endTime || '11:59 PM'),
-        location: `${event.venue}, ${event.address}`,
-        notes: event.description
-      });
+      const calendarAdded = await addEventToCalendarWithTiming(event, `${event.venue}, ${event.address}`);
+      if (!calendarAdded) return;
 
       // Track successful calendar addition
       analytics?.trackUserAction('calendar_add_success', {
@@ -882,20 +850,6 @@ const result = await userService.toggleSavedEvent(event.id, {
   
   const showBuyTicketsButton = hasTicketLink && paid;
   const showRegisterButton = hasTicketLink && !paid;
-  const formatFullDateTime = (): string => {
-    let dateTimeStr = formatEventDateTime(event.startDate, event.startTime, event);
-    
-    if (event.endTime && event.endTime !== event.startTime) {
-      dateTimeStr += ` to ${formatTime(event.endTime)}`;
-      
-      if (event.endDate && event.endDate !== event.startDate) {
-        dateTimeStr += `, ${format(parseISO(event.endDate), 'MMM d')}`;
-      }
-    }
-    
-    return dateTimeStr;
-  };
-  
   const handleHeroLikePress = async (e: GestureResponderEvent) => {
     e.stopPropagation();
     analytics?.trackUserAction('like_attempt', {
@@ -965,12 +919,51 @@ const result = await userService.toggleSavedEvent(event.id, {
     }
   };
 
+  if (event.friendEvent) {
+    const rsvpLabel = event.friendEvent.viewerRole === 'host'
+      ? 'You are hosting'
+      : event.friendEvent.ownRsvp === 'invited'
+        ? 'Invitation · Respond now'
+        : event.friendEvent.ownRsvp === 'cant_go'
+          ? "Can't go"
+          : event.friendEvent.ownRsvp.charAt(0).toUpperCase() + event.friendEvent.ownRsvp.slice(1);
+    return (
+      <TouchableOpacity ref={tutorialRef} activeOpacity={0.78} onPress={onPress} style={[styles.eventCard, styles.friendEventCard]}>
+        <View style={styles.friendEventAccent} />
+        <View style={styles.friendEventIcon}>
+          <Ionicons name="people" size={24} color="#FFFFFF" />
+        </View>
+        <View style={styles.friendEventCopy}>
+          <View style={styles.friendEventTopline}>
+            <Text style={styles.friendEventEyebrow}>FRIEND EVENT · {event.category.toUpperCase()}</Text>
+            <View style={styles.friendEventLock}><Ionicons name="lock-closed" size={10} color="#6941C6" /><Text style={styles.friendEventLockText}>{event.friendEvent.visibility === 'all_friends' ? 'FRIENDS' : 'INVITED'}</Text></View>
+          </View>
+          <Text numberOfLines={2} style={styles.friendEventTitle}>{event.title}</Text>
+          <View style={styles.friendEventTimingRow}>
+            <EventTimingSummaryText event={event} numberOfLines={1} style={styles.friendEventMeta} />
+            <EventTimingBadge event={event} compact />
+          </View>
+          <View style={styles.friendEventLocationRow}>
+            <Ionicons name="location-outline" size={14} color="#667085" />
+            <Text numberOfLines={1} style={styles.friendEventLocation}>{event.friendEvent.addressRevealed ? `${event.venue}${event.address ? ` · ${event.address}` : ''}` : 'Exact address shared later'}</Text>
+          </View>
+          <View style={styles.friendEventFooter}>
+            <Text style={styles.friendEventHost}>{event.friendEvent.viewerRole === 'host' ? 'Hosted by you' : `Hosted by ${event.friendEvent.hostName}`}</Text>
+            <Text style={styles.friendEventRsvp}>{rsvpLabel}</Text>
+          </View>
+        </View>
+        <Ionicons name="chevron-forward" size={20} color="#7F56D9" />
+      </TouchableOpacity>
+    );
+  }
+
   return (
-    <View>
+    <View {...lightboxTap.touchHandlers}>
       <TouchableOpacity
         ref={tutorialRef}
-        style={styles.eventCard}
-        onPress={onPress}
+        style={[styles.eventCard, grouped && styles.groupedEventCard, timingState.muted && styles.mutedEventCard]}
+        onPress={event => { if (lightboxTap.isTap(event)) onPress(); }}
+        onAccessibilityTap={onPress}
         activeOpacity={0.7}
       >
       {/* Hero Image Section - NEW */}
@@ -979,7 +972,8 @@ const result = await userService.toggleSavedEvent(event.id, {
           <View>
             <TouchableOpacity
               activeOpacity={0.9}
-              onPress={() => onImagePress(event.imageUrl || event.profileUrl, event)}
+              onPress={touch => { if (lightboxTap.isTap(touch)) onImagePress(event.imageUrl || event.profileUrl, event); }}
+              onAccessibilityTap={() => onImagePress(event.imageUrl || event.profileUrl, event)}
             >
               <FallbackImage
               imageUrl={event.imageUrl || event.profileUrl}
@@ -1001,7 +995,7 @@ const result = await userService.toggleSavedEvent(event.id, {
             />
 
             {/* Venue identity and address disclosure - top left */}
-            <View style={styles.venueIdentityOverlay}>
+            {!grouped && <View style={styles.venueIdentityOverlay}>
               <View style={styles.venueIdentityPill}>
                 <View style={styles.venueProfileImageContainer}>
                   <FallbackImage
@@ -1064,7 +1058,7 @@ const result = await userService.toggleSavedEvent(event.id, {
                   </Text>
                 </View>
               )}
-            </View>
+            </View>}
 
             {showHeroEngagementOverlay && (
               <View style={styles.heroEngagementOverlay} pointerEvents="box-none">
@@ -1153,47 +1147,27 @@ const result = await userService.toggleSavedEvent(event.id, {
         <View style={styles.dateTimeRow}>
           <MaterialIcons name="access-time" size={14} color={BRAND.primaryDark} />
           {(() => {
-            const base = formatEventDateTime(event.startDate, event.startTime, event);
-            const timeStatus = getEventTimeStatus(event);
-
-            const startRaw = event?.startTime;
-            const endRaw   = event?.endTime;
-
-            const start = startRaw && startRaw !== 'N/A' ? formatTime(startRaw) : null;
-            const end   = endRaw   && endRaw   !== 'N/A' ? formatTime(endRaw)   : null;
-
-            const range =
-              start && end ? `${start} – ${end}` :
-              start        ? `${start} – late`  :
-              end          ? `until ${end}`     :
-                            '';
-
-            // Structured-ish build: derive parts and only append range for now/today
-            const rangeOrUndefined = range && range.trim() ? range : undefined;
-            const { label, start: s, end: e, labelWithTime } = partsFrom(base, rangeOrUndefined);
-            const showRange = (timeStatus === 'now' || timeStatus === 'today' || timeStatus === 'future') && !!rangeOrUndefined;
-
-            const suffix = showRange ? ` • ${s}${e ? ` – ${e}` : ''}` : '';
-            const displayUntilDate = getEventDisplayUntilDate(event);
+            const scheduleContext = getEventScheduleContext(event);
+            const displayUntilDate = scheduleContext ? undefined : getEventDisplayUntilDate(event);
             const endDateSuffix =
-              showRange && isFutureDate(displayUntilDate) ? ` • (Until ${formatEndDateLabel(displayUntilDate!)})` : '';
-
-            const display = showRange ? `${label}${suffix}${endDateSuffix}` : labelWithTime;
-
-
-
+              isFutureDate(displayUntilDate) ? ` • (Until ${formatEndDateLabel(displayUntilDate!)})` : '';
             return (
-              <Text
-                style={styles.dateTimeText}
-                numberOfLines={1}
-                adjustsFontSizeToFit={true}
-                minimumFontScale={0.7}
-              >
-                {display}
-              </Text>
+              <>
+                <EventTimingSummaryText
+                  event={event}
+                  suffix={endDateSuffix}
+                  style={styles.dateTimeText}
+                  numberOfLines={2}
+                  adjustsFontSizeToFit={true}
+                  minimumFontScale={0.75}
+                />
+                <EventTimingBadge event={event} compact style={styles.timingBadge} />
+              </>
             );
           })()}
         </View>
+
+        <EventSeriesContextLine event={event} containerStyle={styles.seriesContextLine} />
 
         <Text
           style={styles.cardTitle}
@@ -1378,7 +1352,9 @@ const result = await userService.toggleSavedEvent(event.id, {
 const MemoizedEventListItem = React.memo(EventListItem, (prevProps, nextProps) => {
   // Only re-render if these specific props change
   return (
-    prevProps.event.id === nextProps.event.id &&
+    prevProps.event === nextProps.event &&
+    prevProps.grouped === nextProps.grouped &&
+    prevProps.browseEvents === nextProps.browseEvents &&
     prevProps.event.familyFriendlyScore === nextProps.event.familyFriendlyScore &&
     prevProps.matchesUserInterests === nextProps.matchesUserInterests &&
     prevProps.isSaved === nextProps.isSaved &&
@@ -1389,6 +1365,11 @@ const MemoizedEventListItem = React.memo(EventListItem, (prevProps, nextProps) =
 
 // Main Events Screen component
 function EventsScreen() {
+  const safeAreaInsets = useSafeAreaInsets();
+  const dockContentInset = getTabDockContentInset(Platform.OS, safeAreaInsets.bottom);
+  const router = useRouter();
+  const pathname = usePathname();
+  const isFriendEventDetailRoute = isFriendEventDetailPath(pathname);
   const adColors = AdColors[useColorScheme() ?? 'light'];
   markTabScreenRenderStart('events');
   // ===============================================================
@@ -1512,6 +1493,7 @@ useEffect(() => {
   // Store integration - individual selectors to prevent infinite loops
   // (Combined object selectors with shallow cause getSnapshot caching issues)
   const events = useMapStore((state) => state.events);
+  const onScreenEvents = useMapStore((state) => state.onScreenEvents);
   const viewportEvents = useMapStore((state) => state.viewportEvents);
   const outsideViewportEvents = useMapStore((state) => state.outsideViewportEvents);
   const isLoading = useMapStore((state) => state.isLoading);
@@ -1552,8 +1534,7 @@ useEffect(() => {
   // State management
   const [scrollY] = useState(new Animated.Value(0));
   const [headerHeight, setHeaderHeight] = useState(INITIAL_FILTER_HEADER_HEIGHT);
-  const [isHeaderCollapsed, setIsHeaderCollapsed] = useState(false);
-  const headerTranslateY = useRef(new Animated.Value(0)).current;
+  const navigationHeaderHeight = useHeaderHeight();
   const lastScrollY = useRef(0);
   const flatListRef = useRef<FlatList>(null);
   const handleFlatListLayout = useCallback(() => {
@@ -1567,18 +1548,30 @@ useEffect(() => {
   }, []);
   
   // Back to top button state
-  const [showBackToTop, setShowBackToTop] = useState(false);
-  const backToTopOpacity = useRef(new Animated.Value(0)).current;
+  const backToTop = useFeedBackToTop(SCREEN_HEIGHT);
+  const { visible: showBackToTop, opacity: backToTopOpacity } = backToTop;
   
   // Performance tracking
   const [listLoadTime, setListLoadTime] = useState<number | null>(null);
   const [scrollStartTime, setScrollStartTime] = useState<number | null>(null);
-  const collapsibleHeaderTop = COLLAPSIBLE_HEADER_TOP_MARGIN;
+  const collapsibleHeaderTop = navigationHeaderHeight;
   const effectiveHeaderStackHeight = collapsibleHeaderTop + Math.max(headerHeight, 120);
+
+  const chromeTutorialVisible = useTutorialUiStore((state) => state.isVisible);
+  const feedChrome = useFeedScrollChrome('events', isHeaderSearchActive || chromeTutorialVisible);
+  const visibleVenueGroups = useVisibleVenueGroups();
+  const showFullFilters = !feedChrome.compactFilters || feedChrome.filtersExpanded;
+  const visibleFilterHeight = feedChrome.compactFilters
+    ? FEED_FILTER_SUMMARY_HEIGHT + (feedChrome.filtersExpanded ? headerHeight : 0) : headerHeight;
+  const headerTranslateY = feedChrome.progress.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, -(collapsibleHeaderTop + visibleFilterHeight)],
+  });
 
   // Scroll to top functionality
   useEffect(() => {
     if (scrollTriggers.events > 0) {
+      feedChrome.reveal();
       console.log('[EventsScreen] Scroll trigger detected, scrolling to top');
       
       // Track scroll to top interaction
@@ -1623,8 +1616,11 @@ useEffect(() => {
   const [selectedImageData, setSelectedImageData] = useState<{
     imageUrl: string;
     event: Event;
+    events: Event[];
   } | null>(null);
   
+  const [selectedVenueEvents, setSelectedVenueEvents] = useState<Record<string, string>>({});
+
   // Read saved events, interests, and favorite venues from the centralized cache
   const savedEvents = useUserPrefsStore((s: UserPrefsState) => s.savedEvents);
   const userInterests = useUserPrefsStore((s: UserPrefsState) => s.interests);
@@ -1872,7 +1868,11 @@ useEffect(() => {
   // ANALYTICS-ENHANCED EVENT HANDLERS
   // ===============================================================
   
-  const handleEventPress = (event: Event) => {
+  const handleEventPress = (event: Event, groupEvents: Event[] = [event]) => {
+    if (event.friendEvent) {
+      router.push(`/friend-event/${event.friendEvent.eventId}`);
+      return;
+    }
     console.log(`[GuestLimitation] Event press: ${event.title}`);
     
     // Track event discovery and interaction
@@ -1908,7 +1908,7 @@ useEffect(() => {
     
     if (imageUrl) {
       console.log('CARD PRESSED - Opening lightbox for:', imageUrl);
-      handleImagePress(imageUrl, event);
+      handleImagePress(imageUrl, event, groupEvents);
     } else {
       setSelectedEvent(event);
       setDetailsVisible(true);
@@ -1922,7 +1922,11 @@ useEffect(() => {
     }
   };
 
-  const handleImagePress = (imageUrl: string, event: Event) => {
+  const handleImagePress = (imageUrl: string, event: Event, groupEvents: Event[] = [event]) => {
+    if (event.friendEvent) {
+      router.push(`/friend-event/${event.friendEvent.eventId}`);
+      return;
+    }
     console.log(`[GuestLimitation] Image press: ${event.title}`);
     
     // Track image interaction
@@ -1950,7 +1954,7 @@ try {
   });
 } catch {}
 
-setSelectedImageData({ imageUrl, event });
+setSelectedImageData({ imageUrl, event, events: groupEvents });
 
   };
 
@@ -2018,16 +2022,7 @@ setSelectedImageData({ imageUrl, event });
           trackScrollInteraction('events');
         }
         
-        // Back to top button visibility logic
-        const shouldShowBackToTop = currentScrollY > SCREEN_HEIGHT;
-        if (shouldShowBackToTop !== showBackToTop) {
-          setShowBackToTop(shouldShowBackToTop);
-          Animated.timing(backToTopOpacity, {
-            toValue: shouldShowBackToTop ? 1 : 0,
-            duration: 300,
-            useNativeDriver: true,
-          }).start();
-        }
+        backToTop.onScroll(currentScrollY);
         
         // Track scroll depth for engagement analytics (every 25% of content)
         const contentHeight = (sortedViewportEvents.length + sortedOutsideViewportEvents.length) * 200; // Approximate item height
@@ -2042,24 +2037,7 @@ setSelectedImageData({ imageUrl, event });
           });
         }
         
-        // Header collapse animation
-        if (headerHeight > 0 && Math.abs(scrollDiff) > 5) {
-          if (scrollDiff > 0 && currentScrollY > 50 && !isHeaderCollapsed) {
-            setIsHeaderCollapsed(true);
-            Animated.timing(headerTranslateY, {
-              toValue: -headerHeight,
-              duration: 300,
-              useNativeDriver: true,
-            }).start();
-          } else if (scrollDiff < 0 && isHeaderCollapsed) {
-            setIsHeaderCollapsed(false);
-            Animated.timing(headerTranslateY, {
-              toValue: 0,
-              duration: 300,
-              useNativeDriver: true,
-            }).start();
-          }
-        }
+        feedChrome.onScroll(event.nativeEvent);
         
         lastScrollY.current = currentScrollY;
       },
@@ -2068,6 +2046,8 @@ setSelectedImageData({ imageUrl, event });
 
   // Handle back to top button press
   const handleBackToTop = () => {
+    backToTop.hide();
+    feedChrome.reveal();
     analytics?.trackUserAction('back_to_top_pressed', {
       screen: 'events',
       scroll_position: lastScrollY.current
@@ -2169,10 +2149,11 @@ setSelectedImageData({ imageUrl, event });
       const isSaved = isEventSaved(event);
       const timeStatus = getEventTimeStatusFast(event, eventTimeContext);
       const matchesInterest = matchesUserInterests(event);
+      const provinceWide = isProvinceScopeEvent(event);
 
       // Check if event is from a favorite venue
-      const eventLocationKey = createLocationKeyFromEvent(event);
-      const isFromFavoriteVenue = favoriteVenueSet.has(eventLocationKey);
+      const eventLocationKey = provinceWide ? '' : createLocationKeyFromEvent(event);
+      const isFromFavoriteVenue = !provinceWide && favoriteVenueSet.has(eventLocationKey);
 
       const scoreCategory = matchesInterest ? 'INTEREST_MATCH' : 'NON_INTEREST';
       const baseScore = timeStatus === 'past' ? 0 : BASE_SCORES[scoreCategory][timeStatus];
@@ -2180,7 +2161,7 @@ setSelectedImageData({ imageUrl, event });
       let proximityMultiplier = 1.0;
       let distance = Infinity;
 
-      if (userLocation) {
+      if (userLocation && !provinceWide) {
         distance = calculateDistance(
           userLocation.coords.latitude,
           userLocation.coords.longitude,
@@ -2287,18 +2268,28 @@ setSelectedImageData({ imageUrl, event });
     });
   }, [filteredOutsideViewportEvents, outsideViewportLoadCount, userLocation, userInterestLowerSet, savedEventSet, favoriteVenueSet, eventTimeContext]);
 
+  // Group only already-filtered records; preserve ranked venue order and expose every matching sibling.
+  const viewportVenueGroups = useMemo(() => groupVenueFeedEvents(sortedViewportEvents,
+    [...filteredViewportEvents, ...filteredOutsideViewportEvents]),
+    [sortedViewportEvents, filteredViewportEvents, filteredOutsideViewportEvents]);
+  const outsideVenueGroups = useMemo(() => {
+    const visibleKeys = new Set(viewportVenueGroups.map(group => group.key));
+    return groupVenueFeedEvents([...sortedOutsideViewportEvents, ...filteredOutsideViewportEvents])
+      .filter(group => !visibleKeys.has(group.key));
+  }, [sortedOutsideViewportEvents, filteredOutsideViewportEvents, viewportVenueGroups]);
+
   // Request one distinct NativeAd instance for every placement in the currently
   // exposed page. The target grows with pagination instead of stopping at four.
   const displayedOutsideViewportEventCount = Math.min(
-    sortedOutsideViewportEvents.length,
+    outsideVenueGroups.length,
     outsideViewportLoadCount
   );
   const regularEventAdPlacements =
-    Math.floor(sortedViewportEvents.length / 4) +
+    Math.floor(viewportVenueGroups.length / 4) +
     Math.floor(displayedOutsideViewportEventCount / 4);
   const lowCountEventAdPlacement =
-    sortedViewportEvents.length > 0 &&
-    sortedViewportEvents.length < 4 &&
+    viewportVenueGroups.length > 0 &&
+    viewportVenueGroups.length < 4 &&
     displayedOutsideViewportEventCount === 0
       ? 1
       : 0;
@@ -2309,6 +2300,7 @@ setSelectedImageData({ imageUrl, event });
   type EventListItem = {
     type: 'event';
     data: Event;
+    group: VenueFeedGroup;
   };
 
   type DividerItem = {
@@ -2347,8 +2339,8 @@ setSelectedImageData({ imageUrl, event });
   const eventsWithAds = useMemo<ListItem[]>(() => {
     return measureListTabStage('events', 'build_list_with_ads', {
       ready: isFocusedContentReady,
-      viewportCount: sortedViewportEvents.length,
-      outsideViewportCount: sortedOutsideViewportEvents.length,
+      viewportCount: viewportVenueGroups.length,
+      outsideViewportCount: outsideVenueGroups.length,
       nativeAdsCount: nativeAds.length,
     }, () => {
       if (!isFocusedContentReady) {
@@ -2361,8 +2353,8 @@ setSelectedImageData({ imageUrl, event });
       const validAds = nativeAds.filter(ad => ad.ad !== null && !ad.loading);
 
     // Add viewport events with ads
-    sortedViewportEvents.forEach((event, index) => {
-      result.push({ type: 'event', data: event });
+    viewportVenueGroups.forEach((group, index) => {
+      result.push({ type: 'event', data: group.events[0], group });
 
       // Insert ad every 4 events
       if ((index + 1) % adFrequency === 0 && nativeAds.length > 0) {
@@ -2394,9 +2386,9 @@ setSelectedImageData({ imageUrl, event });
     }
 
     // Add outside-viewport events (paginated) with ads interspersed
-    const outsideViewportToShow = sortedOutsideViewportEvents.slice(0, outsideViewportLoadCount);
-    outsideViewportToShow.forEach((event, index) => {
-      result.push({ type: 'event', data: event });
+    const outsideViewportToShow = outsideVenueGroups.slice(0, outsideViewportLoadCount);
+    outsideViewportToShow.forEach((group, index) => {
+      result.push({ type: 'event', data: group.events[0], group });
 
       // Continue inserting ads every 4 events in outside-viewport section
       if ((index + 1) % adFrequency === 0 && nativeAds.length > 0) {
@@ -2416,7 +2408,7 @@ setSelectedImageData({ imageUrl, event });
     });
 
     // Low-count fallback for viewport section: if 1–3 events, append one ad at the end of viewport section
-    if (sortedViewportEvents.length > 0 && sortedViewportEvents.length < adFrequency && nativeAds.length > 0 && sortedOutsideViewportEvents.length === 0) {
+    if (viewportVenueGroups.length > 0 && viewportVenueGroups.length < adFrequency && nativeAds.length > 0 && outsideVenueGroups.length === 0) {
       const selectedAd = validAds[0];
       if (selectedAd) {
         result.push({
@@ -2433,14 +2425,14 @@ setSelectedImageData({ imageUrl, event });
       markTabListDataReady('events', {
         ready: true,
         itemCount: result.length,
-        viewportCount: sortedViewportEvents.length,
-        outsideViewportCount: sortedOutsideViewportEvents.length,
+        viewportCount: viewportVenueGroups.length,
+        outsideViewportCount: outsideVenueGroups.length,
         nativeAdsCount: nativeAds.length,
       });
 
       return result;
     });
-  }, [getAdListKey, isFocusedContentReady, sortedViewportEvents, sortedOutsideViewportEvents, filteredOutsideViewportEvents.length, nativeAds, outsideViewportLoadCount]);
+  }, [getAdListKey, isFocusedContentReady, viewportVenueGroups, outsideVenueGroups, filteredOutsideViewportEvents.length, nativeAds, outsideViewportLoadCount]);
 
   // Pre-compute lookup Sets for O(1) access during render
   const interestMatchSet = useMemo(() => {
@@ -2451,8 +2443,10 @@ setSelectedImageData({ imageUrl, event });
       if (userInterestLowerSet.size === 0) return new Set<string>();
       const matchingIds = new Set<string>();
       eventsWithAds.forEach(item => {
-        if (item.type === 'event' && doesEventMatchAnyInterest(item.data, userInterestLowerSet)) {
-          matchingIds.add(String(item.data.id));
+        if (item.type === 'event') {
+          item.group.events.forEach(event => {
+            if (doesEventMatchAnyInterest(event, userInterestLowerSet)) matchingIds.add(String(event.id));
+          });
         }
       });
       return matchingIds;
@@ -2475,7 +2469,7 @@ setSelectedImageData({ imageUrl, event });
 
   // Memoized FlatList callbacks to prevent unnecessary re-renders
   const keyExtractor = useCallback((item: any, index: number) => {
-    if (item.type === 'event') return `event-${item.data.id}`;
+    if (item.type === 'event') return item.group.key;
     if (item.type === 'ad') return item.data.key;
     if (item.type === 'divider') return `divider-${index}`;
     return `item-${index}`;
@@ -2500,8 +2494,11 @@ setSelectedImageData({ imageUrl, event });
 
   const contentContainerStyleMemo = useMemo(() => [
     styles.listContent,
-    { paddingTop: effectiveHeaderStackHeight + (showBanner ? 35 : 0) + 8 }
-  ], [effectiveHeaderStackHeight, showBanner]);
+    {
+      paddingTop: effectiveHeaderStackHeight + (showBanner ? 35 : 0) + 8,
+      paddingBottom: dockContentInset,
+    }
+  ], [effectiveHeaderStackHeight, showBanner, dockContentInset]);
 
   // Track priority effectiveness
   useEffect(() => {
@@ -2590,19 +2587,27 @@ setSelectedImageData({ imageUrl, event });
         />
       )}
       {/* Collapsible Header */}
+      {feedChrome.filtersExpanded && !feedChrome.hidden && <Pressable testID="feed-filter-backdrop"
+        accessibilityRole="button" accessibilityLabel="Close filters" onPress={feedChrome.dismissFilters}
+        style={[StyleSheet.absoluteFillObject, { top: collapsibleHeaderTop + FEED_FILTER_SUMMARY_HEIGHT, zIndex: 9, backgroundColor: 'rgba(0,0,0,0.25)' }]} />}
       <Animated.View 
+        pointerEvents={feedChrome.hidden ? 'none' : 'auto'}
         style={[
           styles.collapsibleHeader,
           { top: collapsibleHeaderTop },
           { transform: [{ translateY: headerTranslateY }] }
         ]}
-        onLayout={(event) => {
-          const nextHeight = event.nativeEvent.layout.height + 5;
-          setHeaderHeight((previousHeight) =>
-            Math.abs(previousHeight - nextHeight) > 1 ? nextHeight : previousHeight
-          );
-        }}
       >
+        {feedChrome.compactFilters && <FeedFilterSummary filters={filterCriteria.eventFilters}
+          expanded={feedChrome.filtersExpanded} onPress={feedChrome.toggleFilters} />}
+        <View testID="feed-full-filters" style={!showFullFilters && { display: 'none' }}
+          accessibilityElementsHidden={!showFullFilters} importantForAccessibility={showFullFilters ? 'auto' : 'no-hide-descendants'}
+          onLayout={event => {
+            // Keep the original full-panel inset stable while the compact row/overlay changes.
+            if (!showFullFilters || event.nativeEvent.layout.height <= 0) return;
+            const nextHeight = event.nativeEvent.layout.height + COLLAPSIBLE_HEADER_TOP_MARGIN + 5;
+            setHeaderHeight(previous => Math.abs(previous - nextHeight) > 1 ? nextHeight : previous);
+          }}>
         {/* Filtering section */}
         <Animated.View 
           style={[
@@ -2736,6 +2741,13 @@ setSelectedImageData({ imageUrl, event });
           </ScrollView>
 
         
+        {filterCriteria.eventFilters.timeFilter === TimeFilterType.UPCOMING && (
+          <UpcomingDateOptions appearance="dark" events={onScreenEvents} criteria={filterCriteria}
+            onSelect={upcomingDate => {
+              if (isGuest) trackInteraction(InteractionType.LIST_FILTER);
+              setTypeFilters('event', { upcomingDate });
+            }} />
+        )}
         <View style={styles.filterDivider} />
         <View style={styles.sectionHeaderContainer}>
           <Text style={styles.filterSectionTitle}>Category</Text>
@@ -2763,6 +2775,7 @@ setSelectedImageData({ imageUrl, event });
         })()}
           </View>
         </Animated.View>
+        </View>
       </Animated.View>
       
       {/* User preferences banner */}
@@ -2770,8 +2783,9 @@ setSelectedImageData({ imageUrl, event });
         <Animated.View style={[
           styles.preferencesBar, 
           { 
-            opacity: fadeAnim,
-            top: effectiveHeaderStackHeight
+            opacity: Animated.multiply(fadeAnim, feedChrome.progress.interpolate({ inputRange: [0, 1], outputRange: [1, 0] })),
+            top: collapsibleHeaderTop + visibleFilterHeight,
+            transform: [{ translateY: headerTranslateY }]
           }
         ]}>
           <Text style={styles.preferencesText}>
@@ -2787,7 +2801,13 @@ setSelectedImageData({ imageUrl, event });
           style={styles.eventList}
           data={isFocusedContentReady ? eventsWithAds : []}
           keyExtractor={keyExtractor}
+          onViewableItemsChanged={visibleVenueGroups.onViewableItemsChanged}
+          viewabilityConfig={visibleVenueGroups.viewabilityConfig}
           onScroll={handleScroll}
+          onScrollBeginDrag={backToTop.onScrollBeginDrag}
+          onScrollEndDrag={backToTop.onScrollEndDrag}
+          onMomentumScrollBegin={backToTop.onMomentumScrollBegin}
+          onMomentumScrollEnd={backToTop.onMomentumScrollEnd}
           onLayout={handleFlatListLayout}
           scrollEventThrottle={16}
           contentContainerStyle={contentContainerStyleMemo}
@@ -2828,21 +2848,20 @@ setSelectedImageData({ imageUrl, event });
               );
             }
 
-            // item.type === 'event'
-            // Use pre-computed firstEventIndex (O(1)) instead of slice+filter (O(n))
-            const isFirstEventItem = index === firstEventIndex;
-            const eventId = String(item.data.id);
-            const eventData = getUpdatedEvent(item.data.id) || item.data;
             const eventListItem = (
-              <MemoizedEventListItem
-                event={eventData}
-                onPress={() => handleEventPress(eventData)}
-                onImagePress={handleImagePress}
-                matchesUserInterests={interestMatchSet.has(eventId)}
-                isSaved={savedEventSet.has(eventId)}
-                isGuest={isGuest}
-                analytics={analytics || {}}
-                isFirstItem={isFirstEventItem}
+              <VenueEventRow group={item.group} timeFilter={filterCriteria.eventFilters.timeFilter}
+                selectedEventId={selectedVenueEvents[item.group.key]}
+                countCueActive={visibleVenueGroups.focused && visibleVenueGroups.keys.has(item.group.key)}
+                onSelectEvent={event => setSelectedVenueEvents(previous => ({ ...previous, [item.group.key]: String(event.id) }))}
+                renderEvent={(page, grouped) => {
+                  const eventData = getUpdatedEvent(page.id) || page;
+                  const eventId = String(eventData.id);
+                  return <MemoizedEventListItem key={eventId} event={eventData} grouped={grouped} browseEvents={item.group.events}
+                    onPress={() => handleEventPress(eventData, item.group.events)}
+                    onImagePress={(url, event) => handleImagePress(url, event, item.group.events)}
+                    matchesUserInterests={interestMatchSet.has(eventId)} isSaved={savedEventSet.has(eventId)}
+                    isGuest={isGuest} analytics={analytics || {}} isFirstItem={index === firstEventIndex} />;
+                }}
               />
             );
 
@@ -2888,7 +2907,7 @@ setSelectedImageData({ imageUrl, event });
       )}
       
       {/* Image Lightbox */}
-      {selectedImageData && (
+      {selectedImageData && !isFriendEventDetailRoute && (
         <Modal
           transparent={true}
           visible={!!selectedImageData}
@@ -2899,6 +2918,14 @@ setSelectedImageData({ imageUrl, event });
           <EventImageLightbox
             imageUrl={selectedImageData.imageUrl}
             event={selectedImageData.event}
+            events={selectedImageData.events}
+            currentIndex={selectedImageData.events.findIndex(event => String(event.id) === String(selectedImageData.event.id))}
+            onNavigate={index => {
+              const next = selectedImageData.events[index];
+              if (!next) return;
+              setSelectedVenueEvents(previous => ({ ...previous, [getVenueFeedKey(next)]: String(next.id) }));
+              setSelectedImageData({ imageUrl: next.imageUrl || next.profileUrl, event: next, events: selectedImageData.events });
+            }}
             onClose={handleModalClose}
           />
         </Modal>
@@ -2911,11 +2938,18 @@ setSelectedImageData({ imageUrl, event });
             styles.backToTopButton,
             {
               opacity: backToTopOpacity,
+              bottom: dockContentInset,
+              transform: [{ translateY: feedChrome.progress.interpolate({
+                inputRange: [0, 1],
+                outputRange: [0, dockContentInset - getTabDockBottom(Platform.OS, safeAreaInsets.bottom) - 12],
+              }) }],
             }
           ]}
         >
           <TouchableOpacity
             style={styles.backToTopButtonInner}
+            accessibilityRole="button"
+            accessibilityLabel="Back to top"
             onPress={handleBackToTop}
             activeOpacity={0.8}
           >
@@ -2945,6 +2979,7 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   collapsibleHeader: {
+    paddingTop: COLLAPSIBLE_HEADER_TOP_MARGIN,
     position: 'absolute',
     left: 0,
     right: 0,
@@ -3111,6 +3146,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   // NEW: Updated card styles with framing
+  groupedEventCard: { marginHorizontal: 0, marginBottom: 0, borderWidth: 0, borderRadius: 0 },
   eventCard: {
     backgroundColor: '#FFFFFF',
     paddingBottom: 0,
@@ -3131,6 +3167,22 @@ const styles = StyleSheet.create({
       shadowRadius: 6,
     }),
   },
+  friendEventCard: { minHeight: 150, flexDirection: 'row', alignItems: 'center', gap: 11, padding: 14, overflow: 'hidden', borderWidth: 1, borderColor: '#D6BBFB', backgroundColor: '#FCFAFF' },
+  friendEventAccent: { position: 'absolute', left: 0, top: 0, bottom: 0, width: 5, backgroundColor: '#6941C6' },
+  friendEventIcon: { width: 46, height: 46, borderRadius: 17, alignItems: 'center', justifyContent: 'center', backgroundColor: '#6941C6' },
+  friendEventCopy: { flex: 1, minWidth: 0, gap: 4 },
+  friendEventTopline: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  friendEventEyebrow: { flex: 1, color: '#6941C6', fontSize: 9, fontWeight: '900', letterSpacing: 0.5 },
+  friendEventLock: { flexDirection: 'row', alignItems: 'center', gap: 2, paddingHorizontal: 5, paddingVertical: 3, borderRadius: 99, backgroundColor: '#F4EBFF' },
+  friendEventLockText: { color: '#6941C6', fontSize: 8, fontWeight: '900' },
+  friendEventTitle: { color: '#101828', fontSize: 17, fontWeight: '900', lineHeight: 20 },
+  friendEventTimingRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  friendEventMeta: { color: '#475467', fontSize: 11, fontWeight: '700' },
+  friendEventLocationRow: { flexDirection: 'row', alignItems: 'center', gap: 3 },
+  friendEventLocation: { flex: 1, color: '#667085', fontSize: 11 },
+  friendEventFooter: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginTop: 2 },
+  friendEventHost: { flex: 1, color: '#667085', fontSize: 10 },
+  friendEventRsvp: { color: '#6941C6', fontSize: 10, fontWeight: '900' },
   badgeContainer: {
     position: 'absolute',
     top: 5,
@@ -3227,7 +3279,7 @@ const styles = StyleSheet.create({
   },
   heroImage: {
     width: '100%',
-    height: 300, // Increased to reveal more vertical area
+    height: VENUE_FEED_HERO_HEIGHT,
     backgroundColor: '#F0F0F0',
     borderRadius: 12, // Add rounded corners like other cards
     // Strong border to create "photo frame" effect
@@ -3405,6 +3457,16 @@ const styles = StyleSheet.create({
     flex: 1,
     fontWeight: '600',
   },
+  seriesContextLine: {
+    marginBottom: 4,
+    marginTop: -2,
+  },
+  mutedEventCard: {
+    opacity: 0.68,
+  },
+  timingBadge: {
+    marginLeft: 6,
+  },
   cardDescription: {
     fontSize: 14,
     color: '#555555',
@@ -3566,7 +3628,7 @@ const styles = StyleSheet.create({
   },
   backToTopButton: {
     position: 'absolute',
-    bottom: 15, // Positioned above the tab bar
+    // The shared dock inset keeps this control clear of the floating tabs.
     alignSelf: 'center',
     zIndex: 1000,
   },

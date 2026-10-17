@@ -14,14 +14,18 @@
  */
 
 import React, { useEffect, useLayoutEffect, useRef, useState, useMemo, useCallback } from 'react';
-import { View, Text, StyleSheet, Animated, Dimensions, PixelRatio, TouchableOpacity, Easing, Keyboard, Pressable, Image, Modal, InteractionManager, GestureResponderEvent } from 'react-native';
+import { View, Text, StyleSheet, Animated, Dimensions, PixelRatio, TouchableOpacity, Easing, Pressable, Image, Modal, InteractionManager, GestureResponderEvent, LayoutChangeEvent, StatusBar, useWindowDimensions } from 'react-native';
 import * as Location from 'expo-location';
 import * as Haptics from 'expo-haptics';
 import MapboxGL from '@rnmapbox/maps';
-import { Ionicons, MaterialIcons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
+import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { useIsFocused } from '@react-navigation/native';
+import { getDefaultHeaderHeight } from '@react-navigation/elements';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Platform } from 'react-native';
-import { useRouter } from 'expo-router';
+import { getTabDockBottom, TAB_DOCK_EDGE_INSET, TAB_DOCK_HEIGHT } from '../../constants/tabDock';
+import { usePathname, useRouter } from 'expo-router';
 
 
 
@@ -45,9 +49,12 @@ import type { InterestCarouselFilter } from '../../types/store';
 import type { ComponentMeasurement } from '../../types/tutorial';
 import { filterClusterForInterestCarouselFilter } from '../../utils/interestCarouselFilterUtils';
 import { isMapCameraGestureActive } from '../../utils/mapCameraGestures';
+import { isFriendEventDetailPath } from '../../utils/friendEventLightbox';
 
 // Import components
 import FilterPills from '../../components/map/FilterPills';
+import FloatingMapSearchHeader from '../../components/map/FloatingMapSearchHeader';
+import EdgeBlur from '../../components/common/EdgeBlur';
 import MapLegend, {
   type MapLightPreset,
   type MapPerspective,
@@ -59,16 +66,29 @@ import HotFlamePill from '../../components/map/HotFlamePill';
 
 import EventCallout from '../../components/map/EventCallout';
 import EventImageLightbox from '../../components/map/EventImageLightbox';
+import CalloutModalTabBarTouchLayer, {
+  type CalloutModalTabTarget,
+} from '../../components/map/CalloutModalTabBarTouchLayer';
 import HotspotHighlight from '../../components/map/HotspotHighlight';
 import MapTracePanel from '../../components/debug/MapTracePanel';
 import StaticDebugCallout from '../../components/map/StaticDebugCallout';
 import RouteFeatureCallout from '../../components/map/RouteFeatureCallout';
+import AreaLocationBrowser from '../../components/map/AreaLocationBrowser';
+import AreaLocationLayer from '../../components/map/AreaLocationLayer';
+import ContextualCheckInControl from '../../components/social/ContextualCheckInControl';
+import CheckInRadiusOverlay from '../../components/social/CheckInRadiusOverlay';
+import FriendCheckInBadge from '../../components/social/FriendCheckInBadge';
+import FriendEventsMapToggle from '../../components/social/FriendEventsMapToggle';
+import ExternalFriendCheckInMarkers, {
+  buildExternalFriendPlaceGroups,
+  ExternalFriendCheckInPanel,
+  type ExternalFriendPlaceGroup,
+} from '../../components/social/ExternalFriendCheckInMarkers';
 
 // Import centralized date utilities
 import {
-  isEventNow, 
-  isEventHappeningToday, 
-  getEventTimeStatus 
+  isEventNowWithTiming,
+  isEventHappeningToday
 } from '../../utils/dateUtils';
 
 // Import user service for preferences
@@ -83,6 +103,7 @@ import {
 
 // Trending lightbox (flame pill + cold-start auto-open)
 import { buildTrendingEvents } from '../../utils/trendingUtils';
+import { shouldLoopGlobalLightbox } from '../../utils/lightboxNavigation';
 import {
   getTrendingLightboxImageUrl,
   openTrendingLightbox,
@@ -103,12 +124,27 @@ import {
   type GeoCoordinate
 } from '../../utils/geoUtils';
 import {
+  MAP_TRACE_ENABLED,
   MAP_TRACE_UI_ENABLED,
+  beginMapTraceGestureSession,
   captureMapTraceSamplers,
+  createMapTraceTimerExpectation,
+  getActiveMapTraceGestureSessionId,
+  mapTraceNow,
   registerMapTraceSampler,
   setMapTraceSnapshot,
   traceMapEvent,
+  traceMapTimerFired,
+  traceMapTimerScheduled,
 } from '../../utils/mapTrace';
+import {
+  type MapCameraReconciliationSource,
+  shouldReconcileAndroidMapIdle,
+  shouldCompleteRecenterOnMapIdle,
+  shouldFetchReconciledViewport,
+  shouldRefreshBeaconProjection,
+  shouldUseNativeCameraReconciliation,
+} from '../../utils/mapIdleReconciliation';
 import {
   cacheStartupLocation,
   DEVICE_LAST_KNOWN_REQUIRED_ACCURACY_METERS,
@@ -129,11 +165,16 @@ import {
   markTabTracePhase,
 } from '../../utils/tabSwitchTrace';
 import { registerTutorialAction, runTutorialAction } from '../../utils/tutorialActions';
+import {
+  isLatestReservedViewportRequest,
+  reserveViewportRequestId,
+} from '../../utils/viewportRequestCoordinator';
 import { createTutorialBooleanGate } from '../../utils/tutorialBooleanGate';
 import { isTutorialCalloutPresentationReady as getTutorialCalloutPresentationReady } from '../../utils/tutorialCalloutReadiness';
 import {
   closePresentedTutorialCallout,
   shouldActivateAndroidRetapOverlay,
+  shouldBypassCalloutOpenGuard,
   shouldRouteTutorialCalloutBack,
 } from '../../utils/tutorialCalloutClosing';
 import {
@@ -157,7 +198,10 @@ import {
   subscribeTutorialModalOverlay,
 } from '../../utils/tutorialModalOverlay';
 import { useReduceMotion } from '../../hooks/useReduceMotion';
-import { isAreaExperienceEvent } from '../../utils/locationScope';
+import {
+  isAreaExperienceEvent,
+  shouldOpenAreaExperienceLightboxDirectly,
+} from '../../utils/locationScope';
 import {
   buildRouteLineFeatureCollection,
   buildRouteStopFeatureCollection,
@@ -174,14 +218,19 @@ import {
   type RouteFeatureCalloutData,
 } from '../../utils/routeEvent';
 import {
-  buildAreaLocationFeatureCollection,
   getAreaLocationBounds,
   getAreaLocationCallout,
   getAreaLocations,
   getAreaLocationsLabel,
+  getAreaLocationGroupForPress,
+  type AreaLocationGroup,
   hasDrawableAreaLocations,
 } from '../../utils/areaEvent';
 import { buildRouteSummaryLightboxSelection } from '../../utils/routeEventLightbox';
+import {
+  AREA_LOCATION_MAP_FIT_PADDING,
+  ROUTE_MAP_FIT_PADDING,
+} from '../../utils/spatialMapFitPadding';
 import {
   doesEventMatchAnyInterest,
 } from '../../utils/familyFriendly';
@@ -189,13 +238,22 @@ import {
 // Initialize Mapbox token
 initializeMapboxAccessToken(MapboxGL);
 
+const getCommittedMapTraceCounts = () => {
+  if (!MAP_TRACE_ENABLED) return {};
+
+  const state = useMapStore.getState();
+
+  return {
+    events: state.events?.length ?? 0,
+    filteredEvents: state.filteredEvents?.length ?? 0,
+    viewportEvents: state.viewportEvents?.length ?? 0,
+    onScreenEvents: state.onScreenEvents?.length ?? 0,
+    clusters: state.clusters?.length ?? 0,
+  };
+};
+
 // Constants
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
-const ROUTE_MAP_FIT_PADDING: [number, number, number, number] = [72, 48, 190, 48];
-// Multi-location events have no connecting line to keep their locations visually
-// grouped. Reserve the right-side control rail so the easternmost point is not
-// technically in-bounds but hidden beneath the interest pills.
-const AREA_LOCATION_MAP_FIT_PADDING: [number, number, number, number] = [72, 112, 190, 48];
 const HOTSPOT_HARD_DISABLED_FOR_PREVIEW_DEBUG = false;
 const STATIC_CALLOUT_ISOLATION_DEBUG = false;
 const ANDROID_MAPBOX_STARTUP_ISOLATION_DEBUG = false;
@@ -256,7 +314,6 @@ type ClusterMarkerDetailMode = 'overview' | 'label' | 'media';
 // events degrade to plain markers when false.
 const CITY_EVENT_UI_ENABLED = true;
 const CITY_EVENT_GOLD = '#FFC400';
-const DEBUG_TREE_MARKER_EVENTS = false;
 const ANDROID_CLUSTER_TOUCH_OVERLAY_SIZE = 144;
 const ANDROID_CLUSTER_TOUCH_OVERLAY_DURATION_MS = 4500;
 const ANDROID_CLUSTER_TOUCH_OVERLAY_LIMIT = 80;
@@ -283,6 +340,9 @@ const ANDROID_CONTROLS_RELEASE_AFTER_CLOSE_MS = 150;
 const TUTORIAL_CALLOUT_READY_TIMEOUT_MS = 2500;
 const TUTORIAL_CALLOUT_CLOSE_TIMEOUT_MS = 1800;
 const TUTORIAL_CLUSTER_OPEN_READY_TIMEOUT_MS = 1200;
+const RECENTER_CAMERA_ANIMATION_MS = 500;
+const RECENTER_CAMERA_IDLE_MIN_ELAPSED_MS = 350;
+const RECENTER_VIEWPORT_REFRESH_FALLBACK_MS = 800;
 
 const logCalloutProbe = (...args: unknown[]): void => {
   if (DEBUG_CALLOUT_PROBE) {
@@ -476,7 +536,7 @@ const prepareClusterCallout = (
         // lightbox: above interest matches, below saved events/favorites.
         const cityEventScore = CITY_EVENT_UI_ENABLED && isAreaExperienceEvent(event) ? 250 : 0;
 
-        const timeScore = isEventNow(event.startDate, event.startTime, event.endDate, event.endTime)
+        const timeScore = isEventNowWithTiming(event)
           ? 10
           : isEventHappeningToday(event)
           ? 5
@@ -640,11 +700,13 @@ type AndroidClusterMarkerFeatureProperties = {
   clusterId: string;
   eventLabel: string;
   friendCountLabel: string;
-  friendHaloRadius: number;
   friendBadgeRadius: number;
+  friendEventCountLabel: string;
+  friendEventHaloRadius: number;
+  hasFriendEvents: boolean;
   hasCategory: boolean;
   hasEvents: boolean;
-  hasFirestoreEvents: boolean;
+  friendOnly: boolean;
   hasFriendPresence: boolean;
   hasNewContent: boolean;
   hasSpecials: boolean;
@@ -721,6 +783,8 @@ const ANDROID_CLUSTER_MARKER_VENUE_DARK_ICON_ID = 'gathr-marker-venue-dark';
 const ANDROID_CLUSTER_MARKER_VENUE_LIGHT_ICON_ID = 'gathr-marker-venue-light';
 const ANDROID_CLUSTER_MARKER_CITY_FESTIVAL_ICON_ID = 'gathr-marker-city-festival';
 const ANDROID_CLUSTER_MARKER_IMAGES = {
+  'gathr-friend-only': require('../../assets/map-markers/friend-only.png'),
+  'gathr-friend-attached': require('../../assets/map-markers/friend-attached.png'),
   [ANDROID_CLUSTER_MARKER_CATEGORY_PILL_ID]: require('../../assets/map-markers/marker-category-pill.png'),
   [ANDROID_CLUSTER_CATEGORY_ICON_IDS.bar]: require('../../assets/map-markers/category-bar.png'),
   [ANDROID_CLUSTER_CATEGORY_ICON_IDS.church]: require('../../assets/map-markers/category-church.png'),
@@ -1121,10 +1185,8 @@ const buildAndroidClusterMarkerShape = (
           Math.PI
       );
       const usesDarkText = ANDROID_CLUSTER_DARK_TEXT_COLORS.has(color);
-      const hasFirestoreEvents = detailsEnabled && cluster.venues.some(venue =>
-        venue.events.some(event => event.source === 'firestore')
-      );
       const hasFriendPresence = !!cluster.friendPresence;
+      const hasFriendEvents = (cluster.friendEventCount || 0) > 0;
       const categoryItems = detailsEnabled
         ? getAndroidClusterCategoryItems(cluster, options.userInterests)
         : [];
@@ -1160,13 +1222,15 @@ const buildAndroidClusterMarkerShape = (
           categoryTextColor: categoryItem?.isUserInterest ? '#4A90E2' : '#333333',
           clusterId: cluster.id,
           eventLabel: detailsEnabled && cluster.eventCount > 0 ? String(cluster.eventCount) : '',
-          friendCountLabel: hasFriendPresence ? `F${cluster.friendPresence?.displayCount || ''}` : '',
-          friendHaloRadius: markerRadius + 8,
+          friendCountLabel: hasFriendPresence ? String(cluster.friendPresence!.friendCount > 9 ? '9+' : cluster.friendPresence!.friendCount) : '',
           friendBadgeRadius: 8.5,
+          friendEventCountLabel: hasFriendEvents ? `E${cluster.friendEventCount}` : '',
+          friendEventHaloRadius: markerRadius + (hasFriendPresence ? 13 : 8),
           hasCategory: detailsEnabled && categoryItem != null,
           hasEvents: detailsEnabled && cluster.eventCount > 0,
-          hasFirestoreEvents,
+          friendOnly: hasFriendPresence && cluster.eventCount === 0 && cluster.specialCount === 0,
           hasFriendPresence,
+          hasFriendEvents,
           hasNewContent: detailsEnabled && !!cluster.hasNewContent,
           hasSpecials: detailsEnabled && cluster.specialCount > 0,
           isBroadcasting,
@@ -1181,6 +1245,7 @@ const buildAndroidClusterMarkerShape = (
           markerSortKey:
             Math.round(densityWeight * 10) +
             (hasFriendPresence ? 10000 : 0) +
+            (hasFriendEvents ? 8000 : 0) +
             (isSelected ? 1000 : 0) +
             (isProcessing ? 500 : 0),
           markerStrokeColor: isSelected ? '#202124' : '#FFFFFF',
@@ -2403,6 +2468,7 @@ const ClusterSummaryBeacon: React.FC<ClusterSummaryBeaconProps> = ({
         )}
 
         {cluster.hasNewContent && <View style={styles.clusterSummaryNewDot} />}
+        {cluster.friendPresence && <FriendCheckInBadge count={cluster.friendPresence.friendCount} style={{ position: 'absolute', left: -12, top: -6 }} />}
       </View>
 
       <View
@@ -2598,20 +2664,13 @@ const TreeMarker: React.FC<TreeMarkerProps> = React.memo(({ cluster, isSelected,
       ? 'home'
       : 'storefront'
   ) as React.ComponentProps<typeof MaterialIcons>['name'];
-  const friendPresence = detailsEnabled ? cluster.friendPresence : undefined;
+  const friendPresence = cluster.friendPresence;
+  const friendEventCount = detailsEnabled ? (cluster.friendEventCount || 0) : 0;
 
-  // Check if cluster contains Firestore-sourced events
-  const hasFirestoreEvents = detailsEnabled
-    ? cluster.venues.some(venue =>
-        venue.events.some(event => event.source === 'firestore')
-      )
-    : false;
-
-  // DEBUG: Log clusters with Firestore events
-  if (DEBUG_TREE_MARKER_EVENTS && hasFirestoreEvents) {
-    const fsEventCount = cluster.venues.reduce((count, venue) =>
-      count + venue.events.filter(e => e.source === 'firestore').length, 0);
-    console.log(`[TreeMarker] Cluster ${cluster.id} has ${fsEventCount} Firestore events`);
+  if (friendPresence && cluster.eventCount === 0 && cluster.specialCount === 0) {
+    return (
+      <View style={[styles.markerWrapper, { opacity: !isReady ? 0.4 : isProcessing ? 0.6 : 1 }]}><FriendCheckInBadge count={friendPresence.friendCount} standalone /></View>
+    );
   }
 
   if (isBeacon && presentation === 'summary') {
@@ -2671,17 +2730,15 @@ const TreeMarker: React.FC<TreeMarkerProps> = React.memo(({ cluster, isSelected,
         <CityEventEffect size={adjustedSize} isActive={isActive} />
       )}
 
-      {/* Friend presence is an outer teal bloom. Inner canopy size still
-          represents event interest and the existing rings still mean "now". */}
-      {friendPresence && (
+      {friendEventCount > 0 && (
         <View
           pointerEvents="none"
           style={[
-            styles.friendPresenceHalo,
+            styles.friendEventHalo,
             {
-              width: adjustedSize * 2.05,
-              height: adjustedSize * 2.05,
-              borderRadius: adjustedSize * 1.025,
+              width: adjustedSize * (friendPresence ? 2.35 : 2.05),
+              height: adjustedSize * (friendPresence ? 2.35 : 2.05),
+              borderRadius: adjustedSize * 1.2,
             },
           ]}
         />
@@ -2803,31 +2860,6 @@ const TreeMarker: React.FC<TreeMarkerProps> = React.memo(({ cluster, isSelected,
           />
         )}
 
-        {/* Firestore source indicator - subtle "F" badge in top-left */}
-        {hasFirestoreEvents && (
-          <View
-            style={[
-              styles.firestoreIndicator,
-              {
-                width: adjustedSize * 0.45,
-                height: adjustedSize * 0.45,
-                borderRadius: adjustedSize * 0.225,
-                top: -(adjustedSize * 0.15),
-                left: -(adjustedSize * 0.15),
-              }
-            ]}
-          >
-            <Text
-              style={[
-                styles.firestoreIndicatorText,
-                { fontSize: adjustedSize * 0.25 }
-              ]}
-            >
-              F
-            </Text>
-          </View>
-        )}
-
         {/* Festival badge for city-level events - bottom-left, static so it
             reads with animations paused or reduce-motion on */}
         {CITY_EVENT_UI_ENABLED && cluster.containsCityLevelEvent && (
@@ -2852,29 +2884,25 @@ const TreeMarker: React.FC<TreeMarkerProps> = React.memo(({ cluster, isSelected,
         )}
 
         {friendPresence && (
+          <FriendCheckInBadge count={friendPresence.friendCount} style={{ position: 'absolute', top: -6, right: adjustedSize * 0.95 }} />
+        )}
+        {friendEventCount > 0 && (
           <View
             accessible
-            accessibilityLabel={`${friendPresence.friendCount} friend${friendPresence.friendCount === 1 ? '' : 's'} checked in within this map cluster`}
+            accessibilityLabel={`${friendEventCount} friend ${friendEventCount === 1 ? 'event' : 'events'} in this map cluster`}
             style={[
-              styles.friendPresenceBadge,
+              styles.friendEventBadge,
               {
-                width: adjustedSize * 0.72,
-                height: adjustedSize * 0.72,
-                borderRadius: adjustedSize * 0.36,
-                bottom: -(adjustedSize * 0.2),
-                right: -(adjustedSize * 0.2),
+                minWidth: adjustedSize * 0.72,
+                height: adjustedSize * 0.58,
+                borderRadius: adjustedSize * 0.29,
+                top: adjustedSize * 0.42,
+                left: -(adjustedSize * 0.42),
               },
             ]}
           >
-            {friendPresence.previewFriends[0]?.photoURL ? (
-              <Image
-                source={{ uri: friendPresence.previewFriends[0].photoURL }}
-                style={styles.friendPresenceAvatar}
-              />
-            ) : (
-              <Ionicons name="people" size={Math.max(adjustedSize * 0.32, 8)} color="#FFFFFF" />
-            )}
-            <Text style={styles.friendPresenceBadgeText}>{friendPresence.displayCount}</Text>
+            <Ionicons name="calendar" size={Math.max(adjustedSize * 0.26, 8)} color="#FFFFFF" />
+            <Text style={styles.friendEventBadgeText}>{friendEventCount}</Text>
           </View>
         )}
       </View>
@@ -2900,7 +2928,7 @@ const TreeMarker: React.FC<TreeMarkerProps> = React.memo(({ cluster, isSelected,
       )}
       
       {/* Label area with category icons */}
-      {detailsEnabled && !isBeacon && (
+      {detailsEnabled && !isBeacon && (cluster.eventCount > 0 || cluster.specialCount > 0) && (
         <View
           style={[
             styles.markerLabel,
@@ -2969,6 +2997,8 @@ const TreeMarker: React.FC<TreeMarkerProps> = React.memo(({ cluster, isSelected,
     prevProps.cluster.interestLevel === nextProps.cluster.interestLevel &&
     prevProps.cluster.eventCount === nextProps.cluster.eventCount &&
     prevProps.cluster.specialCount === nextProps.cluster.specialCount &&
+    prevProps.cluster.friendPresence === nextProps.cluster.friendPresence &&
+    prevProps.cluster.friendEventCount === nextProps.cluster.friendEventCount &&
     prevProps.cluster.containsCityLevelEvent === nextProps.cluster.containsCityLevelEvent &&
     prevProps.cluster.containsRouteEvent === nextProps.cluster.containsRouteEvent &&
     prevProps.isSelected === nextProps.isSelected &&
@@ -2990,12 +3020,15 @@ const TreeMarker: React.FC<TreeMarkerProps> = React.memo(({ cluster, isSelected,
 // Re-center button component
 const RecenterButton: React.FC<{ 
   onPress: () => void,
-  disabled: boolean 
-}> = ({ onPress, disabled }) => {
+  disabled: boolean,
+  rightOffset?: number,
+  bottomOffset?: number,
+}> = ({ onPress, disabled, rightOffset = 10, bottomOffset = 0 }) => {
   return (
     <TouchableOpacity 
       style={[
         styles.recenterButton,
+        { right: rightOffset, bottom: 88 + bottomOffset },
         disabled && styles.recenterButtonDisabled
       ]}
       onPress={onPress}
@@ -3021,6 +3054,8 @@ const GlobalEventLightbox = ({
 }: {
   onShowRoute: (event: Event) => void;
 }) => {
+  const pathname = usePathname();
+  const isFriendEventDetailRoute = isFriendEventDetailPath(pathname);
   const globalSelectedImageData = useMapStore((state) => state.selectedImageData);
   const selectedVenues = useMapStore((state) => state.selectedVenues);
   const selectedCluster = useMapStore((state) => state.selectedCluster);
@@ -3085,11 +3120,16 @@ const GlobalEventLightbox = ({
     setGlobalSelectedImageData(null);
   }, [setGlobalSelectedImageData]);
 
-  if (!globalSelectedImageData) return null;
+  if (!globalSelectedImageData || isFriendEventDetailRoute) return null;
   const isCityEventLightbox = globalSelectedImageData.source === 'city_event_marker';
+  const isFriendEventResume = globalSelectedImageData.source === 'friend_event_resume';
   const isCalloutMounted =
     !!selectedCluster || (Array.isArray(selectedVenues) && selectedVenues.length > 0);
   if (isCityEventLightbox && isCalloutMounted) return null;
+  // EventCallout owns this resume payload while its callout is still mounted.
+  // If routing removed the callout, this map-level lightbox becomes the
+  // fallback and restores the same event instead of leaving a bare map.
+  if (isFriendEventResume && isCalloutMounted) return null;
 
   return (
     <Modal
@@ -3112,6 +3152,7 @@ const GlobalEventLightbox = ({
           globalSelectedImageData.events ? globalSelectedImageData.currentIndex : undefined
         }
         onNavigate={globalSelectedImageData.events ? handleNavigate : undefined}
+        loopNavigation={shouldLoopGlobalLightbox(globalSelectedImageData.source)}
         isTrending={
           globalSelectedImageData.source === 'trending_manual' ||
           globalSelectedImageData.source === 'trending_auto'
@@ -3217,6 +3258,27 @@ useEffect(() => {
   const { user } = useAuth(); // Adjust import path as needed
   const isGuest = !user;
   const router = useRouter();
+  const safeAreaInsets = useSafeAreaInsets();
+  const windowDimensions = useWindowDimensions();
+  // Center the floating row on the same body as the Events/Specials header,
+  // including React Navigation's Dynamic Island adjustment.
+  const floatingHeaderTop = (getDefaultHeaderHeight(windowDimensions, false, safeAreaInsets.top)
+    + safeAreaInsets.top - 44) / 2;
+  const mapChromeTopReserve = floatingHeaderTop + 34;
+  // One continuous fade behind the controls and status icons. Keep the
+  // strongest portion inside the status area and taper below the 44pt row.
+  const mapTopFadeHeight = floatingHeaderTop + 44 + 6;
+  const floatingSideControlLift = 100;
+  const floatingDockBottomOffset = getTabDockBottom(Platform.OS, safeAreaInsets.bottom);
+  const mapboxOrnamentBottomOffset = floatingDockBottomOffset + TAB_DOCK_HEIGHT + 8;
+  // Native iOS ornaments measure from the safe area; React overlays measure
+  // from the map edge. Keep both branding corners on the ruler's lower row.
+  const mapboxBrandingBottomOffset = Platform.OS === 'ios'
+    ? Math.max(0, mapboxOrnamentBottomOffset - safeAreaInsets.bottom)
+    : mapboxOrnamentBottomOffset;
+  const globeBottomOffset = mapboxOrnamentBottomOffset + 21 + 8;
+  const friendsPillBottomOffset = 88 + floatingSideControlLift + 36 + 12;
+  const interestRailBottomOffset = friendsPillBottomOffset + 30 + 10;
 
   // Guest limitation hook - only for guests
   const { trackInteraction } = useGuestInteraction();
@@ -3268,6 +3330,11 @@ useEffect(() => {
   // (Combined object selectors with shallow cause getSnapshot caching issues)
   const baseClusters = useMapStore((state) => state.clusters);
   const friendActivity = useSocialStore((state) => state.activity);
+  const [selectedExternalFriendPlace, setSelectedExternalFriendPlace] = useState<ExternalFriendPlaceGroup | null>(null);
+  const externalFriendPlaces = useMemo(
+    () => buildExternalFriendPlaceGroups(friendActivity),
+    [friendActivity]
+  );
   const events = useMapStore((state) => state.events);
   const allEvents = useMapStore((state) => state.allEvents);
   const friendVenueSourceEvents = allEvents.length > 0 ? allEvents : events;
@@ -3289,6 +3356,9 @@ useEffect(() => {
   const selectedVenue = useMapStore((state) => state.selectedVenue);
   const selectedVenues = useMapStore((state) => state.selectedVenues);
   const selectedCluster = useMapStore((state) => state.selectedCluster);
+  const preferredCalloutVenueLocationKey = useMapStore(
+    (state) => state.preferredCalloutVenueLocationKey
+  );
   const isLoading = useMapStore((state) => state.isLoading);
   const error = useMapStore((state) => state.error);
   const fetchEvents = useMapStore((state) => state.fetchEvents);
@@ -3307,9 +3377,9 @@ useEffect(() => {
   const setActiveFilterPanel = useMapStore((state) => state.setActiveFilterPanel);
   const closeCalloutTrigger = useMapStore((state) => state.closeCalloutTrigger);
   const triggerCloseCallout = useMapStore((state) => state.triggerCloseCallout);
-  const isHeaderSearchActive = useMapStore((state) => state.isHeaderSearchActive);
-  const setHeaderSearchActive = useMapStore((state) => state.setHeaderSearchActive);
+  const profileButtonHighlighted = useTutorialUiStore((state) => state.currentStepId === 'profile-facebook');
   const setTypeFiltersBatch = useMapStore((state) => state.setTypeFiltersBatch);
+  const pendingRouteEvent = useMapStore((state) => state.pendingRouteEvent);
   const interestCarouselFilter = useInterestCarouselUiStore((state) => state.interestCarouselFilter);
   const setInterestCarouselFilter = useInterestCarouselUiStore((state) => state.setInterestCarouselFilter);
 
@@ -3392,8 +3462,26 @@ useEffect(() => {
   const [mapTabOverlaysReady, setMapTabOverlaysReady] = useState<boolean>(Platform.OS !== 'android');
   const [activeRouteEvent, setActiveRouteEvent] = useState<Event | null>(null);
   const [activeAreaEvent, setActiveAreaEvent] = useState<Event | null>(null);
+  const [areaLocationGroup, setAreaLocationGroup] = useState<AreaLocationGroup | null>(null);
   const activeMapExperienceEvent = activeRouteEvent || activeAreaEvent;
   const [routeOverlayHeight, setRouteOverlayHeight] = useState(0);
+  const [interestRailLayout, setInterestRailLayout] = useState({ width: 0, height: 0 });
+  const handleInterestRailLayout = useCallback((event: LayoutChangeEvent) => {
+    const { width, height } = event.nativeEvent.layout;
+    setInterestRailLayout((current) => (
+      Math.abs(current.width - width) < 1 && Math.abs(current.height - height) < 1
+        ? current
+        : { width, height }
+    ));
+  }, []);
+  const measuredRailWidth = interestRailLayout.width;
+  const sideControlRightOffset = measuredRailWidth >= 36 && measuredRailWidth <= 220
+    ? 10 + (measuredRailWidth - 36) / 2
+    : 27;
+  const sideControlCenterRightOffset = sideControlRightOffset + 18;
+  // iOS's info glyph sits at the bottom of a 44-point native touch target.
+  const mapboxAttributionRightOffset = sideControlCenterRightOffset
+    - (Platform.OS === 'ios' ? 22 : 10);
   const [routeFeatureCallout, setRouteFeatureCallout] = useState<{
     data: RouteFeatureCalloutData;
     anchorX: number;
@@ -3624,7 +3712,7 @@ useEffect(() => {
   const mapStyleMarkerRemountTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mapPerspectiveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const showRouteOnMap = useCallback((event: Event) => {
+  const showRouteOnMap = useCallback((event: Event, fitDelayMs = 120) => {
     const routeExperience = hasDrawableRoute(event);
     const areaExperience = hasDrawableAreaLocations(event);
     if (!routeExperience && !areaExperience) return;
@@ -3635,6 +3723,7 @@ useEffect(() => {
     useMapStore.getState().setSelectedImageData(null);
     routeFeatureCalloutRequestRef.current += 1;
     setRouteFeatureCallout(null);
+    setAreaLocationGroup(null);
     setActiveRouteEvent(routeExperience ? event : null);
     setActiveAreaEvent(areaExperience ? event : null);
 
@@ -3650,20 +3739,18 @@ useEffect(() => {
             fitPadding,
             700
           );
-        }, 120);
+        }, fitDelayMs);
       });
     }
   }, []);
 
   useEffect(() => {
     if (!isFocused) return;
-
-    const pendingRouteEvent = useMapStore.getState().pendingRouteEvent;
     if (!pendingRouteEvent) return;
 
     useMapStore.getState().setPendingRouteEvent(null);
     showRouteOnMap(pendingRouteEvent);
-  }, [isFocused, showRouteOnMap]);
+  }, [isFocused, pendingRouteEvent, showRouteOnMap]);
 
   const hideRouteOnMap = useCallback(() => {
     if (activeMapExperienceEvent) {
@@ -3673,6 +3760,7 @@ useEffect(() => {
     }
     routeFeatureCalloutRequestRef.current += 1;
     setRouteFeatureCallout(null);
+    setAreaLocationGroup(null);
     setActiveRouteEvent(null);
     setActiveAreaEvent(null);
   }, [activeMapExperienceEvent, activeRouteEvent]);
@@ -3683,6 +3771,7 @@ useEffect(() => {
 
     routeFeatureCalloutRequestRef.current += 1;
     setRouteFeatureCallout(null);
+    setAreaLocationGroup(null);
     useMapStore.getState().setSelectedImageData(selection);
     amplitudeTrack('route_summary_lightbox_reopened', {
       event_id: String(activeMapExperienceEvent?.id || ''),
@@ -4310,6 +4399,11 @@ useEffect(() => {
       hasRenderedCallout,
       hasSelectedCalloutRendered,
       calloutLayoutReady: isRenderedCalloutLayoutReady,
+      hasPresentedCallout,
+      presentedCalloutVenueCount,
+      presentedCalloutClusterId,
+      calloutTouchCaptureMounted: hasPresentedCallout,
+      isCalloutClosingVisually,
       activeFilterPanel: activeFilterPanel ?? null,
       hasInitiallyPositioned,
       locationPermissionGranted,
@@ -4321,14 +4415,18 @@ useEffect(() => {
     clustersReady,
     clustersReadyForInteraction,
     hasSelectedCalloutRendered,
+    hasPresentedCallout,
     hasInitiallyPositioned,
     hasRenderedCallout,
     isRenderedCalloutLayoutReady,
+    isCalloutClosingVisually,
     isCalloutOpen,
     isGuest,
     isLoading,
     locationPermissionGranted,
     processingClusterId,
+    presentedCalloutClusterId,
+    presentedCalloutVenueCount,
     renderedCalloutClusterId,
     renderedCalloutVenueCount,
     selectedClusterId,
@@ -4402,9 +4500,23 @@ useEffect(() => {
     traceMapEvent('clusters_ready_state_changed', {
       clustersReady,
       clustersReadyForInteraction,
-      clusterCount: clusters.length,
+      isLoading,
+      ...getCommittedMapTraceCounts(),
     });
-  }, [clusters.length, clustersReady, clustersReadyForInteraction]);
+  }, [clusters.length, clustersReady, clustersReadyForInteraction, isLoading]);
+
+  useLayoutEffect(() => {
+    traceMapEvent('map_interaction_state_react_commit', {
+      isMapMovingState: isMapMoving,
+      isMapMovingRef: isMapMovingRef.current,
+      isLoading,
+      clustersReadyForInteraction,
+      clustersReadyState: clustersReady,
+      processingClusterId: processingClusterId ?? 'none',
+      ignoreProgrammatic: ignoreProgrammaticCameraRef.current,
+      ...getCommittedMapTraceCounts(),
+    }, { gestureSessionId: gestureTraceSessionIdRef.current });
+  }, [clusters.length, clustersReady, clustersReadyForInteraction, isLoading, isMapMoving, processingClusterId]);
 
   useEffect(() => {
     logCalloutProbe('[CalloutProbe] store selection changed', {
@@ -4420,10 +4532,41 @@ useEffect(() => {
   }, [isCalloutOpen, selectedClusterId, selectedVenueCount]);
 
   useEffect(() => {
+    traceMapEvent(
+      hasPresentedCallout ? 'callout_modal_presented' : 'callout_modal_dismissed',
+      {
+        selectedVenueCount,
+        selectedClusterId: selectedClusterId ?? 'none',
+        renderedVenueCount: renderedCalloutVenueCount,
+        renderedClusterId: renderedCalloutClusterId ?? 'none',
+        presentedVenueCount: presentedCalloutVenueCount,
+        presentedClusterId: presentedCalloutClusterId ?? 'none',
+        isCalloutClosingVisually,
+      }
+    );
+  }, [
+    hasPresentedCallout,
+    isCalloutClosingVisually,
+    presentedCalloutClusterId,
+    presentedCalloutVenueCount,
+    renderedCalloutClusterId,
+    renderedCalloutVenueCount,
+    selectedClusterId,
+    selectedVenueCount,
+  ]);
+
+  useEffect(() => {
     traceMapEvent('processing_cluster_state_changed', {
       processingClusterId: processingClusterId ?? 'none',
     });
   }, [processingClusterId]);
+
+  useEffect(() => {
+    traceMapEvent('marker_view_epoch_committed', {
+      markerViewEpoch,
+      ...getCommittedMapTraceCounts(),
+    }, { gestureSessionId: gestureTraceSessionIdRef.current });
+  }, [markerViewEpoch]);
 
   // Dismiss interest carousel (category filters)
   const dismissInterestCarousel = useCallback((reason: string = 'unspecified') => {
@@ -4558,7 +4701,26 @@ const hideCapTimeoutRef = useRef<NodeJS.Timeout | null>(null); // force-show cap
 
 const lastCameraChangeRef = useRef<number>(0);
 const lastMapIdleAtRef = useRef<number>(0);
+const lastSuccessfulCameraReconcileChangeAtRef = useRef<number>(-1);
 const lastViewportFetchZoomRef = useRef<number | null>(null);
+const gestureTraceSessionIdRef = useRef<string | null>(null);
+const gestureTraceNativeActiveRef = useRef(false);
+const gestureTraceMeaningfulTickCountRef = useRef(0);
+const gestureTraceFirstMeaningfulAtRef = useRef<number | null>(null);
+const gestureTraceLastMeaningfulAtRef = useRef<number | null>(null);
+const gestureTraceMovementEndCancellationCountRef = useRef(0);
+const gestureTraceViewportDebounceCancellationCountRef = useRef(0);
+const gestureTraceRenderedClusterArrayRef = useRef<Cluster[] | null>(null);
+const gestureTraceMarkerRenderStatsRef = useRef({
+  gestureSessionId: null as string | null,
+  count: 0,
+  cumulativeDurationMs: 0,
+  maxDurationMs: 0,
+  lastMarkerViewEpoch: 0,
+  lastClusterCount: 0,
+  lastVisibleCount: 0,
+  lastRenderedCount: 0,
+});
 
 
 // Track previous camera values to compute true deltas
@@ -4623,6 +4785,9 @@ const logPills = (msg: string, ctx?: Record<string, any>) => {
     visibleBbox: BoundingBox | null;
   } | null>(null);
   const cameraReconcileRequestIdRef = useRef<number>(0);
+  const recenterViewportRefreshPendingRef = useRef(false);
+  const recenterViewportRefreshStartedAtRef = useRef(0);
+  const recenterViewportRefreshTimerRef = useRef<NodeJS.Timeout | null>(null);
   const startupFallbackViewportUsedRef = useRef(false);
 
 
@@ -5035,7 +5200,7 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
     lastViewportFetchTimeRef.current = Date.now();
     startupFallbackViewportUsedRef.current = source === 'fallback_center';
     startupViewportRecoveryAttemptedRef.current = false;
-    fetchViewportEvents(roundedBbox);
+    fetchViewportEvents(roundedBbox, { source: `startup_${source}` });
 
     if (startupViewportRecoveryTimerRef.current) {
       clearTimeout(startupViewportRecoveryTimerRef.current);
@@ -5058,7 +5223,7 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
         allEvents: state.allEvents.length,
         source,
       });
-      fetchViewportEvents(roundedBbox);
+      fetchViewportEvents(roundedBbox, { source: `startup_recovery_${source}` });
     }, 1200);
   };
 
@@ -6219,17 +6384,26 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
     setAndroidAncillaryOverlaysNativeVisibility,
   ]);
 
-  const closeCallout = useCallback((reason: string) => {
+  const closeCallout = useCallback((reason: string): boolean => {
     const calloutOpenGuardRemainingMs = Math.max(0, calloutOpenTouchGuardUntilRef.current - Date.now());
     const sharedEventReturnGuardUntil = Math.max(
       sharedEventReturnGuardUntilRef.current,
       Number((globalThis as any).__gathrSharedEventReturnGuardUntil || 0)
     );
     const sharedEventReturnGuardRemainingMs = Math.max(0, sharedEventReturnGuardUntil - Date.now());
+    traceMapEvent('callout_close_request_received', {
+      reason,
+      calloutOpenGuardRemainingMs,
+      sharedEventReturnGuardRemainingMs,
+      selectedVenueCount,
+      selectedClusterId: selectedClusterId ?? 'none',
+      renderedVenueCount: renderedCalloutVenues.length,
+      renderedClusterId: renderedCalloutClusterId ?? 'none',
+      isCalloutClosingVisually: isCalloutClosingVisuallyRef.current,
+    });
     if (
       calloutOpenGuardRemainingMs > 0 &&
-      reason !== 'modal-request-close' &&
-      reason !== 'tutorial-navigation'
+      !shouldBypassCalloutOpenGuard(reason)
     ) {
       logCalloutProbe('[CalloutProbe] closeCallout ignored during post-open guard', {
         reason,
@@ -6237,7 +6411,12 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
         selectedVenueCount,
         selectedClusterId: selectedClusterId ?? 'none',
       });
-      return;
+      traceMapEvent('callout_close_request_blocked', {
+        reason,
+        blocker: 'post_open_guard',
+        remainingMs: calloutOpenGuardRemainingMs,
+      });
+      return false;
     }
 
     if (
@@ -6254,7 +6433,12 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
         selectedVenueCount,
         selectedClusterId: selectedClusterId ?? 'none',
       });
-      return;
+      traceMapEvent('callout_close_request_blocked', {
+        reason,
+        blocker: 'shared_event_return_guard',
+        remainingMs: sharedEventReturnGuardRemainingMs,
+      });
+      return false;
     }
 
     logCalloutProbe('[CalloutProbe] closeCallout', {
@@ -6278,9 +6462,20 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
         deactivateAndroidRetapOverlay();
       }
       scheduleAndroidDeferredCalloutTeardown(reason);
-      return;
+      traceMapEvent('callout_close_request_accepted', {
+        reason,
+        platform: Platform.OS,
+        teardown: 'deferred',
+      });
+      return true;
     }
     selectVenue(null);
+    traceMapEvent('callout_close_request_accepted', {
+      reason,
+      platform: Platform.OS,
+      teardown: 'selection_cleared',
+    });
+    return true;
   }, [
     activateAndroidRetapOverlay,
     cancelPendingAndroidCalloutCameraMove,
@@ -6295,6 +6490,33 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
     selectVenue,
     trackClusterClosedOnce,
   ]);
+
+  const handleCalloutModalTabSelect = useCallback((target: CalloutModalTabTarget) => {
+    const closeAccepted = closeCallout('bottom-tab-navigation');
+    traceMapEvent('callout_modal_tab_pressed', {
+      target,
+      closeAccepted,
+      selectedVenueCount,
+      selectedClusterId: selectedClusterId ?? 'none',
+    });
+
+    if (!closeAccepted || target === 'map') {
+      return;
+    }
+
+    requestAnimationFrame(() => {
+      router.replace(target === 'events' ? '/(tabs)/events' : '/(tabs)/specials');
+    });
+  }, [closeCallout, router, selectedClusterId, selectedVenueCount]);
+
+  const showRouteFromCallout = useCallback((event: Event) => {
+    // Start rendering/fitting the route before hiding the nested surfaces.
+    // EventCallout keeps its lightbox opaque until the next frame, so the
+    // user sees one continuous lightbox-to-map transition instead of a flash
+    // of the parent cluster callout.
+    showRouteOnMap(event, 0);
+    closeCallout('route-handoff');
+  }, [closeCallout, showRouteOnMap]);
 
   // Parent callout lifecycle only mounts/dismisses the subtree.
   // EventCallout owns the visible sheet presentation.
@@ -6500,14 +6722,16 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
         clusterCount: clusters.length,
       });
       traceMapEvent('clusters_ready_immediate_started', {
-        clusterCount: clusters.length,
         delayMs: 0,
-      });
+        isLoading,
+        ...getCommittedMapTraceCounts(),
+      }, { gestureSessionId: gestureTraceSessionIdRef.current });
       console.log('[map] Clusters ready for interaction');
       setClustersReady(true);
       traceMapEvent('clusters_ready_immediate_completed', {
-        clusterCount: clusters.length,
-      });
+        isLoading,
+        ...getCommittedMapTraceCounts(),
+      }, { gestureSessionId: gestureTraceSessionIdRef.current });
       logAndroidStartupTiming('clusters_ready_immediate_completed', {
         clusterCount: clusters.length,
       });
@@ -6517,9 +6741,12 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
     // Reset clustersReady when loading starts again
     if (!clustersReadyForInteraction && clustersReady) {
       setClustersReady(false);
-      traceMapEvent('clusters_ready_reset_for_loading');
+      traceMapEvent('clusters_ready_reset_for_loading', {
+        isLoading,
+        ...getCommittedMapTraceCounts(),
+      }, { gestureSessionId: gestureTraceSessionIdRef.current });
     }
-  }, [clusters.length, clustersReady, clustersReadyForInteraction]);
+  }, [clusters.length, clustersReady, clustersReadyForInteraction, isLoading]);
 
   useEffect(() => {
     return () => {
@@ -6839,25 +7066,36 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
   // Re-center the map on user location
   const handleRecenterPress = () => {
     if (location && cameraRef.current) {
-        setIgnoreProgrammaticTrace(true, 'recenter');
-    logPills('PROGRAMMATIC MOVE START (recenter) — suppress hides 800ms');
-    setTimeout(() => {
-      setIgnoreProgrammaticTrace(false, 'recenter_complete');
-      logPills('PROGRAMMATIC MOVE END (recenter)');
-    }, 800);
+      if (recenterViewportRefreshTimerRef.current) {
+        clearTimeout(recenterViewportRefreshTimerRef.current);
+      }
+      recenterViewportRefreshPendingRef.current = true;
+      recenterViewportRefreshStartedAtRef.current = Date.now();
+      setIgnoreProgrammaticTrace(true, 'recenter');
+      logPills('PROGRAMMATIC MOVE START (recenter) — suppress until settled');
+      recenterViewportRefreshTimerRef.current = setTimeout(() => {
+        recenterViewportRefreshTimerRef.current = null;
+        if (!recenterViewportRefreshPendingRef.current) {
+          return;
+        }
+        recenterViewportRefreshPendingRef.current = false;
+        setIgnoreProgrammaticTrace(false, 'recenter_complete_fallback');
+        logPills('PROGRAMMATIC MOVE END (recenter fallback)');
+        void reconcileCameraStateFromMapRef('recenter');
+      }, RECENTER_VIEWPORT_REFRESH_FALLBACK_MS);
 
-    traceMapEvent('recenter_pressed', {
-      latitude: location.coords.latitude,
-      longitude: location.coords.longitude,
-    });
+      traceMapEvent('recenter_pressed', {
+        latitude: location.coords.latitude,
+        longitude: location.coords.longitude,
+      });
 
 
-    cameraRef.current.setCamera({
-      centerCoordinate: [location.coords.longitude, location.coords.latitude],
+      cameraRef.current.setCamera({
+        centerCoordinate: [location.coords.longitude, location.coords.latitude],
 
-      zoomLevel: 12,
-      animationDuration: 500,
-    });
+        zoomLevel: 12,
+        animationDuration: RECENTER_CAMERA_ANIMATION_MS,
+      });
 
 
       // 🔥 ANALYTICS: Track re-center actions
@@ -6900,11 +7138,18 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
       clusterId: cluster.id,
       clusterType: cluster.clusterType,
       venueCount: cluster.venues?.length ?? 0,
+      sinceLastMeaningfulCameraMs: gestureTraceLastMeaningfulAtRef.current === null
+        ? null
+        : mapTraceNow() - gestureTraceLastMeaningfulAtRef.current,
+      isMapMovingRef: isMapMovingRef.current,
+      isLoadingRef: isMapLoadingRef.current,
+      clustersReadyForInteractionRef: clustersReadyForInteractionRef.current,
       ignoreProgrammatic: ignoreProgrammaticCameraRef.current,
       activeProcessingClusterId: clusterProcessingRef.current ?? 'none',
       hasRenderedCallout,
       renderedCalloutClusterId: renderedCalloutClusterId ?? 'none',
-    });
+      ...getCommittedMapTraceCounts(),
+    }, { gestureSessionId: gestureTraceSessionIdRef.current });
     logAndroidRetapLatencyProbe('marker_press_started', {
       clusterId: cluster.id,
       clusterType: cluster.clusterType,
@@ -7138,7 +7383,11 @@ lastOpenedClusterIdRef.current = cluster.id;
               )
           : [];
       const primaryCityEvent = cityEvents[0];
-      const shouldOpenCalloutForMarker = !primaryCityEvent || sortedVenues.length > 1;
+      const shouldOpenAreaLightboxDirectly = shouldOpenAreaExperienceLightboxDirectly(
+        primaryCityEvent,
+        sortedVenues.length
+      );
+      const shouldOpenCalloutForMarker = !shouldOpenAreaLightboxDirectly;
       const calloutCluster = cluster.clusterType === 'multi' || cluster.friendPresence ? cluster : null;
 
       if (shouldOpenCalloutForMarker) {
@@ -7162,10 +7411,9 @@ lastOpenedClusterIdRef.current = cluster.id;
         });
       }
 
-      // City-level (festival) events open the lightbox first. Multi-venue
-      // clusters keep the callout underneath; single-venue city markers close
-      // straight back to the map.
-      if (primaryCityEvent) {
+      // A single-venue area/route marker can open its lightbox immediately.
+      // Multi-venue markers stop at the callout so the user chooses an event.
+      if (primaryCityEvent && shouldOpenAreaLightboxDirectly) {
         const primaryImageUrl = primaryCityEvent
           ? getTrendingLightboxImageUrl(primaryCityEvent)
           : '';
@@ -7202,14 +7450,7 @@ lastOpenedClusterIdRef.current = cluster.id;
             });
           };
 
-          // Let the callout mount and the camera move settle first when there
-          // is actually a callout underlay. Single-venue city markers open as
-          // lightbox-only and should close straight back to the map.
-          if (shouldOpenCalloutForMarker) {
-            InteractionManager.runAfterInteractions(openCityLightbox);
-          } else {
-            openCityLightbox();
-          }
+          openCityLightbox();
         }
       }
 
@@ -7937,8 +8178,17 @@ lastOpenedClusterIdRef.current = cluster.id;
   const handleAreaLocationPress = async (pressEvent: any) => {
     if (!activeAreaEvent) return;
 
-    const featureId = String(pressEvent?.features?.[0]?.properties?.id || '').trim();
+    const group = getAreaLocationGroupForPress(activeAreaEvent, pressEvent);
+    const featureId = group?.id || String(pressEvent?.features?.[0]?.properties?.id || '').trim();
     if (!featureId) return;
+
+    if (group && (group.locations.length > 1 || group.locations.some((location) => location.venueId))) {
+      routeFeatureCalloutRequestRef.current += 1;
+      routeFeaturePressGuardUntilRef.current = Date.now() + 500;
+      setRouteFeatureCallout(null);
+      setAreaLocationGroup(group);
+      return;
+    }
 
     const data = getAreaLocationCallout(activeAreaEvent, featureId);
     if (!data) return;
@@ -7995,6 +8245,21 @@ lastOpenedClusterIdRef.current = cluster.id;
       Number((globalThis as any).__gathrSharedEventReturnGuardUntil || 0)
     );
     const sharedEventReturnGuardRemainingMs = Math.max(0, sharedEventReturnGuardUntil - Date.now());
+    traceMapEvent('map_surface_press_received', {
+      sinceLastMeaningfulCameraMs: gestureTraceLastMeaningfulAtRef.current === null
+        ? null
+        : mapTraceNow() - gestureTraceLastMeaningfulAtRef.current,
+      isMapMovingState: isMapMoving,
+      isMapMovingRef: isMapMovingRef.current,
+      isLoading,
+      clustersReadyForInteraction,
+      processingClusterId: clusterProcessingRef.current ?? 'none',
+      ignoreProgrammatic: ignoreProgrammaticCameraRef.current,
+      guardRemainingMs,
+      filterGuardRemainingMs,
+      sharedEventReturnGuardRemainingMs,
+      ...getCommittedMapTraceCounts(),
+    }, { gestureSessionId: gestureTraceSessionIdRef.current });
     logCalloutProbe('[CalloutProbe] handleMapPress fired', {
       selectedVenueCount,
       selectedClusterId: selectedClusterId ?? 'none',
@@ -8140,13 +8405,20 @@ const hidePills = useCallback((reason: string = 'unspecified') => {
  * can’t immediately trigger a new hide (prevents “blink-hide”).
  */
 const showPills = useCallback((reason: string = 'unspecified') => {
-
+    const gestureSessionId = gestureTraceSessionIdRef.current ?? getActiveMapTraceGestureSessionId();
+    const requestedAt = MAP_TRACE_ENABLED ? mapTraceNow() : 0;
+    traceMapEvent('filter_pills_show_requested', {
+      reason,
+      requestedAtMonotonicMs: requestedAt,
+      isMapMovingRef: isMapMovingRef.current,
+      ...getCommittedMapTraceCounts(),
+    }, { gestureSessionId });
     logPills('showPills RUN', { reason });
     // Set a brief lockout to prevent immediate re-hide flicker
     postShowLockoutUntilRef.current = Date.now() + POST_SHOW_LOCKOUT_MS;
     logPills('LOCKOUT set post-show', { lockoutMs: POST_SHOW_LOCKOUT_MS });
 
-    Animated.parallel([
+    const showAnimation = Animated.parallel([
       Animated.timing(pillsAnimation, {
         toValue: 0,
         duration: 180,
@@ -8157,15 +8429,32 @@ const showPills = useCallback((reason: string = 'unspecified') => {
         duration: 160,
         useNativeDriver: true,
       }),
-    ]).start(() => {
+    ]);
+    traceMapEvent('filter_pills_native_animation_dispatch_started', {
+      reason,
+      sinceShowRequestedMs: mapTraceNow() - requestedAt,
+      ...getCommittedMapTraceCounts(),
+    }, { gestureSessionId });
+    showAnimation.start(({ finished }) => {
       logPills('showPills DONE', { reason });
+      traceMapEvent('filter_pills_animation_callback_completed', {
+        reason,
+        finished,
+        sinceShowRequestedMs: mapTraceNow() - requestedAt,
+        ...getCommittedMapTraceCounts(),
+      }, { gestureSessionId });
     });
+    traceMapEvent('filter_pills_native_animation_dispatched', {
+      reason,
+      sinceShowRequestedMs: mapTraceNow() - requestedAt,
+      ...getCommittedMapTraceCounts(),
+    }, { gestureSessionId });
   }, [pillsAnimation, pillsOpacity]);
 
 
   // --- Floating pills top offset (baseline + small per-platform nudge) ---
 const BASELINE_TOP = 0; // dp - starting point that looks good under the header (reduced by 6px)
-const PLATFORM_NUDGE = Platform.select({ ios: 20, android: 20, default: 0 })!;
+const PLATFORM_NUDGE = Platform.select({ ios: 16, android: 20, default: 0 })!;
 const TOP_OFFSET = BASELINE_TOP + PLATFORM_NUDGE;
 // -----------
 
@@ -8316,6 +8605,13 @@ const handleMapMovementStart = useCallback(() => {
   // Already moving? Nothing to do.
   if (isMapMovingRef.current) return;
 
+  const gestureSessionId = gestureTraceSessionIdRef.current ?? getActiveMapTraceGestureSessionId();
+  traceMapEvent('map_movement_started', {
+    isMapMovingState: isMapMoving,
+    isMapMovingRef: isMapMovingRef.current,
+    ignoreProgrammatic: ignoreProgrammaticCameraRef.current,
+    ...getCommittedMapTraceCounts(),
+  }, { gestureSessionId });
   isMapMovingRef.current = true;
   setIsMapMoving(true);
   mapInteractionStartTime.current = now;
@@ -8326,7 +8622,23 @@ const handleMapMovementStart = useCallback(() => {
   if (hideCapTimeoutRef.current) { clearTimeout(hideCapTimeoutRef.current); hideCapTimeoutRef.current = null; }
 
   // Kick off the hard cap: force-show if we stay “moving” too long (e.g., long zoom-out tail)
+  const hiddenCapExpectation = MAP_TRACE_ENABLED
+    ? createMapTraceTimerExpectation(
+        'filter_pills_hidden_cap',
+        MAX_HIDDEN_MS,
+        gestureSessionId
+      )
+    : null;
+  if (hiddenCapExpectation) {
+    traceMapTimerScheduled(hiddenCapExpectation, getCommittedMapTraceCounts());
+  }
   hideCapTimeoutRef.current = setTimeout(() => {
+    if (hiddenCapExpectation) {
+      traceMapTimerFired(hiddenCapExpectation, {
+        isMapMovingRef: isMapMovingRef.current,
+        ...getCommittedMapTraceCounts(),
+      });
+    }
     if (isMapMovingRef.current) {
       // logPills('MAX_HIDDEN cap reached — forcing show');
       handleMapMovementEnd(); // will call showPills after debounce
@@ -8342,8 +8654,52 @@ const handleMapMovementStart = useCallback(() => {
 }, [activeFilterPanel, hidePills, hasInitiallyPositioned, isMapMoving]);
 
 
-const reconcileCameraStateFromMapRef = useCallback(async (source: 'map_idle' | 'movement_end' | 'hotspot_return' = 'map_idle') => {
-  if (Platform.OS !== 'android' || isAndroidHotspotStartupFlowActive()) {
+const reconcileCameraStateFromMapRef = useCallback(async (source: MapCameraReconciliationSource = 'map_idle') => {
+  const gestureSessionId = gestureTraceSessionIdRef.current ?? getActiveMapTraceGestureSessionId();
+  const startedAt = MAP_TRACE_ENABLED ? mapTraceNow() : 0;
+  const traceCompleted = (result: string, extra: Record<string, unknown> = {}) => {
+    traceMapEvent('camera_reconcile_completed', {
+      source,
+      result,
+      durationMs: mapTraceNow() - startedAt,
+      ...getCommittedMapTraceCounts(),
+      ...extra,
+    }, { gestureSessionId });
+  };
+  traceMapEvent('camera_reconcile_started', {
+    source,
+    platform: Platform.OS,
+    ...getCommittedMapTraceCounts(),
+  }, { gestureSessionId });
+
+  const androidHotspotStartupActive =
+    Platform.OS === 'android' && isAndroidHotspotStartupFlowActive();
+  if (!shouldUseNativeCameraReconciliation({
+    platform: Platform.OS,
+    source,
+    androidHotspotStartupActive,
+  })) {
+    traceCompleted(
+      Platform.OS === 'android' && androidHotspotStartupActive
+        ? 'hotspot_startup_active'
+        : 'platform_not_reconciled'
+    );
+    return;
+  }
+
+  const cameraChangeAtRequest = lastCameraChangeRef.current;
+  if (
+    source === 'map_idle' &&
+    !shouldReconcileAndroidMapIdle({
+      hasCurrentCameraState: currentCameraStateRef.current !== null,
+      lastCameraChangeAt: cameraChangeAtRequest,
+      lastSuccessfulReconcileCameraChangeAt: lastSuccessfulCameraReconcileChangeAtRef.current,
+    })
+  ) {
+    traceCompleted('no_new_camera_change', {
+      cameraChangeAtRequest,
+      lastSuccessfulCameraReconcileChangeAt: lastSuccessfulCameraReconcileChangeAtRef.current,
+    });
     return;
   }
 
@@ -8353,6 +8709,7 @@ const reconcileCameraStateFromMapRef = useCallback(async (source: 'map_idle' | '
     typeof mapView.getCenter !== 'function' ||
     typeof mapView.getZoom !== 'function'
   ) {
+    traceCompleted('native_camera_api_unavailable');
     return;
   }
 
@@ -8369,6 +8726,7 @@ const reconcileCameraStateFromMapRef = useCallback(async (source: 'map_idle' | '
     ]);
 
     if (cameraReconcileRequestIdRef.current !== requestId) {
+      traceCompleted('superseded', { requestId });
       return;
     }
 
@@ -8378,6 +8736,7 @@ const reconcileCameraStateFromMapRef = useCallback(async (source: 'map_idle' | '
       : undefined;
 
     if (!centerArr || typeof reportedZoom !== 'number') {
+      traceCompleted('invalid_native_camera_state', { requestId });
       return;
     }
 
@@ -8387,15 +8746,16 @@ const reconcileCameraStateFromMapRef = useCallback(async (source: 'map_idle' | '
     const height = mapDimensions?.height ?? windowHeight;
     const effectiveClusterZoom = getEffectiveZoomFromVisibleBounds(
       reportedZoom,
-      nativeVisibleBbox,
+      Platform.OS === 'android' ? nativeVisibleBbox : null,
       width * PixelRatio.get()
     );
 
-    if (isAndroidStartupCameraPayloadInvalid({
+    if (Platform.OS === 'android' && isAndroidStartupCameraPayloadInvalid({
       zoom: effectiveClusterZoom,
       visibleBbox: nativeVisibleBbox,
       userGestureSeen: userGestureSeenRef.current,
     })) {
+      traceCompleted('startup_camera_payload_rejected', { requestId });
       return;
     }
 
@@ -8414,6 +8774,7 @@ const reconcileCameraStateFromMapRef = useCallback(async (source: 'map_idle' | '
     const cameraMovedMeaningfully = previousZoomDelta >= 0.02 || previousCenterDelta >= 10;
 
     if (
+      Platform.OS === 'android' &&
       !userGestureSeenRef.current &&
       !ignoreProgrammaticCameraRef.current &&
       lastViewportBboxRef.current !== null &&
@@ -8433,18 +8794,31 @@ const reconcileCameraStateFromMapRef = useCallback(async (source: 'map_idle' | '
       zoom: effectiveClusterZoom,
       visibleBbox: nativeVisibleBbox,
     };
+    lastSuccessfulCameraReconcileChangeAtRef.current = Math.max(
+      lastSuccessfulCameraReconcileChangeAtRef.current,
+      cameraChangeAtRequest
+    );
     previousCenterRef.current = centerArr;
     lastZoomLevel.current = effectiveClusterZoom;
 
-    setAndroidRichMarkerZoomAllowed((previous) => {
-      const next = effectiveClusterZoom >= ANDROID_RICH_CLUSTER_MARKER_MIN_ZOOM;
-      return previous === next ? previous : next;
-    });
+    if (Platform.OS === 'android') {
+      setAndroidRichMarkerZoomAllowed((previous) => {
+        const next = effectiveClusterZoom >= ANDROID_RICH_CLUSTER_MARKER_MIN_ZOOM;
+        return previous === next ? previous : next;
+      });
+    }
 
     const storeZoom = useMapStore.getState().zoomLevel;
     const finalZoomDelta = Math.abs(effectiveClusterZoom - storeZoom);
     const finalZoomBucketChanged = Math.floor(effectiveClusterZoom) !== Math.floor(storeZoom);
     if (finalZoomBucketChanged || finalZoomDelta >= 0.02) {
+      traceMapEvent('cluster_generation_requested', {
+        source: `camera_reconcile_${source}`,
+        zoom: effectiveClusterZoom,
+        finalZoomDelta,
+        finalZoomBucketChanged,
+        ...getCommittedMapTraceCounts(),
+      }, { gestureSessionId });
       setZoomLevel(effectiveClusterZoom);
     }
 
@@ -8471,16 +8845,40 @@ const reconcileCameraStateFromMapRef = useCallback(async (source: 'map_idle' | '
     const bboxChanged = !lastViewportBboxRef.current ||
       JSON.stringify(roundedBbox) !== JSON.stringify(lastViewportBboxRef.current);
 
-    if (bboxChanged && (userGestureSeenRef.current || lastViewportBboxRef.current !== null)) {
+    if (shouldRefreshBeaconProjection({ bboxChanged, cameraMovedMeaningfully })) {
+      setBeaconProjectionEpoch((epoch) => epoch + 1);
+      traceMapEvent('beacon_projection_refreshed', {
+        source,
+        bboxChanged,
+        cameraMovedMeaningfully,
+      }, { gestureSessionId });
+    }
+
+    if (shouldFetchReconciledViewport({
+      bboxChanged,
+      source,
+      userGestureSeen: userGestureSeenRef.current,
+      hasPreviousViewportBbox: lastViewportBboxRef.current !== null,
+    })) {
       if (viewportFetchTimeoutRef.current) {
         clearTimeout(viewportFetchTimeoutRef.current);
         viewportFetchTimeoutRef.current = null;
       }
       lastViewportBboxRef.current = roundedBbox;
       lastViewportFetchTimeRef.current = Date.now();
-      fetchViewportEvents(roundedBbox);
+      lastViewportFetchZoomRef.current = effectiveClusterZoom;
+      fetchViewportEvents(roundedBbox, { source });
     }
-  } catch {
+    traceCompleted('completed', {
+      requestId,
+      bboxChanged,
+      onScreenEvents: onScreenEvents.length,
+    });
+  } catch (error) {
+    traceCompleted('native_camera_read_failed', {
+      requestId,
+      message: error instanceof Error ? error.message : String(error),
+    });
     // Native camera reads are best-effort; camera-change events still handle normal updates.
   }
 }, [
@@ -8528,11 +8926,41 @@ useEffect(() => {
  * Movement END:
  *  • Ends the analytics “movement session”.
  *  • Clears the hard cap timer.
- *  • Re-shows pills after a short idle delay (300ms) for a snappy feel.
+ *  • Dispatches the native pill-return animation as soon as movement ends.
  *  • Starts POST_SHOW_LOCKOUT_MS so tiny follow-up ticks can’t instantly hide.
  */
 const handleMapMovementEnd = useCallback(() => {
-
+  const gestureSessionId = gestureTraceSessionIdRef.current ?? getActiveMapTraceGestureSessionId();
+  const movementEndStartedAt = MAP_TRACE_ENABLED ? mapTraceNow() : 0;
+  const markerRenderStats = gestureTraceMarkerRenderStatsRef.current;
+  const markerRenderStatsMatchGesture = markerRenderStats.gestureSessionId === gestureSessionId;
+  traceMapEvent('handle_map_movement_end', {
+    meaningfulCameraTicks: gestureTraceMeaningfulTickCountRef.current,
+    movementEndDebounceCancellations: gestureTraceMovementEndCancellationCountRef.current,
+    viewportDebounceCancellations: gestureTraceViewportDebounceCancellationCountRef.current,
+    markerRenderCount: markerRenderStatsMatchGesture ? markerRenderStats.count : 0,
+    markerRenderCumulativeMs: markerRenderStatsMatchGesture ? markerRenderStats.cumulativeDurationMs : 0,
+    markerRenderMaxMs: markerRenderStatsMatchGesture ? markerRenderStats.maxDurationMs : 0,
+    markerViewEpoch: markerRenderStats.lastMarkerViewEpoch,
+    lastRenderedMarkerCount: markerRenderStats.lastRenderedCount,
+    firstMeaningfulCameraAtMonotonicMs: gestureTraceFirstMeaningfulAtRef.current,
+    lastMeaningfulCameraAtMonotonicMs: gestureTraceLastMeaningfulAtRef.current,
+    meaningfulCameraSpanMs:
+      gestureTraceFirstMeaningfulAtRef.current === null ||
+      gestureTraceLastMeaningfulAtRef.current === null
+        ? null
+        : gestureTraceLastMeaningfulAtRef.current - gestureTraceFirstMeaningfulAtRef.current,
+    sinceLastMeaningfulCameraMs: gestureTraceLastMeaningfulAtRef.current === null
+      ? null
+      : movementEndStartedAt - gestureTraceLastMeaningfulAtRef.current,
+    isMapMovingState: isMapMoving,
+    isMapMovingRef: isMapMovingRef.current,
+    isLoading,
+    clustersReadyForInteraction,
+    processingClusterId: clusterProcessingRef.current ?? 'none',
+    ignoreProgrammatic: ignoreProgrammaticCameraRef.current,
+    ...getCommittedMapTraceCounts(),
+  }, { gestureSessionId });
   console.log('[DEBUG] 🛑 handleMapMovementEnd called');
   isMapMovingRef.current = false;
   setIsMapMoving(false);
@@ -8540,17 +8968,54 @@ const handleMapMovementEnd = useCallback(() => {
   // analytics session
   if (mapInteractionStartTime.current) {
     const movementDuration = Date.now() - mapInteractionStartTime.current;
+    const analyticsStartedAt = MAP_TRACE_ENABLED ? mapTraceNow() : 0;
     analytics.trackMapInteraction('map_movement_session', {
       duration_ms: movementDuration,
       zoom_change: Math.abs(zoomLevel - lastZoomLevel.current),
       is_guest: isGuest
     });
+    traceMapEvent('movement_end_analytics_completed', {
+      durationMs: mapTraceNow() - analyticsStartedAt,
+      movementDurationMs: movementDuration,
+    }, { gestureSessionId });
     mapInteractionStartTime.current = null;
   }
 
   // Clear timers
-  if (showTimeoutRef.current) { clearTimeout(showTimeoutRef.current); }
+  if (showTimeoutRef.current) {
+    clearTimeout(showTimeoutRef.current);
+    showTimeoutRef.current = null;
+  }
   if (hideCapTimeoutRef.current) { clearTimeout(hideCapTimeoutRef.current); hideCapTimeoutRef.current = null; }
+  if (viewportFetchTimeoutRef.current) {
+    clearTimeout(viewportFetchTimeoutRef.current);
+    viewportFetchTimeoutRef.current = null;
+    if (MAP_TRACE_ENABLED) {
+      gestureTraceViewportDebounceCancellationCountRef.current += 1;
+      traceMapEvent('viewport_fetch_debounce_cancelled', {
+        source: 'movement_end',
+        viewportDebounceCancellations: gestureTraceViewportDebounceCancellationCountRef.current,
+        ...getCommittedMapTraceCounts(),
+      }, { gestureSessionId });
+    }
+  }
+
+  const traceMovementEndSyncWorkCompleted = () => {
+    traceMapEvent('map_movement_end_sync_work_completed', {
+      durationMs: mapTraceNow() - movementEndStartedAt,
+      isMapMovingState: isMapMoving,
+      isMapMovingRef: isMapMovingRef.current,
+      ...getCommittedMapTraceCounts(),
+    }, { gestureSessionId });
+  };
+
+  traceMapEvent('filter_pills_return_immediate', {
+    isMapMovingState: isMapMoving,
+    isMapMovingRef: isMapMovingRef.current,
+    ...getCommittedMapTraceCounts(),
+  }, { gestureSessionId });
+  showPills('movement_end');
+  postShowLockoutUntilRef.current = Date.now() + POST_SHOW_LOCKOUT_MS;
 
   // Check if viewport changed during movement and fetch if needed
   const cameraState = currentCameraStateRef.current;
@@ -8558,15 +9023,17 @@ const handleMapMovementEnd = useCallback(() => {
 
   if (Platform.OS === 'android') {
     void reconcileCameraStateFromMapRef('movement_end');
-
-    showTimeoutRef.current = setTimeout(() => {
-      showPills('movement_end');
-      postShowLockoutUntilRef.current = Date.now() + POST_SHOW_LOCKOUT_MS;
-    }, 300);
-
+    traceMovementEndSyncWorkCompleted();
     return;
   }
 
+  const inlineReconcileStartedAt = MAP_TRACE_ENABLED ? mapTraceNow() : 0;
+  traceMapEvent('camera_reconcile_started', {
+    source: 'movement_end_cached_state',
+    platform: Platform.OS,
+    hasCameraState: Boolean(cameraState),
+    ...getCommittedMapTraceCounts(),
+  }, { gestureSessionId });
   if (cameraState) {
     const { width, height } = Dimensions.get('window');
     const center: GeoCoordinate = {
@@ -8581,6 +9048,13 @@ const handleMapMovementEnd = useCallback(() => {
 
     if (!ignoreProgrammaticCameraRef.current && (finalZoomBucketChanged || finalZoomDelta >= 0.02)) {
       lastZoomLevel.current = zoom;
+      traceMapEvent('cluster_generation_requested', {
+        source: 'movement_end_final_zoom',
+        zoom,
+        finalZoomDelta,
+        finalZoomBucketChanged,
+        ...getCommittedMapTraceCounts(),
+      }, { gestureSessionId });
       setZoomLevel(zoom);
     }
 
@@ -8599,19 +9073,33 @@ const handleMapMovementEnd = useCallback(() => {
       console.log('[Viewport] Movement ended - bbox changed, fetching:', roundedBbox);
       lastViewportBboxRef.current = roundedBbox;
       lastViewportFetchZoomRef.current = zoomLevel;
-      fetchViewportEvents(roundedBbox);
+      traceMapEvent('viewport_fetch_requested', {
+        source: 'movement_end',
+        zoom,
+        ...getCommittedMapTraceCounts(),
+      }, { gestureSessionId });
+      fetchViewportEvents(roundedBbox, { source: 'movement_end' });
     }
+    traceMapEvent('camera_reconcile_completed', {
+      source: 'movement_end_cached_state',
+      result: 'completed',
+      durationMs: mapTraceNow() - inlineReconcileStartedAt,
+      bboxChanged,
+      zoom,
+      ...getCommittedMapTraceCounts(),
+    }, { gestureSessionId });
   } else {
     console.log('[DEBUG] ⚠️ No camera state available for viewport check');
+    traceMapEvent('camera_reconcile_completed', {
+      source: 'movement_end_cached_state',
+      result: 'camera_state_unavailable',
+      durationMs: mapTraceNow() - inlineReconcileStartedAt,
+      ...getCommittedMapTraceCounts(),
+    }, { gestureSessionId });
   }
 
-  // Re-show after a short idle delay (keeps UX snappy)
-  showTimeoutRef.current = setTimeout(() => {
-    showPills('movement_end');
-    // After showing, set a brief lockout so a tiny tick can't immediately hide again
-    postShowLockoutUntilRef.current = Date.now() + POST_SHOW_LOCKOUT_MS;
-  }, 300);
-}, [showPills, analytics, zoomLevel, isGuest, fetchViewportEvents, setZoomLevel, reconcileCameraStateFromMapRef]);
+  traceMovementEndSyncWorkCompleted();
+}, [showPills, analytics, zoomLevel, isGuest, fetchViewportEvents, setZoomLevel, reconcileCameraStateFromMapRef, isLoading, clustersReadyForInteraction, processingClusterId, isMapMoving]);
 
 
   // Add this right before the return statement in the component
@@ -8744,6 +9232,28 @@ const pitch: number | undefined = props.pitch ?? props.tilt;
 // RNMapbox v10 supplies this outside `properties` at
 // `e.gestures.isGestureActive`, including on iOS.
 const isGesture = isMapCameraGestureActive(e);
+if (MAP_TRACE_ENABLED && isGesture && !gestureTraceNativeActiveRef.current) {
+  gestureTraceNativeActiveRef.current = true;
+  gestureTraceMeaningfulTickCountRef.current = 0;
+  gestureTraceFirstMeaningfulAtRef.current = null;
+  gestureTraceLastMeaningfulAtRef.current = null;
+  gestureTraceMovementEndCancellationCountRef.current = 0;
+  gestureTraceViewportDebounceCancellationCountRef.current = 0;
+  gestureTraceSessionIdRef.current = beginMapTraceGestureSession('native_camera_gesture', {
+    platform: Platform.OS,
+    zoom: typeof zoom === 'number' ? zoom : 'unknown',
+    ...getCommittedMapTraceCounts(),
+  });
+} else if (MAP_TRACE_ENABLED && !isGesture && gestureTraceNativeActiveRef.current) {
+  gestureTraceNativeActiveRef.current = false;
+  traceMapEvent('gesture_input_released', {
+    meaningfulCameraTicks: gestureTraceMeaningfulTickCountRef.current,
+    sinceLastMeaningfulCameraMs: gestureTraceLastMeaningfulAtRef.current === null
+      ? null
+      : mapTraceNow() - gestureTraceLastMeaningfulAtRef.current,
+    ...getCommittedMapTraceCounts(),
+  }, { gestureSessionId: gestureTraceSessionIdRef.current });
+}
 if (isGesture && !userGestureSeenRef.current) {
   userGestureSeenRef.current = true;
   setIgnoreProgrammaticTrace(false, 'first_user_gesture');
@@ -8862,6 +9372,34 @@ if (isGesture && !userGestureSeenRef.current) {
   const isPitchMeaningful = pitchDelta >= MIN_PITCH_DELTA_TO_HIDE;
 
   const meaningfulChange = isZoomMeaningful || isCenterMeaningful || isHeadingMeaningful || isPitchMeaningful;
+  if (MAP_TRACE_ENABLED && meaningfulChange && !isProgrammaticCameraMove) {
+    const meaningfulAt = mapTraceNow();
+    const previousMeaningfulAt = gestureTraceLastMeaningfulAtRef.current;
+    const inferredSequenceIsNew =
+      !gestureTraceSessionIdRef.current ||
+      previousMeaningfulAt === null ||
+      meaningfulAt - previousMeaningfulAt > 1000;
+    if (
+      !gestureTraceNativeActiveRef.current &&
+      !isMapMovingRef.current &&
+      inferredSequenceIsNew
+    ) {
+      gestureTraceMeaningfulTickCountRef.current = 0;
+      gestureTraceFirstMeaningfulAtRef.current = null;
+      gestureTraceLastMeaningfulAtRef.current = null;
+      gestureTraceMovementEndCancellationCountRef.current = 0;
+      gestureTraceViewportDebounceCancellationCountRef.current = 0;
+      gestureTraceSessionIdRef.current = beginMapTraceGestureSession('inferred_camera_movement', {
+        platform: Platform.OS,
+        zoom: typeof effectiveClusterZoom === 'number' ? effectiveClusterZoom : 'unknown',
+        ...getCommittedMapTraceCounts(),
+      });
+    }
+
+    gestureTraceMeaningfulTickCountRef.current += 1;
+    gestureTraceFirstMeaningfulAtRef.current ??= meaningfulAt;
+    gestureTraceLastMeaningfulAtRef.current = meaningfulAt;
+  }
   if (Platform.OS === 'android' && meaningfulChange) {
     const probe = androidZoomTapLatencyProbeRef.current;
     probe.cameraTickCount += 1;
@@ -8942,6 +9480,12 @@ Clustering refresh: keep zoom → store → recluster in sync
               shouldSyncProgrammaticZoom,
             });
           }
+          traceMapEvent('cluster_generation_requested', {
+            source: 'camera_zoom_threshold',
+            zoom: effectiveClusterZoom,
+            isProgrammaticCameraMove,
+            ...getCommittedMapTraceCounts(),
+          }, { gestureSessionId: gestureTraceSessionIdRef.current });
           setZoomLevel(effectiveClusterZoom); // triggers generateClusters(zoom) in the store
         } catch (e) {
           if (DEBUG_MAP_LOAD) console.log('[MapLoad] setZoomLevel error', e);
@@ -9141,6 +9685,9 @@ Clustering refresh: keep zoom → store → recluster in sync
       // Clear any pending debounced fetch
       if (viewportFetchTimeoutRef.current) {
         clearTimeout(viewportFetchTimeoutRef.current);
+        if (MAP_TRACE_ENABLED) {
+          gestureTraceViewportDebounceCancellationCountRef.current += 1;
+        }
       }
 
       // THROTTLE: If enough time has passed since last fetch, fetch immediately
@@ -9173,7 +9720,18 @@ Clustering refresh: keep zoom → store → recluster in sync
           typeof effectiveClusterZoom === 'number'
             ? effectiveClusterZoom
             : lastViewportFetchZoomRef.current;
-        fetchViewportEvents(roundedBbox);
+        traceMapEvent('viewport_fetch_requested', {
+          source: shouldUseAndroidPriorityFetch ? 'camera_priority_immediate' : 'camera_throttled_immediate',
+          timeSinceLastFetch,
+          zoom: effectiveClusterZoom,
+          viewportDebounceCancellations: gestureTraceViewportDebounceCancellationCountRef.current,
+          ...getCommittedMapTraceCounts(),
+        }, { gestureSessionId: gestureTraceSessionIdRef.current });
+        fetchViewportEvents(roundedBbox, {
+          source: shouldUseAndroidPriorityFetch
+            ? 'camera_priority_immediate'
+            : 'camera_throttled_immediate',
+        });
       } else {
         // DEBOUNCE: Schedule a fetch after movement stops for final accuracy
         if (Platform.OS === 'android') {
@@ -9188,8 +9746,33 @@ Clustering refresh: keep zoom → store → recluster in sync
           });
         }
         const debounceScheduledAt = Date.now();
+        const viewportDebounceExpectation = MAP_TRACE_ENABLED
+          ? createMapTraceTimerExpectation(
+              'viewport_fetch_debounce',
+              DEBOUNCE_DELAY,
+              gestureTraceSessionIdRef.current
+            )
+          : null;
+        const viewportRequestId = reserveViewportRequestId();
         viewportFetchTimeoutRef.current = setTimeout(() => {
           const debounceFiredAfterMs = Date.now() - debounceScheduledAt;
+          if (viewportDebounceExpectation) {
+            traceMapTimerFired(viewportDebounceExpectation, {
+              viewportDebounceCancellations: gestureTraceViewportDebounceCancellationCountRef.current,
+              ...getCommittedMapTraceCounts(),
+            });
+          }
+          if (!isLatestReservedViewportRequest(viewportRequestId)) {
+            viewportFetchTimeoutRef.current = null;
+            traceMapEvent('viewport_fetch_stale_skipped', {
+              requestId: viewportRequestId,
+              source: 'camera_debounced',
+              stage: 'before_ref_update',
+              debounceFiredAfterMs,
+              ...getCommittedMapTraceCounts(),
+            }, { gestureSessionId: gestureTraceSessionIdRef.current });
+            return;
+          }
           if (
             Platform.OS === 'android' &&
             isAndroidMinorViewportTail &&
@@ -9224,7 +9807,17 @@ Clustering refresh: keep zoom → store → recluster in sync
             typeof effectiveClusterZoom === 'number'
               ? effectiveClusterZoom
               : lastViewportFetchZoomRef.current;
-          fetchViewportEvents(roundedBbox);
+          traceMapEvent('viewport_fetch_requested', {
+            source: 'camera_debounced',
+            debounceFiredAfterMs,
+            zoom: effectiveClusterZoom,
+            viewportDebounceCancellations: gestureTraceViewportDebounceCancellationCountRef.current,
+            ...getCommittedMapTraceCounts(),
+          }, { gestureSessionId: gestureTraceSessionIdRef.current });
+          fetchViewportEvents(roundedBbox, {
+            requestId: viewportRequestId,
+            source: 'camera_debounced',
+          });
         }, DEBOUNCE_DELAY);
       }
     }
@@ -9247,8 +9840,28 @@ Clustering refresh: keep zoom → store → recluster in sync
   // Only reset the debounce when the tick itself is meaningful.
   // Tiny, non-meaningful drifts (especially at low zoom) won't extend the hidden period.
   if (meaningfulChange) {
-    if (hideTimeoutRef.current) clearTimeout(hideTimeoutRef.current);
+    if (hideTimeoutRef.current) {
+      clearTimeout(hideTimeoutRef.current);
+      if (MAP_TRACE_ENABLED) {
+        gestureTraceMovementEndCancellationCountRef.current += 1;
+      }
+    }
+    const movementEndExpectation = MAP_TRACE_ENABLED
+      ? createMapTraceTimerExpectation(
+          'movement_end_debounce',
+          250,
+          gestureTraceSessionIdRef.current
+        )
+      : null;
     hideTimeoutRef.current = setTimeout(() => {
+      if (movementEndExpectation) {
+        traceMapTimerFired(movementEndExpectation, {
+          meaningfulCameraTicks: gestureTraceMeaningfulTickCountRef.current,
+          movementEndDebounceCancellations: gestureTraceMovementEndCancellationCountRef.current,
+          lastMeaningfulCameraAtMonotonicMs: gestureTraceLastMeaningfulAtRef.current,
+          ...getCommittedMapTraceCounts(),
+        });
+      }
       if (isMapMovingRef.current) {
         handleMapMovementEnd();
       }
@@ -9256,7 +9869,22 @@ Clustering refresh: keep zoom → store → recluster in sync
 
     // Fallback: always ensure pills come back after prolonged movement
     if (showTimeoutRef.current) clearTimeout(showTimeoutRef.current);
+    const movementFallbackExpectation = MAP_TRACE_ENABLED
+      ? createMapTraceTimerExpectation(
+          'movement_end_fallback',
+          1000,
+          gestureTraceSessionIdRef.current
+        )
+      : null;
     showTimeoutRef.current = setTimeout(() => {
+      if (movementFallbackExpectation) {
+        traceMapTimerFired(movementFallbackExpectation, {
+          meaningfulCameraTicks: gestureTraceMeaningfulTickCountRef.current,
+          movementEndDebounceCancellations: gestureTraceMovementEndCancellationCountRef.current,
+          lastMeaningfulCameraAtMonotonicMs: gestureTraceLastMeaningfulAtRef.current,
+          ...getCommittedMapTraceCounts(),
+        });
+      }
       if (isMapMovingRef.current) {
         handleMapMovementEnd();
       }
@@ -9308,6 +9936,9 @@ Clustering refresh: keep zoom → store → recluster in sync
       if (startupViewportRecoveryTimerRef.current) {
         clearTimeout(startupViewportRecoveryTimerRef.current);
       }
+      if (recenterViewportRefreshTimerRef.current) {
+        clearTimeout(recenterViewportRefreshTimerRef.current);
+      }
     };
   }, []);
 
@@ -9356,8 +9987,9 @@ Clustering refresh: keep zoom → store → recluster in sync
       return null;
     }
 
-    const markerRenderStartedAt =
-      __DEV__ && typeof performance !== 'undefined' && typeof performance.now === 'function'
+    const markerRenderStartedAt = MAP_TRACE_ENABLED
+      ? mapTraceNow()
+      : __DEV__ && typeof performance !== 'undefined' && typeof performance.now === 'function'
         ? performance.now()
         : null;
   // DEBUG T5 (first render call)
@@ -9546,6 +10178,33 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
       }));
     }
 
+    const markerRenderDurationMs = markerRenderStartedAt == null
+      ? null
+      : Math.max(0, mapTraceNow() - markerRenderStartedAt);
+    if (MAP_TRACE_ENABLED && markerRenderDurationMs !== null) {
+      const gestureSessionId = gestureTraceSessionIdRef.current ?? getActiveMapTraceGestureSessionId();
+      const previousStats = gestureTraceMarkerRenderStatsRef.current;
+      const nextCount = previousStats.gestureSessionId === gestureSessionId
+        ? previousStats.count + 1
+        : 1;
+      const nextCumulativeDurationMs = previousStats.gestureSessionId === gestureSessionId
+        ? previousStats.cumulativeDurationMs + markerRenderDurationMs
+        : markerRenderDurationMs;
+      const nextMaxDurationMs = previousStats.gestureSessionId === gestureSessionId
+        ? Math.max(previousStats.maxDurationMs, markerRenderDurationMs)
+        : markerRenderDurationMs;
+      gestureTraceMarkerRenderStatsRef.current = {
+        gestureSessionId,
+        count: nextCount,
+        cumulativeDurationMs: nextCumulativeDurationMs,
+        maxDurationMs: nextMaxDurationMs,
+        lastMarkerViewEpoch: markerViewEpoch,
+        lastClusterCount: clusters.length,
+        lastVisibleCount: visibleClustersForRender.length,
+        lastRenderedCount: orderedClustersForRender.length,
+      };
+    }
+
     markTabTracePhase('map', 'map_markers_render_start', {
       clusterCount: clusters.length,
       visibleCount: visibleClustersForRender.length,
@@ -9561,9 +10220,9 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
       fullMarkers: fullClusterMarkersEnabled,
       richMarkers: richClusterMarkersEnabled,
       richDetails: richClusterMarkerDetailsEnabled,
-      renderMs: markerRenderStartedAt == null
+      renderMs: markerRenderDurationMs == null
         ? null
-        : Math.round((performance.now() - markerRenderStartedAt) * 10) / 10,
+        : Math.round(markerRenderDurationMs * 10) / 10,
     });
 
     if (shouldAppendHotspotPreviewCluster && !startupHotspotPreviewMarkerLoggedRef.current) {
@@ -9741,20 +10400,20 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
             }}
           />
           <MapboxGL.CircleLayer
-            id="android-cluster-layer-friend-halos"
-            filter={['==', ['get', 'hasFriendPresence'], true] as any}
+            id="android-cluster-layer-friend-event-halos"
+            filter={['==', ['get', 'hasFriendEvents'], true] as any}
             style={{
-              circleColor: '#2DD4BF',
-              circleOpacity: 0.18,
-              circleRadius: ['get', 'friendHaloRadius'] as any,
+              circleColor: 'rgba(255,255,255,0)',
+              circleRadius: ['get', 'friendEventHaloRadius'] as any,
               circleSortKey: ['get', 'markerSortKey'] as any,
-              circleStrokeColor: '#0F766E',
+              circleStrokeColor: '#7F56D9',
               circleStrokeOpacity: 0.95,
-              circleStrokeWidth: 3.5,
+              circleStrokeWidth: 3,
             }}
           />
           <MapboxGL.SymbolLayer
             id="android-cluster-layer-trunks"
+            filter={['!=', ['get', 'friendOnly'], true] as any}
             style={{
               textAllowOverlap: true,
               textAnchor: 'center',
@@ -9771,6 +10430,7 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
           />
           <MapboxGL.CircleLayer
             id="android-cluster-layer-tree-tops"
+            filter={['!=', ['get', 'friendOnly'], true] as any}
             style={{
               circleColor: ['get', 'markerColor'] as any,
               circleOpacity: ['get', 'markerOpacity'] as any,
@@ -9818,19 +10478,6 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
               circleStrokeColor: '#FFFFFF',
               circleStrokeWidth: 1,
               circleTranslate: [9, -9],
-              circleTranslateAnchor: 'viewport',
-            }}
-          />
-          <MapboxGL.CircleLayer
-            id="android-cluster-layer-firestore-badges"
-            filter={['==', ['get', 'hasFirestoreEvents'], true] as any}
-            style={{
-              circleColor: '#E3F2FD',
-              circleRadius: ['get', 'markerStatusDotRadius'] as any,
-              circleSortKey: ['get', 'markerSortKey'] as any,
-              circleStrokeColor: '#1565C0',
-              circleStrokeWidth: 1,
-              circleTranslate: [-9, -9],
               circleTranslateAnchor: 'viewport',
             }}
           />
@@ -10036,23 +10683,8 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
             }}
           />
           <MapboxGL.SymbolLayer
-            id="android-cluster-layer-firestore-labels"
-            filter={['==', ['get', 'hasFirestoreEvents'], true] as any}
-            style={{
-              textAllowOverlap: true,
-              textAnchor: 'center',
-              textColor: '#1565C0',
-              textField: 'F',
-              textIgnorePlacement: true,
-              symbolSortKey: ['get', 'markerSortKey'] as any,
-              textSize: 7,
-              textTranslate: [-9, -9],
-              textTranslateAnchor: 'viewport',
-            }}
-          />
-          <MapboxGL.SymbolLayer
             id="android-cluster-layer-venue-icon-outlines"
-            filter={['==', ['get', 'hasVenueIconOutline'], true] as any}
+            filter={['all', ['==', ['get', 'hasVenueIconOutline'], true], ['!=', ['get', 'friendOnly'], true]] as any}
             style={{
               iconAllowOverlap: true,
               iconAnchor: 'center',
@@ -10067,6 +10699,7 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
           />
           <MapboxGL.SymbolLayer
             id="android-cluster-layer-venue-icons"
+            filter={['!=', ['get', 'friendOnly'], true] as any}
             style={{
               iconAllowOverlap: true,
               iconAnchor: 'center',
@@ -10080,6 +10713,7 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
           />
           <MapboxGL.SymbolLayer
             id="android-cluster-layer-venue-labels"
+            filter={['!=', ['get', 'friendOnly'], true] as any}
             style={{
               textAllowOverlap: true,
               textAnchor: 'center',
@@ -10094,33 +10728,53 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
               textTranslateAnchor: 'viewport',
             }}
           />
+          <MapboxGL.SymbolLayer
+            id="android-cluster-layer-friend-attached-capsule"
+            filter={['all', ['==', ['get', 'hasFriendPresence'], true], ['==', ['get', 'friendOnly'], false]] as any}
+            style={{ iconAllowOverlap: true, iconIgnorePlacement: true, iconImage: 'gathr-friend-attached', iconSize: 0.35, iconTranslate: [-17, -9], iconTranslateAnchor: 'viewport', symbolSortKey: ['get', 'markerSortKey'] as any }}
+          />
+          <MapboxGL.SymbolLayer
+            id="android-cluster-layer-friend-attached-count"
+            filter={['all', ['==', ['get', 'hasFriendPresence'], true], ['==', ['get', 'friendOnly'], false]] as any}
+            style={{ textAllowOverlap: true, textIgnorePlacement: true, textField: ['get', 'friendCountLabel'] as any, textColor: '#FFFFFF', textSize: 8, textTranslate: [-12.8, -9], textTranslateAnchor: 'viewport', symbolSortKey: ['get', 'markerSortKey'] as any }}
+          />
+          <MapboxGL.SymbolLayer
+            id="android-cluster-layer-friend-only-capsule"
+            filter={['all', ['==', ['get', 'hasFriendPresence'], true], ['==', ['get', 'friendOnly'], true]] as any}
+            style={{ iconAllowOverlap: true, iconIgnorePlacement: true, iconImage: 'gathr-friend-only', iconSize: 0.5, iconTranslate: [0, 0], iconTranslateAnchor: 'viewport', symbolSortKey: ['get', 'markerSortKey'] as any }}
+          />
+          <MapboxGL.SymbolLayer
+            id="android-cluster-layer-friend-only-count"
+            filter={['all', ['==', ['get', 'hasFriendPresence'], true], ['==', ['get', 'friendOnly'], true]] as any}
+            style={{ textAllowOverlap: true, textIgnorePlacement: true, textField: ['get', 'friendCountLabel'] as any, textColor: '#FFFFFF', textSize: 12, textTranslate: [8, -3], textTranslateAnchor: 'viewport', symbolSortKey: ['get', 'markerSortKey'] as any }}
+          />
           <MapboxGL.CircleLayer
-            id="android-cluster-layer-friend-badges"
-            filter={['==', ['get', 'hasFriendPresence'], true] as any}
+            id="android-cluster-layer-friend-event-badges"
+            filter={['==', ['get', 'hasFriendEvents'], true] as any}
             style={{
-              circleColor: '#0F766E',
+              circleColor: '#6941C6',
               circleRadius: ['get', 'friendBadgeRadius'] as any,
               circleSortKey: ['get', 'markerSortKey'] as any,
               circleStrokeColor: '#FFFFFF',
               circleStrokeWidth: 1.5,
-              circleTranslate: [-30, -24],
+              circleTranslate: [30, -24],
               circleTranslateAnchor: 'viewport',
             }}
           />
           <MapboxGL.SymbolLayer
-            id="android-cluster-layer-friend-labels"
-            filter={['==', ['get', 'hasFriendPresence'], true] as any}
+            id="android-cluster-layer-friend-event-labels"
+            filter={['==', ['get', 'hasFriendEvents'], true] as any}
             style={{
               textAllowOverlap: true,
               textAnchor: 'center',
               textColor: '#FFFFFF',
-              textField: ['get', 'friendCountLabel'] as any,
-              textHaloColor: '#0F766E',
+              textField: ['get', 'friendEventCountLabel'] as any,
+              textHaloColor: '#6941C6',
               textHaloWidth: 0.5,
               textIgnorePlacement: true,
               symbolSortKey: ['get', 'markerSortKey'] as any,
               textSize: 8,
-              textTranslate: [-30, -24],
+              textTranslate: [30, -24],
               textTranslateAnchor: 'viewport',
             }}
           />
@@ -10221,7 +10875,40 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
              
           >
             <TouchableOpacity
+              onPressIn={() => {
+                traceMapEvent('cluster_touchable_press_in_received', {
+                  clusterId: cluster.id,
+                  clusterType: cluster.clusterType,
+                  venueCount: cluster.venues?.length ?? 0,
+                  sinceLastMeaningfulCameraMs: gestureTraceLastMeaningfulAtRef.current === null
+                    ? null
+                    : mapTraceNow() - gestureTraceLastMeaningfulAtRef.current,
+                  isMapMovingState: isMapMoving,
+                  isMapMovingRef: isMapMovingRef.current,
+                  isLoading,
+                  clustersReadyForInteraction,
+                  processingClusterId: processingClusterId ?? 'none',
+                  ignoreProgrammatic: ignoreProgrammaticCameraRef.current,
+                  touchBlockingOverlayVisible: !isLoading && !clustersReadyForInteraction && !hasZeroFilteredResults,
+                  ...getCommittedMapTraceCounts(),
+                }, { gestureSessionId: gestureTraceSessionIdRef.current });
+              }}
               onPress={() => {
+                traceMapEvent('cluster_touchable_press_received', {
+                  clusterId: cluster.id,
+                  clusterType: cluster.clusterType,
+                  venueCount: cluster.venues?.length ?? 0,
+                  sinceLastMeaningfulCameraMs: gestureTraceLastMeaningfulAtRef.current === null
+                    ? null
+                    : mapTraceNow() - gestureTraceLastMeaningfulAtRef.current,
+                  isMapMovingState: isMapMoving,
+                  isMapMovingRef: isMapMovingRef.current,
+                  isLoading,
+                  clustersReadyForInteraction,
+                  processingClusterId: processingClusterId ?? 'none',
+                  ignoreProgrammatic: ignoreProgrammaticCameraRef.current,
+                  ...getCommittedMapTraceCounts(),
+                }, { gestureSessionId: gestureTraceSessionIdRef.current });
                 if (Platform.OS === 'android') {
                   const probe = androidZoomTapLatencyProbeRef.current;
                   probe.markerTapCount += 1;
@@ -10342,9 +11029,28 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
         statusBarTranslucent={true}
         hardwareAccelerated={true}
       >
-        <View style={styles.calloutModalContent}>
+        <View
+          onTouchStart={() => {
+            traceMapEvent('callout_modal_touch_received', {
+              selectedVenueCount,
+              selectedClusterId: selectedClusterId ?? 'none',
+              renderedVenueCount: renderedCalloutVenueCount,
+              renderedClusterId: renderedCalloutClusterId ?? 'none',
+              presentedVenueCount: presentedCalloutVenueCount,
+              presentedClusterId: presentedCalloutClusterId ?? 'none',
+              isCalloutClosingVisually: isCalloutClosingVisuallyRef.current,
+            });
+          }}
+          style={styles.calloutModalContent}
+        >
           {content}
           <CalloutTutorialOverlayHost />
+          <CalloutModalTabBarTouchLayer
+            height={TAB_DOCK_HEIGHT}
+            bottomOffset={floatingDockBottomOffset}
+            edgeInset={TAB_DOCK_EDGE_INSET}
+            onSelect={handleCalloutModalTabSelect}
+          />
         </View>
       </Modal>
     );
@@ -10362,10 +11068,25 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
       style={styles.container}
       onLayout={handleRootLayout}
     >
-      {isHeaderSearchActive && (
+      {isFocused && (
+        <StatusBar barStyle="dark-content" backgroundColor="transparent" translucent />
+      )}
+      {isFocused && !profileButtonHighlighted && (
+        <FloatingMapSearchHeader
+          top={floatingHeaderTop}
+          onSettings={() => {
+            analytics.trackUserAction('profile_access', { access_method: 'header_button' });
+            router.push('/profile');
+          }}
+        />
+      )}
+      {activeFilterPanel && shouldRenderAncillaryOverlays && (
         <Pressable
-          onPress={() => { setHeaderSearchActive(false); Keyboard.dismiss(); }}
-          style={[StyleSheet.absoluteFillObject, { zIndex: 9999 }]}
+          testID="filter-panel-map-dismiss-target"
+          accessibilityRole="button"
+          accessibilityLabel="Close filters"
+          onPress={() => setActiveFilterPanel(null)}
+          style={[StyleSheet.absoluteFillObject, { zIndex: 30, elevation: 30 }]}
         />
       )}
       {/* Add Filter Bar at the top */}
@@ -10378,9 +11099,9 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
             position: 'absolute',
             left: 0,
             right: 0,
-            top: TOP_OFFSET, // baseline + per-platform nudge
-            zIndex: 12,
-            elevation: 12,
+            top: TOP_OFFSET + mapChromeTopReserve, // preserve the old header-relative position over the full-screen map
+            zIndex: activeFilterPanel ? 40 : 12,
+            elevation: activeFilterPanel ? 40 : 12,
             transform: [{ translateY: pillsAnimation }],
             opacity: shouldRenderAncillaryOverlays ? pillsOpacity : 0,
           }}
@@ -10388,7 +11109,7 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
           <View
             ref={filterPillsContentRef}
             testID="filter-pills"
-            pointerEvents={shouldRenderAncillaryOverlays ? 'auto' : 'none'}
+            pointerEvents={shouldRenderAncillaryOverlays ? 'box-none' : 'none'}
             onLayout={(e) => {
               const h = e.nativeEvent.layout.height || 0;
               if (h && Math.abs(h - pillsHeight) > 1) setPillsHeight(h);
@@ -10415,19 +11136,24 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
         style={styles.map}
         styleURL={mapStyleChoice === 'current' ? GATHR_MAPBOX_STYLE_URL : GATHR_MAPBOX_STANDARD_STYLE_URL}
         scaleBarEnabled={true}
+        logoPosition={{
+          bottom: mapboxBrandingBottomOffset,
+          // Center Mapbox's 21-point circle beneath the 24-point globe, inset 10.
+          left: 11.5,
+        }}
+        attributionPosition={{ bottom: mapboxBrandingBottomOffset, right: mapboxAttributionRightOffset }}
         scaleBarPosition={
-          mapDimensions?.height
-            ? {
-                // Bottom margins reserve ornament clearance. Anchor from the
-                // measured top so the visible rule shares the attribution row.
-                top: Math.max(0, Math.round(mapDimensions.height - 28)),
-                left: Math.round((Dimensions.get('window').width / 2) - 50),
-              }
-            : {
-                bottom: 12,
-                left: Math.round((Dimensions.get('window').width / 2) - 50),
-              }
-        }
+          // iOS stacks ornaments sharing a corner, ignoring the scale's bottom
+          // margin. A separate top anchor keeps its lower edge above the dock.
+          Platform.OS === 'ios' ? {
+          top: Math.max(0,
+            (mapDimensions?.height ?? Dimensions.get('window').height)
+              - safeAreaInsets.top - mapboxOrnamentBottomOffset - 16),
+          left: Math.round((Dimensions.get('window').width / 2) - 50),
+        } : {
+          bottom: mapboxOrnamentBottomOffset,
+          left: Math.round((Dimensions.get('window').width / 2) - 50),
+        }}
         surfaceView={Platform.OS === 'android' ? false : undefined}
 onLayout={(event) => {
   const { width, height, x, y } = event.nativeEvent.layout;
@@ -10463,20 +11189,47 @@ onLayout={(event) => {
 }}
 onMapIdle={() => {
   lastMapIdleAtRef.current = Date.now();
+  traceMapEvent('mapbox_on_map_idle', {
+    sinceLastMeaningfulCameraMs: gestureTraceLastMeaningfulAtRef.current === null
+      ? null
+      : mapTraceNow() - gestureTraceLastMeaningfulAtRef.current,
+    meaningfulCameraTicks: gestureTraceMeaningfulTickCountRef.current,
+    movementEndDebounceCancellations: gestureTraceMovementEndCancellationCountRef.current,
+    isMapMovingState: isMapMoving,
+    isMapMovingRef: isMapMovingRef.current,
+    isLoading,
+    clustersReadyForInteraction,
+    processingClusterId: processingClusterId ?? 'none',
+    ignoreProgrammatic: ignoreProgrammaticCameraRef.current,
+    ...getCommittedMapTraceCounts(),
+  }, { gestureSessionId: gestureTraceSessionIdRef.current });
   const tutorialResolverAtIdle = tutorialCameraIdleResolverRef.current;
   if (Platform.OS === 'android') {
     androidZoomTapLatencyProbeRef.current.lastMapIdleAt = Date.now();
     logAndroidZoomTapLatencyProbe('map_idle');
   }
   notifyHotspotCameraReady('map_idle');
-  void reconcileCameraStateFromMapRef('map_idle').finally(() => {
+  const shouldCompleteRecenter = shouldCompleteRecenterOnMapIdle({
+    pending: recenterViewportRefreshPendingRef.current,
+    elapsedMs: Date.now() - recenterViewportRefreshStartedAtRef.current,
+    minimumElapsedMs: RECENTER_CAMERA_IDLE_MIN_ELAPSED_MS,
+  });
+  if (shouldCompleteRecenter) {
+    recenterViewportRefreshPendingRef.current = false;
+    if (recenterViewportRefreshTimerRef.current) {
+      clearTimeout(recenterViewportRefreshTimerRef.current);
+      recenterViewportRefreshTimerRef.current = null;
+    }
+    setIgnoreProgrammaticTrace(false, 'recenter_complete_map_idle');
+    logPills('PROGRAMMATIC MOVE END (recenter map idle)');
+  }
+  void reconcileCameraStateFromMapRef(shouldCompleteRecenter ? 'recenter' : 'map_idle').finally(() => {
     if (
       tutorialResolverAtIdle &&
       tutorialCameraIdleResolverRef.current === tutorialResolverAtIdle
     ) {
       tutorialResolverAtIdle();
     }
-    setBeaconProjectionEpoch((epoch) => epoch + 1);
   });
   if (DEBUG_MAP_LOAD) {
     const t1b = Date.now();
@@ -10498,6 +11251,16 @@ onMapIdle={() => {
 }}
 
 onDidFinishRenderingFrameFully={() => {
+  if (MAP_TRACE_ENABLED && gestureTraceRenderedClusterArrayRef.current !== clusters) {
+    gestureTraceRenderedClusterArrayRef.current = clusters;
+    traceMapEvent('cluster_array_first_mapbox_frame_rendered', {
+      isMapMovingState: isMapMoving,
+      isMapMovingRef: isMapMovingRef.current,
+      isLoading,
+      clustersReadyForInteraction,
+      ...getCommittedMapTraceCounts(),
+    }, { gestureSessionId: gestureTraceSessionIdRef.current });
+  }
   markTabTracePhase('map', 'mapbox_frame_fully', {
     firstStartupFrameAlreadyRendered: mapFirstFrameRenderedRef.current,
     overlaysReady: mapTabOverlaysReady,
@@ -10832,54 +11595,7 @@ onDidFinishLoadingMap={() => {
 
         {activeAreaEvent && (
           <>
-            <MapboxGL.ShapeSource
-              id="active-area-locations-source"
-              shape={buildAreaLocationFeatureCollection(activeAreaEvent) as any}
-              hitbox={{ width: 52, height: 52 }}
-              onPress={(event: any) => void handleAreaLocationPress(event)}
-            >
-              <MapboxGL.CircleLayer
-                id="active-area-location-halos"
-                style={{
-                  circleColor: '#FFFFFF',
-                  circleRadius: 10,
-                  circleOpacity: 0.98,
-                }}
-              />
-              <MapboxGL.CircleLayer
-                id="active-area-confirmed-locations"
-                filter={['==', ['get', 'certainty'], 'confirmed'] as any}
-                style={{
-                  circleColor: '#F6C84C',
-                  circleRadius: 7,
-                  circleStrokeColor: '#6B4E16',
-                  circleStrokeWidth: 2,
-                }}
-              />
-              <MapboxGL.CircleLayer
-                id="active-area-possible-locations"
-                filter={['==', ['get', 'certainty'], 'approximate'] as any}
-                style={{
-                  circleColor: '#FFFFFF',
-                  circleRadius: 7,
-                  circleStrokeColor: '#D98700',
-                  circleStrokeWidth: 3,
-                }}
-              />
-              <MapboxGL.SymbolLayer
-                id="active-area-location-labels"
-                style={{
-                  textField: ['get', 'label'] as any,
-                  textSize: 12,
-                  textColor: '#4E342E',
-                  textHaloColor: '#FFFFFF',
-                  textHaloWidth: 2,
-                  textOffset: [0, 1.65],
-                  textAnchor: 'top',
-                  textAllowOverlap: true,
-                }}
-              />
-            </MapboxGL.ShapeSource>
+            <AreaLocationLayer event={activeAreaEvent} onPress={(event) => void handleAreaLocationPress(event)} />
 
             {routeFeatureCallout && (
               <MapboxGL.MarkerView
@@ -10914,14 +11630,40 @@ onDidFinishLoadingMap={() => {
           <MapboxGL.Images images={ANDROID_CLUSTER_MARKER_IMAGES} />
         )}
        
+        {SOCIAL_FEATURE_ENABLED && <CheckInRadiusOverlay />}
+
         {/* Render native user location as soon as permission is available */}
         {locationPermissionGranted && (
           <UserLocationMarker visible={locationPermissionGranted} zoomLevel={zoomLevel} />
+        )}
+
+        {SOCIAL_FEATURE_ENABLED && (
+          <ExternalFriendCheckInMarkers
+            activities={friendActivity}
+            hidden={Boolean(isCalloutOpen)}
+            onPress={setSelectedExternalFriendPlace}
+          />
         )}
         
         {/* Render event markers */}
         {!isLoading && !ANDROID_CLUSTER_MARKERVIEW_ISOLATION_DEBUG && renderClusterMarkers()}
       </MapboxGL.MapView>
+      )}
+      {/* Android's Mapbox texture cannot be sampled by a view blur. Preserve
+          the map beneath a translucent tint there; iOS uses the native blur. */}
+      {isFocused && !profileButtonHighlighted && (
+        <View pointerEvents="none" style={{
+          position: 'absolute', top: 0, left: 0, right: 0,
+          height: mapTopFadeHeight, zIndex: 20, elevation: 20,
+        }}>
+          <EdgeBlur edge="top" androidBlurEnabled={false}
+            topFadeStart={safeAreaInsets.top * 0.6 / mapTopFadeHeight} />
+        </View>
+      )}
+
+      {activeAreaEvent && areaLocationGroup && (
+        <AreaLocationBrowser key={`${activeAreaEvent.id}-${areaLocationGroup.id}`} umbrella={activeAreaEvent}
+          group={areaLocationGroup} onClose={() => setAreaLocationGroup(null)} />
       )}
 
       {activeMapExperienceEvent && (
@@ -11020,33 +11762,22 @@ onDidFinishLoadingMap={() => {
         </Pressable>
       )}
 
-      {MAP_TRACE_UI_ENABLED && (
-        <Pressable
-          style={styles.mapTraceTrigger}
-          delayLongPress={700}
-          onLongPress={() => {
-            traceMapEvent('trace_panel_opened', {
-              source: 'logo_long_press',
-            });
-            setIsTracePanelVisible(true);
-          }}
-        />
-      )}
-
       {ANDROID_CLUSTER_MARKERVIEW_ISOLATION_DEBUG && (
         <View pointerEvents="none" style={styles.androidMarkerIsolationBadge}>
           <Text style={styles.androidMarkerIsolationBadgeText}>Android dev: cluster markers disabled</Text>
         </View>
       )}
 
-            {/* GathR logo above Mapbox logo */}
-      <View style={styles.mapLogoContainer} pointerEvents="none">
-        <Image
-          source={require('../../assets/images/icon.png')}
-          style={styles.mapLogo}
-          resizeMode="contain"
-        />
-      </View>
+      {/* Keep the app's globe mark visible above Mapbox's required attribution. */}
+      {!MAP_TRACE_UI_ENABLED && (
+        <View style={[styles.mapLogoContainer, { bottom: globeBottomOffset }]} pointerEvents="none">
+          <Image
+            source={require('../../assets/images/icon.png')}
+            style={styles.mapLogo}
+            resizeMode="contain"
+          />
+        </View>
+      )}
 
       {shouldMountAncillaryOverlays && (
         <View
@@ -11062,7 +11793,7 @@ onDidFinishLoadingMap={() => {
           ]}
         >
           <MapLegend
-            topOffset={30}
+            topOffset={18 + mapChromeTopReserve}
             rightOffset={10}
             mapStyle={mapStyleChoice}
             mapStyleChanging={mapStyleChanging}
@@ -11075,13 +11806,20 @@ onDidFinishLoadingMap={() => {
 
           {/* Trending pill - opens the trending lightbox from the top-right */}
           <HotFlamePill
-            top={134}
+            top={122 + mapChromeTopReserve}
             right={10}
             onPress={handleTrendingPillPress}
           />
 
-          <View pointerEvents="box-none" style={styles.interestPillsContainer}>
-            <InterestFilterPills />
+          <View
+            pointerEvents="box-none"
+            onLayout={handleInterestRailLayout}
+            style={[styles.interestPillsContainer, {
+              top: 170 + mapChromeTopReserve,
+              bottom: interestRailBottomOffset,
+            }]}
+          >
+            <InterestFilterPills availableHeight={interestRailLayout.height || undefined} />
           </View>
 
           {/* Interests Carousel - appears when interest pill is selected */}
@@ -11089,37 +11827,51 @@ onDidFinishLoadingMap={() => {
         </View>
       )}
 
-      <View style={styles.mapLogoContainer} pointerEvents="none">
-        <Image
-          source={require('../../assets/images/icon.png')}
-          style={styles.mapLogo}
-          resizeMode="contain"
-        />
-      </View>
-      
       {/* Add the Re-center button */}
       {location && locationPermissionGranted && (
         <RecenterButton 
           onPress={handleRecenterPress}
           disabled={!location} 
+          rightOffset={sideControlRightOffset}
+          bottomOffset={floatingSideControlLift}
         />
       )}
 
-      {SOCIAL_FEATURE_ENABLED && user && !isCalloutOpen && (
-        <TouchableOpacity
-          accessibilityRole="button"
-          accessibilityLabel="Check in at a recognized GathR venue"
-          activeOpacity={0.85}
-          onPress={() => router.push('/check-in')}
-          style={styles.checkInMapButton}
-        >
-          <Ionicons name="location" size={18} color="#FFFFFF" />
-          <Text style={styles.checkInMapButtonText}>Check in</Text>
-        </TouchableOpacity>
-      )}
+      <ContextualCheckInControl
+        enabled={Boolean(!isCalloutOpen)}
+        rightOffset={sideControlRightOffset}
+        bottomOffset={floatingSideControlLift}
+      />
+      <FriendEventsMapToggle
+          hidden={Boolean(isCalloutOpen)}
+          bottomOffset={friendsPillBottomOffset - 136}
+          centerRightOffset={sideControlCenterRightOffset}
+        onOpenExternal={(activity) => {
+          const group = externalFriendPlaces.find(
+            (candidate) => candidate.locationKey === activity.venueLocationKey
+          );
+          if (group) setSelectedExternalFriendPlace(group);
+        }}
+      />
+      <ExternalFriendCheckInPanel
+        group={selectedExternalFriendPlace}
+        onClose={() => setSelectedExternalFriendPlace(null)}
+      />
       
       {shouldRenderBlockingLoadingOverlay && (
-        <View style={styles.loadingOverlay}>
+        <View
+          style={styles.loadingOverlay}
+          onTouchStart={() => {
+            traceMapEvent('loading_overlay_touch_received', {
+              isMapMovingState: isMapMoving,
+              isMapMovingRef: isMapMovingRef.current,
+              isLoading,
+              clustersReadyForInteraction,
+              processingClusterId: processingClusterId ?? 'none',
+              ...getCommittedMapTraceCounts(),
+            }, { gestureSessionId: gestureTraceSessionIdRef.current });
+          }}
+        >
           <Text>Loading map data...</Text>
         </View>
       )}
@@ -11134,14 +11886,31 @@ onDidFinishLoadingMap={() => {
           style={styles.clustersNotReadyOverlay}
           pointerEvents="box-only"
           onStartShouldSetResponder={() => true}
+          onResponderGrant={() => {
+            traceMapEvent('clusters_not_ready_overlay_touch_started', {
+              isMapMovingState: isMapMoving,
+              isMapMovingRef: isMapMovingRef.current,
+              isLoading,
+              clustersReadyForInteraction,
+              processingClusterId: processingClusterId ?? 'none',
+              ignoreProgrammatic: ignoreProgrammaticCameraRef.current,
+              ...getCommittedMapTraceCounts(),
+            }, { gestureSessionId: gestureTraceSessionIdRef.current });
+          }}
           onResponderRelease={() => {
             console.log('[map] Touch blocked: clusters not ready yet');
             logAndroidZoomTapLatencyProbe('clusters_not_ready_overlay_tap_blocked', {
               clusterCount: clusters.length,
             });
             traceMapEvent('clusters_not_ready_overlay_tap_blocked', {
-              clusterCount: clusters.length,
-            });
+              isMapMovingState: isMapMoving,
+              isMapMovingRef: isMapMovingRef.current,
+              isLoading,
+              clustersReadyForInteraction,
+              processingClusterId: processingClusterId ?? 'none',
+              ignoreProgrammatic: ignoreProgrammaticCameraRef.current,
+              ...getCommittedMapTraceCounts(),
+            }, { gestureSessionId: gestureTraceSessionIdRef.current });
           }}
         >
           <View
@@ -11197,12 +11966,35 @@ Owner: Map UX stability on Android • Last validated: 2025-09-04
   style={[StyleSheet.absoluteFillObject, { zIndex: 4 }]}
   pointerEvents="auto"
   // Always capture touches so MapView doesn't receive them on Android
-  onStartShouldSetResponder={() =>
-    !isCalloutClosingVisuallyRef.current || androidRetapOverlayActiveRef.current
-  }
+  onStartShouldSetResponder={() => {
+    const shouldCapture =
+      !isCalloutClosingVisuallyRef.current || androidRetapOverlayActiveRef.current;
+    traceMapEvent('callout_touch_capture_start_decided', {
+      shouldCapture,
+      isCalloutClosingVisually: isCalloutClosingVisuallyRef.current,
+      androidRetapOverlayActive: androidRetapOverlayActiveRef.current,
+      selectedVenueCount: presentedCalloutVenueCount,
+      selectedClusterId: presentedCalloutClusterId ?? 'none',
+    });
+    return shouldCapture;
+  }}
   onMoveShouldSetResponder={() =>
     !isCalloutClosingVisuallyRef.current || androidRetapOverlayActiveRef.current
   }
+  onResponderGrant={() => {
+    traceMapEvent('callout_touch_capture_granted', {
+      selectedVenueCount: presentedCalloutVenueCount,
+      selectedClusterId: presentedCalloutClusterId ?? 'none',
+      isCalloutClosingVisually: isCalloutClosingVisuallyRef.current,
+    });
+  }}
+  onResponderTerminate={() => {
+    traceMapEvent('callout_touch_capture_terminated', {
+      selectedVenueCount: presentedCalloutVenueCount,
+      selectedClusterId: presentedCalloutClusterId ?? 'none',
+      isCalloutClosingVisually: isCalloutClosingVisuallyRef.current,
+    });
+  }}
   onResponderRelease={(event) => {
     const guardRemainingMs = Math.max(0, calloutOpenTouchGuardUntilRef.current - Date.now());
     const presentationDismissGuardRemainingMs = Math.max(
@@ -11214,6 +12006,14 @@ Owner: Map UX stability on Android • Last validated: 2025-09-04
       Number((globalThis as any).__gathrSharedEventReturnGuardUntil || 0)
     );
     const sharedEventReturnGuardRemainingMs = Math.max(0, sharedEventReturnGuardUntil - Date.now());
+    traceMapEvent('callout_touch_capture_released', {
+      guardRemainingMs,
+      presentationDismissGuardRemainingMs,
+      sharedEventReturnGuardRemainingMs,
+      selectedClusterId: presentedCalloutClusterId ?? 'none',
+      selectedVenueCount: presentedCalloutVenueCount,
+      isCalloutClosingVisually: isCalloutClosingVisuallyRef.current,
+    });
     if (
       guardRemainingMs > 0 ||
       presentationDismissGuardRemainingMs > 0 ||
@@ -11226,6 +12026,12 @@ Owner: Map UX stability on Android • Last validated: 2025-09-04
         selectedClusterId: presentedCalloutClusterId ?? 'none',
         selectedVenueCount: presentedCalloutVenueCount,
       });
+      traceMapEvent('callout_touch_capture_close_blocked', {
+        blocker: 'dismiss_guard',
+        guardRemainingMs,
+        presentationDismissGuardRemainingMs,
+        sharedEventReturnGuardRemainingMs,
+      });
       return;
     }
 
@@ -11233,6 +12039,9 @@ Owner: Map UX stability on Android • Last validated: 2025-09-04
       return;
     }
     if (isCalloutClosingVisuallyRef.current) {
+      traceMapEvent('callout_touch_capture_close_blocked', {
+        blocker: 'already_closing',
+      });
       return;
     }
     // Tapping outside the sheet intentionally closes it with animation
@@ -11272,6 +12081,7 @@ Owner: Map UX stability on Android • Last validated: 2025-09-04
               key={presentedCalloutPresentationKey}
               venues={presentedCalloutVenues}
               cluster={livePresentedCalloutCluster}
+              preferredVenueLocationKey={preferredCalloutVenueLocationKey}
               onClose={() => closeCallout('callout-onClose-prop')}
               onCloseStart={handleCalloutCloseStart}
               onLayoutReady={() => {
@@ -11285,6 +12095,12 @@ Owner: Map UX stability on Android • Last validated: 2025-09-04
                 );
               }}
               onPresentationReady={() => {
+                traceMapEvent('callout_presentation_callback_completed', {
+                  renderedClusterId: presentedCalloutClusterId ?? 'none',
+                  renderedVenueCount: presentedCalloutVenueCount,
+                  renderedCalloutPresentationKey: presentedCalloutPresentationKey,
+                  ...getCommittedMapTraceCounts(),
+                }, { gestureSessionId: gestureTraceSessionIdRef.current });
                 setCalloutPresentationReadyKey((currentKey) =>
                   currentKey === presentedCalloutPresentationKey
                     ? currentKey
@@ -11293,6 +12109,7 @@ Owner: Map UX stability on Android • Last validated: 2025-09-04
               }}
               readinessEpoch={calloutReadinessEpoch}
               onEventSelected={handleEventSelected}
+              onShowRoute={showRouteFromCallout}
             />
           </View>
         </>
@@ -11368,6 +12185,43 @@ Owner: Map UX stability on Android • Last validated: 2025-09-04
       <GlobalEventLightbox onShowRoute={showRouteOnMap} />
 
       {MAP_TRACE_UI_ENABLED && (
+        <TouchableOpacity
+          activeOpacity={0.75}
+          accessibilityActions={[{ name: 'activate', label: 'Open map trace' }]}
+          accessibilityLabel="Open map trace"
+          accessibilityRole="button"
+          delayLongPress={700}
+          onAccessibilityAction={(event) => {
+            if (event.nativeEvent.actionName === 'activate') {
+              traceMapEvent('trace_panel_opened', {
+                source: 'logo_accessibility_action',
+              });
+              setIsTracePanelVisible(true);
+            }
+          }}
+          onLongPress={() => {
+            traceMapEvent('trace_panel_opened', {
+              source: 'logo_long_press',
+            });
+            setIsTracePanelVisible(true);
+          }}
+          onPress={() => {
+            traceMapEvent('trace_panel_opened', {
+              source: 'logo_press_fallback',
+            });
+            setIsTracePanelVisible(true);
+          }}
+          style={styles.mapTraceLogoHost}
+        >
+          <Image
+            source={require('../../assets/images/icon.png')}
+            style={styles.mapLogo}
+            resizeMode="contain"
+          />
+        </TouchableOpacity>
+      )}
+
+      {MAP_TRACE_UI_ENABLED && isTracePanelVisible && (
         <MapTracePanel
           visible={isTracePanelVisible}
           onClose={() => setIsTracePanelVisible(false)}
@@ -11777,44 +12631,34 @@ const styles = StyleSheet.create({
     height: '100%',
     minWidth: 4,
   },
-  friendPresenceHalo: {
+  friendEventHalo: {
     position: 'absolute',
-    borderWidth: 4,
-    borderColor: 'rgba(13, 148, 136, 0.88)',
-    backgroundColor: 'rgba(45, 212, 191, 0.16)',
-    shadowColor: '#0F766E',
+    borderWidth: 3,
+    borderColor: 'rgba(127, 86, 217, 0.92)',
+    backgroundColor: 'rgba(214, 187, 251, 0.10)',
+    shadowColor: '#6941C6',
     shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.5,
+    shadowOpacity: 0.42,
     shadowRadius: 7,
-    elevation: 4,
-    zIndex: 1,
+    elevation: 3,
+    zIndex: 0,
   },
-  friendPresenceBadge: {
+  friendEventBadge: {
     position: 'absolute',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 1,
-    paddingHorizontal: 2,
-    overflow: 'hidden',
-    backgroundColor: '#0F766E',
+    paddingHorizontal: 3,
+    backgroundColor: '#6941C6',
     borderWidth: 1.5,
     borderColor: '#FFFFFF',
     zIndex: 7,
   },
-  friendPresenceAvatar: {
-    position: 'absolute',
-    width: '100%',
-    height: '100%',
-    opacity: 0.42,
-  },
-  friendPresenceBadgeText: {
+  friendEventBadgeText: {
     color: '#FFFFFF',
     fontSize: 8,
-    fontWeight: '800',
-    textShadowColor: 'rgba(0,0,0,0.45)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 1,
+    fontWeight: '900',
   },
 venueCountContainer: {
   position: 'absolute',
@@ -11920,27 +12764,6 @@ countText: {
     borderWidth: 1.5,
     borderColor: 'rgba(255, 255, 255, 0.9)',
     zIndex: 5,
-  },
-  // Firestore source indicator - subtle badge in top-left
-  firestoreIndicator: {
-    position: 'absolute',
-    top: -3,
-    left: -3,
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: '#E3F2FD', // Light blue
-    borderWidth: 1,
-    borderColor: '#2196F3', // Blue border
-    zIndex: 5,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  firestoreIndicatorText: {
-    fontSize: 6,
-    fontWeight: 'bold',
-    color: '#1565C0', // Dark blue text
-    textAlign: 'center',
   },
   // Processing ring indicator - shown when cluster is being tapped/processed
   processingRing: {
@@ -12304,7 +13127,7 @@ countText: {
   // Re-center button styles
   recenterButton: {
     position: 'absolute',
-    bottom: 80,
+    bottom: 88,
     right: 10,
     backgroundColor: 'white',
     width: 36,
@@ -12351,8 +13174,7 @@ countText: {
   interestPillsContainer: {
     position: 'absolute',
     right: 10,
-    top: 182, // Legend button ends at ~170 (80+54+36), add 12px spacing
-    bottom: 128, // Recenter button starts at ~116 from bottom (80 + 36), add 12px spacing
+    top: 170, // Keep the wheel tucked below the raised Trending control.
     justifyContent: 'center',
     alignItems: 'flex-end',
     zIndex: 11,
@@ -12378,18 +13200,21 @@ countText: {
     bottom: 34, // sits just above the Mapbox logo area
     zIndex: 6,
   },
-  mapTraceTrigger: {
+  mapTraceLogoHost: {
+    alignItems: 'center',
     position: 'absolute',
-    left: 2,
+    justifyContent: 'center',
+    left: 0,
     bottom: 24,
     width: 40,
     height: 40,
-    zIndex: 8,
+    zIndex: 200,
+    elevation: 200,
   },
   mapLogo: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.25,
@@ -12401,4 +13226,3 @@ countText: {
 // Explicitly mark the default export for Expo Router
 const MapPage = MapScreen;
 export default MapPage;
-

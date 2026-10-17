@@ -1,0 +1,15 @@
+{
+  "updateId": "01a14b4f-9f31-7e59-9002-7564147d1252",
+  "group": "14c93e61-7c95-4601-8316-cd89f9af0b42",
+  "sourceCommit": "1416f83882fd4c111d590727f954885c8d518e0e",
+  "platform": "ios",
+  "runtime": "1.1.10",
+  "channel": "preview",
+  "channelPaused": false,
+  "fingerprint": "9ee0b973a2f53ed5647ccafe1599ef64f1580ffb",
+  "recordedLaunchAssetSha256": "55fb1fc5f91e0594925d83b82627700102e8126d9857039f73bd06c7d7e5c470",
+  "matchesCheckedExport": true,
+  "assetCount": 111,
+  "deviceAdoptionVerified": false,
+  "remoteBundleDownloaded": false
+}

@@ -1,0 +1,49 @@
+{
+  "checkedAt": "2026-10-17T13:18:01.850Z",
+  "head": "8e934a1130e817dca2d563e6f13479b42603783f",
+  "clean": true,
+  "platform": "ios",
+  "runtime": "1.1.10",
+  "bundleBytes": 5736316,
+  "sha256": "753ebce6bc77af11a7e6bf7ff0ec3d5e4ed73cfa361070c09dfa6bedfd8223a2",
+  "byteEqualToReviewedExport": true,
+  "modules": 2505,
+  "assets": 111,
+  "assetsEqualToReviewedExport": true,
+  "sourceMapSources": 2461,
+  "unexpectedQaSources": [],
+  "checks": [
+    {
+      "path": "app/_layout.tsx",
+      "matches": true
+    },
+    {
+      "path": "app/index.tsx",
+      "matches": true
+    },
+    {
+      "path": "app/(tabs)/map.tsx",
+      "matches": true
+    },
+    {
+      "path": "components/map/InterestsCarousel.tsx",
+      "matches": true
+    },
+    {
+      "path": "components/map/EventImageLightbox.tsx",
+      "matches": true
+    },
+    {
+      "path": "components/map/InterestLightboxCounter.tsx",
+      "matches": true
+    },
+    {
+      "path": "utils/loopingCarousel.ts",
+      "matches": true
+    },
+    {
+      "path": "utils/lightboxNavigation.ts",
+      "matches": true
+    }
+  ]
+}

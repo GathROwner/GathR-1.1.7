@@ -1,7 +1,15 @@
 import { TutorialBooleanGate } from './tutorialBooleanGate';
 
+export const shouldBypassCalloutOpenGuard = (reason: string): boolean =>
+  reason === 'modal-request-close' ||
+  reason === 'callout-onClose-prop' ||
+  reason === 'bottom-tab-navigation' ||
+  reason === 'tab-repress-trigger' ||
+  reason === 'tutorial-navigation' ||
+  reason === 'route-handoff';
+
 export const shouldActivateAndroidRetapOverlay = (reason: string): boolean =>
-  reason !== 'tutorial-navigation';
+  reason !== 'tutorial-navigation' && reason !== 'route-handoff';
 
 export const shouldRouteTutorialCalloutBack = (
   tutorialVisible: boolean,

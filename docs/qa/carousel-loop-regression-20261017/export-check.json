@@ -1,0 +1,112 @@
+{
+  "checkedAt": "2026-10-17T14:13:32.111Z",
+  "candidateCommit": "089ad6b50122e3010c3f515d1c2365a3440c148a",
+  "baselineCommit": "8e934a1130e817dca2d563e6f13479b42603783f",
+  "platform": "ios",
+  "runtime": "1.1.10",
+  "published": false,
+  "tests": {
+    "suites": 23,
+    "passed": 269,
+    "skipped": 1
+  },
+  "typescript": "passed",
+  "lint": {
+    "errors": 0,
+    "warnings": 215
+  },
+  "authSocialMapbox": "passed; preflight only",
+  "bundle": {
+    "path": "artifacts/carousel-loop-regression-20261017/export/_expo/static/js/ios/entry-37f976abb0fb586b5fd972922dc76e0f.hbc",
+    "bytes": 5736344,
+    "sha256": "5409d9e43b3479454e3e03e6d75579c98151bde6d2a04da81d303974dd758f70",
+    "modules": 2505,
+    "deltaBytesFromBaseline": 28
+  },
+  "assets": 111,
+  "assetsEqualToBaseline": true,
+  "sourceMapSources": 2461,
+  "sourceGraphEqualToBaseline": true,
+  "changedRuntimeSources": [
+    "/app/(tabs)/map.tsx"
+  ],
+  "soleRuntimeDelta": "Four-line loopNavigation prop for exact Trending manual/auto sources in GlobalEventLightbox",
+  "allOtherRuntimeSourceContentsEqual": true,
+  "unexpectedQaSources": [],
+  "sourceChecks": [
+    {
+      "path": "app/_layout.tsx",
+      "matches": true,
+      "sha256": "8b104231c9cbaaff80091cc481a194e5bac332600c967024775f22cc79da4dd7"
+    },
+    {
+      "path": "app/index.tsx",
+      "matches": true,
+      "sha256": "ffda86346355942c39d49b980d558f1c87ccda3642729d83039b52b8afc95f35"
+    },
+    {
+      "path": "app/(tabs)/map.tsx",
+      "matches": true,
+      "sha256": "7d6d409315fe6eceb204b7443aa61badad672c75caddef0fc4733358ef4e4623"
+    },
+    {
+      "path": "components/map/InterestsCarousel.tsx",
+      "matches": true,
+      "sha256": "6aeb567d5f8d623ab6072518c40632fcec8253b8c1fc58180984e339828ec849"
+    },
+    {
+      "path": "components/map/EventImageLightbox.tsx",
+      "matches": true,
+      "sha256": "94181279e3eb006cc4773eb6f115d5e59ead5059f29b83c1ff38a399b78a3807"
+    },
+    {
+      "path": "components/map/InterestLightboxCounter.tsx",
+      "matches": true,
+      "sha256": "cf043e61900c3ff418f32ad8ee563cfa019a354ef21c15dd7768f2c0c4446cd0"
+    },
+    {
+      "path": "utils/loopingCarousel.ts",
+      "matches": true,
+      "sha256": "173a832ca9d440956868400e1577b2fc4d3f3395838c58d398ed2d5af4219d9a"
+    },
+    {
+      "path": "utils/lightboxNavigation.ts",
+      "matches": true,
+      "sha256": "1d7a73afa4204981c527fa68418feef67ffe27e43eddd93f39b3b52d7edcb56a"
+    }
+  ],
+  "restoration": {
+    "restored": true,
+    "checks": [
+      {
+        "file": "app/_layout.tsx",
+        "sha256": "8b104231c9cbaaff80091cc481a194e5bac332600c967024775f22cc79da4dd7",
+        "matches": true,
+        "snapshot": "original-root"
+      },
+      {
+        "file": "app/index.tsx",
+        "sha256": "ffda86346355942c39d49b980d558f1c87ccda3642729d83039b52b8afc95f35",
+        "matches": true,
+        "snapshot": "original-index"
+      },
+      {
+        "file": "app/(tabs)/map.tsx",
+        "sha256": "7d6d409315fe6eceb204b7443aa61badad672c75caddef0fc4733358ef4e4623",
+        "matches": true,
+        "snapshot": "candidate-map"
+      }
+    ],
+    "onlyIntentionalMapChange": "Four-line Trending-only loopNavigation prop; no map interaction.",
+    "temporaryRootsRemoved": true
+  },
+  "visualVerification": {
+    "beforeTrendingFirstCaptured": true,
+    "afterFixVerified": false,
+    "reason": "Emulator qemu crashes followed by automatic connection rejection twice, including after fresh user approval",
+    "readOnlyCaptureAllowed": true,
+    "lastScreen": "Android launcher with System UI ANR dialog; GathR not loaded",
+    "iOSAdoption": false
+  },
+  "releaseGate": "Held before publication; independent source/export review and explicit visual-gate waiver required if native verification remains unavailable"
+}

@@ -32,7 +32,7 @@ const formatEntryDetails = (details?: Record<string, string | number | boolean |
 };
 
 export default function MapTracePanel({ visible, onClose }: MapTracePanelProps) {
-  const { entries, snapshot } = useMapTraceState();
+  const { entries, snapshot } = useMapTraceState(visible);
 
   if (!MAP_TRACE_UI_ENABLED) {
     return null;
@@ -123,6 +123,8 @@ export default function MapTracePanel({ visible, onClose }: MapTracePanelProps) 
                     })}
                     {'.'}
                     {new Date(entry.timestamp).getMilliseconds().toString().padStart(3, '0')}{' '}
+                    +{entry.monotonicMs.toFixed(1)}ms{' '}
+                    [{entry.gestureSessionId?.split('-').pop() ?? 'no-gesture'}]{' '}
                     {entry.label}
                   </Text>
                   {entry.details ? (

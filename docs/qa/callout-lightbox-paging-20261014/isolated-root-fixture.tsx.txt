@@ -1,0 +1,15 @@
+import React from 'react';
+import { Stack } from 'expo-router';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { BottomTabBarHeightContext } from '@react-navigation/bottom-tabs';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { AuthProvider } from '../contexts/AuthContext';
+import * as SplashScreen from 'expo-splash-screen';
+const client = new QueryClient();
+export default function QaRoot() {
+ React.useEffect(() => { void SplashScreen.hideAsync(); }, []);
+ return <GestureHandlerRootView style={{flex:1}}><SafeAreaProvider><QueryClientProvider client={client}>
+ <AuthProvider><BottomTabBarHeightContext.Provider value={0}><Stack initialRouteName="index" screenOptions={{headerShown:false}} /></BottomTabBarHeightContext.Provider></AuthProvider>
+ </QueryClientProvider></SafeAreaProvider></GestureHandlerRootView>;
+}

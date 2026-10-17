@@ -3,6 +3,10 @@ import { CITY_EVENTS_CATEGORY } from '../locationScope';
 import { TimeFilterType, type FilterCriteria } from '../../types/filter';
 import type { Event } from '../../types/events';
 
+// These fixtures describe September 13; keep them active regardless of today's date.
+beforeAll(() => { jest.useFakeTimers(); jest.setSystemTime(new Date('2026-09-13T12:00:00-03:00')); });
+afterAll(() => jest.useRealTimers());
+
 const criteria = (overrides: Partial<FilterCriteria> = {}): FilterCriteria => ({
   showEvents: true,
   showSpecials: true,

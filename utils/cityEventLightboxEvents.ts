@@ -1,3 +1,4 @@
+import { createEventTimeContext } from './mapEventFilters';
 import type { Event } from '../types/events';
 import type { FilterCriteria } from '../types/filter';
 import { doesEventMatchInterestCarouselBaseFilters } from './interestCarouselFilterUtils';
@@ -12,13 +13,14 @@ export const buildCityEventLightboxEvents = ({
   onScreenEvents,
   filterCriteria,
 }: BuildCityEventLightboxEventsParams): Event[] => {
+  const context = createEventTimeContext();
   const seenIds = new Set<string>();
   return onScreenEvents.filter((event) => {
     if (!isAreaExperienceEvent(event)) {
       return false;
     }
 
-    if (!doesEventMatchInterestCarouselBaseFilters(event, filterCriteria)) {
+    if (!doesEventMatchInterestCarouselBaseFilters(event, filterCriteria, context)) {
       return false;
     }
 

@@ -1,0 +1,275 @@
+// Frozen from dfef992:store/mapStore.ts for full-result parity and a local benchmark.
+async (
+  eventIds: (string | number)[],
+  options: { forceRefresh?: boolean } = {}
+) => {
+  if (!eventIds || eventIds.length === 0) return;
+
+  const forceRefresh = options.forceRefresh === true;
+  const qc: any = (global as any)?.__RQ_CLIENT ?? null;
+  const locallyConfirmedEventIds = new Set(
+    get().events
+      .filter((event) => event.sharedEventProvenance?.sharedByCurrentUser === true)
+      .map((event) => String(event.id))
+  );
+  const normalizedIds = Array.from(
+    new Set(
+      eventIds
+        .filter((id) => (
+          !isPrivateSharedEventId(id) && !locallyConfirmedEventIds.has(String(id))
+        ))
+        .map((id) => toAppEventId(id))
+        .filter(Boolean)
+    )
+  );
+  if (normalizedIds.length === 0) return;
+  const idsString = normalizedIds.join(',');
+  const key = [
+    'event-details',
+    EVENT_DETAILS_SCHEMA_VERSION,
+    [...normalizedIds].sort().join(','),
+  ];
+  const STALE_MS = 1000 * 60 * 5;
+
+  const dedupeByEquivalentId = (items: Event[]): Event[] => {
+    const deduped: Event[] = [];
+    for (const item of items) {
+      const existingIndex = deduped.findIndex((candidate) =>
+        areEventIdsEquivalent(candidate.id, item.id)
+      );
+      if (existingIndex >= 0) {
+        deduped[existingIndex] = item;
+      } else {
+        deduped.push(item);
+      }
+    }
+    return deduped;
+  };
+
+  const coerceDetailToEvent = (detail: any): Event => {
+    const eventType = detail?.type === 'special' ? 'special' : 'event';
+    return {
+      id: toAppEventId(detail?.id ?? ''),
+      type: eventType,
+      category: detail?.category || 'Other',
+      title: detail?.title || '',
+      description: detail?.fullDescription || detail?.description || '',
+      venueId: detail?.venueId ?? null,
+      venue: detail?.venue || '',
+      address: detail?.address || '',
+      startDate: detail?.startDate || '',
+      endDate: detail?.endDate || detail?.startDate || '',
+      startTime: detail?.startTime || '',
+      endTime: detail?.endTime || '',
+      timing: detail?.timing?.version === 2
+        ? detail.timing
+        : createLegacyTimingContract(
+            {
+              startDate: detail?.startDate || '',
+              startTime: detail?.startTime || '',
+              endDate: detail?.endDate || detail?.startDate || '',
+              endTime: detail?.endTime || '',
+            },
+            {
+              endStatus: 'unknown',
+              endResolutionMethod: 'legacy_details_api_unproven',
+              sourceUrl:
+                detail?.sourceUrl || detail?.metadata?.sourceUrl || detail?.facebookUrl || null,
+            }
+          ),
+      ticketPrice: detail?.ticketPrice || detail?.price || '',
+      profileUrl: detail?.profileUrl || '',
+      imageUrl: detail?.imageUrl || '',
+      SharedPostThumbnail: detail?.SharedPostThumbnail || '',
+      latitude: Number(detail?.latitude) || 0,
+      longitude: Number(detail?.longitude) || 0,
+      locationScope: detail?.locationScope ?? null,
+      locationLabel: detail?.locationLabel ?? null,
+      locationCity: detail?.locationCity ?? null,
+      locationProvince: detail?.locationProvince ?? null,
+      locationPrecision: detail?.locationPrecision ?? null,
+      locationReviewStatus: detail?.locationReviewStatus ?? null,
+      mapMode: detail?.mapMode ?? null,
+      routeData: detail?.routeData ?? null,
+      areaData: detail?.areaData ?? null,
+      ticketLinkPosts: detail?.ticketLinkPosts || '',
+      ticketLinkEvents: detail?.ticketLinkEvents || '',
+      ticketsBuyUrl: detail?.ticketsBuyUrl || '',
+      ticketLink: detail?.ticketLink || '',
+      actionLinks: Array.isArray(detail?.actionLinks) ? detail.actionLinks : [],
+      source: detail?.source || 'firestore',
+      likes: detail?.likes,
+      shares: detail?.shares,
+      interested: detail?.interested,
+      comments: detail?.comments,
+      topReactionsCount: detail?.topReactionsCount,
+      usersResponded: detail?.usersResponded,
+      mediaUrls: detail?.mediaUrls,
+      sourceUrl: detail?.sourceUrl || detail?.metadata?.sourceUrl,
+      sourceUniqueId: detail?.sourceUniqueId || detail?.metadata?.uniqueId,
+      facebookUrl: detail?.facebookUrl,
+      eventType: detail?.eventType,
+      ageRestriction: detail?.ageRestriction,
+      isRecurring: detail?.isRecurring,
+      recurringPattern: detail?.recurringPattern,
+      isRecurringInstance: detail?.isRecurringInstance,
+      originalEventId: detail?.originalEventId ?? null,
+      venueRating: detail?.venueRating,
+      venuePhone: detail?.venuePhone,
+      venueWebsite: detail?.venueWebsite,
+      venueFacebookUrl: detail?.venueFacebookUrl,
+      venueInstagramUrl: detail?.venueInstagramUrl,
+      venueCategories: detail?.venueCategories,
+      sharedEventProvenance: detail?.sharedEventProvenance,
+    };
+  };
+
+  const normalizeDetail = (detail: any): any | null => {
+    if (!detail || detail.id == null) return null;
+    const rawOriginalId =
+      detail.originalEventId ?? detail.metadata?.originalEventId ?? null;
+    return {
+      ...detail,
+      id: toAppEventId(detail.id),
+      description: detail.fullDescription || detail.description || '',
+      isRecurring: detail.isRecurring ?? detail.metadata?.isRecurring,
+      recurringPattern: detail.recurringPattern ?? detail.metadata?.recurringPattern,
+      isRecurringInstance:
+        detail.isRecurringInstance ?? detail.metadata?.isRecurringInstance,
+      originalEventId: rawOriginalId ? toAppEventId(rawOriginalId) : null,
+    };
+  };
+
+  const fetchLegacyDetails = async (): Promise<any[]> => {
+    const legacyIds = eventIds.map((id) => String(id)).filter(Boolean).join(',');
+    const url = `${LEGACY_EVENTS_API_BASE}/details?ids=${encodeURIComponent(legacyIds)}`;
+    const response = await fetch(url);
+    if (!response.ok) {
+      throw new Error(`Legacy details API error: ${response.status}`);
+    }
+
+    const payload = await response.json();
+    if (Array.isArray(payload)) return payload;
+    if (Array.isArray(payload?.data)) return payload.data;
+    return [];
+  };
+
+  const fetchFresh = async () => {
+    if (DEBUG_MAP_LOAD) {
+      console.log('[MapStore] Fetching event details from Firestore for ids:', idsString);
+    }
+
+    const firestoreDetails = await fetchFirestoreEventDetailsBatch(normalizedIds);
+    if (firestoreDetails.length > 0 || !ENABLE_LEGACY_DETAILS_FALLBACK) {
+      return firestoreDetails as any[];
+    }
+
+    console.warn(
+      '[MapStore] Firestore details returned no rows; trying legacy fallback because ENABLE_LEGACY_DETAILS_FALLBACK=true'
+    );
+    return fetchLegacyDetails();
+  };
+
+  const mergeIntoStore = (rawDetails: any[]) => {
+    const normalizedDetails = rawDetails
+      .map(normalizeDetail)
+      .filter((detail): detail is any => Boolean(detail));
+
+    if (normalizedDetails.length === 0) return;
+
+    const mergeCollection = (collection: Event[]): Event[] => {
+      const merged = collection.map((event) => {
+        const detail = normalizedDetails.find((candidate) =>
+          areEventIdsEquivalent(candidate.id, event.id)
+        );
+        if (!detail) return event;
+
+        return {
+          ...event,
+          ...detail,
+          // Keep stable event identity in current collection shape.
+          id: event.id,
+          type: event.type,
+          description: detail.fullDescription || detail.description || event.description,
+          ticketLinkPosts: detail.ticketLinkPosts ?? event.ticketLinkPosts,
+          ticketLinkEvents: detail.ticketLinkEvents ?? event.ticketLinkEvents,
+          ticketsBuyUrl: detail.ticketsBuyUrl ?? event.ticketsBuyUrl,
+          ticketLink: detail.ticketLink ?? event.ticketLink,
+          actionLinks: detail.actionLinks ?? event.actionLinks,
+          isRecurring: detail.isRecurring ?? event.isRecurring,
+          recurringPattern: detail.recurringPattern ?? event.recurringPattern,
+          isRecurringInstance:
+            detail.isRecurringInstance ?? event.isRecurringInstance,
+          originalEventId: detail.originalEventId ?? event.originalEventId ?? null,
+        } as Event;
+      });
+
+      const extras = normalizedDetails
+        .filter(
+          (detail) =>
+            !merged.some((event) => areEventIdsEquivalent(event.id, detail.id))
+        )
+        .map((detail) => coerceDetailToEvent(detail));
+
+      return dedupeByEquivalentId([...merged, ...extras]);
+    };
+
+    const { events, allEvents } = get();
+    const nextEvents = mergeCollection(events);
+    const nextAllEvents = mergeCollection(allEvents);
+
+    const calloutOpenNow =
+      Array.isArray((get() as any).selectedVenues) && (get() as any).selectedVenues.length > 0;
+    console.warn('[EnhanceProbe] mergeIntoStore set({events,allEvents})', {
+      calloutOpen: calloutOpenNow,
+      nextEvents: nextEvents.length,
+    });
+
+    set({
+      events: nextEvents,
+      allEvents: nextAllEvents,
+    });
+  };
+
+  const cached = qc?.getQueryData(key) as any[] | undefined;
+  if (cached?.length && !forceRefresh) {
+    if (DEBUG_MAP_LOAD) {
+      console.log('[MapStore] Using cached event details for', idsString);
+    }
+    mergeIntoStore(cached);
+
+    if (qc) {
+      qc.fetchQuery({
+        queryKey: key,
+        queryFn: fetchFresh,
+        staleTime: STALE_MS,
+        gcTime: 1000 * 60 * 10,
+      }).then((fresh: any[]) => {
+        mergeIntoStore(fresh);
+      }).catch((err: unknown) => {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.warn('[MapStore] details refresh error:', msg);
+      });
+    }
+    return;
+  }
+
+  try {
+    const fresh = forceRefresh
+      ? await fetchFresh()
+      : qc
+      ? await qc.fetchQuery({
+          queryKey: key,
+          queryFn: fetchFresh,
+          staleTime: STALE_MS,
+          gcTime: 1000 * 60 * 10,
+        })
+      : await fetchFresh();
+    if (forceRefresh && qc) {
+      qc.setQueryData(key, fresh);
+    }
+    mergeIntoStore(fresh);
+  } catch (error) {
+    console.error('Error fetching event details:', error);
+  }
+}

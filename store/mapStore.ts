@@ -56,17 +56,24 @@ Last validated: 2025-09-04 • Owner: Map data/UX
 
 
 
+import { createEventTimeContext, doesEventMatchTypeFilters, getFilterScheduleState as getMeasuredEventScheduleState, getEventFilterTimeFacts, matchesTimeFacts, matchesUpcomingDate, eventMatchesSearch, type EventTimeContext } from '../utils/mapEventFilters';
+import { normalizeUpcomingTypeFilters } from '../utils/upcomingDateWindow';
 import { create } from 'zustand';
 import { Event, Venue, Cluster, TimeStatus, InterestLevel } from '../types/events';
 import { FilterCriteria, TimeFilterType, TypeFilterCriteria } from '../types/filter';
-import { MapState } from '../types/store';
+import { MapState, type ViewportFetchOptions } from '../types/store';
 import * as Location from 'expo-location';
 import { Platform } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import Supercluster from 'supercluster';
 
 
 // Import default filter criteria
 import { DEFAULT_FILTER_CRITERIA } from '../types/filter';
+
+export { createEventTimeContext, doesEventMatchTypeFilters, type EventTimeContext } from '../utils/mapEventFilters';
+
+const FRIEND_EVENTS_MAP_VISIBILITY_KEY = '@gathr/friend-events-map-visible';
 
 // Import cluster interaction tracking
 import { getHasNewContent } from './clusterInteractionStore';
@@ -74,9 +81,14 @@ import { getHasNewContent } from './clusterInteractionStore';
 // Shared scoped-location (city-level) predicates
 import {
   isAreaExperienceEvent,
+  isMapRenderableEvent,
   isRouteEvent,
   isScopedLocationEvent,
 } from '../utils/locationScope';
+import {
+  getEventViewportMembership,
+  type ViewportBoundingBox,
+} from '../utils/eventViewport';
 import {
   doesEventMatchCategoryOrFacet,
   getEventFacetKeys,
@@ -90,9 +102,9 @@ import {
   type FetchMinimalEventsOptions,
 } from '../lib/api/events';
 import {
-  areEventIdsEquivalent,
   fetchFirestoreEventDetailsBatch,
   toAppEventId,
+  toFirestoreEventId,
 } from '../lib/api/firestoreEvents';
 import {
   fetchPrivateSharedEventsForCurrentUser,
@@ -103,13 +115,29 @@ import {
   LEGACY_EVENTS_API_BASE,
   USE_FIRESTORE_EVENTS,
 } from '../lib/config/backend';
-import { EVENTS_MINIMAL } from '../lib/queryKeys';
+import { EVENT_DETAILS_SCHEMA_VERSION, EVENTS_MINIMAL } from '../lib/queryKeys';
 import { normalizeVenueIdentityText } from '../utils/venueIdentity';
+import { createLegacyTimingContract, readVersion2EventTiming } from '../utils/eventTiming';
+import { readEventAreaData } from '../utils/eventAreaData';
+import { readEventProgrammeData } from '../utils/eventProgramme';
+import { normalizeRecurrenceFlag } from '../utils/eventRecurrence';
 import {
-  getEventDateKey,
   isEventPastFast,
-  parseTimeMinutes,
 } from '../utils/eventExpiry';
+import {
+  isLatestStartedViewportRequest,
+  markViewportRequestStarted,
+  reserveViewportRequestId,
+} from '../utils/viewportRequestCoordinator';
+import {
+  MAP_TRACE_ENABLED,
+  diffMapScheduleStateMetrics,
+  getActiveMapTraceGestureSessionId,
+  getMapScheduleStateMetricSnapshot,
+  mapTraceNow,
+  traceMapEvent,
+  type MapScheduleStateCaller,
+} from '../utils/mapTrace';
 
 // Define zoom threshold bands and their corresponding clustering radii
 export interface ZoomThreshold {
@@ -197,6 +225,68 @@ export interface ZoomThreshold {
 let lastClusters: Cluster[] = [];         // Last generated clusters for potential reuse
 let currentThresholdIndex = 2;            // Default to Neighborhood level (index 2)
 let filtersChanged = true;                // Track if filters have changed
+let lastMapProjectionSignature: string | null = null;
+
+const areEventArraysShallowEqual = (left: Event[], right: Event[]): boolean =>
+  left === right || (
+    left.length === right.length &&
+    left.every((event, index) => event === right[index])
+  );
+
+const areStringArraysEqual = (left: string[], right: string[]): boolean =>
+  left === right || (
+    left.length === right.length &&
+    left.every((value, index) => value === right[index])
+  );
+
+const areVenueProjectionsEqual = (left: Venue, right: Venue): boolean =>
+  left.locationKey === right.locationKey &&
+  areEventArraysShallowEqual(left.events, right.events);
+
+const areClusterProjectionsEqual = (left: Cluster[], right: Cluster[]): boolean =>
+  left === right || (
+    left.length === right.length &&
+    left.every((cluster, clusterIndex) => {
+      const previous = right[clusterIndex];
+      return Boolean(previous) &&
+        cluster.id === previous.id &&
+        cluster.clusterType === previous.clusterType &&
+        cluster.timeStatus === previous.timeStatus &&
+        cluster.interestLevel === previous.interestLevel &&
+        cluster.isBroadcasting === previous.isBroadcasting &&
+        cluster.eventCount === previous.eventCount &&
+        cluster.specialCount === previous.specialCount &&
+        cluster.friendEventCount === previous.friendEventCount &&
+        cluster.hasNewContent === previous.hasNewContent &&
+        cluster.containsCityLevelEvent === previous.containsCityLevelEvent &&
+        cluster.containsRouteEvent === previous.containsRouteEvent &&
+        areStringArraysEqual(cluster.categories, previous.categories) &&
+        cluster.venues.length === previous.venues.length &&
+        cluster.venues.every((venue, venueIndex) =>
+          areVenueProjectionsEqual(venue, previous.venues[venueIndex])
+        );
+    })
+  );
+
+const areBoundingBoxesEqual = (
+  left: ViewportBoundingBox | null,
+  right: ViewportBoundingBox | null
+): boolean => left === right || Boolean(
+  left &&
+  right &&
+  left.west === right.west &&
+  left.south === right.south &&
+  left.east === right.east &&
+  left.north === right.north
+);
+
+const getMapStateTraceCounts = (state: MapState) => ({
+  events: state.events.length,
+  filteredEvents: state.filteredEvents.length,
+  viewportEvents: state.viewportEvents.length,
+  onScreenEvents: state.onScreenEvents.length,
+  clusters: state.clusters.length,
+});
 
 // Supercluster caches
 let __scIndex: any | null = null;
@@ -227,8 +317,6 @@ const scheduleCalloutCloseClusterRefresh = (refreshClusters: () => void): void =
   // indicator state can refresh immediately without blocking user input.
   refreshClusters();
 };
-
-type ViewportBoundingBox = { west: number; south: number; east: number; north: number };
 
 const clampNumber = (value: number, min: number, max: number): number =>
   Math.min(max, Math.max(min, value));
@@ -453,13 +541,13 @@ const determineClusterTimeStatus = (
   timeContext: EventTimeContext = createEventTimeContext()
 ): TimeStatus => {
   const hasNowEvents = venues.some(venue => 
-    venue.events.some(event => isEventNowFast(event, timeContext))
+    venue.events.some(event => isEventNowFast(event, timeContext, 'cluster_now_today'))
   );
   
   if (hasNowEvents) return 'now';
   
   const hasTodayEvents = venues.some(venue => 
-    venue.events.some(event => isEventHappeningTodayFast(event, timeContext))
+    venue.events.some(event => isEventHappeningTodayFast(event, timeContext, 'cluster_now_today'))
   );
   
   if (hasTodayEvents) return 'today';
@@ -478,181 +566,92 @@ const calculateInterestLevel = (venues: Venue[]): InterestLevel => {
   return 'low';
 };
 
-export type EventTimeContext = {
-  todayKey: string;
-  tomorrowKey: string;
-  yesterdayKey: string;
-  nowMinutes: number;
-};
-
-const NOON_MINUTES = 12 * 60;
-const END_OF_DAY_MINUTES = 23 * 60 + 59;
-
-const formatLocalDateKey = (date: Date): string => {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-};
-
-const addDaysKey = (date: Date, days: number): string => {
-  const next = new Date(date);
-  next.setDate(next.getDate() + days);
-  return formatLocalDateKey(next);
-};
-
-export const createEventTimeContext = (now = new Date()): EventTimeContext => ({
-  todayKey: formatLocalDateKey(now),
-  tomorrowKey: addDaysKey(now, 1),
-  yesterdayKey: addDaysKey(now, -1),
-  nowMinutes: now.getHours() * 60 + now.getMinutes(),
-});
-
-const isEventNowFast = (event: Pick<Event, 'startDate' | 'startTime' | 'endDate' | 'endTime'>, context: EventTimeContext): boolean => {
-  const startKey = getEventDateKey(event.startDate);
-  if (!startKey) return false;
-
-  const endKey = getEventDateKey(event.endDate) || startKey;
-  const startMinutes = parseTimeMinutes(event.startTime, NOON_MINUTES);
-  const endMinutes = parseTimeMinutes(event.endTime, END_OF_DAY_MINUTES);
-
-  if (startMinutes === null || endMinutes === null) return false;
-
-  const crossesMidnight = endMinutes < startMinutes;
-  const isMultiDay = endKey !== startKey;
-
-  if (isMultiDay) {
-    if (context.todayKey < startKey || context.todayKey > endKey) {
-      return false;
-    }
-
-    if (crossesMidnight) {
-      return context.nowMinutes >= startMinutes;
-    }
-
-    return context.nowMinutes >= startMinutes && context.nowMinutes <= endMinutes;
-  }
-
-  if (startKey === context.todayKey) {
-    if (crossesMidnight) {
-      return context.nowMinutes >= startMinutes;
-    }
-
-    return context.nowMinutes >= startMinutes && context.nowMinutes <= endMinutes;
-  }
-
-  if (startKey === context.yesterdayKey && crossesMidnight) {
-    return context.nowMinutes <= endMinutes;
-  }
-
-  return false;
-};
+const isEventNowFast = (
+  event: Pick<Event, 'startDate' | 'startTime' | 'endDate' | 'endTime' | 'timing'>,
+  context: EventTimeContext,
+  traceCaller: MapScheduleStateCaller = 'map_filtering'
+): boolean => getMeasuredEventScheduleState(event, context, traceCaller).nowEligibility === 'confirmed';
 
 const isEventHappeningTodayFast = (
-  event: Pick<Event, 'startDate' | 'startTime' | 'endDate' | 'endTime'>,
-  context: EventTimeContext
+  event: Pick<Event, 'startDate' | 'startTime' | 'endDate' | 'endTime' | 'timing'>,
+  context: EventTimeContext,
+  traceCaller: MapScheduleStateCaller = 'map_filtering'
 ): boolean => {
-  if (isEventNowFast(event, context)) {
-    return true;
-  }
-
-  if (isEventPastFast(event, context)) {
-    return false;
-  }
-
-  const startKey = getEventDateKey(event.startDate);
-  if (!startKey) return false;
-
-  const endKey = getEventDateKey(event.endDate) || startKey;
-
-  if (endKey !== startKey) {
-    if (context.todayKey < startKey || context.todayKey > endKey) {
-      return false;
-    }
-
-    if (startKey === context.todayKey) {
-      return true;
-    }
-
-    if (context.todayKey > startKey && context.todayKey < endKey) {
-      return true;
-    }
-
-    if (endKey === context.todayKey) {
-      const endMinutes = parseTimeMinutes(event.endTime, END_OF_DAY_MINUTES);
-      return endMinutes !== null && context.nowMinutes <= endMinutes;
-    }
-
-    return true;
-  }
-
-  return startKey === context.todayKey;
+  return getMeasuredEventScheduleState(event, context, traceCaller).todayEligible;
 };
 
 export const getEventTimeStatusFast = (
-  event: Pick<Event, 'startDate' | 'startTime' | 'endDate' | 'endTime'>,
-  context: EventTimeContext
+  event: Pick<Event, 'startDate' | 'startTime' | 'endDate' | 'endTime' | 'timing'>,
+  context: EventTimeContext,
+  traceCaller: MapScheduleStateCaller = 'map_filtering'
 ): TimeStatus => {
-  if (isEventNowFast(event, context)) return 'now';
-  if (isEventPastFast(event, context)) return 'past';
-  if (isEventHappeningTodayFast(event, context)) return 'today';
+  const state = getMeasuredEventScheduleState(event, context, traceCaller);
+  if (state.nowEligibility === 'confirmed') return 'now';
+  if (state.code === 'confirmed_ended') return 'past';
+  if (state.todayEligible) return 'today';
   return 'future';
 };
+
+const isEventDefaultMapEligibleMeasured = (
+  event: Event,
+  context: EventTimeContext = createEventTimeContext()
+): boolean => getMeasuredEventScheduleState(
+  event,
+  context,
+  'default_map_eligibility'
+).defaultMapEligible;
+
+const createMapProjectionSignature = (
+  events: Event[],
+  context: EventTimeContext
+): string => {
+  const signatureParts: string[] = [];
+
+  for (const event of events) {
+    if (!isMapRenderableEvent(event)) continue;
+    const state = getMeasuredEventScheduleState(
+      event,
+      context,
+      'default_map_eligibility'
+    );
+    if (!state.defaultMapEligible) continue;
+
+    const timeStatus: TimeStatus = state.nowEligibility === 'confirmed'
+      ? 'now'
+      : state.todayEligible
+        ? 'today'
+        : 'future';
+    signatureParts.push([
+      String(event.id),
+      timeStatus,
+      event.type,
+      event.category,
+      event.venue,
+      event.address,
+      String(event.latitude),
+      String(event.longitude),
+    ].join(':'));
+  }
+
+  return signatureParts.join('|');
+};
+
+const updateMapProjectionSignature = (nextSignature: string): void => {
+  if (nextSignature !== lastMapProjectionSignature) filtersChanged = true;
+  lastMapProjectionSignature = nextSignature;
+};
+
+const isEventPastMeasured = (
+  event: Event,
+  context: EventTimeContext,
+  traceCaller: MapScheduleStateCaller
+): boolean => event.timing?.version === 2
+  ? getMeasuredEventScheduleState(event, context, traceCaller).code === 'confirmed_ended'
+  : isEventPastFast(event, context);
 
 /**
  * Determines if an event matches the given type-specific filters
  */
-export const doesEventMatchTypeFilters = (
-  event: Event,
-  typeFilters: TypeFilterCriteria,
-  timeContext: EventTimeContext = createEventTimeContext()
-): boolean => {
-  // Ended events (past end time + grace) never show, regardless of time filter
-  if (isEventPastFast(event, timeContext)) {
-    return false;
-  }
-
-  // Check time filter
-  if (typeFilters.timeFilter === TimeFilterType.ALL) {
-    // No time filtering - show all events
-    // Continue to other filters
-  } else if (typeFilters.timeFilter === TimeFilterType.NOW) {
-    const isNow = isEventNowFast(event, timeContext);
-    if (!isNow) return false;
-  } else if (typeFilters.timeFilter === TimeFilterType.TODAY) {
-    const isToday = isEventHappeningTodayFast(event, timeContext);
-    if (!isToday) return false;
-  } else if (typeFilters.timeFilter === TimeFilterType.TOMORROW) {
-    const isTomorrow = getEventDateKey(event.startDate) === timeContext.tomorrowKey;
-    if (!isTomorrow) return false;
-  } else if (typeFilters.timeFilter === TimeFilterType.UPCOMING) {
-    // UPCOMING should only show future events (not now or today)
-    const timeStatus = getEventTimeStatusFast(event, timeContext);
-    if (timeStatus !== 'future') return false;
-  }
-
-  
-  // Check category filter
-  if (typeFilters.category &&
-      !doesEventMatchCategoryOrFacet(event, typeFilters.category)) {
-    return false;
-  }
-  
-  // Check search filter if implemented
-  if (typeFilters.search && typeFilters.search.trim() !== '') {
-    const searchTerm = typeFilters.search.toLowerCase().trim();
-    const matchesSearch = 
-      event.title.toLowerCase().includes(searchTerm) ||
-      event.description.toLowerCase().includes(searchTerm) ||
-      event.venue.toLowerCase().includes(searchTerm);
-    
-    if (!matchesSearch) return false;
-  }
-  
-  // If passed all filter checks, the event matches
-  return true;
-};
-
 /**
  * Determines if a cluster should be visible based on all active filters
  */
@@ -661,6 +660,7 @@ const shouldClusterBeVisible = (cluster: Cluster, criteria: FilterCriteria): boo
   // authorized check-in visible even when time/category/search filters remove
   // every event at that venue; its fallback cluster carries zero content counts.
   if (cluster.friendPresence) return true;
+  const timeContext = createEventTimeContext();
 
   for (const venue of cluster.venues) {
     for (const event of venue.events) {
@@ -676,7 +676,7 @@ const shouldClusterBeVisible = (cluster: Cluster, criteria: FilterCriteria): boo
         ? criteria.eventFilters 
         : criteria.specialFilters;
       
-      if (doesEventMatchTypeFilters(event, typeFilters)) {
+      if (doesEventMatchTypeFilters(event, typeFilters, timeContext) && eventMatchesSearch(event, criteria.search)) {
         return true; // This event matches all filters
       }
     }
@@ -721,10 +721,38 @@ export const calculateDistance = (
 /**
  * Filter events with type-specific filter support
  */
+let lastUpcomingEvaluationDay = '';
+
+// A callout holds a snapshot of its cluster. Close that snapshot when its date
+// window changes so it cannot retain unrelated occurrences from the previous filter.
+const dateSelectionReset = (previous: FilterCriteria, next: FilterCriteria): Partial<MapState> => {
+  const currentDay = createEventTimeContext().todayKey;
+  const changed = ([before, after]: [TypeFilterCriteria, TypeFilterCriteria]) => {
+    const upcomingInvolved = before.timeFilter === TimeFilterType.UPCOMING ||
+      after.timeFilter === TimeFilterType.UPCOMING;
+    return upcomingInvolved && (before.timeFilter !== after.timeFilter ||
+      JSON.stringify(before.upcomingDate) !== JSON.stringify(after.upcomingDate) ||
+      lastUpcomingEvaluationDay !== currentDay);
+  };
+  const filterPairs: [TypeFilterCriteria, TypeFilterCriteria][] = [
+    [previous.eventFilters, next.eventFilters],
+    [previous.specialFilters, next.specialFilters],
+  ];
+  return filterPairs.some(changed) ? {
+    selectedVenue: null, selectedVenues: [], selectedCluster: null, preferredCalloutVenueLocationKey: null,
+  } : {};
+};
+
 const filterEvents = (events: Event[], criteria: FilterCriteria): Event[] => {
   const timeContext = createEventTimeContext();
+  const gestureSessionId = getActiveMapTraceGestureSessionId();
+  const traceStartedAt = MAP_TRACE_ENABLED ? mapTraceNow() : 0;
+  const scheduleMetricBefore = MAP_TRACE_ENABLED
+    ? getMapScheduleStateMetricSnapshot('map_filtering', gestureSessionId)
+    : { count: 0, cumulativeDurationMs: 0 };
 
-  return events.filter(event => {
+  lastUpcomingEvaluationDay = timeContext.todayKey;
+  const filteredEvents = events.filter(event => {
     // Apply basic visibility filter
     const isVisible = 
       (event.type === 'event' && criteria.showEvents) || 
@@ -737,136 +765,104 @@ const filterEvents = (events: Event[], criteria: FilterCriteria): Event[] => {
       ? criteria.eventFilters 
       : criteria.specialFilters;
     
-    return doesEventMatchTypeFilters(event, typeFilters, timeContext);
+    return doesEventMatchTypeFilters(event, typeFilters, timeContext) && eventMatchesSearch(event, criteria.search);
   });
+
+  if (MAP_TRACE_ENABLED) {
+    const scheduleMetric = diffMapScheduleStateMetrics(
+      scheduleMetricBefore,
+      getMapScheduleStateMetricSnapshot('map_filtering', gestureSessionId)
+    );
+    traceMapEvent('map_filtering_completed', {
+      durationMs: mapTraceNow() - traceStartedAt,
+      inputEvents: events.length,
+      outputEvents: filteredEvents.length,
+      scheduleCalls: scheduleMetric.count,
+      scheduleCumulativeDurationMs: scheduleMetric.cumulativeDurationMs,
+      eventTimeFilter: criteria.eventFilters.timeFilter,
+      specialTimeFilter: criteria.specialFilters.timeFilter,
+    }, { gestureSessionId });
+  }
+
+  return filteredEvents;
 };
 
+type TimeFilterCounts = { [key in TimeFilterType]: number };
+type CategoryFilterCounts = { [category: string]: number };
+type FilterCountBundle = Record<
+  'event' | 'special',
+  { time: TimeFilterCounts; category: CategoryFilterCounts }
+>;
+
+const createEmptyTimeFilterCounts = (): TimeFilterCounts => ({
+  [TimeFilterType.ALL]: 0,
+  [TimeFilterType.NOW]: 0,
+  [TimeFilterType.TODAY]: 0,
+  [TimeFilterType.TOMORROW]: 0,
+  [TimeFilterType.UPCOMING]: 0,
+});
+
 /**
- * Calculate counts for time filter options
- * Returns counts for each time filter option given current criteria
+ * Calculate every filter-pill count in one pass. A schedule state is resolved
+ * at most once for each visible event and then shared by its time and category
+ * facets, instead of re-running the timing state machine for each pill family.
  */
-const calculateTimeFilterCounts = (
-  events: Event[], 
-  currentCriteria: FilterCriteria, 
-  eventType: 'event' | 'special'
-): { [key in TimeFilterType]: number } => {
+const calculateFilterCountBundle = (
+  events: Event[],
+  currentCriteria: FilterCriteria
+): FilterCountBundle => {
   const timeContext = createEventTimeContext();
-  const typeFilters = eventType === 'event'
-    ? currentCriteria.eventFilters
-    : currentCriteria.specialFilters;
-  const categoryFilter = typeFilters.category?.toLowerCase();
-  const searchTerm = typeFilters.search?.trim().toLowerCase();
-  const counts = {
-    [TimeFilterType.ALL]: 0,
-    [TimeFilterType.NOW]: 0,
-    [TimeFilterType.TODAY]: 0,
-    [TimeFilterType.TOMORROW]: 0,
-    [TimeFilterType.UPCOMING]: 0
+  const result: FilterCountBundle = {
+    event: { time: createEmptyTimeFilterCounts(), category: {} },
+    special: { time: createEmptyTimeFilterCounts(), category: {} },
   };
 
   for (const event of events) {
-    const isVisible =
-      (event.type === 'event' && currentCriteria.showEvents) ||
-      (event.type === 'special' && currentCriteria.showSpecials);
-
-    if (!isVisible || event.type !== eventType) continue;
-
-    if (categoryFilter && !doesEventMatchCategoryOrFacet(event, categoryFilter)) {
-      continue;
-    }
-
-    if (searchTerm) {
-      const matchesSearch =
-        event.title.toLowerCase().includes(searchTerm) ||
-        event.description.toLowerCase().includes(searchTerm) ||
-        event.venue.toLowerCase().includes(searchTerm);
-
-      if (!matchesSearch) continue;
-    }
-
-    if (isEventPastFast(event, timeContext)) continue;
-
-    counts[TimeFilterType.ALL] += 1;
-
-    const isNow = isEventNowFast(event, timeContext);
-    const isToday = isNow || isEventHappeningTodayFast(event, timeContext);
-
-    if (isNow) counts[TimeFilterType.NOW] += 1;
-    if (isToday) counts[TimeFilterType.TODAY] += 1;
-    if (getEventDateKey(event.startDate) === timeContext.tomorrowKey) {
-      counts[TimeFilterType.TOMORROW] += 1;
-    }
-    if (!isToday && !isNow) {
-      counts[TimeFilterType.UPCOMING] += 1;
-    }
-  }
-
-  
-  return counts;
-};
-
-/**
- * Calculate counts for category filter options
- * Returns counts for each category given current criteria
- */
-const calculateCategoryFilterCounts = (
-  events: Event[], 
-  currentCriteria: FilterCriteria, 
-  eventType: 'event' | 'special'
-): { [category: string]: number } => {
-  const timeContext = createEventTimeContext();
-  const typeFilters = eventType === 'event'
-    ? currentCriteria.eventFilters
-    : currentCriteria.specialFilters;
-  const searchTerm = typeFilters.search?.trim().toLowerCase();
-  
-  const counts: { [category: string]: number } = {};
-
-  for (const event of events) {
-    if (event.type !== eventType) continue;
-
+    const eventType = event.type === 'special' ? 'special' : 'event';
+    const typeResult = result[eventType];
+    const typeFilters = eventType === 'event'
+      ? currentCriteria.eventFilters
+      : currentCriteria.specialFilters;
     const facetKeys = getEventFacetKeys(event);
-    facetKeys.forEach((key) => {
-      if (counts[key] === undefined) counts[key] = 0;
-    });
 
-    const isVisible =
-      (event.type === 'event' && currentCriteria.showEvents) ||
-      (event.type === 'special' && currentCriteria.showSpecials);
+    for (const key of facetKeys) {
+      if (typeResult.category[key] === undefined) typeResult.category[key] = 0;
+    }
 
+    const isVisible = eventType === 'event'
+      ? currentCriteria.showEvents
+      : currentCriteria.showSpecials;
     if (!isVisible) continue;
 
-    if (isEventPastFast(event, timeContext)) continue;
+    const searchTerm = typeFilters.search?.trim().toLowerCase() || '';
+    if (!eventMatchesSearch(event, searchTerm) || !eventMatchesSearch(event, currentCriteria.search)) continue;
 
-    if (typeFilters.timeFilter === TimeFilterType.NOW) {
-      const isNow = isEventNowFast(event, timeContext);
-      if (!isNow) continue;
-    } else if (typeFilters.timeFilter === TimeFilterType.TODAY) {
-      const isToday = isEventHappeningTodayFast(event, timeContext);
-      if (!isToday) continue;
-    } else if (typeFilters.timeFilter === TimeFilterType.TOMORROW) {
-      const isTomorrow = getEventDateKey(event.startDate) === timeContext.tomorrowKey;
-      if (!isTomorrow) continue;
-    } else if (typeFilters.timeFilter === TimeFilterType.UPCOMING) {
-      const timeStatus = getEventTimeStatusFast(event, timeContext);
-      if (timeStatus !== 'future') continue;
+    const traceCaller: MapScheduleStateCaller = eventType === 'event'
+      ? 'events_pill_counts'
+      : 'specials_pill_counts';
+    const facts = getEventFilterTimeFacts(event, timeContext, traceCaller);
+    if (facts.past) continue;
+    const { now: isNow, today: isToday, tomorrow: isTomorrow } = facts;
+    const isUpcoming = facts.upcoming &&
+      matchesUpcomingDate(event, typeFilters.upcomingDate, timeContext);
+
+    const categoryFilter = typeFilters.category?.toLowerCase();
+    if (!categoryFilter || doesEventMatchCategoryOrFacet(event, categoryFilter)) {
+      typeResult.time[TimeFilterType.ALL] += 1;
+      if (isNow) typeResult.time[TimeFilterType.NOW] += 1;
+      if (isToday) typeResult.time[TimeFilterType.TODAY] += 1;
+      if (isTomorrow) typeResult.time[TimeFilterType.TOMORROW] += 1;
+      if (isUpcoming) typeResult.time[TimeFilterType.UPCOMING] += 1;
     }
 
-    if (searchTerm) {
-      const matchesSearch =
-        event.title.toLowerCase().includes(searchTerm) ||
-        event.description.toLowerCase().includes(searchTerm) ||
-        event.venue.toLowerCase().includes(searchTerm);
+    const matchesSelectedTime = matchesTimeFacts(event, typeFilters, timeContext, facts);
 
-      if (!matchesSearch) continue;
+    if (matchesSelectedTime) {
+      for (const key of facetKeys) typeResult.category[key] += 1;
     }
-
-    facetKeys.forEach((key) => {
-      counts[key] += 1;
-    });
   }
-  
-  return counts;
+
+  return result;
 };
 
 type FilterCountCacheEntry<T> = {
@@ -876,18 +872,16 @@ type FilterCountCacheEntry<T> = {
   result: T;
 };
 
-const timeFilterCountsCache: Partial<Record<'event' | 'special', FilterCountCacheEntry<{ [key in TimeFilterType]: number }>>> = {};
-const categoryFilterCountsCache: Partial<Record<'event' | 'special', FilterCountCacheEntry<{ [category: string]: number }>>> = {};
+let filterCountBundleCache: FilterCountCacheEntry<FilterCountBundle> | null = null;
 
 const getFilterCountMinuteKey = () => Math.floor(Date.now() / 60000);
 
-const getCachedTimeFilterCounts = (
+const getCachedFilterCountBundle = (
   events: Event[],
-  currentCriteria: FilterCriteria,
-  eventType: 'event' | 'special'
-): { [key in TimeFilterType]: number } => {
+  currentCriteria: FilterCriteria
+): FilterCountBundle => {
   const minuteKey = getFilterCountMinuteKey();
-  const cached = timeFilterCountsCache[eventType];
+  const cached = filterCountBundleCache;
 
   if (
     cached &&
@@ -898,30 +892,8 @@ const getCachedTimeFilterCounts = (
     return cached.result;
   }
 
-  const result = calculateTimeFilterCounts(events, currentCriteria, eventType);
-  timeFilterCountsCache[eventType] = { events, criteria: currentCriteria, minuteKey, result };
-  return result;
-};
-
-const getCachedCategoryFilterCounts = (
-  events: Event[],
-  currentCriteria: FilterCriteria,
-  eventType: 'event' | 'special'
-): { [category: string]: number } => {
-  const minuteKey = getFilterCountMinuteKey();
-  const cached = categoryFilterCountsCache[eventType];
-
-  if (
-    cached &&
-    cached.events === events &&
-    cached.criteria === currentCriteria &&
-    cached.minuteKey === minuteKey
-  ) {
-    return cached.result;
-  }
-
-  const result = calculateCategoryFilterCounts(events, currentCriteria, eventType);
-  categoryFilterCountsCache[eventType] = { events, criteria: currentCriteria, minuteKey, result };
+  const result = calculateFilterCountBundle(events, currentCriteria);
+  filterCountBundleCache = { events, criteria: currentCriteria, minuteKey, result };
   return result;
 };
 
@@ -982,6 +954,7 @@ const clusterVenues = (venues: Venue[], zoom: number = 12): Cluster[] => {
       const allEvents = venuesInCluster.flatMap(v => v.events);
       const eventCount = allEvents.filter(e => e.type === 'event').length;
       const specialCount = allEvents.filter(e => e.type === 'special').length;
+      const friendEventCount = allEvents.filter(e => e.source === 'friend_event').length;
       const categories = Array.from(new Set(allEvents.map(e => e.category)));
       const timeStatus = determineClusterTimeStatus(venuesInCluster, timeContext);
       const interestLevel = calculateInterestLevel(venuesInCluster);
@@ -1012,6 +985,7 @@ const clusterVenues = (venues: Venue[], zoom: number = 12): Cluster[] => {
         isBroadcasting,
         eventCount,
         specialCount,
+        friendEventCount,
         categories,
         hasNewContent,
         containsCityLevelEvent,
@@ -1023,6 +997,7 @@ const clusterVenues = (venues: Venue[], zoom: number = 12): Cluster[] => {
       const allEvents = v.events;
       const eventCount = allEvents.filter(e => e.type === 'event').length;
       const specialCount = allEvents.filter(e => e.type === 'special').length;
+      const friendEventCount = allEvents.filter(e => e.source === 'friend_event').length;
       const categories = Array.from(new Set(allEvents.map(e => e.category)));
       const timeStatus = determineClusterTimeStatus([v], timeContext);
       const interestLevel = calculateInterestLevel([v]);
@@ -1047,6 +1022,7 @@ const clusterVenues = (venues: Venue[], zoom: number = 12): Cluster[] => {
         isBroadcasting,
         eventCount,
         specialCount,
+        friendEventCount,
         categories,
         hasNewContent,
         containsCityLevelEvent,
@@ -1072,6 +1048,8 @@ const clusterVenues = (venues: Venue[], zoom: number = 12): Cluster[] => {
 export const useMapStore = create<MapState>((set, get) => ({
   // Initial state
   allEvents: [],  // Global cache populated by React Query
+  friendEvents: [],
+  showFriendEvents: true,
   events: [],
   specials: [],
   filteredEvents: [],
@@ -1087,11 +1065,13 @@ export const useMapStore = create<MapState>((set, get) => ({
     outsideViewportCount: 0,
     lastFetchTimestamp: null,
   },
+  hasInitialViewportSettled: false,
 
   clusters: [],
   selectedVenue: null,
   selectedVenues: [],
   selectedCluster: null,
+  preferredCalloutVenueLocationKey: null,
   isLoading: false,
   lastFetchedAt: null,
   error: null,
@@ -1209,7 +1189,7 @@ export const useMapStore = create<MapState>((set, get) => ({
     // yesterday's from a stale AsyncStorage snapshot — never enter the store.
     const timeContext = createEventTimeContext();
     const liveEvents = Array.isArray(events)
-      ? events.filter((event) => !isEventPastFast(event, timeContext))
+      ? events.filter((event) => !isEventPastMeasured(event, timeContext, 'map_filtering'))
       : events;
 
     // DEBUG: summarize address/coords in incoming batch
@@ -1230,18 +1210,63 @@ export const useMapStore = create<MapState>((set, get) => ({
     });
   },
 
+  setFriendEvents: (events) => {
+    const next = Array.isArray(events)
+      ? events.filter((event) => event.source === 'friend_event')
+      : [];
+    set({ friendEvents: next });
+    filtersChanged = true;
+    const bbox = get().viewportBbox;
+    if (bbox) {
+      void get().fetchViewportEvents(bbox);
+      return;
+    }
+    const combined = [...get().allEvents, ...next];
+    const filtered = filterEvents(combined, get().filterCriteria)
+      .filter((event) => get().showFriendEvents || event.source !== 'friend_event');
+    set({ events: combined, filteredEvents: filtered });
+    get().generateClusters(get().zoomLevel);
+  },
+
+  setShowFriendEvents: (visible) => {
+    if (get().showFriendEvents === visible) return;
+    set({ showFriendEvents: visible });
+    void AsyncStorage.setItem(FRIEND_EVENTS_MAP_VISIBILITY_KEY, visible ? 'true' : 'false').catch(() => undefined);
+    filtersChanged = true;
+    const bbox = get().viewportBbox;
+    if (bbox) {
+      void get().fetchViewportEvents(bbox);
+      return;
+    }
+    const combined = [...get().allEvents, ...get().friendEvents];
+    const filtered = filterEvents(combined, get().filterCriteria)
+      .filter((event) => visible || event.source !== 'friend_event');
+    set({ events: combined, filteredEvents: filtered });
+    get().generateClusters(get().zoomLevel);
+  },
+
   /**
    * Remove events whose end time (plus grace) has passed from every event
    * array, so events that end while the app is open disappear from all
    * surfaces. No-ops (no re-render) when nothing expired.
    */
   pruneExpiredEvents: () => {
-    const state = get();
     const timeContext = createEventTimeContext();
+    const criteria = get().filterCriteria;
+    const normalizedEvents = normalizeUpcomingTypeFilters(criteria.eventFilters, timeContext.todayKey);
+    const normalizedSpecials = normalizeUpcomingTypeFilters(criteria.specialFilters, timeContext.todayKey);
+    const upcomingDayChanged = lastUpcomingEvaluationDay !== timeContext.todayKey &&
+      (criteria.eventFilters.timeFilter === TimeFilterType.UPCOMING ||
+        criteria.specialFilters.timeFilter === TimeFilterType.UPCOMING);
+    if (normalizedEvents !== criteria.eventFilters || normalizedSpecials !== criteria.specialFilters ||
+        upcomingDayChanged) {
+      get().setFilterCriteria({ eventFilters: normalizedEvents, specialFilters: normalizedSpecials });
+    }
+    const state = get();
 
     const prune = (list: Event[]): Event[] => {
       if (!Array.isArray(list) || list.length === 0) return list;
-      const next = list.filter((event) => !isEventPastFast(event, timeContext));
+      const next = list.filter((event) => !isEventPastMeasured(event, timeContext, 'map_filtering'));
       return next.length === list.length ? list : next;
     };
 
@@ -1301,7 +1326,7 @@ export const useMapStore = create<MapState>((set, get) => ({
 
     const pruneSelectedImageData = (data: MapState['selectedImageData']) => {
       if (!data) return data;
-      if (isEventPastFast(data.event, timeContext)) return null;
+      if (isEventPastMeasured(data.event, timeContext, 'map_filtering')) return null;
       if (!data.events) return data;
 
       const events = prune(data.events);
@@ -1342,7 +1367,20 @@ export const useMapStore = create<MapState>((set, get) => ({
       selectedCluster !== state.selectedCluster ||
       selectedImageData !== state.selectedImageData;
 
-    if (!changed) return;
+    if (!changed) {
+      // A timing transition can change map eligibility or the Now/Today badge
+      // without removing an event. Recluster only when that visible projection
+      // actually changes; ordinary minute ticks remain true no-ops.
+      const projectionSignature = createMapProjectionSignature(
+        state.filteredEvents,
+        timeContext
+      );
+      if (projectionSignature !== lastMapProjectionSignature) {
+        filtersChanged = true;
+        get().generateClusters(get().zoomLevel);
+      }
+      return;
+    }
 
     set({
       allEvents,
@@ -1384,7 +1422,13 @@ export const useMapStore = create<MapState>((set, get) => ({
   // Do ALL processing synchronously in one batch
   const categories = Array.from(new Set(events.map(event => event.category)));
   const filtered = filterEvents(events, filterCriteria);
-  const venues = groupEventsByVenue(filtered);
+  const timeContext = createEventTimeContext();
+  const venues = groupEventsByVenue(
+    filtered
+      .filter(isMapRenderableEvent)
+      .filter((event) => isEventDefaultMapEligibleMeasured(event, timeContext))
+  );
+  updateMapProjectionSignature(createMapProjectionSignature(filtered, timeContext));
   const clusters = clusterVenues(venues, zoomLevel);
   
   // Single store update - prevents render cascade
@@ -1405,10 +1449,12 @@ export const useMapStore = create<MapState>((set, get) => ({
       ...criteria 
     };
     
+    updatedCriteria.eventFilters = normalizeUpcomingTypeFilters(updatedCriteria.eventFilters);
+    updatedCriteria.specialFilters = normalizeUpcomingTypeFilters(updatedCriteria.specialFilters);
     // Set the filters changed flag to true
     filtersChanged = true;
-    
-    set({ filterCriteria: updatedCriteria });
+
+    set({ ...dateSelectionReset(get().filterCriteria, updatedCriteria), filterCriteria: updatedCriteria });
     
     // Apply updated filters and regenerate clusters
     get().getFilteredEvents();
@@ -1438,10 +1484,17 @@ export const useMapStore = create<MapState>((set, get) => ({
           ...updatedCriteria[filterKey],
           ...typeFilters,
           // Set source if category is being set, clear if being cleared
-          categoryFilterSource: typeFilters.category !== undefined ? source : undefined
+          categoryFilterSource: 'category' in typeFilters
+            ? (typeFilters.category ? source : undefined) : updatedCriteria[filterKey].categoryFilterSource
         }
       };
     });
+
+    updatedCriteria = {
+      ...updatedCriteria,
+      eventFilters: normalizeUpcomingTypeFilters(updatedCriteria.eventFilters),
+      specialFilters: normalizeUpcomingTypeFilters(updatedCriteria.specialFilters),
+    };
 
     if (JSON.stringify(updatedCriteria) === JSON.stringify(currentCriteria)) {
       return;
@@ -1459,7 +1512,13 @@ export const useMapStore = create<MapState>((set, get) => ({
     __ML_lastFilterOut = filtered.length;
 
     const clusterStartedAt = Date.now();
-    const venues = groupEventsByVenue(filtered);
+    const timeContext = createEventTimeContext();
+    const venues = groupEventsByVenue(
+      filtered
+        .filter(isMapRenderableEvent)
+        .filter((event) => isEventDefaultMapEligibleMeasured(event, timeContext))
+    );
+    updateMapProjectionSignature(createMapProjectionSignature(filtered, timeContext));
     const clusters = clusterVenues(venues, zoomLevel);
 
     __ML_lastVenueCount = venues.length;
@@ -1476,6 +1535,7 @@ export const useMapStore = create<MapState>((set, get) => ({
     });
 
     set({
+      ...dateSelectionReset(currentCriteria, updatedCriteria),
       filterCriteria: updatedCriteria,
       filteredEvents: filtered,
       clusters,
@@ -1486,7 +1546,10 @@ export const useMapStore = create<MapState>((set, get) => ({
    * Set selected venues (for multi-venue support)
    */
   selectVenues: (venues) => {
-    set({ selectedVenues: venues });
+    set({
+      selectedVenues: venues,
+      preferredCalloutVenueLocationKey: null,
+    });
   },
   
   /**
@@ -1502,11 +1565,22 @@ export const useMapStore = create<MapState>((set, get) => ({
    * Open a callout with one store update so Android does not pay three
    * selection render passes before the sheet can mount.
    */
-  selectCallout: (venues, cluster) => {
+  selectCallout: (venues, cluster, options) => {
+    const requestedVenueLocationKey = options?.preferredVenueLocationKey ?? null;
+    const preferredCalloutVenueLocationKey = requestedVenueLocationKey && venues.some(
+      (venue) => venue.locationKey === requestedVenueLocationKey
+    )
+      ? requestedVenueLocationKey
+      : null;
+    const selectedVenue = preferredCalloutVenueLocationKey
+      ? venues.find((venue) => venue.locationKey === preferredCalloutVenueLocationKey) ?? null
+      : venues[0] ?? null;
+
     set({
-      selectedVenue: venues[0] ?? null,
+      selectedVenue,
       selectedVenues: venues,
       selectedCluster: cluster,
+      preferredCalloutVenueLocationKey,
     });
     scheduleSelectedClusterEnhancement(get, set, cluster);
   },
@@ -1524,7 +1598,8 @@ export const useMapStore = create<MapState>((set, get) => ({
       set({
         selectedVenue: null,
         selectedVenues: [],
-        selectedCluster: null
+        selectedCluster: null,
+        preferredCalloutVenueLocationKey: null,
       });
 
       const refreshClustersAfterClose = () => {
@@ -1737,17 +1812,54 @@ refreshPrivateSharedEventsFromServer: async (privateEventIds?: string[]) => {
    * Fetch and partition events for the current viewport.
    * Legacy viewport API is removed from the active path.
    */
-  fetchViewportEvents: async (bbox: { west: number; south: number; east: number; north: number }) => {
+  fetchViewportEvents: async (
+    bbox: { west: number; south: number; east: number; north: number },
+    options: ViewportFetchOptions = {}
+  ) => {
+    const requestId = options.requestId ?? reserveViewportRequestId();
     const startedAt = Date.now();
+    const traceStartedAt = MAP_TRACE_ENABLED ? mapTraceNow() : 0;
+    const traceGestureSessionId = getActiveMapTraceGestureSessionId();
+    traceMapEvent('viewport_fetch_started', {
+      allEvents: get().allEvents.length,
+      events: get().events.length,
+      viewportEvents: get().viewportEvents.length,
+      onScreenEvents: get().onScreenEvents.length,
+      filteredEvents: get().filteredEvents.length,
+      clusters: get().clusters.length,
+      bbox,
+      requestId,
+      source: options.source ?? 'unspecified',
+    }, { gestureSessionId: traceGestureSessionId });
     logStartupDataTiming('viewport_fetch_called', {
       bbox,
       allEvents: get().allEvents.length,
       filteredEvents: get().filteredEvents.length,
       clusters: get().clusters.length,
+      requestId,
+      source: options.source ?? 'unspecified',
     });
 
+    const abortIfStale = (stage: string): boolean => {
+      if (isLatestStartedViewportRequest(requestId)) return false;
+      traceMapEvent('viewport_fetch_stale_skipped', {
+        requestId,
+        source: options.source ?? 'unspecified',
+        stage,
+        durationMs: MAP_TRACE_ENABLED ? mapTraceNow() - traceStartedAt : 0,
+        ...getMapStateTraceCounts(get()),
+      }, { gestureSessionId: traceGestureSessionId });
+      return true;
+    };
+
+    if (!markViewportRequestStarted(requestId)) {
+      abortIfStale('before_start');
+      return;
+    }
+    if (abortIfStale('before_start')) return;
+
     try {
-      set({ error: null });
+      if (get().error !== null) set({ error: null });
 
       const filters = get().filterCriteria;
       const typeParam = filters.showEvents && filters.showSpecials
@@ -1767,15 +1879,17 @@ refreshPrivateSharedEventsFromServer: async (privateEventIds?: string[]) => {
         return true;
       };
 
-      let candidateEvents = (get().allEvents || []).filter(matchesTypeFilter);
+      let publicCandidateEvents = (get().allEvents || []).filter(matchesTypeFilter);
+      const friendCandidateEvents = (get().friendEvents || []).filter(matchesTypeFilter);
       logStartupDataTiming('viewport_candidates_ready', {
         elapsedMs: Date.now() - startedAt,
-        candidateEvents: candidateEvents.length,
+        candidateEvents: publicCandidateEvents.length + friendCandidateEvents.length,
+        friendCandidateEvents: friendCandidateEvents.length,
         requestedType: typeParam,
       });
 
       // Refresh from source when cache is empty for the requested type slice.
-      if (candidateEvents.length === 0) {
+      if (publicCandidateEvents.length === 0) {
         const fetchOptions =
           typeof firestoreTypeFilter === 'boolean'
             ? { isEvent: firestoreTypeFilter }
@@ -1786,14 +1900,15 @@ refreshPrivateSharedEventsFromServer: async (privateEventIds?: string[]) => {
           fetchOptions,
         });
         const result = await fetchMinimalEventsShared(fetchOptions);
+        if (abortIfStale('after_minimal_fetch')) return;
         const dedupedAll = dedupeEvents(result.combinedData);
-        candidateEvents = dedupedAll.filter(matchesTypeFilter);
+        publicCandidateEvents = dedupedAll.filter(matchesTypeFilter);
         get().setAllEvents(dedupedAll);
         set({ lastFetchedAt: Date.now() });
         logStartupDataTiming('viewport_fetch_minimal_events_ready', {
           elapsedMs: Date.now() - startedAt,
           fetched: dedupedAll.length,
-          matchedTypeCount: candidateEvents.length,
+          matchedTypeCount: publicCandidateEvents.length,
         });
 
         if (DEBUG_MAP_LOAD) {
@@ -1801,29 +1916,19 @@ refreshPrivateSharedEventsFromServer: async (privateEventIds?: string[]) => {
             firestoreDefault: USE_FIRESTORE_EVENTS,
             fetched: dedupedAll.length,
             requestedType: typeParam,
-            matchedTypeCount: candidateEvents.length,
+            matchedTypeCount: publicCandidateEvents.length,
           });
         }
       }
 
-      const hasValidCoordinates = (event: Event): boolean => {
-        const lat = Number(event.latitude);
-        const lng = Number(event.longitude);
-        return Number.isFinite(lat) && Number.isFinite(lng) && !(lat === 0 && lng === 0);
-      };
-
-      const inBbox = (event: Event, targetBbox: ViewportBoundingBox = bbox): boolean => {
-        const lat = Number(event.latitude);
-        const lng = Number(event.longitude);
-        return (
-          lat >= targetBbox.south &&
-          lat <= targetBbox.north &&
-          lng >= targetBbox.west &&
-          lng <= targetBbox.east
-        );
-      };
+      // Friend events deliberately never enter allEvents or the persisted
+      // React Query cache. Their live per-user projections are composed only
+      // for the current in-memory map/feed view.
+      const candidateEvents = [...publicCandidateEvents, ...friendCandidateEvents];
+      if (abortIfStale('before_partition')) return;
 
       const partitionStartedAt = Date.now();
+      const partitionTraceStartedAt = MAP_TRACE_ENABLED ? mapTraceNow() : 0;
       const clusterBbox = expandBoundingBox(bbox, CLUSTER_SOURCE_BBOX_BUFFER_MULTIPLIER);
       const coordinateEvents: Event[] = [];
       const clusterSourceEvents: Event[] = [];
@@ -1833,29 +1938,33 @@ refreshPrivateSharedEventsFromServer: async (privateEventIds?: string[]) => {
       // candidateEvents comes from fetchMinimalEvents/dedupeEvents or allEvents,
       // so keep this pass allocation-light and avoid re-deduping the same list.
       for (const event of candidateEvents) {
-        if (!hasValidCoordinates(event)) {
-          if (isScopedLocationEvent(event)) {
-            outsideViewportEvents.push(event);
-          }
-          continue;
-        }
-
-        coordinateEvents.push(event);
-        if (inBbox(event)) {
-          viewportEvents.push(event);
-        } else {
-          outsideViewportEvents.push(event);
-        }
-
-        if (inBbox(event, clusterBbox)) {
-          clusterSourceEvents.push(event);
-        }
+        const membership = getEventViewportMembership(event, bbox, clusterBbox);
+        if (membership.hasPhysicalCoordinates) coordinateEvents.push(event);
+        if (membership.includeInViewport) viewportEvents.push(event);
+        if (membership.includeOutsideViewport) outsideViewportEvents.push(event);
+        if (membership.includeInClusterSource) clusterSourceEvents.push(event);
       }
 
       const partitionMs = Date.now() - partitionStartedAt;
+      const partitionTraceMs = MAP_TRACE_ENABLED ? mapTraceNow() - partitionTraceStartedAt : 0;
       const filterStartedAt = Date.now();
-      const filtered = filterEvents(clusterSourceEvents, filters);
+      const filterTraceStartedAt = MAP_TRACE_ENABLED ? mapTraceNow() : 0;
+      const filtered = filterEvents(clusterSourceEvents, filters)
+        .filter((event) => get().showFriendEvents || event.source !== 'friend_event');
       const filterMs = Date.now() - filterStartedAt;
+      const filterTraceMs = MAP_TRACE_ENABLED ? mapTraceNow() - filterTraceStartedAt : 0;
+      traceMapEvent('viewport_partition_completed', {
+        elapsedMs: MAP_TRACE_ENABLED ? mapTraceNow() - traceStartedAt : 0,
+        partitionMs: partitionTraceMs,
+        filterMs: filterTraceMs,
+        candidateEvents: candidateEvents.length,
+        coordinateEvents: coordinateEvents.length,
+        clusterSourceEvents: clusterSourceEvents.length,
+        viewportEvents: viewportEvents.length,
+        outsideViewportEvents: outsideViewportEvents.length,
+        filteredEvents: filtered.length,
+        clustersBeforeCommit: get().clusters.length,
+      }, { gestureSessionId: traceGestureSessionId });
       logStartupDataTiming('viewport_partition_complete', {
         elapsedMs: Date.now() - startedAt,
         partitionMs,
@@ -1868,8 +1977,6 @@ refreshPrivateSharedEventsFromServer: async (privateEventIds?: string[]) => {
         outsideViewportCount: outsideViewportEvents.length,
         filteredCount: filtered.length,
       });
-
-      filtersChanged = true;
 
       const onScreenEvents = viewportEvents;
 
@@ -1885,35 +1992,107 @@ refreshPrivateSharedEventsFromServer: async (privateEventIds?: string[]) => {
         });
       }
 
-      set({
-        events: clusterSourceEvents,
-        viewportEvents,
-        outsideViewportEvents,
-        onScreenEvents,
-        filteredEvents: filtered,
-        viewportBbox: bbox,
-        viewportMetadata: {
-          wasCapped: false,
-          viewportCount: viewportEvents.length,
-          outsideViewportCount: outsideViewportEvents.length,
-          lastFetchTimestamp: new Date().toISOString(),
-        },
-        isLoading: false,
-        lastFetchedAt: Date.now(),
-      });
+      if (abortIfStale('before_commit')) return;
 
-      get().generateClusters(get().zoomLevel);
+      const currentState = get();
+      const nextEvents = areEventArraysShallowEqual(currentState.events, clusterSourceEvents)
+        ? currentState.events
+        : clusterSourceEvents;
+      const nextViewportEvents = areEventArraysShallowEqual(currentState.viewportEvents, viewportEvents)
+        ? currentState.viewportEvents
+        : viewportEvents;
+      const nextOutsideViewportEvents = areEventArraysShallowEqual(
+        currentState.outsideViewportEvents,
+        outsideViewportEvents
+      ) ? currentState.outsideViewportEvents : outsideViewportEvents;
+      const nextOnScreenEvents = areEventArraysShallowEqual(currentState.onScreenEvents, onScreenEvents)
+        ? currentState.onScreenEvents
+        : onScreenEvents;
+      const nextFilteredEvents = areEventArraysShallowEqual(currentState.filteredEvents, filtered)
+        ? currentState.filteredEvents
+        : filtered;
+      const eventProjectionChanged =
+        nextEvents !== currentState.events ||
+        nextViewportEvents !== currentState.viewportEvents ||
+        nextOutsideViewportEvents !== currentState.outsideViewportEvents ||
+        nextOnScreenEvents !== currentState.onScreenEvents ||
+        nextFilteredEvents !== currentState.filteredEvents;
+      const bboxChanged = !areBoundingBoxesEqual(currentState.viewportBbox, bbox);
+      const storeCommitNeeded = eventProjectionChanged || bboxChanged || currentState.isLoading;
+
+      if (storeCommitNeeded) {
+        set({
+          events: nextEvents,
+          viewportEvents: nextViewportEvents,
+          outsideViewportEvents: nextOutsideViewportEvents,
+          onScreenEvents: nextOnScreenEvents,
+          filteredEvents: nextFilteredEvents,
+          viewportBbox: bbox,
+          viewportMetadata: {
+            wasCapped: false,
+            viewportCount: viewportEvents.length,
+            outsideViewportCount: outsideViewportEvents.length,
+            lastFetchTimestamp: new Date().toISOString(),
+          },
+          hasInitialViewportSettled: true,
+          isLoading: false,
+          lastFetchedAt: Date.now(),
+        });
+      } else {
+        if (!currentState.hasInitialViewportSettled) set({ hasInitialViewportSettled: true });
+        traceMapEvent('viewport_store_commit_skipped', {
+          requestId,
+          source: options.source ?? 'unspecified',
+          reason: 'equivalent_projection',
+          ...getMapStateTraceCounts(get()),
+        }, { gestureSessionId: traceGestureSessionId });
+      }
+
+      traceMapEvent('viewport_store_committed', {
+        elapsedMs: MAP_TRACE_ENABLED ? mapTraceNow() - traceStartedAt : 0,
+        committed: storeCommitNeeded,
+        events: get().events.length,
+        viewportEvents: get().viewportEvents.length,
+        outsideViewportEvents: get().outsideViewportEvents.length,
+        onScreenEvents: get().onScreenEvents.length,
+        filteredEvents: get().filteredEvents.length,
+        clustersBeforeGeneration: get().clusters.length,
+      }, { gestureSessionId: traceGestureSessionId });
+
+      if (nextFilteredEvents !== currentState.filteredEvents) {
+        filtersChanged = true;
+        get().generateClusters(get().zoomLevel);
+      }
+      traceMapEvent('viewport_fetch_completed', {
+        durationMs: MAP_TRACE_ENABLED ? mapTraceNow() - traceStartedAt : 0,
+        events: get().events.length,
+        viewportEvents: get().viewportEvents.length,
+        onScreenEvents: get().onScreenEvents.length,
+        filteredEvents: get().filteredEvents.length,
+        clusters: get().clusters.length,
+      }, { gestureSessionId: traceGestureSessionId });
       logStartupDataTiming('viewport_fetch_completed', {
         elapsedMs: Date.now() - startedAt,
         clusters: get().clusters.length,
       });
     } catch (error) {
+      if (abortIfStale('error')) return;
       const errorMsg = error instanceof Error ? error.message : 'Unknown viewport fetch error';
       console.error('[MapStore] Viewport fetch error:', errorMsg);
       set({
         error: errorMsg,
+        hasInitialViewportSettled: true,
         isLoading: false,
       });
+      traceMapEvent('viewport_fetch_failed', {
+        durationMs: MAP_TRACE_ENABLED ? mapTraceNow() - traceStartedAt : 0,
+        error: errorMsg,
+        events: get().events.length,
+        viewportEvents: get().viewportEvents.length,
+        onScreenEvents: get().onScreenEvents.length,
+        filteredEvents: get().filteredEvents.length,
+        clusters: get().clusters.length,
+      }, { gestureSessionId: traceGestureSessionId });
       logStartupDataTiming('viewport_fetch_failed', {
         elapsedMs: Date.now() - startedAt,
         error: errorMsg,
@@ -1925,19 +2104,25 @@ refreshPrivateSharedEventsFromServer: async (privateEventIds?: string[]) => {
    * Set viewport bounding box
    */
   setViewportBbox: (bbox: { west: number; south: number; east: number; north: number }) => {
+    if (areBoundingBoxesEqual(get().viewportBbox, bbox)) return;
     set({ viewportBbox: bbox });
   },
 
   setOnScreenEvents: (events: Event[]) => {
+    if (areEventArraysShallowEqual(get().onScreenEvents, events)) return;
     set({ onScreenEvents: events });
   },
 
   /**
    * Fetch detailed event data for lazy loading callouts
    */
-fetchEventDetails: async (eventIds: (string | number)[]) => {
+fetchEventDetails: async (
+  eventIds: (string | number)[],
+  options: { forceRefresh?: boolean } = {}
+) => {
   if (!eventIds || eventIds.length === 0) return;
 
+  const forceRefresh = options.forceRefresh === true;
   const qc: any = (global as any)?.__RQ_CLIENT ?? null;
   const locallyConfirmedEventIds = new Set(
     get().events
@@ -1956,18 +2141,25 @@ fetchEventDetails: async (eventIds: (string | number)[]) => {
   );
   if (normalizedIds.length === 0) return;
   const idsString = normalizedIds.join(',');
-  const key = ['event-details', [...normalizedIds].sort().join(',')];
+  const key = [
+    'event-details',
+    EVENT_DETAILS_SCHEMA_VERSION,
+    [...normalizedIds].sort().join(','),
+  ];
   const STALE_MS = 1000 * 60 * 5;
 
   const dedupeByEquivalentId = (items: Event[]): Event[] => {
     const deduped: Event[] = [];
+    const positions = new Map<string, number>();
     for (const item of items) {
-      const existingIndex = deduped.findIndex((candidate) =>
-        areEventIdsEquivalent(candidate.id, item.id)
-      );
-      if (existingIndex >= 0) {
+      // Nullish IDs never match, even each other. Blank IDs do match, as in
+      // areEventIdsEquivalent; use the same single-prefix normalization.
+      const key = item.id == null ? null : toFirestoreEventId(item.id);
+      const existingIndex = key === null ? undefined : positions.get(key);
+      if (existingIndex !== undefined) {
         deduped[existingIndex] = item;
       } else {
+        if (key !== null) positions.set(key, deduped.length);
         deduped.push(item);
       }
     }
@@ -1982,18 +2174,46 @@ fetchEventDetails: async (eventIds: (string | number)[]) => {
       category: detail?.category || 'Other',
       title: detail?.title || '',
       description: detail?.fullDescription || detail?.description || '',
+      venueId: detail?.venueId ?? null,
       venue: detail?.venue || '',
       address: detail?.address || '',
       startDate: detail?.startDate || '',
       endDate: detail?.endDate || detail?.startDate || '',
       startTime: detail?.startTime || '',
       endTime: detail?.endTime || '',
+      timing: readVersion2EventTiming(detail ?? {})
+        ??
+        createLegacyTimingContract(
+            {
+              startDate: detail?.startDate || '',
+              startTime: detail?.startTime || '',
+              endDate: detail?.endDate || detail?.startDate || '',
+              endTime: detail?.endTime || '',
+              locationScope: detail?.locationScope ?? detail?.metadata?.locationScope,
+            },
+            {
+              endStatus: 'unknown',
+              endResolutionMethod: 'legacy_details_api_unproven',
+              sourceUrl:
+                detail?.sourceUrl || detail?.metadata?.sourceUrl || detail?.facebookUrl || null,
+            }
+          ),
       ticketPrice: detail?.ticketPrice || detail?.price || '',
       profileUrl: detail?.profileUrl || '',
       imageUrl: detail?.imageUrl || '',
       SharedPostThumbnail: detail?.SharedPostThumbnail || '',
       latitude: Number(detail?.latitude) || 0,
       longitude: Number(detail?.longitude) || 0,
+      locationScope: detail?.locationScope ?? detail?.metadata?.locationScope ?? null,
+      locationLabel: detail?.locationLabel ?? null,
+      locationCity: detail?.locationCity ?? null,
+      locationProvince: detail?.locationProvince ?? null,
+      locationPrecision: detail?.locationPrecision ?? null,
+      locationReviewStatus: detail?.locationReviewStatus ?? null,
+      mapMode: detail?.mapMode ?? detail?.metadata?.mapMode ?? null,
+      routeData: detail?.routeData ?? null,
+      areaData: readEventAreaData(detail ?? {}),
+      programmeData: readEventProgrammeData(detail ?? {}) ?? undefined,
       ticketLinkPosts: detail?.ticketLinkPosts || '',
       ticketLinkEvents: detail?.ticketLinkEvents || '',
       ticketsBuyUrl: detail?.ticketsBuyUrl || '',
@@ -2007,6 +2227,8 @@ fetchEventDetails: async (eventIds: (string | number)[]) => {
       topReactionsCount: detail?.topReactionsCount,
       usersResponded: detail?.usersResponded,
       mediaUrls: detail?.mediaUrls,
+      sourceUrl: detail?.sourceUrl || detail?.metadata?.sourceUrl,
+      sourceUniqueId: detail?.sourceUniqueId || detail?.metadata?.uniqueId,
       facebookUrl: detail?.facebookUrl,
       eventType: detail?.eventType,
       ageRestriction: detail?.ageRestriction,
@@ -2028,14 +2250,24 @@ fetchEventDetails: async (eventIds: (string | number)[]) => {
     if (!detail || detail.id == null) return null;
     const rawOriginalId =
       detail.originalEventId ?? detail.metadata?.originalEventId ?? null;
+    const isRecurring = detail.isRecurring ?? detail.metadata?.isRecurring;
+    const isRecurringInstance = detail.isRecurringInstance ?? detail.metadata?.isRecurringInstance;
     return {
       ...detail,
+      programmeData: readEventProgrammeData(detail) ?? undefined,
+      ...(readVersion2EventTiming(detail) ? { timing: readVersion2EventTiming(detail) } : {}),
+      ...((detail.areaData !== undefined || detail.metadata?.areaData !== undefined)
+        ? { areaData: readEventAreaData(detail) } : {}),
+      ...((detail.locationScope !== undefined || detail.metadata?.locationScope !== undefined)
+        ? { locationScope: detail.locationScope ?? detail.metadata?.locationScope ?? null } : {}),
+      ...((detail.mapMode !== undefined || detail.metadata?.mapMode !== undefined)
+        ? { mapMode: detail.mapMode ?? detail.metadata?.mapMode ?? null } : {}),
       id: toAppEventId(detail.id),
       description: detail.fullDescription || detail.description || '',
-      isRecurring: detail.isRecurring ?? detail.metadata?.isRecurring,
+      isRecurring: isRecurring == null ? undefined : normalizeRecurrenceFlag(isRecurring),
       recurringPattern: detail.recurringPattern ?? detail.metadata?.recurringPattern,
       isRecurringInstance:
-        detail.isRecurringInstance ?? detail.metadata?.isRecurringInstance,
+        isRecurringInstance == null ? undefined : normalizeRecurrenceFlag(isRecurringInstance),
       originalEventId: rawOriginalId ? toAppEventId(rawOriginalId) : null,
     };
   };
@@ -2077,11 +2309,20 @@ fetchEventDetails: async (eventIds: (string | number)[]) => {
 
     if (normalizedDetails.length === 0) return;
 
+    // Match Array.find's first-detail-wins rule. Reuse this lookup for both
+    // collections instead of rescanning every detail for every event.
+    const detailsById = new Map<string, any>();
+    for (const detail of normalizedDetails) {
+      const key = toFirestoreEventId(detail.id);
+      if (!detailsById.has(key)) detailsById.set(key, detail);
+    }
+
     const mergeCollection = (collection: Event[]): Event[] => {
+      const existingIds = new Set<string>();
       const merged = collection.map((event) => {
-        const detail = normalizedDetails.find((candidate) =>
-          areEventIdsEquivalent(candidate.id, event.id)
-        );
+        const key = event.id == null ? null : toFirestoreEventId(event.id);
+        if (key !== null) existingIds.add(key);
+        const detail = key === null ? undefined : detailsById.get(key);
         if (!detail) return event;
 
         return {
@@ -2105,10 +2346,7 @@ fetchEventDetails: async (eventIds: (string | number)[]) => {
       });
 
       const extras = normalizedDetails
-        .filter(
-          (detail) =>
-            !merged.some((event) => areEventIdsEquivalent(event.id, detail.id))
-        )
+        .filter((detail) => !existingIds.has(toFirestoreEventId(detail.id)))
         .map((detail) => coerceDetailToEvent(detail));
 
       return dedupeByEquivalentId([...merged, ...extras]);
@@ -2132,7 +2370,7 @@ fetchEventDetails: async (eventIds: (string | number)[]) => {
   };
 
   const cached = qc?.getQueryData(key) as any[] | undefined;
-  if (cached?.length) {
+  if (cached?.length && !forceRefresh) {
     if (DEBUG_MAP_LOAD) {
       console.log('[MapStore] Using cached event details for', idsString);
     }
@@ -2155,7 +2393,9 @@ fetchEventDetails: async (eventIds: (string | number)[]) => {
   }
 
   try {
-    const fresh = qc
+    const fresh = forceRefresh
+      ? await fetchFresh()
+      : qc
       ? await qc.fetchQuery({
           queryKey: key,
           queryFn: fetchFresh,
@@ -2163,6 +2403,9 @@ fetchEventDetails: async (eventIds: (string | number)[]) => {
           gcTime: 1000 * 60 * 10,
         })
       : await fetchFresh();
+    if (forceRefresh && qc) {
+      qc.setQueryData(key, fresh);
+    }
     mergeIntoStore(fresh);
   } catch (error) {
     console.error('Error fetching event details:', error);
@@ -2177,7 +2420,8 @@ fetchEventDetails: async (eventIds: (string | number)[]) => {
     const { events, filterCriteria } = get();
     const t0 = Date.now();
 
-    const filtered = filterEvents(events, filterCriteria);
+    const filtered = filterEvents(events, filterCriteria)
+      .filter((event) => get().showFriendEvents || event.source !== 'friend_event');
 
     __ML_lastFilterMs = Date.now() - t0;
     __ML_lastFilterIn = events.length;
@@ -2208,11 +2452,64 @@ fetchEventDetails: async (eventIds: (string | number)[]) => {
     });
 
     // Province-scope records participate in the Area pill and event lists but
-    // have no physical map marker: their PEI coordinate is a discovery anchor,
-    // not a claim that the event occurs at the island centre.
-    const mapRenderableEvents = filteredEvents.filter((event) => event.mapMode !== 'none');
+    // have no physical destination, so every clustering path excludes them.
+    const traceGestureSessionId = getActiveMapTraceGestureSessionId();
+    const traceStartedAt = MAP_TRACE_ENABLED ? mapTraceNow() : 0;
+    const eligibilityBefore = MAP_TRACE_ENABLED
+      ? getMapScheduleStateMetricSnapshot('default_map_eligibility', traceGestureSessionId)
+      : { count: 0, cumulativeDurationMs: 0 };
+    const clusterClassificationBefore = MAP_TRACE_ENABLED
+      ? getMapScheduleStateMetricSnapshot('cluster_now_today', traceGestureSessionId)
+      : { count: 0, cumulativeDurationMs: 0 };
+    traceMapEvent('cluster_generation_started', {
+      zoom: currentZoom,
+      filteredEvents: filteredEvents.length,
+      clustersBeforeGeneration: get().clusters.length,
+    }, { gestureSessionId: traceGestureSessionId });
+
+    const eligibilityStartedAt = MAP_TRACE_ENABLED ? mapTraceNow() : 0;
+    const timeContext = createEventTimeContext();
+    const mapRenderableEvents = filteredEvents
+      .filter(isMapRenderableEvent)
+      .filter((event) => isEventDefaultMapEligibleMeasured(event, timeContext));
+    updateMapProjectionSignature(createMapProjectionSignature(filteredEvents, timeContext));
+    const eligibilityDurationMs = MAP_TRACE_ENABLED ? mapTraceNow() - eligibilityStartedAt : 0;
+
+    const groupingStartedAt = MAP_TRACE_ENABLED ? mapTraceNow() : 0;
     const venues = groupEventsByVenue(mapRenderableEvents);
+    const groupingDurationMs = MAP_TRACE_ENABLED ? mapTraceNow() - groupingStartedAt : 0;
+
+    const clusteringStartedAt = MAP_TRACE_ENABLED ? mapTraceNow() : 0;
     const clusters = clusterVenues(venues, currentZoom);
+    const clusteringDurationMs = MAP_TRACE_ENABLED ? mapTraceNow() - clusteringStartedAt : 0;
+    const eligibilityMetric = MAP_TRACE_ENABLED
+      ? diffMapScheduleStateMetrics(
+          eligibilityBefore,
+          getMapScheduleStateMetricSnapshot('default_map_eligibility', traceGestureSessionId)
+        )
+      : eligibilityBefore;
+    const clusterClassificationMetric = MAP_TRACE_ENABLED
+      ? diffMapScheduleStateMetrics(
+          clusterClassificationBefore,
+          getMapScheduleStateMetricSnapshot('cluster_now_today', traceGestureSessionId)
+        )
+      : clusterClassificationBefore;
+
+    traceMapEvent('cluster_generation_computed', {
+      elapsedMs: MAP_TRACE_ENABLED ? mapTraceNow() - traceStartedAt : 0,
+      zoom: currentZoom,
+      filteredEvents: filteredEvents.length,
+      mapRenderableEvents: mapRenderableEvents.length,
+      venues: venues.length,
+      clusters: clusters.length,
+      eligibilityDurationMs,
+      groupingDurationMs,
+      clusteringDurationMs,
+      defaultMapEligibilityCalls: eligibilityMetric.count,
+      defaultMapEligibilityCumulativeMs: eligibilityMetric.cumulativeDurationMs,
+      clusterNowTodayCalls: clusterClassificationMetric.count,
+      clusterNowTodayCumulativeMs: clusterClassificationMetric.cumulativeDurationMs,
+    }, { gestureSessionId: traceGestureSessionId });
 
     if (__DEV__ && currentZoom >= 8.5 && currentZoom <= 12.5 && filteredEvents.length > 0) {
       const zoomBucket = Math.round(currentZoom * 4) / 4;
@@ -2326,7 +2623,33 @@ if (DEBUG_MAP_LOAD) {
   }
 }
 
-set({ clusters });
+const previousClusters = get().clusters;
+const clusterCommitSkipped = areClusterProjectionsEqual(clusters, previousClusters);
+if (!clusterCommitSkipped) {
+  set({ clusters });
+} else {
+  traceMapEvent('cluster_store_commit_skipped', {
+    reason: 'equivalent_projection',
+    zoom: currentZoom,
+    clusters: previousClusters.length,
+  }, { gestureSessionId: traceGestureSessionId });
+}
+traceMapEvent('cluster_store_committed', {
+  durationMs: MAP_TRACE_ENABLED ? mapTraceNow() - traceStartedAt : 0,
+  committed: !clusterCommitSkipped,
+  zoom: currentZoom,
+  events: get().events.length,
+  viewportEvents: get().viewportEvents.length,
+  onScreenEvents: get().onScreenEvents.length,
+  filteredEvents: get().filteredEvents.length,
+  mapRenderableEvents: mapRenderableEvents.length,
+  venues: venues.length,
+  clusters: get().clusters.length,
+  defaultMapEligibilityCalls: eligibilityMetric.count,
+  defaultMapEligibilityCumulativeMs: eligibilityMetric.cumulativeDurationMs,
+  clusterNowTodayCalls: clusterClassificationMetric.count,
+  clusterNowTodayCumulativeMs: clusterClassificationMetric.cumulativeDurationMs,
+}, { gestureSessionId: traceGestureSessionId });
 logStartupDataTiming('generate_clusters_completed', {
   elapsedMs: Date.now() - t0,
   zoom: currentZoom,
@@ -2337,7 +2660,12 @@ logStartupDataTiming('generate_clusters_completed', {
 
   getClustersForZoom: (zoom) => {
     const { filteredEvents } = get();
-    const venues = groupEventsByVenue(filteredEvents);
+    const timeContext = createEventTimeContext();
+    const venues = groupEventsByVenue(
+      filteredEvents
+        .filter(isMapRenderableEvent)
+        .filter((event) => isEventDefaultMapEligibleMeasured(event, timeContext))
+    );
     return clusterVenues(venues, zoom);
   },
   
@@ -2347,7 +2675,7 @@ logStartupDataTiming('generate_clusters_completed', {
   getTimeFilterCounts: (eventType: 'event' | 'special') => {
     const { onScreenEvents, filterCriteria } = get();
     // Use ONLY on-screen events - counts should reflect what's actually visible on screen
-    return getCachedTimeFilterCounts(onScreenEvents, filterCriteria, eventType);
+    return getCachedFilterCountBundle(onScreenEvents, filterCriteria)[eventType].time;
   },
 
   /**
@@ -2356,6 +2684,12 @@ logStartupDataTiming('generate_clusters_completed', {
   getCategoryFilterCounts: (eventType: 'event' | 'special') => {
     const { onScreenEvents, filterCriteria } = get();
     // Use ONLY on-screen events - counts should reflect what's actually visible on screen
-    return getCachedCategoryFilterCounts(onScreenEvents, filterCriteria, eventType);
+    return getCachedFilterCountBundle(onScreenEvents, filterCriteria)[eventType].category;
   }
 }))
+
+void AsyncStorage.getItem(FRIEND_EVENTS_MAP_VISIBILITY_KEY)
+  .then((value) => {
+    if (value === 'false') useMapStore.getState().setShowFriendEvents(false);
+  })
+  .catch(() => undefined);

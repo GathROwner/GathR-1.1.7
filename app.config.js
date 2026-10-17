@@ -71,7 +71,8 @@ module.exports = ({ config }) => ({
     supportsTablet: true,
     bundleIdentifier: "com.craigb.gathr",
     buildNumber: "1",
-    googleServicesFile: "GoogleService-Info.plist",
+    googleServicesFile:
+      process.env.GOOGLE_SERVICES_PLIST ?? "GoogleService-Info.plist",
     // Deep linking: Universal Links for iOS
     associatedDomains: [
       "applinks:link.gathrapp.ca",
@@ -191,7 +192,7 @@ plugins: [
         "ios": {
           "deploymentTarget": "15.1",
           "useFrameworks": "static",
-          "forceStaticLinking": ["RNFBApp", "RNFBAnalytics"],
+          "forceStaticLinking": ["RNFBApp", "RNFBAnalytics", "RNFBAppCheck"],
           "podfileProperties": { 
             "use_modular_headers!": true 
           }
@@ -253,6 +254,9 @@ plugins: [
         calendarPermission: "Allow GathR to access your calendar to add events"
       }
     ],
+
+    "@react-native-community/datetimepicker",
+    "@react-native-firebase/app-check",
 
     [
       "expo-image-picker",

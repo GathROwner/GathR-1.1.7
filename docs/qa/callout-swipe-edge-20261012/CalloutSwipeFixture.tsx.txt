@@ -1,0 +1,39 @@
+import React, { useMemo } from 'react';
+import { Modal, View, Text } from 'react-native';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import EventCallout from '../../components/map/EventCallout';
+import { useMapStore } from '../../store';
+import type { Event, Venue, Cluster } from '../../types/events';
+
+export default function CalloutSwipeFixture() {
+  const source = useMapStore.getState().allEvents;
+  const venues = useMemo(() => {
+    const template = source.find(event => event.title?.includes('Articulated')) ?? source[0];
+    const day = new Date(Date.now() + 2 * 86400000).toISOString().slice(0, 10);
+    return ['A', 'B'].map((label, venueIndex) => ({
+      locationKey: `local-swipe-fixture-${label}`,
+      venue: `Fixture ${label}`,
+      address: '123 Example Street, Charlottetown', latitude: 46.2, longitude: -63.1,
+      events: ['event', 'event', 'special', 'special'].map((type, index) => ({
+        ...template, id: `local-swipe-fixture-${label}-${type}-${index}`, type,
+        venue: `Fixture ${label}`, title: `Fixture ${label} ${type === 'event' ? 'Events' : 'Specials'}`,
+        description: 'Local native gesture fixture. No map is mounted.',
+        startDate: day, endDate: day, startTime: '12:00', endTime: '23:00',
+        timing: undefined, category: type === 'event' ? 'Live Music' : 'Food Special',
+        isRecurring: false, recurrence: undefined,
+      } as Event)),
+    } as Venue));
+  }, [source]);
+  const cluster = useMemo(() => ({ id: 'local-swipe-fixture', venues, clusterType: 'multi',
+    timeStatus: 'today', interestLevel: 'low', isBroadcasting: false,
+    eventCount: 4, specialCount: 4, categories: ['Live Music', 'Food Special'],
+  } as Cluster), [venues]);
+  return <Modal visible statusBarTranslucent navigationBarTranslucent animationType="none" onRequestClose={() => {}}>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <View style={{ flex: 1, marginRight: 40, backgroundColor: '#DCE9E8' }}>
+        <Text style={{ marginTop: 35, padding: 15 }}>Isolated callout fixture — no map mounted</Text>
+        <EventCallout venues={venues} cluster={cluster} preferredVenueLocationKey={venues[0].locationKey} onClose={() => false} />
+      </View>
+    </GestureHandlerRootView>
+  </Modal>;
+}

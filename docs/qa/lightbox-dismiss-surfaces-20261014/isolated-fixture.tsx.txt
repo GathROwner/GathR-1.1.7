@@ -1,0 +1,36 @@
+import React, { useMemo } from 'react';
+import { Image, View, Text, Modal, Pressable } from 'react-native';
+import EventCallout from '../components/map/EventCallout';
+import type { Event, Venue, Cluster } from '../types/events';
+import { useMapStore } from '../store/mapStore';
+const music = Image.resolveAssetSource(require('../assets/fallbacks/categories/live-music.webp')).uri;
+const classes = Image.resolveAssetSource(require('../assets/fallbacks/categories/workshops.webp')).uri;
+const food = Image.resolveAssetSource(require('../assets/fallbacks/categories/food-special.webp')).uri;
+const profile = Image.resolveAssetSource(require('../assets/fallbacks/profiles/event-default.webp')).uri;
+export default function QaCallout() {
+ const [key,setKey] = React.useState(0);
+ const venues = useMemo(() => {
+ const day = new Date(Date.now()+2*86400000).toISOString().slice(0,10);
+ const make = (id:string,title:string,type:'event'|'special',category:string,imageUrl:string,time:string):Event => ({
+ id,title,type,category,imageUrl,profileUrl:profile,mediaUrls:id==='qa-event-2'?[classes,music,food]:[imageUrl],
+ venue:'Harbour Arts Centre',address:'123 Example St, Charlottetown, PE, Canada',latitude:46.2,longitude:-63.1,
+ description: id==='qa-special-1'?'Daily food special. More details at https://example.com.':Array.from({length:24},(_,i)=>`Paragraph ${i+1}. Explore local performances, practical workshops and community gatherings. This is a local visual fixture for testing description scrolling independently from event browsing.`).join('\n\n'),
+ startDate:day,endDate:day,startTime:time,endTime:'23:00',likes:3,shares:2,interested:1,isRecurring:false,
+ } as Event);
+ const events=[make('qa-event-1','Evening Music Session','event','Live Music',music,'18:00'),
+ make('qa-event-2','Creative Workshop: Making Art Together With Friends and Neighbours. Explore Painting, Sculpture, Drawing, Printmaking, Collage and Community Storytelling in a Welcoming Studio With Guided Activities for All Experience Levels','event','Workshops & Classes',classes,'19:00'),
+ make('qa-event-3','Community Gathering','event','Gatherings & Parties',food,'20:00'),
+ make('qa-special-1','Dinner Special','special','Food Special',food,'17:00'),make('qa-special-2','Late Supper','special','Food Special',food,'21:00')];
+ const result=[{locationKey:'qa-harbour',venue:'Harbour Arts Centre',address:events[0].address,latitude:46.2,longitude:-63.1,events},
+ {locationKey:'qa-other',venue:'Other Venue',address:'1 Other St',latitude:46.3,longitude:-63.2,events:[{...events[0],id:'qa-other-1',venue:'Other Venue',title:'Other Venue Only Event'}]}] as Venue[];
+ useMapStore.setState({events:result.flatMap(v=>v.events),allEvents:result.flatMap(v=>v.events),selectedImageData:null});
+ return result;
+ },[]);
+ const cluster = useMemo(()=>({id:'qa-callout-only',venues,clusterType:'multi',timeStatus:'upcoming',interestLevel:'low',isBroadcasting:false,eventCount:4,specialCount:2,categories:['Live Music','Food Special']} as Cluster),[venues]);
+ return <View style={{flex:1,backgroundColor:'#E4EBF0'}}><Text style={{marginTop:35,padding:12}}>Isolated callout · no map mounted</Text>
+ <Pressable onPress={()=>setKey(k=>k+1)}><Text>Reset fixture</Text></Pressable>
+ <Modal visible transparent statusBarTranslucent navigationBarTranslucent animationType="none">
+ <EventCallout key={key} venues={venues} cluster={cluster} preferredVenueLocationKey={venues[0].locationKey} readinessEpoch={key} onClose={()=>false}/>
+ </Modal></View>;
+}
+

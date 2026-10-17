@@ -28,6 +28,15 @@ export type InterestCarouselFilter =
       status: 'cleared';
     };
 
+export type ViewportFetchOptions = {
+  requestId?: number;
+  source?: string;
+};
+
+export type SelectCalloutOptions = {
+  preferredVenueLocationKey?: string | null;
+};
+
 /**
  * Map state interface for the application
  * Defines the structure of the map store
@@ -35,6 +44,10 @@ export type InterestCarouselFilter =
 export interface MapState {
   // Event data
   allEvents: Event[];  // Global cache (all 112 items from React Query)
+  // Authorization-sensitive friend events are kept outside the persisted
+  // public-event cache and are populated only by a live server snapshot.
+  friendEvents: Event[];
+  showFriendEvents: boolean;
   events: Event[];
   specials: Event[];
   filteredEvents: Event[];
@@ -50,12 +63,16 @@ export interface MapState {
     outsideViewportCount: number;
     lastFetchTimestamp: string | null;
   };
+  // True after the first viewport has been partitioned (or its first request
+  // failed), so app-wide readiness work can wait for the map's initial data pass.
+  hasInitialViewportSettled: boolean;
   
   // Venue and cluster data
   clusters: Cluster[];
   selectedVenue: Venue | null;
   selectedVenues: Venue[];
   selectedCluster: Cluster | null;
+  preferredCalloutVenueLocationKey: string | null;
   
   // Location data
   userLocation: Location.LocationObject | null;
@@ -88,7 +105,14 @@ export interface MapState {
     // renders swipe/chevron navigation and the "X / N" indicator.
     events?: Event[];
     currentIndex?: number;
-    source?: 'deep_link' | 'trending_manual' | 'trending_auto' | 'city_event_marker' | 'route_summary';
+    source?:
+      | 'deep_link'
+      | 'trending_manual'
+      | 'trending_auto'
+      | 'city_event_marker'
+      | 'route_summary'
+      | 'friend_presence'
+      | 'friend_event_resume';
   } | null;
 
   // Route selected from any tab and waiting for the Map tab to display it.
@@ -101,6 +125,8 @@ export interface MapState {
   
   // Actions
   setAllEvents: (events: Event[]) => void;  // For React Query global cache
+  setFriendEvents: (events: Event[]) => void;
+  setShowFriendEvents: (visible: boolean) => void;
   setEvents: (events: Event[]) => void;  // Deprecated - use setAllEvents
   setFilterCriteria: (criteria: Partial<FilterCriteria>) => void;
   setTypeFilters: (
@@ -118,7 +144,11 @@ export interface MapState {
   selectVenue: (venue: Venue | null) => void;
   selectVenues: (venues: Venue[]) => void;
   selectCluster: (cluster: Cluster | null) => void;
-  selectCallout: (venues: Venue[], cluster: Cluster | null) => void;
+  selectCallout: (
+    venues: Venue[],
+    cluster: Cluster | null,
+    options?: SelectCalloutOptions
+  ) => void;
   setZoomLevel: (zoom: number) => void;
   setUserLocation: (location: Location.LocationObject) => void;
   setActiveFilterPanel: (panel: 'events' | 'specials' | null) => void;
@@ -133,7 +163,14 @@ export interface MapState {
     cluster?: Cluster;
     events?: Event[];
     currentIndex?: number;
-    source?: 'deep_link' | 'trending_manual' | 'trending_auto' | 'city_event_marker' | 'route_summary';
+    source?:
+      | 'deep_link'
+      | 'trending_manual'
+      | 'trending_auto'
+      | 'city_event_marker'
+      | 'route_summary'
+      | 'friend_presence'
+      | 'friend_event_resume';
   } | null) => void;
   setPendingRouteEvent: (event: Event | null) => void;
   fetchEvents: () => Promise<void>;
@@ -145,10 +182,16 @@ export interface MapState {
   getClustersForZoom: (zoom: number) => Cluster[];
   getTimeFilterCounts: (eventType: 'event' | 'special') => { [key in TimeFilterType]: number };
   getCategoryFilterCounts: (eventType: 'event' | 'special') => { [category: string]: number };
-  fetchEventDetails: (eventIds: (string | number)[]) => Promise<void>;
+  fetchEventDetails: (
+    eventIds: (string | number)[],
+    options?: { forceRefresh?: boolean }
+  ) => Promise<void>;
 
   // Viewport-aware actions
-  fetchViewportEvents: (bbox: { west: number; south: number; east: number; north: number }) => Promise<void>;
+  fetchViewportEvents: (
+    bbox: { west: number; south: number; east: number; north: number },
+    options?: ViewportFetchOptions
+  ) => Promise<void>;
   setViewportBbox: (bbox: { west: number; south: number; east: number; north: number }) => void;
   setOnScreenEvents: (events: Event[]) => void;
 }

@@ -1,0 +1,25 @@
+{
+  "restored": true,
+  "checks": [
+    {
+      "file": "app/_layout.tsx",
+      "sha256": "8b104231c9cbaaff80091cc481a194e5bac332600c967024775f22cc79da4dd7",
+      "matches": true,
+      "snapshot": "original-root"
+    },
+    {
+      "file": "app/index.tsx",
+      "sha256": "ffda86346355942c39d49b980d558f1c87ccda3642729d83039b52b8afc95f35",
+      "matches": true,
+      "snapshot": "original-index"
+    },
+    {
+      "file": "app/(tabs)/map.tsx",
+      "sha256": "7d6d409315fe6eceb204b7443aa61badad672c75caddef0fc4733358ef4e4623",
+      "matches": true,
+      "snapshot": "candidate-map"
+    }
+  ],
+  "onlyIntentionalMapChange": "Four-line Trending-only loopNavigation prop; no map interaction.",
+  "temporaryRootsRemoved": true
+}

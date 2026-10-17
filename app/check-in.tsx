@@ -1,4 +1,6 @@
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
+import * as Haptics from 'expo-haptics';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
@@ -8,17 +10,20 @@ import {
   KeyboardAvoidingView,
   Modal,
   Platform,
+  Pressable,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
   TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 
 import { useAuth } from '../contexts/AuthContext';
 import {
+  bindCheckInReadiness,
   checkOut,
   createCheckIn,
   createSocialOperationId,
@@ -26,6 +31,9 @@ import {
 } from '../services/socialService';
 import { useMapStore } from '../store';
 import { useSocialStore } from '../store/socialStore';
+import { useCheckInReadinessStore } from '../store/checkInReadinessStore';
+import { CHECK_IN_READINESS, emptyReadiness, mayOfferExactPrivateLocation, mayShareExactPrivateLocation } from '../utils/checkInReadiness';
+import { readinessLevels, validBoundReadiness } from '../utils/checkInReadinessContract';
 import type {
   CheckInAudienceMode,
   CheckInDurationMinutes,
@@ -37,11 +45,14 @@ import {
   getRecognizedVenueId,
 } from '../utils/friendPresence';
 
-interface RecognizedVenueOption {
-  venueId: string;
+interface CheckInPlaceOption {
+  venueId?: string;
+  placeCandidateId?: string;
+  locationType: 'gathr_venue' | 'external_place' | 'private_place';
   locationKey: string;
   venueName: string;
   address: string;
+  category: string;
 }
 
 const BRAND = '#2F80ED';
@@ -58,28 +69,77 @@ function audienceCount(mode: CheckInAudienceMode, friends: FriendProjection[], s
 }
 
 export default function CheckInScreen() {
+  return (
+    <SafeAreaProvider>
+      <CheckInScreenContent />
+    </SafeAreaProvider>
+  );
+}
+
+function CheckInScreenContent() {
   const router = useRouter();
-  const params = useLocalSearchParams<{ venueId?: string }>();
+  const params = useLocalSearchParams<{
+    venueId?: string;
+    placeCandidateId?: string;
+    placeType?: string;
+    placeName?: string;
+    placeAddress?: string;
+    placeCategory?: string;
+    eligibilitySessionId?: string;
+    readinessSessionId?: string;
+    readinessVersion?: string;
+    eligibleVenueIds?: string | string[];
+  }>();
   const { user } = useAuth();
-  const clusters = useMapStore((state) => state.clusters);
+  const allEvents = useMapStore((state) => state.allEvents);
   const selectedVenues = useMapStore((state) => state.selectedVenues);
   const { friends, ownCheckIn, fromCache } = useSocialStore();
-  const options = useMemo(() => {
-    const byId = new Map<string, RecognizedVenueOption>();
-    for (const cluster of clusters) {
-      for (const venue of cluster.venues) {
-        const venueId = getRecognizedVenueId(venue);
-        if (!venueId || byId.has(venueId)) continue;
-        byId.set(venueId, {
-          venueId,
-          locationKey: venue.locationKey,
-          venueName: venue.venue,
-          address: venue.address,
+  const readiness = useCheckInReadinessStore();
+  const [nowMs, setNowMs] = useState(Date.now());
+  useEffect(() => {
+    if (params.readinessVersion !== '1') return;
+    const timer = setInterval(() => setNowMs(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [params.readinessVersion]);
+  useEffect(() => {
+    if (params.readinessVersion !== '1') return;
+    return () => {
+      const current = useCheckInReadinessStore.getState();
+      if (current.grant?.readinessSessionId === params.readinessSessionId) {
+        useCheckInReadinessStore.setState({
+          grant: null,
+          evidence: emptyReadiness(current.evidence.revision + 1, current.evidence.suppressedUntilMs),
+          receipt: null,
+          sessionId: '',
+          interruptedAtMs: null,
+          resumeAfterCheckIn: false,
         });
       }
+    };
+  }, [params.readinessSessionId, params.readinessVersion]);
+  const options = useMemo(() => {
+    const byId = new Map<string, CheckInPlaceOption>();
+    for (const event of allEvents) {
+      const venueId = String(event.venueId || '').trim();
+      if (
+        !venueId
+        || byId.has(venueId)
+        || event.locationScope === 'city'
+        || event.locationScope === 'area'
+        || event.locationScope === 'route'
+        || event.locationScope === 'unknown'
+      ) continue;
+      byId.set(venueId, {
+        venueId,
+        locationType: 'gathr_venue',
+        locationKey: `venue:${venueId}`,
+        venueName: event.venue || event.title || 'GathR venue',
+        address: event.address || '',
+        category: 'GathR venue',
+      });
     }
     return [...byId.values()].sort((a, b) => a.venueName.localeCompare(b.venueName));
-  }, [clusters]);
+  }, [allEvents]);
 
   const initialVenueId = useMemo(() => {
     const requested = String(params.venueId || '');
@@ -96,12 +156,14 @@ export default function CheckInScreen() {
   const [durationMinutes, setDurationMinutes] = useState<CheckInDurationMinutes>(60);
   const [audienceMode, setAudienceMode] = useState<CheckInAudienceMode>('all_friends');
   const [selectedUids, setSelectedUids] = useState<string[]>([]);
+  const [shareExactLocation, setShareExactLocation] = useState(false);
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
   const [isEditing, setIsEditing] = useState(!ownCheckIn);
   const [venuePickerVisible, setVenuePickerVisible] = useState(false);
   const [audiencePickerVisible, setAudiencePickerVisible] = useState(false);
   const pendingOperationRef = useRef<{ fingerprint: string; operationId: string } | null>(null);
+  const pendingBindRef = useRef<{ key: string; operationId: string } | null>(null);
   const activeRevisionRef = useRef<string | null>(ownCheckIn?.revision ?? null);
 
   useEffect(() => {
@@ -115,26 +177,126 @@ export default function CheckInScreen() {
   }, [friends]);
 
   useEffect(() => {
+    if (audienceMode === 'all_friends') setShareExactLocation(false);
+  }, [audienceMode]);
+
+  useEffect(() => {
     const revision = ownCheckIn?.revision ?? null;
     if (revision && revision !== activeRevisionRef.current) setIsEditing(false);
     if (!revision && activeRevisionRef.current) setIsEditing(true);
     activeRevisionRef.current = revision;
   }, [ownCheckIn?.revision]);
 
-  const selectedVenue = options.find((option) => option.venueId === venueId) ?? null;
+  const contextualPlace = useMemo<CheckInPlaceOption | null>(() => {
+    const placeCandidateId = String(params.placeCandidateId || '').trim();
+    const venueName = String(params.placeName || '').trim();
+    // Discovery may return a recognized venue with no event in the current viewport.
+    // The final readiness binding, not this route's display snapshot, authorizes check-in.
+    if (params.readinessVersion === '1' && params.placeType === 'gathr_venue' && params.venueId && venueName) {
+      return { venueId: String(params.venueId), locationType: 'gathr_venue', locationKey: `venue:${params.venueId}`,
+        venueName, address: String(params.placeAddress || ''), category: 'GathR venue' };
+    }
+    if (!placeCandidateId || !venueName) return null;
+    const locationType = params.placeType === 'private_place'
+      ? 'private_place'
+      : 'external_place';
+    return {
+      placeCandidateId,
+      locationType,
+      locationKey: `candidate:${placeCandidateId}`,
+      venueName,
+      address: locationType === 'private_place'
+        ? ''
+        : String(params.placeAddress || '').trim(),
+      category: String(params.placeCategory || '').trim()
+        || (locationType === 'private_place' ? 'Private location' : 'Public place'),
+    };
+  }, [params.placeAddress, params.placeCandidateId, params.placeCategory, params.placeName, params.placeType, params.readinessVersion, params.venueId]);
+  const selectedVenue = contextualPlace ?? options.find((option) => option.venueId === venueId) ?? null;
+  const isPrivatePlace = selectedVenue?.locationType === 'private_place';
+  const eligibilitySessionId = String(params.eligibilitySessionId || '').trim();
+  const readinessSessionId = String(params.readinessSessionId || '').trim();
+  const contextualEligibleVenueIds = useMemo(() => {
+    const serialized = Array.isArray(params.eligibleVenueIds)
+      ? params.eligibleVenueIds.join(',')
+      : String(params.eligibleVenueIds || '');
+    const ids = serialized.split(',').map((item) => item.trim()).filter(Boolean);
+    const requestedVenueId = String(params.venueId || '').trim();
+    if (requestedVenueId && !ids.includes(requestedVenueId)) ids.unshift(requestedVenueId);
+    return new Set(ids);
+  }, [params.eligibleVenueIds, params.venueId]);
+  const selectableOptions = useMemo(() => {
+    if (!eligibilitySessionId || contextualEligibleVenueIds.size === 0) return options;
+    return [...contextualEligibleVenueIds]
+      .map((candidateVenueId) => options.find((option) => option.venueId === candidateVenueId))
+      .filter((option): option is CheckInPlaceOption => Boolean(option));
+  }, [contextualEligibleVenueIds, eligibilitySessionId, options]);
+  const canReuseActiveVenue = Boolean(
+    ownCheckIn
+    && selectedVenue?.locationType === 'gathr_venue'
+    && ownCheckIn.venueId === selectedVenue.venueId
+  );
+  const currentReadinessLevels = readinessLevels(readiness.evidence, readiness.receipt, readiness.sessionId, nowMs);
+  const readinessTarget = selectedVenue ? {
+    type: selectedVenue.locationType,
+    venueId: selectedVenue.venueId,
+    placeCandidateId: selectedVenue.placeCandidateId,
+  } : null;
+  const existingBoundGrant = Boolean(
+    params.readinessVersion === '1'
+    && readinessSessionId
+    && readiness.uid === user?.uid
+    && readinessTarget
+    && readiness.grant?.readinessSessionId === readinessSessionId
+    && validBoundReadiness(readiness.grant, readinessTarget, readinessSessionId, nowMs)
+  );
+  const readyForSelectedPlace = Boolean(
+    params.readinessVersion === '1'
+    && readinessSessionId
+    && readiness.uid === user?.uid
+    && readiness.sessionId === readinessSessionId
+    && readiness.appActive
+    && readiness.interruptedAtMs === null
+    && (isPrivatePlace ? currentReadinessLevels.here : currentReadinessLevels.place)
+  );
+  const hasContextualEligibility = Boolean(
+    selectedVenue
+    && (params.readinessVersion === '1'
+      ? existingBoundGrant || readyForSelectedPlace
+      : eligibilitySessionId && (contextualPlace || contextualEligibleVenueIds.has(venueId)))
+  );
+  // Precise location sharing is available for private places after Here readiness. A
+  // bound server grant remains authoritative once one exists.
+  const exactAllowed = mayOfferExactPrivateLocation({
+    isPrivatePlace,
+    readinessV1: params.readinessVersion === '1',
+    hasContextualEligibility,
+    hasBoundGrant: existingBoundGrant,
+    boundGrantAllowsExact: readiness.grant?.exactPrivateAllowed === true,
+    hereReady: currentReadinessLevels.here,
+  });
+  const exactSharing = mayShareExactPrivateLocation({ isPrivatePlace, audienceMode,
+    selectedFriendCount: selectedUids.length, exactAllowed, explicitlyEnabled: shareExactLocation });
+  useEffect(() => {
+    if (!exactAllowed || selectedUids.length === 0) setShareExactLocation(false);
+  }, [exactAllowed, selectedUids.length]);
   const filteredOptions = useMemo(() => {
     const query = venueQuery.trim().toLowerCase();
-    if (!query) return options.slice(0, 8);
-    return options.filter((option) =>
+    if (!query) return selectableOptions.slice(0, 8);
+    return selectableOptions.filter((option) =>
       `${option.venueName} ${option.address}`.toLowerCase().includes(query)
     ).slice(0, 25);
-  }, [options, venueQuery]);
+  }, [selectableOptions, venueQuery]);
   const currentAudienceCount = audienceCount(audienceMode, friends, selectedUids);
   const estimatedExpiry = Date.now() + durationMinutes * 60_000;
   const hasAudience = audienceMode === 'all_friends'
     ? friends.length > 0
     : selectedUids.length > 0;
-  const canSubmit = !!selectedVenue && hasAudience && !busy && !fromCache;
+  const canSubmit = !!selectedVenue
+    && (canReuseActiveVenue || hasContextualEligibility)
+    && hasAudience
+    && !busy
+    && !fromCache;
   const selectedFriendNames = friends
     .filter((friend) => selectedUids.includes(friend.uid))
     .map((friend) => friend.displayName);
@@ -145,6 +307,37 @@ export default function CheckInScreen() {
       : selectedFriendNames.length <= 2
         ? selectedFriendNames.join(', ')
         : `${selectedFriendNames.slice(0, 2).join(', ')} +${selectedFriendNames.length - 2}`;
+  const confirmationCopy = isPrivatePlace
+    ? exactSharing
+      ? `Only ${currentAudienceCount} selected friend${currentAudienceCount === 1 ? '' : 's'} will see your precise location. It expires automatically.`
+      : `${currentAudienceCount} friend${currentAudienceCount === 1 ? '' : 's'} will see only an approximate area. It expires automatically.`
+    : formatCheckInVisibilityCopy(currentAudienceCount, estimatedExpiry);
+
+  const backToPreviousStep = () => {
+    const current = useCheckInReadinessStore.getState();
+    if (params.readinessVersion === '1' && readinessSessionId) {
+      useCheckInReadinessStore.setState({ restorePickerOnReturn: true });
+      // A failed final attempt may have consumed this one-use readiness
+      // session. Start a fresh one only after a grant was actually bound.
+      if (current.grant?.readinessSessionId === readinessSessionId) {
+        useCheckInReadinessStore.setState({
+          grant: null,
+          evidence: emptyReadiness(current.evidence.revision + 1, current.evidence.suppressedUntilMs),
+          receipt: null,
+          sessionId: '',
+          interruptedAtMs: null,
+          resumeAfterCheckIn: false,
+        });
+      }
+    }
+    router.back();
+  };
+
+  const cancelCheckInFlow = () => {
+    if (busy) return;
+    useCheckInReadinessStore.setState({ restorePickerOnReturn: false });
+    router.replace('/(tabs)/map');
+  };
 
   const toggleFriend = (uid: string) => setSelectedUids((current) =>
     current.includes(uid) ? current.filter((item) => item !== uid) : [...current, uid]
@@ -158,20 +351,22 @@ export default function CheckInScreen() {
 
   const beginEditing = () => {
     if (ownCheckIn) {
-      setVenueId(ownCheckIn.venueId);
+      setVenueId(ownCheckIn.venueId || '');
       setDurationMinutes(ownCheckIn.durationMinutes);
       setAudienceMode(ownCheckIn.audienceMode);
       setSelectedUids(ownCheckIn.selectedUids.filter((uid) =>
         friends.some((friend) => friend.uid === uid)
       ));
+      setShareExactLocation(Boolean(ownCheckIn.shareExactLocation));
       setMessage(ownCheckIn.message);
     }
     setIsEditing(true);
   };
 
   const submit = async () => {
+    if (!canSubmit) return;
     if (!selectedVenue) {
-      Alert.alert('Choose a venue', 'Check-ins are available only at recognized GathR venues.');
+      Alert.alert('Choose a place', 'Return to the map and choose a nearby public place.');
       return;
     }
     if (audienceMode === 'selected_friends' && selectedUids.length === 0) {
@@ -182,11 +377,82 @@ export default function CheckInScreen() {
     const perform = async () => {
       setBusy(true);
       try {
+        let boundEligibilitySessionId = eligibilitySessionId;
+        if (params.readinessVersion === '1' && !canReuseActiveVenue) {
+          if (!readinessSessionId || !selectedVenue || !user) {
+            throw new Error('Check-in readiness expired. Return to the map and wait for the ring to fill again.');
+          }
+          const target = {
+            type: selectedVenue.locationType,
+            venueId: selectedVenue.venueId,
+            placeCandidateId: selectedVenue.placeCandidateId,
+          };
+          const current = useCheckInReadinessStore.getState();
+          let grant = current.grant?.readinessSessionId === readinessSessionId
+            && validBoundReadiness(current.grant, target, readinessSessionId, Date.now())
+            ? current.grant
+            : null;
+          if (!grant) {
+            const requirePlace = selectedVenue.locationType !== 'private_place';
+            const levels = readinessLevels(current.evidence, current.receipt, current.sessionId, Date.now());
+            const fix = current.evidence.previous;
+            const accuracyLimit = requirePlace
+              ? CHECK_IN_READINESS.placeAccuracyMetres
+              : CHECK_IN_READINESS.hereAccuracyMetres;
+            const fixAgeMs = fix ? Date.now() - fix.capturedAtMs : Number.POSITIVE_INFINITY;
+            if (current.uid !== user.uid || !current.appActive || current.interruptedAtMs !== null
+              || current.sessionId !== readinessSessionId
+              || !(requirePlace ? levels.place : levels.here)
+              || !fix
+              || !Number.isFinite(fix.latitude) || !Number.isFinite(fix.longitude)
+              || !Number.isFinite(fix.accuracyMeters) || fix.accuracyMeters! < 0 || fix.accuracyMeters! > accuracyLimit
+              || fixAgeMs < 0 || fixAgeMs > CHECK_IN_READINESS.maxSampleGapMs) {
+              throw new Error('Your location changed. Stay here until the check-in ring is ready, then try again.');
+            }
+            const bindKey = `${readinessSessionId}:${selectedVenue.locationType}:${selectedVenue.venueId || selectedVenue.placeCandidateId}`;
+            if (pendingBindRef.current?.key !== bindKey) {
+              pendingBindRef.current = { key: bindKey, operationId: createSocialOperationId() };
+            }
+            grant = await bindCheckInReadiness({
+              protocolVersion: 1,
+              readinessSessionId,
+              operationId: pendingBindRef.current.operationId,
+              ...(selectedVenue.locationType === 'gathr_venue'
+                ? { venueId: selectedVenue.venueId }
+                : { placeCandidateId: selectedVenue.placeCandidateId }),
+              latitude: fix.latitude,
+              longitude: fix.longitude,
+              accuracyMeters: fix.accuracyMeters,
+              speedMetersPerSecond: fix.speedMetersPerSecond,
+              capturedAtMs: Math.floor(fix.capturedAtMs),
+            });
+            const after = useCheckInReadinessStore.getState();
+            const afterLevels = readinessLevels(after.evidence, after.receipt, after.sessionId, Date.now());
+            if (after.uid !== user.uid || !after.appActive || after.interruptedAtMs !== null
+              || after.sessionId !== readinessSessionId
+              || !(requirePlace ? afterLevels.place : afterLevels.here)
+              || !validBoundReadiness(grant, target, readinessSessionId, Date.now())
+              || (exactSharing && !grant.exactPrivateAllowed)) {
+              throw new Error('Location changed during check-in confirmation. Wait for the ring to fill again.');
+            }
+            useCheckInReadinessStore.setState({ grant });
+          }
+          if (!grant || (exactSharing && !grant.exactPrivateAllowed)) {
+            throw new Error('This check-in is not eligible to share your precise location. Choose approximate sharing or verify your private location again.');
+          }
+          boundEligibilitySessionId = grant.eligibilitySessionId;
+        }
         const input = {
-          venueId: selectedVenue.venueId,
+          ...(selectedVenue.locationType !== 'gathr_venue'
+            ? { placeCandidateId: selectedVenue.placeCandidateId }
+            : { venueId: selectedVenue.venueId }),
+          eligibilitySessionId: canReuseActiveVenue ? undefined : boundEligibilitySessionId,
           durationMinutes,
           audienceMode,
           selectedUids: audienceMode === 'selected_friends' ? [...selectedUids].sort() : undefined,
+          // Always send an explicit boolean. Public check-ins and approximate
+          // private check-ins must never share an exact pin.
+          shareExactLocation: isPrivatePlace ? exactSharing : false,
           message,
         };
         const fingerprint = JSON.stringify(input);
@@ -196,16 +462,27 @@ export default function CheckInScreen() {
             operationId: createSocialOperationId(),
           };
         }
-        const result = await createCheckIn({
+        await createCheckIn({
           ...input,
           operationId: pendingOperationRef.current.operationId,
         });
         pendingOperationRef.current = null;
-        Alert.alert(
-          ownCheckIn ? 'Check-in updated' : 'Checked in',
-          formatCheckInVisibilityCopy(result.viewerCount, result.expiresAt),
-          [{ text: 'View map', onPress: () => router.replace('/(tabs)/map') }]
-        );
+        if (params.readinessVersion === '1' && !canReuseActiveVenue) {
+          const currentReadiness = useCheckInReadinessStore.getState();
+          if (currentReadiness.uid === user?.uid
+            && (currentReadiness.sessionId === readinessSessionId
+              || currentReadiness.grant?.readinessSessionId === readinessSessionId)) {
+            useCheckInReadinessStore.setState({
+              grant: null,
+              receipt: null,
+              sessionId: '',
+              interruptedAtMs: Date.now(),
+              resumeAfterCheckIn: true,
+            });
+          }
+        }
+        useCheckInReadinessStore.setState({ restorePickerOnReturn: false });
+        await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => undefined);
       } catch (error) {
         Alert.alert('Could not check in', messageForError(error));
       } finally {
@@ -225,7 +502,7 @@ export default function CheckInScreen() {
     } else {
       Alert.alert(
         `Check in at ${selectedVenue.venueName}?`,
-        formatCheckInVisibilityCopy(currentAudienceCount, estimatedExpiry),
+        confirmationCopy,
         [
           { text: 'Cancel', style: 'cancel' },
           { text: 'Check in', onPress: () => void perform() },
@@ -245,12 +522,57 @@ export default function CheckInScreen() {
         onPress: () => {
           setBusy(true);
           void checkOut()
-            .then(() => Alert.alert('Checked out', 'Your check-in is no longer visible.'))
+            .then(() => router.replace('/(tabs)/map'))
             .catch((error) => Alert.alert('Could not check out', messageForError(error)))
             .finally(() => setBusy(false));
         },
       },
     ]
+  );
+
+  const activeCheckInCard = ownCheckIn && (
+    <View style={[styles.card, styles.activeCard]}>
+      <View style={styles.activeHeading}>
+        <View style={styles.activeIcon}>
+          <Ionicons name="location" size={22} color="#175CD3" />
+        </View>
+        <View style={styles.flex}>
+          <Text maxFontSizeMultiplier={1.1} style={styles.activeEyebrow}>ACTIVE NOW</Text>
+          <Text maxFontSizeMultiplier={1.2} numberOfLines={2} style={styles.sectionTitle}>{ownCheckIn.venueNameSnapshot}</Text>
+        </View>
+      </View>
+      <Text maxFontSizeMultiplier={1.15} style={styles.muted}>
+        {formatCheckInVisibilityCopy(ownCheckIn.viewerCount, ownCheckIn.expiresAt)}
+      </Text>
+      {ownCheckIn.locationType === 'private_place' && (
+        <View style={styles.activePrivateRow}>
+          <Ionicons name="shield-checkmark-outline" size={17} color="#6941C6" />
+          <Text style={styles.activePrivateText}>
+            {ownCheckIn.shareExactLocation
+              ? 'Precise location shared only with your selected friends'
+              : 'Friends see only an approximate area'}
+          </Text>
+        </View>
+      )}
+      {!!ownCheckIn.message && (
+        <Text maxFontSizeMultiplier={1.15} numberOfLines={3} style={styles.activeMessage}>“{ownCheckIn.message}”</Text>
+      )}
+      <View style={styles.activeActions}>
+        <TouchableOpacity accessibilityRole="button" accessibilityLabel="Close check-in details and return to map" onPress={() => router.back()} style={styles.secondaryButton}>
+          <Ionicons name="map-outline" size={18} color="#175CD3" />
+          <Text maxFontSizeMultiplier={1.1} style={styles.secondaryText}>View map</Text>
+        </TouchableOpacity>
+        {ownCheckIn.locationType === 'gathr_venue' && (
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel="Change active check-in" onPress={beginEditing} style={styles.secondaryButton}>
+            <Ionicons name="create-outline" size={18} color="#175CD3" />
+            <Text maxFontSizeMultiplier={1.1} style={styles.secondaryText}>Change</Text>
+          </TouchableOpacity>
+        )}
+        <TouchableOpacity accessibilityRole="button" accessibilityLabel="Check out now" disabled={busy} onPress={checkout} style={styles.checkoutButton}>
+          <Text maxFontSizeMultiplier={1.1} style={styles.checkoutText}>Check out</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
   );
 
   if (!SOCIAL_FEATURE_ENABLED || !user) {
@@ -268,55 +590,67 @@ export default function CheckInScreen() {
     );
   }
 
+  if (ownCheckIn && !isEditing) {
+    return (
+      <View style={styles.activeOverviewRoot}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Close check-in details"
+          onPress={() => router.back()}
+          style={StyleSheet.absoluteFillObject}
+        />
+        <View accessibilityViewIsModal style={styles.activeOverviewSheet}>
+          <SafeAreaView edges={['bottom']} style={styles.activeOverviewSafeArea}>
+            <StatusBar style="dark" backgroundColor="transparent" />
+            <View style={styles.header}>
+              <TouchableOpacity accessibilityLabel="Back to map" onPress={() => router.back()} style={styles.iconButton}>
+                <Ionicons name="chevron-back" size={25} color="#101828" />
+              </TouchableOpacity>
+              <View style={styles.headerText}>
+                <Text style={styles.title}>Your check-in</Text>
+                <Text style={styles.muted}>Share a place, never continuous location.</Text>
+              </View>
+              <TouchableOpacity accessibilityRole="button" accessibilityLabel="Close check-in details" onPress={() => router.back()} style={styles.iconButton}>
+                <Ionicons name="close" size={23} color="#344054" />
+              </TouchableOpacity>
+            </View>
+            <View style={styles.activeOverviewContent}>
+              {activeCheckInCard}
+            </View>
+          </SafeAreaView>
+        </View>
+      </View>
+    );
+  }
+
   return (
-    <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
-      <StatusBar style="dark" backgroundColor="#FFFFFF" />
-      <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <View style={styles.header}>
-          <TouchableOpacity accessibilityLabel="Close check-in" onPress={() => router.back()} style={styles.iconButton}>
-            <Ionicons name="close" size={25} color="#101828" />
+    <View style={styles.formModalRoot}>
+      <StatusBar style="dark" backgroundColor="transparent" />
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="Back to place choices"
+        disabled={busy}
+        onPress={backToPreviousStep}
+        style={[StyleSheet.absoluteFillObject, styles.formModalScrim]}
+      />
+      <KeyboardAvoidingView pointerEvents="box-none" style={styles.formModalKeyboard} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+        <SafeAreaView accessibilityViewIsModal edges={['bottom']} style={styles.formSheet}>
+          <View style={[styles.header, styles.formHeader]}>
+          <TouchableOpacity accessibilityLabel="Back to place choices" disabled={busy} onPress={backToPreviousStep} style={styles.iconButton}>
+            <Ionicons name="chevron-back" size={25} color="#101828" />
           </TouchableOpacity>
           <View style={styles.headerText}>
             <Text style={styles.title}>{ownCheckIn && !isEditing ? 'Your check-in' : ownCheckIn ? 'Update check-in' : 'Check in'}</Text>
-            <Text style={styles.muted}>Share a venue, never continuous location.</Text>
+            <Text style={styles.muted}>Share a place, never continuous location.</Text>
           </View>
-        </View>
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel={ownCheckIn ? 'Cancel check-in changes' : 'Cancel check-in'} disabled={busy} onPress={cancelCheckInFlow} style={styles.iconButton}>
+            <Ionicons name="close" size={23} color="#344054" />
+          </TouchableOpacity>
+          </View>
 
+          <ScrollView keyboardShouldPersistTaps="handled" style={styles.formScroll} contentContainerStyle={styles.formScrollContent}>
         <View style={styles.content}>
           {fromCache && <Text maxFontSizeMultiplier={1.15} numberOfLines={2} style={styles.offlineBanner}>Offline: changing a check-in requires a connection.</Text>}
-
-          {ownCheckIn && !isEditing && (
-            <View style={[styles.card, styles.activeCard]}>
-              <View style={styles.activeHeading}>
-                <View style={styles.activeIcon}>
-                  <Ionicons name="location" size={22} color="#175CD3" />
-                </View>
-                <View style={styles.flex}>
-                  <Text maxFontSizeMultiplier={1.1} style={styles.activeEyebrow}>ACTIVE NOW</Text>
-                  <Text maxFontSizeMultiplier={1.2} numberOfLines={2} style={styles.sectionTitle}>{ownCheckIn.venueNameSnapshot}</Text>
-                </View>
-              </View>
-              <Text maxFontSizeMultiplier={1.15} style={styles.muted}>
-                {formatCheckInVisibilityCopy(ownCheckIn.viewerCount, ownCheckIn.expiresAt)}
-              </Text>
-              {!!ownCheckIn.message && (
-                <Text maxFontSizeMultiplier={1.15} numberOfLines={3} style={styles.activeMessage}>“{ownCheckIn.message}”</Text>
-              )}
-              <View style={styles.activeActions}>
-                <TouchableOpacity accessibilityRole="button" accessibilityLabel="View check-in on map" onPress={() => router.replace('/(tabs)/map')} style={styles.secondaryButton}>
-                  <Ionicons name="map-outline" size={18} color="#175CD3" />
-                  <Text maxFontSizeMultiplier={1.1} style={styles.secondaryText}>View map</Text>
-                </TouchableOpacity>
-                <TouchableOpacity accessibilityRole="button" accessibilityLabel="Change active check-in" onPress={beginEditing} style={styles.secondaryButton}>
-                  <Ionicons name="create-outline" size={18} color="#175CD3" />
-                  <Text maxFontSizeMultiplier={1.1} style={styles.secondaryText}>Change</Text>
-                </TouchableOpacity>
-                <TouchableOpacity accessibilityRole="button" accessibilityLabel="Check out now" disabled={busy} onPress={checkout} style={styles.checkoutButton}>
-                  <Text maxFontSizeMultiplier={1.1} style={styles.checkoutText}>Check out</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          )}
 
           {isEditing && (
             <View style={styles.formSurface}>
@@ -333,22 +667,58 @@ export default function CheckInScreen() {
                 </View>
               )}
 
-              <View style={styles.fieldGroup}>
-                <Text maxFontSizeMultiplier={1.15} style={styles.fieldLabel}>Venue</Text>
-                <TouchableOpacity
-                  accessibilityRole="button"
-                  accessibilityLabel={selectedVenue ? `Change venue, currently ${selectedVenue.venueName}` : 'Choose a recognized venue'}
-                  onPress={() => setVenuePickerVisible(true)}
-                  style={styles.selectorButton}
+              <TouchableOpacity
+                accessibilityLabel={!contextualPlace && selectableOptions.length > 1 ? `Selected place ${selectedVenue?.venueName}. Choose another nearby place` : `Selected place ${selectedVenue?.venueName || 'none'}`}
+                accessibilityRole={!contextualPlace && selectableOptions.length > 1 ? 'button' : undefined}
+                activeOpacity={!contextualPlace && selectableOptions.length > 1 ? 0.9 : 1}
+                disabled={Boolean(contextualPlace) || selectableOptions.length <= 1}
+                onPress={() => setVenuePickerVisible(true)}
+              >
+                <LinearGradient
+                  colors={['#175CD3', '#2F80ED', '#53B1FD']}
+                  end={{ x: 1, y: 1 }}
+                  start={{ x: 0, y: 0 }}
+                  style={styles.venueHero}
                 >
-                  <View style={styles.selectorIcon}><Ionicons name="location" size={19} color={BRAND} /></View>
-                  <View style={styles.flex}>
-                    <Text maxFontSizeMultiplier={1.15} numberOfLines={1} style={selectedVenue ? styles.venueName : styles.selectorPlaceholder}>{selectedVenue?.venueName || 'Choose a recognized venue'}</Text>
-                    <Text maxFontSizeMultiplier={1.1} numberOfLines={1} style={styles.selectorDetail}>{selectedVenue?.address || `${options.length} venues loaded from the map`}</Text>
+                  <View pointerEvents="none" style={styles.canopyLarge} />
+                  <View pointerEvents="none" style={styles.canopySmall} />
+                  <View style={styles.heroIcon}>
+                    <Ionicons name="location" size={22} color="#175CD3" />
                   </View>
-                  <Ionicons name="chevron-forward" size={20} color="#667085" />
-                </TouchableOpacity>
-              </View>
+                  <View style={styles.flex}>
+                    <Text maxFontSizeMultiplier={1.1} style={styles.heroEyebrow}>
+                      {selectedVenue ? "YOU'RE AT" : 'LOCATION REQUIRED'}
+                    </Text>
+                    <Text maxFontSizeMultiplier={1.2} numberOfLines={1} style={styles.heroVenue}>
+                      {selectedVenue?.venueName || 'Return to the map'}
+                    </Text>
+                    <Text maxFontSizeMultiplier={1.1} numberOfLines={1} style={styles.heroAddress}>
+                      {isPrivatePlace
+                        ? 'Private location · Address hidden'
+                        : selectedVenue?.address || 'Check-in appears after you remain at a verified nearby place.'}
+                    </Text>
+                  </View>
+                  {(hasContextualEligibility || canReuseActiveVenue) && (
+                    <View style={styles.verifiedPill}>
+                      <Ionicons name="checkmark" size={13} color="#175CD3" />
+                      <Text style={styles.verifiedText}>Verified</Text>
+                    </View>
+                  )}
+                  {!contextualPlace && selectableOptions.length > 1 && (
+                    <View style={styles.changeVenuePill}>
+                      <Text style={styles.changeVenueText}>Change</Text>
+                      <Ionicons name="chevron-down" size={13} color="#FFFFFF" />
+                    </View>
+                  )}
+                </LinearGradient>
+              </TouchableOpacity>
+
+              {!canReuseActiveVenue && !hasContextualEligibility && (
+                <View style={styles.contextWarning}>
+                  <Ionicons name="walk-outline" size={18} color="#B54708" />
+                  <Text style={styles.contextWarningText}>Return to the map and remain near the venue until check-in becomes available.</Text>
+                </View>
+              )}
 
               <View style={styles.fieldGroup}>
                 <Text maxFontSizeMultiplier={1.15} style={styles.fieldLabel}>Duration</Text>
@@ -406,6 +776,39 @@ export default function CheckInScreen() {
                 </TouchableOpacity>
               </View>
 
+              {isPrivatePlace && (
+                <View style={styles.privateLocationCard}>
+                  <View style={styles.privateLocationHeading}>
+                    <View style={styles.privateLocationIcon}>
+                      <Ionicons name={exactSharing ? 'navigate' : 'home-outline'} size={20} color="#6941C6" />
+                    </View>
+                    <View style={styles.flex}>
+                      <Text style={styles.privateLocationTitle}>
+                        {exactSharing ? 'Precise location for selected friends' : 'Approximate area'}
+                      </Text>
+                      <Text style={styles.privateLocationCopy}>
+                        {!exactAllowed
+                          ? 'Precise location requires a verified private place and is shared only with selected friends.'
+                          : audienceMode === 'selected_friends'
+                          ? 'Precise location is optional and applies only to the friends you chose.'
+                          : 'All friends see a neighbourhood-sized area. Your address is never shown.'}
+                      </Text>
+                    </View>
+                    {audienceMode === 'selected_friends' && (
+                      <Switch
+                        accessibilityLabel="Share precise location with selected friends"
+                        accessibilityRole="switch"
+                        disabled={!exactAllowed || selectedUids.length === 0}
+                        onValueChange={setShareExactLocation}
+                        trackColor={{ false: '#D6BBFB', true: '#9E77ED' }}
+                        thumbColor="#FFFFFF"
+                        value={exactSharing}
+                      />
+                    )}
+                  </View>
+                </View>
+              )}
+
               <View style={styles.fieldGroup}>
                 <View style={styles.noteHeading}>
                   <Text maxFontSizeMultiplier={1.15} style={styles.fieldLabel}>Note <Text style={styles.optionalLabel}>optional</Text></Text>
@@ -422,17 +825,24 @@ export default function CheckInScreen() {
                 />
               </View>
 
-              <View style={styles.submitArea}>
-                <Text maxFontSizeMultiplier={1.1} numberOfLines={2} style={styles.confirmationCopy}>
-                  {formatCheckInVisibilityCopy(currentAudienceCount, estimatedExpiry)}
-                </Text>
-                <TouchableOpacity accessibilityRole="button" accessibilityLabel={ownCheckIn ? 'Replace active check-in' : 'Confirm check-in'} disabled={!canSubmit} onPress={() => void submit()} style={[styles.primaryButton, !canSubmit && styles.disabled]}>
-                  {busy ? <ActivityIndicator color="#FFF" /> : <Text maxFontSizeMultiplier={1.1} style={styles.primaryText}>{ownCheckIn ? 'Replace check-in' : 'Check in'}</Text>}
-                </TouchableOpacity>
-              </View>
             </View>
           )}
         </View>
+          </ScrollView>
+          {isEditing && (
+            <View style={styles.submitArea}>
+              <View style={styles.privacyPill}>
+                <Ionicons name="lock-closed" size={15} color="#175CD3" />
+                <Text maxFontSizeMultiplier={1.1} numberOfLines={2} style={styles.confirmationCopy}>
+                  {confirmationCopy}
+                </Text>
+              </View>
+              <TouchableOpacity accessibilityRole="button" accessibilityLabel={ownCheckIn ? 'Replace active check-in' : 'Confirm check-in'} disabled={!canSubmit} onPress={() => void submit()} style={[styles.primaryButton, !canSubmit && styles.disabled]}>
+                {busy ? <ActivityIndicator color="#FFF" /> : <Text maxFontSizeMultiplier={1.1} style={styles.primaryText}>{ownCheckIn ? 'Replace check-in' : 'Check in'}</Text>}
+              </TouchableOpacity>
+            </View>
+          )}
+        </SafeAreaView>
       </KeyboardAvoidingView>
 
       <Modal animationType="slide" onRequestClose={() => setVenuePickerVisible(false)} transparent visible={venuePickerVisible}>
@@ -440,8 +850,10 @@ export default function CheckInScreen() {
           <View accessibilityViewIsModal style={styles.pickerCard}>
             <View style={styles.pickerHeader}>
               <View style={styles.flex}>
-                <Text style={styles.pickerTitle}>Choose a venue</Text>
-                <Text maxFontSizeMultiplier={1.1} numberOfLines={1} style={styles.muted}>Loaded from your current map</Text>
+                <Text style={styles.pickerTitle}>{eligibilitySessionId ? 'Choose a nearby venue' : 'Choose a venue'}</Text>
+                <Text maxFontSizeMultiplier={1.1} numberOfLines={1} style={styles.muted}>
+                  {eligibilitySessionId ? 'Verified for this check-in' : 'Loaded from your current map'}
+                </Text>
               </View>
               <TouchableOpacity accessibilityLabel="Close venue picker" onPress={() => { setVenueQuery(''); setVenuePickerVisible(false); }} style={styles.compactIconButton}>
                 <Ionicons name="close" size={23} color="#344054" />
@@ -461,7 +873,7 @@ export default function CheckInScreen() {
             </View>
             <ScrollView contentContainerStyle={styles.pickerList} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} style={styles.pickerScroller}>
               {filteredOptions.map((option) => (
-                <TouchableOpacity accessibilityRole="radio" accessibilityState={{ selected: option.venueId === venueId }} accessibilityLabel={`Choose ${option.venueName}`} key={option.venueId} onPress={() => chooseVenue(option.venueId)} style={styles.venueOption}>
+                <TouchableOpacity accessibilityRole="radio" accessibilityState={{ selected: option.venueId === venueId }} accessibilityLabel={`Choose ${option.venueName}`} key={option.locationKey} onPress={() => option.venueId && chooseVenue(option.venueId)} style={styles.venueOption}>
                   <View style={styles.selectorIcon}><Ionicons name="business-outline" size={19} color="#475467" /></View>
                   <View style={styles.flex}>
                     <Text maxFontSizeMultiplier={1.15} numberOfLines={1} style={styles.venueName}>{option.venueName}</Text>
@@ -470,9 +882,9 @@ export default function CheckInScreen() {
                   <Ionicons name={option.venueId === venueId ? 'checkmark-circle' : 'chevron-forward'} size={21} color={option.venueId === venueId ? BRAND : '#98A2B3'} />
                 </TouchableOpacity>
               ))}
-              {options.length === 0 && <Text style={styles.emptyText}>Move the map to load recognized venues, then try again.</Text>}
-              {options.length > 0 && filteredOptions.length === 0 && <Text style={styles.emptyText}>No loaded venue matches that search.</Text>}
-              {!venueQuery.trim() && options.length > filteredOptions.length && <Text style={styles.helperText}>Search to see the rest of the loaded venues.</Text>}
+              {selectableOptions.length === 0 && <Text style={styles.emptyText}>Move the map to load recognized venues, then try again.</Text>}
+              {selectableOptions.length > 0 && filteredOptions.length === 0 && <Text style={styles.emptyText}>No nearby venue matches that search.</Text>}
+              {!venueQuery.trim() && selectableOptions.length > filteredOptions.length && <Text style={styles.helperText}>Search to see the rest of the loaded venues.</Text>}
             </ScrollView>
           </View>
         </KeyboardAvoidingView>
@@ -510,11 +922,22 @@ export default function CheckInScreen() {
           </View>
         </View>
       </Modal>
-    </SafeAreaView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  formModalRoot: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'transparent' },
+  formModalScrim: { backgroundColor: 'rgba(16,24,40,0.45)' },
+  formModalKeyboard: { flex: 1, justifyContent: 'flex-end' },
+  formSheet: { width: '100%', maxHeight: '90%', flexShrink: 1, paddingHorizontal: 16, paddingTop: 8, borderTopLeftRadius: 28, borderTopRightRadius: 28, overflow: 'hidden', backgroundColor: '#F8FAFC', shadowColor: '#101828', shadowOffset: { width: 0, height: -4 }, shadowOpacity: 0.13, shadowRadius: 14, elevation: 12 },
+  formHeader: { paddingHorizontal: 0, paddingTop: 2, paddingBottom: 8, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#EAECF0', backgroundColor: 'transparent' },
+  formScroll: { flexGrow: 0, flexShrink: 1 },
+  formScrollContent: { paddingTop: 8, paddingBottom: 4 },
+  activeOverviewRoot: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(16,24,40,0.45)' },
+  activeOverviewSheet: { width: '100%', maxHeight: '78%', overflow: 'hidden', borderTopLeftRadius: 30, borderTopRightRadius: 30, backgroundColor: '#F6F8FB', shadowColor: '#101828', shadowOffset: { width: 0, height: -4 }, shadowOpacity: 0.12, shadowRadius: 14, elevation: 12 },
+  activeOverviewSafeArea: { backgroundColor: '#F6F8FB' },
+  activeOverviewContent: { paddingHorizontal: 16, paddingTop: 16, paddingBottom: 14 },
   safeArea: { flex: 1, backgroundColor: '#F6F8FB' },
   flex: { flex: 1 },
   centered: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 14, padding: 28 },
@@ -523,7 +946,7 @@ const styles = StyleSheet.create({
   iconButton: { width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center' },
   compactIconButton: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
   title: { fontSize: 24, fontWeight: '800', color: '#101828' },
-  content: { flex: 1, padding: 12, gap: 10, minHeight: 0 },
+  content: { gap: 10, minHeight: 0 },
   card: { backgroundColor: '#FFF', borderWidth: StyleSheet.hairlineWidth, borderColor: '#E4E7EC', borderRadius: 16, padding: 16, gap: 11 },
   activeCard: { borderColor: '#53B1FD', backgroundColor: '#EFF8FF' },
   sectionTitle: { fontSize: 17, fontWeight: '700', color: '#101828' },
@@ -532,14 +955,29 @@ const styles = StyleSheet.create({
   activeIcon: { width: 42, height: 42, alignItems: 'center', justifyContent: 'center', borderRadius: 21, backgroundColor: '#DCEBFF' },
   activeEyebrow: { color: '#175CD3', fontSize: 11, fontWeight: '800', letterSpacing: 0.8, marginBottom: 2 },
   activeMessage: { color: '#344054', fontStyle: 'italic', lineHeight: 20 },
+  activePrivateRow: { flexDirection: 'row', alignItems: 'center', gap: 7, padding: 9, borderRadius: 11, backgroundColor: '#F4EBFF' },
+  activePrivateText: { flex: 1, color: '#53389E', fontSize: 11.5, lineHeight: 16, fontWeight: '700' },
   activeActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 2 },
   secondaryButton: { minHeight: 42, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingHorizontal: 12, borderRadius: 9, backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#B2DDFF' },
   secondaryText: { color: '#175CD3', fontWeight: '700' },
   checkoutButton: { minHeight: 42, justifyContent: 'center', paddingHorizontal: 12, borderRadius: 9, backgroundColor: '#FEE4E2' },
   checkoutText: { color: '#B42318', fontWeight: '700' },
-  formSurface: { flex: 1, minHeight: 0, gap: 9, padding: 12, borderRadius: 16, backgroundColor: '#FFF', borderWidth: StyleSheet.hairlineWidth, borderColor: '#E4E7EC' },
+  formSurface: { gap: 9, backgroundColor: 'transparent' },
   activeStrip: { minHeight: 52, flexDirection: 'row', alignItems: 'center', gap: 9, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 11, backgroundColor: '#EFF8FF' },
   stripVenue: { color: '#101828', fontWeight: '700', marginTop: 1 },
+  venueHero: { minHeight: 94, flexDirection: 'row', alignItems: 'center', gap: 10, overflow: 'hidden', paddingHorizontal: 13, paddingVertical: 12, borderRadius: 16 },
+  canopyLarge: { position: 'absolute', width: 118, height: 118, borderRadius: 59, right: -38, top: -55, backgroundColor: 'rgba(255,255,255,0.13)' },
+  canopySmall: { position: 'absolute', width: 72, height: 72, borderRadius: 36, right: 27, bottom: -42, backgroundColor: 'rgba(255,255,255,0.10)' },
+  heroIcon: { width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center', backgroundColor: '#FFFFFF' },
+  heroEyebrow: { color: '#DCEBFF', fontSize: 10, fontWeight: '900', letterSpacing: 1 },
+  heroVenue: { color: '#FFFFFF', fontSize: 18, fontWeight: '900', marginTop: 2 },
+  heroAddress: { color: '#EAF2FF', fontSize: 12, marginTop: 2 },
+  verifiedPill: { position: 'absolute', right: 10, top: 9, flexDirection: 'row', alignItems: 'center', gap: 3, paddingHorizontal: 7, paddingVertical: 4, borderRadius: 999, backgroundColor: '#FFFFFF' },
+  verifiedText: { color: '#175CD3', fontSize: 10, fontWeight: '800' },
+  changeVenuePill: { position: 'absolute', right: 10, bottom: 9, flexDirection: 'row', alignItems: 'center', gap: 2, paddingHorizontal: 7, paddingVertical: 4, borderRadius: 999, backgroundColor: 'rgba(16,24,40,0.32)' },
+  changeVenueText: { color: '#FFFFFF', fontSize: 10, fontWeight: '800' },
+  contextWarning: { minHeight: 42, flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 10, paddingVertical: 7, borderRadius: 11, backgroundColor: '#FFFAEB' },
+  contextWarningText: { flex: 1, color: '#B54708', fontSize: 12, lineHeight: 16, fontWeight: '600' },
   fieldGroup: { gap: 5 },
   fieldLabel: { color: '#344054', fontSize: 13, fontWeight: '800' },
   optionalLabel: { color: '#667085', fontWeight: '500' },
@@ -565,9 +1003,15 @@ const styles = StyleSheet.create({
   friendChoice: { flexDirection: 'row', alignItems: 'center', gap: 10, minHeight: 60, paddingVertical: 7, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#EAECF0' },
   friendAvatar: { width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center', backgroundColor: '#DCEBFF' },
   friendInitial: { color: '#175CD3', fontWeight: '800' },
-  submitArea: { marginTop: 'auto', gap: 7, paddingTop: 3 },
-  confirmationCopy: { color: '#344054', textAlign: 'center', fontSize: 13, lineHeight: 17, paddingHorizontal: 6 },
-  primaryButton: { minHeight: 48, alignItems: 'center', justifyContent: 'center', backgroundColor: BRAND, borderRadius: 11, paddingHorizontal: 20 },
+  privateLocationCard: { padding: 12, borderRadius: 15, borderWidth: 1, borderColor: '#D6BBFB', backgroundColor: '#F4EBFF' },
+  privateLocationHeading: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  privateLocationIcon: { width: 38, height: 38, alignItems: 'center', justifyContent: 'center', borderRadius: 13, backgroundColor: '#FFFFFF' },
+  privateLocationTitle: { color: '#42307D', fontSize: 13, fontWeight: '900' },
+  privateLocationCopy: { marginTop: 2, color: '#6941C6', fontSize: 10.5, lineHeight: 14 },
+  submitArea: { gap: 7, paddingTop: 9, paddingBottom: 8, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#EAECF0' },
+  privacyPill: { minHeight: 40, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 12, backgroundColor: '#EFF8FF' },
+  confirmationCopy: { flexShrink: 1, color: '#175CD3', textAlign: 'center', fontSize: 12, lineHeight: 16, fontWeight: '600' },
+  primaryButton: { minHeight: 50, alignItems: 'center', justifyContent: 'center', backgroundColor: BRAND, borderRadius: 14, paddingHorizontal: 20, shadowColor: '#175CD3', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.2, shadowRadius: 7, elevation: 3 },
   primaryText: { color: '#FFF', fontWeight: '800', fontSize: 16 },
   disabled: { opacity: 0.45 },
   offlineBanner: { backgroundColor: '#FFF4CC', color: '#7A5D00', paddingHorizontal: 10, paddingVertical: 7, borderRadius: 9 },

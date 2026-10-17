@@ -22,12 +22,23 @@ import {
   useColorScheme
 } from 'react-native';
 import { ScrollView as GestureScrollView } from 'react-native-gesture-handler';
-import { MaterialIcons, MaterialCommunityIcons } from '@expo/vector-icons';
+import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { useFocusEffect } from '@react-navigation/native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { getTabDockContentInset, getTabDockBottom } from '../../constants/tabDock';
+import { useHeaderHeight } from '@react-navigation/elements';
+import { useFeedScrollChrome } from '../../hooks/useFeedScrollChrome';
+import { useVisibleVenueGroups } from '../../hooks/useVisibleVenueGroups';
+import FeedFilterSummary, { FEED_FILTER_SUMMARY_HEIGHT } from '../../components/common/FeedFilterSummary';
+import UpcomingDateOptions from '../../components/map/UpcomingDateOptions';
+import { useFeedBackToTop } from '../../hooks/useFeedBackToTop';
 import FallbackImage from '../../components/common/FallbackImage';
 import TicketCtaPill from '../../components/common/TicketCtaPill';
 import EventActionLinkPill from '../../components/common/EventActionLinkPill';
 import FamilyFriendlyBadge from '../../components/common/FamilyFriendlyBadge';
+import { EventTimingBadge } from '../../components/common/EventTimingBadge';
+import { EventTimingSummaryText } from '../../components/common/EventTimingSummaryText';
+import { EventSeriesContextLine } from '../../components/common/EventSeriesContextLine';
 import { VenueFavoriteButton } from '../../components/common/VenueFavoriteButton';
 import Autolink from 'react-native-autolink';
 
@@ -43,23 +54,18 @@ import CategoryFilterOptions from '../../components/map/CategoryFilterOptions';
 
 // Import components
 import EventImageLightbox from '../../components/map/EventImageLightbox';
+import VenueEventRow, { VENUE_FEED_HERO_HEIGHT } from '../../components/common/VenueEventRow';
+import { groupVenueFeedEvents, getVenueFeedKey, type VenueFeedGroup } from '../../utils/venueFeedGroups';
 import FullSizeSdkAdCard, { FULL_SIZE_SDK_AD_ROW_HEIGHT } from '../../components/ads/FullSizeSdkAdCard';
 import { AdColors } from '../../constants/AdTheme';
 
 // Import utilities
 import {
-  formatEventDateTime,
   getEventTimeStatus,
-  sortEventsByTimeStatus,
-  combineDateAndTime,
-  isEventNow,
-  isEventHappeningToday,
-  formatTime,
   getEventDisplayUntilDate,
-  parseISO,
-  format
 } from '../../utils/dateUtils';
-import { addToCalendar } from '../../utils/calendarUtils';
+import { getEventScheduleContext } from '../../utils/eventSeries';
+import { addEventToCalendarWithTiming } from '../../utils/calendarUtils';
 import { buildGathrSharePayload } from '../../utils/shareUtils';
 import { getTicketUrl, normalizeTicketUrl } from '../../utils/ticketUrls';
 import { getPrimaryNonTicketAction } from '../../utils/eventActionLinks';
@@ -85,6 +91,9 @@ import { useUserPrefsStore } from '../../store/userPrefsStore';
 import { useTutorialUiStore } from '../../store/tutorialUiStore';
 import { areEventIdsEquivalent } from '../../lib/api/firestoreEvents';
 import { doesEventMatchAnyInterest } from '../../utils/familyFriendly';
+import { useEventTimingMinute } from '../../hooks/useEventTimingMinute';
+import { useTapOnlyPress } from '../../hooks/useTapOnlyPress';
+import { getEventScheduleState } from '../../utils/eventTiming';
 
 // Import for loading native ads
 import useNativeAds from '../../hooks/useNativeAds';
@@ -135,48 +144,10 @@ const ANDROID_SPECIALS_FILTERS_VISIBLE_TOP_PAD = 15;
 const ANDROID_SPECIALS_FILTERS_VISIBLE_BOTTOM_PAD = 0;
 const INITIAL_FILTER_HEADER_HEIGHT = 195;
 
-// --- Local helpers for safe label/range handling and end-date suffix ---
-function partsFrom(base: string, range?: string) {
-  const result = {
-    label: base,
-    start: undefined as string | undefined,
-    end: undefined as string | undefined,
-    labelWithTime: base,
-  };
-  if (!range) return result;
-
-  // Detect common separators: en dash, spaced hyphen, plain hyphen, and " to "
-  const rLower = range.toLowerCase();
-  const sep =
-    range.includes(' – ') ? ' – ' :
-    range.includes('–')    ? '–'    :
-    rLower.includes(' to ') ? ' to ' :
-    range.includes(' - ')  ? ' - '  :
-    range.includes('-')    ? '-'    :
-    null;
-
-  if (sep) {
-    const [startRaw, endRaw] = range.split(sep).map(s => s?.trim());
-    result.start = startRaw || undefined;
-    result.end = endRaw || undefined;
-  }
-
-  // Trim trailing " at <start>" only if it matches, case-insensitively.
-  if (result.start) {
-    const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const tailRe = new RegExp(`\\s+at\\s+${esc(result.start)}$`, 'i');
-    if (tailRe.test(base)) {
-      result.label = base.replace(tailRe, '');
-    }
-  }
-  return result;
-}
-
-
 function isFutureDate(dateStr?: string) {
   if (!dateStr) return false;
   try {
-    const d = parseISO(dateStr);
+    const d = new Date(`${dateStr}T00:00:00`);
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     return d > today;
@@ -186,11 +157,13 @@ function isFutureDate(dateStr?: string) {
 }
 
 function formatEndDateLabel(dateStr: string) {
-  try {
-    return format(parseISO(dateStr), 'MMM d');
-  } catch {
-    return '';
-  }
+  const d = new Date(`${dateStr}T00:00:00`);
+  if (Number.isNaN(d.getTime())) return '';
+  const now = new Date();
+  const opts: Intl.DateTimeFormatOptions = { month: 'short', day: 'numeric' };
+  let label = d.toLocaleDateString(undefined, opts);
+  if (d.getFullYear() !== now.getFullYear()) label += `, ${d.getFullYear()}`;
+  return label;
 }
 
 
@@ -355,6 +328,8 @@ interface EventListItemProps {
   matchesUserInterests: boolean;
   isGuest: boolean;
   analytics: any; // Analytics hook - RE-ENABLED
+  grouped?: boolean;
+  browseEvents?: Event[];
   isFirstItem?: boolean; // NEW: Tutorial awareness only for first item
 }
 
@@ -367,8 +342,12 @@ const EventListItem: React.FC<EventListItemProps> = ({
   matchesUserInterests,
   isGuest,
   analytics,
+  grouped = false,
   isFirstItem = false
 }) => {
+  useEventTimingMinute();
+  const lightboxTap = useTapOnlyPress();
+  const timingState = getEventScheduleState(event);
   const [expanded, setExpanded] = useState(false);
   const [bookmarked, setBookmarked] = useState(isSaved);
   const [isToggling, setIsToggling] = useState(false);
@@ -613,13 +592,8 @@ const favoriteVenues = useUserPrefsStore((s: UserPrefsState) => s.favoriteVenues
       // If marking interested (not unmarking), also open calendar
       if (result.interested) {
         try {
-          await addToCalendar({
-            title: event.title,
-            startDate: combineDateAndTime(event.startDate, event.startTime),
-            endDate: combineDateAndTime(event.endDate || event.startDate, event.endTime || '11:59 PM'),
-            location: `${event.venue}, ${event.address}`,
-            notes: event.description,
-          });
+          const calendarAdded = await addEventToCalendarWithTiming(event, `${event.venue}, ${event.address}`);
+          if (!calendarAdded) return;
 
           analytics.trackUserAction('calendar_add_success', {
             event_id: event.id.toString(),
@@ -673,13 +647,8 @@ const favoriteVenues = useUserPrefsStore((s: UserPrefsState) => s.favoriteVenues
     try {
       const startTime = Date.now();
 
-      await addToCalendar({
-        title: event.title,
-        startDate: combineDateAndTime(event.startDate, event.startTime),
-        endDate: combineDateAndTime(event.endDate || event.startDate, event.endTime || '11:59 PM'),
-        location: `${event.venue}, ${event.address}`,
-        notes: event.description
-      });
+      const calendarAdded = await addEventToCalendarWithTiming(event, `${event.venue}, ${event.address}`);
+      if (!calendarAdded) return;
 
       // Track successful calendar addition for special
       analytics.trackUserAction('calendar_add_success', {
@@ -987,26 +956,13 @@ const result = await userService.toggleSavedEvent(event.id, {
   const showHeroEngagementOverlay = true;
   const showBuyTicketsButton = hasTicketLink && paid;
   const showRegisterButton = hasTicketLink && !paid;
-  const formatFullDateTime = (): string => {
-    let dateTimeStr = formatEventDateTime(event.startDate, event.startTime, event);
-    
-    if (event.endTime && event.endTime !== event.startTime) {
-      dateTimeStr += ` to ${formatTime(event.endTime)}`;
-      
-      if (event.endDate && event.endDate !== event.startDate) {
-        dateTimeStr += `, ${format(parseISO(event.endDate), 'MMM d')}`;
-      }
-    }
-    
-    return dateTimeStr;
-  };
-  
   return (
-    <View>
+    <View {...lightboxTap.touchHandlers}>
       <TouchableOpacity 
         ref={tutorialRef as any}
-        style={styles.eventCard}
-        onPress={onPress}
+        style={[styles.eventCard, grouped && styles.groupedEventCard, timingState.muted && styles.mutedEventCard]}
+        onPress={event => { if (lightboxTap.isTap(event)) onPress(); }}
+        onAccessibilityTap={onPress}
         activeOpacity={0.7}
       >
       {/* Hero Image Section - NEW LAYOUT */}
@@ -1015,7 +971,8 @@ const result = await userService.toggleSavedEvent(event.id, {
           <View>
             <TouchableOpacity
               activeOpacity={0.9}
-              onPress={() => onImagePress(event.imageUrl || event.profileUrl, event)}
+              onPress={touch => { if (lightboxTap.isTap(touch)) onImagePress(event.imageUrl || event.profileUrl, event); }}
+              onAccessibilityTap={() => onImagePress(event.imageUrl || event.profileUrl, event)}
             >
               <FallbackImage
               imageUrl={event.imageUrl || event.profileUrl}
@@ -1037,7 +994,7 @@ const result = await userService.toggleSavedEvent(event.id, {
             />
 
             {/* Venue identity and address disclosure - top left */}
-            <View style={styles.venueIdentityOverlay}>
+            {!grouped && <View style={styles.venueIdentityOverlay}>
               <View style={styles.venueIdentityPill}>
                 <View style={styles.venueProfileImageContainer}>
                   <FallbackImage
@@ -1100,7 +1057,7 @@ const result = await userService.toggleSavedEvent(event.id, {
                   </Text>
                 </View>
               )}
-            </View>
+            </View>}
 
             {showHeroEngagementOverlay && (
               <View style={styles.heroEngagementOverlay} pointerEvents="box-none">
@@ -1191,48 +1148,27 @@ const result = await userService.toggleSavedEvent(event.id, {
         <View style={styles.dateTimeRow}>
         <MaterialIcons name="access-time" size={14} color={BRAND.primaryDark} />
         {(() => {
-          const base = formatEventDateTime(event.startDate, event.startTime, event);
-                      
-          const startRaw = event?.startTime;
-          const endRaw   = event?.endTime;
-
-          const start = startRaw && startRaw !== 'N/A' ? formatTime(startRaw) : null;
-          const end   = endRaw   && endRaw   !== 'N/A' ? formatTime(endRaw)   : null;
-
-          const range =
-            start && end ? `${start} – ${end}` :
-            start        ? `${start} – late`  :
-            end          ? `until ${end}`     :
-                          '';
-
-          const rangeOrUndefined = range && range.trim() ? range : undefined;
-          const { label, start: s, end: e, labelWithTime } = partsFrom(base, rangeOrUndefined);
-
-          // Use existing timeStatus from the component scope
-          // Use existing timeStatus from the component scope
-          const showRange = (timeStatus === 'now' || timeStatus === 'today' || timeStatus === 'future') && !!rangeOrUndefined;
-
-          const displayUntilDate = getEventDisplayUntilDate(event);
+          const scheduleContext = getEventScheduleContext(event);
+          const displayUntilDate = scheduleContext ? undefined : getEventDisplayUntilDate(event);
           const endDateSuffix =
-            showRange && isFutureDate(displayUntilDate) ? ` • (Until ${formatEndDateLabel(displayUntilDate!)})` : '';
-
-          const display = showRange
-            ? `${label} • ${s}${e ? ` – ${e}` : ''}${endDateSuffix}`
-            : labelWithTime;
-
-
+            isFutureDate(displayUntilDate) ? ` • (Until ${formatEndDateLabel(displayUntilDate!)})` : '';
             return (
-              <Text
-                style={styles.dateTimeText}
-                numberOfLines={1}
-                adjustsFontSizeToFit={true}
-                minimumFontScale={0.7}
-              >
-                {display}
-              </Text>
+              <>
+                <EventTimingSummaryText
+                  event={event}
+                  suffix={endDateSuffix}
+                  style={styles.dateTimeText}
+                  numberOfLines={2}
+                  adjustsFontSizeToFit={true}
+                  minimumFontScale={0.75}
+                />
+                <EventTimingBadge event={event} compact style={styles.timingBadge} />
+              </>
             );
           })()}
         </View>
+
+        <EventSeriesContextLine event={event} containerStyle={styles.seriesContextLine} />
 
         <Text
           style={styles.cardTitle}
@@ -1419,7 +1355,9 @@ const result = await userService.toggleSavedEvent(event.id, {
 const MemoizedEventListItem = React.memo(EventListItem, (prevProps, nextProps) => {
   // Only re-render if these specific props change
   return (
-    prevProps.event.id === nextProps.event.id &&
+    prevProps.event === nextProps.event &&
+    prevProps.grouped === nextProps.grouped &&
+    prevProps.browseEvents === nextProps.browseEvents &&
     prevProps.event.familyFriendlyScore === nextProps.event.familyFriendlyScore &&
     prevProps.matchesUserInterests === nextProps.matchesUserInterests &&
     prevProps.isSaved === nextProps.isSaved &&
@@ -1430,6 +1368,8 @@ const MemoizedEventListItem = React.memo(EventListItem, (prevProps, nextProps) =
 
 // Main Specials Screen component
 function SpecialsScreen() {
+  const safeAreaInsets = useSafeAreaInsets();
+  const dockContentInset = getTabDockContentInset(Platform.OS, safeAreaInsets.bottom);
   const adColors = AdColors[useColorScheme() ?? 'light'];
   markTabScreenRenderStart('specials');
 
@@ -1530,6 +1470,7 @@ function SpecialsScreen() {
   // Store integration - individual selectors to prevent infinite loops
   // (Combined object selectors with shallow cause getSnapshot caching issues)
   const events = useMapStore((state) => state.events);
+  const onScreenEvents = useMapStore((state) => state.onScreenEvents);
   const viewportEvents = useMapStore((state) => state.viewportEvents);
   const outsideViewportEvents = useMapStore((state) => state.outsideViewportEvents);
   const isLoading = useMapStore((state) => state.isLoading);
@@ -1566,8 +1507,7 @@ function SpecialsScreen() {
   // State management
   const [scrollY] = useState(new Animated.Value(0));
   const [headerHeight, setHeaderHeight] = useState(INITIAL_FILTER_HEADER_HEIGHT);
-  const [isHeaderCollapsed, setIsHeaderCollapsed] = useState(false);
-  const headerTranslateY = useRef(new Animated.Value(0)).current;
+  const navigationHeaderHeight = useHeaderHeight();
   const lastScrollY = useRef(0);
   const flatListRef = useRef<FlatList>(null);
   const handleFlatListLayout = useCallback(() => {
@@ -1581,18 +1521,30 @@ function SpecialsScreen() {
   }, []);
   
   // Back to top button state
-  const [showBackToTop, setShowBackToTop] = useState(false);
-  const backToTopOpacity = useRef(new Animated.Value(0)).current;
+  const backToTop = useFeedBackToTop(SCREEN_HEIGHT);
+  const { visible: showBackToTop, opacity: backToTopOpacity } = backToTop;
   
   // Performance tracking for specials
   const [listLoadTime, setListLoadTime] = useState<number | null>(null);
   const [scrollStartTime, setScrollStartTime] = useState<number | null>(null);
-  const collapsibleHeaderTop = COLLAPSIBLE_HEADER_TOP_MARGIN;
+  const collapsibleHeaderTop = navigationHeaderHeight;
   const effectiveHeaderStackHeight = collapsibleHeaderTop + Math.max(headerHeight, 120);
+
+  const chromeTutorialVisible = useTutorialUiStore((state) => state.isVisible);
+  const feedChrome = useFeedScrollChrome('specials', isHeaderSearchActive || chromeTutorialVisible);
+  const visibleVenueGroups = useVisibleVenueGroups();
+  const showFullFilters = !feedChrome.compactFilters || feedChrome.filtersExpanded;
+  const visibleFilterHeight = feedChrome.compactFilters
+    ? FEED_FILTER_SUMMARY_HEIGHT + (feedChrome.filtersExpanded ? headerHeight : 0) : headerHeight;
+  const headerTranslateY = feedChrome.progress.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, -(collapsibleHeaderTop + visibleFilterHeight)],
+  });
 
   // Scroll to top functionality
   useEffect(() => {
     if (scrollTriggers.specials > 0) {
+      feedChrome.reveal();
       console.log('[SpecialsScreen] Scroll trigger detected, scrolling to top');
       
       // Track scroll to top interaction for specials
@@ -1637,7 +1589,9 @@ function SpecialsScreen() {
   const [selectedImageData, setSelectedImageData] = useState<{
     imageUrl: string;
     event: Event;
+    events: Event[];
   } | null>(null);
+  const [selectedVenueEvents, setSelectedVenueEvents] = useState<Record<string, string>>({});
   
 
 
@@ -1966,7 +1920,7 @@ useEffect(() => {
   // ANALYTICS-ENHANCED EVENT HANDLERS (Special-specific)
   // ===============================================================
   
-  const handleEventPress = (event: Event) => {
+  const handleEventPress = (event: Event, groupEvents: Event[] = [event]) => {
     console.log(`[GuestLimitation] Special press: ${event.title}`);
     
     // Track special discovery and interaction
@@ -2002,7 +1956,7 @@ useEffect(() => {
     
     if (imageUrl) {
       console.log('CARD PRESSED - Opening lightbox for:', imageUrl);
-      handleImagePress(imageUrl, event);
+      handleImagePress(imageUrl, event, groupEvents);
     } else {
       setSelectedEvent(event);
       setDetailsVisible(true);
@@ -2016,7 +1970,7 @@ useEffect(() => {
     }
   };
 
-  const handleImagePress = (imageUrl: string, event: Event) => {
+  const handleImagePress = (imageUrl: string, event: Event, groupEvents: Event[] = [event]) => {
     console.log(`[GuestLimitation] Image press: ${event.title}`);
     
     // Track special image interaction
@@ -2033,7 +1987,7 @@ useEffect(() => {
       console.log('[GuestLimitation] Image click interaction blocked - allowing action but prompt should show');
     }
     
-    setSelectedImageData({ imageUrl, event });
+    setSelectedImageData({ imageUrl, event, events: groupEvents });
   };
 
   // ===============================================================
@@ -2058,16 +2012,7 @@ useEffect(() => {
           trackScrollInteraction('specials');
         }
         
-        // Back to top button visibility logic
-        const shouldShowBackToTop = currentScrollY > SCREEN_HEIGHT;
-        if (shouldShowBackToTop !== showBackToTop) {
-          setShowBackToTop(shouldShowBackToTop);
-          Animated.timing(backToTopOpacity, {
-            toValue: shouldShowBackToTop ? 1 : 0,
-            duration: 300,
-            useNativeDriver: true,
-          }).start();
-        }
+        backToTop.onScroll(currentScrollY);
         
         // Track scroll depth for special-specific engagement analytics
         const contentHeight = (sortedViewportSpecials.length + sortedOutsideViewportSpecials.length) * 200;
@@ -2082,24 +2027,7 @@ useEffect(() => {
           });
         }
         
-        // Header collapse animation
-        if (headerHeight > 0 && Math.abs(scrollDiff) > 5) {
-          if (scrollDiff > 0 && currentScrollY > 50 && !isHeaderCollapsed) {
-            setIsHeaderCollapsed(true);
-            Animated.timing(headerTranslateY, {
-              toValue: -headerHeight,
-              duration: 300,
-              useNativeDriver: true,
-            }).start();
-          } else if (scrollDiff < 0 && isHeaderCollapsed) {
-            setIsHeaderCollapsed(false);
-            Animated.timing(headerTranslateY, {
-              toValue: 0,
-              duration: 300,
-              useNativeDriver: true,
-            }).start();
-          }
-        }
+        feedChrome.onScroll(event.nativeEvent);
         
         lastScrollY.current = currentScrollY;
       },
@@ -2108,6 +2036,8 @@ useEffect(() => {
 
   // Handle back to top button press
   const handleBackToTop = () => {
+    backToTop.hide();
+    feedChrome.reveal();
     analytics?.trackUserAction('back_to_top_pressed', {
       screen: 'specials',
       scroll_position: lastScrollY.current
@@ -2354,18 +2284,28 @@ useEffect(() => {
     });
   }, [filteredOutsideViewportSpecials, outsideViewportLoadCount, userLocation, savedEventSet, favoriteVenueSet, userInterestLowerSet, eventTimeContext]);
 
+  // Group only already-filtered records; preserve ranked venue order and expose every matching sibling.
+  const viewportVenueGroups = useMemo(() => groupVenueFeedEvents(sortedViewportSpecials,
+    [...filteredViewportSpecials, ...filteredOutsideViewportSpecials]),
+    [sortedViewportSpecials, filteredViewportSpecials, filteredOutsideViewportSpecials]);
+  const outsideVenueGroups = useMemo(() => {
+    const visibleKeys = new Set(viewportVenueGroups.map(group => group.key));
+    return groupVenueFeedEvents([...sortedOutsideViewportSpecials, ...filteredOutsideViewportSpecials])
+      .filter(group => !visibleKeys.has(group.key));
+  }, [sortedOutsideViewportSpecials, filteredOutsideViewportSpecials, viewportVenueGroups]);
+
   // Request one distinct NativeAd instance for every placement in the currently
   // exposed page. The target grows with pagination instead of stopping at four.
   const displayedOutsideViewportSpecialCount = Math.min(
-    sortedOutsideViewportSpecials.length,
+    outsideVenueGroups.length,
     outsideViewportLoadCount
   );
   const regularSpecialAdPlacements =
-    Math.floor(sortedViewportSpecials.length / 4) +
+    Math.floor(viewportVenueGroups.length / 4) +
     Math.floor(displayedOutsideViewportSpecialCount / 4);
   const lowCountSpecialAdPlacement =
-    sortedViewportSpecials.length > 0 &&
-    sortedViewportSpecials.length < 4 &&
+    viewportVenueGroups.length > 0 &&
+    viewportVenueGroups.length < 4 &&
     displayedOutsideViewportSpecialCount === 0
       ? 1
       : 0;
@@ -2376,6 +2316,7 @@ useEffect(() => {
   type SpecialListItem = {
     type: 'special';
     data: Event;
+    group: VenueFeedGroup;
   };
 
   type DividerItem = {
@@ -2414,8 +2355,8 @@ useEffect(() => {
   const specialsWithAds = useMemo<ListItem[]>(() => {
     return measureListTabStage('specials', 'build_list_with_ads', {
       ready: isFocusedContentReady,
-      viewportCount: sortedViewportSpecials.length,
-      outsideViewportCount: sortedOutsideViewportSpecials.length,
+      viewportCount: viewportVenueGroups.length,
+      outsideViewportCount: outsideVenueGroups.length,
       nativeAdsCount: nativeAds.length,
     }, () => {
       if (!isFocusedContentReady) {
@@ -2428,8 +2369,8 @@ useEffect(() => {
       const validAds = nativeAds.filter(ad => ad.ad !== null && !ad.loading);
 
     // Add viewport specials with ads
-    sortedViewportSpecials.forEach((special, index) => {
-      result.push({ type: 'special', data: special });
+    viewportVenueGroups.forEach((group, index) => {
+      result.push({ type: 'special', data: group.events[0], group });
 
       // Insert ad every 4 specials
       if ((index + 1) % adFrequency === 0 && nativeAds.length > 0) {
@@ -2461,9 +2402,9 @@ useEffect(() => {
     }
 
     // Add outside-viewport specials (paginated) with ads interspersed
-    const outsideViewportToShow = sortedOutsideViewportSpecials.slice(0, outsideViewportLoadCount);
-    outsideViewportToShow.forEach((special, index) => {
-      result.push({ type: 'special', data: special });
+    const outsideViewportToShow = outsideVenueGroups.slice(0, outsideViewportLoadCount);
+    outsideViewportToShow.forEach((group, index) => {
+      result.push({ type: 'special', data: group.events[0], group });
 
       // Continue inserting ads every 4 specials in outside-viewport section
       if ((index + 1) % adFrequency === 0 && nativeAds.length > 0) {
@@ -2483,7 +2424,7 @@ useEffect(() => {
     });
 
     // Low-count fallback for viewport section
-    if (sortedViewportSpecials.length > 0 && sortedViewportSpecials.length < adFrequency && nativeAds.length > 0 && sortedOutsideViewportSpecials.length === 0) {
+    if (viewportVenueGroups.length > 0 && viewportVenueGroups.length < adFrequency && nativeAds.length > 0 && outsideVenueGroups.length === 0) {
       const selectedAd = validAds[0];
       if (selectedAd) {
         result.push({
@@ -2500,14 +2441,14 @@ useEffect(() => {
       markTabListDataReady('specials', {
         ready: true,
         itemCount: result.length,
-        viewportCount: sortedViewportSpecials.length,
-        outsideViewportCount: sortedOutsideViewportSpecials.length,
+        viewportCount: viewportVenueGroups.length,
+        outsideViewportCount: outsideVenueGroups.length,
         nativeAdsCount: nativeAds.length,
       });
 
       return result;
     });
-  }, [getAdListKey, isFocusedContentReady, sortedViewportSpecials, sortedOutsideViewportSpecials, filteredOutsideViewportSpecials.length, nativeAds, outsideViewportLoadCount]);
+  }, [getAdListKey, isFocusedContentReady, viewportVenueGroups, outsideVenueGroups, filteredOutsideViewportSpecials.length, nativeAds, outsideViewportLoadCount]);
 
   // Pre-compute lookup Sets for O(1) access during render
   const interestMatchSet = useMemo(() => {
@@ -2518,8 +2459,10 @@ useEffect(() => {
       if (userInterestLowerSet.size === 0) return new Set<string>();
       const matchingIds = new Set<string>();
       specialsWithAds.forEach(item => {
-        if (item.type === 'special' && doesEventMatchAnyInterest(item.data, userInterestLowerSet)) {
-          matchingIds.add(String(item.data.id));
+        if (item.type === 'special') {
+          item.group.events.forEach(event => {
+            if (doesEventMatchAnyInterest(event, userInterestLowerSet)) matchingIds.add(String(event.id));
+          });
         }
       });
       return matchingIds;
@@ -2542,7 +2485,7 @@ useEffect(() => {
 
   // Memoized FlatList callbacks to prevent unnecessary re-renders
   const keyExtractor = useCallback((item: any, index: number) => {
-    if (item.type === 'special') return `special-${item.data.id}`;
+    if (item.type === 'special') return item.group.key;
     if (item.type === 'ad') return item.data.key;
     if (item.type === 'divider') return `divider-${index}`;
     return `item-${index}`;
@@ -2567,8 +2510,11 @@ useEffect(() => {
 
   const contentContainerStyleMemo = useMemo(() => [
     styles.listContent,
-    { paddingTop: effectiveHeaderStackHeight + (showBanner ? 35 : 0) + 8 }
-  ], [effectiveHeaderStackHeight, showBanner]);
+    {
+      paddingTop: effectiveHeaderStackHeight + (showBanner ? 35 : 0) + 8,
+      paddingBottom: dockContentInset,
+    }
+  ], [effectiveHeaderStackHeight, showBanner, dockContentInset]);
 
   // Track special priority effectiveness
   useEffect(() => {
@@ -2657,19 +2603,27 @@ useEffect(() => {
         />
       )}
       {/* Collapsible Header */}
+      {feedChrome.filtersExpanded && !feedChrome.hidden && <Pressable testID="feed-filter-backdrop"
+        accessibilityRole="button" accessibilityLabel="Close filters" onPress={feedChrome.dismissFilters}
+        style={[StyleSheet.absoluteFillObject, { top: collapsibleHeaderTop + FEED_FILTER_SUMMARY_HEIGHT, zIndex: 9, backgroundColor: 'rgba(0,0,0,0.25)' }]} />}
       <Animated.View 
+        pointerEvents={feedChrome.hidden ? 'none' : 'auto'}
         style={[
           styles.collapsibleHeader,
           { top: collapsibleHeaderTop },
           { transform: [{ translateY: headerTranslateY }] }
         ]}
-        onLayout={(event) => {
-          const nextHeight = event.nativeEvent.layout.height + 5;
-          setHeaderHeight((previousHeight) =>
-            Math.abs(previousHeight - nextHeight) > 1 ? nextHeight : previousHeight
-          );
-        }}
       >
+        {feedChrome.compactFilters && <FeedFilterSummary filters={filterCriteria.specialFilters}
+          expanded={feedChrome.filtersExpanded} onPress={feedChrome.toggleFilters} />}
+        <View testID="feed-full-filters" style={!showFullFilters && { display: 'none' }}
+          accessibilityElementsHidden={!showFullFilters} importantForAccessibility={showFullFilters ? 'auto' : 'no-hide-descendants'}
+          onLayout={event => {
+            // Keep the original full-panel inset stable while the compact row/overlay changes.
+            if (!showFullFilters || event.nativeEvent.layout.height <= 0) return;
+            const nextHeight = event.nativeEvent.layout.height + COLLAPSIBLE_HEADER_TOP_MARGIN + 5;
+            setHeaderHeight(previous => Math.abs(previous - nextHeight) > 1 ? nextHeight : previous);
+          }}>
 {/* Filtering section */}
 <Animated.View 
   style={[
@@ -2806,6 +2760,13 @@ useEffect(() => {
               </TouchableOpacity>
             </ScrollView>
             
+            {filterCriteria.specialFilters.timeFilter === TimeFilterType.UPCOMING && (
+              <UpcomingDateOptions type="special" appearance="dark" events={onScreenEvents} criteria={filterCriteria}
+                onSelect={upcomingDate => {
+                  if (isGuest) trackInteraction(InteractionType.LIST_FILTER);
+                  setTypeFilters('special', { upcomingDate });
+                }} />
+            )}
             <View style={styles.filterDivider} />
             <View style={styles.sectionHeaderContainer}>
               <Text style={styles.filterSectionTitle}>Category</Text>
@@ -2833,6 +2794,7 @@ useEffect(() => {
             })()}
           </View>
         </Animated.View>
+        </View>
       </Animated.View>
       
       {/* User preferences banner */}
@@ -2840,8 +2802,9 @@ useEffect(() => {
         <Animated.View style={[
           styles.preferencesBar, 
           { 
-            opacity: fadeAnim,
-            top: effectiveHeaderStackHeight
+            opacity: Animated.multiply(fadeAnim, feedChrome.progress.interpolate({ inputRange: [0, 1], outputRange: [1, 0] })),
+            top: collapsibleHeaderTop + visibleFilterHeight,
+            transform: [{ translateY: headerTranslateY }]
           }
         ]}>
           <Text style={styles.preferencesText}>
@@ -2856,7 +2819,13 @@ useEffect(() => {
         style={styles.eventList}
         data={isFocusedContentReady ? specialsWithAds : []}
         keyExtractor={keyExtractor}
+          onViewableItemsChanged={visibleVenueGroups.onViewableItemsChanged}
+          viewabilityConfig={visibleVenueGroups.viewabilityConfig}
         onScroll={handleScroll}
+          onScrollBeginDrag={backToTop.onScrollBeginDrag}
+          onScrollEndDrag={backToTop.onScrollEndDrag}
+          onMomentumScrollBegin={backToTop.onMomentumScrollBegin}
+          onMomentumScrollEnd={backToTop.onMomentumScrollEnd}
         onLayout={handleFlatListLayout}
         scrollEventThrottle={16}
         contentContainerStyle={contentContainerStyleMemo}
@@ -2908,23 +2877,22 @@ useEffect(() => {
             );
           }
 
-          // item.type === 'special'
-          // Use pre-computed firstSpecialIndex (O(1)) instead of slice+filter (O(n))
-          const isFirstSpecialItem = index === firstSpecialIndex;
-          const specialId = String(item.data.id);
-          const specialData = getUpdatedEvent(item.data.id) || item.data;
-          const specialListItem = (
-            <MemoizedEventListItem
-              event={specialData}
-              onPress={() => handleEventPress(specialData)}
-              onImagePress={handleImagePress}
-              isSaved={savedEventSet.has(specialId)}
-              matchesUserInterests={interestMatchSet.has(specialId)}
-              isGuest={isGuest}
-              analytics={analytics}
-              isFirstItem={isFirstSpecialItem}
-            />
-          );
+            const specialListItem = (
+              <VenueEventRow group={item.group} timeFilter={filterCriteria.specialFilters.timeFilter}
+                selectedEventId={selectedVenueEvents[item.group.key]}
+                countCueActive={visibleVenueGroups.focused && visibleVenueGroups.keys.has(item.group.key)}
+                onSelectEvent={event => setSelectedVenueEvents(previous => ({ ...previous, [item.group.key]: String(event.id) }))}
+                renderEvent={(page, grouped) => {
+                  const eventData = getUpdatedEvent(page.id) || page;
+                  const eventId = String(eventData.id);
+                  return <MemoizedEventListItem key={eventId} event={eventData} grouped={grouped} browseEvents={item.group.events}
+                    onPress={() => handleEventPress(eventData, item.group.events)}
+                    onImagePress={(url, event) => handleImagePress(url, event, item.group.events)}
+                    matchesUserInterests={interestMatchSet.has(eventId)} isSaved={savedEventSet.has(eventId)}
+                    isGuest={isGuest} analytics={analytics || {}} isFirstItem={index === firstSpecialIndex} />;
+                }}
+              />
+            );
 
           return index === 0 ? (
             <View onLayout={handleFirstListItemLayout}>{specialListItem}</View>
@@ -2977,6 +2945,14 @@ useEffect(() => {
           <EventImageLightbox
             imageUrl={selectedImageData.imageUrl}
             event={selectedImageData.event}
+            events={selectedImageData.events}
+            currentIndex={selectedImageData.events.findIndex(event => String(event.id) === String(selectedImageData.event.id))}
+            onNavigate={index => {
+              const next = selectedImageData.events[index];
+              if (!next) return;
+              setSelectedVenueEvents(previous => ({ ...previous, [getVenueFeedKey(next)]: String(next.id) }));
+              setSelectedImageData({ imageUrl: next.imageUrl || next.profileUrl, event: next, events: selectedImageData.events });
+            }}
             onClose={handleModalClose}
           />
         </Modal>
@@ -2989,11 +2965,18 @@ useEffect(() => {
             styles.backToTopButton,
             {
               opacity: backToTopOpacity,
+              bottom: dockContentInset,
+              transform: [{ translateY: feedChrome.progress.interpolate({
+                inputRange: [0, 1],
+                outputRange: [0, dockContentInset - getTabDockBottom(Platform.OS, safeAreaInsets.bottom) - 12],
+              }) }],
             }
           ]}
         >
           <TouchableOpacity
             style={styles.backToTopButtonInner}
+            accessibilityRole="button"
+            accessibilityLabel="Back to top"
             onPress={handleBackToTop}
             activeOpacity={0.8}
           >
@@ -3023,6 +3006,7 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   collapsibleHeader: {
+    paddingTop: COLLAPSIBLE_HEADER_TOP_MARGIN,
     position: 'absolute',
     left: 0,
     right: 0,
@@ -3218,6 +3202,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   // Updated card styles - Hero image layout
+  groupedEventCard: { marginHorizontal: 0, marginBottom: 0, borderWidth: 0, borderRadius: 0 },
   eventCard: {
     backgroundColor: '#FFFFFF',
     paddingBottom: 0,
@@ -3334,7 +3319,7 @@ const styles = StyleSheet.create({
   },
   heroImage: {
     width: '100%',
-    height: 300, // Reduced from 200px to be less imposing
+    height: VENUE_FEED_HERO_HEIGHT,
     backgroundColor: '#F0F0F0',
     borderRadius: 12, // Add rounded corners like other cards
     // Strong border to create "photo frame" effect
@@ -3504,6 +3489,16 @@ const styles = StyleSheet.create({
     flex: 1,
     fontWeight: '600',
   },
+  seriesContextLine: {
+    marginBottom: 4,
+    marginTop: -2,
+  },
+  mutedEventCard: {
+    opacity: 0.68,
+  },
+  timingBadge: {
+    marginLeft: 6,
+  },
   // (remove these three style entries entirely—no replacement needed)
   cardDescription: {
     fontSize: 14,
@@ -3671,7 +3666,7 @@ const styles = StyleSheet.create({
   },
   backToTopButton: {
     position: 'absolute',
-    bottom: 15, // Positioned above the tab bar
+    // The shared dock inset keeps this control clear of the floating tabs.
     alignSelf: 'center',
     zIndex: 1000,
   },

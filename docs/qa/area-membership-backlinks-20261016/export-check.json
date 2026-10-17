@@ -1,0 +1,133 @@
+{
+  "checkedAt": "2026-10-16T14:51:25.698Z",
+  "candidateCommit": "62d09f584becf3d7ca0b56b1974396c281f3f322",
+  "functionalCommit": "70d969f72c3835a27cb4c5aada72a1fb44a6c4e0",
+  "baselineCommit": "896f6a53600ddac69f503c89d307e4d75bdf2f8c",
+  "platform": "ios",
+  "runtime": "1.1.10",
+  "published": false,
+  "tests": {
+    "suites": 12,
+    "tests": 139,
+    "passed": true
+  },
+  "typescript": "passed",
+  "lint": {
+    "errors": 0,
+    "warnings": 215
+  },
+  "previewAuthSocialMapbox": "passed; preflight only",
+  "liveBaseline": {
+    "id": "01a144ee-6772-7448-bfa8-49054339dae9",
+    "createdAt": "2026-10-16T13:37:17.170Z",
+    "group": "a2233c4b-d417-40d6-ba6c-31871f66ed44",
+    "branch": "preview",
+    "message": "Show participation instructions for multi-location hunts",
+    "runtimeVersion": "1.1.10",
+    "platform": "ios",
+    "manifestPermalink": "https://u.expo.dev/update/01a144ee-6772-7448-bfa8-49054339dae9",
+    "isRollBackToEmbedded": false,
+    "gitCommitHash": "896f6a53600ddac69f503c89d307e4d75bdf2f8c"
+  },
+  "bundle": {
+    "path": "artifacts/area-membership-backlinks-20261016/export/_expo/static/js/ios/entry-99e1e9ac7217dfd4d9d716f8c47ebf3d.hbc",
+    "bytes": 5726576,
+    "sha256": "f2cc5596fb537f742be836e07cca13b83f3af3e00689bf71786937076ceaf850",
+    "modules": 2502
+  },
+  "assets": 111,
+  "assetsEqualToAcceptedBaseline": true,
+  "sourceMapSources": 2458,
+  "unexpectedQaSources": [],
+  "sourceChecks": [
+    {
+      "path": "app/_layout.tsx",
+      "matches": true,
+      "sha256": "8b104231c9cbaaff80091cc481a194e5bac332600c967024775f22cc79da4dd7"
+    },
+    {
+      "path": "app/index.tsx",
+      "matches": true,
+      "sha256": "ffda86346355942c39d49b980d558f1c87ccda3642729d83039b52b8afc95f35"
+    },
+    {
+      "path": "app/(tabs)/map.tsx",
+      "matches": true,
+      "sha256": "ae0ce18c8092cba590e1b5427af5eff06e57d352dfa442e1e8a69d6460c0bcdb"
+    },
+    {
+      "path": "components/area/AreaMembershipLinks.tsx",
+      "matches": true,
+      "sha256": "0a581ce7150d380eea0cd23e31823d69e198706539a1fc667ad8c90a2a262e56"
+    },
+    {
+      "path": "components/area/AreaMembershipNavigation.tsx",
+      "matches": true,
+      "sha256": "b93b690d82a8658671eecf86ea6048aff6509e470b1156989fa408f4d9284e56"
+    },
+    {
+      "path": "components/map/EventCallout.tsx",
+      "matches": true,
+      "sha256": "3072c16fc42a274d21fe49e8dfb9162d8d4019d853877375d189110340b8d901"
+    },
+    {
+      "path": "components/map/EventImageLightbox.tsx",
+      "matches": true,
+      "sha256": "eda887a7e95d9ac9de860908993d3547281f243c5a01ec21b724940d22ea2c8e"
+    },
+    {
+      "path": "hooks/useAreaMembershipIndex.ts",
+      "matches": true,
+      "sha256": "f2687a8da877b807babc1d15bdddffc5be214a819aa9727a39120ea90c4d6c09"
+    },
+    {
+      "path": "lib/api/firestoreEvents.ts",
+      "matches": true,
+      "sha256": "b45067bfe4239dc9febf9e030daefbfda4caec5be552a1b702caf980cf33f8d8"
+    },
+    {
+      "path": "utils/areaMembership.ts",
+      "matches": true,
+      "sha256": "a3dd7182c17636f1750b3bd0e37af3b15362ded63fda49f4404971edd1073a6f"
+    }
+  ],
+  "restoration": [
+    {
+      "path": "app/_layout.tsx",
+      "sha256": "8b104231c9cbaaff80091cc481a194e5bac332600c967024775f22cc79da4dd7",
+      "matches": true
+    },
+    {
+      "path": "app/index.tsx",
+      "sha256": "ffda86346355942c39d49b980d558f1c87ccda3642729d83039b52b8afc95f35",
+      "matches": true
+    },
+    {
+      "path": "app/(tabs)/map.tsx",
+      "sha256": "ae0ce18c8092cba590e1b5427af5eff06e57d352dfa442e1e8a69d6460c0bcdb",
+      "matches": true
+    }
+  ],
+  "unchangedProtectedFiles": [
+    "app/_layout.tsx",
+    "app/index.tsx",
+    "app/(tabs)/map.tsx",
+    "utils/dateUtils.ts",
+    "utils/eventTiming.ts",
+    "utils/calendarUtils.ts",
+    "utils/eventExpiry.ts",
+    "utils/areaEvent.ts",
+    "utils/areaEventPresentation.ts",
+    "hooks/useAreaActivities.ts",
+    "utils/areaActivityCache.ts",
+    "lib/eventDetails.ts",
+    "lib/queryKeys.ts",
+    "store/mapStore.ts",
+    "app.config.js",
+    "package.json",
+    "package-lock.json",
+    "eas.json"
+  ],
+  "existingApiLoaderUnchanged": true,
+  "visualEvidence": "Eight unedited Android shared-component native screenshots; iOS device adoption unverified"
+}

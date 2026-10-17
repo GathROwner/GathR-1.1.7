@@ -1,0 +1,18 @@
+{
+  "view": [
+    {
+      "id": "01a14a65-633a-76c8-b64f-02439ee88457",
+      "group": "71240bc7-b1b5-4990-a2c2-9a4596162297",
+      "platform": "ios",
+      "runtime": "1.1.10",
+      "commit": "d4a058cefe61ea503b785a6cd2cca4d3df14b372"
+    }
+  ],
+  "channel": {
+    "name": "preview",
+    "isPaused": false,
+    "branch": "preview",
+    "newestIos": "01a14a65-633a-76c8-b64f-02439ee88457",
+    "commit": "d4a058cefe61ea503b785a6cd2cca4d3df14b372"
+  }
+}

@@ -1,15 +1,15 @@
-import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import Ionicons from '@expo/vector-icons/Ionicons';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { doc, getDoc } from 'firebase/firestore';
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
-  Image,
   KeyboardAvoidingView,
   Modal,
   Platform,
+  Share,
   ScrollView,
   StyleSheet,
   Text,
@@ -17,9 +17,12 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import QRCode from 'react-native-qrcode-svg';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { SocialDiagnosticsPanel } from '../components/social/SocialDiagnosticsPanel';
+import { FriendsHandleCard } from '../components/social/FriendsHandleCard';
+import { ProfileAvatar } from '../components/social/ProfileAvatar';
 import { firestore } from '../config/firebaseConfig';
 import { useAuth } from '../contexts/AuthContext';
 import {
@@ -28,10 +31,11 @@ import {
   cancelFriendRequest,
   claimSocialHandle,
   declineFriendRequest,
+  normalizePeopleSearchQuery,
   normalizeSocialHandle,
   removeFriend,
   reportUser,
-  searchUserByHandle,
+  searchUsers,
   sendFriendRequest,
   SocialServiceError,
   unblockUser,
@@ -42,6 +46,7 @@ import { SOCIAL_FEATURE_ENABLED } from '../types/social';
 
 const BRAND = '#2F80ED';
 type RelationshipSection = 'requests' | 'friends' | 'blocked';
+type PeopleSearchStatus = 'idle' | 'loading' | 'complete' | 'error';
 
 function displayError(error: unknown) {
   return error instanceof SocialServiceError || error instanceof Error
@@ -49,37 +54,33 @@ function displayError(error: unknown) {
     : 'The action could not be completed.';
 }
 
-function Avatar({ profile }: { profile: Pick<SocialProfile, 'displayName' | 'photoURL'> }) {
-  const initial = profile.displayName.trim().charAt(0).toUpperCase() || '?';
-  return profile.photoURL ? (
-    <Image source={{ uri: profile.photoURL }} style={styles.avatarImage} />
-  ) : (
-    <View style={[styles.avatar, styles.avatarFallback]}>
-      <Text style={styles.avatarInitial}>{initial}</Text>
-    </View>
-  );
-}
-
 function PersonRow({
   person,
   children,
+  onPress,
 }: {
   person: Pick<SocialProfile, 'uid' | 'displayName' | 'photoURL' | 'socialHandle'>;
   children?: React.ReactNode;
+  onPress?: () => void;
 }) {
   return (
     <View style={styles.personRow}>
-      <Avatar profile={person} />
-      <View
-        accessible
-        style={styles.personText}
-        accessibilityLabel={`${person.displayName}${person.socialHandle ? `, @${person.socialHandle}` : ''}`}
+      <TouchableOpacity
+        accessibilityLabel={`View ${person.displayName}'s profile${person.socialHandle ? `, @${person.socialHandle}` : ''}`}
+        accessibilityRole={onPress ? 'button' : undefined}
+        activeOpacity={onPress ? 0.72 : 1}
+        disabled={!onPress}
+        onPress={onPress}
+        style={styles.personIdentity}
       >
-        <Text numberOfLines={2} style={styles.personName}>{person.displayName}</Text>
-        <Text maxFontSizeMultiplier={1.1} numberOfLines={2} style={styles.handleText}>
-          {person.socialHandle ? `@${person.socialHandle}` : 'GathR member'}
-        </Text>
-      </View>
+        <ProfileAvatar profile={person} />
+        <View style={styles.personText}>
+          <Text numberOfLines={2} style={styles.personName}>{person.displayName}</Text>
+          <Text maxFontSizeMultiplier={1.1} numberOfLines={2} style={styles.handleText}>
+            {person.socialHandle ? `@${person.socialHandle}` : 'GathR member'}
+          </Text>
+        </View>
+      </TouchableOpacity>
       <View style={styles.rowActions}>{children}</View>
     </View>
   );
@@ -87,17 +88,34 @@ function PersonRow({
 
 export default function FriendsScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams<{ handle?: string }>();
   const { user } = useAuth();
   const currentUid = user?.uid || '';
-  const { friends, requests, blocks, loading, fromCache, error } = useSocialStore();
+  const {
+    friends,
+    requests,
+    blocks,
+    relationshipLoading: loading,
+    relationshipFromCache: fromCache,
+    relationshipError: error,
+  } = useSocialStore();
   const [handle, setHandle] = useState('');
   const [claimedHandle, setClaimedHandle] = useState('');
+  const [currentProfile, setCurrentProfile] = useState<SocialProfile>({
+    uid: currentUid,
+    displayName: user?.displayName || 'You',
+    photoURL: user?.photoURL || '',
+    socialHandle: '',
+  });
   const [search, setSearch] = useState('');
-  const [searchResult, setSearchResult] = useState<SocialProfile | null>(null);
-  const [searchComplete, setSearchComplete] = useState(false);
+  const [searchResults, setSearchResults] = useState<SocialProfile[]>([]);
+  const [searchStatus, setSearchStatus] = useState<PeopleSearchStatus>('idle');
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [handleModalVisible, setHandleModalVisible] = useState(false);
+  const [shareModalVisible, setShareModalVisible] = useState(false);
   const [activeSection, setActiveSection] = useState<RelationshipSection>('friends');
+  const handledLinkRef = useRef('');
+  const searchRequestRef = useRef(0);
 
   const incoming = useMemo(
     () => requests.filter((request) => request.direction === 'incoming'),
@@ -108,27 +126,51 @@ export default function FriendsScreen() {
     [requests]
   );
   const normalizedHandle = normalizeSocialHandle(handle);
-  const normalizedSearch = normalizeSocialHandle(search);
+  const normalizedSearch = normalizePeopleSearchQuery(search);
   const canSaveHandle = /^[a-z0-9_]{3,24}$/.test(normalizedHandle)
     && normalizedHandle !== claimedHandle;
-  const canSearch = /^[a-z0-9_]{3,24}$/.test(normalizedSearch);
-  const searchRelationship = useMemo(() => {
-    if (!searchResult) return null;
-    if (searchResult.uid === currentUid) return 'self';
-    if (friends.some((friend) => friend.uid === searchResult.uid)) return 'friend';
-    if (incoming.some((request) => request.uid === searchResult.uid)) return 'incoming';
-    if (outgoing.some((request) => request.uid === searchResult.uid)) return 'outgoing';
+  const isPeopleSearchActive = normalizedSearch.length >= 2;
+  const relationshipFor = (person: SocialProfile) => {
+    if (person.uid === currentUid) return 'self';
+    if (friends.some((friend) => friend.uid === person.uid)) return 'friend';
+    if (incoming.some((request) => request.uid === person.uid)) return 'incoming';
+    if (outgoing.some((request) => request.uid === person.uid)) return 'outgoing';
     return 'available';
-  }, [currentUid, friends, incoming, outgoing, searchResult]);
+  };
 
   useEffect(() => {
     if (!user) return;
+    setCurrentProfile({
+      uid: user.uid,
+      displayName: user.displayName || 'You',
+      photoURL: user.photoURL || '',
+      socialHandle: '',
+    });
     void getDoc(doc(firestore, 'users', user.uid)).then((snapshot) => {
-      const current = String(snapshot.data()?.socialHandle || '');
+      const data = snapshot.data();
+      const current = String(data?.socialHandle || '');
       setClaimedHandle(current);
       setHandle(current);
+      setCurrentProfile({
+        uid: user.uid,
+        displayName: String(data?.displayName || user.displayName || 'You'),
+        photoURL: String(data?.photoURL || user.photoURL || ''),
+        socialHandle: current,
+      });
     }).catch(() => undefined);
   }, [user]);
+
+  const openProfile = (person: Pick<SocialProfile, 'uid' | 'displayName' | 'photoURL' | 'socialHandle'>) => {
+    router.push({
+      pathname: '/social-profile',
+      params: {
+        uid: person.uid,
+        displayName: person.displayName,
+        photoURL: person.photoURL,
+        socialHandle: person.socialHandle,
+      },
+    });
+  };
 
   const run = async (key: string, operation: () => Promise<unknown>, success?: string) => {
     setBusyKey(key);
@@ -153,12 +195,53 @@ export default function FriendsScreen() {
     if (completed) setHandleModalVisible(false);
   };
 
-  const findPerson = () => run('search', async () => {
-    setSearchComplete(false);
-    const found = await searchUserByHandle(search);
-    setSearchResult(found);
-    setSearchComplete(true);
-  });
+  useEffect(() => {
+    const requestId = searchRequestRef.current + 1;
+    searchRequestRef.current = requestId;
+    if (!isPeopleSearchActive) {
+      setSearchResults([]);
+      setSearchStatus('idle');
+      return;
+    }
+
+    setSearchResults([]);
+    setSearchStatus('loading');
+    const timeout = setTimeout(() => {
+      void searchUsers(normalizedSearch)
+        .then((users) => {
+          if (searchRequestRef.current !== requestId) return;
+          setSearchResults(users);
+          setSearchStatus('complete');
+        })
+        .catch(() => {
+          if (searchRequestRef.current !== requestId) return;
+          setSearchResults([]);
+          setSearchStatus('error');
+        });
+    }, 300);
+    return () => clearTimeout(timeout);
+  }, [isPeopleSearchActive, normalizedSearch]);
+
+  useEffect(() => {
+    const linkedHandle = normalizeSocialHandle(params.handle || '');
+    if (!/^[a-z0-9_]{3,24}$/.test(linkedHandle) || handledLinkRef.current === linkedHandle) return;
+    handledLinkRef.current = linkedHandle;
+    setSearch(linkedHandle);
+    setActiveSection('requests');
+  }, [params.handle]);
+
+  const profileLink = claimedHandle
+    ? `https://www.gathrapp.ca/app/?friend=${encodeURIComponent(claimedHandle)}`
+    : '';
+
+  const shareProfile = () => {
+    if (!profileLink) return;
+    void Share.share({
+      title: 'Add me on GathR',
+      message: `Add me on GathR: @${claimedHandle}\n${profileLink}`,
+      url: profileLink,
+    });
+  };
 
   const sendRequest = (person: SocialProfile) => run(
     `add-${person.uid}`,
@@ -248,76 +331,89 @@ export default function FriendsScreen() {
           {!!error && <Text maxFontSizeMultiplier={1.15} numberOfLines={2} style={styles.errorBanner}>{error}</Text>}
           <SocialDiagnosticsPanel />
 
-          <View style={styles.handleCard}>
-            <View style={styles.handleSummary}>
-              <Text maxFontSizeMultiplier={1.15} style={styles.eyebrow}>YOUR HANDLE</Text>
-              <Text maxFontSizeMultiplier={1.15} numberOfLines={1} style={styles.claimedHandle}>
-                {claimedHandle ? `@${claimedHandle}` : 'Claim a searchable handle'}
-              </Text>
-            </View>
-            <TouchableOpacity
-              accessibilityLabel={claimedHandle ? 'Edit GathR handle' : 'Claim GathR handle'}
-              accessibilityRole="button"
-              onPress={() => setHandleModalVisible(true)}
-              style={styles.compactButton}
-            >
-              <Ionicons name={claimedHandle ? 'pencil' : 'add'} size={17} color="#175CD3" />
-              <Text maxFontSizeMultiplier={1.1} style={styles.actionText}>{claimedHandle ? 'Edit' : 'Claim'}</Text>
-            </TouchableOpacity>
-          </View>
+          <FriendsHandleCard
+            claimedHandle={claimedHandle}
+            onEdit={() => setHandleModalVisible(true)}
+            onShare={() => setShareModalVisible(true)}
+            profile={currentProfile}
+          />
 
-          <View style={styles.searchCard}>
+          <View style={[styles.searchCard, isPeopleSearchActive && styles.searchCardActive]}>
             <View style={styles.inputRow}>
               <Ionicons name="search" size={19} color="#667085" />
               <TextInput
                 value={search}
-                onChangeText={(value) => { setSearch(value); setSearchComplete(false); setSearchResult(null); }}
-                autoCapitalize="none"
+                onChangeText={setSearch}
+                autoCapitalize="words"
                 autoCorrect={false}
-                placeholder="Find exact @handle"
-                accessibilityLabel="Search exact GathR handle"
-                onSubmitEditing={() => { if (canSearch) void findPerson(); }}
+                maxLength={40}
+                placeholder="Search people by name or @handle"
+                accessibilityLabel="Search people by name or GathR handle"
+                returnKeyType="search"
                 style={[styles.input, styles.searchInput]}
               />
-              <TouchableOpacity
-                accessibilityLabel="Search for GathR handle"
-                accessibilityRole="button"
-                disabled={busyKey !== null || !canSearch}
-                onPress={() => void findPerson()}
-                style={[styles.smallPrimaryButton, (busyKey !== null || !canSearch) && styles.disabled]}
-              >
-                {busyKey === 'search' ? <ActivityIndicator color="#FFF" /> : <Text maxFontSizeMultiplier={1.1} style={styles.smallPrimaryText}>Find</Text>}
-              </TouchableOpacity>
+              {searchStatus === 'loading' && <ActivityIndicator color={BRAND} />}
+              {searchStatus !== 'loading' && search.length > 0 && (
+                <TouchableOpacity
+                  accessibilityLabel="Clear people search"
+                  accessibilityRole="button"
+                  onPress={() => setSearch('')}
+                  style={styles.clearSearchButton}
+                >
+                  <Ionicons name="close-circle" size={22} color="#98A2B3" />
+                </TouchableOpacity>
+              )}
             </View>
-            {searchResult && (
-              <PersonRow person={searchResult}>
-                {searchRelationship === 'available' && (
-                  <TouchableOpacity
-                    accessibilityLabel={`Send friend request to ${searchResult.displayName}`}
-                    accessibilityRole="button"
-                    onPress={() => void sendRequest(searchResult)}
-                    style={styles.actionButton}
-                  >
-                    <Text style={styles.actionText}>Add</Text>
-                  </TouchableOpacity>
+            {isPeopleSearchActive && (
+              <ScrollView
+                contentContainerStyle={styles.searchResultsContent}
+                keyboardShouldPersistTaps="handled"
+                showsVerticalScrollIndicator={false}
+                style={styles.searchResults}
+              >
+                {searchResults.map((person) => {
+                  const relationship = relationshipFor(person);
+                  return (
+                    <PersonRow key={person.uid} person={person} onPress={() => openProfile(person)}>
+                      {relationship === 'available' && (
+                        <TouchableOpacity
+                          accessibilityLabel={`Send friend request to ${person.displayName}`}
+                          accessibilityRole="button"
+                          disabled={busyKey !== null}
+                          onPress={() => void sendRequest(person)}
+                          style={[styles.actionButton, busyKey !== null && styles.disabled]}
+                        >
+                          {busyKey === `add-${person.uid}`
+                            ? <ActivityIndicator color={BRAND} />
+                            : <Text style={styles.actionText}>Add</Text>}
+                        </TouchableOpacity>
+                      )}
+                      {relationship !== 'available' && (
+                        <Text maxFontSizeMultiplier={1.1} style={styles.relationshipLabel}>
+                          {relationship === 'self' && 'This is you'}
+                          {relationship === 'friend' && 'Friends'}
+                          {relationship === 'incoming' && 'Respond in Requests'}
+                          {relationship === 'outgoing' && 'Request sent'}
+                        </Text>
+                      )}
+                    </PersonRow>
+                  );
+                })}
+                {searchStatus === 'loading' && <Text style={styles.searchStatusText}>Searching…</Text>}
+                {searchStatus === 'complete' && searchResults.length === 0 && (
+                  <Text maxFontSizeMultiplier={1.15} style={styles.emptyText}>No people found. Try a name or @handle.</Text>
                 )}
-                {searchRelationship !== 'available' && (
-                  <Text maxFontSizeMultiplier={1.1} style={styles.relationshipLabel}>
-                    {searchRelationship === 'self' && 'This is you'}
-                    {searchRelationship === 'friend' && 'Friends'}
-                    {searchRelationship === 'incoming' && 'Respond in Requests'}
-                    {searchRelationship === 'outgoing' && 'Request sent'}
-                  </Text>
+                {searchStatus === 'error' && (
+                  <Text maxFontSizeMultiplier={1.15} style={styles.searchErrorText}>Search is unavailable right now. Please try again.</Text>
                 )}
-              </PersonRow>
+              </ScrollView>
             )}
-            {searchComplete && !searchResult && <Text maxFontSizeMultiplier={1.15} numberOfLines={2} style={styles.emptyText}>No account has that exact handle.</Text>}
           </View>
 
-          <View style={styles.relationshipCard}>
+          {!isPeopleSearchActive && <View style={styles.relationshipCard}>
             <View accessible={false} style={styles.tabRow}>
               {([
-                ['requests', 'Requests', incoming.length + outgoing.length],
+                ['requests', 'Requests', incoming.length],
                 ['friends', 'Friends', friends.length],
                 ['blocked', 'Blocked', blocks.length],
               ] as const).map(([section, label, count]) => (
@@ -350,7 +446,7 @@ export default function FriendsScreen() {
                   <>
                     {incoming.length > 0 && <Text style={styles.groupLabel}>RECEIVED</Text>}
                     {incoming.map((request: FriendRequestProjection) => (
-                      <PersonRow key={request.uid} person={request}>
+                      <PersonRow key={request.uid} person={request} onPress={() => openProfile(request)}>
                         <TouchableOpacity accessibilityRole="button" accessibilityLabel={`Accept ${request.displayName}`} onPress={() => void run(`accept-${request.uid}`, () => acceptFriendRequest(request.uid))} style={styles.acceptButton}>
                           <Text maxFontSizeMultiplier={1.1} style={styles.acceptText}>Accept</Text>
                         </TouchableOpacity>
@@ -361,7 +457,7 @@ export default function FriendsScreen() {
                     ))}
                     {outgoing.length > 0 && <Text style={styles.groupLabel}>SENT</Text>}
                     {outgoing.map((request) => (
-                      <PersonRow key={request.uid} person={request}>
+                      <PersonRow key={request.uid} person={request} onPress={() => openProfile(request)}>
                         <TouchableOpacity accessibilityLabel={`Cancel request to ${request.displayName}`} onPress={() => void run(`cancel-${request.uid}`, () => cancelFriendRequest(request.uid))} style={styles.actionButton}>
                           <Text maxFontSizeMultiplier={1.1} style={styles.actionText}>Cancel</Text>
                         </TouchableOpacity>
@@ -379,7 +475,7 @@ export default function FriendsScreen() {
                 {activeSection === 'friends' && (
                   <>
                     {friends.map((friend) => (
-                      <PersonRow key={friend.uid} person={friend}>
+                      <PersonRow key={friend.uid} person={friend} onPress={() => openProfile(friend)}>
                         <TouchableOpacity accessibilityLabel={`More actions for ${friend.displayName}`} onPress={() => Alert.alert(friend.displayName, undefined, [
                           { text: 'Remove friend', style: 'destructive', onPress: () => confirmRemove(friend) },
                           { text: 'Block', style: 'destructive', onPress: () => confirmBlock(friend) },
@@ -418,7 +514,7 @@ export default function FriendsScreen() {
                 )}
               </ScrollView>
             )}
-          </View>
+          </View>}
         </View>
       </KeyboardAvoidingView>
 
@@ -462,6 +558,25 @@ export default function FriendsScreen() {
           </View>
         </KeyboardAvoidingView>
       </Modal>
+
+      <Modal animationType="fade" onRequestClose={() => setShareModalVisible(false)} transparent visible={shareModalVisible}>
+        <View style={styles.modalBackdrop}>
+          <View accessibilityViewIsModal style={[styles.modalCard, styles.qrCard]}>
+            <TouchableOpacity accessibilityLabel="Close QR code" onPress={() => setShareModalVisible(false)} style={styles.qrClose}>
+              <Ionicons name="close" size={23} color="#344054" />
+            </TouchableOpacity>
+            <View style={styles.qrMark}><Ionicons name="people" size={23} color="#FFFFFF" /></View>
+            <Text style={styles.qrTitle}>Add me on GathR</Text>
+            <Text style={styles.qrHandle}>@{claimedHandle}</Text>
+            {!!profileLink && <View style={styles.qrCode}><QRCode value={profileLink} size={188} color="#101828" backgroundColor="#FFFFFF" /></View>}
+            <Text style={styles.qrHelp}>Scan this code or share the secure profile link.</Text>
+            <TouchableOpacity onPress={shareProfile} style={styles.primaryButton}>
+              <Ionicons name="share-outline" size={19} color="#FFFFFF" />
+              <Text style={styles.primaryButtonText}>Share link</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -476,12 +591,8 @@ const styles = StyleSheet.create({
   title: { fontSize: 24, fontWeight: '800', color: '#101828' },
   subtitle: { marginTop: 1, color: '#667085', lineHeight: 18 },
   content: { flex: 1, padding: 12, gap: 10, minHeight: 0 },
-  handleCard: { minHeight: 60, flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: '#FFF', borderRadius: 14, paddingHorizontal: 14, paddingVertical: 9, borderWidth: StyleSheet.hairlineWidth, borderColor: '#E4E7EC' },
-  handleSummary: { flex: 1, minWidth: 0 },
-  eyebrow: { color: '#667085', fontSize: 11, fontWeight: '800', letterSpacing: 0.7 },
-  claimedHandle: { color: '#101828', fontSize: 17, fontWeight: '700', marginTop: 1 },
-  compactButton: { minHeight: 40, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, paddingHorizontal: 11, borderRadius: 10, backgroundColor: '#EFF8FF' },
   searchCard: { backgroundColor: '#FFF', borderRadius: 14, padding: 10, gap: 4, borderWidth: StyleSheet.hairlineWidth, borderColor: '#E4E7EC' },
+  searchCardActive: { flex: 1, minHeight: 0 },
   relationshipCard: { flex: 1, minHeight: 0, overflow: 'hidden', backgroundColor: '#FFF', borderRadius: 16, borderWidth: StyleSheet.hairlineWidth, borderColor: '#E4E7EC' },
   sectionTitle: { fontSize: 18, fontWeight: '700', color: '#101828' },
   muted: { color: '#667085', lineHeight: 19, textAlign: 'left' },
@@ -489,15 +600,15 @@ const styles = StyleSheet.create({
   atSign: { fontSize: 20, color: '#475467' },
   input: { flex: 1, minHeight: 44, borderWidth: 1, borderColor: '#D0D5DD', borderRadius: 10, paddingHorizontal: 12, color: '#101828', backgroundColor: '#FFF' },
   searchInput: { borderWidth: 0, paddingHorizontal: 0, minHeight: 42 },
-  primaryButton: { backgroundColor: BRAND, paddingHorizontal: 22, paddingVertical: 13, borderRadius: 11 },
+  clearSearchButton: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center', borderRadius: 18 },
+  searchResults: { flex: 1, minHeight: 0 },
+  searchResultsContent: { paddingTop: 3, paddingBottom: 6 },
+  searchStatusText: { color: '#667085', paddingVertical: 18, textAlign: 'center' },
+  searchErrorText: { color: '#B42318', paddingVertical: 18, textAlign: 'center' },
+  primaryButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, backgroundColor: BRAND, paddingHorizontal: 22, paddingVertical: 13, borderRadius: 11 },
   primaryButtonText: { color: '#FFF', fontWeight: '700' },
-  smallPrimaryButton: { minWidth: 54, minHeight: 44, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 12, borderRadius: 10, backgroundColor: BRAND },
-  smallPrimaryText: { color: '#FFF', fontWeight: '700' },
   personRow: { flexDirection: 'row', alignItems: 'center', gap: 10, minHeight: 58, paddingVertical: 6, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#EAECF0' },
-  avatar: { width: 42, height: 42, borderRadius: 21 },
-  avatarImage: { width: 42, height: 42, borderRadius: 21 },
-  avatarFallback: { backgroundColor: '#DCEBFF', alignItems: 'center', justifyContent: 'center' },
-  avatarInitial: { fontSize: 17, fontWeight: '800', color: '#175CD3' },
+  personIdentity: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 2 },
   personText: { flex: 1, minWidth: 0 },
   personName: { fontWeight: '700', color: '#101828' },
   handleText: { color: '#667085', marginTop: 2 },
@@ -529,6 +640,13 @@ const styles = StyleSheet.create({
   modalHeading: { flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
   handleInputRow: { minHeight: 52, flexDirection: 'row', alignItems: 'center', gap: 7, borderWidth: 1, borderColor: '#98A2B3', borderRadius: 11, paddingHorizontal: 12 },
   modalInput: { flex: 1, minHeight: 50, color: '#101828', fontSize: 17 },
+  qrCard: { alignItems: 'center', paddingTop: 24 },
+  qrClose: { position: 'absolute', right: 10, top: 10, width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
+  qrMark: { width: 48, height: 48, borderRadius: 18, alignItems: 'center', justifyContent: 'center', backgroundColor: '#6941C6' },
+  qrTitle: { color: '#101828', fontSize: 22, fontWeight: '900' },
+  qrHandle: { color: '#6941C6', fontSize: 16, fontWeight: '800', marginTop: -8 },
+  qrCode: { padding: 12, borderRadius: 16, borderWidth: 1, borderColor: '#EAECF0', backgroundColor: '#FFFFFF' },
+  qrHelp: { color: '#667085', textAlign: 'center', lineHeight: 19 },
   helperText: { color: '#667085', fontSize: 13, lineHeight: 18 },
   disabled: { opacity: 0.45 },
 });

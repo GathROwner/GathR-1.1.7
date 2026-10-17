@@ -16,10 +16,37 @@ const REFRESH_INTERVAL_MS = 15 * 60 * 1000;
 type StoredRegistration = {
   ownerUid: string;
   expoPushToken: string;
+  registeredAt?: number;
 };
 
 let lastRegisteredUid = '';
 let lastRegisteredAt = 0;
+
+type PushUser = NonNullable<typeof auth.currentUser>;
+type IosRequest = { user: PushUser; token?: Notifications.DevicePushToken; force: boolean };
+let iosFlight: Promise<boolean> | null = null;
+let iosUnregistering: Promise<void> | null = null;
+let iosPending: IosRequest | null = null;
+let iosController: AbortController | null = null;
+let iosActiveUser: PushUser | null = null;
+let iosActiveTokenKey = '';
+let iosBlockedUser: PushUser | null = null;
+let iosConfirmed: StoredRegistration | null = null;
+let iosLastNativeKey = '';
+// Include a request whose response is lost during logout: it may have reached
+// the server, so sign-out must also unregister that token with the same owner.
+const iosOwnedTokens = new Map<string, Set<string>>();
+
+const nativeTokenKey = (token: Notifications.DevicePushToken) => JSON.stringify([token.type, token.data]);
+
+function cancellable<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const cancel = () => reject(new Error('Push registration cancelled'));
+    if (signal.aborted) { cancel(); return; }
+    signal.addEventListener('abort', cancel, { once: true });
+    promise.then(resolve, reject).finally(() => signal.removeEventListener('abort', cancel));
+  });
+}
 
 function projectId(): string {
   return (
@@ -32,14 +59,19 @@ function projectId(): string {
 async function postRegistration(params: {
   action: 'register' | 'unregister';
   expoPushToken: string;
-}): Promise<boolean> {
-  const user = auth.currentUser;
-  if (!user) return false;
+}, context?: { user: PushUser; current: () => boolean; signal?: AbortSignal }): Promise<boolean> {
+  const user = context?.user ?? auth.currentUser;
+  if (!user || (context && !context.current())) return false;
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  const cancel = () => controller.abort();
+  context?.signal?.addEventListener('abort', cancel, { once: true });
   try {
-    const idToken = await user.getIdToken();
+    const idToken = context
+      ? await cancellable(user.getIdToken(), controller.signal)
+      : await user.getIdToken();
+    if (context && (!context.current() || context.signal?.aborted)) return false;
     const response = await fetch(REGISTER_URL, {
       method: 'POST',
       headers: {
@@ -58,16 +90,142 @@ async function postRegistration(params: {
     });
     return response.ok;
   } catch (error) {
-    console.warn('[SharedEventPush] Registration request failed:', error);
+    if (context) console.warn('[SharedEventPush] Registration request failed');
+    else console.warn('[SharedEventPush] Registration request failed:', error);
     return false;
   } finally {
     clearTimeout(timeout);
+    context?.signal?.removeEventListener('abort', cancel);
   }
 }
 
+async function registerIosRequest(request: IosRequest, controller: AbortController): Promise<boolean> {
+  const { user } = request;
+  const current = () => auth.currentUser === user && iosBlockedUser !== user && !controller.signal.aborted;
+  const obsoleteToken = (key: string) => iosPending?.user === user && !!iosPending.token
+    && nativeTokenKey(iosPending.token) !== key;
+  try {
+    let permissions = await cancellable(Notifications.getPermissionsAsync(), controller.signal);
+    if (!current()) return false;
+    if (permissions.status !== 'granted') {
+      permissions = await cancellable(Notifications.requestPermissionsAsync(), controller.signal);
+    }
+    if (!current() || permissions.status !== 'granted') return false;
+
+    // Fetch native tokens only outside the listener. Forward the supplied
+    // token to Expo, which otherwise fetches it again and can re-fire the listener.
+    const token = request.token ?? await cancellable(Notifications.getDevicePushTokenAsync(), controller.signal);
+    if (!current()) return false;
+    const key = nativeTokenKey(token);
+    iosActiveTokenKey = key;
+    if (iosPending?.user === user && iosPending.token && nativeTokenKey(iosPending.token) === key) iosPending = null;
+    if (obsoleteToken(key)) return false;
+    const expoPushToken = (await cancellable(Notifications.getExpoPushTokenAsync({
+      projectId: projectId(), devicePushToken: token,
+    }), controller.signal)).data;
+    if (!current() || obsoleteToken(key)) return false;
+    if (iosConfirmed?.ownerUid === user.uid && iosConfirmed.expoPushToken === expoPushToken
+      && iosLastNativeKey === key
+      && typeof iosConfirmed.registeredAt === 'number' && Date.now() >= iosConfirmed.registeredAt
+      && Date.now() - iosConfirmed.registeredAt < REFRESH_INTERVAL_MS) {
+      iosLastNativeKey = key;
+      return true;
+    }
+
+    if (!iosOwnedTokens.has(user.uid)) iosOwnedTokens.set(user.uid, new Set());
+    iosOwnedTokens.get(user.uid)!.add(expoPushToken);
+    const registered = await postRegistration({ action: 'register', expoPushToken }, {
+      user, current, signal: controller.signal,
+    });
+    if (!registered || !current()) return false;
+    iosConfirmed = { ownerUid: user.uid, expoPushToken, registeredAt: Date.now() };
+    iosLastNativeKey = key;
+    // The successful request is retained in memory even if local storage fails,
+    // so repeated events do not re-post and logout can still unregister it.
+    await AsyncStorage.setItem(STORED_REGISTRATION_KEY, JSON.stringify(iosConfirmed)).catch(() => undefined);
+    return current();
+  } catch {
+    // Do not log SDK errors containing native tokens, credentials or request bodies.
+    return false;
+  }
+}
+
+function registerIos(force: boolean, token?: Notifications.DevicePushToken): Promise<boolean> {
+  const user = auth.currentUser;
+  if (!user || !Device.isDevice || iosBlockedUser === user) return Promise.resolve(false);
+  if (iosUnregistering) return iosUnregistering.then(() => registerIos(force, token));
+  if (iosFlight) {
+    if (iosActiveUser !== user || (token && nativeTokenKey(token) !== iosActiveTokenKey)) {
+      iosPending = { user, token, force };
+    }
+    return iosFlight;
+  }
+  if (iosConfirmed?.ownerUid === user.uid) {
+    if (token && nativeTokenKey(token) === iosLastNativeKey) return Promise.resolve(true);
+    if (!token && !force && typeof iosConfirmed.registeredAt === 'number'
+      && Date.now() >= iosConfirmed.registeredAt && Date.now() - iosConfirmed.registeredAt < REFRESH_INTERVAL_MS) return Promise.resolve(true);
+  }
+  iosPending = { user, token, force };
+  // Assign the flight before any SDK call can synchronously emit a token event.
+  iosFlight = Promise.resolve().then(async () => {
+    let registered = false;
+    while (iosPending) {
+      const request = iosPending;
+      iosPending = null;
+      iosActiveUser = request.user;
+      iosActiveTokenKey = '';
+      iosController = new AbortController();
+      registered = await registerIosRequest(request, iosController);
+    }
+    return registered;
+  }).finally(() => {
+    iosFlight = null; iosController = null; iosActiveUser = null; iosActiveTokenKey = '';
+    // A token can arrive between the drain's last iteration and this microtask.
+    const pending = iosPending;
+    iosPending = null;
+    if (pending && auth.currentUser === pending.user) return registerIos(pending.force, pending.token).then(() => undefined);
+  });
+  return iosFlight;
+}
+
+function unregisterIos(): Promise<void> {
+  const user = auth.currentUser;
+  if (!user) return Promise.resolve();
+  if (iosUnregistering) return iosUnregistering;
+  iosBlockedUser = user;
+  iosPending = null;
+  iosController?.abort();
+  const previousFlight = iosFlight;
+  iosUnregistering = Promise.resolve().then(async () => {
+    await previousFlight;
+    const tokens = new Set(iosOwnedTokens.get(user.uid));
+    if (iosConfirmed?.ownerUid === user.uid) tokens.add(iosConfirmed.expoPushToken);
+    let stored: StoredRegistration | null = null;
+    try {
+      try {
+        const raw = await AsyncStorage.getItem(STORED_REGISTRATION_KEY);
+        stored = raw ? JSON.parse(raw) as StoredRegistration : null;
+      } catch { /* Still unregister tokens already known in memory. */ }
+      if (stored?.ownerUid === user.uid && typeof stored.expoPushToken === 'string' && stored.expoPushToken) tokens.add(stored.expoPushToken);
+      for (const expoPushToken of tokens) {
+        await postRegistration({ action: 'unregister', expoPushToken }, { user, current: () => auth.currentUser === user });
+      }
+    } catch {
+      // Logout still completes if the endpoint or local storage is unavailable.
+    } finally {
+      iosOwnedTokens.delete(user.uid);
+      if (iosConfirmed?.ownerUid === user.uid) { iosConfirmed = null; iosLastNativeKey = ''; }
+      if (!stored || stored.ownerUid === user.uid) await AsyncStorage.removeItem(STORED_REGISTRATION_KEY).catch(() => undefined);
+    }
+  }).finally(() => { iosUnregistering = null; });
+  return iosUnregistering;
+}
+
 export async function registerSharedEventPushNotifications(
-  force = false
+  force = false,
+  devicePushToken?: Notifications.DevicePushToken
 ): Promise<boolean> {
+  if (Platform.OS === 'ios') return registerIos(force, devicePushToken);
   const user = auth.currentUser;
   if (!user || !Device.isDevice) return false;
   if (
@@ -108,6 +266,7 @@ export async function registerSharedEventPushNotifications(
 }
 
 export async function unregisterSharedEventPushNotifications(): Promise<void> {
+  if (Platform.OS === 'ios') return unregisterIos();
   const user = auth.currentUser;
   if (!user) return;
 

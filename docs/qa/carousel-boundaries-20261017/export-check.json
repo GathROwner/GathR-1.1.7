@@ -1,0 +1,97 @@
+{
+  "checkedAt": "2026-10-17T13:12:28.640Z",
+  "candidateCommit": "bf71cd25f9ffc706176c3f7d6c197a0249df414a",
+  "baselineCommit": "5b3912f925efdcb4f769c8c5f1bf0724d5c6ce9e",
+  "platform": "ios",
+  "runtime": "1.1.10",
+  "published": false,
+  "tests": {
+    "suites": 21,
+    "passed": 250,
+    "skipped": 1
+  },
+  "typescript": "passed",
+  "lint": {
+    "errors": 0,
+    "warnings": 215
+  },
+  "authSocialMapbox": "passed",
+  "bundle": {
+    "path": "artifacts/carousel-boundaries-20261017/export/_expo/static/js/ios/entry-716e3cc9dbb1a9ebdcc29256322e09e6.hbc",
+    "bytes": 5736316,
+    "sha256": "753ebce6bc77af11a7e6bf7ff0ec3d5e4ed73cfa361070c09dfa6bedfd8223a2",
+    "modules": 2505
+  },
+  "assets": 111,
+  "assetsEqualToBaseline": true,
+  "sourceMapSources": 2461,
+  "unexpectedQaSources": [],
+  "sourceChecks": [
+    {
+      "path": "app/_layout.tsx",
+      "matches": true,
+      "sha256": "8b104231c9cbaaff80091cc481a194e5bac332600c967024775f22cc79da4dd7"
+    },
+    {
+      "path": "app/index.tsx",
+      "matches": true,
+      "sha256": "ffda86346355942c39d49b980d558f1c87ccda3642729d83039b52b8afc95f35"
+    },
+    {
+      "path": "app/(tabs)/map.tsx",
+      "matches": true,
+      "sha256": "ae0ce18c8092cba590e1b5427af5eff06e57d352dfa442e1e8a69d6460c0bcdb"
+    },
+    {
+      "path": "components/map/InterestsCarousel.tsx",
+      "matches": true,
+      "sha256": "6aeb567d5f8d623ab6072518c40632fcec8253b8c1fc58180984e339828ec849"
+    },
+    {
+      "path": "components/map/EventImageLightbox.tsx",
+      "matches": true,
+      "sha256": "94181279e3eb006cc4773eb6f115d5e59ead5059f29b83c1ff38a399b78a3807"
+    },
+    {
+      "path": "components/map/InterestLightboxCounter.tsx",
+      "matches": true,
+      "sha256": "cf043e61900c3ff418f32ad8ee563cfa019a354ef21c15dd7768f2c0c4446cd0"
+    },
+    {
+      "path": "utils/loopingCarousel.ts",
+      "matches": true,
+      "sha256": "173a832ca9d440956868400e1577b2fc4d3f3395838c58d398ed2d5af4219d9a"
+    },
+    {
+      "path": "utils/lightboxNavigation.ts",
+      "matches": true,
+      "sha256": "1d7a73afa4204981c527fa68418feef67ffe27e43eddd93f39b3b52d7edcb56a"
+    }
+  ],
+  "restoration": [
+    {
+      "path": "app/_layout.tsx",
+      "matches": true,
+      "sha256": "8b104231c9cbaaff80091cc481a194e5bac332600c967024775f22cc79da4dd7"
+    },
+    {
+      "path": "app/index.tsx",
+      "matches": true,
+      "sha256": "ffda86346355942c39d49b980d558f1c87ccda3642729d83039b52b8afc95f35"
+    },
+    {
+      "path": "app/(tabs)/map.tsx",
+      "matches": true,
+      "sha256": "ae0ce18c8092cba590e1b5427af5eff06e57d352dfa442e1e8a69d6460c0bcdb"
+    }
+  ],
+  "onlyApprovedRuntimeFilesChanged": [
+    "components/map/EventImageLightbox.tsx",
+    "components/map/InterestLightboxCounter.tsx",
+    "components/map/InterestsCarousel.tsx",
+    "utils/lightboxNavigation.ts",
+    "utils/loopingCarousel.ts"
+  ],
+  "allOtherSourceFilesUnchanged": true,
+  "visualEvidence": "Actual production components in existing Android native debug client; synthetic local events and static map reference. No live map manipulation or iOS adoption proof."
+}

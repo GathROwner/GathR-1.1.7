@@ -8,18 +8,34 @@ import {
   Animated,
   Modal,
   PanResponder,
+  Platform,
+  useWindowDimensions,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
 } from 'react-native';
-import { MaterialIcons, Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { getTabDockContentInset } from '../../constants/tabDock';
+import MaterialIcons from '@expo/vector-icons/MaterialIcons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { useIsFocused } from '@react-navigation/native';
 import { useMapStore } from '../../store';
 import { useInterestCarouselUiStore } from '../../store/interestCarouselUiStore';
 import { Event, Venue, Cluster } from '../../types/events';
-import { isEventNow, getEventTimeStatus } from '../../utils/dateUtils';
+import { getEventTimeStatus } from '../../utils/dateUtils';
+import { EventTimingSummaryText } from '../common/EventTimingSummaryText';
 import FallbackImage from '../common/FallbackImage';
 import FamilyFriendlyBadge from '../common/FamilyFriendlyBadge';
+import { EventTimingBadge } from '../common/EventTimingBadge';
 import EventImageLightbox from './EventImageLightbox';
 import { useClusterInteractionStore } from '../../store/clusterInteractionStore';
-import { doesEventMatchInterestCarouselActiveCategory } from '../../utils/interestCarouselFilterUtils';
+import { getInterestCarouselEvents } from '../../utils/interestCarouselOrder';
+import {
+  createLoopingCarouselItems, getLoopingCarouselStartIndex,
+  getLoopingCarouselLogicalOffset, getLoopingCarouselRestoredOffset,
+  getLoopingCarouselDotStops,
+  getCarouselMetrics, getCarouselPeriod, getCarouselStartOffset, getCarouselSlotLayout,
+  getCarouselAnchor, getCarouselAnchorOffset, resolveCarouselAnchor, isLoopingCarousel,
+} from '../../utils/loopingCarousel';
 import { isFamilyFriendlyInterest } from '../../utils/familyFriendly';
 import { registerMapTraceSampler, traceMapEvent } from '../../utils/mapTrace';
 import {
@@ -28,6 +44,15 @@ import {
   traceInterestFilterPerf,
 } from '../../utils/interestFilterPerfTrace';
 import { isAreaExperienceEvent } from '../../utils/locationScope';
+import { usePathname } from 'expo-router';
+import { isFriendEventDetailPath } from '../../utils/friendEventLightbox';
+import {
+  getEventScheduleState,
+  getEventTimeRangeParts,
+  getEventTimeRangeText,
+  isEventConfirmedNow,
+} from '../../utils/eventTiming';
+import { useEventTimingMinute } from '../../hooks/useEventTimingMinute';
 
 const readAnimatedValue = (value: Animated.Value): number | string =>
   typeof (value as any).__getValue === 'function' ? (value as any).__getValue() : 'unknown';
@@ -40,8 +65,6 @@ const CARD_WIDTH = 160;
 const CARD_HEIGHT = 112;
 const CARD_GAP = 12;
 const VENUE_AVATAR_SIZE = 30;
-const BOTTOM_SPACING = 0; // Above tab bar
-const TAB_BAR_HEIGHT = 40; // Tab bar height (24px icon + padding)
 
 // Pagination dot sizes
 const DOT_SIZE_LARGE = 10;   // Fully visible cards
@@ -121,72 +144,12 @@ const getCategoryIconName = (category: string): string => {
   return 'category';
 };
 
-// Parse time string and return formatted time
-const parseTimeString = (timeStr: string): string | null => {
-  // Match time format: "8:00:00 PM", "8:00 PM", or "20:00"
-  const timeParts = timeStr.match(/(\d+):(\d+):?(\d+)?\s*(AM|PM)?/i);
-  if (!timeParts) return null;
-
-  const hour = parseInt(timeParts[1], 10);
-  const minute = timeParts[2];
-  const existingAmPm = timeParts[4];
-
-  // Use existing AM/PM if present, otherwise derive from hour (for 24h format)
-  const ampm = existingAmPm
-    ? existingAmPm.toUpperCase()
-    : (hour >= 12 ? 'PM' : 'AM');
-
-  // Convert to 12-hour format if needed
-  const displayHour = existingAmPm
-    ? hour  // Already in 12-hour format
-    : (hour > 12 ? hour - 12 : (hour === 0 ? 12 : hour));
-
-  return `${displayHour}:${minute} ${ampm}`;
-};
-
-// Format time display
+// Preserve the carousel's compact date-only treatment for exact future events.
 const formatEventTime = (event: Event): string => {
-  const isNow = isEventNow(
-    event.startDate,
-    event.startTime,
-    event.endDate || event.startDate,
-    event.endTime || ''
-  );
-
-  if (isNow) {
-    // Show "NOW – end time" if end time is available
-    if (event.endTime && event.endTime !== 'N/A') {
-      const endFormatted = parseTimeString(event.endTime);
-      if (endFormatted) {
-        return `NOW – ${endFormatted}`;
-      }
-    }
-    return 'NOW';
-  }
-
-  const timeStatus = getEventTimeStatus(event);
-  if (timeStatus === 'today') {
-    if (event.startTime) {
-      const startFormatted = parseTimeString(event.startTime);
-      if (!startFormatted) return 'Today';
-
-      // Add end time if available
-      if (event.endTime && event.endTime !== 'N/A') {
-        const endFormatted = parseTimeString(event.endTime);
-        if (endFormatted) {
-          return `${startFormatted} – ${endFormatted}`;
-        }
-      }
-
-      return startFormatted;
-    }
-    return 'Today';
-  }
-
-  // Show date for future events
+  if (isEventConfirmedNow(event)) return `NOW · ${getEventTimeRangeText(event)}`;
+  if (getEventTimeStatus(event) === 'today') return getEventTimeRangeText(event);
   try {
-    const date = new Date(event.startDate);
-    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    return new Date(event.startDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
   } catch {
     return '';
   }
@@ -197,23 +160,25 @@ const EventCard = memo(({
   event,
   onPress,
   hasNewContent,
+  width,
 }: {
   event: Event;
   onPress: () => void;
   hasNewContent?: boolean;
+  width: number;
 }) => {
-  const isNow = isEventNow(
-    event.startDate,
-    event.startTime,
-    event.endDate || event.startDate,
-    event.endTime || ''
-  );
+  useEventTimingMinute();
+  const isNow = isEventConfirmedNow(event);
+  const timingState = getEventScheduleState(event);
+  const timingRangeParts = getEventTimeRangeParts(event);
+  const hasEstimatedEndpoint = timingRangeParts.startEstimated || timingRangeParts.endEstimated;
 
   const categoryBgColor = event.type === 'event' ? EVENT_COLOR : SPECIAL_COLOR;
 
   return (
     <TouchableOpacity
-      style={styles.card}
+      style={[styles.card, { width }, timingState.muted && styles.mutedTimingCard]}
+      accessibilityLabel={`Open ${event.title}`}
       onPress={onPress}
       activeOpacity={0.8}
     >
@@ -230,7 +195,7 @@ const EventCard = memo(({
         />
 
         {/* Venue identity overlay */}
-        <View style={[styles.venueOverlay, isNow && styles.venueOverlayWithNow]}>
+        <View style={[styles.venueOverlay, { maxWidth: width - 18 }, isNow && styles.venueOverlayWithNow]}>
           <View style={styles.venueAvatarShell}>
             <FallbackImage
               imageUrl={event.profileUrl}
@@ -274,7 +239,6 @@ const EventCard = memo(({
             <Text style={styles.nowText}>NOW</Text>
           </View>
         )}
-
         {/* New Content Indicator */}
         {hasNewContent && (
           <View style={[styles.newDotWrapper, isNow && styles.newDotWrapperWithNow]}>
@@ -290,9 +254,23 @@ const EventCard = memo(({
         </Text>
         <View style={styles.timeRow}>
           <MaterialIcons name="schedule" size={13} color="#1967D2" />
-          <Text style={styles.timeText} numberOfLines={1}>
-            {formatEventTime(event)}
-          </Text>
+          {hasEstimatedEndpoint ? (
+            <EventTimingSummaryText
+              event={event}
+              style={styles.timeText}
+              numberOfLines={1}
+            />
+          ) : (
+            <Text
+              style={styles.timeText}
+              numberOfLines={1}
+            >
+              {formatEventTime(event)}
+            </Text>
+          )}
+          {!isNow && (
+            <EventTimingBadge event={event} carousel style={styles.carouselTimingBadge} />
+          )}
         </View>
       </View>
     </TouchableOpacity>
@@ -304,37 +282,33 @@ EventCard.displayName = 'EventCard';
 // Pagination Dots Component with dynamic sizing
 const PaginationDots = memo(({
   scrollX,
-  itemCount
+  itemCount,
+  itemWidth,
+  seamSpan,
 }: {
   scrollX: Animated.Value;
   itemCount: number;
+  itemWidth: number;
+  seamSpan: number;
 }) => {
-  const itemWidth = CARD_WIDTH + CARD_GAP;
 
   // Create animated dots with size interpolation based on scroll position
   const dots = useMemo(() => {
     return Array.from({ length: itemCount }, (_, index) => {
-      // Create input range centered around this dot's position
-      // Each dot transitions through: small -> medium -> large -> medium -> small
-      const inputRange = [
-        (index - 2) * itemWidth,
-        (index - 1) * itemWidth,
-        index * itemWidth,
-        (index + 1) * itemWidth,
-        (index + 2) * itemWidth,
-      ];
+      const { inputRange, distances } = getLoopingCarouselDotStops(index, itemCount, itemWidth, seamSpan);
 
       // Interpolate dot size based on scroll position
       const dotSize = scrollX.interpolate({
         inputRange,
-        outputRange: [DOT_SIZE_SMALL, DOT_SIZE_MEDIUM, DOT_SIZE_LARGE, DOT_SIZE_MEDIUM, DOT_SIZE_SMALL],
+        outputRange: distances.map(distance => itemCount <= 3 || distance === 0
+          ? DOT_SIZE_LARGE : distance === 1 ? DOT_SIZE_MEDIUM : DOT_SIZE_SMALL),
         extrapolate: 'clamp',
       });
 
       // Interpolate opacity - larger dots are more visible
       const dotOpacity = scrollX.interpolate({
         inputRange,
-        outputRange: [0.4, 0.6, 0.9, 0.6, 0.4],
+        outputRange: distances.map(distance => distance === 0 ? 0.9 : distance === 1 ? 0.6 : 0.4),
         extrapolate: 'clamp',
       });
 
@@ -353,10 +327,10 @@ const PaginationDots = memo(({
         />
       );
     });
-  }, [itemCount, scrollX, itemWidth]);
+  }, [itemCount, scrollX, itemWidth, seamSpan]);
 
-  // For 3 or fewer items, show all dots as large (all visible)
-  if (itemCount <= 3) {
+  // A single card has no scrolling or repeated copies.
+  if (itemCount <= 1) {
     return (
       <View style={styles.paginationContainer}>
         {Array.from({ length: itemCount }, (_, index) => (
@@ -394,7 +368,13 @@ type CarouselEventContext = {
 
 // Main Carousel Component
 const InterestsCarousel: React.FC = () => {
+  const { width: viewportWidth } = useWindowDimensions();
+  const [measuredWidth, setMeasuredWidth] = useState(viewportWidth);
+  const insets = useSafeAreaInsets();
+  const bottomOffset = getTabDockContentInset(Platform.OS, insets.bottom);
   const isFocused = useIsFocused();
+  const pathname = usePathname();
+  const isFriendEventDetailRoute = isFriendEventDetailPath(pathname);
   const onScreenEvents = useMapStore((state) => state.onScreenEvents);
   const filterCriteria = useMapStore((state) => state.filterCriteria);
   const clusters = useMapStore((state) => state.clusters);
@@ -469,9 +449,7 @@ const InterestsCarousel: React.FC = () => {
   }, [filterCriteria, interestCarouselFilter]);
 
   const categoryCarouselEvents = useMemo(() => {
-    return onScreenEvents.filter((event) =>
-      doesEventMatchInterestCarouselActiveCategory(event, carouselFilterCriteria)
-    );
+    return getInterestCarouselEvents(onScreenEvents, carouselFilterCriteria);
   }, [onScreenEvents, carouselFilterCriteria]);
 
   // Only activate carousel for interest-pills filters, not filter-pills
@@ -486,6 +464,17 @@ const InterestsCarousel: React.FC = () => {
   const activeMode: 'category' | null = hasInterestPillCategoryFilter ? 'category' : null;
 
   const carouselEvents = categoryCarouselEvents;
+  const loopingItems = useMemo(() => createLoopingCarouselItems(carouselEvents), [carouselEvents]);
+  const railWidth = Math.min(viewportWidth, measuredWidth);
+  const { cardWidth, stride, seamWidth, seamSpan } = getCarouselMetrics(railWidth, carouselEvents.length);
+  const looping = isLoopingCarousel(carouselEvents.length);
+  const loopStartIndex = getLoopingCarouselStartIndex(carouselEvents.length);
+  const carouselListKey = JSON.stringify([
+    carouselFilterCriteria.eventFilters.category,
+    carouselFilterCriteria.specialFilters.category,
+    cardWidth, seamWidth,
+    ...carouselEvents.map(event => String(event.id)),
+  ]);
 
   // Determine which events have new content
   // Map from event.id to boolean indicating if event is new
@@ -527,7 +516,71 @@ const InterestsCarousel: React.FC = () => {
   const slideAnim = useRef(new Animated.Value(150)).current; // Start off-screen
   const opacityAnim = useRef(new Animated.Value(0)).current;
   const scrollX = useRef(new Animated.Value(0)).current; // Track horizontal scroll position
-  const flatListRef = useRef<FlatList<Event>>(null); // Ref for scrolling carousel
+  const flatListRef = useRef<FlatList<(typeof loopingItems)[number]>>(null);
+  const physicalOffsetRef = useRef(getCarouselStartOffset(carouselEvents.length, stride, seamSpan));
+  const anchorRef = useRef({ id: String(carouselEvents[0]?.id ?? ''), fraction: 0 });
+  const anchor = resolveCarouselAnchor(carouselEvents, anchorRef.current);
+  const anchorIndex = anchor.index;
+  const layoutOffset = getCarouselAnchorOffset(anchorIndex, anchor.fraction, carouselEvents.length, stride, seamSpan);
+  const restoreLayoutRef = useRef<number | null>(layoutOffset);
+  const expectedLayoutOffsetRef = useRef<number | null>(layoutOffset);
+  const layoutFrameRef = useRef<number | null>(null);
+  const settleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const clearSettleTimer = useCallback(() => {
+    if (settleTimerRef.current) clearTimeout(settleTimerRef.current);
+    settleTimerRef.current = null;
+  }, []);
+  const restoreLoopPosition = useCallback(() => {
+    clearSettleTimer();
+    if (!looping) return;
+    const offset = physicalOffsetRef.current;
+    const restored = getLoopingCarouselRestoredOffset(offset, carouselEvents.length, stride, seamSpan);
+    if (Math.abs(restored - offset) < 0.5) return;
+    physicalOffsetRef.current = restored;
+    flatListRef.current?.scrollToOffset({ offset: restored, animated: false });
+  }, [carouselEvents.length, looping, stride, seamSpan, clearSettleTimer]);
+  const restoreLayout = useCallback(() => {
+    if (restoreLayoutRef.current === null) return;
+    if (!flatListRef.current) return;
+    const target = restoreLayoutRef.current;
+    restoreLayoutRef.current = null;
+    flatListRef.current?.scrollToOffset({ offset: target, animated: false });
+  }, []);
+  useLayoutEffect(() => {
+    clearSettleTimer();
+    anchorRef.current = { id: anchor.id, fraction: anchor.fraction };
+    physicalOffsetRef.current = layoutOffset;
+    restoreLayoutRef.current = layoutOffset;
+    expectedLayoutOffsetRef.current = layoutOffset;
+    scrollX.setValue(getLoopingCarouselLogicalOffset(layoutOffset, carouselEvents.length, stride, seamSpan));
+    layoutFrameRef.current = requestAnimationFrame(restoreLayout);
+    return () => { clearSettleTimer(); if (layoutFrameRef.current !== null) cancelAnimationFrame(layoutFrameRef.current); };
+    // A new geometry/data key restores the last real-card identity and fractional position.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [carouselListKey, scrollX, clearSettleTimer, restoreLayout]);
+  const handleCarouselScroll = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const offset = event.nativeEvent.contentOffset.x;
+    // Discard the remounted list's transient origin before its exact initial offset is applied.
+    if (expectedLayoutOffsetRef.current !== null) {
+      if (Math.abs(offset - expectedLayoutOffsetRef.current) > 0.5) return;
+      expectedLayoutOffsetRef.current = null;
+    }
+    physicalOffsetRef.current = offset;
+    const anchor = getCarouselAnchor(offset, carouselEvents.length, stride, seamSpan);
+    anchorRef.current = { id: String(carouselEvents[anchor.index]?.id ?? ''), fraction: anchor.fraction };
+    scrollX.setValue(getLoopingCarouselLogicalOffset(offset, carouselEvents.length, stride, seamSpan));
+    // A drag without momentum also settles, but never restore while snap scrolling continues.
+    if (settleTimerRef.current) {
+      clearSettleTimer();
+      settleTimerRef.current = setTimeout(restoreLoopPosition, 120);
+    }
+  }, [carouselEvents, stride, seamSpan, scrollX, clearSettleTimer, restoreLoopPosition]);
+  const beginCarouselDrag = useCallback(() => {
+    clearSettleTimer();
+    expectedLayoutOffsetRef.current = null;
+    restoreLayoutRef.current = null;
+    if (layoutFrameRef.current !== null) cancelAnimationFrame(layoutFrameRef.current);
+  }, [clearSettleTimer]);
   const carouselVisibleRef = useRef(false);
 
   // Dismissal handler - clears the category carousel UI state.
@@ -790,13 +843,14 @@ const InterestsCarousel: React.FC = () => {
       currentIndex: newIndex,
     });
 
-    // Scroll carousel to match lightbox position
-    flatListRef.current?.scrollToIndex({
-      index: newIndex,
-      animated: true,
-      viewPosition: 0.5, // Center the card in view
-    });
-  }, [carouselEvents, getEventContext, markCarouselEventViewed]);
+    // Only original indices enter the lightbox; repeated slots are private to the list.
+    clearSettleTimer();
+    const offset = getCarouselAnchorOffset(newIndex, 0, carouselEvents.length, stride, seamSpan);
+    anchorRef.current = { id: String(event.id), fraction: 0 };
+    physicalOffsetRef.current = offset;
+    scrollX.setValue(getLoopingCarouselLogicalOffset(offset, carouselEvents.length, stride, seamSpan));
+    flatListRef.current?.scrollToOffset({ offset, animated: false });
+  }, [carouselEvents, stride, seamSpan, getEventContext, markCarouselEventViewed, clearSettleTimer, scrollX]);
 
   // Handle when user clicks "View Venue" in lightbox
   // This should record venue-level interaction to clear all red dots for that venue
@@ -814,6 +868,17 @@ const InterestsCarousel: React.FC = () => {
     markCarouselEventsViewed(venue.events.map((e) => e.id));
   }, [selectedImageData, recordInteraction, markCarouselEventsViewed]);
 
+  useEffect(() => {
+    setSelectedImageData(previous => {
+      if (!previous) return previous;
+      const index = carouselEvents.findIndex(event => String(event.id) === String(previous.event.id));
+      const event = carouselEvents[index], context = event && getEventContext(event.id);
+      if (!event || !context) return null;
+      if (event === previous.event && index === previous.currentIndex && context.venue === previous.venue) return previous;
+      return { imageUrl: event.imageUrl || event.SharedPostThumbnail || '', event, venue: context.venue, cluster: context.cluster, currentIndex: index };
+    });
+  }, [carouselEvents, getEventContext]);
+
   if (!isVisible && !shouldRender && !selectedImageData) {
     return null;
   }
@@ -822,9 +887,11 @@ const InterestsCarousel: React.FC = () => {
     <>
       <Animated.View
         {...panResponder.panHandlers}
+        onLayout={event => { const width = event.nativeEvent.layout.width; if (width > 0) setMeasuredWidth(width); }}
         style={[
           styles.container,
           {
+            bottom: bottomOffset,
             transform: [{ translateY: slideAnim }],
             opacity: opacityAnim,
           },
@@ -848,19 +915,32 @@ const InterestsCarousel: React.FC = () => {
 
         {/* Carousel - no wrapper background */}
         <FlatList
+          key={carouselListKey}
           ref={flatListRef}
-          data={carouselEvents}
+          data={loopingItems}
           horizontal
+          initialScrollIndex={looping ? loopStartIndex + anchorIndex : 0}
           showsHorizontalScrollIndicator={false}
-          snapToInterval={carouselEvents.length > 2 ? CARD_WIDTH + CARD_GAP : undefined}
+          snapToOffsets={looping ? loopingItems.filter(item => item.kind === 'event').map(item => getCarouselSlotLayout(item.slot, carouselEvents.length, cardWidth, CARD_GAP, seamWidth).offset) : undefined}
+          snapToStart={!looping}
+          snapToEnd={!looping}
+          disableIntervalMomentum
+          bounces={false}
           decelerationRate="fast"
           contentContainerStyle={[
             styles.listContent,
-            carouselEvents.length <= 2 && { flexGrow: 1, justifyContent: 'center' }
+            carouselEvents.length <= 1 && { flexGrow: 1, justifyContent: 'center' }
           ]}
-          keyExtractor={(item) => `carousel-${item.id}`}
+          keyExtractor={item => item.kind === 'seam' ? `seam-${item.slot}` : `carousel-${item.item.id}-${item.slot}`}
           initialNumToRender={4}
-          renderItem={({ item, index }) => {
+          renderItem={({ item: slot }) => {
+            if (slot.kind === 'seam') return <View style={[styles.seam, { width: seamWidth }]} pointerEvents="none"
+              accessible accessibilityRole="text" accessibilityLabel="First to the right. Last to the left.">
+              <View style={styles.seamHalf}><MaterialIcons name="arrow-forward" size={18} color="#F1F5FA" /><Text style={styles.seamText}>First</Text></View>
+              <View style={styles.seamHalf}><MaterialIcons name="arrow-back" size={18} color="#F1F5FA" /><Text style={styles.seamText}>Last</Text></View>
+              <View style={styles.seamDivider} />
+            </View>;
+            const { item, index } = slot;
             // Check if this event has new content and hasn't been viewed yet
             const hasNew = eventNewContentMap.get(item.id) || false;
 
@@ -882,30 +962,34 @@ const InterestsCarousel: React.FC = () => {
                 event={item}
                 onPress={() => handleCardPress(item, index)}
                 hasNewContent={showRedDot}
+                width={cardWidth}
               />
             );
           }}
-          getItemLayout={(_data, index) => ({
-            length: CARD_WIDTH + CARD_GAP,
-            offset: (CARD_WIDTH + CARD_GAP) * index,
-            index,
-          })}
-          onScroll={Animated.event(
-            [{ nativeEvent: { contentOffset: { x: scrollX } } }],
-            { useNativeDriver: false }
-          )}
+          getItemLayout={(_data, index) => getCarouselSlotLayout(index, carouselEvents.length, cardWidth, CARD_GAP, seamWidth)}
+          onLayout={restoreLayout}
+          onContentSizeChange={restoreLayout}
+          onScroll={handleCarouselScroll}
+          onScrollBeginDrag={beginCarouselDrag}
+          onMomentumScrollBegin={clearSettleTimer}
+          onMomentumScrollEnd={restoreLoopPosition}
+          onScrollEndDrag={() => {
+            clearSettleTimer();
+            settleTimerRef.current = setTimeout(restoreLoopPosition, 120);
+          }}
           scrollEventThrottle={16}
-          windowSize={3}
-          maxToRenderPerBatch={3}
-          removeClippedSubviews={true}
+          // Keep the equivalent neighboring cycle mounted before an invisible restore.
+          windowSize={Math.max(5, 3 + 2 * Math.ceil(getCarouselPeriod(carouselEvents.length, stride, seamSpan) / railWidth))}
+          maxToRenderPerBatch={10}
+          removeClippedSubviews={false}
         />
 
         {/* Pagination Dots */}
-        <PaginationDots scrollX={scrollX} itemCount={carouselEvents.length} />
+        <PaginationDots scrollX={scrollX} itemCount={carouselEvents.length} itemWidth={stride} seamSpan={seamSpan} />
       </Animated.View>
 
       {/* Render lightbox when carousel card is clicked */}
-      {selectedImageData && (
+      {selectedImageData && !isFriendEventDetailRoute && (
         <Modal
           transparent={true}
           visible={true}
@@ -916,6 +1000,7 @@ const InterestsCarousel: React.FC = () => {
         >
           <EventImageLightbox
             imageUrl={selectedImageData.imageUrl}
+            preferRelevantHero
             event={selectedImageData.event}
             venue={selectedImageData.venue}
             cluster={selectedImageData.cluster}
@@ -923,6 +1008,8 @@ const InterestsCarousel: React.FC = () => {
             events={carouselEvents}
             currentIndex={selectedImageData.currentIndex}
             onNavigate={handleNavigate}
+            loopNavigation
+            interestCarouselPaging
             onViewVenue={handleViewVenueFromLightbox}
             isCityEvent={isAreaExperienceEvent(selectedImageData.event)}
           />
@@ -935,7 +1022,6 @@ const InterestsCarousel: React.FC = () => {
 const styles = StyleSheet.create({
   container: {
     position: 'absolute',
-    bottom: BOTTOM_SPACING + TAB_BAR_HEIGHT - PAGINATION_HEIGHT,
     left: 0,
     right: 0,
     zIndex: 12,
@@ -944,6 +1030,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     gap: CARD_GAP,
   },
+  seam: { alignSelf: 'stretch', backgroundColor: '#142735', borderRadius: 12, overflow: 'hidden', borderWidth: 1, borderColor: '#456073' },
+  seamHalf: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 4 },
+  seamText: { color: '#F1F5FA', fontSize: 10, fontWeight: '600' },
+  seamDivider: { position: 'absolute', top: '50%', left: 0, right: 0, height: StyleSheet.hairlineWidth, backgroundColor: '#50616D' },
   card: {
     width: CARD_WIDTH,
     backgroundColor: '#FFFFFF',
@@ -957,8 +1047,11 @@ const styles = StyleSheet.create({
     shadowRadius: 10,
     elevation: 8,
   },
+  mutedTimingCard: {
+    opacity: 0.68,
+  },
   imageContainer: {
-    width: CARD_WIDTH,
+    width: '100%',
     height: CARD_HEIGHT,
     position: 'relative',
   },
@@ -1008,6 +1101,9 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#FFFFFF',
     letterSpacing: 0.5,
+  },
+  carouselTimingBadge: {
+    marginLeft: 0,
   },
   cardContent: {
     paddingHorizontal: 8,

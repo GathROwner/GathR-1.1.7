@@ -1,0 +1,83 @@
+import React from 'react';
+import { Image, Modal, Pressable, Text, View } from 'react-native';
+import { Stack } from 'expo-router';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { BottomTabBarHeightContext } from '@react-navigation/bottom-tabs';
+import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query';
+import * as SplashScreen from 'expo-splash-screen';
+import AreaLocationBrowser from './components/map/AreaLocationBrowser';
+import EventImageLightbox from './components/map/EventImageLightbox';
+import { useMapStore } from './store/mapStore';
+import { EVENTS_MINIMAL } from './lib/queryKeys';
+import { formatLocalDateKey, addDaysToDateKey } from './utils/eventExpiry';
+import type { Event } from './types/events';
+import type { AreaActivityLoader } from './hooks/useAreaActivities';
+
+const client = new QueryClient({defaultOptions:{queries:{retry:false,gcTime:600000}}});
+export function FixtureRoot() {
+  React.useEffect(()=>{void SplashScreen.hideAsync()},[]);
+  return <GestureHandlerRootView style={{flex:1}}><SafeAreaProvider><QueryClientProvider client={client}>
+    <BottomTabBarHeightContext.Provider value={0}><Stack screenOptions={{headerShown:false}}/></BottomTabBarHeightContext.Provider>
+  </QueryClientProvider></SafeAreaProvider></GestureHandlerRootView>;
+}
+const today = formatLocalDateKey(new Date());
+const poster = Image.resolveAssetSource(require('./assets/fallbacks/categories/family-friendly.webp')).uri;
+const profile = Image.resolveAssetSource(require('./assets/fallbacks/profiles/event-default.webp')).uri;
+const base: Event = {id:'qa_hunt_root',type:'event',title:'Harbour Skeleton Selfie Hunt',category:'Gatherings & Parties',
+  description:'Take a selfie with the skeleton displays at participating businesses. Tag the business and the local chamber. Confirm each location’s access hours before visiting.',
+  venue:'Exampletown',venueId:null,address:'',latitude:46.5,longitude:-63.5,
+  startDate:addDaysToDateKey(today,-2),endDate:addDaysToDateKey(today,2),startTime:'',endTime:'',
+  ticketPrice:'',SharedPostThumbnail:'',ticketLinkPosts:'',ticketLinkEvents:'',locationScope:'area',mapMode:'area',
+  profileUrl:profile,imageUrl:poster,mediaUrls:[poster],sourceUrl:'https://example.com/synthetic/hunt',
+  facebookUrl:'https://example.com/synthetic/hunt',areaData:{version:1,status:'verified',sourceLabel:'Community organiser’s public post',locations:[
+    {id:'qa_library',label:'Example Library',venueId:'qa_library',certainty:'confirmed',coordinates:{latitude:46.5,longitude:-63.5},address:'10 Example Street, Exampletown'},
+    {id:'qa_shop',label:'Example Shop',venueId:'qa_shop',certainty:'confirmed',coordinates:{latitude:46.51,longitude:-63.51}},
+    {id:'qa_cafe',label:'Example Café',venueId:'qa_cafe',certainty:'confirmed',coordinates:{latitude:46.52,longitude:-63.52}},
+  ]}};
+type Mode = 'hunt'|'clues'|'festival'|'neutral'|'linked'|'long'|'overview';
+const children: Event[] = ['Paper Lantern Workshop','Autumn Storytelling'].map((title,index)=>({...base,
+  id:'fb_qa_session_'+index,title,description:'Synthetic scheduled festival activity.',locationScope:'venue',areaData:null,
+  venueId:'qa_library',venue:'Example Library',address:'10 Example Street, Exampletown',
+  startDate:addDaysToDateKey(today,1),endDate:addDaysToDateKey(today,1),startTime:(10+index)+':00',endTime:(11+index)+':00',
+  category:'Workshops & Classes',isRecurring:false,isRecurringInstance:false}));
+
+export default function Fixture() {
+  const query = useQueryClient();
+  const [mode,setMode] = React.useState<Mode>('long');
+  const [open,setOpen] = React.useState(false);
+  const [run,setRun] = React.useState(0);
+  const [requests,setRequests] = React.useState(0);
+  const [hydrations,setHydrations] = React.useState(0);
+  const choose = React.useCallback((next:Mode)=>{
+    query.clear();setMode(next);setRequests(0);setHydrations(0);
+    const records=next==='linked'?children:[base]; const fetchedAt=Date.now();
+    useMapStore.setState({events:records,allEvents:records,lastFetchedAt:fetchedAt,
+      fetchEventDetails:async()=>{setHydrations(n=>n+1)}});
+    query.setQueryData(EVENTS_MINIMAL,{combinedData:records,fetchedAt});setRun(n=>n+1);setOpen(true);
+  },[query]);
+  React.useEffect(()=>{choose('long')},[choose]);
+  const loader = React.useCallback<AreaActivityLoader>(async()=>{setRequests(n=>n+1);throw new Error('Unexpected fixture request')},[]);
+  const event: Event = mode==='clues'?{...base,title:'Downtown Scavenger Hunt',description:'Visit participating shops and collect clues at each stop. Check access before visiting.'}
+    :mode==='festival'?{...base,title:'Autumn Arts Festival',description:'A community festival across local venues.'}
+      :mode==='neutral'?{...base,title:'Neighbourhood Art Walk',description:'Explore the outdoor artwork around the neighbourhood. The source lists these locations.'}
+        :mode==='linked'?{...base,title:'Harvest Arts Festival',description:'A programme of scheduled festival activities.',
+          areaData:{...base.areaData!,locations:base.areaData!.locations.map((point,index)=>index===0?{...point,linkedEventIds:children.map(child=>String(child.id).replace('fb_',''))}:point)}}
+          :mode==='long'?{...base,
+            description:'Take a selfie with the skeleton displays at participating local businesses and tag the business and the local chamber of commerce. The library’s October 14 post advertises the activity for this week. Confirm each location’s access hours before visiting. Confirmed points include the library, the bookshop and the café; the organiser’s post lists additional participants.',
+            areaData:{...base.areaData!,locations:base.areaData!.locations.map((place,index)=>index===0?{...place,
+              label:'The Harbour Heritage Library, Arts and Community Centre',
+              description:'Find our skeleton inside the library, snap a picture, and be sure to tag the library.'}:place)}}
+            :base;
+  const point=event.areaData!.locations[0];const group={id:point.id,coordinates:point.coordinates,locations:[point]};
+  return <View style={{flex:1,backgroundColor:'#223346',paddingTop:32,paddingHorizontal:16}}>
+    <Text style={{color:'white',fontSize:18,fontWeight:'700'}}>Area participation QA · 571ed2d</Text>
+    <Text style={{color:'#D0E2F3',fontSize:12,marginTop:6}}>Synthetic · {mode} · requests {requests} · hydration {hydrations}</Text>
+    <View style={{flexDirection:'row',flexWrap:'wrap',gap:8,marginTop:9}}>{(['hunt','clues','festival','neutral','linked','long','overview'] as Mode[]).map(next=>
+      <Pressable key={next} onPress={()=>choose(next)} style={{padding:10,borderRadius:9,backgroundColor:'#395779'}}>
+        <Text style={{color:'white',fontWeight:'600',fontSize:12}}>{next}</Text></Pressable>)}</View>
+    {open&&(mode==='overview'?<Modal transparent visible animationType="fade" statusBarTranslucent onRequestClose={()=>setOpen(false)}>
+      <EventImageLightbox imageUrl={poster} event={event} onClose={()=>setOpen(false)}/></Modal>
+      :<AreaLocationBrowser key={run} umbrella={event} group={group} loadActivity={loader} onClose={()=>setOpen(false)}/>)}
+  </View>;
+}

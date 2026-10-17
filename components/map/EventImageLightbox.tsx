@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -10,10 +10,18 @@ import {
   Platform,
   Alert,
   Animated,
+  ActivityIndicator,
   Easing,
+  Modal,
+  StatusBar,
+  LayoutAnimation,
+  UIManager,
   useWindowDimensions,
 } from 'react-native';
 import { useReduceMotion } from '../../hooks/useReduceMotion';
+import { useCalloutLightboxPaging } from '../../hooks/useCalloutLightboxPaging';
+import { useCalloutLightboxDismiss } from '../../hooks/useCalloutLightboxDismiss';
+import { CalloutLightboxCounter, CalloutLightboxDismissSurface, CalloutLightboxPages } from './CalloutLightboxPager';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 
@@ -21,7 +29,7 @@ import { usePathname, useRouter } from 'expo-router';
 import { amplitudeTrack } from '../../lib/amplitudeAnalytics';
 import { GestureHandlerRootView, PanGestureHandler, ScrollView as GestureScrollView, State } from 'react-native-gesture-handler';
 
-import { MaterialIcons } from '@expo/vector-icons';
+import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { LinearGradient } from 'expo-linear-gradient';
 
 
@@ -31,19 +39,31 @@ import GathRShimmerPill from '../common/GathRShimmerPill';
 import TicketCtaPill from '../common/TicketCtaPill';
 import EventActionLinkPill from '../common/EventActionLinkPill';
 import FamilyFriendlyBadge from '../common/FamilyFriendlyBadge';
+import VenueProgrammeBrowser from '../area/VenueProgrammeBrowser';
+import { getVenueProgrammeLocation } from '../../utils/eventProgramme';
+import { EventTimingBadge } from '../common/EventTimingBadge';
+import { EventTimingSummaryText } from '../common/EventTimingSummaryText';
+import { EventSeriesContextLine } from '../common/EventSeriesContextLine';
+import { EventTimingDisclosureActions } from './EventTimingDisclosureActions';
 import { VenueFavoriteButton } from '../common/VenueFavoriteButton';
 import Autolink from 'react-native-autolink';
 
 import type { Event, Venue, Cluster } from '../../types/events';
 import { useMapStore } from '../../store/mapStore';
-import { addToCalendar } from '../../utils/calendarUtils';
-import { isValidImageUrl, getCategoryFallbackImage } from '../../utils/imageUtils';
+import { addEventToCalendarWithTiming } from '../../utils/calendarUtils';
+import { getCategoryFallbackImage } from '../../utils/imageUtils';
+import { getAdjacentLightboxIndex, getLightboxEventPosition } from '../../utils/lightboxNavigation';
+import InterestLightboxCounter from './InterestLightboxCounter';
 import {
-  formatEventDateTime,
-  combineDateAndTime,
+  buildEventImageGallery,
+  getEventImageGalleryHeroUrl,
+  getEventImageGalleryHiddenCount,
+  getEventImageGallerySideTileIndexes,
+} from '../../utils/eventImageGallery';
+import {
+  formatEventTimingSummary,
   getEventTimeStatus,
-  getEventDisplayUntilDate,
-  formatTime
+  getEventDisplayUntilDate
 } from '../../utils/dateUtils';
 import { createLocationKeyFromEvent } from '../../utils/priorityUtils';
 import { buildGathrSharePayload } from '../../utils/shareUtils';
@@ -53,14 +73,46 @@ import { areEventIdsEquivalent } from '../../lib/api/firestoreEvents';
 import {
   getRouteCompactCertaintyLabel,
   getRouteSourceUrl,
-  hasDrawableRoute,
+  hasRouteMapExperience,
 } from '../../utils/routeEvent';
+import { resolveRouteForMap, RouteRuntimeError } from '../../lib/routeRuntime';
 import {
   getAreaLocations,
-  getAreaLocationsLabel,
   getAreaSourceUrl,
   hasDrawableAreaLocations,
 } from '../../utils/areaEvent';
+import { getAreaParticipationTimingLabel } from '../../utils/areaEventPresentation';
+import { getVenueFriendPresence } from '../../utils/friendPresence';
+import { formatFriendsHere } from '../../utils/friendDestinations';
+import {
+  findFriendEventLocation,
+  hasExactFriendEventCoordinates,
+} from '../../utils/friendEvents';
+import {
+  formatFriendEventGuestResponse,
+  getFriendEventLightboxAction,
+} from '../../utils/friendEventLightbox';
+import {
+  getEventScheduleState,
+  getEventTimingDisclosure,
+  getEventTimeRangeParts,
+} from '../../utils/eventTiming';
+import { getEventScheduleContext } from '../../utils/eventSeries';
+import { getEventOriginalSourceUrl } from '../../utils/eventSourceUrl';
+import { useEventTimingMinute } from '../../hooks/useEventTimingMinute';
+import {
+  hasPhysicalEventDestination,
+  getAreaScopeBadgePresentation,
+  getScopedLocationSummary,
+  isAreaExperienceEvent,
+  isProvinceScopeEvent,
+} from '../../utils/locationScope';
+import { useSocialStore } from '../../store/socialStore';
+import { inviteToFriendEvent, respondToFriendEvent } from '../../services/socialService';
+import type { FriendEventRsvp } from '../../types/social';
+import { getEventLightboxLayout } from '../../utils/eventLightboxLayout';
+import { formatLightboxAddress } from '../../utils/lightboxAddress';
+import { initialLightboxReadingState, reduceLightboxReadingMode, type LightboxReadingAction } from '../../utils/lightboxReadingMode';
 
 // Store imports for like/share functionality
 import * as userService from '../../services/userService';
@@ -81,48 +133,6 @@ import { RegistrationPrompt } from '../RegistrationPrompt';
 import { useGuestLimitationStore } from '../../store/guestLimitationStore';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
-const APP_HEADER_HEIGHT = Platform.OS === 'ios' ? 44 : 56;
-const LIGHTBOX_HEADER_SEAM_OVERLAP = Platform.OS === 'ios' ? 5 : 0;
-
-// --- Local helper to derive label/start/end from already-formatted strings ---
-// Returns { label } (base without trailing " at <start>" if present),
-// { start }, { end }, and { labelWithTime } (original base).
-function partsFrom(base: string, range?: string) {
-  const result = {
-    label: base,
-    start: undefined as string | undefined,
-    end: undefined as string | undefined,
-    labelWithTime: base,
-  };
-  if (!range) return result;
-
-  // Detect common separators: en dash, spaced hyphen, plain hyphen, and " to "
-  const rLower = range.toLowerCase();
-  const sep =
-    range.includes(' – ') ? ' – ' :
-    range.includes('–')    ? '–'    :
-    rLower.includes(' to ') ? ' to ' :
-    range.includes(' - ')  ? ' - '  :
-    range.includes('-')    ? '-'    :
-    null;
-
-  if (sep) {
-    const [startRaw, endRaw] = range.split(sep).map(s => s?.trim());
-    result.start = startRaw || undefined;
-    result.end = endRaw || undefined;
-  }
-
-  // Trim trailing " at <start>" only if it matches, case-insensitively.
-  if (result.start) {
-    const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const tailRe = new RegExp(`\\s+at\\s+${esc(result.start)}$`, 'i');
-    if (tailRe.test(base)) {
-      result.label = base.replace(tailRe, '');
-    }
-  }
-  return result;
-}
-
 
 // Is the given YYYY-MM-DD strictly in the future (date-only)?
 function isFutureDate(dateStr?: string) {
@@ -213,13 +223,20 @@ interface EventImageLightboxProps {
   events?: Event[];
   currentIndex?: number;
   onNavigate?: (index: number) => void;
+  loopNavigation?: boolean;
+  interestCarouselPaging?: boolean;
+  // Only local callout lists opt in; global carousel/list behavior is retained.
+  calloutPaging?: boolean;
   isTrending?: boolean;
+  preferRelevantHero?: boolean;
   // City-level (festival) event opened from its map marker
   isCityEvent?: boolean;
   // Route events use the existing secondary action slot to reveal the route.
   onShowRoute?: (event: Event) => void;
   // Optional callback when "View Venue" button is clicked
   onViewVenue?: () => void;
+  /** A parent-membership host supplies authoritative data and owns background validation. */
+  managedEventDetails?: boolean;
 }
 
 const EventImageLightbox: React.FC<EventImageLightboxProps> = ({
@@ -231,21 +248,35 @@ const EventImageLightbox: React.FC<EventImageLightboxProps> = ({
   events,
   currentIndex,
   onNavigate,
+  loopNavigation = false,
+  interestCarouselPaging = false,
+  calloutPaging = false,
   isTrending = false,
+  preferRelevantHero = false,
   isCityEvent = false,
   onShowRoute,
   onViewVenue,
+  managedEventDetails = false,
 }) => {
+  useEventTimingMinute();
   const router = useRouter();
   const safeAreaInsets = useSafeAreaInsets();
   const tabBarHeight = useBottomTabBarHeight();
   const { height: windowHeight } = useWindowDimensions();
-  const lightboxTop = Math.max(
-    0,
-    safeAreaInsets.top + APP_HEADER_HEIGHT - LIGHTBOX_HEADER_SEAM_OVERLAP
-  );
-  const lightboxHeight = Math.max(0, windowHeight - lightboxTop - tabBarHeight);
-  const imageHeight = Math.min(windowHeight * 0.35, lightboxHeight * 0.45);
+  const {
+    panelTop: lightboxTop,
+    panelBottom: lightboxBottom,
+    imageHeight,
+    descriptionMinHeight,
+  } = getEventLightboxLayout({
+    windowHeight,
+    safeAreaTop: safeAreaInsets.top,
+    // iOS should let the lightbox and its footer reach the physical screen edge.
+    // Android keeps the system-navigation inset below the footer.
+    safeAreaBottom: Platform.OS === 'android' ? safeAreaInsets.bottom : 0,
+    tabBarHeight,
+    extendToDeviceEdges: true,
+  });
   // Add store subscription to get fresh event data
   const storeEvents = useMapStore((state) => state.events);
   
@@ -256,25 +287,111 @@ const EventImageLightbox: React.FC<EventImageLightboxProps> = ({
 
 
 // Use updated event data with fallback to original prop (keep prop fields!)
-  const updatedFromStore = getUpdatedEvent(event.id);
+  const updatedFromStore = managedEventDetails ? undefined : getUpdatedEvent(event.id);
   const updatedEvent = { ...event, ...(updatedFromStore || {}) };
+  const galleryHeroUrl = getEventImageGalleryHeroUrl(
+    imageUrl,
+    updatedEvent.relevantImageUrl,
+    isTrending || preferRelevantHero
+  );
+  const galleryImageUrls = useMemo(
+    () => buildEventImageGallery(galleryHeroUrl, updatedEvent.mediaUrls),
+    [galleryHeroUrl, updatedEvent.mediaUrls]
+  );
+  const gallerySideTileIndexes = useMemo(
+    () => getEventImageGallerySideTileIndexes(galleryImageUrls),
+    [galleryImageUrls]
+  );
+  const galleryHiddenImageCount = getEventImageGalleryHiddenCount(galleryImageUrls);
+  const originalSourceUrl = getEventOriginalSourceUrl(updatedEvent);
+  const provinceScopeEvent = isProvinceScopeEvent(updatedEvent);
+  const areaScopeBadge = getAreaScopeBadgePresentation(updatedEvent);
+  const scopedLocationSummary = getScopedLocationSummary(updatedEvent);
+  const headerVenueName = scopedLocationSummary
+    || updatedEvent.venue?.trim()
+    || venue?.venue?.trim()
+    || '';
+  const headerAddress = scopedLocationSummary ? '' : formatLightboxAddress(updatedEvent.address);
+  const titleParts = updatedEvent.title.length > 55
+    ? updatedEvent.title.match(/^(.+?)\s+(\([^]*\).*)$/)
+    : null;
+  const friendEventId = updatedEvent.friendEvent?.eventId || null;
+  const friendEventProjection = useSocialStore((state) => (
+    friendEventId
+      ? state.friendEvents.find((candidate) => candidate.eventId === friendEventId) ?? null
+      : null
+  ));
+  const friendEventLocation = useSocialStore((state) => (
+    friendEventId ? findFriendEventLocation(friendEventId, state.friendEventLocations) : null
+  ));
+  const socialFriends = useSocialStore((state) => state.friends);
+  const isPrivateFriendEvent = Boolean(updatedEvent.friendEvent);
+  const privateDirectionsAvailable = hasPhysicalEventDestination(updatedEvent) && (
+    !isPrivateFriendEvent || Boolean(
+      friendEventProjection
+        && hasExactFriendEventCoordinates(friendEventProjection, friendEventLocation)
+    )
+  );
+  const privateCalendarLocation = isPrivateFriendEvent
+    ? updatedEvent.address === 'Address shared later'
+      ? updatedEvent.venue
+      : `${updatedEvent.venue}, ${updatedEvent.address}`
+    : `${updatedEvent.venue}, ${updatedEvent.address}`;
+  const publicCalendarLocation = provinceScopeEvent
+    ? updatedEvent.locationLabel || updatedEvent.venue
+    : `${updatedEvent.venue}, ${updatedEvent.address}`;
+  const friendPresence = getVenueFriendPresence(cluster || null, venue || null);
+  const [friendListExpanded, setFriendListExpanded] = useState(false);
+  const [timingDisclosureExpanded, setTimingDisclosureExpanded] = useState(false);
+  const [scheduleExpanded, setScheduleExpanded] = useState(false);
+  const [programmeOpen, setProgrammeOpen] = useState(false);
 
-// If address is missing, fetch details for this id
+  useEffect(() => {
+    setTimingDisclosureExpanded(false);
+    setScheduleExpanded(false);
+  }, [updatedEvent.id]);
+  const [routeActionBusy, setRouteActionBusy] = useState(false);
+  const routeActionInFlightRef = useRef(false);
+  const trendingGalleryRefreshIdsRef = useRef<Set<string>>(new Set());
+
+// Hydrate details when either the address, original-source identity, or media
+// field is missing. The last condition repairs an older persisted Trending
+// payload after an OTA: a missing field is not the same as a confirmed empty
+// source-media array, so only the former needs the detail request.
   const fetchEventDetails = useMapStore(s => s.fetchEventDetails);
 
   // Map actions for opening EventCallout from "View Venue" button
-  const selectVenues = useMapStore(s => s.selectVenues);
-  const selectCluster = useMapStore(s => s.selectCluster);
-  const selectVenue = useMapStore(s => s.selectVenue);
+  const selectCallout = useMapStore(s => s.selectCallout);
   const setSelectedImageData = useMapStore(s => s.setSelectedImageData);
   const setPendingRouteEvent = useMapStore(s => s.setPendingRouteEvent);
 
   useEffect(() => {
-    if (!updatedEvent?.address) {
+    if (managedEventDetails) return;
+    const hasKnownMediaUrls = Array.isArray(updatedEvent?.mediaUrls);
+    const shouldRefreshTrendingGallery =
+      isTrending &&
+      galleryImageUrls.length <= 1 &&
+      !trendingGalleryRefreshIdsRef.current.has(String(event.id));
+
+    if (!updatedEvent?.address || !originalSourceUrl || !hasKnownMediaUrls || shouldRefreshTrendingGallery) {
+      if (shouldRefreshTrendingGallery) {
+        trendingGalleryRefreshIdsRef.current.add(String(event.id));
+      }
       console.log('[AddressFlow][Lightbox] requestingDetails', { id: event.id });
-      fetchEventDetails?.([event.id]);
+      fetchEventDetails?.([event.id], {
+        forceRefresh: shouldRefreshTrendingGallery,
+      });
     }
-  }, [event.id, updatedEvent?.address]);
+  }, [
+    event.id,
+    managedEventDetails,
+    fetchEventDetails,
+    galleryImageUrls.length,
+    isTrending,
+    originalSourceUrl,
+    updatedEvent?.address,
+    updatedEvent?.mediaUrls,
+  ]);
 
 
 // DEBUG: trace address flow into lightbox
@@ -318,6 +435,10 @@ try {
 
   // Like/Share state
   const [isLikeToggling, setIsLikeToggling] = useState(false);
+  const [privateRsvpBusy, setPrivateRsvpBusy] = useState<FriendEventRsvp | null>(null);
+  const [privateGuestSheetVisible, setPrivateGuestSheetVisible] = useState(false);
+  const [privateInviteExpanded, setPrivateInviteExpanded] = useState(false);
+  const [privateInviteBusyUid, setPrivateInviteBusyUid] = useState<string | null>(null);
   const eventIdString = String(updatedEvent.id);
 
   // Get user's liked events from store
@@ -353,16 +474,14 @@ try {
   const interestedText = combinedInterestedValue > 0 ? String(combinedInterestedValue) : '';
 
   // Engagement metrics for overlay - always show (share button always visible)
-  const showEngagementOverlay = true;
+  const showEngagementOverlay = !isPrivateFriendEvent;
 
   // State for full-screen image viewer
   const [isImageViewerVisible, setIsImageViewerVisible] = useState(false);
+  const [selectedGalleryImageIndex, setSelectedGalleryImageIndex] = useState(0);
 
   // State to prevent gesture conflicts when image viewer closes
   const [justClosedImageViewer, setJustClosedImageViewer] = useState(false);
-
-  // Track if the thumbnail is using a fallback image (URL failed to load or was missing)
-  const [isUsingFallbackImage, setIsUsingFallbackImage] = useState(false);
 
   const isReduceMotionEnabled = useReduceMotion();
 
@@ -372,6 +491,14 @@ try {
 
   // Animation value for horizontal swipe navigation
   const translateX = useRef(new Animated.Value(0)).current;
+  const [calloutPageWidth, setCalloutPageWidth] = useState(SCREEN_WIDTH);
+  const calloutPager = useCalloutLightboxPaging({
+    index: currentIndex ?? 0, count: events?.length ?? 0, width: calloutPageWidth,
+    enabled: calloutPaging && !!events && events.length > 1 && !!onNavigate
+      && !isImageViewerVisible && !justClosedImageViewer,
+    reduceMotion: isReduceMotionEnabled,
+    onNavigate: (index) => onNavigate?.(index),
+  });
 
   // Animation values for the Trending badge attention cue
   const trendingShimmerProgress = useRef(new Animated.Value(0)).current;
@@ -380,10 +507,13 @@ try {
   // Refs for gesture handler coordination
   const verticalPanRef = useRef(null);
   const horizontalPanRef = useRef(null);
+  const calloutHorizontalPanRef = useRef<PanGestureHandler>(null);
+  const calloutTitleDismissRef = useRef<PanGestureHandler>(null);
 
   // Navigation state
-  const canNavigatePrev = events && currentIndex !== undefined && currentIndex > 0;
-  const canNavigateNext = events && currentIndex !== undefined && currentIndex < events.length - 1;
+  const previousIndex = getAdjacentLightboxIndex(currentIndex, events?.length ?? 0, -1, loopNavigation);
+  const nextIndex = getAdjacentLightboxIndex(currentIndex, events?.length ?? 0, 1, loopNavigation);
+  const interestPosition = interestCarouselPaging ? getLightboxEventPosition(currentIndex, events?.length ?? 0, loopNavigation) : null;
   const showTrendingOverlay = Boolean(isTrending && events && currentIndex !== undefined);
   const trendingPositionLabel =
     events && currentIndex !== undefined ? `${currentIndex + 1} / ${events.length}` : '';
@@ -392,18 +522,26 @@ try {
   const currentIndexRef = useRef(currentIndex);
   const onNavigateRef = useRef(onNavigate);
   const eventsLengthRef = useRef(events?.length ?? 0);
+  const loopNavigationRef = useRef(loopNavigation);
 
   // Keep refs updated
   useEffect(() => {
     currentIndexRef.current = currentIndex;
     onNavigateRef.current = onNavigate;
     eventsLengthRef.current = events?.length ?? 0;
-  }, [currentIndex, onNavigate, events?.length]);
+    loopNavigationRef.current = loopNavigation;
+  }, [currentIndex, onNavigate, events?.length, loopNavigation]);
 
-  // Reset fallback state when imageUrl changes (navigating between events)
+  // Reset the selected page when navigating between events.
   useEffect(() => {
-    setIsUsingFallbackImage(false);
-  }, [imageUrl]);
+    setSelectedGalleryImageIndex(0);
+  }, [imageUrl, updatedEvent.id]);
+
+  useEffect(() => {
+    setSelectedGalleryImageIndex((current) =>
+      Math.min(current, Math.max(galleryImageUrls.length - 1, 0))
+    );
+  }, [galleryImageUrls]);
 
   useEffect(() => {
     const resetTrendingAnimation = () => {
@@ -478,7 +616,7 @@ try {
 
   // Start/stop like, share, and interested listeners
   useEffect(() => {
-    if (!updatedEvent.id) return;
+    if (!updatedEvent.id || isPrivateFriendEvent) return;
     startEventLikesListener(updatedEvent.id);
     startEventSharesListener(updatedEvent.id);
     startEventInterestedListener(updatedEvent.id);
@@ -487,20 +625,71 @@ try {
       stopEventSharesListener(updatedEvent.id);
       stopEventInterestedListener(updatedEvent.id);
     };
-  }, [updatedEvent.id]);
+  }, [isPrivateFriendEvent, updatedEvent.id]);
 
   // (read-more removed; description is now scrollable)
 
 // --- description scroll state for fade/affordance ---
-const [descLayoutHeight, setDescLayoutHeight] = useState(0);
 const [descCanScroll, setDescCanScroll] = useState(false);
 const [descAtEnd, setDescAtEnd] = useState(true);
 const [descAtTop, setDescAtTop] = useState(true);
+const descMetrics = useRef({ height: 0, contentHeight: 0, y: 0 });
+const readingState = useRef(initialLightboxReadingState);
+const [readingMode, setReadingMode] = useState(false);
+
+  useEffect(() => {
+    if (Platform.OS === 'android' && !('nativeFabricUIManager' in globalThis)) {
+      UIManager.setLayoutAnimationEnabledExperimental?.(true);
+    }
+  }, []);
+
+  const animateDetails = () => {
+    if (!isReduceMotionEnabled) LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+  };
+
+  const applyReadingAction = (action: LightboxReadingAction) => {
+    const previous = readingState.current;
+    const next = reduceLightboxReadingMode(previous, action);
+    readingState.current = next;
+    if (next.reading !== previous.reading) {
+      animateDetails();
+      setReadingMode(next.reading);
+      if (next.reading) {
+        setTimingDisclosureExpanded(false);
+        setScheduleExpanded(false);
+      }
+    }
+  };
+
+  const updateDescriptionFades = () => {
+    const { height, contentHeight, y } = descMetrics.current;
+    setDescCanScroll(contentHeight > height + 4);
+    setDescAtEnd(y + height >= contentHeight - 4);
+    setDescAtTop(y <= 4);
+  };
 
 
   // Gesture-handler setup: scroll in description; swipe-to-close elsewhere
-  const titleScrollRef = useRef(null);
-  const descriptionScrollRef = useRef(null);
+  const titleScrollRef = useRef<React.ElementRef<typeof GestureScrollView>>(null);
+  const [titleAtTop, setTitleAtTop] = useState(true);
+  const descriptionScrollRef = useRef<React.ElementRef<typeof GestureScrollView>>(null);
+
+  useEffect(() => {
+    readingState.current = initialLightboxReadingState;
+    setReadingMode(false);
+    descMetrics.current.y = 0;
+    setDescAtTop(true);
+    descriptionScrollRef.current?.scrollTo({ y: 0, animated: false });
+    if (calloutPaging) {
+      setTitleAtTop(true);
+      titleScrollRef.current?.scrollTo({ y: 0, animated: false });
+    }
+  }, [updatedEvent.id, calloutPaging]);
+
+  const calloutDismiss = useCalloutLightboxDismiss({
+    translateY, backgroundOpacity, height: SCREEN_HEIGHT, reduceMotion: isReduceMotionEnabled,
+    onActivate: calloutPager.reset, onClose,
+  });
 
   const onPanGestureEvent = useRef(
     Animated.event(
@@ -582,31 +771,31 @@ const [descAtTop, setDescAtTop] = useState(true);
       const navigate = onNavigateRef.current;
       const length = eventsLengthRef.current;
 
-      const canGoNext = idx !== undefined && idx < length - 1;
-      const canGoPrev = idx !== undefined && idx > 0;
+      const next = getAdjacentLightboxIndex(idx, length, 1, loopNavigationRef.current);
+      const previous = getAdjacentLightboxIndex(idx, length, -1, loopNavigationRef.current);
 
       // Swipe left = go to next (translationX < -threshold)
-      if ((tx < -threshold || velocityX < -velocityThreshold) && canGoNext && navigate && idx !== undefined) {
+      if ((tx < -threshold || velocityX < -velocityThreshold) && next !== null && navigate) {
         // Animate out to left, then navigate
         Animated.timing(translateX, {
           toValue: -SCREEN_WIDTH,
           duration: 200,
           useNativeDriver: true,
         }).start(() => {
-          navigate(idx + 1);
+          navigate(next);
           // Reset position for next event
           translateX.setValue(0);
         });
       }
       // Swipe right = go to previous (translationX > threshold)
-      else if ((tx > threshold || velocityX > velocityThreshold) && canGoPrev && navigate && idx !== undefined) {
+      else if ((tx > threshold || velocityX > velocityThreshold) && previous !== null && navigate) {
         // Animate out to right, then navigate
         Animated.timing(translateX, {
           toValue: SCREEN_WIDTH,
           duration: 200,
           useNativeDriver: true,
         }).start(() => {
-          navigate(idx - 1);
+          navigate(previous);
           // Reset position for next event
           translateX.setValue(0);
         });
@@ -738,11 +927,16 @@ useEffect(() => {
     setIsImageViewerVisible(true);
   };
 
+  const handleGalleryTilePress = (index: number) => {
+    setSelectedGalleryImageIndex(index);
+    handleImagePress();
+  };
+
   /**
    * Handle like press - BLOCKED for guests (premium feature)
    */
   const handleLikePress = async () => {
-    if (isGuest) {
+    if (isGuest || isPrivateFriendEvent) {
       console.log('[GuestLimitation] Like blocked - premium feature for registered users only');
       return;
     }
@@ -789,7 +983,7 @@ useEffect(() => {
    * Handle share - BLOCKED for guests (premium feature)
    */
   const handleShare = async () => {
-    if (isGuest) {
+    if (isGuest || isPrivateFriendEvent) {
       console.log('[GuestLimitation] Share blocked - premium feature for registered users only');
       return;
     }
@@ -842,7 +1036,7 @@ useEffect(() => {
    * Handle interested press - toggles interested state and adds to calendar
    */
   const handleInterestedPress = async () => {
-    if (isGuest) {
+    if (isGuest || isPrivateFriendEvent) {
       console.log('[GuestLimitation] Interested blocked - premium feature for registered users only');
       return;
     }
@@ -879,13 +1073,7 @@ useEffect(() => {
 
       // If marking interested (not unmarking), also open calendar
       if (result.interested) {
-        await addToCalendar({
-          title: updatedEvent.title,
-          startDate: combineDateAndTime(updatedEvent.startDate, updatedEvent.startTime),
-          endDate: combineDateAndTime(updatedEvent.endDate || updatedEvent.startDate, updatedEvent.endTime || '11:59 PM'),
-          location: `${updatedEvent.venue}, ${updatedEvent.address}`,
-          notes: updatedEvent.description
-        });
+        await addEventToCalendarWithTiming(updatedEvent, publicCalendarLocation);
       }
     } catch (error) {
       setUserPrefs({ interestedEvents: previousInterestedEvents });
@@ -904,6 +1092,15 @@ useEffect(() => {
       return; // Always block for guests
     }
 
+    if (isPrivateFriendEvent) {
+      try {
+        await addEventToCalendarWithTiming(updatedEvent, privateCalendarLocation);
+      } catch (error) {
+        console.error('Failed to add private friend event to calendar', error);
+      }
+      return;
+    }
+
     // If not already interested, mark as interested (which will also add to calendar)
     if (!isInterested) {
       await handleInterestedPress();
@@ -912,13 +1109,7 @@ useEffect(() => {
 
     // Already interested, just add to calendar again
     try {
-      await addToCalendar({
-        title: updatedEvent.title,
-        startDate: combineDateAndTime(updatedEvent.startDate, updatedEvent.startTime),
-        endDate: combineDateAndTime(updatedEvent.endDate || updatedEvent.startDate, updatedEvent.endTime || '11:59 PM'),
-        location: `${updatedEvent.venue}, ${updatedEvent.address}`,
-        notes: updatedEvent.description
-      });
+      await addEventToCalendarWithTiming(updatedEvent, publicCalendarLocation);
     } catch (error) {
       console.error('Failed to add event to calendar', error);
     }
@@ -931,6 +1122,16 @@ const handleDirections = () => {
   if (isGuest) {
     console.log('[GuestLimitation] Directions blocked - premium feature for registered users only');
     return; // Always block for guests
+  }
+
+  if (!privateDirectionsAvailable) {
+    Alert.alert(
+      provinceScopeEvent ? 'Province-wide event' : 'Address shared later',
+      provinceScopeEvent
+        ? 'This event takes place across Prince Edward Island and has no single directions destination.'
+        : 'Directions will become available when the host shares the exact location.'
+    );
+    return;
   }
 
   // Proceed with getting directions for registered users
@@ -961,43 +1162,132 @@ const handleDirections = () => {
   }
 };
 
+  const handleAddressPress = () => {
+    if (isGuest || !privateDirectionsAvailable || isCityEvent || isAreaExperienceEvent(updatedEvent)) return;
+    Alert.alert(
+      'Open in Maps?',
+      `Get directions to ${headerVenueName || 'this location'}?\n\n${headerAddress}`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Open Maps', onPress: handleDirections },
+      ]
+    );
+  };
+
+  const handleOpenPrivateContext = () => {
+    if (!friendEventId) return;
+
+    if (privateLightboxAction.kind === 'manage') {
+      // Native modals do not survive an Expo Router screen transition
+      // consistently on both platforms. Persist the exact lightbox payload in
+      // the map store before opening management so the active surface (or the
+      // map-level fallback) can restore it when Back returns.
+      setSelectedImageData({
+        imageUrl,
+        event: updatedEvent,
+        venue,
+        cluster,
+        source: 'friend_event_resume',
+      });
+      router.push(`/friend-event/${friendEventId}`);
+      return;
+    }
+
+    if (privateLightboxAction.kind === 'none') return;
+    setPrivateInviteExpanded(privateLightboxAction.kind === 'invite');
+    setPrivateGuestSheetVisible(true);
+  };
+
+  const handlePrivateInvite = async (targetUid: string) => {
+    if (!friendEventId || privateInviteBusyUid) return;
+    setPrivateInviteBusyUid(targetUid);
+    try {
+      await inviteToFriendEvent(friendEventId, targetUid);
+    } catch (error) {
+      console.error('Failed to invite friend from private event lightbox', error);
+      Alert.alert('Could not send invitation', 'Please check your connection and try again.');
+    } finally {
+      setPrivateInviteBusyUid(null);
+    }
+  };
+
+  const handlePrivateRsvp = async (
+    response: Exclude<FriendEventRsvp, 'host' | 'invited'>
+  ) => {
+    if (!friendEventId || privateRsvpBusy) return;
+    setPrivateRsvpBusy(response);
+    try {
+      await respondToFriendEvent(friendEventId, response);
+    } catch (error) {
+      console.error('Failed to update private event RSVP', error);
+      Alert.alert('Could not update RSVP', 'Please check your connection and try again.');
+    } finally {
+      setPrivateRsvpBusy(null);
+    }
+  };
+
   const routeEvent = updatedEvent.locationScope === 'route';
-  const drawableRoute = hasDrawableRoute(updatedEvent);
+  const routeMapExperience = hasRouteMapExperience(updatedEvent);
   const areaLocationsEvent = hasDrawableAreaLocations(updatedEvent);
-  const drawableMapExperience = drawableRoute || areaLocationsEvent;
+  const programmeLocation = getVenueProgrammeLocation(updatedEvent);
+  useEffect(() => { setProgrammeOpen(false); }, [updatedEvent.id]);
+  useEffect(() => { if (!programmeLocation) setProgrammeOpen(false); }, [programmeLocation]);
+  const showAreaExperience = isCityEvent || isAreaExperienceEvent(updatedEvent);
+  const drawableMapExperience = routeMapExperience || areaLocationsEvent;
   const routeSourceUrl = getRouteSourceUrl(updatedEvent);
   const mapExperienceSourceUrl = routeEvent
     ? routeSourceUrl
     : getAreaSourceUrl(updatedEvent);
-  const handleRouteAction = () => {
+  const handleRouteAction = async () => {
+    if (routeActionInFlightRef.current) return;
     if (drawableMapExperience) {
-      amplitudeTrack(routeEvent ? 'route_map_opened' : 'area_locations_map_opened', {
-        event_id: String(updatedEvent.id),
-        route_status: routeEvent
-          ? updatedEvent.routeData?.status || 'unknown'
-          : updatedEvent.areaData?.status || 'unknown',
-        confirmed_segments: updatedEvent.routeData?.segments?.filter(
-          (segment) => segment.certainty === 'confirmed'
-        ).length || 0,
-        approximate_segments: updatedEvent.routeData?.segments?.filter(
-          (segment) => segment.certainty === 'approximate'
-        ).length || 0,
-        stop_count: routeEvent
-          ? updatedEvent.routeData?.stops?.length || 0
-          : getAreaLocations(updatedEvent).length,
-        navigation_mode: onShowRoute ? 'same_screen' : 'cross_tab',
-      });
+      routeActionInFlightRef.current = true;
+      setRouteActionBusy(routeEvent);
+      try {
+        // Organizer-supplied geometry is used as-is. Provider-generated route
+        // geometry is requested only now, kept in process memory, and passed
+        // directly to the Map without entering the event store or AsyncStorage.
+        const mapEvent = routeEvent
+          ? await resolveRouteForMap(updatedEvent)
+          : updatedEvent;
 
-      if (onShowRoute) {
-        onShowRoute(updatedEvent);
-        return;
+        amplitudeTrack(routeEvent ? 'route_map_opened' : 'area_locations_map_opened', {
+          event_id: String(mapEvent.id),
+          route_status: routeEvent
+            ? mapEvent.routeData?.status || 'unknown'
+            : mapEvent.areaData?.status || 'unknown',
+          confirmed_segments: mapEvent.routeData?.segments?.filter(
+            (segment) => segment.certainty === 'confirmed'
+          ).length || 0,
+          approximate_segments: mapEvent.routeData?.segments?.filter(
+            (segment) => segment.certainty === 'approximate'
+          ).length || 0,
+          stop_count: routeEvent
+            ? mapEvent.routeData?.stops?.length || 0
+            : getAreaLocations(mapEvent).length,
+          navigation_mode: onShowRoute ? 'same_screen' : 'cross_tab',
+          route_resolution: mapEvent.routeData?.runtimeResolvedAt ? 'session' : 'organizer',
+        });
+
+        if (onShowRoute) {
+          onShowRoute(mapEvent);
+          return;
+        }
+
+        // Lightboxes also live on Events, Specials, and carousel surfaces.
+        // This ephemeral event is queued only in Zustand process memory.
+        setPendingRouteEvent(mapEvent);
+        onClose();
+        router.push('/(tabs)/map');
+      } catch (error) {
+        const message = error instanceof RouteRuntimeError
+          ? error.message
+          : 'The route could not be calculated right now. Please try again.';
+        Alert.alert('Could not show route', message);
+      } finally {
+        routeActionInFlightRef.current = false;
+        setRouteActionBusy(false);
       }
-
-      // Lightboxes also live on Events, Specials, and carousel surfaces. Queue
-      // the route before switching tabs so the Map can draw it immediately.
-      setPendingRouteEvent(updatedEvent);
-      onClose();
-      router.push('/(tabs)/map');
       return;
     }
 
@@ -1032,9 +1322,9 @@ const handleDirections = () => {
     // Let the modal host dismiss before mutating the underlying callout tree.
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
-        selectVenues(sortedVenues);
-        selectCluster(cluster);
-        selectVenue(venue);
+        selectCallout(sortedVenues, cluster, {
+          preferredVenueLocationKey: venue.locationKey,
+        });
       });
     });
   };
@@ -1117,41 +1407,100 @@ const handleNonTicketAction = () => {
   const timeStatus = getEventTimeStatus(updatedEvent);
   const isHappeningNow = timeStatus === 'now';
 
-  // Build structured date/time line (mirror Specials card behavior)
-  const baseDateText = formatEventDateTime(updatedEvent.startDate, updatedEvent.startTime, updatedEvent);
-
-  const startRaw = updatedEvent?.startTime;
-  const endRaw   = updatedEvent?.endTime;
-
-  const start = startRaw && startRaw !== 'N/A' ? formatTime(startRaw) : null;
-  const end   = endRaw   && endRaw   !== 'N/A' ? formatTime(endRaw)   : null;
-
-  const range =
-    start && end ? `${start} – ${end}` :
-    start        ? `${start} – late`  :
-    end          ? `until ${end}`     :
-                  '';
-
-  const rangeOrUndefined = range && range.trim() ? range : undefined;
-  const { label, start: s, end: e, labelWithTime } = partsFrom(baseDateText, rangeOrUndefined);
-  const showRange = (timeStatus === 'now' || timeStatus === 'today' || timeStatus === 'future') && !!rangeOrUndefined;
-  const displayUntilDate = getEventDisplayUntilDate(updatedEvent);
+  // One shared provenance-aware time sentence across every app surface.
+  const standardDateText = formatEventTimingSummary(updatedEvent);
+  const timeRangeText = getEventTimeRangeParts(updatedEvent).text;
+  const participationTimeLabel = getAreaParticipationTimingLabel(updatedEvent, timeRangeText);
+  const baseDateText = participationTimeLabel && standardDateText.endsWith(timeRangeText)
+    ? standardDateText.slice(0, -timeRangeText.length) + participationTimeLabel : standardDateText;
+  const scheduleContext = getEventScheduleContext(updatedEvent);
+  const displayUntilDate = scheduleContext ? undefined : getEventDisplayUntilDate(updatedEvent);
   const endDateSuffix =
-    showRange && isFutureDate(displayUntilDate) ? ` • (Until ${formatEndDateLabel(displayUntilDate!)})` : '';
-  const dateTimeDisplay = isHappeningNow
-    ? `Now${showRange ? ` • ${s}${e ? ` – ${e}` : ''}${endDateSuffix}` : ''}`
-    : showRange
-      ? `${label} • ${s}${e ? ` – ${e}` : ''}${endDateSuffix}`
-      : labelWithTime;
-
-  // Prepare images array for the image viewer
-  // Use fallback if: URL is invalid OR the thumbnail reported a load error
-  const getImagesForViewer = () => {
-    // If URL looks valid AND the thumbnail didn't error, use the remote URL
-    if (isValidImageUrl(imageUrl) && !isUsingFallbackImage) {
-      return [{ uri: imageUrl }];
+    isFutureDate(displayUntilDate) ? ` • (Until ${formatEndDateLabel(displayUntilDate!)})` : '';
+  const dateTimeDisplay = [
+    `${baseDateText}${endDateSuffix}`,
+    scheduleContext?.label,
+  ].filter(Boolean).join(' · ');
+  const timingDisclosure = getEventTimingDisclosure(updatedEvent);
+  const timingState = getEventScheduleState(updatedEvent);
+  const timingHelpText = timingDisclosure
+    ? `${timingDisclosure} Event times can change after GathR receives them. Check the original post for the latest details or report a correction if this listing no longer matches.`
+    : 'Event times can change after GathR receives them. Check the original post for the latest details or report a correction if this listing no longer matches.';
+  const handleReportIncorrectTime = async () => {
+    const subject = `GathR time report: ${updatedEvent.title}`;
+    const body = [
+      'I believe this event time is incorrect.',
+      '',
+      `Event: ${updatedEvent.title}`,
+      `Event ID: ${String(updatedEvent.id)}`,
+      `Displayed time: ${dateTimeDisplay}`,
+      `Timing state: ${timingState.code}`,
+      originalSourceUrl ? `Original post: ${originalSourceUrl}` : '',
+      '',
+      'What should be corrected:',
+    ].filter(Boolean).join('\n');
+    const reportUrl = `mailto:craig@gathrapp.ca?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+    try {
+      const supported = await Linking.canOpenURL(reportUrl);
+      if (!supported) throw new Error('Mail is unavailable');
+      await Linking.openURL(reportUrl);
+      amplitudeTrack('event_time_report_started', {
+        event_id: String(updatedEvent.id),
+        timing_state: timingState.code,
+        source: 'lightbox',
+      });
+    } catch {
+      Alert.alert('Email unavailable', 'Please email craig@gathrapp.ca and include the event name.');
     }
-    // Otherwise use the local fallback asset
+  };
+  const privateOwnRsvp = friendEventProjection?.ownRsvp
+    || updatedEvent.friendEvent?.ownRsvp
+    || 'invited';
+  const privateBadgeLabel = updatedEvent.friendEvent?.viewerRole === 'host'
+    ? 'Private · Hosting'
+    : privateOwnRsvp === 'going'
+      ? 'Private · Going'
+      : privateOwnRsvp === 'maybe'
+        ? 'Private · Maybe'
+        : privateOwnRsvp === 'cant_go'
+          ? "Private · Can't go"
+          : 'Private · Invited';
+  const privateHostName = friendEventProjection?.host.displayName
+    || updatedEvent.friendEvent?.hostName
+    || 'a friend';
+  const privateGuestCount = friendEventProjection
+    ? Math.max(friendEventProjection.viewerCount || 0, friendEventProjection.guests.length)
+    : 0;
+  const privateVisibility = friendEventProjection?.visibility
+    || updatedEvent.friendEvent?.visibility;
+  const privateAudienceCopy = privateVisibility === 'all_friends'
+    ? 'Visible to all friends'
+    : 'Selected friends only';
+  const privateGuestListVisible = friendEventProjection?.guestListVisible === true;
+  const privateCanInvite = friendEventProjection?.viewerRole === 'host'
+    || friendEventProjection?.guestInviteMode === 'guests_can_invite';
+  const privateLightboxAction = getFriendEventLightboxAction({
+    viewerRole: updatedEvent.friendEvent?.viewerRole || 'guest',
+    guestListVisible: privateGuestListVisible,
+    guestInviteMode: friendEventProjection?.guestInviteMode || 'host_only',
+    guestCount: privateGuestCount,
+  });
+  const invitedPrivateGuestUids = new Set(
+    (friendEventProjection?.guests || []).map((guest) => guest.uid)
+  );
+  const privateInviteCandidates = socialFriends.filter(
+    (friend) => !invitedPrivateGuestUids.has(friend.uid)
+  );
+
+  // Prepare images for the full-screen viewer. The visible image component
+  // still provides its category fallback when an individual remote image fails.
+  const displayImageUrl = galleryImageUrls[selectedGalleryImageIndex] || imageUrl;
+
+  const getImagesForViewer = () => {
+    if (galleryImageUrls.length > 0) {
+      return galleryImageUrls.map((url) => ({ uri: url }));
+    }
+    // Otherwise use the local fallback asset.
     return [getCategoryFallbackImage(updatedEvent.category, updatedEvent.type, 'post', updatedEvent)];
   };
   const images = getImagesForViewer();
@@ -1185,9 +1534,10 @@ const handleNonTicketAction = () => {
 
   return (
   <GestureHandlerRootView style={{ flex: 1 }}>
+    <StatusBar barStyle="light-content" backgroundColor="#000000" translucent />
     <PanGestureHandler
       ref={verticalPanRef}
-      enabled={!isImageViewerVisible && !justClosedImageViewer}
+      enabled={!calloutPaging && !isImageViewerVisible && !justClosedImageViewer}
       waitFor={descriptionScrollRef}
       simultaneousHandlers={horizontalPanRef}
       activeOffsetY={10}
@@ -1211,7 +1561,7 @@ const handleNonTicketAction = () => {
       {/* Horizontal swipe handler for navigation */}
       <PanGestureHandler
         ref={horizontalPanRef}
-        enabled={navigationEnabled && !isImageViewerVisible && !justClosedImageViewer}
+        enabled={!calloutPaging && navigationEnabled && !isImageViewerVisible && !justClosedImageViewer}
         simultaneousHandlers={verticalPanRef}
         waitFor={titleScrollRef}
         activeOffsetX={[-20, 20]}
@@ -1226,77 +1576,157 @@ const handleNonTicketAction = () => {
           styles.contentContainer,
           {
             top: lightboxTop,
-            bottom: tabBarHeight,
+            bottom: lightboxBottom,
           },
-          { transform: [{ translateY: translateY }, { translateX: translateX }] }
+          { transform: [{ translateY: translateY }, { translateX: calloutPaging ? 0 : translateX }] }
         ]}
       >
-        {/* Header */}
-        <View style={styles.header}>
-          <View style={styles.headerVenueAvatarContainer}>
-            <FallbackImage
-              imageUrl={updatedEvent.profileUrl}
-              category={updatedEvent.category}
-              type={updatedEvent.type}
-              style={styles.headerVenueAvatar}
-              fallbackType="profile"
-              item={updatedEvent}
-              resizeMode="cover"
-            />
-            <View style={styles.headerVenueFavoriteOverlay}>
-              <VenueFavoriteButton
-                locationKey={createLocationKeyFromEvent(updatedEvent)}
-                venueName={updatedEvent.venue}
-                size={12}
-                source="event_image_lightbox"
-                style={styles.headerVenueFavoriteButton}
+        {/* Venue identity stays below the camera safe area, above the media. */}
+        <CalloutLightboxDismissSurface callout={calloutPaging}
+          enabled={!isImageViewerVisible && !justClosedImageViewer}
+          onVerticalGesture={calloutDismiss.onGestureEvent} onVerticalState={calloutDismiss.onStateChange}>
+        <View testID="event-lightbox-header" style={[
+          styles.header,
+          {
+            paddingTop: safeAreaInsets.top + 10,
+            paddingLeft: Math.max(12, safeAreaInsets.left + 12),
+            paddingRight: Math.max(12, safeAreaInsets.right + 12),
+          },
+        ]}>
+          <View style={styles.headerIdentitySurface}>
+            <View style={styles.headerVenueAvatarContainer}>
+              <FallbackImage
+                imageUrl={updatedEvent.profileUrl}
+                category={updatedEvent.category}
+                type={updatedEvent.type}
+                style={styles.headerVenueAvatar}
+                fallbackType="profile"
+                item={updatedEvent}
+                resizeMode="cover"
               />
+              {!provinceScopeEvent && (!isPrivateFriendEvent || friendEventProjection?.locationType === 'recognized_venue') && (
+                <View style={styles.headerVenueFavoriteOverlay}>
+                  <VenueFavoriteButton
+                    locationKey={createLocationKeyFromEvent(updatedEvent)}
+                    venueName={updatedEvent.venue}
+                    size={12}
+                    source="event_image_lightbox"
+                    style={styles.headerVenueFavoriteButton}
+                  />
+                </View>
+              )}
+            </View>
+            <View style={styles.headerTextContainer}>
+              <Text style={styles.headerVenueName} numberOfLines={1} accessibilityLabel={headerVenueName}>
+                {headerVenueName}
+              </Text>
+              {headerAddress ? (
+                !showAreaExperience && privateDirectionsAvailable ? (
+                  <TouchableOpacity
+                    testID="event-lightbox-address"
+                    hitSlop={10}
+                    accessibilityRole="link"
+                    accessibilityLabel={`Get directions to ${headerAddress}`}
+                    accessibilityHint="Asks before opening Maps"
+                    accessibilityState={{ disabled: isGuest }}
+                    disabled={isGuest}
+                    onPress={handleAddressPress}
+                    style={styles.headerAddressButton}
+                  >
+                    <Text style={[styles.headerAddress, styles.headerAddressLink]}>{headerAddress}</Text>
+                  </TouchableOpacity>
+                ) : <Text style={styles.headerAddress}>{headerAddress}</Text>
+              ) : null}
             </View>
           </View>
-          <View style={styles.headerTextContainer}>
-            <GestureScrollView
-              ref={titleScrollRef}
-              horizontal
-              nestedScrollEnabled
-              bounces={false}
-              showsHorizontalScrollIndicator={false}
-              overScrollMode="never"
-              style={styles.titleScroll}
-              contentContainerStyle={styles.titleScrollContent}
-            >
-              <Text
-                style={styles.title}
-                numberOfLines={1}
-                accessibilityLabel={updatedEvent.title}
-              >
-                {updatedEvent.title}
-              </Text>
-            </GestureScrollView>
-            <Text style={styles.subtitle} numberOfLines={1}>
-              {updatedEvent.venue}
-            </Text>
-          </View>
-          <TouchableOpacity style={styles.closeButton} onPress={handleCloseButton}>
+          <TouchableOpacity
+            accessibilityLabel="Close event details"
+            accessibilityRole="button"
+            onPress={handleCloseButton}
+            style={styles.closeButton}
+          >
             <MaterialIcons name="close" size={24} color="#FFFFFF" />
           </TouchableOpacity>
         </View>
-        
+        </CalloutLightboxDismissSurface>
+
+        <CalloutLightboxPages enabled={calloutPaging} paging={calloutPager} horizontalRef={calloutHorizontalPanRef}
+          previous={previousIndex === null ? undefined : events?.[previousIndex]}
+          next={nextIndex === null ? undefined : events?.[nextIndex]}
+          handoff={calloutPager.handoffIndex === null ? undefined : events?.[calloutPager.handoffIndex]}
+          categoryColor={getCategoryColor}
+          width={calloutPageWidth} imageHeight={imageHeight} onWidth={setCalloutPageWidth}
+          index={currentIndex ?? 0} count={events?.length ?? 0}>
+        <CalloutLightboxDismissSurface callout={calloutPaging}
+          enabled={!isImageViewerVisible && !justClosedImageViewer}
+          onVerticalGesture={calloutDismiss.onGestureEvent} onVerticalState={calloutDismiss.onStateChange}>
         {/* Tappable Image */}
-        <TouchableOpacity onPress={handleImagePress} activeOpacity={0.9} style={styles.imageWrapper}>
-          <FallbackImage
-            imageUrl={imageUrl}
-            category={updatedEvent.category}
-            type={updatedEvent.type}
-            style={[styles.image, { height: imageHeight }]}
-            fallbackType="post"
-            item={updatedEvent}
-            resizeMode="contain"
-            onFallback={setIsUsingFallbackImage as any}
-          />
-          {/* Add a subtle zoom icon overlay */}
-          <View style={styles.zoomIconOverlay}>
-            <MaterialIcons name="zoom-in" size={24} color="rgba(255, 255, 255, 0.8)" />
+        <View style={[styles.imageWrapper, { height: imageHeight }]}>
+          <View style={styles.imageGrid}>
+            <TouchableOpacity
+              accessibilityLabel={`Open photos for ${updatedEvent.title}`}
+              accessibilityRole="imagebutton"
+              activeOpacity={0.9}
+              onPress={() => handleGalleryTilePress(0)}
+              style={[
+                styles.imagePressSurface,
+                gallerySideTileIndexes.length > 0 && styles.imageGridHero,
+              ]}
+            >
+              <FallbackImage
+                imageUrl={galleryImageUrls[0] || displayImageUrl}
+                category={updatedEvent.category}
+                type={updatedEvent.type}
+                style={styles.image}
+                fallbackType="post"
+                item={updatedEvent}
+                resizeMode="contain"
+              />
+            </TouchableOpacity>
+
+            {gallerySideTileIndexes.length > 0 && (
+              <View style={styles.imageGridSideColumn}>
+                {gallerySideTileIndexes.map((index) => {
+                  const hasHiddenImages = index === gallerySideTileIndexes[gallerySideTileIndexes.length - 1]
+                    && galleryHiddenImageCount > 0;
+                  return (
+                    <TouchableOpacity
+                      key={galleryImageUrls[index]}
+                      accessibilityLabel={`Open additional photo for ${updatedEvent.title}`}
+                      accessibilityRole="imagebutton"
+                      activeOpacity={0.9}
+                      onPress={() => handleGalleryTilePress(index)}
+                      style={styles.imageGridSideTile}
+                    >
+                      <FallbackImage
+                        imageUrl={galleryImageUrls[index]}
+                        category={updatedEvent.category}
+                        type={updatedEvent.type}
+                        style={styles.imageGalleryThumbnail}
+                        fallbackType="post"
+                        item={updatedEvent}
+                        resizeMode="cover"
+                      />
+                      {hasHiddenImages && (
+                        <View style={styles.imageGridMoreOverlay} pointerEvents="none">
+                          <Text style={styles.imageGridMoreText}>{`+${galleryHiddenImageCount}`}</Text>
+                        </View>
+                      )}
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            )}
           </View>
+
+          {/* The whole image opens full-screen; this is only a visual affordance. */}
+          <View style={styles.zoomIconOverlay}>
+            <MaterialIcons name="zoom-in" size={21} color="rgba(255, 255, 255, 0.9)" />
+          </View>
+
+          {calloutPaging && <CalloutLightboxCounter index={currentIndex ?? 0} count={events?.length ?? 0}
+            special={updatedEvent.type === 'special'} />}
+          {interestCarouselPaging && !calloutPaging && <InterestLightboxCounter index={currentIndex} count={events?.length ?? 0} />}
 
           {showTrendingOverlay && (
             <View style={styles.trendingOverlay} pointerEvents="none">
@@ -1354,23 +1784,21 @@ const handleNonTicketAction = () => {
             </View>
           )}
 
-          {isCityEvent && !showTrendingOverlay && (
+          {showAreaExperience && !showTrendingOverlay && (
             <View style={styles.trendingOverlay} pointerEvents="none">
               <View style={styles.cityEventStatusPill}>
                 <MaterialIcons
-                  name={routeEvent ? 'alt-route' : 'festival'}
+                  name={routeEvent ? 'alt-route' : areaScopeBadge?.iconName || 'map'}
                   size={15}
                   color="#4E342E"
                 />
                 <Text style={styles.cityEventStatusText} numberOfLines={1}>
                   {routeEvent
                     ? getRouteCompactCertaintyLabel(updatedEvent.routeData)
-                    : areaLocationsEvent
-                      ? getAreaLocationsLabel(updatedEvent)
-                      : 'Area-wide'}
+                    : areaScopeBadge?.label || 'Area-wide'}
                 </Text>
               </View>
-              {events && currentIndex !== undefined && (
+              {!interestCarouselPaging && events && currentIndex !== undefined && (
                 <View style={styles.trendingPositionPill}>
                   <Text style={styles.trendingPositionText}>
                     {`${currentIndex + 1} / ${events.length}`}
@@ -1382,26 +1810,30 @@ const handleNonTicketAction = () => {
 
           {navigationEnabled && (
             <>
-              {canNavigatePrev && (
+              {previousIndex !== null && (
                 <TouchableOpacity
-                  style={styles.navArrowLeft}
-                  onPress={() => onNavigate && currentIndex !== undefined && onNavigate(currentIndex - 1)}
+                  style={[styles.navArrowLeft, !!interestPosition?.previousLabel && styles.wrapArrow]}
+                  accessibilityLabel={interestPosition?.previousLabel || 'Previous event'}
+                  onPress={() => calloutPaging ? calloutPager.step(-1) : onNavigate?.(previousIndex)}
                   activeOpacity={0.7}
                 >
                   <View style={styles.navArrowContainer}>
                     <MaterialIcons name="chevron-left" size={38} color="#FFFFFF" />
                   </View>
+                  {!!interestPosition?.previousLabel && <Text style={styles.wrapLabel}>{interestPosition.previousLabel}</Text>}
                 </TouchableOpacity>
               )}
-              {canNavigateNext && (
+              {nextIndex !== null && (
                 <TouchableOpacity
-                  style={styles.navArrowRight}
-                  onPress={() => onNavigate && currentIndex !== undefined && onNavigate(currentIndex + 1)}
+                  style={[styles.navArrowRight, !!interestPosition?.nextLabel && styles.wrapArrow]}
+                  accessibilityLabel={interestPosition?.nextLabel || 'Next event'}
+                  onPress={() => calloutPaging ? calloutPager.step(1) : onNavigate?.(nextIndex)}
                   activeOpacity={0.7}
                 >
                   <View style={styles.navArrowContainer}>
                     <MaterialIcons name="chevron-right" size={38} color="#FFFFFF" />
                   </View>
+                  {!!interestPosition?.nextLabel && <Text style={styles.wrapLabel}>{interestPosition.nextLabel}</Text>}
                 </TouchableOpacity>
               )}
             </>
@@ -1468,10 +1900,39 @@ const handleNonTicketAction = () => {
               </TouchableOpacity>
             </View>
           )}
-        </TouchableOpacity>
+        </View>
         
+        </CalloutLightboxDismissSurface>
+        <CalloutLightboxDismissSurface callout={calloutPaging} gestureRef={calloutTitleDismissRef}
+          enabled={titleAtTop && !isImageViewerVisible && !justClosedImageViewer}
+          onVerticalGesture={calloutDismiss.onGestureEvent} onVerticalState={calloutDismiss.onStateChange}>
+        <View style={styles.eventHeading}>
+          <GestureScrollView
+            ref={titleScrollRef}
+            {...(calloutPaging ? {
+              waitFor: [calloutHorizontalPanRef, calloutTitleDismissRef],
+              disallowInterruption: false, directionalLockEnabled: true,
+              // Update only after scrolling ends: reaching the top mid-drag
+              // must not transfer an existing scroll into a close gesture.
+              onScrollEndDrag: (e) => setTitleAtTop(e.nativeEvent.contentOffset.y <= 4),
+              onMomentumScrollEnd: (e) => setTitleAtTop(e.nativeEvent.contentOffset.y <= 4),
+            } : {})}
+            nestedScrollEnabled
+            bounces={false}
+            showsHorizontalScrollIndicator={false}
+            overScrollMode="never"
+            style={styles.titleScroll}
+            contentContainerStyle={styles.titleScrollContent}
+          >
+            <Text style={styles.title} accessibilityRole="header" accessibilityLabel={updatedEvent.title}>
+              {titleParts?.[1] || updatedEvent.title}
+            </Text>
+            {titleParts && <Text style={styles.titleSubtitle}>{titleParts[2]}</Text>}
+          </GestureScrollView>
+        </View>
+
         {/* Status badges */}
-        <View style={styles.badgeContainer}>
+        {!readingMode && <View style={styles.badgeContainer}>
           {isHappeningNow && (
             <View style={styles.nowBadge}>
               <Text style={styles.badgeText}>Now</Text>
@@ -1481,7 +1942,13 @@ const handleNonTicketAction = () => {
           <View style={[styles.categoryBadge, { backgroundColor: getCategoryColor(updatedEvent.category) }]}>
             <Text style={styles.badgeText}>{updatedEvent.category}</Text>
           </View>
-          {hasDisplayableTicketPrice(updatedEvent.ticketPrice) &&
+          {updatedEvent.friendEvent && (
+            <View style={styles.privateInvitationBadge}>
+              <MaterialIcons name="lock" size={12} color="#FFFFFF" />
+              <Text style={styles.badgeText}>{privateBadgeLabel}</Text>
+            </View>
+          )}
+          {!isPrivateFriendEvent && hasDisplayableTicketPrice(updatedEvent.ticketPrice) &&
             updatedEvent.ticketPrice !== 'Ticketed Event' &&
             !(hasTicketLink && paid) && (
             <View style={styles.priceBadge}>
@@ -1537,48 +2004,273 @@ const handleNonTicketAction = () => {
               style={styles.ticketCtaPill}
             />
           )}
-        </View>
+        </View>}
+
+        </CalloutLightboxDismissSurface>
+        {isPrivateFriendEvent && (
+          <View style={styles.privateEventContext}>
+            <View style={styles.privateEventContextHeader}>
+              <View style={styles.privateEventContextIcon}>
+                <MaterialIcons name="lock" size={17} color="#FFFFFF" />
+              </View>
+              <View style={styles.privateEventContextCopy}>
+                <Text style={styles.privateEventContextTitle} numberOfLines={1}>
+                  {updatedEvent.friendEvent?.viewerRole === 'host'
+                    ? 'Hosted by you'
+                    : `Hosted by ${privateHostName}`}
+                </Text>
+                <Text style={styles.privateEventContextMeta} numberOfLines={2}>
+                  {privateAudienceCopy}
+                  {privateGuestCount > 0 ? ` · ${privateGuestCount} invited` : ''}
+                </Text>
+              </View>
+              {privateLightboxAction.kind !== 'none' && (
+                <TouchableOpacity
+                  accessibilityLabel={privateLightboxAction.kind === 'manage'
+                    ? 'Manage private event'
+                    : privateLightboxAction.label}
+                  activeOpacity={0.75}
+                  onPress={handleOpenPrivateContext}
+                  style={styles.privateEventDetailsButton}
+                >
+                  <Text style={styles.privateEventDetailsText}>
+                    {privateLightboxAction.label}
+                  </Text>
+                  <MaterialIcons name="chevron-right" size={17} color="#D6BBFB" />
+                </TouchableOpacity>
+              )}
+            </View>
+
+            {updatedEvent.friendEvent?.viewerRole === 'guest' && (
+              <View style={styles.privateRsvpRow}>
+                {([
+                  ['going', 'Going', 'check-circle'],
+                  ['maybe', 'Maybe', 'help'],
+                  ['cant_go', "Can't go", 'cancel'],
+                ] as const).map(([value, label, icon]) => {
+                  const selected = privateOwnRsvp === value;
+                  const busy = privateRsvpBusy === value;
+                  return (
+                    <TouchableOpacity
+                      key={value}
+                      accessibilityLabel={`RSVP ${label}`}
+                      accessibilityState={{ selected, busy }}
+                      activeOpacity={0.75}
+                      disabled={privateRsvpBusy !== null}
+                      onPress={() => void handlePrivateRsvp(value)}
+                      style={[
+                        styles.privateRsvpButton,
+                        selected && styles.privateRsvpButtonSelected,
+                        privateRsvpBusy !== null && !busy && styles.privateRsvpButtonDimmed,
+                      ]}
+                    >
+                      <MaterialIcons
+                        name={busy ? 'hourglass-empty' : icon}
+                        size={15}
+                        color={selected || busy ? '#FFFFFF' : '#D6BBFB'}
+                      />
+                      <Text style={[
+                        styles.privateRsvpText,
+                        (selected || busy) && styles.privateRsvpTextSelected,
+                      ]}>{label}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            )}
+          </View>
+        )}
+
+        {friendPresence && (
+          <View style={styles.lightboxFriendPresence}>
+            <TouchableOpacity
+              accessibilityLabel={`${friendPresence.friendCount} friend${friendPresence.friendCount === 1 ? '' : 's'} checked in. ${friendListExpanded ? 'Hide' : 'Show'} who is here.`}
+              accessibilityRole="button"
+              activeOpacity={0.8}
+              onPress={() => setFriendListExpanded((value) => !value)}
+              style={styles.lightboxFriendPresenceHeader}
+            >
+              <View style={styles.lightboxFriendPresenceIcon}>
+                <MaterialIcons name="people" size={17} color="#FFFFFF" />
+              </View>
+              <View style={styles.lightboxFriendPresenceCopy}>
+                <Text style={styles.lightboxFriendPresenceTitle} numberOfLines={1}>
+                  {formatFriendsHere(friendPresence.friends)}
+                </Text>
+                <Text style={styles.lightboxFriendPresenceHint} numberOfLines={1}>
+                  {friendListExpanded ? 'Hide check-in details' : 'Who’s here'}
+                </Text>
+              </View>
+              <View style={styles.lightboxFriendPresenceCount}>
+                <Text style={styles.lightboxFriendPresenceCountText}>{friendPresence.friendCount}</Text>
+              </View>
+              <MaterialIcons
+                name={friendListExpanded ? 'keyboard-arrow-up' : 'keyboard-arrow-down'}
+                size={20}
+                color="#53389E"
+              />
+            </TouchableOpacity>
+            {friendListExpanded && (
+              <GestureScrollView
+                nestedScrollEnabled
+                showsVerticalScrollIndicator={friendPresence.friendCount > 3}
+                style={styles.lightboxFriendPresenceList}
+              >
+                {friendPresence.friends.map((friend) => (
+                  <View key={friend.ownerUid} style={styles.lightboxFriendPresencePerson}>
+                    <View style={styles.lightboxFriendPresenceInitial}>
+                      <Text style={styles.lightboxFriendPresenceInitialText}>
+                        {(friend.displayName || 'F').trim().slice(0, 1).toUpperCase()}
+                      </Text>
+                    </View>
+                    <View style={styles.lightboxFriendPresencePersonCopy}>
+                      <Text style={styles.lightboxFriendPresenceName}>{friend.displayName}</Text>
+                      {friend.message ? (
+                        <Text style={styles.lightboxFriendPresenceMessage} numberOfLines={1}>
+                          {friend.message}
+                        </Text>
+                      ) : null}
+                    </View>
+                  </View>
+                ))}
+              </GestureScrollView>
+            )}
+          </View>
+        )}
 
         {/* Essential event information */}
-        <View style={styles.infoContainer}>
+        {readingMode ? (
+          <TouchableOpacity
+            testID="event-lightbox-restore-details"
+            accessibilityRole="button"
+            accessibilityLabel="Show event categories and timing"
+            accessibilityState={{ expanded: false }}
+            onPress={() => applyReadingAction({ type: 'restore' })}
+            style={styles.restoreDetailsButton}
+          >
+            <MaterialIcons name="format-list-bulleted" size={17} color="#D1D5DB" />
+            <Text style={styles.restoreDetailsText}>Event details</Text>
+            <MaterialIcons name="keyboard-arrow-down" size={21} color="#FFFFFF" />
+          </TouchableOpacity>
+        ) : <View style={styles.infoContainer}>
           <View style={styles.infoRow}>
             <MaterialIcons name="access-time" size={20} color="#FFFFFF" />
-            <Text style={styles.infoText}>
-              {dateTimeDisplay}
-            </Text>
+            <View style={styles.timingSummaryGroup}>
+              <EventTimingSummaryText
+                event={updatedEvent}
+                style={[styles.infoText, styles.timingSummaryLabel]}
+                containerStyle={styles.timingSummaryText}
+                showInfoMarker={false}
+                showStatusPrefix={!isHappeningNow}
+              />
+              {(scheduleContext || endDateSuffix) && (
+                <TouchableOpacity
+                  accessibilityLabel={scheduleExpanded ? 'Hide schedule details' : 'Show schedule details'}
+                  accessibilityRole="button"
+                  accessibilityState={{ expanded: scheduleExpanded }}
+                  onPress={() => {
+                    animateDetails();
+                    setScheduleExpanded((value) => !value);
+                    setTimingDisclosureExpanded(false);
+                  }}
+                  style={styles.timingInfoButton}
+                  testID="event-schedule-toggle"
+                >
+                  <MaterialIcons name={scheduleExpanded ? 'keyboard-arrow-up' : 'keyboard-arrow-down'} size={22} color="#D1D5DB" />
+                </TouchableOpacity>
+              )}
+              {!isPrivateFriendEvent ? (
+                <TouchableOpacity
+                  accessibilityLabel={timingDisclosureExpanded ? 'Hide time details' : 'Explain event time'}
+                  accessibilityRole="button"
+                  accessibilityState={{ expanded: timingDisclosureExpanded }}
+                  onPress={() => {
+                    animateDetails();
+                    setTimingDisclosureExpanded((value) => !value);
+                    setScheduleExpanded(false);
+                  }}
+                  style={styles.timingInfoButton}
+                  testID="event-time-info-button"
+                >
+                  <MaterialIcons name="info-outline" size={17} color="#F4C542" />
+                </TouchableOpacity>
+              ) : null}
+            </View>
+            <EventTimingBadge
+              event={updatedEvent}
+              compact
+              showInfoIndicator={false}
+              style={styles.timingBadge}
+            />
           </View>
 
-          <View style={styles.infoRow}>
-            <MaterialIcons name="place" size={20} color="#FFFFFF" />
-            <Text style={styles.infoText}>{updatedEvent.address}</Text>
-          </View>
-        </View>
+          {scheduleExpanded && (
+            <View testID="event-schedule-details" style={styles.scheduleDetails}>
+              {scheduleContext ? <EventSeriesContextLine
+                event={updatedEvent}
+                tone="dark"
+                numberOfLines={3}
+                containerStyle={styles.seriesContextLine}
+              /> : <Text style={styles.scheduleDetailsText}>{endDateSuffix.replace(/^ • /, '')}</Text>}
+            </View>
+          )}
+
+          {!isPrivateFriendEvent && timingDisclosureExpanded && (
+            <View style={styles.timingDisclosureContainer}>
+              <View style={styles.timingDisclosureBody}>
+                <Text style={styles.timingDisclosureText}>{timingHelpText}</Text>
+                <EventTimingDisclosureActions
+                  onReportIncorrectTime={handleReportIncorrectTime}
+                  onViewOriginalPost={originalSourceUrl
+                    ? () => Linking.openURL(originalSourceUrl)
+                    : undefined}
+                />
+              </View>
+            </View>
+          )}
+
+        </View>}
 
         {/* Description — fixed flexible area; scrolls internally for long copy */}
-<View style={styles.descriptionContainer}>
+<View
+  style={[
+    styles.descriptionContainer,
+    {
+      minHeight: isPrivateFriendEvent || friendPresence
+        ? Math.min(descriptionMinHeight, 74)
+        : descriptionMinHeight,
+    },
+  ]}
+>
   <GestureScrollView
     ref={descriptionScrollRef}
+    // Resolve the horizontal axis first, then let vertical scrolling own its
+    // gesture. This also protects reading mode and links from sideways drags.
+    {...(calloutPaging ? {
+      waitFor: calloutHorizontalPanRef, disallowInterruption: false, directionalLockEnabled: true,
+    } : {})}
     style={styles.descriptionScroll}
     contentContainerStyle={styles.descriptionContent}
     showsVerticalScrollIndicator={true}
     scrollEventThrottle={16}
     accessibilityHint="Scrollable description. Swipe up to read more."
     onLayout={(e) => {
-      const h = e.nativeEvent.layout.height;
-      setDescLayoutHeight(h);
+      descMetrics.current.height = e.nativeEvent.layout.height;
+      updateDescriptionFades();
     }}
     onContentSizeChange={(_, h) => {
-      const can = h > descLayoutHeight;
-      setDescCanScroll(can);
-      setDescAtEnd(!can || h <= descLayoutHeight);
-      setDescAtTop(true);
+      descMetrics.current.contentHeight = h;
+      updateDescriptionFades();
     }}
+    onScrollBeginDrag={(e) => applyReadingAction({ type: 'begin', y: e.nativeEvent.contentOffset.y })}
+    onScrollEndDrag={() => applyReadingAction({ type: 'end' })}
+    onMomentumScrollBegin={() => applyReadingAction({ type: 'momentum' })}
+    onMomentumScrollEnd={() => applyReadingAction({ type: 'end' })}
     onScroll={(e) => {
       const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
-      const atEnd = contentOffset.y + layoutMeasurement.height >= contentSize.height - 4;
-      const atTop = contentOffset.y <= 4;
-      setDescAtEnd(atEnd);
-      setDescAtTop(atTop);
+      descMetrics.current = { height: layoutMeasurement.height, contentHeight: contentSize.height, y: contentOffset.y };
+      updateDescriptionFades();
+      applyReadingAction({ type: 'scroll', y: contentOffset.y, canScroll: contentSize.height > layoutMeasurement.height + 4 });
     }}
   >
     <GuestLimitedContent 
@@ -1629,8 +2321,12 @@ const handleNonTicketAction = () => {
 </View>
 
                   
+        </CalloutLightboxPages>
         {/* Actions */}
-        <View style={styles.actionContainer}>
+        <View style={[
+          styles.actionContainer,
+          !venue && Platform.OS === 'ios' && { paddingBottom: Math.max(2, safeAreaInsets.bottom) },
+        ]}>
           <TouchableOpacity
             style={[
               styles.actionButton,
@@ -1664,14 +2360,21 @@ const handleNonTicketAction = () => {
             </Text>
           </TouchableOpacity>
           
-          {routeEvent || areaLocationsEvent ? (
+          {programmeLocation && <TouchableOpacity accessibilityRole="button" accessibilityLabel="View programme"
+            style={styles.actionButton} onPress={() => setProgrammeOpen(true)}>
+            <MaterialIcons name="event-note" size={22} color="#F6C84C" />
+            <Text style={[styles.actionText, { color: '#F6C84C', fontWeight: '700' }]}>View programme</Text>
+          </TouchableOpacity>}
+          {showAreaExperience ? (
             <View style={styles.routeActionSlot}>
               <GathRShimmerPill
-                iconName={routeEvent ? 'alt-route' : 'festival'}
+                iconName={routeEvent ? 'alt-route' : areaScopeBadge?.iconName || 'map'}
                 iconSize={20}
-                label={routeEvent
-                  ? (drawableRoute ? 'Show Route' : 'Route Info')
-                  : (areaLocationsEvent ? 'Show Locations' : 'Location Info')}
+                label={provinceScopeEvent
+                  ? 'Event Info'
+                  : routeEvent
+                  ? (routeActionBusy ? 'Calculating…' : routeMapExperience ? 'Show Route' : 'Route Info')
+                  : (areaLocationsEvent ? 'View Locations' : 'Event Info')}
                 onPress={handleRouteAction}
                 style={styles.routeActionPill}
                 testID="show-route-shimmer-button"
@@ -1681,7 +2384,7 @@ const handleNonTicketAction = () => {
             <TouchableOpacity
               style={[
                 styles.actionButton,
-                isGuest && styles.disabledActionButton
+                (isGuest || !privateDirectionsAvailable) && styles.disabledActionButton
               ]}
               onPress={handleDirections}
               activeOpacity={isGuest ? 1 : 0.7}
@@ -1691,7 +2394,7 @@ const handleNonTicketAction = () => {
                 <MaterialIcons
                   name="directions"
                   size={22}
-                  color={isGuest ? "#666666" : "#FFFFFF"}
+                  color={isGuest || !privateDirectionsAvailable ? "#666666" : "#FFFFFF"}
                 />
                 {isGuest && (
                   <View style={styles.lockIconOverlay}>
@@ -1705,9 +2408,9 @@ const handleNonTicketAction = () => {
               </View>
               <Text style={[
                 styles.actionText,
-                isGuest && styles.disabledActionText
+                (isGuest || !privateDirectionsAvailable) && styles.disabledActionText
               ]}>
-                Directions
+                {privateDirectionsAvailable ? 'Directions' : 'Location later'}
               </Text>
             </TouchableOpacity>
           )}
@@ -1752,19 +2455,22 @@ const handleNonTicketAction = () => {
         {/* View Venue Button - Opens EventCallout with all events at venue */}
         {venue && (
           <TouchableOpacity
-            style={styles.viewVenueButton}
+            style={[
+              styles.viewVenueButton,
+              Platform.OS === 'ios' && { paddingBottom: Math.max(12, safeAreaInsets.bottom) },
+            ]}
             onPress={handleViewVenue}
             activeOpacity={0.8}
           >
             <View style={styles.viewVenueContent}>
-              <MaterialIcons name="store" size={20} color="#1976D2" />
+              <MaterialIcons name="store" size={20} color="#62B5FF" />
               <View style={styles.viewVenueTextContainer}>
-                <Text style={styles.viewVenueLabel}>View all events at</Text>
+                <Text style={styles.viewVenueLabel}>More at</Text>
                 <Text style={styles.viewVenueName} numberOfLines={1}>
                   {venue.venue}
                 </Text>
               </View>
-              <MaterialIcons name="chevron-right" size={24} color="#1976D2" />
+              <MaterialIcons name="chevron-right" size={24} color="#62B5FF" />
             </View>
           </TouchableOpacity>
         )}
@@ -1773,7 +2479,7 @@ const handleNonTicketAction = () => {
         {navigationEnabled && (
           <>
             {/* Position indicator */}
-            {!isTrending && !isCityEvent && events && currentIndex !== undefined && (
+            {!interestCarouselPaging && !calloutPaging && !isTrending && !showAreaExperience && events && currentIndex !== undefined && (
               <View style={styles.positionIndicator}>
                 <Text style={styles.positionText}>
                   {currentIndex + 1} / {events.length}
@@ -1785,18 +2491,176 @@ const handleNonTicketAction = () => {
       </Animated.View>
       </PanGestureHandler>
 
+      {Platform.OS === 'android' && safeAreaInsets.bottom > 0 && (
+        <View
+          pointerEvents="none"
+          style={{
+            position: 'absolute',
+            left: 0,
+            right: 0,
+            bottom: 0,
+            height: safeAreaInsets.bottom,
+            backgroundColor: '#111111',
+          }}
+        />
+      )}
+
       {/* Full-Screen Image Viewer */}
+      {programmeOpen && programmeLocation && <VenueProgrammeBrowser key={updatedEvent.id} event={updatedEvent} onClose={() => setProgrammeOpen(false)} />}
       <ImageView
         images={images}
-        imageIndex={0}
+        imageIndex={galleryImageUrls.length > 0 ? selectedGalleryImageIndex : 0}
         visible={isImageViewerVisible}
         onRequestClose={handleImageViewerClose}
-        backgroundColor="rgba(0, 0, 0, 0.9)"
+        backgroundColor="#000000"
         swipeToCloseEnabled={true}
         doubleTapToZoomEnabled={true}
         presentationStyle="overFullScreen"
         FooterComponent={() => null}
       />
+
+      <Modal
+        animationType="slide"
+        onRequestClose={() => setPrivateGuestSheetVisible(false)}
+        presentationStyle="overFullScreen"
+        transparent
+        visible={privateGuestSheetVisible}
+      >
+        <View style={styles.privateGuestSheetBackdrop}>
+          <TouchableOpacity
+            accessibilityLabel="Close guest list"
+            activeOpacity={1}
+            onPress={() => setPrivateGuestSheetVisible(false)}
+            style={StyleSheet.absoluteFill}
+          />
+          <View style={[
+            styles.privateGuestSheet,
+            { paddingBottom: Math.max(16, safeAreaInsets.bottom + 8) },
+          ]}>
+            <View style={styles.privateGuestSheetHandle} />
+            <View style={styles.privateGuestSheetHeader}>
+              <View style={styles.privateGuestSheetHeaderCopy}>
+                <Text style={styles.privateGuestSheetTitle}>
+                  {privateGuestListVisible ? `Guests (${privateGuestCount})` : 'Invite a friend'}
+                </Text>
+                <Text style={styles.privateGuestSheetMeta}>
+                  {privateGuestListVisible
+                    ? 'Visible to invited guests'
+                    : 'The host keeps the guest list private'}
+                  {privateCanInvite ? ' · Guest invites allowed' : ''}
+                </Text>
+              </View>
+              <TouchableOpacity
+                accessibilityLabel="Close guest list"
+                onPress={() => setPrivateGuestSheetVisible(false)}
+                style={styles.privateGuestSheetClose}
+              >
+                <MaterialIcons name="close" size={22} color="#344054" />
+              </TouchableOpacity>
+            </View>
+
+            {privateGuestListVisible && (
+              <GestureScrollView
+                contentContainerStyle={styles.privateGuestListContent}
+                nestedScrollEnabled
+                showsVerticalScrollIndicator={(friendEventProjection?.guests.length || 0) > 4}
+                style={styles.privateGuestList}
+              >
+                {(friendEventProjection?.guests || []).map((guest) => (
+                  <View key={guest.uid} style={styles.privateGuestRow}>
+                    <View style={styles.privateGuestAvatar}>
+                      <Text style={styles.privateGuestAvatarText}>
+                        {guest.displayName.trim().charAt(0).toUpperCase() || '?'}
+                      </Text>
+                    </View>
+                    <View style={styles.privateGuestCopy}>
+                      <Text numberOfLines={1} style={styles.privateGuestName}>
+                        {guest.displayName}
+                      </Text>
+                      <Text style={styles.privateGuestResponse}>
+                        {formatFriendEventGuestResponse(guest.response)}
+                      </Text>
+                    </View>
+                  </View>
+                ))}
+                {(friendEventProjection?.guests.length || 0) === 0 && (
+                  <View style={styles.privateGuestEmpty}>
+                    <MaterialIcons name="people-outline" size={26} color="#98A2B3" />
+                    <Text style={styles.privateGuestEmptyText}>
+                      Guest names are not available yet.
+                    </Text>
+                  </View>
+                )}
+              </GestureScrollView>
+            )}
+
+            {privateCanInvite && (
+              <>
+                <TouchableOpacity
+                  accessibilityLabel="Invite a friend"
+                  activeOpacity={0.78}
+                  onPress={() => setPrivateInviteExpanded((value) => !value)}
+                  style={styles.privateInviteToggle}
+                >
+                  <View style={styles.privateInviteToggleIcon}>
+                    <MaterialIcons name="person-add" size={19} color="#6941C6" />
+                  </View>
+                  <Text style={styles.privateInviteToggleText}>Invite a friend</Text>
+                  <MaterialIcons
+                    name={privateInviteExpanded ? 'keyboard-arrow-up' : 'keyboard-arrow-down'}
+                    size={21}
+                    color="#6941C6"
+                  />
+                </TouchableOpacity>
+
+                {privateInviteExpanded && (
+                  <GestureScrollView
+                    contentContainerStyle={styles.privateInviteListContent}
+                    nestedScrollEnabled
+                    showsVerticalScrollIndicator={privateInviteCandidates.length > 3}
+                    style={styles.privateInviteList}
+                  >
+                    {privateInviteCandidates.map((friend) => {
+                      const busy = privateInviteBusyUid === friend.uid;
+                      return (
+                        <TouchableOpacity
+                          activeOpacity={0.75}
+                          disabled={privateInviteBusyUid !== null}
+                          key={friend.uid}
+                          onPress={() => void handlePrivateInvite(friend.uid)}
+                          style={styles.privateInviteRow}
+                        >
+                          <View style={styles.privateGuestAvatar}>
+                            <Text style={styles.privateGuestAvatarText}>
+                              {friend.displayName.trim().charAt(0).toUpperCase() || '?'}
+                            </Text>
+                          </View>
+                          <View style={styles.privateGuestCopy}>
+                            <Text numberOfLines={1} style={styles.privateGuestName}>
+                              {friend.displayName}
+                            </Text>
+                            <Text numberOfLines={1} style={styles.privateGuestResponse}>
+                              @{friend.socialHandle}
+                            </Text>
+                          </View>
+                          {busy
+                            ? <ActivityIndicator color="#6941C6" size="small" />
+                            : <MaterialIcons name="add-circle-outline" size={24} color="#6941C6" />}
+                        </TouchableOpacity>
+                      );
+                    })}
+                    {privateInviteCandidates.length === 0 && (
+                      <Text style={styles.privateInviteEmptyText}>
+                        All of your eligible friends are already invited.
+                      </Text>
+                    )}
+                  </GestureScrollView>
+                )}
+              </>
+            )}
+          </View>
+        </View>
+      </Modal>
 
       {/* =============================================================== */}
       {/* GUEST LIMITATION REGISTRATION PROMPT - ONLY FOR GUESTS */}
@@ -1833,46 +2697,132 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    backgroundColor: '#111111',
+    flexShrink: 0,
+    backgroundColor: '#000000',
+    paddingHorizontal: 12,
+    paddingBottom: 10,
+    zIndex: 30,
+  },
+  headerIdentitySurface: {
+    flex: 1,
+    flexShrink: 1,
+    minWidth: 0,
+    minHeight: 44,
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   headerTextContainer: {
     flex: 1,
-    marginRight: 10,
+    flexShrink: 1,
+    minWidth: 0,
+    marginRight: 0,
+  },
+  headerVenueName: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    lineHeight: 21,
+    fontWeight: '600',
+  },
+  headerAddressButton: {
+    paddingVertical: 3,
+    alignSelf: 'flex-start',
+    maxWidth: '100%',
+  },
+  headerAddress: {
+    color: '#D1D5DB',
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  headerAddressLink: {
+    textDecorationLine: 'underline',
+  },
+  eventHeading: {
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 8,
+    backgroundColor: '#2C2F33',
+    flexShrink: 0,
   },
   titleScroll: {
     maxWidth: '100%',
+    maxHeight: 136,
     flexGrow: 0,
     flexShrink: 1,
   },
   titleScrollContent: {
-    paddingRight: 18,
+    paddingRight: 4,
   },
   title: {
-    fontSize: 18,
+    fontSize: 24,
+    lineHeight: 29,
     fontWeight: 'bold',
     color: '#FFFFFF',
     flexShrink: 0,
   },
-  subtitle: {
+  titleSubtitle: {
+    color: '#E5E7EB',
     fontSize: 14,
-    color: '#CCCCCC',
+    lineHeight: 19,
+    marginTop: 3,
   },
   closeButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    width: 44,
+    height: 44,
     justifyContent: 'center',
     alignItems: 'center',
+    marginLeft: 8,
   },
   image: {
     width: '100%',
+    height: '100%',
     backgroundColor: '#000000',
   },
   imageWrapper: {
     position: 'relative',
+    flexShrink: 1,
+    minHeight: 160,
+    overflow: 'hidden',
+    backgroundColor: '#000000',
+  },
+  imagePressSurface: {
+    width: '100%',
+    height: '100%',
+  },
+  imageGrid: {
+    flex: 1,
+    flexDirection: 'row',
+  },
+  imageGridHero: {
+    // A percentage width prevents React Native from letting the hero's
+    // intrinsic image size collapse a one-tile side column.
+    flexGrow: 0,
+    flexShrink: 0,
+    width: '67%',
+  },
+  imageGridSideColumn: {
+    flexGrow: 0,
+    flexShrink: 0,
+    width: '33%',
+    overflow: 'hidden',
+    borderLeftWidth: 2,
+    borderLeftColor: '#111111',
+  },
+  imageGridSideTile: {
+    flex: 1,
+    overflow: 'hidden',
+    borderBottomWidth: 2,
+    borderBottomColor: '#111111',
+  },
+  imageGridMoreOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.55)',
+  },
+  imageGridMoreText: {
+    color: '#FFFFFF',
+    fontSize: 25,
+    fontWeight: '800',
   },
   headerVenueAvatarContainer: {
     width: 40,
@@ -1908,13 +2858,18 @@ const styles = StyleSheet.create({
   zoomIconOverlay: {
     position: 'absolute',
     top: 10,
-    right: 10,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    borderRadius: 15,
-    width: 30,
-    height: 30,
+    right: 12,
+    backgroundColor: 'rgba(0, 0, 0, 0.52)',
+    borderRadius: 14,
+    width: 28,
+    height: 28,
     justifyContent: 'center',
     alignItems: 'center',
+    zIndex: 26,
+  },
+  imageGalleryThumbnail: {
+    width: '100%',
+    height: '100%',
   },
   engagementOverlay: {
     position: 'absolute',
@@ -2041,8 +2996,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     paddingHorizontal: 16,
-    paddingTop: 8,
-    paddingBottom: 4,
+    paddingTop: 0,
+    paddingBottom: 2,
+    backgroundColor: '#2C2F33',
+    flexShrink: 0,
   },
   nowBadge: {
     backgroundColor: '#34A853',
@@ -2058,6 +3015,263 @@ const styles = StyleSheet.create({
     borderRadius: 4,
     marginRight: 8,
     marginBottom: 6,
+  },
+  privateInvitationBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 4,
+    marginRight: 8,
+    marginBottom: 6,
+    backgroundColor: '#6941C6',
+  },
+  privateEventContext: {
+    marginHorizontal: 16,
+    marginBottom: 5,
+    overflow: 'hidden',
+    borderRadius: 13,
+    borderWidth: 1,
+    borderColor: '#7F56D9',
+    backgroundColor: '#2D1B4E',
+  },
+  privateEventContextHeader: {
+    minHeight: 48,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 9,
+    paddingVertical: 7,
+  },
+  privateEventContextIcon: {
+    width: 31,
+    height: 31,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 16,
+    backgroundColor: '#6941C6',
+  },
+  privateEventContextCopy: {
+    flex: 1,
+    minWidth: 0,
+    marginLeft: 9,
+  },
+  privateEventContextTitle: {
+    color: '#FFFFFF',
+    fontSize: 12.5,
+    fontWeight: '900',
+  },
+  privateEventContextMeta: {
+    marginTop: 1,
+    color: '#D6BBFB',
+    fontSize: 10.5,
+    lineHeight: 13,
+    fontWeight: '600',
+  },
+  privateEventDetailsButton: {
+    minHeight: 32,
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginLeft: 7,
+    paddingLeft: 9,
+    paddingRight: 5,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255, 255, 255, 0.10)',
+  },
+  privateEventDetailsText: {
+    color: '#F4EBFF',
+    fontSize: 10.5,
+    fontWeight: '800',
+  },
+  privateRsvpRow: {
+    flexDirection: 'row',
+    gap: 6,
+    paddingHorizontal: 9,
+    paddingBottom: 8,
+  },
+  privateRsvpButton: {
+    flex: 1,
+    minHeight: 32,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    borderRadius: 9,
+    borderWidth: 1,
+    borderColor: 'rgba(214, 187, 251, 0.45)',
+    backgroundColor: 'rgba(255, 255, 255, 0.07)',
+  },
+  privateRsvpButtonSelected: {
+    borderColor: '#FFFFFF',
+    backgroundColor: '#7F56D9',
+  },
+  privateRsvpButtonDimmed: {
+    opacity: 0.45,
+  },
+  privateRsvpText: {
+    color: '#D6BBFB',
+    fontSize: 10.5,
+    fontWeight: '800',
+  },
+  privateRsvpTextSelected: {
+    color: '#FFFFFF',
+  },
+  privateGuestSheetBackdrop: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(0, 0, 0, 0.60)',
+  },
+  privateGuestSheet: {
+    maxHeight: '72%',
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    backgroundColor: '#F9FAFB',
+  },
+  privateGuestSheetHandle: {
+    alignSelf: 'center',
+    width: 42,
+    height: 4,
+    marginBottom: 10,
+    borderRadius: 2,
+    backgroundColor: '#D0D5DD',
+  },
+  privateGuestSheetHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  privateGuestSheetHeaderCopy: {
+    flex: 1,
+    minWidth: 0,
+  },
+  privateGuestSheetTitle: {
+    color: '#101828',
+    fontSize: 18,
+    fontWeight: '900',
+  },
+  privateGuestSheetMeta: {
+    marginTop: 2,
+    color: '#667085',
+    fontSize: 11,
+    lineHeight: 15,
+    fontWeight: '600',
+  },
+  privateGuestSheetClose: {
+    width: 38,
+    height: 38,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 8,
+    borderRadius: 19,
+    backgroundColor: '#EAECF0',
+  },
+  privateGuestList: {
+    maxHeight: 224,
+    marginBottom: 10,
+    borderRadius: 16,
+    backgroundColor: '#FFFFFF',
+  },
+  privateGuestListContent: {
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+  },
+  privateGuestRow: {
+    minHeight: 52,
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#EAECF0',
+  },
+  privateGuestAvatar: {
+    width: 34,
+    height: 34,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 17,
+    backgroundColor: '#E9D7FE',
+  },
+  privateGuestAvatarText: {
+    color: '#6941C6',
+    fontSize: 13,
+    fontWeight: '900',
+  },
+  privateGuestCopy: {
+    flex: 1,
+    minWidth: 0,
+    marginLeft: 10,
+  },
+  privateGuestName: {
+    color: '#101828',
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  privateGuestResponse: {
+    marginTop: 1,
+    color: '#667085',
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  privateGuestEmpty: {
+    minHeight: 82,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+  },
+  privateGuestEmptyText: {
+    color: '#667085',
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  privateInviteToggle: {
+    minHeight: 48,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 11,
+    borderRadius: 14,
+    backgroundColor: '#F4EBFF',
+  },
+  privateInviteToggleIcon: {
+    width: 30,
+    height: 30,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 15,
+    backgroundColor: '#E9D7FE',
+  },
+  privateInviteToggleText: {
+    flex: 1,
+    marginLeft: 9,
+    color: '#53389E',
+    fontSize: 13,
+    fontWeight: '900',
+  },
+  privateInviteList: {
+    maxHeight: 184,
+    marginTop: 8,
+    borderRadius: 14,
+    backgroundColor: '#FFFFFF',
+  },
+  privateInviteListContent: {
+    paddingHorizontal: 11,
+    paddingVertical: 4,
+  },
+  privateInviteRow: {
+    minHeight: 52,
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#EAECF0',
+  },
+  privateInviteEmptyText: {
+    paddingHorizontal: 8,
+    paddingVertical: 18,
+    color: '#667085',
+    fontSize: 11,
+    lineHeight: 16,
+    textAlign: 'center',
+    fontWeight: '600',
   },
   priceBadge: {
     backgroundColor: '#E94E77',
@@ -2106,17 +3320,74 @@ const styles = StyleSheet.create({
     borderRadius: 4,
     padding: 2,
   },
+  lightboxFriendPresence: {
+    marginHorizontal: 16,
+    marginBottom: 5,
+    overflow: 'hidden',
+    borderRadius: 13,
+    borderWidth: 1,
+    borderColor: '#B692F6',
+    backgroundColor: '#F4EBFF',
+  },
+  lightboxFriendPresenceHeader: {
+    minHeight: 50,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 9,
+    paddingVertical: 7,
+  },
+  lightboxFriendPresenceIcon: {
+    width: 31,
+    height: 31,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 16,
+    backgroundColor: '#6941C6',
+  },
+  lightboxFriendPresenceCopy: { flex: 1, minWidth: 0, marginLeft: 9 },
+  lightboxFriendPresenceTitle: { color: '#3E1C96', fontSize: 12.5, fontWeight: '900' },
+  lightboxFriendPresenceHint: { marginTop: 1, color: '#6941C6', fontSize: 10.5, fontWeight: '700' },
+  lightboxFriendPresenceCount: {
+    minWidth: 24,
+    height: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 6,
+    borderRadius: 12,
+    backgroundColor: '#E9D7FE',
+  },
+  lightboxFriendPresenceCountText: { color: '#53389E', fontSize: 11, fontWeight: '900' },
+  lightboxFriendPresenceList: {
+    maxHeight: 118,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: '#D6BBFB',
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+  },
+  lightboxFriendPresencePerson: { minHeight: 34, flexDirection: 'row', alignItems: 'center' },
+  lightboxFriendPresenceInitial: {
+    width: 25,
+    height: 25,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 13,
+    backgroundColor: '#D6BBFB',
+  },
+  lightboxFriendPresenceInitialText: { color: '#53389E', fontSize: 10, fontWeight: '900' },
+  lightboxFriendPresencePersonCopy: { flex: 1, minWidth: 0, marginLeft: 8 },
+  lightboxFriendPresenceName: { color: '#3E1C96', fontSize: 11.5, fontWeight: '800' },
+  lightboxFriendPresenceMessage: { color: '#6941C6', fontSize: 10.5 },
   infoContainer: {
     paddingHorizontal: 16,
-    paddingTop: 8,
-    paddingBottom: 8,
-    gap: 6,
+    paddingVertical: 2,
+    flexShrink: 0,
+    gap: 2,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: 'rgba(255, 255, 255, 0.08)',
   },
   infoRow: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
+    alignItems: 'center',
   },
   infoText: {
     color: '#FFFFFF',
@@ -2125,6 +3396,74 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     marginLeft: 6,
     flex: 1,
+  },
+  timingBadge: {
+    marginLeft: 4,
+  },
+  timingSummaryGroup: {
+    flex: 1,
+    minWidth: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  timingSummaryText: {
+    flex: 1,
+    flexShrink: 1,
+    minWidth: 0,
+  },
+  timingSummaryLabel: {
+    flex: 0,
+    flexGrow: 0,
+    flexShrink: 1,
+  },
+  timingInfoButton: {
+    width: 44,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  seriesContextLine: {
+    marginLeft: 0,
+  },
+  scheduleDetails: {
+    paddingLeft: 26,
+    marginTop: -4,
+    paddingBottom: 4,
+  },
+  scheduleDetailsText: {
+    color: '#BFC5CD',
+    fontSize: 12,
+    lineHeight: 17,
+  },
+  restoreDetailsButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    minHeight: 44,
+    flexShrink: 0,
+    paddingHorizontal: 16,
+    gap: 8,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: 'rgba(255,255,255,0.08)',
+  },
+  restoreDetailsText: {
+    flex: 1,
+    color: '#E5E7EB',
+    fontSize: 13,
+  },
+  timingDisclosureContainer: {
+    marginLeft: 20,
+    marginTop: -2,
+  },
+  timingDisclosureBody: {
+    backgroundColor: 'rgba(255,255,255,0.07)',
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+  },
+  timingDisclosureText: {
+    color: '#E5E7EB',
+    fontSize: 12,
+    lineHeight: 16,
   },
   descriptionContainer: {
     flex: 1,
@@ -2181,21 +3520,29 @@ description: {
   flexDirection: 'row',
   justifyContent: 'space-around',
   alignItems: 'center',
-  paddingVertical: 4, // was 12
+  paddingVertical: 0,
+  flexShrink: 0,
   backgroundColor: '#111111',
 },
 
 
   actionButton: {
+  flexDirection: 'row',
+  gap: 8,
   alignItems: 'center',
-  padding: 8, // was 10
+  justifyContent: 'center',
+  minHeight: 44,
+  minWidth: 72,
+  paddingHorizontal: 8,
+  paddingVertical: 4,
   position: 'relative',
 },
 
   routeActionSlot: {
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 8,
+    minHeight: 48,
+    padding: 4,
   },
   routeActionPill: {
     minHeight: 44,
@@ -2228,11 +3575,13 @@ description: {
     color: '#666666',
   },
   viewVenueButton: {
-    backgroundColor: '#FFFFFF',
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(0, 0, 0, 0.1)',
-    paddingVertical: 16,
+    backgroundColor: '#151515',
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: 'rgba(255, 255, 255, 0.12)',
+    paddingVertical: 8,
     paddingHorizontal: 20,
+    minHeight: 48,
+    flexShrink: 0,
   },
   viewVenueContent: {
     flexDirection: 'row',
@@ -2243,14 +3592,14 @@ description: {
     flex: 1,
   },
   viewVenueLabel: {
-    fontSize: 12,
-    color: '#5F6368',
+    fontSize: 11,
+    color: '#BFC5CD',
     marginBottom: 2,
   },
   viewVenueName: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: '600',
-    color: '#1A1A1A',
+    color: '#FFFFFF',
   },
   // Navigation arrow styles for swipe between events
   navArrowLeft: {
@@ -2275,6 +3624,9 @@ description: {
     justifyContent: 'center',
     alignItems: 'center',
   },
+  wrapArrow: { alignItems: 'center' },
+  wrapLabel: { color: '#FFFFFF', fontSize: 10, lineHeight: 13, fontWeight: '600', marginTop: 4, paddingHorizontal: 5,
+    paddingVertical: 4, borderRadius: 7, overflow: 'hidden', backgroundColor: 'rgba(12,18,25,0.84)' },
   positionIndicator: {
     position: 'absolute',
     bottom: -30,

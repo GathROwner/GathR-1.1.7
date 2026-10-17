@@ -1,0 +1,57 @@
+{
+  "baselineCommit": "eb7741974619281b6eea5659f8783d7f0d867a21",
+  "branch": "codex/upcoming-carousel-order-20260924",
+  "relevantChecks": {
+    "testsPassed": 75,
+    "suites": [
+      "mapStoreExpiryGate-test.ts",
+      "interestCarouselOrder-test.ts",
+      "eventTiming-test.ts",
+      "interestCarouselFamilyFriendly-test.ts",
+      "eventViewport-test.ts",
+      "firestoreTimingFields-test.ts",
+      "eventScheduleStateCache-test.ts"
+    ],
+    "suitesPassed": 7
+  },
+  "baselineControl": {
+    "suitesFailed": 2,
+    "failures": [
+      "buildTrendingEvents city-level slot includes a low-engagement city event even when trending is full",
+      "buildTrendingEvents city-level slot reserves only one slot for city events",
+      "buildTrendingEvents city-level slot is unchanged when no city events are on screen",
+      "buildTrendingEvents city-level slot excludes events that have already ended",
+      "buildTrendingEvents city-level slot respects the active city filter sentinel (only city events remain)",
+      "buildTrendingEvents family-friendly facet guarantees a scored cross-category event for the family-friendly interest",
+      "buildTrendingEvents family-friendly facet respects the family-friendly facet as an active category filter",
+      "buildCityEventLightboxEvents keeps only city-level events that match the active base filters",
+      "buildCityEventLightboxEvents dedupes repeated city events by id before opening the lightbox carousel"
+    ],
+    "testsPassed": 24,
+    "testsFailed": 9
+  },
+  "typescript": "pass",
+  "touchedEslint": "pass: zero errors, zero warnings",
+  "repositoryLint": "pass: zero errors, 219 existing warnings",
+  "runtime": {
+    "runtime": "1.1.10",
+    "existingOta": "01a0bd13",
+    "candidateVisualVerification": false,
+    "candidateAdopted": false,
+    "device": "emulator-5554",
+    "channel": "Preview",
+    "package": "com.craigb.gathr",
+    "version": "1.1.10 (13)",
+    "debuggable": false
+  },
+  "noOtaPublished": true,
+  "noBackendDataChanged": true,
+  "fullSuite": {
+    "baselineFailureNamesMatch": true,
+    "snapshotsPassed": 1,
+    "suitesFailed": 2,
+    "suitesPassed": 86,
+    "testsPassed": 541,
+    "testsFailed": 9
+  }
+}

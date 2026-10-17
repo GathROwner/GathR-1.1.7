@@ -19,10 +19,11 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import * as Haptics from 'expo-haptics';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { MaterialIcons } from '@expo/vector-icons';
+import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { amplitudeTrack } from '../lib/amplitudeAnalytics';
 import { useMapStore } from '../store';
-import { format, parseISO } from 'date-fns';
+import { format } from 'date-fns/format';
+import { parseISO } from 'date-fns/parseISO';
 import FallbackImage from '../components/common/FallbackImage';
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');

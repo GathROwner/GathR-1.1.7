@@ -37,16 +37,22 @@ export interface FirestoreVenueInfo {
  * Event metadata from Firestore
  */
 export interface FirestoreEventMetadata {
+  status?: string;
+  isCancelled?: boolean | string | number;
+  cancelled?: boolean | string | number;
+  canceled?: boolean | string | number;
+  isExpired?: boolean | string | number;
   icon?: string;
   image?: string;
+  relevantImageUrl?: string;
   address?: string;
   establishment?: string;
   venueName?: string;
   // Legacy location for recurrence fields (backend now returns these top-level)
-  isRecurring?: boolean;
+  isRecurring?: boolean | string | number | null;
   recurringPattern?: string;
   recurrenceUntilDate?: string;
-  isRecurringInstance?: boolean;
+  isRecurringInstance?: boolean | string | number | null;
   originalEventId?: string | null;
   isFoodSpecial?: boolean;
   matchType?: string;
@@ -64,6 +70,7 @@ export interface FirestoreEventMetadata {
   facebookUrl?: string;
   cleanedFacebookUrl?: string;
   sourceUrl?: string;
+  uniqueId?: string;
   eventType?: string;
   ageRestriction?: string;
   familyFriendlyScore?: number | null;
@@ -93,6 +100,11 @@ export interface FirestoreEventMetadata {
   mapMode?: 'venue' | 'area' | 'route' | 'none' | null;
   routeData?: import('./events').EventRouteData | null;
   areaData?: import('./events').EventAreaData | null;
+  programmeData?: import('./events').EventProgrammeData | null;
+  timing?: import('./events').EventTiming | null;
+  timingContractVersion?: number;
+  timeFlags?: unknown;
+  timeResolution?: unknown;
 }
 
 /**
@@ -131,6 +143,11 @@ export interface FirestoreVenue {
  * Single event from Firestore API
  */
 export interface FirestoreEvent {
+  status?: string;
+  isCancelled?: boolean | string | number;
+  cancelled?: boolean | string | number;
+  canceled?: boolean | string | number;
+  isExpired?: boolean | string | number;
   id: string;
   title: string;
   description: string;
@@ -152,6 +169,11 @@ export interface FirestoreEvent {
   mapMode?: 'venue' | 'area' | 'route' | 'none' | null;
   routeData?: import('./events').EventRouteData | null;
   areaData?: import('./events').EventAreaData | null;
+  programmeData?: import('./events').EventProgrammeData | null;
+  timing?: import('./events').EventTiming | null;
+  timingContractVersion?: number;
+  timeFlags?: unknown;
+  timeResolution?: unknown;
   category: string | null;  // Can be null
   familyFriendlyScore?: number | null;
   familyFriendlyLevel?: 'unlikely' | 'possible' | 'likely' | 'high' | null;
@@ -159,10 +181,10 @@ export interface FirestoreEvent {
   familyFriendlyScoringVersion?: string | null;
   isEvent: boolean | null;  // Can be null - default to true
   // Top-level recurrence fields (materialized recurring instances)
-  isRecurring?: boolean;
+  isRecurring?: boolean | string | number | null;
   recurringPattern?: string;
   recurrenceUntilDate?: string;
-  isRecurringInstance?: boolean;
+  isRecurringInstance?: boolean | string | number | null;
   originalEventId?: string | null;
   price?: string | null;
   ticketLinkPosts?: string;
@@ -174,6 +196,7 @@ export interface FirestoreEvent {
   profileUrl?: string;
   imageUrl?: string;
   relevantImageUrl?: string;
+  mediaUrls?: string[];
   SharedPostThumbnail?: string | null;
   sourceUrl?: string;
   sharedEventCandidateId?: string;

@@ -1,0 +1,71 @@
+import React from 'react';
+import { Image, Modal, Pressable, ScrollView, Text, View } from 'react-native';
+import { Stack } from 'expo-router';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { BottomTabBarHeightContext } from '@react-navigation/bottom-tabs';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import * as SplashScreen from 'expo-splash-screen';
+import { SpecialCard, EventTabs, VenueSelector } from './components/map/EventCallout';
+import EventImageLightbox from './components/map/EventImageLightbox';
+import { AreaMembershipNavigationProvider } from './components/area/AreaMembershipNavigation';
+import { normalizeFirestoreEvent } from './lib/api/firestoreEvents';
+import { useMapStore } from './store/mapStore';
+import { EVENTS_MINIMAL } from './lib/queryKeys';
+import { DEFAULT_FILTER_CRITERIA, TimeFilterType } from './types/filter';
+import { addDaysToDateKey, formatLocalDateKey } from './utils/eventExpiry';
+import type { Event, Venue } from './types/events';
+
+const query=new QueryClient({defaultOptions:{queries:{retry:false,gcTime:Infinity}}});
+export function FixtureRoot(){React.useEffect(()=>{void SplashScreen.hideAsync()},[]);
+ return <GestureHandlerRootView style={{flex:1}}><SafeAreaProvider><QueryClientProvider client={query}>
+ <BottomTabBarHeightContext.Provider value={0}><Stack screenOptions={{headerShown:false}}/></BottomTabBarHeightContext.Provider>
+ </QueryClientProvider></SafeAreaProvider></GestureHandlerRootView>}
+const day=addDaysToDateKey(formatLocalDateKey(new Date()),1);
+const poster=Image.resolveAssetSource(require('./assets/fallbacks/categories/live-music.webp')).uri;
+const profile=Image.resolveAssetSource(require('./assets/fallbacks/profiles/event-default.webp')).uri;
+const data={version:1,status:'partial',venueId:'slug_foundersfoodhall',linkedEventIds:['X7fuxHlvFRgWwlEchJ3L','qBimPRIGiW8A8EqMHxYj'],
+ sourceUrl:'https://foundersfoodhall.com/events/harvest-fest-2/',sourceLabel:'Reviewed organiser programme · synthetic QA'};
+// This raw shape mirrors the existing metadata:data public API projection, not a live document.
+const root=normalizeFirestoreEvent({id:'01q4d8wzK8R8VH0revQX',isEvent:true,title:'Harvest Fest',category:'Gatherings & Parties',
+ description:'An afternoon of live music and autumn activities at Founders Food Hall & Market. Open the programme for the linked performances.',
+ venueId:data.venueId,venue:'Founders Food Hall & Market',address:'6 Prince St, Charlottetown',latitude:46.233,longitude:-63.12,
+ startDate:day,endDate:day,startTime:'15:00',endTime:'20:00',sourceUrl:data.sourceUrl,imageUrl:poster,profileUrl:profile,mediaUrls:[poster],
+ timing:{version:2,timeZone:'America/Halifax',scheduleKind:'timed_session',schedule:{
+  start:{localDate:day,localTime:'15:00',status:'observed',confidence:'high',sourceUrl:data.sourceUrl},
+  end:{localDate:day,localTime:'20:00',status:'observed',confidence:'high',sourceUrl:data.sourceUrl}}},
+ metadata:{locationScope:'venue',locationPrecision:'exact',programmeData:data}} as any);
+const first:Event={...root,id:'fb_X7fuxHlvFRgWwlEchJ3L',title:'Salty Sailors',category:'Live Music',programmeData:null,
+ description:'Live music at Founders Food Hall & Market, as part of Harvest Fest. Synthetic QA card using the two reviewed canonical music links.',
+ startTime:'15:00',endTime:'17:00',timing:undefined};
+const second:Event={...first,id:'fb_qBimPRIGiW8A8EqMHxYj',title:'Vintage 4.0',startTime:'18:00',endTime:'20:00'};
+export default function Fixture(){
+ const [ready,setReady]=React.useState(false),[parentOpen,setParentOpen]=React.useState(false);
+ const [tab,setTab]=React.useState<'events'|'specials'|'venue'>('events');
+ const [requests,setRequests]=React.useState(0),[hydration,setHydration]=React.useState(0),[childOpens,setChildOpens]=React.useState(0);
+ React.useEffect(()=>{const fetchedAt=Date.now();
+  useMapStore.setState({events:[root,first,second],allEvents:[root,first,second],lastFetchedAt:fetchedAt,
+   filterCriteria:{...DEFAULT_FILTER_CRITERIA,eventFilters:{...DEFAULT_FILTER_CRITERIA.eventFilters,timeFilter:TimeFilterType.TOMORROW}},
+   fetchEventDetails:async()=>{setHydration(value=>value+1)}});
+  query.setQueryData(EVENTS_MINIMAL,{combinedData:[root,first,second],fetchedAt});setReady(true);
+ },[]);
+ const loadParent=React.useCallback(async()=>{setRequests(value=>value+1);throw Error('Fresh parent must not fetch')},[]);
+ const venue:Venue={locationKey:'qa_founders',venue:root.venue,address:root.address,latitude:root.latitude,longitude:root.longitude,events:[root,first,second]};
+ return <View style={{flex:1,backgroundColor:'#080B0E',paddingTop:28}}>
+  <Text style={{color:'white',fontWeight:'700',fontSize:14,marginHorizontal:12}}>Single venue · 058c909 · synthetic QA</Text>
+  <Text style={{color:'#BAC8D6',fontSize:10,margin:6}}>venue / exact · 3 canonical events · root requests {requests} · hydration {hydration} · child opens {childOpens}</Text>
+  <Pressable onPress={()=>setParentOpen(true)} style={{backgroundColor:'#263A4D',borderRadius:8,padding:10,margin:6}}>
+   <Text style={{color:'white',textAlign:'center'}}>Open Harvest Fest parent</Text></Pressable>
+  {ready&&<AreaMembershipNavigationProvider loadParent={loadParent}>
+   <VenueSelector venues={[venue]} activeVenueIndex={0} onSelectVenue={()=>{}} venueHasNewContent={()=>false} favoriteVenues={[]} isGuest/>
+   <EventTabs activeTab={tab} onChangeTab={setTab} eventCount={3} specialCount={0} venueCount={1}/>
+   <ScrollView style={{flex:1}} contentContainerStyle={{paddingBottom:24}}>
+    <SpecialCard event={first} onSelectEvent={()=>{}} onImagePress={()=>setChildOpens(value=>value+1)} isGuest isTutorialTarget={false}/>
+   </ScrollView>
+  </AreaMembershipNavigationProvider>}
+  {parentOpen&&<Modal transparent visible animationType="fade" statusBarTranslucent presentationStyle="overFullScreen" onRequestClose={()=>setParentOpen(false)}>
+   <EventImageLightbox event={root} imageUrl={poster} managedEventDetails onClose={()=>setParentOpen(false)}/>
+  </Modal>}
+ </View>
+}
+

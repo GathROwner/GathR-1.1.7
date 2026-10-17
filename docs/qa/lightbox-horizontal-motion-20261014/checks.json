@@ -1,0 +1,13 @@
+{
+  "sourceBase": "abeea34",
+  "iosPreviewBase": "1e6262c5bf12e58077668c2fcf31fd36b08d76d4",
+  "typescriptExit": 0,
+  "lintExit": 0,
+  "lintErrors": 0,
+  "lintWarnings": 213,
+  "testSuites": 9,
+  "tests": 84,
+  "success": true,
+  "nativeQa": "Android Metro isolated EventCallout; native recordings and frames independently reviewed",
+  "iosDeviceVerification": "pending"
+}

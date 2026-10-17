@@ -1,0 +1,56 @@
+{
+  "checkedAt": "2026-10-17T14:26:34.152Z",
+  "head": "12025d15da05f4d5832cd3ff5129c5fdbdd9b553",
+  "clean": true,
+  "platform": "ios",
+  "runtime": "1.1.10",
+  "bundleBytes": 5736344,
+  "sha256": "5409d9e43b3479454e3e03e6d75579c98151bde6d2a04da81d303974dd758f70",
+  "byteEqualToReviewedExport": true,
+  "modules": 2505,
+  "assets": 111,
+  "assetsEqualToReviewedExport": true,
+  "sourceMapSources": 2461,
+  "allRuntimeSourcesEqualToReviewedExport": true,
+  "unexpectedQaSources": [],
+  "checks": [
+    {
+      "path": "app/_layout.tsx",
+      "matches": true
+    },
+    {
+      "path": "app/index.tsx",
+      "matches": true
+    },
+    {
+      "path": "app/(tabs)/map.tsx",
+      "matches": true
+    },
+    {
+      "path": "components/map/InterestsCarousel.tsx",
+      "matches": true
+    },
+    {
+      "path": "components/map/EventImageLightbox.tsx",
+      "matches": true
+    },
+    {
+      "path": "components/map/InterestLightboxCounter.tsx",
+      "matches": true
+    },
+    {
+      "path": "utils/loopingCarousel.ts",
+      "matches": true
+    },
+    {
+      "path": "utils/lightboxNavigation.ts",
+      "matches": true
+    }
+  ],
+  "visualGateWaiver": {
+    "directUserReply": "Yep push it",
+    "scope": "Missing post-fix emulator visual check waived for exact four-line Trending loop fix and iOS Preview-only publication",
+    "relayedByCoordinator": true
+  },
+  "iPhoneAdoptionVerified": false
+}

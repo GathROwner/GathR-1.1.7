@@ -1,0 +1,89 @@
+import React from 'react';
+import { Image, Pressable, ScrollView, Text, View } from 'react-native';
+import { Stack } from 'expo-router';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { BottomTabBarHeightContext } from '@react-navigation/bottom-tabs';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import * as SplashScreen from 'expo-splash-screen';
+import { SpecialCard, EventTabs, VenueSelector } from './components/map/EventCallout';
+import { AreaMembershipNavigationProvider } from './components/area/AreaMembershipNavigation';
+import { VenueHuntMembershipLinks } from './components/area/AreaMembershipLinks';
+import { useMapStore } from './store/mapStore';
+import { EVENTS_MINIMAL } from './lib/queryKeys';
+import { DEFAULT_FILTER_CRITERIA } from './types/filter';
+import { addDaysToDateKey, formatLocalDateKey } from './utils/eventExpiry';
+import type { Event, Venue } from './types/events';
+
+const query = new QueryClient({defaultOptions:{queries:{retry:false,gcTime:Infinity}}});
+export function FixtureRoot() {
+  React.useEffect(()=>{void SplashScreen.hideAsync()},[]);
+  return <GestureHandlerRootView style={{flex:1}}><SafeAreaProvider><QueryClientProvider client={query}>
+    <BottomTabBarHeightContext.Provider value={0}><Stack screenOptions={{headerShown:false}}/></BottomTabBarHeightContext.Provider>
+  </QueryClientProvider></SafeAreaProvider></GestureHandlerRootView>;
+}
+const today = formatLocalDateKey(new Date());
+const poster = Image.resolveAssetSource(require('./assets/fallbacks/categories/workshops.webp')).uri;
+const soup = Image.resolveAssetSource(require('./assets/fallbacks/categories/food-special.webp')).uri;
+const profile = Image.resolveAssetSource(require('./assets/fallbacks/profiles/event-default.webp')).uri;
+const common: Event = {id:'fb_qa_child',type:'event',title:'Gallery Mystery Evening (in French)',category:'Gatherings & Parties',
+  description:'Join the community for an evening of clues and stories at the gallery. Solve the mystery and discover what happens next.',
+  venueId:'qa_centre',venue:'Harbour Arts Centre',address:'10 Example Street, Exampletown',latitude:46.5,longitude:-63.5,
+  startDate:today,endDate:today,startTime:'18:00',endTime:'21:00',ticketPrice:'$25',ticketsBuyUrl:'https://example.com/qa/tickets',
+  imageUrl:poster,profileUrl:profile,SharedPostThumbnail:'',mediaUrls:[poster],ticketLinkPosts:'',ticketLinkEvents:'',
+  facebookUrl:'https://www.facebook.com/ExampleFestival',sourceUniqueId:'1234567890123456_qa',source:'firestore',
+  isRecurring:false,isRecurringInstance:false};
+const future = Array.from({length:12},(_,index)=>({...common,id:'fb_qa_future_'+index,title:'Synthetic future activity '+(index+1),
+  venueId:index===11?'qa_library':'qa_centre',startDate:addDaysToDateKey(today,1+Math.floor(index/3)),endDate:addDaysToDateKey(today,1+Math.floor(index/3))}));
+const point = {id:'qa_centre_point',label:'Harbour Arts Centre',venueId:'qa_centre',certainty:'confirmed' as const,
+  coordinates:{latitude:46.5,longitude:-63.5},address:'10 Example Street, Exampletown',
+  linkedEventIds:[common,...future.filter(item=>item.venueId==='qa_centre')].map(item=>String(item.id).replace('fb_',''))};
+const festival: Event = {...common,id:'fb_qa_festival',title:'Harbour Autumn Festival',venueId:null,venue:'Exampletown',address:'',locationScope:'area',
+  startDate:addDaysToDateKey(today,-1),endDate:addDaysToDateKey(today,15),startTime:'',endTime:'',ticketPrice:'',ticketsBuyUrl:undefined,
+  description:'A festival programme of gallery evenings, creative workshops and community activities at the confirmed locations. See each linked activity for its own dates and times.',
+  areaData:{version:1,status:'verified',sourceLabel:'Synthetic organiser post',locations:[point,
+    {...point,id:'qa_library_point',label:'Example Library',venueId:'qa_library',coordinates:{latitude:46.51,longitude:-63.51},linkedEventIds:['qa_future_11']}]}};
+const hunt: Event = {...festival,id:'fb_qa_hunt',title:'Harbour Skeleton Selfie Hunt',startDate:addDaysToDateKey(today,-2),endDate:addDaysToDateKey(today,2),
+  description:'Take a selfie with the skeleton displays at participating businesses and tag the business and the local chamber. Confirm each location’s access hours before visiting.',
+  areaData:{version:1,status:'partial',sourceLabel:'Synthetic community post',locations:[
+    {...point,id:'qa_cafe_point',label:'Harbour Café',venueId:'qa_cafe',linkedEventIds:[]},
+    {...point,id:'qa_shop_point',label:'Example Shop',venueId:'qa_shop',linkedEventIds:[]},
+    {...point,id:'qa_pub_point',label:'Example Pub',venueId:'qa_pub',linkedEventIds:[]}]}};
+const special: Event = {...common,id:'fb_qa_soup',type:'special',title:'Daily Soup',category:'Food Special',description:'$6 Daily Soup: Loaded Potato Soup',
+  venueId:'qa_cafe',venue:'Harbour Café',ticketPrice:'$6',ticketsBuyUrl:undefined,startTime:'08:00',endTime:'17:00',imageUrl:soup,mediaUrls:[soup]};
+type Mode='event'|'hunt'|'long-event'|'long-hunt';
+export default function Fixture() {
+  const [mode,setMode]=React.useState<Mode>('event'); const [ready,setReady]=React.useState(false);
+  const [tab,setTab]=React.useState<'events'|'specials'|'venue'>('events'); const [run,setRun]=React.useState(0);
+  const [requests,setRequests]=React.useState(0),[hydrations,setHydrations]=React.useState(0),[childOpens,setChildOpens]=React.useState(0);
+  const participation=mode==='hunt'||mode==='long-hunt';
+  const root=React.useMemo(()=>participation?{...hunt,title:mode==='long-hunt'?'Harbour Skeleton Selfie Hunt — Community Autumn Photo Adventure at Participating Local Businesses':hunt.title}
+    :{...festival,title:mode==='long-event'?'Harbour Festival of Autumn Arts, Music and Community Stories Across the Region':festival.title},[mode,participation]);
+  const item=participation?special:common;
+  const venue: Venue={locationKey:'qa_selected_venue',venue:item.venue,address:item.address,latitude:item.latitude,longitude:item.longitude,events:[item]};
+  React.useEffect(()=>{
+    query.clear();setRequests(0);setHydrations(0);setChildOpens(0);setTab(participation?'specials':'events');
+    const records=participation?[root,special]:[root,common,...future];const fetchedAt=Date.now();
+    // Deliberately stale matching store parent: managed parent details must prefer the current feed.
+    const old={...root,title:'OLD STORE COPY — must never appear'};
+    useMapStore.setState({events:[item,old],allEvents:[old,item],lastFetchedAt:fetchedAt-60000,
+      filterCriteria:{...DEFAULT_FILTER_CRITERIA,showEvents:!participation},
+      fetchEventDetails:async()=>{setHydrations(value=>value+1)}});
+    query.setQueryData(EVENTS_MINIMAL,{combinedData:records,fetchedAt});setRun(value=>value+1);setReady(true);
+  },[root,item,participation]);
+  const loadParent=React.useCallback(async()=>{setRequests(value=>value+1);throw new Error('Unexpected fresh-parent request')},[]);
+  return <View style={{flex:1,backgroundColor:'#080B0E',paddingTop:28}}>
+    <Text style={{color:'white',fontSize:15,fontWeight:'700',marginHorizontal:12}}>Membership QA · 70d969f · synthetic</Text>
+    <Text style={{color:'#BAC8D6',fontSize:10,margin:6}}>Root requests {requests} · hydration {hydrations} · child opens {childOpens} · {participation?'Events OFF / 1 special':'Today 1 / 12 future loaded'}</Text>
+    <View style={{flexDirection:'row',gap:5,paddingHorizontal:8,marginBottom:6}}>{(['event','hunt','long-event','long-hunt'] as Mode[]).map(value=>
+      <Pressable key={value} onPress={()=>setMode(value)} style={{backgroundColor:'#263A4D',borderRadius:8,padding:8}}><Text style={{color:'white',fontSize:11}}>{value}</Text></Pressable>)}</View>
+    {ready&&<AreaMembershipNavigationProvider key={run} loadParent={loadParent}>
+      <VenueSelector venues={[venue]} activeVenueIndex={0} onSelectVenue={()=>{}} venueHasNewContent={()=>false} favoriteVenues={[]} isGuest />
+      <VenueHuntMembershipLinks venue={venue} filterType={participation?'special':'event'} />
+      <EventTabs activeTab={tab} onChangeTab={setTab} eventCount={participation?0:1} specialCount={participation?1:0} venueCount={1}/>
+      <ScrollView style={{flex:1}} contentContainerStyle={{paddingBottom:24}}>
+        {tab==='venue'?<Text style={{color:'white',padding:18}}>Synthetic venue info · no selection or filter change.</Text>:
+          <SpecialCard event={item} onSelectEvent={()=>{}} onImagePress={()=>setChildOpens(value=>value+1)} isGuest isTutorialTarget={false}/>}</ScrollView>
+    </AreaMembershipNavigationProvider>}
+  </View>;
+}

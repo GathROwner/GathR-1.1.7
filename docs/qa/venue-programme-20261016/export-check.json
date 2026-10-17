@@ -1,0 +1,158 @@
+{
+  "checkedAt": "2026-10-16T22:29:00.687Z",
+  "candidateCommit": "70d41d172f41fa21f129550be291136970446312",
+  "functionalCommits": [
+    "975ee789c6fe0e53fa2cc0f0841d39b4b79edb91",
+    "058c90902cf30ccef6294da9886f8e3b9d8d2eab"
+  ],
+  "baselineCommit": "2d40cb7c7f1b69d50074fe0343a233f1c32eb787",
+  "liveBaseline": {
+    "id": "01a14538-c839-782f-a845-87e89f643ed9",
+    "createdAt": "2026-10-16T14:58:31.609Z",
+    "group": "3b237578-33e4-49e6-9c85-191f1815391a",
+    "branch": "preview",
+    "message": "Link venue activities and hunt stops to their parent events",
+    "runtimeVersion": "1.1.10",
+    "platform": "ios",
+    "manifestPermalink": "https://u.expo.dev/update/01a14538-c839-782f-a845-87e89f643ed9",
+    "isRollBackToEmbedded": false,
+    "gitCommitHash": "2d40cb7c7f1b69d50074fe0343a233f1c32eb787"
+  },
+  "platform": "ios",
+  "runtime": "1.1.10",
+  "published": false,
+  "tests": {
+    "suites": 15,
+    "passed": 188,
+    "skipped": 1
+  },
+  "typescript": "passed",
+  "lint": {
+    "errors": 0,
+    "warnings": 215
+  },
+  "previewAuthSocialMapbox": "passed; no Publish switch",
+  "bundle": {
+    "path": "artifacts/venue-programme-20261016/export/_expo/static/js/ios/entry-196a35035924cc880f1436fafe5b0ce8.hbc",
+    "bytes": 5730028,
+    "sha256": "2aea047e837babe6bf8603d4d90ef275d3e267e1139db9cbc87806172a3f0ae4",
+    "modules": 2504
+  },
+  "assets": 111,
+  "assetsEqualToBaseline": true,
+  "sourceMapSources": 2460,
+  "unexpectedQaSources": [],
+  "sourceChecks": [
+    {
+      "path": "app/_layout.tsx",
+      "matches": true,
+      "sha256": "8b104231c9cbaaff80091cc481a194e5bac332600c967024775f22cc79da4dd7"
+    },
+    {
+      "path": "app/index.tsx",
+      "matches": true,
+      "sha256": "ffda86346355942c39d49b980d558f1c87ccda3642729d83039b52b8afc95f35"
+    },
+    {
+      "path": "app/(tabs)/map.tsx",
+      "matches": true,
+      "sha256": "ae0ce18c8092cba590e1b5427af5eff06e57d352dfa442e1e8a69d6460c0bcdb"
+    },
+    {
+      "path": "components/area/VenueProgrammeBrowser.tsx",
+      "matches": true,
+      "sha256": "5af6f7499bb06b669e3b21c229d4704c1c74b0239a05609e3257ca9f99e04a2d"
+    },
+    {
+      "path": "components/map/AreaLocationBrowser.tsx",
+      "matches": true,
+      "sha256": "fb48a7099b4435248c66efe79d88784e5e4cc309318a9f2c38c95914c674e080"
+    },
+    {
+      "path": "components/map/EventImageLightbox.tsx",
+      "matches": true,
+      "sha256": "f73a278fec345ff5869b85b7da95c43f5d9241904ec5effa934e5b1b3063ec08"
+    },
+    {
+      "path": "hooks/useAreaMembershipIndex.ts",
+      "matches": true,
+      "sha256": "c2342f2c11dd68c1fa8c819fa6358a8070f1551199dcabb8e150ebfb406d97f9"
+    },
+    {
+      "path": "lib/api/firestoreEvents.ts",
+      "matches": true,
+      "sha256": "1f672e84b6ad4170f387f21382ddc6a890d3bcbcfb2ebdcf7ac1803be8a6857d"
+    },
+    {
+      "path": "lib/queryKeys.ts",
+      "matches": true,
+      "sha256": "d70c7f4a9e0745b422d9a407dc8ee4704519d0c16b441ba21d5d3d40a3863844"
+    },
+    {
+      "path": "store/mapStore.ts",
+      "matches": true,
+      "sha256": "f5bb2e818e46e495d297187fc6f8402f0363c52ad7cad0c0fdbdb54f6c14a052"
+    },
+    {
+      "path": "utils/eventProgramme.ts",
+      "matches": true,
+      "sha256": "913019bd80a45b56194700d00f829dbcd4e5d8004984746a06911514625a09bf"
+    },
+    {
+      "path": "utils/areaMembership.ts",
+      "matches": true,
+      "sha256": "899ad20f4c25f0be445fc26d01cca897569ffba6afbc54d9c3f9f22405dfcadb"
+    },
+    {
+      "path": "utils/areaEvent.ts",
+      "matches": true,
+      "sha256": "a6043be58f7d8920cf90c0f18d5e099f4d2158b827e943d54900c75722cc9766"
+    }
+  ],
+  "typeOnlySources": [
+    "types/events.ts",
+    "types/firestore.ts"
+  ],
+  "typeOnlyValidation": "TypeScript passes; type-only declarations are erased from the runtime graph",
+  "restoration": [
+    {
+      "path": "app/_layout.tsx",
+      "matches": true,
+      "sha256": "8b104231c9cbaaff80091cc481a194e5bac332600c967024775f22cc79da4dd7"
+    },
+    {
+      "path": "app/index.tsx",
+      "matches": true,
+      "sha256": "ffda86346355942c39d49b980d558f1c87ccda3642729d83039b52b8afc95f35"
+    },
+    {
+      "path": "app/(tabs)/map.tsx",
+      "matches": true,
+      "sha256": "ae0ce18c8092cba590e1b5427af5eff06e57d352dfa442e1e8a69d6460c0bcdb"
+    }
+  ],
+  "unchangedProtectedFiles": [
+    "app/_layout.tsx",
+    "app/index.tsx",
+    "app/(tabs)/map.tsx",
+    "components/map/EventCallout.tsx",
+    "components/area/AreaMembershipLinks.tsx",
+    "components/area/AreaMembershipNavigation.tsx",
+    "utils/dateUtils.ts",
+    "utils/eventTiming.ts",
+    "utils/calendarUtils.ts",
+    "utils/eventExpiry.ts",
+    "utils/areaEventPresentation.ts",
+    "hooks/useAreaActivities.ts",
+    "utils/areaActivityCache.ts",
+    "app.config.js",
+    "package.json",
+    "package-lock.json",
+    "eas.json",
+    "types/social.ts"
+  ],
+  "existingApiLoadersUnchanged": true,
+  "nativeIntegrationWarnings": 0,
+  "visualEvidence": "Seven unedited shared-component Android native screenshots; synthetic fixture; no live data proof or iOS device adoption",
+  "newFeedGeneration": "// This key versions the persisted *normalized* Event shape, not only the API\r\n// request. Keep capability responses isolated from unsupported OTA caches.\r\n// Bump it whenever new backend fields must be remapped so an OTA does\r\n// not keep restoring incompatible Event objects from the prior app runtime.\r\nexport const EVENTS_MINIMAL = ['events-minimal', 'original-source-v3', 'date-only-activities-v1', 'venue-programme-v1'] as const;\r\n\r\n// Detail results are persisted independently from the minimal feed and need\r\n// their own schema version for the same reason.\r\nexport const EVENT_DETAILS_SCHEMA_VERSION = 'original-source-v2-date-only-activities-v1-venue-programme-v1';\r\n"
+}

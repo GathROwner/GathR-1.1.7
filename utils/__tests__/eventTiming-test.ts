@@ -1,0 +1,248 @@
+import type { Event, EventTiming } from '../../types/events';
+import { formatEventTimingSummary } from '../dateUtils';
+import {
+  createLegacyTimingContract,
+  getCalendarEndDecision,
+  getEventScheduleLocalScalar,
+  getEventScheduleState,
+  getEventTimeRangeParts,
+  getEventTimeRangeText,
+  getEventTimeStatusFromTiming,
+  getEventTimingBadge,
+  resetEventTimingIntlCache,
+} from '../eventTiming';
+
+const baseEvent = (timing: EventTiming): Pick<Event, 'startDate' | 'startTime' | 'endDate' | 'endTime' | 'timing'> => ({
+  startDate: '2026-09-05',
+  startTime: '7:00 PM',
+  endDate: '2026-09-05',
+  endTime: '8:00 PM',
+  timing,
+});
+
+const atHalifax = (hour: number, minute = 0) =>
+  new Date(Date.UTC(2026, 8, 5, hour + 3, minute));
+
+describe('honest event timing state machine', () => {
+  beforeEach(() => {
+    resetEventTimingIntlCache();
+  });
+
+  it('reuses timezone formatting across events and minute transitions', () => {
+    const formatterSpy = jest.spyOn(Intl, 'DateTimeFormat');
+    try {
+      const first = baseEvent(createLegacyTimingContract(baseEvent(null as never), { endStatus: 'observed' }));
+      const second = {
+        ...baseEvent(createLegacyTimingContract(baseEvent(null as never), { endStatus: 'observed' })),
+        startTime: '6:00 PM',
+      };
+
+      getEventScheduleState(first, atHalifax(19, 30));
+      getEventScheduleState(second, atHalifax(19, 30));
+      getEventScheduleState(first, atHalifax(19, 31));
+
+      expect(formatterSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      formatterSpy.mockRestore();
+    }
+  });
+
+  it('keeps separate reusable formatters for distinct timezones', () => {
+    const formatterSpy = jest.spyOn(Intl, 'DateTimeFormat');
+    try {
+      const halifax = baseEvent(createLegacyTimingContract(baseEvent(null as never), { endStatus: 'observed' }));
+      const torontoTiming = createLegacyTimingContract(baseEvent(null as never), {
+        endStatus: 'observed',
+        timeZone: 'America/Toronto',
+      });
+      const toronto = baseEvent(torontoTiming);
+
+      getEventScheduleState(halifax, atHalifax(19, 30));
+      getEventScheduleState(toronto, atHalifax(19, 30));
+      getEventScheduleState(toronto, atHalifax(19, 31));
+
+      expect(formatterSpy).toHaveBeenCalledTimes(2);
+    } finally {
+      formatterSpy.mockRestore();
+    }
+  });
+
+  it('reserves Happening Now for an observed ending', () => {
+    const event = baseEvent(createLegacyTimingContract(baseEvent(null as never), { endStatus: 'observed' }));
+    expect(getEventScheduleState(event, atHalifax(19, 30)).code).toBe('happening_confirmed');
+    expect(getEventTimeStatusFromTiming(event, atHalifax(19, 30))).toBe('now');
+    expect(getEventTimingBadge(event, atHalifax(19, 30))).toBeNull();
+  });
+
+  it('exposes only real schedule transitions as cache boundaries', () => {
+    const event = baseEvent(createLegacyTimingContract(baseEvent(null as never), { endStatus: 'observed' }));
+
+    expect(getEventScheduleState(event, atHalifax(18, 30)).nextTransitionLocalScalar).toBe(
+      getEventScheduleLocalScalar(atHalifax(19), 'America/Halifax')
+    );
+    expect(getEventScheduleState(event, atHalifax(19, 30)).nextTransitionLocalScalar).toBe(
+      getEventScheduleLocalScalar(atHalifax(20, 6), 'America/Halifax')
+    );
+    expect(getEventScheduleState(event, atHalifax(20, 6)).code).toBe('confirmed_ended');
+    expect(getEventScheduleState(event, atHalifax(20, 6)).nextTransitionLocalScalar).toBeUndefined();
+  });
+
+  it('uses a hidden cutoff but never displays it as an ending', () => {
+    const timing = createLegacyTimingContract(
+      { startDate: '2026-09-05', startTime: '7:00 PM', endDate: '2026-09-05', endTime: '11:00 PM' },
+      { endStatus: 'unknown', endResolutionMethod: 'category_default' }
+    );
+    const event = baseEvent(timing);
+
+    expect(getEventScheduleState(event, atHalifax(19, 30)).code).toBe('started_unknown_end');
+    expect(getEventTimeStatusFromTiming(event, atHalifax(19, 30))).toBe('today');
+    expect(getEventTimeRangeText(event, atHalifax(19, 30))).toBe('Started 7:00 PM');
+    expect(getEventTimingBadge(event, atHalifax(19, 30))?.text).toBe('END\nUNKNOWN');
+
+    expect(getEventScheduleState(event, atHalifax(23, 30))).toMatchObject({
+      code: 'unknown_cutoff_passed',
+      defaultMapEligible: false,
+      todayEligible: true,
+    });
+    expect(getEventTimingBadge(event, atHalifax(23, 30))?.text).toBe('STATUS\nUNKNOWN');
+  });
+
+  it('distinguishes a supported estimate before and after its display end', () => {
+    const timing = createLegacyTimingContract(
+      { startDate: '2026-09-05', startTime: '7:00 PM', endDate: '2026-09-05', endTime: '' },
+      { endStatus: 'unknown' }
+    );
+    timing.estimate = {
+      confidence: 'high',
+      displayEndDate: '2026-09-05',
+      displayEndTime: '8:00 PM',
+      discoveryCutoffDate: '2026-09-05',
+      discoveryCutoffTime: '8:15 PM',
+      method: 'official_runtime',
+    };
+    const event = baseEvent(timing);
+
+    expect(getEventScheduleState(event, atHalifax(19, 30)).code).toBe('expected_happening');
+    expect(getEventTimingBadge(event, atHalifax(19, 30))?.text).toBe('END\nESTIMATED');
+    expect(getEventTimeRangeText(event, atHalifax(19, 30))).toBe('7:00 PM ~ 8:00 PM');
+    expect(getEventTimeRangeParts(event, atHalifax(19, 30))).toMatchObject({
+      startEstimated: false,
+      endEstimated: true,
+      separator: ' ~ ',
+    });
+
+    expect(getEventScheduleState(event, atHalifax(20, 1)).code).toBe('estimate_passed');
+    expect(getEventTimingBadge(event, atHalifax(20, 1))?.text).toBe('END\nESTIMATED');
+
+    jest.useFakeTimers();
+    try {
+      jest.setSystemTime(atHalifax(19, 30));
+      expect(formatEventTimingSummary(event)).toBe('EXPECTED NOW • 7:00 PM ~ 8:00 PM');
+      jest.setSystemTime(atHalifax(20, 1));
+      expect(formatEventTimingSummary(event)).toBe('MAY HAVE ENDED • 7:00 PM ~ 8:00 PM');
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('marks only an estimated start when the ending is observed', () => {
+    const timing = createLegacyTimingContract(
+      { startDate: '2026-09-05', startTime: '7:00 PM', endDate: '2026-09-05', endTime: '9:00 PM' },
+      { endStatus: 'observed' }
+    );
+    timing.schedule.start = {
+      ...timing.schedule.start,
+      status: 'estimated',
+      confidence: 'medium',
+      method: 'official_schedule_context',
+    };
+    const event = baseEvent(timing);
+
+    expect(getEventScheduleState(event, atHalifax(19, 30))).toMatchObject({
+      code: 'expected_happening',
+      nowEligibility: 'expected',
+    });
+    expect(getEventTimeStatusFromTiming(event, atHalifax(19, 30))).toBe('today');
+    expect(getEventTimingBadge(event, atHalifax(19, 30))?.text).toBe('START\nESTIMATED');
+    expect(getEventTimeRangeParts(event, atHalifax(19, 30))).toMatchObject({
+      text: '7:00 PM ~ 9:00 PM',
+      startEstimated: true,
+      endEstimated: false,
+    });
+  });
+
+  it('marks both endpoint controls when both times are estimated', () => {
+    const timing = createLegacyTimingContract(
+      { startDate: '2026-09-05', startTime: '7:00 PM', endDate: '2026-09-05', endTime: '' },
+      { endStatus: 'unknown' }
+    );
+    timing.schedule.start = {
+      ...timing.schedule.start,
+      status: 'estimated',
+      confidence: 'high',
+      method: 'official_schedule_context',
+    };
+    timing.estimate = {
+      confidence: 'medium',
+      displayEndDate: '2026-09-05',
+      displayEndTime: '9:00 PM',
+      discoveryCutoffDate: '2026-09-05',
+      discoveryCutoffTime: '9:15 PM',
+      method: 'venue_subtype_duration',
+    };
+    const event = baseEvent(timing);
+
+    expect(getEventTimingBadge(event, atHalifax(18))).toMatchObject({
+      text: 'TIMES\nESTIMATED',
+      accessibilityLabel: 'Start and end times estimated by GathR',
+    });
+    expect(getEventTimeRangeParts(event, atHalifax(18))).toMatchObject({
+      text: '7:00 PM ~ 9:00 PM',
+      startEstimated: true,
+      endEstimated: true,
+    });
+  });
+
+  it('treats verified until-close semantics as supported current status', () => {
+    const timing = createLegacyTimingContract(
+      { startDate: '2026-09-05', startTime: '7:00 PM', endDate: '2026-09-05', endTime: '11:00 PM' },
+      { endStatus: 'until_close', scheduleKind: 'until_close' }
+    );
+    const event = baseEvent(timing);
+    expect(getEventScheduleState(event, atHalifax(20)).code).toBe('until_close_active');
+    expect(getEventTimeStatusFromTiming(event, atHalifax(20))).toBe('now');
+  });
+
+  it('retains uncertain events under Today only until local midnight', () => {
+    const timing = createLegacyTimingContract(
+      { startDate: '2026-09-05', startTime: '7:00 PM', endDate: '2026-09-05', endTime: '' },
+      { endStatus: 'unknown' }
+    );
+    const event = baseEvent(timing);
+    expect(getEventScheduleState(event, atHalifax(22)).code).toBe('unknown_cutoff_passed');
+    expect(getEventScheduleState(event, new Date('2026-09-06T03:05:00.000Z')).code).toBe('confirmed_ended');
+  });
+
+  it('retains an overnight cutoff under Today until the cutoff day ends', () => {
+    const timing = createLegacyTimingContract(
+      { startDate: '2026-09-05', startTime: '11:30 PM', endDate: '2026-09-05', endTime: '' },
+      { endStatus: 'unknown' }
+    );
+    const event = baseEvent(timing);
+    expect(getEventScheduleState(event, new Date('2026-09-06T04:00:00.000Z')).code).toBe('started_unknown_end');
+    expect(getEventScheduleState(event, new Date('2026-09-06T05:45:00.000Z'))).toMatchObject({
+      code: 'unknown_cutoff_passed',
+      todayEligible: true,
+      defaultMapEligible: false,
+    });
+    expect(getEventScheduleState(event, new Date('2026-09-07T03:05:00.000Z')).code).toBe('confirmed_ended');
+  });
+
+  it('requires a user-selected calendar ending when the source omitted one', () => {
+    const timing = createLegacyTimingContract(
+      { startDate: '2026-09-05', startTime: '7:00 PM', endDate: '2026-09-05', endTime: '' },
+      { endStatus: 'unknown' }
+    );
+    expect(getCalendarEndDecision(baseEvent(timing)).kind).toBe('user_required');
+  });
+});

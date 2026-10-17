@@ -16,12 +16,13 @@ import {
   TouchableOpacity
 } from 'react-native';
 import { useRouter } from 'expo-router';
+import { getAnalyticsEmailDomain } from '../utils/analyticsPrivacy';
 import { signInWithEmailAndPassword, createUserWithEmailAndPassword, sendPasswordResetEmail } from 'firebase/auth';
 import { requestCurrentUserVerificationEmail } from '../lib/accountVerification';
 import { auth, firestore, storage } from '../config/firebaseConfig';
 import { setDoc, doc } from 'firebase/firestore';
 import * as ImagePicker from 'expo-image-picker';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import { amplitudeMarkManualLogin } from '../lib/amplitudeAnalytics';
 // Import analytics hook
@@ -203,7 +204,16 @@ export default function Index() {
         // Navigation is handled by _layout.tsx once onAuthStateChanged fires
       } catch (error: any) {
         const duration = Date.now() - startTime;
-        const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
+        const credentialErrorCodes = new Set([
+          'auth/invalid-credential',
+          'auth/user-not-found',
+          'auth/wrong-password',
+        ]);
+        const errorMessage = credentialErrorCodes.has(error?.code)
+          ? 'The email or password is incorrect.'
+          : error instanceof Error
+            ? error.message
+            : 'An unknown error occurred';
         
         // Track login failure
         analytics.trackError('authentication', errorMessage, {
@@ -353,14 +363,14 @@ export default function Index() {
     try {
       // Track password reset attempt
       analytics.trackUserAction('password_reset_attempt', {
-        email: email
+        email_domain: getAnalyticsEmailDomain(email)
       });
       
       await sendPasswordResetEmail(auth, email);
       
       // Track password reset success
       analytics.trackUserAction('password_reset_sent', {
-        email: email
+        email_domain: getAnalyticsEmailDomain(email)
       });
       
       Alert.alert('Password Reset', 'Password reset email has been sent to your email address');
@@ -369,7 +379,7 @@ export default function Index() {
       
       // Track password reset error
       analytics.trackError('password_reset', errorMessage, {
-        email: email,
+        email_domain: getAnalyticsEmailDomain(email),
         error_code: error.code || 'unknown'
       });
       

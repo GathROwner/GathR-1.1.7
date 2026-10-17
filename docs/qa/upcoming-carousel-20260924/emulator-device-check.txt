@@ -1,0 +1,8 @@
+device=emulator-5554
+state=device
+package=package:com.craigb.gathr
+versionCode=13 minSdk=24 targetSdk=36
+versionName=1.1.10
+display=Physical size: 1080x2400
+debuggable=False
+run_as=run-as: package not debuggable: com.craigb.gathr

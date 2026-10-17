@@ -1,0 +1,23 @@
+{
+  "sourceBase": "f61b339536866d6ca2155e06f4b8109cd4398bd5",
+  "iosPreviewBase": "0878859ee8f897570969175c3dcbd7ad69bf96d0",
+  "typescriptExit": 0,
+  "lintExit": 0,
+  "lintErrors": 0,
+  "lintWarnings": 213,
+  "testSuites": 8,
+  "tests": 69,
+  "success": true,
+  "suites": [
+    "hooks\\__tests__\\useCalloutLightboxPaging.test.tsx",
+    "hooks\\__tests__\\useCalloutSwipeTransition.test.tsx",
+    "lib\\__tests__\\sharedEventPushNotifications-test.ts",
+    "utils\\__tests__\\eventImageGallery-test.ts",
+    "utils\\__tests__\\lightboxReadingMode-test.ts",
+    "utils\\__tests__\\lightboxNavigation-test.ts",
+    "utils\\__tests__\\calloutLightbox-test.ts",
+    "utils\\__tests__\\eventLightboxLayout-test.ts"
+  ],
+  "nativeQa": "Android Metro isolated EventCallout; map route disabled",
+  "iosDeviceAdoption": "unverified"
+}

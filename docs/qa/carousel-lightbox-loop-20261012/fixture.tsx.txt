@@ -1,0 +1,60 @@
+import React, { useLayoutEffect, useRef, useState } from 'react';
+import { Modal, View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import InterestsCarousel from '../../components/map/InterestsCarousel';
+import ContextualCheckInControl from '../../components/social/ContextualCheckInControl';
+import CalloutModalTabBarTouchLayer from '../../components/map/CalloutModalTabBarTouchLayer';
+import { getTabDockBottom, TAB_DOCK_HEIGHT, TAB_DOCK_EDGE_INSET } from '../../constants/tabDock';
+import { useMapStore } from '../../store';
+import { useInterestCarouselUiStore } from '../../store/interestCarouselUiStore';
+import { getInterestCarouselEvents } from '../../utils/interestCarouselOrder';
+import { TimeFilterType } from '../../types/filter';
+import type { Cluster } from '../../types/events';
+
+export default function CarouselLoopFixture() {
+  const insets = useSafeAreaInsets();
+  const saved = useRef(useMapStore.getState()).current;
+  const savedFilter = useRef(useInterestCarouselUiStore.getState().interestCarouselFilter).current;
+  const [limit, setLimit] = useState(4);
+  const [ready, setReady] = useState(false);
+  const [shown, setShown] = useState(true);
+  useLayoutEffect(() => {
+    const criteria = {
+      ...saved.filterCriteria, showEvents: false, showSpecials: true, search: '',
+      eventFilters: { timeFilter: TimeFilterType.ALL },
+      specialFilters: { timeFilter: TimeFilterType.ALL, category: 'Drink Special', categoryFilterSource: 'interest-pills' as const },
+    };
+    const candidates = getInterestCarouselEvents(saved.allEvents, criteria);
+    const items = Array.from({ length: limit }, (_, index) => candidates[index % candidates.length]).map((event, index) => ({
+      ...event, id: `local-loop-fixture-${index}`, title: `Item ${index + 1} · ${event.title}`, venue: `Item ${index + 1} · ${event.venue}`,
+    }));
+    const cluster: Cluster = {
+      id: 'local-loop-fixture', clusterType: 'multi', timeStatus: 'today', interestLevel: 'low',
+      isBroadcasting: false, eventCount: 0, specialCount: items.length, categories: ['Drink Special'],
+      venues: items.map((event, index) => ({ locationKey: `local-loop-fixture-${index}`, venue: event.venue,
+        address: event.address, latitude: event.latitude, longitude: event.longitude, events: [event] })),
+    };
+    useMapStore.setState({ onScreenEvents: items, filterCriteria: criteria, clusters: [cluster], activeFilterPanel: null });
+    useInterestCarouselUiStore.setState({ interestCarouselFilter: { status: 'active', type: 'special', category: 'Drink Special' } });
+    setReady(true);
+    setShown(true);
+  }, [limit, saved]);
+  useLayoutEffect(() => () => {
+    useMapStore.setState({ onScreenEvents: saved.onScreenEvents, filterCriteria: saved.filterCriteria, clusters: saved.clusters, activeFilterPanel: saved.activeFilterPanel });
+    useInterestCarouselUiStore.setState({ interestCarouselFilter: savedFilter });
+  }, [saved, savedFilter]);
+  return <Modal visible statusBarTranslucent navigationBarTranslucent animationType="none">
+    <View style={{ flex: 1, backgroundColor: '#DCE9E8' }}>
+      <View style={{ marginTop: insets.top + 24, padding: 22, gap: 14 }}>
+        <Text style={{ fontSize: 22, fontWeight: '700' }}>Looping carousel · {limit} items</Text>
+        <Text>Isolated native fixture — no map mounted</Text>
+        <View style={{ flexDirection: 'row', gap: 12 }}>{[4, 2, 1].map(count => <TouchableOpacity key={count} onPress={() => setLimit(count)} style={{ padding: 18, backgroundColor: 'white', borderRadius: 12 }}><Text>{count} items</Text></TouchableOpacity>)}</View>
+        <TouchableOpacity onPress={() => { setShown(!shown); useInterestCarouselUiStore.setState({ interestCarouselFilter: shown ? { status: 'cleared' } : { status: 'active', type: 'special', category: 'Drink Special' } }); }} style={{ padding: 18, backgroundColor: 'white', borderRadius: 12 }}><Text>{shown ? 'Dismiss carousel' : 'Reopen carousel'}</Text></TouchableOpacity>
+      </View>
+      <TouchableOpacity onPress={() => setLimit(20)} style={{ margin: 22, padding: 18, backgroundColor: 'white', borderRadius: 12 }}><Text>20 items</Text></TouchableOpacity>
+      {ready && <View pointerEvents="box-none" style={[StyleSheet.absoluteFillObject, { zIndex: 12, elevation: 12 }]}><InterestsCarousel /></View>}
+      <ContextualCheckInControl enabled rightOffset={10} bottomOffset={100} />
+      <CalloutModalTabBarTouchLayer height={TAB_DOCK_HEIGHT} bottomOffset={getTabDockBottom(Platform.OS, insets.bottom)} edgeInset={TAB_DOCK_EDGE_INSET} onSelect={() => {}} />
+    </View>
+  </Modal>;
+}

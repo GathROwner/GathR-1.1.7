@@ -28,6 +28,72 @@ export interface EventActionLink {
   evidence?: string;
 }
 
+export type EventScheduleKind =
+  | 'timed_session'
+  | 'availability_window'
+  | 'all_day'
+  | 'multi_day'
+  | 'date_range_overview'
+  | 'until_close'
+  | 'unknown';
+
+export type EventTimingConfidence = 'high' | 'medium' | 'low' | 'unknown';
+
+export interface EventTimingPoint {
+  at?: string | null;
+  localDate?: string | null;
+  localTime?: string | null;
+  timeZone?: string | null;
+  status: 'observed' | 'semantic' | 'until_close' | 'all_day' | 'estimated' | 'unknown';
+  sourceType?: string | null;
+  evidence?: string | null;
+  sourceUrl?: string | null;
+  observedAt?: string | null;
+  sourceRevision?: string | null;
+  confidence?: EventTimingConfidence;
+  method?: string | null;
+  sampleSize?: number | null;
+  evidenceRefs?: string[];
+  computedAt?: string | null;
+  invalidatedAt?: string | null;
+}
+
+export interface EventScheduleEstimate {
+  endAt?: string | null;
+  displayEndAt?: string | null;
+  discoveryCutoffAt?: string | null;
+  displayEndDate?: string | null;
+  displayEndTime?: string | null;
+  discoveryCutoffDate?: string | null;
+  discoveryCutoffTime?: string | null;
+  method?: string | null;
+  confidence: EventTimingConfidence;
+  sampleSize?: number | null;
+  medianDurationMinutes?: number | null;
+  upperDurationMinutes?: number | null;
+  estimateVersion?: string | null;
+  evidenceRefs?: string[];
+  computedAt?: string | null;
+  invalidatedAt?: string | null;
+  invalidationReason?: string | null;
+}
+
+/**
+ * Additive v2 timing contract. Legacy start/end fields remain on Event for old
+ * clients, but new UI and discovery logic must use this provenance-aware shape.
+ */
+export interface EventTiming {
+  version: 2;
+  timeZone: string;
+  scheduleKind: EventScheduleKind;
+  schedule: {
+    start: EventTimingPoint;
+    end: EventTimingPoint;
+  };
+  estimate?: EventScheduleEstimate | null;
+  policyVersion?: string | null;
+}
+
 // Firestore does not allow arrays nested directly in arrays, so persisted
 // coordinates use named fields and are converted to GeoJSON tuples in the app.
 export interface RouteCoordinate {
@@ -47,6 +113,18 @@ export interface EventRouteStop {
   sourceLabel?: string;
 }
 
+export interface EventRouteRequestWaypoint {
+  id: string;
+  label: string;
+  address?: string;
+  coordinates?: RouteCoordinate;
+}
+
+export interface EventRouteRequest {
+  profile?: 'walking' | 'driving' | 'cycling';
+  waypoints: EventRouteRequestWaypoint[];
+}
+
 export interface EventRouteSegment {
   id: string;
   label?: string;
@@ -59,6 +137,7 @@ export interface EventRouteSegment {
     | 'official_map'
     | 'official_streets'
     | 'routed_streets'
+    | 'runtime_directions'
     | 'connected_stops'
     | 'manual_review';
 }
@@ -83,6 +162,10 @@ export interface EventRouteData {
   verifiedAt?: string;
   confirmedStreets?: string[];
   geometrySource?: string;
+  /** Provider-independent inputs only. Mapbox results must never be stored here. */
+  routeRequest?: EventRouteRequest;
+  /** Ephemeral marker added only to the in-memory event returned by the route callable. */
+  runtimeResolvedAt?: string;
   stops?: EventRouteStop[];
   segments?: EventRouteSegment[];
 }
@@ -92,6 +175,8 @@ export interface EventAreaLocation {
   label: string;
   coordinates: RouteCoordinate;
   certainty: 'confirmed' | 'approximate';
+  venueId?: string;
+  linkedEventIds?: string[];
   address?: string;
   description?: string;
   timeLabel?: string;
@@ -117,6 +202,9 @@ export interface EventAreaData {
  * Main Event interface representing event data from the API
  */
 export interface Event {
+  status?: string;
+  isCancelled?: boolean;
+  isExpired?: boolean;
   id: string | number;
   type: 'event' | 'special';
   category: string;
@@ -133,6 +221,7 @@ export interface Event {
   endDate: string;
   startTime: string;
   endTime: string;
+  timing?: EventTiming | null;
   ticketPrice: string;
   profileUrl: string;
   imageUrl: string;
@@ -158,7 +247,17 @@ export interface Event {
   relevanceScore?: number;
 
   // Data source tracking (for parallel API sources)
-  source?: 'google_sheets' | 'firestore' | 'private_shared';
+  source?: 'google_sheets' | 'firestore' | 'private_shared' | 'friend_event';
+
+  friendEvent?: {
+    eventId: string;
+    hostUid: string;
+    hostName: string;
+    viewerRole: 'host' | 'guest';
+    ownRsvp: import('./social').FriendEventRsvp;
+    visibility: import('./social').FriendEventVisibility;
+    addressRevealed: boolean;
+  };
 
   // User share provenance. This is intentionally separate from `source` so a
   // public Firestore event can still render normally while showing that the
@@ -179,6 +278,8 @@ export interface Event {
   mediaUrls?: string[];
 
   // Event details (from Firestore metadata)
+  sourceUrl?: string;
+  sourceUniqueId?: string;
   facebookUrl?: string;
   eventType?: string;
   ageRestriction?: string;
@@ -200,6 +301,7 @@ export interface Event {
   mapMode?: 'venue' | 'area' | 'route' | 'none' | null;
   routeData?: EventRouteData | null;
   areaData?: EventAreaData | null;
+  programmeData?: EventProgrammeData | null;
 
   // Venue details (from Firestore venue object)
   venueRating?: number;
@@ -208,6 +310,17 @@ export interface Event {
   venueFacebookUrl?: string;
   venueInstagramUrl?: string;
   venueCategories?: string[];
+}
+
+/** Explicit reviewed membership at one canonical venue; never inferred occurrences. */
+export interface EventProgrammeData {
+  version: 1;
+  status: 'verified' | 'partial';
+  venueId: string;
+  linkedEventIds: string[];
+  sourceUrl: string;
+  sourceLabel?: string;
+  verifiedAt?: string;
 }
 
 /**
@@ -252,5 +365,6 @@ export interface Cluster {
   hasNewContent?: boolean;           // Whether cluster has new events/specials since last interaction
   containsCityLevelEvent?: boolean;  // Whether cluster contains a city/area/route experience
   containsRouteEvent?: boolean;      // Whether cluster contains a route-scoped event
+  friendEventCount?: number;         // Viewer-authorized hosted/invited events in this cluster
   friendPresence?: import('./social').ClusterFriendPresence; // Derived from viewer-authorized activity only
 }

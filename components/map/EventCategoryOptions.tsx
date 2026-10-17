@@ -1,0 +1,154 @@
+import React, { useEffect, useRef, useState } from 'react';
+import MaterialIcons from '@expo/vector-icons/MaterialIcons';
+import { LinearGradient } from 'expo-linear-gradient';
+import {
+  Animated, NativeScrollEvent, NativeSyntheticEvent, Pressable, StyleSheet, Text, View,
+} from 'react-native';
+import { useMapStore } from '../../store';
+import { formatFilterCount, getFilterCategoryOptions, shouldShowEventCategoryScrollCue } from './eventFilterPanelModel';
+
+export const getEventCategoryIcon = (category: string): keyof typeof MaterialIcons.glyphMap => {
+  const value = category.toLowerCase();
+  if (value.includes('music')) return 'audiotrack';
+  if (value.includes('comedy')) return 'sentiment-very-satisfied';
+  if (value.includes('sport')) return 'sports-basketball';
+  if (value.includes('trivia')) return 'psychology-alt';
+  if (value.includes('workshop') || value.includes('class')) return 'school';
+  if (value.includes('religious') || value.includes('church')) return 'church';
+  if (value.includes('family')) return 'family-restroom';
+  if (value.includes('gathering') || value.includes('parties')) return 'nightlife';
+  if (value.includes('cinema') || value.includes('movie')) return 'theaters';
+  if (value.includes('food')) return 'restaurant';
+  if (value.includes('happy hour') || value.includes('drink')) return 'local-bar';
+  return 'category';
+};
+
+type Props = {
+  counts: Record<string, number>;
+  allCount: number;
+  maxHeight: number;
+  type?: 'event' | 'special';
+};
+
+type SelectedCategoryPillProps = {
+  category: string;
+  count: number;
+  type?: 'event' | 'special';
+};
+
+export function SelectedCategoryPill({
+  category, count, type = 'event',
+}: SelectedCategoryPillProps) {
+  const isSpecial = type === 'special';
+  const selectedColor = isSpecial ? '#248542' : '#0874D5';
+
+  return <View accessible={false} pointerEvents="none"
+    style={[styles.option, styles.selected, isSpecial && styles.specialSelected, styles.selectedSummaryOption]}>
+    <MaterialIcons name={getEventCategoryIcon(category)} size={18} color={selectedColor} />
+    <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}
+      style={[styles.label, styles.selectedLabel, isSpecial && styles.specialSelectedLabel]}>
+      {formatFilterCount(category, count)}
+    </Text>
+  </View>;
+}
+
+export default function EventCategoryOptions({ counts, allCount, maxHeight, type = 'event' }: Props) {
+  const activeCategory = useMapStore(state => type === 'event'
+    ? state.filterCriteria.eventFilters.category : state.filterCriteria.specialFilters.category);
+  const setTypeFilters = useMapStore(state => state.setTypeFilters);
+  const categories = getFilterCategoryOptions(type, counts, activeCategory);
+  const isSpecial = type === 'special';
+  const selectedColor = isSpecial ? '#248542' : '#0874D5';
+  const options = [{ label: 'All', count: allCount, category: undefined },
+    ...categories.map(category => ({ label: category, count: counts[category] ?? 0, category }))];
+  const hasOverflow = shouldShowEventCategoryScrollCue(options.length);
+  const [contentHeight, setContentHeight] = useState(maxHeight);
+  const [hasMoreBelow, setHasMoreBelow] = useState(hasOverflow);
+  const scrollY = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    scrollY.setValue(0);
+    setHasMoreBelow(hasOverflow);
+  }, [hasOverflow, options.length, scrollY]);
+
+  const updateMoreState = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
+    setHasMoreBelow(contentOffset.y + layoutMeasurement.height < contentSize.height - 4);
+  };
+
+  const thumbHeight = contentHeight > maxHeight
+    ? Math.max(24, (maxHeight / contentHeight) * maxHeight)
+    : maxHeight;
+  const scrollDistance = Math.max(1, contentHeight - maxHeight);
+  const thumbTravel = Math.max(0, maxHeight - thumbHeight);
+  const thumbTranslateY = scrollY.interpolate({
+    inputRange: [0, scrollDistance], outputRange: [0, thumbTravel], extrapolate: 'clamp',
+  });
+
+  return <View>
+    <View style={[styles.scrollViewport, { height: maxHeight }]}>
+      <Animated.ScrollView style={styles.scrollView} nestedScrollEnabled
+        showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="always"
+        accessibilityHint={hasOverflow ? `Swipe up to see more ${isSpecial ? 'special' : 'event'} categories` : undefined}
+        scrollEventThrottle={16}
+        onContentSizeChange={(_, height) => setContentHeight(height)}
+        onScroll={Animated.event(
+          [{ nativeEvent: { contentOffset: { y: scrollY } } }],
+          { useNativeDriver: false, listener: updateMoreState }
+        )}
+        contentContainerStyle={[styles.grid, hasOverflow && styles.gridWithIndicator]}>
+        {options.map(option => {
+          const active = activeCategory === option.category;
+          return <Pressable key={option.label} accessibilityRole="button"
+            accessibilityLabel={`${option.label}, ${option.count} ${isSpecial ? 'specials' : 'events'}`}
+            accessibilityState={{ selected: active }}
+            onPress={() => setTypeFilters(type, { category: option.category }, 'filter-pills')}
+            style={[styles.option, active && styles.selected, active && isSpecial && styles.specialSelected]}>
+            <MaterialIcons name={option.category ? getEventCategoryIcon(option.category) : 'apps'}
+              size={18} color={active ? selectedColor : '#263F68'} />
+            <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}
+              style={[styles.label, active && styles.selectedLabel, active && isSpecial && styles.specialSelectedLabel]}>
+              {formatFilterCount(option.label, option.count)}
+            </Text>
+          </Pressable>;
+        })}
+      </Animated.ScrollView>
+      {hasOverflow && <View pointerEvents="none" style={styles.scrollTrack}>
+        <Animated.View style={[styles.scrollThumb, {
+          height: thumbHeight, transform: [{ translateY: thumbTranslateY }],
+        }]} />
+      </View>}
+      {hasMoreBelow && <LinearGradient pointerEvents="none"
+        colors={['rgba(250, 252, 255, 0)', 'rgba(250, 252, 255, 0.96)']}
+        style={styles.bottomFade} />}
+    </View>
+    {hasOverflow && <View accessible accessibilityLabel={hasMoreBelow
+      ? 'More categories below' : 'End of categories'} style={styles.moreCue}>
+      <Text style={styles.moreCueText}>{hasMoreBelow ? 'More categories' : 'All categories shown'}</Text>
+      <MaterialIcons name={hasMoreBelow ? 'keyboard-arrow-down' : 'done'} size={18} color="#526880" />
+    </View>}
+  </View>;
+}
+
+const styles = StyleSheet.create({
+  scrollViewport: { position: 'relative' },
+  scrollView: { flex: 1 },
+  grid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', rowGap: 7, paddingBottom: 3 },
+  gridWithIndicator: { paddingRight: 7 },
+  option: { width: '48.5%', minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 5,
+    paddingHorizontal: 9, borderRadius: 12, borderWidth: 1, borderColor: '#DAE3EE',
+    backgroundColor: '#FFFFFF', elevation: 1, shadowColor: '#273E60', shadowOpacity: 0.07,
+    shadowRadius: 3, shadowOffset: { width: 0, height: 2 } },
+  selected: { backgroundColor: '#E7F3FF', borderColor: '#1681E2' },
+  selectedSummaryOption: { width: 'auto', maxWidth: '100%', alignSelf: 'center', flexShrink: 1 },
+  specialSelected: { backgroundColor: '#EAF7EE', borderColor: '#34A853' },
+  label: { flexShrink: 1, fontSize: 12, color: '#263F68', fontWeight: '500' },
+  selectedLabel: { color: '#0874D5', fontWeight: '700' },
+  specialSelectedLabel: { color: '#248542' },
+  scrollTrack: { position: 'absolute', top: 2, right: 0, bottom: 2, width: 3,
+    borderRadius: 2, backgroundColor: '#E2E9F1' },
+  scrollThumb: { width: 3, borderRadius: 2, backgroundColor: '#8FA4BC' },
+  bottomFade: { position: 'absolute', left: 0, right: 7, bottom: 0, height: 14 },
+  moreCue: { height: 25, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 2 },
+  moreCueText: { color: '#526880', fontSize: 12, fontWeight: '500' },
+});
