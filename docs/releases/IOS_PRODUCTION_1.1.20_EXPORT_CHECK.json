@@ -1,0 +1,36 @@
+{
+  "sourceCommit": "9792dd6b01178ea03e6ad36fca4c2c38e9bac4be",
+  "platform": "ios",
+  "runtime": "1.1.20",
+  "bundle": {
+    "bytes": 5744660,
+    "sha256": "417cf342c581e60accfbb3a40562ad88284fdcd4d13cdddce160221c133f6408",
+    "sourceMapSources": 2463
+  },
+  "matchedBundledSources": [
+    "app/_layout.tsx",
+    "app/index.tsx",
+    "app/(tabs)/map.tsx",
+    "app/(tabs)/events.tsx",
+    "app/(tabs)/specials.tsx",
+    "app/profile.tsx",
+    "config/firebaseConfig.js",
+    "components/map/MapBrandWordmark.tsx",
+    "components/map/MapLogoBackdrop.tsx",
+    "components/map/FloatingMapSearchHeader.tsx",
+    "components/map/EventImageLightbox.tsx",
+    "components/map/EventCallout.tsx",
+    "components/map/InterestsCarousel.tsx",
+    "components/map/UpcomingDateOptions.tsx",
+    "components/sharedEvent/SharedEventPushRegistration.tsx",
+    "lib/sharedEventPushNotifications.ts",
+    "services/appCheckService.ts",
+    "services/socialService.ts",
+    "store/mapStore.ts",
+    "types/social.ts",
+    "utils/lightboxNavigation.ts"
+  ],
+  "assets": 111,
+  "allAssetBytesEqualToAcceptedBaseline": true,
+  "unexpectedQaSources": []
+}
