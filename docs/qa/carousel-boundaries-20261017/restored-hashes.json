@@ -1,0 +1,17 @@
+[
+  {
+    "Algorithm": "SHA256",
+    "Hash": "8B104231C9CBAAFF80091CC481A194E5BAC332600C967024775F22CC79DA4DD7",
+    "Path": "C:\\Users\\craig\\.codex\\worktrees\\carousel-boundaries\\GathR-upgrade-sdk54\\app\\_layout.tsx"
+  },
+  {
+    "Algorithm": "SHA256",
+    "Hash": "FFDA86346355942C39D49B980D558F1C87CCDA3642729D83039B52B8AFC95F35",
+    "Path": "C:\\Users\\craig\\.codex\\worktrees\\carousel-boundaries\\GathR-upgrade-sdk54\\app\\index.tsx"
+  },
+  {
+    "Algorithm": "SHA256",
+    "Hash": "AE0CE18C8092CBA590E1B5427AF5EFF06E57D352DFA442E1E8A69D6460C0BCDB",
+    "Path": "C:\\Users\\craig\\.codex\\worktrees\\carousel-boundaries\\GathR-upgrade-sdk54\\app\\(tabs)\\map.tsx"
+  }
+]
