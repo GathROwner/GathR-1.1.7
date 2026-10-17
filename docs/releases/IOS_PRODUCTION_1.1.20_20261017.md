@@ -81,3 +81,11 @@ Continue monitoring the exact build ID. Upload only after FINISHED and verify pr
 - Invoked EAS Submit once for the exact existing build ID, production/iOS only. Existing remote App Store Connect API key was reused. Submission ID 020d9441-b945-4f66-822e-9b2dfb436d1c; initial status submitting. No new build was launched.
 - After build completion, reloaded App Store Connect and attempted new-version creation once more. It still returns Agreement Update, although Developer account acceptance was previously confirmed. No version/metadata write succeeded. Do not loop or alter existing distributed 1.1.10 metadata.
 - Narrow Production Firebase App Check setup remains pending Craig's answer to the explicit question. No Production Firebase writes, enforcement changes, or event-data changes performed. Physical Production/TestFlight acceptance remains pending.
+
+## Upload blocked by Apple agreement state
+
+- Submission 020d9441-b945-4f66-822e-9b2dfb436d1c failed during the initial App Store application-information read, before IPA upload. Exact log: "A required Apple agreement is missing or has expired." It points to App Store Connect Business and, if prompted, Apple Developer account.
+- Business page readback: Free Apps Agreement `Active (New Agreement Available)`; Paid Apps Agreement Active. A banner still says the updated Apple Developer Program License Agreement needs acceptance, contradicting the earlier Developer account accepted date. Cannot distinguish another agreement from propagation without Apple/account-holder resolution. No legal acceptance, tax/trader answer or payment action was performed.
+- App Store version 1.1.20 was not created; release notes are saved locally only. Build 79 is finished and retained on EAS, but is not uploaded, not ready for review and not publicly released.
+- No automatic retry was performed. Once Apple resolves the agreement gate, retry only submission of the same finished build d2567498-8749-4863-bc10-b5ff85d74e41. A new native build is unnecessary and not authorized.
+- Evidence screenshot: C:\Users\craig\.codex\visualizations\2026\10\11\01a12ac6-42ef-7b30-842a-3131be446090\ios-1120-upload-agreement-blocker.png .
