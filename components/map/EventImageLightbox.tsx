@@ -3624,7 +3624,7 @@ description: {
     justifyContent: 'center',
     alignItems: 'center',
   },
-  wrapArrow: { alignItems: 'center', transform: [{ translateY: -36 }] },
+  wrapArrow: { alignItems: 'center' },
   wrapLabel: { color: '#FFFFFF', fontSize: 10, lineHeight: 13, fontWeight: '600', marginTop: 4, paddingHorizontal: 5,
     paddingVertical: 4, borderRadius: 7, overflow: 'hidden', backgroundColor: 'rgba(12,18,25,0.84)' },
   positionIndicator: {
