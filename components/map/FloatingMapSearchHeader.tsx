@@ -1,11 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
-  Animated, BackHandler, Easing, Image, Keyboard, Pressable,
+  Animated, BackHandler, Easing, Keyboard, Pressable,
   StyleSheet, Text, TextInput, TouchableOpacity, View,
 } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useMapStore } from '../../store';
 import useAnalytics from '../../hooks/useAnalytics';
+import MapBrandWordmark from './MapBrandWordmark';
 
 type Props = { top: number; onSettings: () => void };
 
@@ -105,9 +106,8 @@ export default function FloatingMapSearchHeader({ top, onSettings }: Props) {
                   </TouchableOpacity>
                 </View>
               ) : (
-                <View key="brand" pointerEvents="none" style={styles.brandPill}>
-                  <Image source={require('../../assets/GathR Text Logo.png')}
-                    style={styles.brandLogo} resizeMode="contain" />
+                <View key="brand" pointerEvents="none" style={styles.brandWordmark}>
+                  <MapBrandWordmark />
                 </View>
               )}
             </View>
@@ -182,15 +182,11 @@ const styles = StyleSheet.create({
     position: 'absolute', left: 52, right: 52, height: 44,
     alignItems: 'center', justifyContent: 'center',
   },
-  brandPill: {
-    width: 108, height: 34, alignItems: 'center', justifyContent: 'center',
-    // Match the optical lift from the shared header logo's marginTop: -6.
+  brandWordmark: {
+    width: 108, height: 40, alignItems: 'center', justifyContent: 'center',
+    // Retain the accepted map header's optical lift.
     transform: [{ translateY: -3 }],
-    borderRadius: 18, backgroundColor: '#1E90FF', overflow: 'hidden',
-    shadowColor: '#000000', shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.18, shadowRadius: 6, elevation: 5,
   },
-  brandLogo: { width: 100, height: 64 },
   queryPill: {
     maxWidth: '100%', height: 34, paddingLeft: 10, paddingRight: 2,
     flexDirection: 'row', alignItems: 'center', borderRadius: 18,
