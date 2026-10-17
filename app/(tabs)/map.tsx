@@ -3151,6 +3151,10 @@ const GlobalEventLightbox = ({
           globalSelectedImageData.events ? globalSelectedImageData.currentIndex : undefined
         }
         onNavigate={globalSelectedImageData.events ? handleNavigate : undefined}
+        loopNavigation={
+          globalSelectedImageData.source === 'trending_manual' ||
+          globalSelectedImageData.source === 'trending_auto'
+        }
         isTrending={
           globalSelectedImageData.source === 'trending_manual' ||
           globalSelectedImageData.source === 'trending_auto'

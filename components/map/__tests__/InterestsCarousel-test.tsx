@@ -5,6 +5,7 @@ import InterestsCarousel from '../InterestsCarousel';
 import { useMapStore } from '../../../store';
 import type { Event, Cluster, Venue } from '../../../types/events';
 import { DEFAULT_FILTER_CRITERIA, TimeFilterType } from '../../../types/filter';
+import { getAdjacentLightboxIndex } from '../../../utils/lightboxNavigation';
 jest.mock('../../../store', () => ({ useMapStore: jest.requireActual('zustand').create(() => ({})) }));
 jest.mock('../../../store/clusterInteractionStore', () => { const state = { hasNewContent: () => false, recordInteraction: jest.fn(),
   carouselViewedEventIds: new Set(), markCarouselEventViewed: jest.fn(), markCarouselEventsViewed: jest.fn() };
@@ -67,4 +68,25 @@ it('gives the first real drag ownership even if native omitted its initial-offse
   const surface = tree.root.findAll(node => node.props.pointerEvents === 'box-none' && typeof node.props.onLayout === 'function')[0];
   act(() => surface.props.onLayout({ nativeEvent: { layout: { width: 320 } } }));
   expect(tree.root.findByType(FlatList).props.initialScrollIndex).toBe(lastSlot);
+});
+it.each([2, 3])('keeps category lightbox boundary identities across %i separate venue contexts and live reordering', count => {
+  act(() => {
+    seed(count);
+    useMapStore.setState({ clusters: events.slice(0, count).map((event, index) => ({ id: 'cluster_' + index,
+      venues: [{ locationKey: 'venue_' + index, venue: 'Venue ' + index, events: [event] }] } as Cluster)) });
+  });
+  const list = tree.root.findByType(FlatList).props;
+  act(() => list.renderItem({ item: list.data.find((slot: any) => slot.kind === 'event' && slot.index === 0) }).props.onPress());
+  const current = () => tree.root.findByType('StandardLightbox' as any).props;
+  act(() => current().onNavigate(getAdjacentLightboxIndex(current().currentIndex, count, -1, current().loopNavigation)));
+  expect(current().event.id).toBe(events[count - 1].id);
+  expect(current().venue.locationKey).toBe('venue_' + (count - 1));
+  act(() => current().onNavigate(getAdjacentLightboxIndex(current().currentIndex, count, 1, current().loopNavigation)));
+  expect(current().event.id).toBe(events[0].id);
+  act(() => useMapStore.setState({ onScreenEvents: events.slice(0, count).reverse() }));
+  expect(current().event.id).toBe(events[0].id);
+  expect(current().currentIndex).toBe(count - 1);
+  act(() => current().onNavigate(getAdjacentLightboxIndex(current().currentIndex, count, 1, current().loopNavigation)));
+  expect(current().event.id).toBe(events[count - 1].id);
+  expect(current().currentIndex).toBe(0);
 });
