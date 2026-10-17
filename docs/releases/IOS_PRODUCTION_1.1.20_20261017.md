@@ -70,3 +70,14 @@ This supersedes the account-lock signing hold above. The next action is the sing
 - A separate browser release tab was created to avoid interfering with Craig's own App Store navigation. No metadata write succeeded yet. No review credentials were copied/exposed, and no agreement/payment action was performed.
 
 Continue monitoring the exact build ID. Upload only after FINISHED and verify processing/build selection, metadata, release mode and unresolved App Check/device acceptance gates before claiming review readiness. Never create a second build to resolve an upload/metadata delay.
+
+## Build finished and exact binary verified
+
+- EAS build d2567498-8749-4863-bc10-b5ff85d74e41 finished successfully at 2026-10-17T22:20:39.030Z. Exactly one paid native build was invoked.
+- Downloaded Store IPA: 63,912,288 bytes; SHA256 7420d575e28b3437602dcc5c93afae2e3d55f6b73c66236015b2272f7b3e29ae. This is compressed IPA size, not an App Store thinned download estimate.
+- Main and share-extension native Info.plist both contain 1.1.20 (79), minimum iOS 15.1. Embedded Expo config is runtime 1.1.20, production channel, correct GathR EAS project.
+- Embedded native Firebase plist targets gathr-m1, app 1:234071683975:ios:3ba054e711eb33b1869922.
+- Parsed actual Mach-O code-signature entitlements, separately from provisioning profiles: main executable has App Attest production and APNs production; both targets have get-task-allow false, team G2W34P3KQ7 and group.com.craigb.gathr. Provisioning allows multiple App Attest environments; actual signed executable is production. See IOS_PRODUCTION_1.1.20_IPA_CHECK.json.
+- Invoked EAS Submit once for the exact existing build ID, production/iOS only. Existing remote App Store Connect API key was reused. Submission ID 020d9441-b945-4f66-822e-9b2dfb436d1c; initial status submitting. No new build was launched.
+- After build completion, reloaded App Store Connect and attempted new-version creation once more. It still returns Agreement Update, although Developer account acceptance was previously confirmed. No version/metadata write succeeded. Do not loop or alter existing distributed 1.1.10 metadata.
+- Narrow Production Firebase App Check setup remains pending Craig's answer to the explicit question. No Production Firebase writes, enforcement changes, or event-data changes performed. Physical Production/TestFlight acceptance remains pending.
