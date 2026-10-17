@@ -1,0 +1,16 @@
+{
+  "updateId": "01a14a9a-2347-7f2f-bd42-a38878950764",
+  "group": "a5164736-0184-40a8-83e8-b4a01d2b2f93",
+  "sourceCommit": "5a415d518c7b009b016061ff5021f1a4385306ac",
+  "platform": "ios",
+  "runtime": "1.1.10",
+  "channel": "preview",
+  "channelPaused": false,
+  "fingerprint": "9ee0b973a2f53ed5647ccafe1599ef64f1580ffb",
+  "recordedLaunchAssetSha256": "2847453551b93fc01bb6bae2c32d3136c99c34e467795423df32f5dad571141c",
+  "matchesReviewedExport": true,
+  "assetCount": 111,
+  "deviceAdoptionVerified": false,
+  "remoteBundleDownloaded": false,
+  "directManifestRequest": "HTTP 403; authenticated EAS channel manifest hash checked instead"
+}
