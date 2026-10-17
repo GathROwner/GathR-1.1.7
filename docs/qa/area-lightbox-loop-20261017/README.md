@@ -32,9 +32,9 @@ Expanded clean validation:25suites /294passed /1existing optional benchmark skip
 
 - iOS-only Hermes bundle:5,736,488bytes, delta+144bytes from live-reviewed Trending export.
 - SHA256 `7538dce13b5c88cf851068d6affd44a261c1c4595bee2cacdcf7b042c11429c3`.
--2505modules /2461source-map sources; exact same source set as live-reviewed export.
+- 2505modules /2461source-map sources; exact same source set as live-reviewed export.
 - Only the three approved runtime source contents differ. Every other runtime source content matches baseline.
--111assets, identical metadata order/set and independently verified identical file bytes.
+- 111assets, identical metadata order/set and independently verified identical file bytes.
 - Ten route/component/utility contents match checkout hashes; no fixture/QA/test source in runtime graph.
 - Accepted lightbox/carousel/AreaLocationBrowser/programme/cache/API/auth/social/native/config source files are unchanged.
 
@@ -45,3 +45,5 @@ Local artifacts: `artifacts/area-lightbox-loop-20261017/` contains before/focuse
 No genuinely available post-fix native screenshot exists for this patch. Previous emulator reconnect/local-manifest requests were policy-blocked even after connection approval; this task did not retry them through any tool or method. The permitted prior read-only capture showed Android launcher/System UI ANR, not a loaded GathR client, and is not offered as area-fix acceptance. Craig's earlier visual waiver covered only the Trending patch; it is not applied here.
 
 **Stop before publication.** Root must independently review the concrete source/export and make one new scoped visual-gap/iOSPreview release decision with Craig. No Android/Production publication, native build, backend/data change or map interaction is authorized or performed. iPhone adoption of this area candidate is not claimed.
+
+Root subsequently independently accepted the source/tests/export comparison, including all2461sources, all111asset bytes and the exact candidate bundle hash. The separate scoped visual-gap/publication decision remains pending; no release has occurred.
