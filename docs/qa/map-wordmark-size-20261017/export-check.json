@@ -1,0 +1,23 @@
+{
+  "sourceCommit": "12b4d814d26270e81c710bdc9f34437733a3308f",
+  "bundle": {
+    "bytes": 5742960,
+    "sha256": "8e401a5ee1d4a3639ea0c102d83602297ccf92feaea256f5ecfdcbfa9c91d7b7",
+    "sourceMapSources": 2462
+  },
+  "matchedBundledSources": [
+    "components/map/MapBrandWordmark.tsx",
+    "components/map/FloatingMapSearchHeader.tsx",
+    "app/(tabs)/map.tsx",
+    "components/map/EventImageLightbox.tsx",
+    "components/map/EventCallout.tsx",
+    "components/map/InterestsCarousel.tsx",
+    "utils/lightboxNavigation.ts",
+    "types/social.ts"
+  ],
+  "assets": 111,
+  "allAssetBytesEqualToAcceptedBaseline": true,
+  "unexpectedQaSources": [],
+  "platform": "ios",
+  "runtime": "1.1.10"
+}
