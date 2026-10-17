@@ -42,3 +42,11 @@ Validation results, exact source/build ID and final outcome will be appended aft
 - App Review email screenshot is an informational updated-guidelines notice, with no request to accept an agreement in the portion shown. No matching agreement email was found in the connected Gmail account. Applicable review guidelines still need review before store submission.
 - Free EAS credentials configuration restored an expired Apple session and requested the account password. It was cancelled rather than handling a password through chat. Signing/provisioning validation, including the new App Attest capability, requires Craig to sign in locally before the paid build is queued.
 - **No paid build has been queued at this checkpoint. No App Store Connect submission, public release, OTA or backend change has occurred.** See BUILD_RUNTIME_COMPATIBILITY.md; older Preview/Development binaries are not renamed to 1.1.20.
+
+## User signing attempt — Apple account locked
+
+Craig subsequently ran the credentials command locally. Apple returned service error `-20209`: the Apple Account is locked for security reasons and must be recovered through https://iforgot.apple.com/ . Do not retry authentication or launch the paid build until Craig confirms account recovery and signing/provisioning can be validated. The error does not establish why Apple locked the account. Apple's recovery guidance: https://support.apple.com/en-us/102640 .
+
+The pasted transcript also shows an earlier command ran from `C:\Windows\System32`, creating an unrelated EAS project `@craigb/system32`, ID `54880746-abfd-43a4-8fe5-2bbb1c487f55`. Read-only inspection confirms a new 124-byte `C:\Windows\System32\app.json` pointing to that project; the pre-existing package.json dates to 2024 and must not be deleted as part of this accident. No cleanup of local System32 files or remote EAS project was performed. A later concatenated `productionSet-Location` command caused a separate unexpected-argument error.
+
+The actual release checkout remains clean and linked to the correct GathR project `87fd0c8f-0007-49fb-a057-2f4e81afe1db`, with eas.json present. The CLI upgrade notice is advisory. These credential commands did not queue a paid build. Preparation/source commits remain unchanged; this follow-up is documentation only.
