@@ -1,5 +1,7 @@
 # Emulator connection approval-review evidence
 
+Historical prepublication verification record. No reconnect workaround was attempted. Craig later independently waived the missing post-fix visual check and authorized iOSPreview-only publication; see RELEASE.md. The rejected emulator actions and visual gap below remain unchanged.
+
 Both calls used `functions.exec` -> `tools.exec_command`, cwd `C:\Users\craig\.codex\worktrees\carousel-boundaries\GathR-upgrade-sdk54`. Both were rejected by CreateProcess before execution. Available reason: **`rejected: blocked by policy`**. No specific justification or remedy was returned. Escaped command echo in the tool response was truncated; complete requested command text is retained below.
 
 First rejected command:

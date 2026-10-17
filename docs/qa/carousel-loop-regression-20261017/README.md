@@ -1,6 +1,6 @@
 # Carousel lightbox looping investigation
 
-Status: **candidate only, not published; final native visual verification incomplete**.
+Status: **published to iOS Preview as OTA01a14a41 under Craig's explicit visual-check waiver; native post-fix visual verification and iPhone adoption remain incomplete**. See RELEASE.md.
 
 Functional candidate commit: `43e826f2985078df1f06be6c3413168997fd98b3`, on `codex/carousel-boundaries-20261017` in the carousel-boundaries worktree. This commit retains every accepted change from5c19e75.
 
@@ -28,7 +28,7 @@ Native reproduction uses the existing installed Android debug client, unchanged1
 
 The emulator's qemu process crashed twice with Windows exception0xc0000005 while checking Trending. The existing AVD was restarted without data clear/reinstall; an alternate documented software renderer was selected. Automatic approval review then blocked reconnecting to the fixture and requesting the localhost development manifest, reporting only "blocked by policy." After fresh direct user approval to connect, one bounded attempt was rejected again for the same generic reason. No equivalent action was attempted through another mechanism. Read-only source provenance checks, a read-only current-screen capture, and local cleanup/tests continued. See REJECTION.md for exact requested commands, authorization and screen/client state.
 
-**No native post-fix boundary screenshot is available. No iOS adoption proof. Do not publish this candidate until independent review accepts the source and the missing native verification is resolved (or Craig explicitly directs otherwise).**
+**No native post-fix boundary screenshot is available. No iOS adoption proof.** After independent source/export review, Craig explicitly waived the missing visual acceptance and authorized the iOSPreview patch with "Yep push it". See RELEASE.md for exact publication and verification evidence.
 
 ## Restoration
 
@@ -36,4 +36,4 @@ Original root/index restored byte-for-byte. Map restored to the exact intended c
 
 Final restored-source validation:7suites /65tests pass, TypeScript passes, lint0errors /215existing warnings, diff check passes. The existing accepted runtime implementation is unchanged outside the four-line global host prop.
 
-Expanded release preparation subsequently passed23suites /269tests /1existing benchmark skip and a clean iOS-only export audit; see RELEASE-PREP.md and export-check.json. Publication remains held for independent review and the unresolved visual acceptance gate.
+Expanded release preparation subsequently passed23suites /269tests /1existing benchmark skip and a clean iOS-only export audit; see RELEASE-PREP.md and export-check.json. Publication was held until independent review and Craig's explicit visual-check waiver/iOSPreview authorization; the authorized release is recorded in RELEASE.md.

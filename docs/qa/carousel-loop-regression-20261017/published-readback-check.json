@@ -1,0 +1,13 @@
+{
+  "checkedAt": "2026-10-17T14:27:27.672Z",
+  "branch": "preview",
+  "platform": "ios",
+  "runtime": "1.1.10",
+  "updateId": "01a14a41-5615-7df3-959a-b722370fd2c7",
+  "groupId": "9fd7c64c-a8f0-4d44-b2fe-1aad06727d72",
+  "sourceCommit": "12025d15da05f4d5832cd3ff5129c5fdbdd9b553",
+  "newestPreviewUpdate": true,
+  "channelMapping": "preview -> preview",
+  "channelNewestIosMatches": true,
+  "iPhoneAdoptionVerified": false
+}

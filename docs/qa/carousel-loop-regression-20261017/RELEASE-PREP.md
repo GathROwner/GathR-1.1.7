@@ -1,5 +1,7 @@
 # Clean iOS Preview candidate; publication held
 
+Historical prepublication record. Craig subsequently waived the missing visual check and authorized iOSPreview publication with "Yep push it" after independent source/export review. See RELEASE.md for the completed release; the preparation evidence below remains unchanged.
+
 No OTA published. Existing live Preview remains iOS `01a14a02-2e52-7d05-b75d-6241d2ecfe44`, group `b592824e-f83c-443e-ae28-be7eac0f1e73`, source `8e934a1130e817dca2d563e6f13479b42603783f`, runtime1.1.10. Fresh EAS list/view were checked before export.
 
 Functional fix `43e826f2985078df1f06be6c3413168997fd98b3`; tested/exported clean candidate `089ad6b50122e3010c3f515d1c2365a3440c148a`. Later evidence-only commits retain that exact runtime source tree. Checkout `C:\Users\craig\.codex\worktrees\carousel-boundaries\GathR-upgrade-sdk54`, branch `codex/carousel-boundaries-20261017`.
