@@ -89,3 +89,11 @@ Continue monitoring the exact build ID. Upload only after FINISHED and verify pr
 - App Store version 1.1.20 was not created; release notes are saved locally only. Build 79 is finished and retained on EAS, but is not uploaded, not ready for review and not publicly released.
 - No automatic retry was performed. Once Apple resolves the agreement gate, retry only submission of the same finished build d2567498-8749-4863-bc10-b5ff85d74e41. A new native build is unnecessary and not authorized.
 - Evidence screenshot: C:\Users\craig\.codex\visualizations\2026\10\11\01a12ac6-42ef-7b30-842a-3131be446090\ios-1120-upload-agreement-blocker.png .
+
+## Agreement accepted; one upload retry still blocked
+
+Craig confirmed accepting the agreement. On October 17 at approximately 22:37 UTC, re-read Developer account for team G2W34P3KQ7: Apple Developer Program License Agreement issued October 13, accepted October 17. App Store Connect Business still showed the updated-agreement banner and Free Apps Agreement Active (New Agreement Available); Paid Apps Agreement Active. The Digital Services Act row now showed Active, last updated October 17; no compliance details were entered by this agent.
+
+Retried only the existing finished build d2567498-8749-4863-bc10-b5ff85d74e41 through EAS Submit. New submission 5eaada08-1266-4cfc-93d7-cf97c09761e2 failed at the initial application-information read with the same missing/expired agreement message, before IPA upload. No new native build, legal/payment action, metadata write, backend mutation or public release occurred. The disagreement between Developer acceptance and App Store Connect may be propagation, but its cause is not established. Do not tell Craig he failed to accept or automatically reaccept anything. Stop repeated submission attempts until account state changes or Apple resolves it. Store metadata/review readiness and pending App Check/device gates remain open.
+
+Screenshot: C:\Users\craig\.codex\visualizations\2026\10\11\01a12ac6-42ef-7b30-842a-3131be446090\ios-1120-agreement-retry-blocker.png .
