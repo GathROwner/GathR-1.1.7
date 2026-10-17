@@ -34,7 +34,7 @@ import {
   getLoopingCarouselLogicalOffset, getLoopingCarouselRestoredOffset,
   getLoopingCarouselDotStops,
   getCarouselMetrics, getCarouselPeriod, getCarouselStartOffset, getCarouselSlotLayout,
-  getCarouselAnchor, getCarouselAnchorOffset, isLoopingCarousel,
+  getCarouselAnchor, getCarouselAnchorOffset, resolveCarouselAnchor, isLoopingCarousel,
 } from '../../utils/loopingCarousel';
 import { isFamilyFriendlyInterest } from '../../utils/familyFriendly';
 import { registerMapTraceSampler, traceMapEvent } from '../../utils/mapTrace';
@@ -519,8 +519,9 @@ const InterestsCarousel: React.FC = () => {
   const flatListRef = useRef<FlatList<(typeof loopingItems)[number]>>(null);
   const physicalOffsetRef = useRef(getCarouselStartOffset(carouselEvents.length, stride, seamSpan));
   const anchorRef = useRef({ id: String(carouselEvents[0]?.id ?? ''), fraction: 0 });
-  const anchorIndex = Math.max(0, carouselEvents.findIndex(event => String(event.id) === anchorRef.current.id));
-  const layoutOffset = getCarouselAnchorOffset(anchorIndex, anchorRef.current.fraction, carouselEvents.length, stride, seamSpan);
+  const anchor = resolveCarouselAnchor(carouselEvents, anchorRef.current);
+  const anchorIndex = anchor.index;
+  const layoutOffset = getCarouselAnchorOffset(anchorIndex, anchor.fraction, carouselEvents.length, stride, seamSpan);
   const restoreLayoutRef = useRef<number | null>(layoutOffset);
   const expectedLayoutOffsetRef = useRef<number | null>(layoutOffset);
   const layoutFrameRef = useRef<number | null>(null);
@@ -547,6 +548,7 @@ const InterestsCarousel: React.FC = () => {
   }, []);
   useLayoutEffect(() => {
     clearSettleTimer();
+    anchorRef.current = { id: anchor.id, fraction: anchor.fraction };
     physicalOffsetRef.current = layoutOffset;
     restoreLayoutRef.current = layoutOffset;
     expectedLayoutOffsetRef.current = layoutOffset;

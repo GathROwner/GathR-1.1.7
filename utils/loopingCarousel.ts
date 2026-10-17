@@ -38,6 +38,11 @@ export function getCarouselAnchorOffset(index: number, fraction: number, count: 
   return getCarouselStartOffset(count, stride, seamSpan) + validIndex * stride
     + Math.max(0, Math.min(1, fraction)) * (stride + (validIndex === count - 1 ? seamSpan : 0));
 }
+export function resolveCarouselAnchor(items: readonly { id: string | number }[], anchor: { id: string; fraction: number }) {
+  const match = items.findIndex(item => String(item.id) === anchor.id);
+  const index = Math.max(0, match);
+  return { index, id: String(items[index]?.id ?? ''), fraction: match >= 0 ? anchor.fraction : 0 };
+}
 export function getCarouselSlotLayout(slot: number, count: number, cardWidth: number, gap: number, seamWidth: number) {
   const stride = cardWidth + gap, loop = isLoopingCarousel(count), block = count + (loop ? 1 : 0);
   const cycle = block ? Math.floor(slot / block) : 0, within = block ? slot % block : 0;

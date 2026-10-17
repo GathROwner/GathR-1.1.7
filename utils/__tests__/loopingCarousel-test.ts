@@ -3,7 +3,7 @@ import {
   getLoopingCarouselLogicalOffset, getLoopingCarouselRestoredOffset,
   getLoopingCarouselDotStops,
   getCarouselMetrics, getCarouselPeriod, getCarouselSlotLayout, getCarouselStartOffset,
-  getCarouselAnchor, getCarouselAnchorOffset,
+  getCarouselAnchor, getCarouselAnchorOffset, resolveCarouselAnchor,
 } from '../loopingCarousel';
 
 describe('looping carousel', () => {
@@ -92,5 +92,11 @@ describe('looping carousel', () => {
     expect(createLoopingCarouselItems(['a','b','c']).filter(slot => slot.kind === 'event')).toHaveLength(15);
     expect(getCarouselAnchorOffset(1, 0, 2, 160, 0)).toBe(0);
     expect(getCarouselStartOffset(3, 160, 40)).toBe(1040);
+  });
+  it('resets an unrelated category to its first card, but retains matching ID/fraction across reorder and resize', () => {
+    const previous = { id: 'music-last', fraction: 0.63 };
+    expect(resolveCarouselAnchor([{ id: 'family-first' }, { id: 'family-next' }], previous)).toEqual({ index: 0, id: 'family-first', fraction: 0 });
+    expect(resolveCarouselAnchor([{ id: 'other' }, { id: 'music-last' }], previous)).toEqual({ index: 1, id: 'music-last', fraction: 0.63 });
+    expect(resolveCarouselAnchor([], previous)).toEqual({ index: 0, id: '', fraction: 0 });
   });
 });
