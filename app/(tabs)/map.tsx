@@ -103,6 +103,7 @@ import {
 
 // Trending lightbox (flame pill + cold-start auto-open)
 import { buildTrendingEvents } from '../../utils/trendingUtils';
+import { shouldLoopGlobalLightbox } from '../../utils/lightboxNavigation';
 import {
   getTrendingLightboxImageUrl,
   openTrendingLightbox,
@@ -3151,10 +3152,7 @@ const GlobalEventLightbox = ({
           globalSelectedImageData.events ? globalSelectedImageData.currentIndex : undefined
         }
         onNavigate={globalSelectedImageData.events ? handleNavigate : undefined}
-        loopNavigation={
-          globalSelectedImageData.source === 'trending_manual' ||
-          globalSelectedImageData.source === 'trending_auto'
-        }
+        loopNavigation={shouldLoopGlobalLightbox(globalSelectedImageData.source)}
         isTrending={
           globalSelectedImageData.source === 'trending_manual' ||
           globalSelectedImageData.source === 'trending_auto'

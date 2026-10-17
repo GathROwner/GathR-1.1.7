@@ -20,6 +20,7 @@ import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { openCalloutLightbox, navigateCalloutLightbox, type CalloutLightboxSelection } from '../../utils/calloutLightbox';
+import { shouldLoopGlobalLightbox } from '../../utils/lightboxNavigation';
 
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
@@ -4886,6 +4887,7 @@ useEffect(() => {
             cluster={globalSelectedImageData?.cluster}
             onClose={handleModalClose}
             calloutPaging={!globalSelectedImageData && !!selectedImageData}
+            loopNavigation={shouldLoopGlobalLightbox(globalSelectedImageData?.source)}
             events={globalSelectedImageData ? globalSelectedImageData.events : selectedImageData?.events}
             currentIndex={
               globalSelectedImageData ? globalSelectedImageData.currentIndex : selectedImageData?.currentIndex

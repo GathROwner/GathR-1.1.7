@@ -8,7 +8,7 @@ import { useMapStore } from '../../../store/mapStore';
 import { useClusterInteractionStore } from '../../../store/clusterInteractionStore';
 import { amplitudeTrack } from '../../../lib/amplitudeAnalytics';
 import { openTrendingLightbox, getTrendingLightboxImageUrl, resolveTrendingEventContext } from '../../../utils/trendingLightbox';
-import { getAdjacentLightboxIndex } from '../../../utils/lightboxNavigation';
+import { getAdjacentLightboxIndex, shouldLoopGlobalLightbox } from '../../../utils/lightboxNavigation';
 import type { Event, Cluster } from '../../../types/events';
 
 jest.mock('../../../store/mapStore', () => ({ useMapStore: jest.requireActual('zustand').create((set: any) => ({
@@ -27,11 +27,11 @@ const body = transformSync(source.slice(start, end), { filename: 'GlobalEventLig
   presets: [require.resolve('@babel/preset-typescript'), [require.resolve('@babel/preset-react'), { runtime: 'classic' }]],
 })!.code!;
 const GlobalHost = new Function('React', 'Modal', 'useEffect', 'useRef', 'useCallback', 'usePathname', 'isFriendEventDetailPath',
-  'useMapStore', 'useClusterInteractionStore', 'amplitudeTrack', 'getTrendingLightboxImageUrl', 'resolveTrendingEventContext', 'EventImageLightbox',
+  'useMapStore', 'useClusterInteractionStore', 'amplitudeTrack', 'getTrendingLightboxImageUrl', 'resolveTrendingEventContext', 'shouldLoopGlobalLightbox', 'EventImageLightbox',
   body + '; return GlobalEventLightbox;')(
   React, Modal, React.useEffect, React.useRef, React.useCallback, () => '/qa', () => false, useMapStore,
   useClusterInteractionStore, amplitudeTrack,
-  getTrendingLightboxImageUrl, resolveTrendingEventContext, 'StandardLightbox',
+  getTrendingLightboxImageUrl, resolveTrendingEventContext, shouldLoopGlobalLightbox, 'StandardLightbox',
 );
 const events = Array.from({ length: 3 }, (_, i) => ({ id: 'qa_global_' + i, title: 'Event ' + i, type: 'event',
   category: 'Live Music', venueId: 'venue_' + i, venue: 'Venue ' + i, imageUrl: 'https://example.com/' + i + '.jpg' } as Event));
@@ -63,7 +63,7 @@ it.each([['manual', 2], ['auto', 2], ['manual', 3], ['auto', 3]] as const)(
   },
 );
 
-it.each(['deep_link', 'city_event_marker', 'route_summary', 'friend_presence', 'friend_event_resume'] as const)(
+it.each(['deep_link', 'route_summary', 'friend_presence', 'friend_event_resume'] as const)(
   'preserves bounded navigation for unrelated %s callers', source => {
     act(() => { useMapStore.getState().setSelectedImageData({ imageUrl: events[0].imageUrl!, event: events[0], events, currentIndex: 0, source });
       tree = renderer.create(<GlobalHost onShowRoute={() => {}} />); });

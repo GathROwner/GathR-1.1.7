@@ -1,3 +1,8 @@
+/** Parent overview carousels share a loop contract across their two modal hosts. */
+export function shouldLoopGlobalLightbox(source?: string | null): boolean {
+  return source === 'trending_manual' || source === 'trending_auto' || source === 'city_event_marker';
+}
+
 /** Resolve original item indices for both arrow and swipe navigation. */
 export function getAdjacentLightboxIndex(
   index: number | undefined,
