@@ -42,7 +42,7 @@ module.exports = ({ config }) => ({
 
   name: "GathR",
   slug: "gathr",
-  version: "1.1.10",
+  version: "1.1.20",
   runtimeVersion: {
     policy: "appVersion"
   },
@@ -73,6 +73,10 @@ module.exports = ({ config }) => ({
     buildNumber: "1",
     googleServicesFile:
       process.env.GOOGLE_SERVICES_PLIST ?? "GoogleService-Info.plist",
+    entitlements: {
+      "com.apple.developer.devicecheck.appattest-environment": "production",
+      "aps-environment": "production"
+    },
     // Deep linking: Universal Links for iOS
     associatedDomains: [
       "applinks:link.gathrapp.ca",

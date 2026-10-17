@@ -12,8 +12,10 @@ describe('Firestore family-friendly field mapping', () => {
     expect(EVENTS_MINIMAL).toEqual([
       'events-minimal',
       'original-source-v3',
+      'date-only-activities-v1',
+      'venue-programme-v1',
     ]);
-    expect(EVENT_DETAILS_SCHEMA_VERSION).toBe('original-source-v2');
+    expect(EVENT_DETAILS_SCHEMA_VERSION).toBe('original-source-v2-date-only-activities-v1-venue-programme-v1');
   });
 
   it('preserves score fields on the normalized event used by filters', () => {
