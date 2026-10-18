@@ -19,6 +19,15 @@
   "productionActiveVersionCode": "13",
   "productionDraftVersionCode": "14",
   "productionTrackUnchanged": true,
-  "physicalStoreTokenVerified": false,
-  "protectedSocialCallVerified": false
+  "physicalStoreTokenVerified": true,
+  "protectedSocialCallVerified": true,
+  "protectedCallEvidence": {
+    "service": "createprivatecheckinplacecandidatecallable",
+    "observedAtUtc": ["2026-10-18T15:31:34.515179Z", "2026-10-18T15:32:12.265582Z"],
+    "appVerification": "VALID",
+    "authVerification": "VALID",
+    "httpStatus": 200,
+    "userAgent": "okhttp/4.12.0",
+    "deviceCorrelation": "Physical Play tablet session and user-provided private check-in setup photos; no installation identifier collected."
+  }
 }

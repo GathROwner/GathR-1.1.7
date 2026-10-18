@@ -10,13 +10,16 @@ import {
   Image,
   Linking,
   Modal,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
+  useWindowDimensions,
   View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useAuth } from '../../contexts/AuthContext';
 import {
@@ -35,6 +38,7 @@ import { useCheckInReadinessStore } from '../../store/checkInReadinessStore';
 import { claimReadinessPrompt } from '../../services/checkInReadinessPreferences';
 import { CHECK_IN_READINESS, isFreshReadiness, mayPromptReadiness, projectedReadinessMs } from '../../utils/checkInReadiness';
 import { readinessLevels } from '../../utils/checkInReadinessContract';
+import { getBottomSystemInset } from '../../utils/systemInsets';
 
 const MAX_ACCURACY_METRES = 75;
 const BASE_RADIUS_METRES = 50;
@@ -347,6 +351,11 @@ function waitForServerReadiness(uid: string, requirePlace: boolean, sessionId: s
 
 export default function ContextualCheckInControl({ enabled, rightOffset = 10, bottomOffset = 0 }: Props) {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
+  const windowSize = useWindowDimensions();
+  const androidBottomInset = Platform.OS === 'android'
+    ? getBottomSystemInset(Platform.OS, insets.bottom, windowSize)
+    : 0;
   const isFocused = useIsFocused();
   const { user } = useAuth();
   const allEvents = useMapStore((state) => state.allEvents);
@@ -933,7 +942,7 @@ export default function ContextualCheckInControl({ enabled, rightOffset = 10, bo
       {control}
       <Modal animationType="slide" onRequestClose={closePicker} transparent visible={pickerVisible}>
         <View style={styles.modalBackdrop}>
-          <View accessibilityViewIsModal style={styles.pickerCard}>
+          <View accessibilityViewIsModal style={[styles.pickerCard, { paddingBottom: androidBottomInset }]}>
             <View style={styles.pickerHeader}>
               {privateSetupVisible && (
                 <TouchableOpacity
@@ -1013,7 +1022,7 @@ export default function ContextualCheckInControl({ enabled, rightOffset = 10, bo
             )}
 
             {privateSetupVisible ? (
-              <View style={styles.privateSetup}>
+              <ScrollView keyboardShouldPersistTaps="handled" style={styles.privateSetupScroll} contentContainerStyle={styles.privateSetup}>
                 <View style={styles.privateHero}>
                   <View style={styles.privateHeroIcon}><Ionicons name="home-outline" size={24} color="#6941C6" /></View>
                   <View style={styles.copy}>
@@ -1065,7 +1074,7 @@ export default function ContextualCheckInControl({ enabled, rightOffset = 10, bo
                     ? <><ActivityIndicator color="#FFFFFF" /><Text style={styles.usePlaceText}>Confirming location…</Text></>
                     : <><Text style={styles.usePlaceText}>Continue to privacy</Text><Ionicons name="arrow-forward" size={19} color="#FFFFFF" /></>}
                 </TouchableOpacity>
-              </View>
+              </ScrollView>
             ) : (
               <>
                 {externalSearchVisible && (
@@ -1353,6 +1362,7 @@ const styles = StyleSheet.create({
   privateEntryIcon: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center', borderRadius: 12, backgroundColor: '#FFFFFF' },
   privateEntryTitle: { color: '#53389E', fontSize: 13.5, fontWeight: '900' },
   privateEntryCopy: { marginTop: 1, color: '#6941C6', fontSize: 11.5, lineHeight: 15 },
+  privateSetupScroll: { flexGrow: 0, flexShrink: 1 },
   privateSetup: { paddingHorizontal: 18, paddingBottom: 24, gap: 13 },
   privateHero: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14, borderRadius: 18, backgroundColor: '#F4EBFF' },
   privateHeroIcon: { width: 46, height: 46, alignItems: 'center', justifyContent: 'center', borderRadius: 16, backgroundColor: '#FFFFFF' },
