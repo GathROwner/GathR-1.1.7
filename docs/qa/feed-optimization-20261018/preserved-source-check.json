@@ -1,0 +1,22 @@
+{
+  "baseline": "118fd98",
+  "source": "d540ae98a223ad67053f8f5f8254fd6675416172",
+  "matches": {
+    "events": [
+      "liveCountLifecycle",
+      "filteredViewportEvents",
+      "filteredOutsideViewportEvents",
+      "sortAndPrioritizeEvents",
+      "sortedViewportEvents",
+      "sortedOutsideViewportEvents"
+    ],
+    "specials": [
+      "liveCountLifecycle",
+      "filteredViewportSpecials",
+      "filteredOutsideViewportSpecials",
+      "sortAndPrioritizeSpecials",
+      "sortedViewportSpecials",
+      "sortedOutsideViewportSpecials"
+    ]
+  }
+}

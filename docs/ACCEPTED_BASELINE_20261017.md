@@ -43,7 +43,7 @@ Individual implementation and validation records remain under `docs/qa/`; this l
 
 ## Parked work and status checks
 
-- Further frontend optimization: assess shared venue-group/list work only when resumed. Preserve ordering, pagination, all functionality, ad ownership, persistence, private/shared-event and check-in contracts. Earlier completed optimizations above must not be proposed as unfinished.
+- Frontend optimization follow-up was explicitly approved and implemented October18: per-card like/interest subscriptions and reuse of filtered venue grouping during pagination. Source d540ae98a223ad67053f8f5f8254fd6675416172, branch codex/feed-optimization-20261018 in this same checkout; iOS Preview OTA01a15005. Device feedback remains pending. See [implementation and release evidence](qa/feed-optimization-20261018/RELEASE.md); do not propose these as unimplemented or silently omit them from later additive work. Original accepted checkpoint above remains separately identified.
 - Advertisement presentation: reconcile existing ad changes before deciding what remains of media whitespace/dark styling. Ads are fragile; preserve native lifecycle and instance ownership. Do not assume the original request is wholly untouched or fully completed.
 - Original Jennifer's Body hero selection, missing City Cinema fallback, stale recurrence and venue-versus-city classification: current backend/data status has not been re-audited here. Coordinate status before opening duplicate work or making repairs. The original pause during the large parse does not authorize backend work now.
 - Review any older follow-up against newer commits before calling it open; some earlier notes predate subsequent membership/programme fixes.

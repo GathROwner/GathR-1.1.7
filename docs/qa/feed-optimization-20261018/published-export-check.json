@@ -1,0 +1,24 @@
+{
+  "sourceCommit": "d540ae98a223ad67053f8f5f8254fd6675416172",
+  "platform": "ios",
+  "runtime": "1.1.10",
+  "bundleSha256": "9fd78ee2d61a2f497ce347fd8158a32c84413eb77e03ace2b271a09b05859d16",
+  "bundleBytes": 5747136,
+  "byteEqualToCheckedExport": true,
+  "sourceMapSources": 2466,
+  "assetDescriptors": 111,
+  "uniqueAssetFiles": 108,
+  "assetBytesUnchanged": true,
+  "matchedBundledSources": [
+    "app/(tabs)/events.tsx",
+    "app/(tabs)/specials.tsx",
+    "hooks/useEventPreferenceFlags.ts",
+    "utils/venueFeedGroups.ts",
+    "utils/systemInsets.ts",
+    "utils/mapScaleBarLayout.ts",
+    "components/common/VenueEventRow.tsx",
+    "components/map/EventImageLightbox.tsx",
+    "types/social.ts"
+  ],
+  "unexpectedQaSources": []
+}

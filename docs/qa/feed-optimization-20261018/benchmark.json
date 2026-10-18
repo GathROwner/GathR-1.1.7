@@ -1,0 +1,171 @@
+{
+  "at": "2026-10-18T17:11:12.006Z",
+  "sourceCommit": "d540ae98a223ad67053f8f5f8254fd6675416172",
+  "environment": "Local Node, synthetic records, actual original and implemented grouping/key/timing source; no app/device/backend use",
+  "scope": "Grouping only; excludes filtering, score ranking, React/native rendering, network and store-size effects",
+  "correctnessComparisons": 480,
+  "results": [
+    {
+      "n": 60,
+      "venues": 20,
+      "type": "special",
+      "timing": "legacy",
+      "steps": [
+        10,
+        30,
+        50,
+        70
+      ],
+      "identical": true,
+      "baselineCounts": {
+        "keys": 1182,
+        "starts": 312
+      },
+      "candidateCounts": {
+        "keys": 60,
+        "starts": 60
+      },
+      "medianMs": {
+        "firstGroupingCurrent": 2.2454999999999927,
+        "firstGroupingCandidate": 0.66599999999994,
+        "threePaginationCurrent": 5.141200000000026,
+        "threePaginationCandidate": 0.2902999999998883
+      }
+    },
+    {
+      "n": 60,
+      "venues": 20,
+      "type": "special",
+      "timing": "v2",
+      "steps": [
+        10,
+        30,
+        50,
+        70
+      ],
+      "identical": true,
+      "baselineCounts": {
+        "keys": 1182,
+        "starts": 312
+      },
+      "candidateCounts": {
+        "keys": 60,
+        "starts": 60
+      },
+      "medianMs": {
+        "firstGroupingCurrent": 2.057199999999966,
+        "firstGroupingCandidate": 0.6091000000001259,
+        "threePaginationCurrent": 5.3478000000000065,
+        "threePaginationCandidate": 0.2199000000000524
+      }
+    },
+    {
+      "n": 400,
+      "venues": 80,
+      "type": "event",
+      "timing": "legacy",
+      "steps": [
+        10,
+        30,
+        50,
+        70
+      ],
+      "identical": true,
+      "baselineCounts": {
+        "keys": 5120,
+        "starts": 4318
+      },
+      "candidateCounts": {
+        "keys": 400,
+        "starts": 400
+      },
+      "medianMs": {
+        "firstGroupingCurrent": 7.225699999999961,
+        "firstGroupingCandidate": 1.8092999999998938,
+        "threePaginationCurrent": 22.658999999999878,
+        "threePaginationCandidate": 0.9544000000000779
+      }
+    },
+    {
+      "n": 400,
+      "venues": 80,
+      "type": "event",
+      "timing": "v2",
+      "steps": [
+        10,
+        30,
+        50,
+        70
+      ],
+      "identical": true,
+      "baselineCounts": {
+        "keys": 5120,
+        "starts": 4318
+      },
+      "candidateCounts": {
+        "keys": 400,
+        "starts": 400
+      },
+      "medianMs": {
+        "firstGroupingCurrent": 5.328599999999824,
+        "firstGroupingCandidate": 1.2088999999998578,
+        "threePaginationCurrent": 11.952600000000075,
+        "threePaginationCandidate": 0.7315999999998439
+      }
+    },
+    {
+      "n": 1000,
+      "venues": 200,
+      "type": "event",
+      "timing": "legacy",
+      "steps": [
+        10,
+        30,
+        50,
+        70
+      ],
+      "identical": true,
+      "baselineCounts": {
+        "keys": 11720,
+        "starts": 7576
+      },
+      "candidateCounts": {
+        "keys": 1000,
+        "starts": 550
+      },
+      "medianMs": {
+        "firstGroupingCurrent": 22.928800000000138,
+        "firstGroupingCandidate": 4.475399999999809,
+        "threePaginationCurrent": 54.46210000000019,
+        "threePaginationCandidate": 1.2386000000001332
+      }
+    },
+    {
+      "n": 1000,
+      "venues": 200,
+      "type": "event",
+      "timing": "v2",
+      "steps": [
+        10,
+        30,
+        50,
+        70
+      ],
+      "identical": true,
+      "baselineCounts": {
+        "keys": 11720,
+        "starts": 7576
+      },
+      "candidateCounts": {
+        "keys": 1000,
+        "starts": 550
+      },
+      "medianMs": {
+        "firstGroupingCurrent": 24.040500000000065,
+        "firstGroupingCandidate": 6.116799999999785,
+        "threePaginationCurrent": 49.38720000000012,
+        "threePaginationCandidate": 1.7775000000001455
+      }
+    }
+  ]
+}
