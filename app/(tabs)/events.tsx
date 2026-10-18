@@ -2872,7 +2872,7 @@ setSelectedImageData({ imageUrl, event, events: groupEvents });
         onEndReached={handleEndReached}
         onEndReachedThreshold={0.5}
         // Performance optimizations for large lists
-        removeClippedSubviews={true}
+        removeClippedSubviews={Platform.OS !== 'ios'}
         maxToRenderPerBatch={1}
         windowSize={3}
         initialNumToRender={1}
