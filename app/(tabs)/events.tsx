@@ -98,6 +98,7 @@ import { doesEventMatchAnyInterest } from '../../utils/familyFriendly';
 import { isProvinceScopeEvent } from '../../utils/locationScope';
 import { useEventTimingMinute } from '../../hooks/useEventTimingMinute';
 import { useEventPreferenceFlags } from '../../hooks/useEventPreferenceFlags';
+import { useDeferredSavedRanking } from '../../hooks/useDeferredSavedRanking';
 import { useTapOnlyPress } from '../../hooks/useTapOnlyPress';
 import { getEventScheduleState } from '../../utils/eventTiming';
 
@@ -988,7 +989,7 @@ const result = await userService.toggleSavedEvent(event.id, {
             <BadgeContainer
               isNow={timeStatus === 'now'}
               matchesUserInterests={matchesUserInterests}
-              isSaved={isSaved}
+              isSaved={bookmarked}
               isSharedByUser={event.sharedEventProvenance?.sharedByCurrentUser === true}
             />
 
@@ -1973,6 +1974,10 @@ setSelectedImageData({ imageUrl, event, events: groupEvents });
   const savedEventSet = useMemo(() => {
     return new Set(savedEvents || []);
   }, [savedEvents]);
+  const preferencesReady = useUserPrefsStore(state => state.lastLoadedAt !== undefined);
+  const { rankingSavedIds, rankingRevision, refreshSavedRanking, refreshing } = useDeferredSavedRanking(
+    savedEvents, JSON.stringify([user?.uid ?? null, filterCriteria.eventFilters, filterCriteria.search]), preferencesReady,
+  );
 
   const userInterestLowerSet = useMemo(() => {
     return new Set((userInterests || []).map(interest => interest.toLowerCase()));
@@ -2144,7 +2149,7 @@ setSelectedImageData({ imageUrl, event, events: groupEvents });
     const unsavedEvents: ScoredEvent[] = [];
 
     for (const event of events) {
-      const isSaved = isEventSaved(event);
+      const isSaved = rankingSavedIds.has(String(event.id));
       const timeStatus = getEventTimeStatusFast(event, eventTimeContext);
       const matchesInterest = matchesUserInterests(event);
       const provinceWide = isProvinceScopeEvent(event);
@@ -2236,7 +2241,7 @@ setSelectedImageData({ imageUrl, event, events: groupEvents });
     return measureListTabStage('events', 'sort_viewport', {
       inputCount: filteredViewportEvents.length,
     }, () => sortAndPrioritizeEvents(filteredViewportEvents));
-  }, [filteredViewportEvents, userLocation, userInterestLowerSet, savedEventSet, favoriteVenueSet, eventTimeContext]);
+  }, [filteredViewportEvents, userLocation, userInterestLowerSet, rankingSavedIds, favoriteVenueSet, eventTimeContext]);
 
   // State for pagination of outside-viewport events
   const [outsideViewportLoadCount, setOutsideViewportLoadCount] = useState(10);
@@ -2264,7 +2269,7 @@ setSelectedImageData({ imageUrl, event, events: groupEvents });
       const eventsToSort = filteredOutsideViewportEvents.slice(0, maxToSort);
       return sortAndPrioritizeEvents(eventsToSort);
     });
-  }, [filteredOutsideViewportEvents, outsideViewportLoadCount, userLocation, userInterestLowerSet, savedEventSet, favoriteVenueSet, eventTimeContext]);
+  }, [filteredOutsideViewportEvents, outsideViewportLoadCount, userLocation, userInterestLowerSet, rankingSavedIds, favoriteVenueSet, eventTimeContext]);
 
   // Group only already-filtered records; preserve ranked venue order and expose every matching sibling.
   const venueGrouping = useMemo(() => createVenueFeedGrouping(filteredViewportEvents, filteredOutsideViewportEvents),
@@ -2796,6 +2801,9 @@ setSelectedImageData({ imageUrl, event, events: groupEvents });
       {/* Event list with ads */}
      {/* Event list with ads */}
       <FlatList
+          // Applying deferred ranking starts at the top with fresh row measurements.
+          // Saving while browsing leaves this key and the visible rows in place.
+          key={`saved-ranking-${rankingRevision}`}
           ref={flatListRef}
           style={styles.eventList}
           data={isFocusedContentReady ? eventsWithAds : []}
@@ -2803,6 +2811,8 @@ setSelectedImageData({ imageUrl, event, events: groupEvents });
           onViewableItemsChanged={visibleVenueGroups.onViewableItemsChanged}
           viewabilityConfig={visibleVenueGroups.viewabilityConfig}
           onScroll={handleScroll}
+          onRefresh={refreshSavedRanking}
+          refreshing={refreshing}
           onScrollBeginDrag={backToTop.onScrollBeginDrag}
           onScrollEndDrag={backToTop.onScrollEndDrag}
           onMomentumScrollBegin={backToTop.onMomentumScrollBegin}
@@ -2872,7 +2882,7 @@ setSelectedImageData({ imageUrl, event, events: groupEvents });
         onEndReached={handleEndReached}
         onEndReachedThreshold={0.5}
         // Performance optimizations for large lists
-        removeClippedSubviews={Platform.OS !== 'ios'}
+        removeClippedSubviews={true}
         maxToRenderPerBatch={1}
         windowSize={3}
         initialNumToRender={1}

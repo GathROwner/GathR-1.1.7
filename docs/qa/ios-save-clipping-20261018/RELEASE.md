@@ -15,6 +15,6 @@ Publisher clear-cache export2510modules,2466source-map sources. Independently co
 
 Independent update:view and update:list require and confirm exact update, group, source, iOS platform, runtime1.1.10 and newest Preview position. Publication/source/export verified; no independent remote launch-bundle download claimed.
 
-**Phone adoption and repeated save/scroll behavior remain pending.** User should reopen Preview as necessary, confirm Profile OTA01a150eb and repeat the reported long-list/save/continued-scroll sequence. Do not report jitter fixed from publication or tests alone. No new device/emulator operation, map test, Android/Production OTA, paid build, backend deployment or data write in this release. Earlier emulator attempt remains inconclusive and predates this patch.
+**Craig confirmed phone adoption of OTA01a150eb and reported flashing still occurring.** This experiment did not resolve the symptom. He approved restoring clipping and testing deferred saved-first movement; see ../feed-save-ranking-20261018/README.md. No new device/emulator operation, map test, Android/Production OTA, paid build, backend deployment or data write in this release. Earlier emulator attempt remains inconclusive and predates this patch.
 
 Private ignored evidence: artifacts/feed-jitter-20261018/{preflight.log,publish.log,export-check.json,published-view.json,published-list.json,tests.json,tests.log,tsc.log,lint.log}. Restore the prior clipping setting only as a separately recorded comparison if this experiment is inconclusive or regresses responsiveness.

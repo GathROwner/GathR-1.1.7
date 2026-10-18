@@ -93,6 +93,7 @@ import { areEventIdsEquivalent } from '../../lib/api/firestoreEvents';
 import { doesEventMatchAnyInterest } from '../../utils/familyFriendly';
 import { useEventTimingMinute } from '../../hooks/useEventTimingMinute';
 import { useEventPreferenceFlags } from '../../hooks/useEventPreferenceFlags';
+import { useDeferredSavedRanking } from '../../hooks/useDeferredSavedRanking';
 import { useTapOnlyPress } from '../../hooks/useTapOnlyPress';
 import { getEventScheduleState } from '../../utils/eventTiming';
 
@@ -987,7 +988,7 @@ const result = await userService.toggleSavedEvent(event.id, {
             <BadgeContainer
               isNow={timeStatus === 'now'}
               matchesUserInterests={matchesUserInterests}
-              isSaved={isSaved}
+              isSaved={bookmarked}
               isSharedByUser={event.sharedEventProvenance?.sharedByCurrentUser === true}
             />
 
@@ -1889,6 +1890,10 @@ useEffect(() => {
   const savedEventSet = useMemo(() => {
     return new Set(savedEvents || []);
   }, [savedEvents]);
+  const preferencesReady = useUserPrefsStore(state => state.lastLoadedAt !== undefined);
+  const { rankingSavedIds, rankingRevision, refreshSavedRanking, refreshing } = useDeferredSavedRanking(
+    savedEvents, JSON.stringify([user?.uid ?? null, filterCriteria.specialFilters, filterCriteria.search]), preferencesReady,
+  );
 
   const userInterestLowerSet = useMemo(() => {
     return new Set((userInterests || []).map(interest => interest.toLowerCase()));
@@ -2134,7 +2139,7 @@ useEffect(() => {
     const unsavedSpecials: ScoredSpecial[] = [];
 
     for (const special of specials) {
-      const isSaved = isEventSaved(special);
+      const isSaved = rankingSavedIds.has(String(special.id));
       const timeStatus = getEventTimeStatusFast(special, eventTimeContext);
       const matchesInterest = matchesUserInterests(special);
 
@@ -2253,7 +2258,7 @@ useEffect(() => {
     return measureListTabStage('specials', 'sort_viewport', {
       inputCount: filteredViewportSpecials.length,
     }, () => sortAndPrioritizeSpecials(filteredViewportSpecials));
-  }, [filteredViewportSpecials, userLocation, savedEventSet, favoriteVenueSet, userInterestLowerSet, eventTimeContext]);
+  }, [filteredViewportSpecials, userLocation, rankingSavedIds, favoriteVenueSet, userInterestLowerSet, eventTimeContext]);
 
   // State for pagination of outside-viewport specials
   const [outsideViewportLoadCount, setOutsideViewportLoadCount] = useState(10);
@@ -2280,7 +2285,7 @@ useEffect(() => {
       const specialsToSort = filteredOutsideViewportSpecials.slice(0, maxToSort);
       return sortAndPrioritizeSpecials(specialsToSort);
     });
-  }, [filteredOutsideViewportSpecials, outsideViewportLoadCount, userLocation, savedEventSet, favoriteVenueSet, userInterestLowerSet, eventTimeContext]);
+  }, [filteredOutsideViewportSpecials, outsideViewportLoadCount, userLocation, rankingSavedIds, favoriteVenueSet, userInterestLowerSet, eventTimeContext]);
 
   // Group only already-filtered records; preserve ranked venue order and expose every matching sibling.
   const venueGrouping = useMemo(() => createVenueFeedGrouping(filteredViewportSpecials, filteredOutsideViewportSpecials),
@@ -2814,6 +2819,9 @@ useEffect(() => {
          
       {/* Specials list with ads */}
       <FlatList
+        // Applying deferred ranking starts at the top with fresh row measurements.
+        // Saving while browsing leaves this key and the visible rows in place.
+        key={`saved-ranking-${rankingRevision}`}
         ref={flatListRef}
         style={styles.eventList}
         data={isFocusedContentReady ? specialsWithAds : []}
@@ -2821,6 +2829,8 @@ useEffect(() => {
           onViewableItemsChanged={visibleVenueGroups.onViewableItemsChanged}
           viewabilityConfig={visibleVenueGroups.viewabilityConfig}
         onScroll={handleScroll}
+        onRefresh={refreshSavedRanking}
+        refreshing={refreshing}
           onScrollBeginDrag={backToTop.onScrollBeginDrag}
           onScrollEndDrag={backToTop.onScrollEndDrag}
           onMomentumScrollBegin={backToTop.onMomentumScrollBegin}
@@ -2901,7 +2911,7 @@ useEffect(() => {
         onEndReached={handleEndReached}
         onEndReachedThreshold={0.5}
         // Performance optimizations for large lists
-        removeClippedSubviews={Platform.OS !== 'ios'}
+        removeClippedSubviews={true}
         maxToRenderPerBatch={1}
         windowSize={3}
         initialNumToRender={1}
