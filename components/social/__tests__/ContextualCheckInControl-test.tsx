@@ -1,5 +1,5 @@
 import React from 'react';
-import { Image, Modal, StyleSheet, Text } from 'react-native';
+import { Dimensions, Image, Modal, Platform, StyleSheet, Text } from 'react-native';
 import renderer, { act } from 'react-test-renderer';
 import * as Location from 'expo-location';
 import { createPrivateCheckInPlaceCandidate, bindCheckInReadiness, discoverNearbyCheckInPlaces, listNearbyCanonicalCheckInVenues, SocialServiceError } from '../../../services/socialService';
@@ -22,6 +22,9 @@ jest.mock('@react-native-async-storage/async-storage', () => ({ getItem: jest.fn
 jest.mock('expo-haptics', () => ({ selectionAsync: jest.fn().mockResolvedValue(undefined) }));
 
 jest.mock('@expo/vector-icons/Ionicons', () => () => null);
+jest.mock('react-native-safe-area-context', () => ({
+  useSafeAreaInsets: () => ({ top: 0, right: 0, bottom: 0, left: 0 }),
+}));
 
 jest.mock('expo-location', () => ({
   Accuracy: { High: 4 },
@@ -158,6 +161,21 @@ describe('ContextualCheckInControl', () => {
     } });
     expect(JSON.stringify(mockPush.mock.calls)).not.toMatch(/latitude|longitude|placeAddress|eligibilitySessionId/);
     expect(createPrivateCheckInPlaceCandidate).toHaveBeenCalledWith(expect.objectContaining({ label: 'Home' }));
+  });
+
+  it('keeps both place choices and private setup above an Android tablet taskbar without confirming a check-in', async () => {
+    jest.replaceProperty(Platform, 'OS', 'android');
+    jest.spyOn(Dimensions, 'get').mockReturnValue({ width: 800, height: 1280, scale: 1, fontScale: 1 });
+    makeReady(30);
+    await open();
+    const sheet = () => control().findByProps({ accessibilityViewIsModal: true });
+    expect(StyleSheet.flatten(sheet().props.style).paddingBottom).toBe(52);
+    await press('private-place-entry');
+    expect(StyleSheet.flatten(sheet().props.style).paddingBottom).toBe(52);
+    expect(copy()).toContain('Continue to privacy');
+    expect(createPrivateCheckInPlaceCandidate).not.toHaveBeenCalled();
+    expect(bindCheckInReadiness).not.toHaveBeenCalled();
+    expect(mockPush).not.toHaveBeenCalled();
   });
 
   it('enables private check-in at Here readiness while public search waits for Place readiness', async () => {
