@@ -59,7 +59,7 @@ import CategoryFilterOptions from '../../components/map/CategoryFilterOptions';
 // Import components
 import EventImageLightbox from '../../components/map/EventImageLightbox';
 import VenueEventRow, { VENUE_FEED_HERO_HEIGHT } from '../../components/common/VenueEventRow';
-import { groupVenueFeedEvents, getVenueFeedKey, type VenueFeedGroup } from '../../utils/venueFeedGroups';
+import { createVenueFeedGrouping, getVenueFeedKey, type VenueFeedGroup } from '../../utils/venueFeedGroups';
 import FullSizeSdkAdCard, { FULL_SIZE_SDK_AD_ROW_HEIGHT } from '../../components/ads/FullSizeSdkAdCard';
 import { AdColors } from '../../constants/AdTheme';
 
@@ -98,6 +98,7 @@ import { areEventIdsEquivalent } from '../../lib/api/firestoreEvents';
 import { doesEventMatchAnyInterest } from '../../utils/familyFriendly';
 import { isProvinceScopeEvent } from '../../utils/locationScope';
 import { useEventTimingMinute } from '../../hooks/useEventTimingMinute';
+import { useEventPreferenceFlags } from '../../hooks/useEventPreferenceFlags';
 import { useTapOnlyPress } from '../../hooks/useTapOnlyPress';
 import { getEventScheduleState } from '../../utils/eventTiming';
 
@@ -365,10 +366,7 @@ const EventListItem: React.FC<EventListItemProps> = ({
   const [isHeroLikeToggling, setIsHeroLikeToggling] = useState(false);
   const [isInterestedToggling, setIsInterestedToggling] = useState(false);
   const eventIdString = String(event.id);
-  const likedEvents = useUserPrefsStore((s: UserPrefsState) => s.likedEvents);
-  const interestedEvents = useUserPrefsStore((s: UserPrefsState) => s.interestedEvents);
-  const isHeroLiked = likedEvents.includes(eventIdString);
-  const isInterested = interestedEvents.includes(eventIdString);
+  const { isHeroLiked, isInterested } = useEventPreferenceFlags(eventIdString);
   const setUserPrefs = useUserPrefsStore.getState().setAll;
 
   // Tutorial awareness - only for first item
@@ -478,7 +476,7 @@ const EventListItem: React.FC<EventListItemProps> = ({
     if (isInterestedToggling) return;
 
     setIsInterestedToggling(true);
-    const previousInterestedEvents = [...interestedEvents];
+    const previousInterestedEvents = [...useUserPrefsStore.getState().interestedEvents];
     const nextInterestedEvents = isInterested
       ? previousInterestedEvents.filter((id) => id !== eventIdString)
       : [...previousInterestedEvents, eventIdString];
@@ -870,7 +868,7 @@ const result = await userService.toggleSavedEvent(event.id, {
 
     const actionStart = Date.now();
     setIsHeroLikeToggling(true);
-    const previousLikedEvents = [...likedEvents];
+    const previousLikedEvents = [...useUserPrefsStore.getState().likedEvents];
     const nextLikedEvents = isHeroLiked
       ? previousLikedEvents.filter((id) => id !== eventIdString)
       : [...previousLikedEvents, eventIdString];
@@ -2270,19 +2268,20 @@ setSelectedImageData({ imageUrl, event, events: groupEvents });
   }, [filteredOutsideViewportEvents, outsideViewportLoadCount, userLocation, userInterestLowerSet, savedEventSet, favoriteVenueSet, eventTimeContext]);
 
   // Group only already-filtered records; preserve ranked venue order and expose every matching sibling.
-  const viewportVenueGroups = useMemo(() => groupVenueFeedEvents(sortedViewportEvents,
-    [...filteredViewportEvents, ...filteredOutsideViewportEvents]),
-    [sortedViewportEvents, filteredViewportEvents, filteredOutsideViewportEvents]);
-  const outsideVenueGroups = useMemo(() => {
-    const visibleKeys = new Set(viewportVenueGroups.map(group => group.key));
-    return groupVenueFeedEvents([...sortedOutsideViewportEvents, ...filteredOutsideViewportEvents])
-      .filter(group => !visibleKeys.has(group.key));
-  }, [sortedOutsideViewportEvents, filteredOutsideViewportEvents, viewportVenueGroups]);
+  const venueGrouping = useMemo(() => createVenueFeedGrouping(filteredViewportEvents, filteredOutsideViewportEvents),
+    [filteredViewportEvents, filteredOutsideViewportEvents]);
+  const viewportVenueGroups = useMemo(() => venueGrouping.groupViewport(sortedViewportEvents),
+    [venueGrouping, sortedViewportEvents]);
+  const outsideVenuePage = useMemo(() => venueGrouping.groupOutside(
+    sortedOutsideViewportEvents, viewportVenueGroups, outsideViewportLoadCount),
+    [venueGrouping, sortedOutsideViewportEvents, viewportVenueGroups, outsideViewportLoadCount]);
+  const outsideVenueGroups = outsideVenuePage.groups;
+  const outsideVenueCount = outsideVenuePage.totalCount;
 
   // Request one distinct NativeAd instance for every placement in the currently
   // exposed page. The target grows with pagination instead of stopping at four.
   const displayedOutsideViewportEventCount = Math.min(
-    outsideVenueGroups.length,
+    outsideVenueCount,
     outsideViewportLoadCount
   );
   const regularEventAdPlacements =
@@ -2341,7 +2340,7 @@ setSelectedImageData({ imageUrl, event, events: groupEvents });
     return measureListTabStage('events', 'build_list_with_ads', {
       ready: isFocusedContentReady,
       viewportCount: viewportVenueGroups.length,
-      outsideViewportCount: outsideVenueGroups.length,
+      outsideViewportCount: outsideVenueCount,
       nativeAdsCount: nativeAds.length,
     }, () => {
       if (!isFocusedContentReady) {
@@ -2387,7 +2386,7 @@ setSelectedImageData({ imageUrl, event, events: groupEvents });
     }
 
     // Add outside-viewport events (paginated) with ads interspersed
-    const outsideViewportToShow = outsideVenueGroups.slice(0, outsideViewportLoadCount);
+    const outsideViewportToShow = outsideVenueGroups;
     outsideViewportToShow.forEach((group, index) => {
       result.push({ type: 'event', data: group.events[0], group });
 
@@ -2409,7 +2408,7 @@ setSelectedImageData({ imageUrl, event, events: groupEvents });
     });
 
     // Low-count fallback for viewport section: if 1–3 events, append one ad at the end of viewport section
-    if (viewportVenueGroups.length > 0 && viewportVenueGroups.length < adFrequency && nativeAds.length > 0 && outsideVenueGroups.length === 0) {
+    if (viewportVenueGroups.length > 0 && viewportVenueGroups.length < adFrequency && nativeAds.length > 0 && outsideVenueCount === 0) {
       const selectedAd = validAds[0];
       if (selectedAd) {
         result.push({
@@ -2427,13 +2426,13 @@ setSelectedImageData({ imageUrl, event, events: groupEvents });
         ready: true,
         itemCount: result.length,
         viewportCount: viewportVenueGroups.length,
-        outsideViewportCount: outsideVenueGroups.length,
+        outsideViewportCount: outsideVenueCount,
         nativeAdsCount: nativeAds.length,
       });
 
       return result;
     });
-  }, [getAdListKey, isFocusedContentReady, viewportVenueGroups, outsideVenueGroups, filteredOutsideViewportEvents.length, nativeAds, outsideViewportLoadCount]);
+  }, [getAdListKey, isFocusedContentReady, viewportVenueGroups, outsideVenueGroups, outsideVenueCount, filteredOutsideViewportEvents.length, nativeAds]);
 
   // Pre-compute lookup Sets for O(1) access during render
   const interestMatchSet = useMemo(() => {
