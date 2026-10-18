@@ -80,6 +80,14 @@
       "ios": {
         "ascAppId": "6743016252"
       }
+    },
+    "android-production-draft": {
+      "android": {
+        "serviceAccountKeyPath": "C:/Users/craig/.gathr/credentials/google-play-release-uploader.json",
+        "track": "production",
+        "releaseStatus": "draft",
+        "changesNotSentForReview": true
+      }
     }
   }
 }
