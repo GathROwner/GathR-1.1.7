@@ -55,7 +55,7 @@ import CategoryFilterOptions from '../../components/map/CategoryFilterOptions';
 // Import components
 import EventImageLightbox from '../../components/map/EventImageLightbox';
 import VenueEventRow, { VENUE_FEED_HERO_HEIGHT } from '../../components/common/VenueEventRow';
-import { groupVenueFeedEvents, getVenueFeedKey, type VenueFeedGroup } from '../../utils/venueFeedGroups';
+import { createVenueFeedGrouping, getVenueFeedKey, type VenueFeedGroup } from '../../utils/venueFeedGroups';
 import FullSizeSdkAdCard, { FULL_SIZE_SDK_AD_ROW_HEIGHT } from '../../components/ads/FullSizeSdkAdCard';
 import { AdColors } from '../../constants/AdTheme';
 
@@ -92,6 +92,7 @@ import { useTutorialUiStore } from '../../store/tutorialUiStore';
 import { areEventIdsEquivalent } from '../../lib/api/firestoreEvents';
 import { doesEventMatchAnyInterest } from '../../utils/familyFriendly';
 import { useEventTimingMinute } from '../../hooks/useEventTimingMinute';
+import { useEventPreferenceFlags } from '../../hooks/useEventPreferenceFlags';
 import { useTapOnlyPress } from '../../hooks/useTapOnlyPress';
 import { getEventScheduleState } from '../../utils/eventTiming';
 
@@ -365,10 +366,7 @@ const savedEvents = useUserPrefsStore((s: UserPrefsState) => s.savedEvents);
 const userInterests = useUserPrefsStore((s: UserPrefsState) => s.interests);
 const favoriteVenues = useUserPrefsStore((s: UserPrefsState) => s.favoriteVenues);
 
-  const likedEvents = useUserPrefsStore((s: UserPrefsState) => s.likedEvents);
-  const isHeroLiked = likedEvents.includes(eventIdString);
-  const interestedEvents = useUserPrefsStore((s: UserPrefsState) => s.interestedEvents);
-  const isInterested = interestedEvents.includes(eventIdString);
+  const { isHeroLiked, isInterested } = useEventPreferenceFlags(eventIdString);
   const [isInterestedToggling, setIsInterestedToggling] = useState(false);
   const setUserPrefs = useUserPrefsStore.getState().setAll;
   
@@ -474,7 +472,7 @@ const favoriteVenues = useUserPrefsStore((s: UserPrefsState) => s.favoriteVenues
 
     const startTime = Date.now();
     setIsHeroLikeToggling(true);
-    const previousLikedEvents = [...likedEvents];
+    const previousLikedEvents = [...useUserPrefsStore.getState().likedEvents];
     const nextLikedEvents = isHeroLiked
       ? previousLikedEvents.filter((id) => id !== eventIdString)
       : [...previousLikedEvents, eventIdString];
@@ -550,7 +548,7 @@ const favoriteVenues = useUserPrefsStore((s: UserPrefsState) => s.favoriteVenues
 
     const startTime = Date.now();
     setIsInterestedToggling(true);
-    const previousInterestedEvents = [...interestedEvents];
+    const previousInterestedEvents = [...useUserPrefsStore.getState().interestedEvents];
     const willBeInterested = !isInterested;
     const nextInterestedEvents = willBeInterested
       ? [...previousInterestedEvents, eventIdString]
@@ -2285,19 +2283,20 @@ useEffect(() => {
   }, [filteredOutsideViewportSpecials, outsideViewportLoadCount, userLocation, savedEventSet, favoriteVenueSet, userInterestLowerSet, eventTimeContext]);
 
   // Group only already-filtered records; preserve ranked venue order and expose every matching sibling.
-  const viewportVenueGroups = useMemo(() => groupVenueFeedEvents(sortedViewportSpecials,
-    [...filteredViewportSpecials, ...filteredOutsideViewportSpecials]),
-    [sortedViewportSpecials, filteredViewportSpecials, filteredOutsideViewportSpecials]);
-  const outsideVenueGroups = useMemo(() => {
-    const visibleKeys = new Set(viewportVenueGroups.map(group => group.key));
-    return groupVenueFeedEvents([...sortedOutsideViewportSpecials, ...filteredOutsideViewportSpecials])
-      .filter(group => !visibleKeys.has(group.key));
-  }, [sortedOutsideViewportSpecials, filteredOutsideViewportSpecials, viewportVenueGroups]);
+  const venueGrouping = useMemo(() => createVenueFeedGrouping(filteredViewportSpecials, filteredOutsideViewportSpecials),
+    [filteredViewportSpecials, filteredOutsideViewportSpecials]);
+  const viewportVenueGroups = useMemo(() => venueGrouping.groupViewport(sortedViewportSpecials),
+    [venueGrouping, sortedViewportSpecials]);
+  const outsideVenuePage = useMemo(() => venueGrouping.groupOutside(
+    sortedOutsideViewportSpecials, viewportVenueGroups, outsideViewportLoadCount),
+    [venueGrouping, sortedOutsideViewportSpecials, viewportVenueGroups, outsideViewportLoadCount]);
+  const outsideVenueGroups = outsideVenuePage.groups;
+  const outsideVenueCount = outsideVenuePage.totalCount;
 
   // Request one distinct NativeAd instance for every placement in the currently
   // exposed page. The target grows with pagination instead of stopping at four.
   const displayedOutsideViewportSpecialCount = Math.min(
-    outsideVenueGroups.length,
+    outsideVenueCount,
     outsideViewportLoadCount
   );
   const regularSpecialAdPlacements =
@@ -2356,7 +2355,7 @@ useEffect(() => {
     return measureListTabStage('specials', 'build_list_with_ads', {
       ready: isFocusedContentReady,
       viewportCount: viewportVenueGroups.length,
-      outsideViewportCount: outsideVenueGroups.length,
+      outsideViewportCount: outsideVenueCount,
       nativeAdsCount: nativeAds.length,
     }, () => {
       if (!isFocusedContentReady) {
@@ -2402,7 +2401,7 @@ useEffect(() => {
     }
 
     // Add outside-viewport specials (paginated) with ads interspersed
-    const outsideViewportToShow = outsideVenueGroups.slice(0, outsideViewportLoadCount);
+    const outsideViewportToShow = outsideVenueGroups;
     outsideViewportToShow.forEach((group, index) => {
       result.push({ type: 'special', data: group.events[0], group });
 
@@ -2424,7 +2423,7 @@ useEffect(() => {
     });
 
     // Low-count fallback for viewport section
-    if (viewportVenueGroups.length > 0 && viewportVenueGroups.length < adFrequency && nativeAds.length > 0 && outsideVenueGroups.length === 0) {
+    if (viewportVenueGroups.length > 0 && viewportVenueGroups.length < adFrequency && nativeAds.length > 0 && outsideVenueCount === 0) {
       const selectedAd = validAds[0];
       if (selectedAd) {
         result.push({
@@ -2442,13 +2441,13 @@ useEffect(() => {
         ready: true,
         itemCount: result.length,
         viewportCount: viewportVenueGroups.length,
-        outsideViewportCount: outsideVenueGroups.length,
+        outsideViewportCount: outsideVenueCount,
         nativeAdsCount: nativeAds.length,
       });
 
       return result;
     });
-  }, [getAdListKey, isFocusedContentReady, viewportVenueGroups, outsideVenueGroups, filteredOutsideViewportSpecials.length, nativeAds, outsideViewportLoadCount]);
+  }, [getAdListKey, isFocusedContentReady, viewportVenueGroups, outsideVenueGroups, outsideVenueCount, filteredOutsideViewportSpecials.length, nativeAds]);
 
   // Pre-compute lookup Sets for O(1) access during render
   const interestMatchSet = useMemo(() => {
