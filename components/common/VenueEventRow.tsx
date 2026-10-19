@@ -26,7 +26,7 @@ type Props = {
 export default function VenueEventRow({ group, timeFilter, selectedEventId, countCueActive = false, onSelectEvent, renderEvent }: Props) {
   const { width: windowWidth } = useWindowDimensions();
   // Mount content immediately; the viewport measurement refines this estimate for safe areas/resizing.
-  const [width, setWidth] = useState(() => Math.max(1, windowWidth - 14));
+  const [width, setWidth] = useState(() => Math.max(1, windowWidth - 2));
   const [heights, setHeights] = useState<Record<string, number>>({});
   const [addressExpanded, setAddressExpanded] = useState(false);
   const pager = useRef<ScrollView>(null);
@@ -120,7 +120,7 @@ export default function VenueEventRow({ group, timeFilter, selectedEventId, coun
 }
 
 const styles = StyleSheet.create({
-  group: { marginHorizontal: 6, marginBottom: 10, backgroundColor: '#FFF', borderRadius: 16, borderWidth: 1, borderColor: '#DDE1E7', overflow: 'hidden' },
+  group: { marginHorizontal: 0, marginBottom: 10, backgroundColor: '#FFF', borderRadius: 16, borderWidth: 1, borderColor: '#DDE1E7', overflow: 'hidden' },
   header: { minHeight: 64, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 10, paddingVertical: 9, gap: 10 },
   avatarWrap: { width: 42, height: 42 }, avatar: { width: 42, height: 42, borderRadius: 21, borderWidth: 1, borderColor: '#E1E4E8' },
   favorite: { position: 'absolute', right: -4, bottom: -4, backgroundColor: '#FFF', borderRadius: 12 },
