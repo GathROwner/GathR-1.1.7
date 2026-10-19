@@ -59,9 +59,13 @@ export default function FullSizeSdkAdCard({ nativeAd, loading, allowMedia = true
     />
   </View> : null;
 
-  return <NativeAdView nativeAd={nativeAd} onLayout={onLayout} testID={`native-ad-card-${layout.split ? 'portrait' : layout.kind}`}
+  // Fabric's SDK view positions its own contentView using padding/border insets.
+  // Keep decoration on a regular View so child coordinates are not inset twice.
+  return <View onLayout={onLayout} testID="native-ad-card-frame"
     style={[styles.card, { backgroundColor: colors.cardBackground, borderColor: colors.cardBorder,
       shadowColor: colors.shadowColor, shadowOpacity: colors.shadowOpacity }]}>
+    <NativeAdView nativeAd={nativeAd} style={styles.sdkView}
+      testID={`native-ad-card-${layout.split ? 'portrait' : layout.kind}`}>
     {/* Reserve the opposite corner for the SDK-owned AdChoices overlay. */}
     <View style={styles.disclosureRow}>
       <View style={[styles.badge, { backgroundColor: colors.badgeBackground, borderColor: colors.badgeBorder }]}>
@@ -85,12 +89,14 @@ export default function FullSizeSdkAdCard({ nativeAd, loading, allowMedia = true
       </View>
       {description && <View style={styles.footerBody}>{description}</View>}
     </>}
-  </NativeAdView>;
+    </NativeAdView>
+  </View>;
 }
 
 const styles = StyleSheet.create({
   card: { padding: 8, borderRadius: AdRadius.md, overflow: 'hidden', borderWidth: 1,
     shadowOffset: { width: 0, height: 1 }, shadowRadius: 4, elevation: 3 },
+  sdkView: { width: '100%' },
   disclosureRow: { minHeight: 18, paddingRight: 24, marginBottom: 8, alignItems: 'flex-start' },
   badge: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, borderWidth: 1 },
   badgeText: { fontSize: 10, lineHeight: 12, fontWeight: '500', letterSpacing: 0.2 },

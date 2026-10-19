@@ -28,6 +28,10 @@ afterEach(() => { if (tree) act(() => tree.unmount()); });
 const mount = (nativeAd: any, allowMedia = true) => act(() => { tree = renderer.create(<FullSizeSdkAdCard nativeAd={nativeAd} loading={false} allowMedia={allowMedia} />); });
 const frame = () => tree.root.findByProps({ testID: 'native-ad-media-frame' });
 const mediaNode = () => tree.root.findByType('sdk-media' as any);
+const cardFrame = () => tree.root.findByProps({ testID: 'native-ad-card-frame' });
+const renderedOrder = (node: any): string[] => !node ? [] : Array.isArray(node)
+  ? node.flatMap(renderedOrder) : typeof node === 'string' ? [node]
+  : [node.type, ...renderedOrder(node.children)];
 
 it.each([9 / 16, 16 / 9, 1, 0])('retains one SDK ad/media and one registration of each supplied asset at ratio %s', ratio => {
   const nativeAd = ad(ratio);
@@ -46,7 +50,7 @@ it.each([9 / 16, 16 / 9, 1, 0])('retains one SDK ad/media and one registration o
 it('places media before the footer for H2 and beside details for portrait B', () => {
   mount(ad(16 / 9));
   expect(tree.root.findByType('sdk-ad-view' as any).props.testID).toBe('native-ad-card-landscape');
-  const order = JSON.stringify((tree.toJSON() as renderer.ReactTestRendererJSON).children);
+  const order = renderedOrder(tree.toJSON());
   expect(order.indexOf('sdk-media')).toBeLessThan(order.indexOf('Discover local dining'));
   act(() => tree.update(<FullSizeSdkAdCard nativeAd={ad(9 / 16)} loading={false} />));
   expect(tree.root.findByType('sdk-ad-view' as any).props.testID).toBe('native-ad-card-portrait');
@@ -56,7 +60,7 @@ it('measures the actual row width without replacing its ad or media instance', (
   const nativeAd = ad(16 / 9);
   mount(nativeAd);
   const originalMedia = mediaNode();
-  act(() => tree.root.findByType('sdk-ad-view' as any).props.onLayout({ nativeEvent: { layout: { width: 600 } } }));
+  act(() => cardFrame().props.onLayout({ nativeEvent: { layout: { width: 600 } } }));
   expect(mediaNode()).toBe(originalMedia);
   expect(tree.root.findByType('sdk-ad-view' as any).props.nativeAd).toBe(nativeAd);
   expect(StyleSheet.flatten(frame().props.style).width).toBe(582);
@@ -75,5 +79,18 @@ it('stacks accessible large-text media and supports the dark theme', () => {
   const view = tree.root.findByType('sdk-ad-view' as any);
   expect(view.props.testID).toBe('native-ad-card-portrait');
   expect(StyleSheet.flatten(frame().props.style).height).toBe(420);
-  expect(StyleSheet.flatten(view.props.style).backgroundColor).not.toBe('#FFFFFF');
+  expect(StyleSheet.flatten(cardFrame().props.style).backgroundColor).not.toBe('#FFFFFF');
+});
+
+it.each([9 / 16, 16 / 9, 0])('keeps Fabric SDK content insets empty while decorating the regular card at ratio %s', ratio => {
+  mount(ad(ratio));
+  const sdk = tree.root.findByType('sdk-ad-view' as any);
+  const sdkStyle = StyleSheet.flatten(sdk.props.style);
+  for (const key of ['padding', 'paddingHorizontal', 'paddingVertical', 'borderWidth', 'borderLeftWidth', 'borderRightWidth']) {
+    expect(sdkStyle[key]).toBeUndefined();
+  }
+  expect(StyleSheet.flatten(cardFrame().props.style)).toMatchObject({ padding: 8, borderWidth: 1 });
+  expect(cardFrame().findByType('sdk-ad-view' as any)).toBe(sdk);
+  expect(sdk.findAllByType('sdk-media' as any)).toHaveLength(1);
+  expect(sdk.findAllByType('sdk-asset' as any)).toHaveLength(5);
 });

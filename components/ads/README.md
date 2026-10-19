@@ -181,3 +181,7 @@ Verify the pool kept separate `NativeAd` instances even if their creative fields
 ### Ads take too long to appear
 Confirm the focused surface requested its pool and that the SDK returned at
 least one ad. Development builds use Google's sample native ad unit.
+
+### iOS Fabric spacing follow-up (October 19)
+
+Keep padding/border decoration on the ordinary outer card View, not NativeAdView. Fabric's SDK contentView inset can otherwise shift children twice and clip right/bottom edges. NativeAdView itself remains inset-free, full width, with all registered assets inside. The outer measurement still includes the card border/padding for getNativeAdMediaLayout. See [native spacing diagnosis and rendered comparison](../../docs/qa/ad-spacing-20261019/README.md). Video metadata is a load-time SDK snapshot; no inner-content-bound detection or orientation update event is exposed here. Preserve the reported ratio/unknown fallback rather than cropping or guessing by advertiser.
