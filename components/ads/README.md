@@ -91,7 +91,7 @@ The `{ aspectRatio: undefined }` override removes the library's default aspect r
 
 ### Adaptive feed layouts (October 18, 2026)
 
-`FullSizeSdkAdCard` reads the loaded SDK `mediaContent.aspectRatio` before rendering media. `utils/nativeAdLayout.ts` selects portrait below 0.9, landscape above 1.1, and square between. Portrait normally uses a 43%-width media column beside the supplied icon, title, body and CTA (B); landscape uses full-width media followed by identity/CTA and body (H2). Square uses the same stacked structure. Missing/invalid ratios with video use a visible 16:9 fallback; missing media uses a compact text/icon card. No creative inference from the icon or playback resize is used.
+`FullSizeSdkAdCard` reads the loaded SDK `mediaContent.aspectRatio` before rendering media. `utils/nativeAdLayout.ts` selects portrait below 0.9, landscape above 1.1, and square between. Portrait normally uses a 47%-width media column beside the supplied icon, title, body and CTA (B); landscape uses full-width media followed by identity/CTA and body (H2). Square uses the same stacked structure. Missing/invalid ratios with video use a visible 16:9 fallback; missing media uses a compact text/icon card. No creative inference from the icon or playback resize is used.
 
 Feed ad wrappers have no fixed row height. The media frame has explicit dimensions, capped at 420 points high and at least 120 points in each dimension on supported screens. Narrow screens and large font scales use stacked portrait content. Width changes are measured by the card without replacing its SDK ad instance. Ordinary known ratios retain their proportions; extreme ratios are bounded and contained. Padding baked into a creative or unknown video proportions can still leave space.
 
