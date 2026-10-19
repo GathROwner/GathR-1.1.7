@@ -25,6 +25,8 @@ import {
 import { useRouter, useNavigation, usePathname } from 'expo-router';
 import * as Application from 'expo-application';
 import Constants from 'expo-constants';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { UpdateRequiredNotice } from '../components/common/UpdateRequiredNotice';
 import * as Updates from 'expo-updates';
 import { auth, firestore, storage } from '../config/firebaseConfig';
 import { doc, getDoc, setDoc, updateDoc, deleteDoc, addDoc, collection, query, where, getDocs, serverTimestamp } from 'firebase/firestore';
@@ -730,6 +732,7 @@ const FacebookPageSubmission = React.forwardRef<View, FacebookPageSubmissionProp
 
 export default function ProfileScreen() {
   // State variables
+  const [showUpdateNoticePreview, setShowUpdateNoticePreview] = useState(false);
   const [displayName, setDisplayName] = useState('');
   const [email, setEmail] = useState('');
   const [photoURL, setPhotoURL] = useState('');
@@ -1508,6 +1511,10 @@ const handleLogout = async () => {
           text: 'Copy',
           onPress: () => Clipboard.setString(APP_VERSION_DETAILS),
         },
+        ...((__DEV__ || APP_UPDATE_CHANNEL === 'preview') ? [{
+          text: 'Preview update notice',
+          onPress: () => setShowUpdateNoticePreview(true),
+        }] : []),
         { text: 'Done', style: 'cancel' },
       ]
     );
@@ -1876,6 +1883,19 @@ const handleLogout = async () => {
       
       {/* Native-stack Profile sits above the root overlay on iOS. */}
       <ProfileTutorialOverlayHost hostRef={profileTutorialOverlayHostRef} />
+
+      {(__DEV__ || APP_UPDATE_CHANNEL === 'preview') && <Modal
+        visible={showUpdateNoticePreview} animationType="fade" presentationStyle="fullScreen"
+        onRequestClose={() => setShowUpdateNoticePreview(false)}>
+        <SafeAreaProvider>
+          <StatusBar barStyle="dark-content" />
+          <UpdateRequiredNotice installedVersion={Application.nativeApplicationVersion || '1.1.10'}
+            minimumVersion="1.1.20" platform={Platform.OS === 'android' ? 'android' : 'ios'}
+            onUpdate={() => Alert.alert('Preview only', 'The real Update GathR button opens this app’s store page. This preview does not require an update.')}
+            onRetry={() => setShowUpdateNoticePreview(false)}
+            onPreviewClose={() => setShowUpdateNoticePreview(false)} />
+        </SafeAreaProvider>
+      </Modal>}
 
       <Modal
         visible={showAccountModal}
