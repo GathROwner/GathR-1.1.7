@@ -5635,10 +5635,10 @@ const styles = StyleSheet.create({
     paddingBottom: 0,
     overflow: 'hidden',
     position: 'relative',
-    borderRadius: 18,
+    borderRadius: 16,
     borderWidth: 1,
     borderColor: 'rgba(0, 0, 0, 0.08)',
-    marginHorizontal: 2,
+    marginHorizontal: 0,
     marginBottom: 6,
     // Modern floating shadow
     shadowColor: '#000',
@@ -5663,9 +5663,9 @@ const styles = StyleSheet.create({
     width: '100%',
     height: 200,
     backgroundColor: '#F5F5F5',
-    borderRadius: 14,
-    borderWidth: 2,
-    borderColor: 'rgba(255, 255, 255, 0.8)', // Glass-like white border
+    borderRadius: 12,
+    borderWidth: 3,
+    borderColor: '#FFFFFF', // Match the thin photo frame in Events and Specials.
     // Premium floating shadow
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 6 },
@@ -5742,7 +5742,7 @@ const styles = StyleSheet.create({
   heroImageContainer: {
     backgroundColor: 'rgba(255, 255, 255, 0.5)', // Soft glass frame
     borderRadius: 16,
-    padding: 5,
+    padding: 0,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.12,
