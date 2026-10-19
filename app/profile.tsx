@@ -27,6 +27,7 @@ import * as Application from 'expo-application';
 import Constants from 'expo-constants';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { UpdateRequiredNotice } from '../components/common/UpdateRequiredNotice';
+import { useAppStoreLink } from '../hooks/useAppStoreLink';
 import * as Updates from 'expo-updates';
 import { auth, firestore, storage } from '../config/firebaseConfig';
 import { doc, getDoc, setDoc, updateDoc, deleteDoc, addDoc, collection, query, where, getDocs, serverTimestamp } from 'firebase/firestore';
@@ -733,6 +734,8 @@ const FacebookPageSubmission = React.forwardRef<View, FacebookPageSubmissionProp
 export default function ProfileScreen() {
   // State variables
   const [showUpdateNoticePreview, setShowUpdateNoticePreview] = useState(false);
+  const { storeError: updateNoticeStoreError, openStore: openUpdateNoticeStore, resetStoreError: resetUpdateNoticeStoreError } =
+    useAppStoreLink(Platform.OS === 'android' ? 'android' : 'ios');
   const [displayName, setDisplayName] = useState('');
   const [email, setEmail] = useState('');
   const [photoURL, setPhotoURL] = useState('');
@@ -1513,7 +1516,10 @@ const handleLogout = async () => {
         },
         ...((__DEV__ || APP_UPDATE_CHANNEL === 'preview') ? [{
           text: 'Preview update notice',
-          onPress: () => setShowUpdateNoticePreview(true),
+          onPress: () => {
+            resetUpdateNoticeStoreError();
+            setShowUpdateNoticePreview(true);
+          },
         }] : []),
         { text: 'Done', style: 'cancel' },
       ]
@@ -1891,7 +1897,8 @@ const handleLogout = async () => {
           <StatusBar barStyle="dark-content" />
           <UpdateRequiredNotice installedVersion={Application.nativeApplicationVersion || '1.1.10'}
             minimumVersion="1.1.20" platform={Platform.OS === 'android' ? 'android' : 'ios'}
-            onUpdate={() => Alert.alert('Preview only', 'The real Update GathR button opens this app’s store page. This preview does not require an update.')}
+            storeError={updateNoticeStoreError}
+            onUpdate={() => { void openUpdateNoticeStore(); }}
             onRetry={() => setShowUpdateNoticePreview(false)}
             onPreviewClose={() => setShowUpdateNoticePreview(false)} />
         </SafeAreaProvider>

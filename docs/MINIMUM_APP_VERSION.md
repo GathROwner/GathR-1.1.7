@@ -6,7 +6,7 @@ GathR can show an update-required notice on opening or returning to the foregrou
 
 The initial policy in `config/minimum-versions.disabled.json` targets 1.1.20 but disables enforcement and store availability for **both** platforms. Only a non-development native installation on the `production` update channel reads/enforces the live policy. Preview, development and web cannot be blocked by it. Production publication and activation are separate release decisions and remain held.
 
-In Preview: open Profile, tap the version footer, then **Preview update notice**. This opens the actual shared notice with a clear Preview banner and close button. Update explains its real action without opening the store; Check again returns to Profile. This is a design demonstration, not evidence of a real Production lock or successful store installation.
+In Preview: open Profile, tap the version footer, then **Preview update notice**. This opens the actual shared notice with a clear Preview banner and close button. Update now opens the actual platform store listing using the same handoff as the real gate. Return to GathR to close the notice; Check again also returns to Profile. Opening the listing does not install an update. This verifies the store handoff when confirmed on a phone, not a real Production lock or successful store installation. The initial OTA01a15451 used an explanatory alert instead; see the [subsequent handoff record](qa/update-store-handoff-20261019/README.md).
 
 ## Public policy
 
