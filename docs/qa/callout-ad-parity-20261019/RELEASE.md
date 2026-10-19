@@ -24,8 +24,10 @@ Normal SDK-backed callout ads in Events and Specials now reuse the exact accepte
 - Fingerprint 9ee0b973a2f53ed5647ccafe1599ef64f1580ffb unchanged; compatible-build fingerprint advisory remains separate from runtime compatibility/device adoption.
 - No map operation/testing, device/emulator manipulation, native/dependency/config/runtime change, backend/live-data mutation, paid build, Android or Production publication. Production remains held.
 
-## Phone check pending
+## Phone feedback and remaining check
 
 Close/reopen Preview twice if needed and confirm OTA01a153df. Craig should check normal ads within both callout tabs: portrait versus horizontal formatting, Sponsored placement, margins, playback/controls, scrolling and switching venue/tab. Native callout stability and adoption remain pending his observation. The pre-mode skeleton and explicitly non-SDK emergency fallback are not evidence of an SDK ad or its playback.
+
+October 19 follow-up: Craig reported, "Alright those are looking good. I haven't seen a split ad yet, but the rest laid and fit nicely". This accepts the observed non-split callout layouts as the working baseline. Split portrait callout layout is still awaiting a real ad on his phone. This is user-reported layout acceptance after the publication above, not an independent Profile update-ID capture or explicit confirmation of every playback/scroll/venue-switch case. It supersedes the earlier blanket layout-pending status without claiming the remaining checks passed. No runtime change or new OTA accompanies this feedback checkpoint; Production remains held.
 
 Raw checks/render harness/readbacks/metrics: ignored artifacts/callout-ad-parity-20261019/.
