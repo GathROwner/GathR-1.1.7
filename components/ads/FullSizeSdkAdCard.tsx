@@ -58,6 +58,12 @@ export default function FullSizeSdkAdCard({ nativeAd, loading, allowMedia = true
       style={[styles.mediaView, { aspectRatio: undefined }]} resizeMode="contain"
     />
   </View> : null;
+  const disclosure = <View testID="native-ad-disclosure"
+    style={[styles.disclosureRow, layout.split && styles.portraitDisclosure]}>
+    <View style={[styles.badge, { backgroundColor: colors.badgeBackground, borderColor: colors.badgeBorder }]}>
+      <Text style={[styles.badgeText, { color: colors.badgeText }]}>Sponsored</Text>
+    </View>
+  </View>;
 
   // Fabric's SDK view positions its own contentView using padding/border insets.
   // Keep decoration on a regular View so child coordinates are not inset twice.
@@ -67,14 +73,11 @@ export default function FullSizeSdkAdCard({ nativeAd, loading, allowMedia = true
     <NativeAdView nativeAd={nativeAd} style={styles.sdkView}
       testID={`native-ad-card-${layout.split ? 'portrait' : layout.kind}`}>
     {/* Reserve the opposite corner for the SDK-owned AdChoices overlay. */}
-    <View style={styles.disclosureRow}>
-      <View style={[styles.badge, { backgroundColor: colors.badgeBackground, borderColor: colors.badgeBorder }]}>
-        <Text style={[styles.badgeText, { color: colors.badgeText }]}>Sponsored</Text>
-      </View>
-    </View>
+    {!layout.split && disclosure}
     {layout.split ? <View style={styles.splitRow}>
       {media}
       <View style={[styles.splitDetails, { minHeight: layout.mediaHeight }]}>
+        {disclosure}
         {icon}{title}{advertiserText}
         {description && <View style={styles.portraitBody}>{description}</View>}
         {action && <View style={styles.portraitAction}>{action}</View>}
@@ -98,13 +101,14 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 1 }, shadowRadius: 4, elevation: 3 },
   sdkView: { width: '100%' },
   disclosureRow: { minHeight: 18, paddingRight: 24, marginBottom: 8, alignItems: 'flex-start' },
+  portraitDisclosure: { position: 'absolute', top: 0, left: 0, right: 0, marginBottom: 0 },
   badge: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, borderWidth: 1 },
   badgeText: { fontSize: 10, lineHeight: 12, fontWeight: '500', letterSpacing: 0.2 },
   media: { borderRadius: 10, overflow: 'hidden', alignSelf: 'center' },
   mediaView: { width: '100%', height: '100%' },
   stackedMedia: { alignItems: 'center', marginBottom: 8 },
   splitRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
-  splitDetails: { flex: 1, minWidth: 0, justifyContent: 'center' },
+  splitDetails: { flex: 1, minWidth: 0, justifyContent: 'center', paddingTop: 26 },
   portraitIcon: { marginRight: 0, marginBottom: 8 },
   portraitBody: { marginTop: 8 },
   portraitAction: { marginTop: 12 },

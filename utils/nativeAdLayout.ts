@@ -22,7 +22,8 @@ export function getNativeAdMediaLayout({ cardWidth, aspectRatio, hasMediaContent
   const ratio = knownRatio ? aspectRatio : 16 / 9;
   const minimum = Math.min(120, innerWidth);
   const mediaWidth = kind === 'portrait'
-    ? Math.min(innerWidth, Math.max(minimum, split ? Math.min(innerWidth * 0.43, 220) : Math.min(innerWidth, 420 * ratio)))
+    // Reclaim the former full-width disclosure row without stretching the video.
+    ? Math.min(innerWidth, Math.max(minimum, split ? Math.min(innerWidth * 0.47, 220) : Math.min(innerWidth, 420 * ratio)))
     : innerWidth;
   // Contain extreme creatives inside a bounded frame rather than stretching.
   // Ordinary 9:16/16:9 creatives fit exactly; unknown video ratios stay visible.
