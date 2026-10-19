@@ -67,3 +67,5 @@ Use this document plus the branch's newest accepted release as the starting poin
 ## Current Preview iteration - adaptive feed ads
 
 October 18: Craig selected portrait B and landscape H2 and requested iOS Preview. The additive implementation preserves the accepted feed/save behavior above; Production remains on hold. See [adaptive ad QA](qa/ad-layout-20261018/README.md) and its release record for the latest source and OTA identifiers. Native SDK playback and phone adoption require the Preview device check; the reviewed React Native Web fixture screenshot proves component layout only.
+
+Latest iOS Preview publication for that iteration: source e751ef5ee4590efafc67d069567b7b3239e2aa13, OTA01a151c6 (group 10d4cedd-4365-45e6-9ffc-1d6673e648ac), runtime 1.1.10, confirmed newest by EAS readback. [Release evidence](qa/ad-layout-20261018/RELEASE.md). Phone acceptance pending; selected layouts are not yet a user-confirmed device baseline. Continue additively from this source while retaining all earlier accepted work.
