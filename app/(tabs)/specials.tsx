@@ -3220,7 +3220,7 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     borderWidth: 1,
     borderColor: '#DDE1E7',
-    marginHorizontal: 6,
+    marginHorizontal: 0,
     marginBottom: 10,
     ...(Platform.OS === 'android' ? {
       elevation: 0,

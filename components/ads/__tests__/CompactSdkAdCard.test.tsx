@@ -69,7 +69,7 @@ it('measures the callout width during the skeleton and retains it for the shared
   const frame = tree!.root.findByProps({ testID: 'native-ad-media-frame' });
   const size = StyleSheet.flatten(frame.props.style);
   expect(size.width / size.height).toBeCloseTo(9 / 16);
-  expect(size.width).toBeCloseTo((342 - 18) * 0.47);
+  expect(size.width).toBeCloseTo((342 - 8) * 0.47);
   const disclosure = tree!.root.findByProps({ testID: 'native-ad-disclosure' });
   expect(StyleSheet.flatten(disclosure.props.style).position).toBe('absolute');
   expect(mockMounts).toEqual([nativeAd]);

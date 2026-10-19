@@ -63,7 +63,7 @@ it('measures the actual row width without replacing its ad or media instance', (
   act(() => cardFrame().props.onLayout({ nativeEvent: { layout: { width: 600 } } }));
   expect(mediaNode()).toBe(originalMedia);
   expect(tree.root.findByType('sdk-ad-view' as any).props.nativeAd).toBe(nativeAd);
-  expect(StyleSheet.flatten(frame().props.style).width).toBe(582);
+  expect(StyleSheet.flatten(frame().props.style).width).toBe(592);
 });
 it('uses compact content instead of an oversized icon hero when media is absent or disabled', () => {
   mount({ ...ad(0, false), mediaContent: null });
@@ -89,7 +89,7 @@ it.each([9 / 16, 16 / 9, 0])('keeps Fabric SDK content insets empty while decora
   for (const key of ['padding', 'paddingHorizontal', 'paddingVertical', 'borderWidth', 'borderLeftWidth', 'borderRightWidth']) {
     expect(sdkStyle[key]).toBeUndefined();
   }
-  expect(StyleSheet.flatten(cardFrame().props.style)).toMatchObject({ padding: 8, borderWidth: 1 });
+  expect(StyleSheet.flatten(cardFrame().props.style)).toMatchObject({ paddingVertical: 8, paddingHorizontal: 3, borderWidth: 1 });
   expect(cardFrame().findByType('sdk-ad-view' as any)).toBe(sdk);
   expect(sdk.findAllByType('sdk-media' as any)).toHaveLength(1);
   expect(sdk.findAllByType('sdk-asset' as any)).toHaveLength(5);

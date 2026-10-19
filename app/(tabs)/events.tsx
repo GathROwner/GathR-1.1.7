@@ -3031,10 +3031,9 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   adContainer: {
-    // marginHorizontal removed - inner component already has margins
+    // The shared card owns its border; keep media insets equal across both lists.
     marginBottom: 12,
     borderRadius: 16,
-    borderWidth: 2,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.08,
@@ -3164,7 +3163,7 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     borderWidth: 1,
     borderColor: '#DDE1E7',
-    marginHorizontal: 6,
+    marginHorizontal: 0,
     marginBottom: 10,
     ...(Platform.OS === 'android' ? {
       elevation: 0,

@@ -6,7 +6,7 @@ it('fits landscape and square media without changing their proportions', () => {
     const layout = getNativeAdMediaLayout({ ...media, aspectRatio: ratio });
     expect(layout.split).toBe(false);
     expect(layout.mediaWidth / layout.mediaHeight).toBeCloseTo(ratio);
-    expect(layout.mediaWidth).toBe(356);
+    expect(layout.mediaWidth).toBe(366);
   }
 });
 it('uses the portrait split while preserving standard portrait proportions', () => {
@@ -16,7 +16,7 @@ it('uses the portrait split while preserving standard portrait proportions', () 
     expect(layout.split).toBe(true);
     expect(layout.mediaWidth / layout.mediaHeight).toBeCloseTo(ratio);
     expect(layout.mediaWidth).toBeGreaterThanOrEqual(120);
-    expect(layout.mediaWidth).toBeLessThan(356 / 2);
+    expect(layout.mediaWidth).toBeLessThan(366 / 2);
   }
 });
 it.each([0, -1, NaN, Infinity, undefined])('keeps video visible with unavailable ratio %s', aspectRatio => {
@@ -42,7 +42,7 @@ it('stacks narrow and enlarged-text portrait cards and bounds extreme media', ()
   }
   for (const ratio of [0.01, 0.2, 10, 100]) {
     const layout = getNativeAdMediaLayout({ ...media, aspectRatio: ratio });
-    expect(layout.mediaWidth).toBeLessThanOrEqual(356);
+    expect(layout.mediaWidth).toBeLessThanOrEqual(366);
     expect(layout.mediaHeight).toBeGreaterThanOrEqual(120);
     expect(layout.mediaHeight).toBeLessThanOrEqual(420);
   }
