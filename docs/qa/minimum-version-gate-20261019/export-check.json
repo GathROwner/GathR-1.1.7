@@ -1,0 +1,42 @@
+{
+  "sourceCommit": "ebc3eac1b11e224961e17cb584c567565188f4a4",
+  "platform": "ios",
+  "runtime": "1.1.10",
+  "bundle": {
+    "bytes": 5756532,
+    "sha256": "77bfd6b6527223b10ce3d3036b2de1674bc6e206633f821bcd59d4aa001bbb89",
+    "sourceMapSources": 2473
+  },
+  "matchedBundledSources": [
+    "app/_layout.tsx",
+    "app/profile.tsx",
+    "utils/minimumAppVersion.ts",
+    "services/minimumAppVersionPolicy.ts",
+    "hooks/useMinimumAppVersion.ts",
+    "components/common/MinimumAppVersionGate.tsx",
+    "components/common/UpdateRequiredNotice.tsx",
+    "components/common/GathrWordmarkLogo.tsx",
+    "components/map/MapBrandWordmark.tsx",
+    "components/map/MapLogoBackdrop.tsx",
+    "app/(tabs)/events.tsx",
+    "app/(tabs)/specials.tsx",
+    "hooks/useEventPreferenceFlags.ts",
+    "utils/venueFeedGroups.ts",
+    "utils/systemInsets.ts",
+    "utils/mapScaleBarLayout.ts",
+    "components/common/VenueEventRow.tsx",
+    "components/map/EventImageLightbox.tsx",
+    "types/social.ts",
+    "components/ads/FullSizeSdkAdCard.tsx",
+    "utils/nativeAdLayout.ts",
+    "hooks/useDeferredSavedRanking.ts",
+    "components/ads/CompactSdkAdCard.tsx",
+    "components/map/EventCallout.tsx",
+    "components/ads/CompactNativeAdComponent.tsx",
+    "hooks/useNativeAds.ts",
+    "store/adPoolStore.ts"
+  ],
+  "assets": 108,
+  "allAssetBytesEqualToAcceptedBaseline": true,
+  "unexpectedQaSources": []
+}

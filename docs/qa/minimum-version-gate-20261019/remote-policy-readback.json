@@ -1,0 +1,22 @@
+{
+  "verifiedAt": "2026-10-19T13:19:01.359Z",
+  "status": 200,
+  "anonymous": true,
+  "exactClientUrl": true,
+  "cacheControl": "no-cache,max-age=0,must-revalidate",
+  "policy": {
+    "schemaVersion": 1,
+    "ios": {
+      "enabled": false,
+      "storeReleaseAvailable": false,
+      "minimumVersion": "1.1.20",
+      "minimumOSVersion": "15.1"
+    },
+    "android": {
+      "enabled": false,
+      "storeReleaseAvailable": false,
+      "minimumVersion": "1.1.20",
+      "minimumApiLevel": 24
+    }
+  }
+}
