@@ -4,9 +4,10 @@ This directory contains the native ad display components for GathR.
 
 ## Components
 
-- **FullSizeSdkAdCard.tsx** - Adaptive Events/Specials feed card: portrait B split layout, landscape H2 media-first layout, square/media-free fallbacks. Loaded rows size to their content.
+- **FullSizeSdkAdCard.tsx** - Shared adaptive card for lists and normal SDK-backed callout ads: portrait B split layout, landscape H2 media-first layout, square/media-free fallbacks. Loaded cards size to their content.
+- **CompactSdkAdCard.tsx** - Callout-specific native mount safeguard around FullSizeSdkAdCard; iOS waits two frames plus 60ms for the current ad object.
 - **NativeAdComponent.tsx** - Other native ad card surfaces (200px media height)
-- **CompactNativeAdComponent.tsx** - Compact native ad card for callouts (200px media height)
+- **CompactNativeAdComponent.tsx** - Legacy non-SDK emergency fallback and pre-mode callout placeholder; its native wrapper/media suppression remains unchanged.
 
 ## Architecture Overview
 
