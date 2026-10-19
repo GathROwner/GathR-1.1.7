@@ -156,7 +156,7 @@ import {
 import * as Haptics from 'expo-haptics';
 
 // Import for lazy-loading venue details
-import { fetchVenueDetailsByName, VenueContactInfo } from '../../lib/api/firestoreEvents';
+import { fetchVenueDetails, fetchVenueDetailsByName, VenueContactInfo } from '../../lib/api/firestoreEvents';
 
 // Import ad components and hooks
 import useNativeAds from '../../hooks/useNativeAds';
@@ -1436,7 +1436,12 @@ const VenueInfoContent: React.FC<VenueInfoProps> = ({ venue }) => {
 
       setIsLoadingContact(true);
       try {
-        const details = await fetchVenueDetailsByName(venue.venue);
+        const venueIds = Array.from(new Set(
+          venue.events.map(event => event.venueId?.trim()).filter((id): id is string => Boolean(id))
+        ));
+        const details = venueIds.length === 1
+          ? await fetchVenueDetails(venueIds[0])
+          : await fetchVenueDetailsByName(venue.venue);
         setFetchedContactInfo(details);
       } catch (error) {
         console.error('[VenueInfoContent] Error fetching venue details:', error);
@@ -1447,7 +1452,7 @@ const VenueInfoContent: React.FC<VenueInfoProps> = ({ venue }) => {
     };
 
     loadVenueDetails();
-  }, [venue.venue, cachedContactInfo, hasFetched]);
+  }, [venue.venue, venue.events, cachedContactInfo, hasFetched]);
 
   // Merge cached and fetched contact info (fetched takes priority for missing fields)
   const venueContactInfo = useMemo(() => {
@@ -4826,7 +4831,10 @@ useEffect(() => {
             )}
             
             {activeTab === 'venue' && (
-              <VenueInfoContent venue={activeVenue} />
+              <VenueInfoContent
+                key={JSON.stringify([activeVenue.locationKey, activeVenue.venue, activeVenue.address])}
+                venue={activeVenue}
+              />
             )}
             
             {/* bottom spacer replaced by dynamic paddingBottom */}

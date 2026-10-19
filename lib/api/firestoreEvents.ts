@@ -637,47 +637,52 @@ export async function fetchVenueDetails(venueId: string): Promise<VenueContactIn
 }
 
 /**
- * Fetch venue details by venue name (searches all venues).
+ * Fetch venue details by exact venue name (searches all venue pages).
  */
 export async function fetchVenueDetailsByName(
   venueName: string
 ): Promise<VenueContactInfo | null> {
+  const venueNameLower = venueName.trim().toLowerCase();
+  if (!venueNameLower) return null;
+
   try {
-    const url = `${FIRESTORE_API_BASE}/venues`;
 
     if (DEBUG_FIRESTORE) {
       console.log(`[Firestore][fetchVenueDetailsByName] Searching for venue: ${venueName}`);
     }
 
     const t0 = Date.now();
-    const response = await fetch(url);
+    let nextPageToken: string | undefined;
+    const seenPageTokens = new Set<string>();
+    const matches = new Map<string, any>();
+    do {
+      const cursor = nextPageToken ? `&startAfter=${encodeURIComponent(nextPageToken)}` : '';
+      const response = await fetch(`${FIRESTORE_API_BASE}/venues?limit=100${cursor}`);
+      if (!response.ok) return null;
 
-    if (!response.ok) {
-      return null;
-    }
+      const data = await response.json();
+      const venues = data.venues || data;
+      if (!Array.isArray(venues)) return null;
 
-    const data = await response.json();
-    const venues = data.venues || data;
+      for (const venue of venues) {
+        // Empty names and substring matches must never supply another venue's links.
+        const names = [venue.pagename, venue.title].filter(
+          (name): name is string => typeof name === 'string' && Boolean(name.trim())
+        );
+        if (names.some(name => name.trim().toLowerCase() === venueNameLower)) {
+          matches.set(venue.id || JSON.stringify(venue), venue);
+        }
+      }
 
-    if (!Array.isArray(venues)) {
-      console.error('[Firestore] Unexpected venues response format:', typeof venues);
-      return null;
-    }
+      nextPageToken = data.nextPageToken || undefined;
+      if (nextPageToken) {
+        if (seenPageTokens.has(nextPageToken)) return null;
+        seenPageTokens.add(nextPageToken);
+      }
+    } while (nextPageToken);
 
-    const venueNameLower = venueName.toLowerCase();
-    const matchedVenue = venues.find((v: any) => {
-      const pagename = (v.pagename || '').toLowerCase();
-      const title = (v.title || '').toLowerCase();
-
-      return (
-        pagename === venueNameLower ||
-        title === venueNameLower ||
-        pagename.includes(venueNameLower) ||
-        title.includes(venueNameLower) ||
-        venueNameLower.includes(pagename) ||
-        venueNameLower.includes(title)
-      );
-    });
+    // Ambiguous names need a stronger identity before exposing contact links.
+    const matchedVenue = matches.size === 1 ? matches.values().next().value : null;
 
     if (!matchedVenue) {
       if (DEBUG_FIRESTORE) {
