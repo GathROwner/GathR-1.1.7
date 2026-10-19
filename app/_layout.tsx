@@ -53,6 +53,7 @@ import CheckInReadinessObserver from '../components/social/CheckInReadinessObser
 import { preloadStartupLocation } from '../utils/startupLocationCache';
 import { GATHR_MAPBOX_STYLE_URL, initializeMapboxAccessToken } from '../utils/mapboxAccessToken';
 import { SOCIAL_FEATURE_ENABLED } from '../types/social';
+import { MinimumAppVersionGate } from '../components/common/MinimumAppVersionGate';
 import { isAuthenticatedSocialRoute } from '../utils/authenticatedAppRoute';
 import {
   EVENTS_PERSIST_MAX_AGE_MS,
@@ -500,6 +501,7 @@ try {
 >
         <AuthProvider>
            <MainNavigator />
+           <MinimumAppVersionGate />
         </AuthProvider>
       </PersistQueryClientProvider>
       </ShareIntentProvider>
