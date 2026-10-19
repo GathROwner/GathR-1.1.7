@@ -189,3 +189,7 @@ Keep padding/border decoration on the ordinary outer card View, not NativeAdView
 ### Portrait disclosure relocation (October 19)
 
 Split portrait cards now place Sponsored above the right-hand details, freeing the full-width top row for video. Media width is 47% (previously 43%), preserving the SDK ratio while adding about 25 points of height for a standard 374-point card / 9:16 creative. The details column reserves top clearance and AdChoices keeps its top-right corner. Stacked/landscape fallbacks retain their disclosure row. See [rendered comparison and scope](../../docs/qa/ad-disclosure-20261019/README.md). Callout components remain separate and await parity work.
+
+### Callout formatting parity (October 19)
+
+Normal callout SDK ads now use CompactSdkAdCard only for the iOS two-frame + 60ms mount safeguard, then render the exact FullSizeSdkAdCard shared with the lists. Readiness belongs to the current NativeAd object; replacements and unmount cancel pending attachment. The shared loading skeleton measures width before attachment without a hidden SDK view. Portrait B, landscape H2, corrected spacing and right-column Sponsored now stay in sync. EventCallout and its explicitly non-SDK emergency fallback remain unchanged. [Callout parity QA and limits](../../docs/qa/callout-ad-parity-20261019/README.md).
