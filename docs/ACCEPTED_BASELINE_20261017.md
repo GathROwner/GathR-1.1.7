@@ -62,3 +62,7 @@ Nothing in this checkpoint starts new implementation or monitoring.
 - Root AGENTS.md contains historical SDK 52 guidance; actual app is SDK 54. Verify current package/config rather than treating historical version statements as current.
 
 Use this document plus the branch's newest accepted release as the starting point for the next additive request.
+
+## Current Preview iteration - adaptive feed ads
+
+October 18: Craig selected portrait B and landscape H2 and requested iOS Preview. The additive implementation preserves the accepted feed/save behavior above; Production remains on hold. See [adaptive ad QA](qa/ad-layout-20261018/README.md) and its release record for the latest source and OTA identifiers. Native SDK playback and phone adoption require the Preview device check; the reviewed React Native Web fixture screenshot proves component layout only.

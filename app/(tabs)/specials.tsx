@@ -56,7 +56,7 @@ import CategoryFilterOptions from '../../components/map/CategoryFilterOptions';
 import EventImageLightbox from '../../components/map/EventImageLightbox';
 import VenueEventRow, { VENUE_FEED_HERO_HEIGHT } from '../../components/common/VenueEventRow';
 import { createVenueFeedGrouping, getVenueFeedKey, type VenueFeedGroup } from '../../utils/venueFeedGroups';
-import FullSizeSdkAdCard, { FULL_SIZE_SDK_AD_ROW_HEIGHT } from '../../components/ads/FullSizeSdkAdCard';
+import FullSizeSdkAdCard from '../../components/ads/FullSizeSdkAdCard';
 import { AdColors } from '../../constants/AdTheme';
 
 // Import utilities
@@ -3058,7 +3058,6 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   adContainer: {
-    height: FULL_SIZE_SDK_AD_ROW_HEIGHT,
     marginBottom: 12, // Changed from borderBottomWidth to margin
     borderRadius: 16,
     overflow: 'hidden',
