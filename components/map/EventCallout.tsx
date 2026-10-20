@@ -156,7 +156,7 @@ import {
 import * as Haptics from 'expo-haptics';
 
 // Import for lazy-loading venue details
-import { fetchVenueDetails, fetchVenueDetailsByName, VenueContactInfo } from '../../lib/api/firestoreEvents';
+import { fetchVenueDetails, fetchVenueDetailsByName, normalizeVenueInstagramUrl, VenueContactInfo } from '../../lib/api/firestoreEvents';
 
 // Import ad components and hooks
 import useNativeAds from '../../hooks/useNativeAds';
@@ -1410,7 +1410,7 @@ const VenueInfoContent: React.FC<VenueInfoProps> = ({ venue }) => {
         return {
           website: event.venueWebsite,
           facebook: event.venueFacebookUrl,
-          instagram: event.venueInstagramUrl,
+          instagram: normalizeVenueInstagramUrl(event.venueInstagramUrl),
           phone: event.venuePhone,
           rating: event.venueRating,
           // Note: profileImage is NOT cached from events - it comes from fetched venue details only
@@ -1460,7 +1460,7 @@ const VenueInfoContent: React.FC<VenueInfoProps> = ({ venue }) => {
     return {
       website: cachedContactInfo?.website || fetchedContactInfo?.website,
       facebook: cachedContactInfo?.facebook || fetchedContactInfo?.facebook,
-      instagram: cachedContactInfo?.instagram || fetchedContactInfo?.instagram,
+      instagram: cachedContactInfo?.instagram || normalizeVenueInstagramUrl(fetchedContactInfo?.instagram),
       phone: cachedContactInfo?.phone || fetchedContactInfo?.phone,
       email: fetchedContactInfo?.email,
       rating: cachedContactInfo?.rating || fetchedContactInfo?.rating,
