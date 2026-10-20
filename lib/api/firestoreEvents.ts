@@ -435,7 +435,7 @@ export function normalizeFirestoreEvent(fsEvent: FirestoreEvent): Event {
     venuePhone:
       venueRecord?.placeDetailsParsed?.international_phone_number || venueRecord?.phone || '',
     venueFacebookUrl: venueRecord?.facebookUrl || '',
-    venueInstagramUrl: venueRecord?.instagramUrl || '',
+    venueInstagramUrl: normalizeVenueInstagramUrl(venueRecord?.instagramUrl) || '',
     venueCategories: venueRecord?.categories || (venueRecord?.category1 ? [venueRecord.category1] : []),
     sharedEventProvenance: sharedEventProvenanceForCurrentUser(fsEvent),
   };
@@ -576,6 +576,22 @@ export async function fetchFirestoreEventDetailsBatch(
   return responses.filter((event): event is Event => Boolean(event));
 }
 
+/** Only actual Instagram web destinations belong on the venue Instagram action. */
+export function normalizeVenueInstagramUrl(value: unknown): string | undefined {
+  if (typeof value !== 'string' || !value.trim()) return undefined;
+  const candidate = value.trim();
+  try {
+    const url = new URL(candidate);
+    if (url.protocol !== 'https:' && url.protocol !== 'http:') return undefined;
+    if (!['instagram.com', 'www.instagram.com', 'm.instagram.com'].includes(url.hostname.toLowerCase())) {
+      return undefined;
+    }
+    return candidate;
+  } catch {
+    return undefined;
+  }
+}
+
 /**
  * Venue contact info structure returned by fetchVenueDetails.
  */
@@ -624,7 +640,7 @@ export async function fetchVenueDetails(venueId: string): Promise<VenueContactIn
     return {
       website: venue.website || venue.placeDetailsParsed?.website || undefined,
       facebook: venue.facebookUrl || undefined,
-      instagram: venue.instagramUrl || undefined,
+      instagram: normalizeVenueInstagramUrl(venue.instagramUrl),
       phone: venue.placeDetailsParsed?.international_phone_number || venue.phone || undefined,
       email: venue.email || undefined,
       rating: venue.placeDetailsParsed?.rating ?? venue.rating ?? undefined,
@@ -700,7 +716,7 @@ export async function fetchVenueDetailsByName(
     return {
       website: matchedVenue.website || matchedVenue.placeDetailsParsed?.website || undefined,
       facebook: matchedVenue.facebookUrl || undefined,
-      instagram: matchedVenue.instagramUrl || undefined,
+      instagram: normalizeVenueInstagramUrl(matchedVenue.instagramUrl),
       phone:
         matchedVenue.placeDetailsParsed?.international_phone_number ||
         matchedVenue.phone ||
