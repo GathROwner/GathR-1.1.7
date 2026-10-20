@@ -1,5 +1,8 @@
 # Map Callout Production Bug Handoff
 
+## Venue contact links release - October 20, 2026
+
+Retain functional commit **fb86603** and its venue-ID lookup, exact-name fallback, and selected-venue contact-state reset in later frontend releases. Published iOS Preview OTA **01a156a0** at runtime **1.1.10**; group **408a28d2-8ad8-4126-b616-7a0a6311b0de**. Server delivery verified; phone adoption and the native Brakish tap/switch sequence remain unverified after a QEMU crash. The complete receipt, 566-record global audit, validation limits and rollback reference are in [the venue-contact release handoff](qa/venue-contact-links-20261020/RELEASE.md). This note concerns contact destinations; the historical callout timing investigation below is separate.
 ## Current Status
 
 This bug is not resolved.
