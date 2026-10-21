@@ -273,6 +273,95 @@ describe('ContextualCheckInControl', () => {
     expect(bindCheckInReadiness).not.toHaveBeenCalled();
   });
 
+  it('resumes public-place discovery when confirmation arrives after the initial wait', async () => {
+    makeReady(90);
+    const receipt = useCheckInReadinessStore.getState().receipt!;
+    useCheckInReadinessStore.setState({ receipt: { ...receipt, placeQualifyingMs: 80_000 } });
+    (discoverNearbyCheckInPlaces as jest.Mock).mockResolvedValue({ candidates: [
+      { ...publicPlace('external-cafe', 'Nearby cafe'), type: 'external_place' },
+    ] });
+    await search();
+    expect(discoverNearbyCheckInPlaces).not.toHaveBeenCalled();
+    await act(async () => { jest.advanceTimersByTime(12_000); });
+    expect(discoverNearbyCheckInPlaces).not.toHaveBeenCalled();
+    expect(byId('continue-public-check-in').props.disabled).toBe(true);
+    // A later, accurate stationary fix and server receipt complete the same session.
+    const before = useCheckInReadinessStore.getState();
+    await act(async () => useCheckInReadinessStore.setState({
+      evidence: advanceReadiness(before.evidence, { latitude: 46.23501, longitude: -63.12901,
+        accuracyMeters: 14, speedMetersPerSecond: 0.2, capturedAtMs: Date.now() }, Date.now()),
+      receipt: { ...receipt, expiresAtMs: Date.now() + 20_000 },
+    }));
+    expect(discoverNearbyCheckInPlaces).toHaveBeenCalledTimes(1);
+    expect(discoverNearbyCheckInPlaces).toHaveBeenCalledWith(expect.objectContaining({
+      capturedAtMs: Date.now(), accuracyMeters: 14,
+    }));
+    expect(placeRow('Nearby cafe').props.accessibilityState.selected).toBe(false);
+    expect(byId('continue-public-check-in').props.disabled).toBe(true);
+    expect(mockPush).not.toHaveBeenCalled();
+    expect(bindCheckInReadiness).not.toHaveBeenCalled();
+  });
+
+  it('shows Confirming instead of Ready while the public-place search lacks a server receipt', async () => {
+    makeReady(90);
+    const receipt = useCheckInReadinessStore.getState().receipt!;
+    useCheckInReadinessStore.setState({ receipt: { ...receipt, placeQualifyingMs: 80_000 } });
+    await search();
+    expect(byId('public-place-location-status').props.children).toBe('Confirming');
+    await act(async () => { jest.advanceTimersByTime(12_000); });
+    expect(byId('public-place-location-status').props.children).toBe('Confirming');
+    expect(copy()).toContain('Nearby places will load automatically');
+    expect(discoverNearbyCheckInPlaces).not.toHaveBeenCalled();
+  });
+
+  it('does not turn a resumed search transport failure into repeated automatic requests', async () => {
+    makeReady(90);
+    const receipt = useCheckInReadinessStore.getState().receipt!;
+    useCheckInReadinessStore.setState({ receipt: { ...receipt, placeQualifyingMs: 80_000 } });
+    (discoverNearbyCheckInPlaces as jest.Mock).mockRejectedValue(new SocialServiceError('unavailable', 'Network unavailable.'));
+    await search();
+    await act(async () => { jest.advanceTimersByTime(12_000); });
+    await act(async () => useCheckInReadinessStore.setState({ receipt }));
+    expect(discoverNearbyCheckInPlaces).toHaveBeenCalledTimes(1);
+    expect(copy()).toContain('Network unavailable.');
+    await act(async () => useCheckInReadinessStore.setState({ receipt: null }));
+    await act(async () => useCheckInReadinessStore.setState({ receipt }));
+    expect(discoverNearbyCheckInPlaces).toHaveBeenCalledTimes(1);
+    await press('retry-nearby-public-places');
+    expect(discoverNearbyCheckInPlaces).toHaveBeenCalledTimes(2);
+    expect(mockPush).not.toHaveBeenCalled();
+  });
+
+  it.each(['closed', 'new session', 'stale fix', 'low accuracy', 'interrupted', 'disabled', 'unfocused'])(
+    'does not resume a pending public-place search after %s', async (change) => {
+      makeReady(90);
+      const receipt = useCheckInReadinessStore.getState().receipt!;
+      useCheckInReadinessStore.setState({ receipt: { ...receipt, placeQualifyingMs: 80_000 } });
+      await search();
+      await act(async () => { jest.advanceTimersByTime(12_000); });
+      if (change === 'closed') act(() => control().findByType(Modal).props.onRequestClose());
+      if (change === 'disabled') act(() => component!.update(<ContextualCheckInControl enabled={false} />));
+      if (change === 'unfocused') {
+        mockIsFocused.mockReturnValue(false);
+        act(() => component!.update(<ContextualCheckInControl enabled />));
+      }
+      if (change === 'stale fix') await act(async () => { jest.advanceTimersByTime(9_000); });
+      const before = useCheckInReadinessStore.getState();
+      await act(async () => useCheckInReadinessStore.setState({
+        ...(change === 'new session' ? { sessionId: 'replacement-session' } : {}),
+        ...(change === 'interrupted' ? { interruptedAtMs: Date.now() } : {}),
+        ...(change === 'low accuracy' ? { evidence: advanceReadiness(before.evidence, {
+          latitude: 46.23501, longitude: -63.129, accuracyMeters: 40,
+          speedMetersPerSecond: 0, capturedAtMs: Date.now(),
+        }, Date.now()) } : {}),
+        receipt: { ...receipt, sessionId: change === 'new session' ? 'replacement-session' : receipt.sessionId,
+          expiresAtMs: Date.now() + 20_000 },
+      }));
+      expect(discoverNearbyCheckInPlaces).not.toHaveBeenCalled();
+      expect(mockPush).not.toHaveBeenCalled();
+    }
+  );
+
   it('keeps check-in locked until return validation finishes', async () => {
     makeReady(90);
     useCheckInReadinessStore.setState({ interruptedAtMs: Date.now() - 1_000 });

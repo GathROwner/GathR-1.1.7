@@ -371,6 +371,7 @@ export default function ContextualCheckInControl({ enabled, rightOffset = 10, bo
   const visibleRef = useRef(false);
   const checkInRouteOpeningRef = useRef(false);
   const retryKnownVenuesRef = useRef<((capture: NonNullable<ReturnType<typeof localReadinessLocation>>, flowGeneration: number) => Promise<void>) | null>(null);
+  const retryPublicPlacesRef = useRef<(() => Promise<void>) | null>(null);
 
 
 
@@ -382,6 +383,7 @@ export default function ContextualCheckInControl({ enabled, rightOffset = 10, bo
   const [knownVenuesNotice, setKnownVenuesNotice] = useState('');
   const [discovering, setDiscovering] = useState(false);
   const [confirmingReadiness, setConfirmingReadiness] = useState(false);
+  const [pendingDiscoverySessionId, setPendingDiscoverySessionId] = useState('');
   const [discoveryError, setDiscoveryError] = useState('');
   const [partialDiscoveryNotice, setPartialDiscoveryNotice] = useState('');
   const [selectionError, setSelectionError] = useState('');
@@ -465,6 +467,7 @@ export default function ContextualCheckInControl({ enabled, rightOffset = 10, bo
   }, []);
   useEffect(() => {
     if (pickerVisible && externalSearchVisible && !placeEntryReady) {
+      setPendingDiscoverySessionId('');
       setNearbyPlaces([]);
       setSelectedPlaceId('');
       if (!discovering) {
@@ -521,6 +524,20 @@ export default function ContextualCheckInControl({ enabled, rightOffset = 10, bo
     const capture = acceptedReadinessLocation(user.uid, false);
     if (capture) void retryKnownVenuesRef.current?.(capture, flowGenerationRef.current);
   }, [externalSearchVisible, knownVenuesLoading, knownVenuesNotice, levels.here, pickerVisible, user]);
+
+  // A locally complete ring can precede the server receipt by more than the
+  // initial wait. Resume only that pending search, while its session stays valid.
+  useEffect(() => {
+    if (!pendingDiscoverySessionId) return;
+    if (!enabled || !isFocused || !pickerVisible || !externalSearchVisible || readiness.sessionId !== pendingDiscoverySessionId) {
+      setPendingDiscoverySessionId('');
+      return;
+    }
+    if (!discovering && levels.place && user
+      && acceptedReadinessLocation(user.uid, true)?.sessionId === pendingDiscoverySessionId) {
+      void retryPublicPlacesRef.current?.();
+    }
+  }, [discovering, enabled, externalSearchVisible, isFocused, levels.place, pendingDiscoverySessionId, pickerVisible, readiness.sessionId, user]);
 
   if (!enabled || !SOCIAL_FEATURE_ENABLED || !SOCIAL_RELEASE_TWO_ENABLED || !user) return null;
 
@@ -624,6 +641,7 @@ export default function ContextualCheckInControl({ enabled, rightOffset = 10, bo
 
   const searchSomewhereElse = async () => {
     if (discovering) return;
+    setPendingDiscoverySessionId('');
     const localCapture = localReadinessLocation(user.uid, true);
     setExternalSearchVisible(true);
     setDiscoveryError('');
@@ -643,7 +661,13 @@ export default function ContextualCheckInControl({ enabled, rightOffset = 10, bo
       if (!mountedRef.current || flowGenerationRef.current !== flowGeneration) return;
       const capture = confirmed ? acceptedReadinessLocation(user.uid, true) : null;
       if (!capture || capture.sessionId !== localCapture.sessionId) {
-        setDiscoveryError('Location confirmation did not finish. Stay here until the blue Place ring is ready, then try again.');
+        const stillLocal = localReadinessLocation(user.uid, true);
+        if (stillLocal?.sessionId === localCapture.sessionId) {
+          setPendingDiscoverySessionId(localCapture.sessionId);
+          setDiscoveryError('GathR is still confirming your location. Nearby places will load automatically when confirmation finishes.');
+        } else {
+          setDiscoveryError('Your location needs to settle again. Wait for the blue Place ring, then search again.');
+        }
         return;
       }
       const { sessionId, ...location } = capture;
@@ -678,6 +702,7 @@ export default function ContextualCheckInControl({ enabled, rightOffset = 10, bo
       }
     }
   };
+  retryPublicPlacesRef.current = searchSomewhereElse;
 
   const choosePlace = async (place: VenueCandidate | null) => {
     if (!place || bindingRef.current) return;
@@ -963,11 +988,11 @@ export default function ContextualCheckInControl({ enabled, rightOffset = 10, bo
                       <Ionicons name="navigate-outline" size={17} color="#2F80ED" />
                       <Text numberOfLines={1} style={styles.locationStatusCopy}>Using your recent location</Text>
                       <View style={styles.locationReadyStatus}>
-                        {placeEntryReady
+                        {levels.place
                           ? <Ionicons name="checkmark-circle" size={16} color="#039855" />
                           : <ActivityIndicator size="small" color="#2F80ED" />}
-                        <Text style={[styles.locationReadyText, !placeEntryReady && styles.locationCheckingText]}>
-                          {placeEntryReady ? 'Ready' : 'Waiting'}
+                        <Text testID="public-place-location-status" style={[styles.locationReadyText, !levels.place && styles.locationCheckingText]}>
+                          {levels.place ? 'Ready' : placeEntryReady ? 'Confirming' : 'Waiting'}
                         </Text>
                       </View>
                       <TouchableOpacity
