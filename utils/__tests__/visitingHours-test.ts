@@ -85,6 +85,12 @@ it('rejects malformed, mismatched, estimated or unsupported schedules and never 
   const e=dateOnlyActivity();expect(readVisitingHours(e)).toBeNull();expect(getEventTimingBadge(e)?.text).toBe('TIMES\nUNKNOWN');
 });
 
+it.each([undefined, null, '', '   ', 'Not/A_Timezone'])('rejects missing or invalid activity timezone %p instead of using device timezone', timeZone => {
+  const e = softInternet();
+  (e.timing as any).timeZone = timeZone;
+  expect(readVisitingHours(e)).toBeNull();
+});
+
 it('supports split hours and overnight carry without altering ordinary overnight events', () => {
   const e=softInternet(), h=e.timing!.visitingHours!;
   h.week.find(d=>d.weekday==='Wednesday')!.segments=[{open:'10:00',close:'12:00',overnight:false},{open:'13:00',close:'17:00',overnight:false}];

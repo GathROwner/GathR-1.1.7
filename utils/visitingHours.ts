@@ -37,6 +37,7 @@ export function readVisitingHours(event: Input): EventVisitingHours | null {
     || new Set(h.week.map(d => d.weekday)).size !== 7) return null;
   // This minimum slice does not consume dated exceptions. Do not ignore one if later added.
   if ('exceptions' in h) return null;
+  if (typeof t.timeZone !== 'string' || !t.timeZone.trim()) return null;
   try { new Intl.DateTimeFormat('en', { timeZone: t.timeZone }).format(); } catch { return null; }
   for (const day of h.week) {
     if (!days.includes(day.weekday) || typeof day.closed !== 'boolean' || !Array.isArray(day.segments)

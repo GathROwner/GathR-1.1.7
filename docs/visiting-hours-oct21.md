@@ -8,7 +8,7 @@ Final combined source, inclusion matrix, tests, renders, source-map/export verif
 
 Owned branch `codex/visiting-hours-production-oct21`, checkout `C:/Windows/System32/GathR-Project/vh21`. Base is public iOS build 79's exact embedded source `6c773c3a13663c950e73438fd7447b613e81ffa8`, runtime 1.1.20, Production channel. EAS build `d2567498-8749-4863-bc10-b5ff85d74e41` confirms this identity. Channel mapping points to production; a fresh iOS/runtime1.1.20/production manifest request returns 204 NO_UPDATE_AVAILABLE, so no compatible OTA supersedes that embedded source at preparation time. Runtime1.1.10 Preview is a different target and is not a substitute.
 
-Craig authorized the smallest functional selected-weekday fix. Production OTA approval is separately pending with the coordinating chat; no publication or data apply has occurred at this checkpoint.
+Craig authorized the smallest functional selected-weekday fix and explicitly approved iOS Production publication with the accepted review-wait changes. Final combined independent review precedes publication and the exact data apply.
 
 ## Behavior and scope
 
