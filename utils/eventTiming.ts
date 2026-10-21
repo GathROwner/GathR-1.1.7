@@ -8,6 +8,7 @@ import type {
   TimeStatus,
 } from '../types/events';
 import { normalizeRecurrenceFlag } from './eventRecurrence';
+import { readVisitingHours, visitingIntervals, visitingLocalNow, visitingHoursText } from './visitingHours';
 
 export const EVENT_TIMING_POLICY_VERSION = 'honest-end-times-v2';
 export const DEFAULT_UNKNOWN_END_CUTOFF_MINUTES = 120;
@@ -478,6 +479,17 @@ export const getEventScheduleState = (
 
   const dateOnly = getDateOnlyScheduleRange(event, timing);
   if (dateOnly) {
+    if (readVisitingHours(event)) {
+      if (zonedNow.dateKey > dateOnly.endDate) return { code: 'confirmed_ended', nowEligibility: 'none', defaultMapEligible: false, todayEligible: false, muted: true };
+      const intervals = visitingIntervals(event, zonedNow.dateKey);
+      const active = intervals.some(s => zonedNow.minutes >= s.open && zonedNow.minutes < s.close);
+      const next = [1440, ...intervals.flatMap(s => [s.open, s.close])].filter(m => m > zonedNow.minutes && m <= 1440);
+      return { code: active ? 'happening_confirmed' : intervals.length ? 'date_only_today' : 'date_only_upcoming',
+        nowEligibility: active ? 'confirmed' : 'none', todayEligible: intervals.length > 0,
+        // Day filters decide closure; a closed today must not remove a valid Tomorrow/Upcoming pin.
+        defaultMapEligible: true, muted: !intervals.length,
+        nextTransitionLocalScalar: localScalar(zonedNow.dateKey, Math.min(...next)) };
+    }
     if (zonedNow.dateKey > dateOnly.endDate) return { code: 'confirmed_ended', nowEligibility: 'none',
       defaultMapEligible: false, todayEligible: false, muted: true };
     const today = zonedNow.dateKey >= dateOnly.startDate;
@@ -634,6 +646,7 @@ export const getEventTimingBadge = (
   now = new Date()
 ): EventTimingBadge | null => {
   const timing = getEventTiming(event);
+  if (readVisitingHours(event)) return { text: 'VISITING\nHOURS', accessibilityLabel: 'Source-advertised visiting hours', tone: 'neutral', infoTitle: 'Visiting hours' };
   if (timing.scheduleKind === 'date_range_overview') return null;
   if (getDateOnlyScheduleRange(event, timing)) return { text: 'TIMES\nUNKNOWN',
     accessibilityLabel: 'Start and end times not provided', tone: 'caution', infoTitle: 'Times not provided' };
@@ -703,10 +716,15 @@ const getEstimateDisplayTime = (timing: EventTiming): string => {
 
 export const getEventTimeRangeParts = (
   event: LegacyTimingInput & { timing?: EventTiming | null },
-  now = new Date()
+  now = new Date(),
+  viewedDate?: string | null
 ): EventTimeRangeParts => {
   const timing = getEventTiming(event);
   const state = getEventScheduleState(event, now);
+  if (readVisitingHours(event)) {
+    const text = visitingHoursText(event, viewedDate === undefined ? visitingLocalNow(event, now).date : viewedDate);
+    return { prefix: text, start: '', separator: '', end: '', startEstimated: false, endEstimated: false, text };
+  }
   if (timing.scheduleKind === 'date_range_overview') {
     return { prefix: 'See individual event times', start: '', separator: '', end: '', startEstimated: false, endEstimated: false, text: 'See individual event times' };
   }
@@ -762,6 +780,8 @@ export const getEventTimingDisclosure = (
 ): string | null => {
   const timing = getEventTiming(event);
   const state = getEventScheduleState(event, now);
+  const visiting = readVisitingHours(event);
+  if (visiting) return `${visiting.source.evidence} ${visiting.caveat} Exhibition dates: ${visiting.startDate} to ${visiting.endDate}. Source: ${visiting.source.url}`;
   if (getDateOnlyScheduleRange(event, timing)) {
     return 'The organizer provided dates but no start or end time. Check the original source for details.';
   }

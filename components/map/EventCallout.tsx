@@ -167,6 +167,7 @@ import EventActionLinkPill from '../common/EventActionLinkPill';
 import FamilyFriendlyBadge from '../common/FamilyFriendlyBadge';
 import { EventTimingBadge } from '../common/EventTimingBadge';
 import { EventTimingSummaryText } from '../common/EventTimingSummaryText';
+import { useViewedEventTimeStatus } from '../../hooks/useVisitingHoursView';
 import { EventSeriesContextLine } from '../common/EventSeriesContextLine';
 import { MAP_TRACE_ENABLED, traceMapEvent } from '../../utils/mapTrace';
 import { doesEventMatchAnyInterest } from '../../utils/familyFriendly';
@@ -1229,7 +1230,7 @@ interface EventCardProps {
 }
 
 const EventCard: React.FC<EventCardProps> = ({ event, isSelected, onPress }) => {
-  const timeStatus = getEventTimeStatus(event);
+  const timeStatus = useViewedEventTimeStatus(event);
   const timingState = getEventScheduleState(event);
   
   return (
@@ -1285,7 +1286,7 @@ interface EventDetailsProps {
 const EventDetailsContent: React.FC<EventDetailsProps> = ({ event, onImagePress }) => {
   const [expanded, setExpanded] = useState(false);
   const needsReadMore = event.description.length > 120;
-  const timeStatus = getEventTimeStatus(event);
+  const timeStatus = useViewedEventTimeStatus(event);
   const timingDisclosure = getEventTimingDisclosure(event);
   const timingRangeParts = getEventTimeRangeParts(event);
   const hasEstimatedEndpoint = timingRangeParts.startEstimated || timingRangeParts.endEstimated;
@@ -1818,7 +1819,7 @@ export const SpecialCard: React.FC<SpecialCardProps> = ({
   const [bookmarked, setBookmarked] = useState(isSaved);
   const [isToggling, setIsToggling] = useState(false);
   const [isHeroLikeToggling, setIsHeroLikeToggling] = useState(false);
-  const timeStatus = getEventTimeStatus(event);
+  const timeStatus = useViewedEventTimeStatus(event);
   const friendEventBadgeLabel = event.friendEvent
     ? event.friendEvent.viewerRole === 'host'
       ? 'PRIVATE · HOSTING'

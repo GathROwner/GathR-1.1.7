@@ -13,6 +13,7 @@ import type { Event } from '../../types/events';
 import { formatEventTimingSummary } from '../../utils/dateUtils';
 import { getEventTimeRangeParts, getEventTimingDisclosure } from '../../utils/eventTiming';
 import { getAreaParticipationTimingLabel } from '../../utils/areaEventPresentation';
+import { useVisitingHoursView } from '../../hooks/useVisitingHoursView';
 
 type TimingEvent = Pick<Event, 'startDate' | 'startTime' | 'endDate' | 'endTime' | 'timing'>
   & Partial<Pick<Event, 'title' | 'description' | 'locationScope' | 'areaData'>>;
@@ -50,11 +51,12 @@ export function EventTimingSummaryText({
   showStatusPrefix = true,
 }: EventTimingSummaryTextProps) {
   const [expanded, setExpanded] = useState(false);
-  const originalParts = getEventTimeRangeParts(event);
+  const viewedDate = useVisitingHoursView(event);
+  const originalParts = getEventTimeRangeParts(event, new Date(), viewedDate);
   const participationLabel = getAreaParticipationTimingLabel(event, originalParts.text);
   const parts = participationLabel ? { ...originalParts, prefix: participationLabel, text: participationLabel } : originalParts;
   const disclosure = getEventTimingDisclosure(event);
-  const summary = formatEventTimingSummary(event);
+  const summary = formatEventTimingSummary(event, viewedDate);
   const summaryPrefix = summary.endsWith(originalParts.text)
     ? summary.slice(0, -originalParts.text.length)
     : '';

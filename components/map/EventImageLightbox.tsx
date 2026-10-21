@@ -43,6 +43,7 @@ import VenueProgrammeBrowser from '../area/VenueProgrammeBrowser';
 import { getVenueProgrammeLocation } from '../../utils/eventProgramme';
 import { EventTimingBadge } from '../common/EventTimingBadge';
 import { EventTimingSummaryText } from '../common/EventTimingSummaryText';
+import { useViewedEventTimeStatus, useVisitingHoursView } from '../../hooks/useVisitingHoursView';
 import { EventSeriesContextLine } from '../common/EventSeriesContextLine';
 import { EventTimingDisclosureActions } from './EventTimingDisclosureActions';
 import { VenueFavoriteButton } from '../common/VenueFavoriteButton';
@@ -62,7 +63,6 @@ import {
 } from '../../utils/eventImageGallery';
 import {
   formatEventTimingSummary,
-  getEventTimeStatus,
   getEventDisplayUntilDate
 } from '../../utils/dateUtils';
 import { createLocationKeyFromEvent } from '../../utils/priorityUtils';
@@ -1404,12 +1404,13 @@ const handleNonTicketAction = () => {
   };
 
   // Determine time status
-  const timeStatus = getEventTimeStatus(updatedEvent);
+  const viewedDate = useVisitingHoursView(updatedEvent);
+  const timeStatus = useViewedEventTimeStatus(updatedEvent);
   const isHappeningNow = timeStatus === 'now';
 
   // One shared provenance-aware time sentence across every app surface.
-  const standardDateText = formatEventTimingSummary(updatedEvent);
-  const timeRangeText = getEventTimeRangeParts(updatedEvent).text;
+  const standardDateText = formatEventTimingSummary(updatedEvent, viewedDate);
+  const timeRangeText = getEventTimeRangeParts(updatedEvent, new Date(), viewedDate).text;
   const participationTimeLabel = getAreaParticipationTimingLabel(updatedEvent, timeRangeText);
   const baseDateText = participationTimeLabel && standardDateText.endsWith(timeRangeText)
     ? standardDateText.slice(0, -timeRangeText.length) + participationTimeLabel : standardDateText;

@@ -4,6 +4,7 @@ import renderer, { act } from 'react-test-renderer';
 import { createLegacyTimingContract } from '../../../utils/eventTiming';
 import { EventTimingSummaryText } from '../EventTimingSummaryText';
 import { participationArea } from '../../../utils/__tests__/fixtures/areaParticipation';
+jest.mock('../../../store/mapStore', () => ({ useMapStore: (selector: any) => selector({filterCriteria:{eventFilters:{timeFilter:'today'},specialFilters:{timeFilter:'today'}}}) }));
 
 const estimatedEndEvent = () => {
   const timing = createLegacyTimingContract(

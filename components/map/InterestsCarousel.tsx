@@ -23,6 +23,8 @@ import { useInterestCarouselUiStore } from '../../store/interestCarouselUiStore'
 import { Event, Venue, Cluster } from '../../types/events';
 import { getEventTimeStatus } from '../../utils/dateUtils';
 import { EventTimingSummaryText } from '../common/EventTimingSummaryText';
+import { readVisitingHours } from '../../utils/visitingHours';
+import { useViewedEventTimeStatus } from '../../hooks/useVisitingHoursView';
 import FallbackImage from '../common/FallbackImage';
 import FamilyFriendlyBadge from '../common/FamilyFriendlyBadge';
 import { EventTimingBadge } from '../common/EventTimingBadge';
@@ -168,7 +170,7 @@ const EventCard = memo(({
   width: number;
 }) => {
   useEventTimingMinute();
-  const isNow = isEventConfirmedNow(event);
+  const isNow = useViewedEventTimeStatus(event) === 'now';
   const timingState = getEventScheduleState(event);
   const timingRangeParts = getEventTimeRangeParts(event);
   const hasEstimatedEndpoint = timingRangeParts.startEstimated || timingRangeParts.endEstimated;
@@ -254,7 +256,7 @@ const EventCard = memo(({
         </Text>
         <View style={styles.timeRow}>
           <MaterialIcons name="schedule" size={13} color="#1967D2" />
-          {hasEstimatedEndpoint ? (
+          {hasEstimatedEndpoint || readVisitingHours(event) ? (
             <EventTimingSummaryText
               event={event}
               style={styles.timeText}

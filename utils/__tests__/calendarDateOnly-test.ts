@@ -4,11 +4,18 @@ import { addEventToCalendarWithTiming } from '../calendarUtils';
 import { dateOnlyActivity } from './fixtures/dateOnlyActivity';
 import { createLegacyTimingContract } from '../eventTiming';
 import type { Event } from '../../types/events';
+import { softInternet } from './fixtures/softInternet';
 
 jest.mock('expo-linking', () => ({ canOpenURL: jest.fn(async () => true), openURL: jest.fn() }));
 
 beforeEach(() => { jest.clearAllMocks(); (Linking.canOpenURL as jest.Mock).mockResolvedValue(true); });
 afterEach(() => jest.restoreAllMocks());
+it('explains advertised visiting hours without inventing one months-long calendar appointment', async () => {
+  const alert = jest.spyOn(Alert, 'alert').mockImplementation((_title,_message,buttons)=>buttons?.[0].onPress?.());
+  expect(await addEventToCalendarWithTiming(softInternet(),'Confederation Centre Art Gallery')).toBe(false);
+  expect(alert.mock.calls[0][0]).toBe('Choose your visiting time');
+  expect(alert.mock.calls[0][1]).toContain('closed Mondays');expect(Linking.openURL).not.toHaveBeenCalled();
+});
 it('does not invent a noon calendar start for a date-only activity', async () => {
   const alert = jest.spyOn(Alert, 'alert').mockImplementation((_title, _message, buttons) => buttons?.[0].onPress?.());
   expect(await addEventToCalendarWithTiming(dateOnlyActivity(), 'Example venue')).toBe(false);

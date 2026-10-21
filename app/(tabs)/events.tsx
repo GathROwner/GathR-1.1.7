@@ -42,6 +42,7 @@ import EventActionLinkPill from '../../components/common/EventActionLinkPill';
 import FamilyFriendlyBadge from '../../components/common/FamilyFriendlyBadge';
 import { EventTimingBadge } from '../../components/common/EventTimingBadge';
 import { EventTimingSummaryText } from '../../components/common/EventTimingSummaryText';
+import { useViewedEventTimeStatus } from '../../hooks/useVisitingHoursView';
 import { EventSeriesContextLine } from '../../components/common/EventSeriesContextLine';
 import { VenueFavoriteButton } from '../../components/common/VenueFavoriteButton';
 import Autolink from 'react-native-autolink';
@@ -444,7 +445,7 @@ const EventListItem: React.FC<EventListItemProps> = ({
     };
   }, [event.id, isGuest]);
 
-  const timeStatus = getEventTimeStatus(event);
+  const timeStatus = useViewedEventTimeStatus(event);
   const hasVenueAddress = Boolean(event.address?.trim());
   const handleVenuePress = (e: GestureResponderEvent) => {
     e.stopPropagation();
