@@ -1,4 +1,5 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
+import { useOtaSafetyBlock } from '../../hooks/useOtaSafetyBlock';
 import { useIsFocused } from '@react-navigation/native';
 import * as Haptics from 'expo-haptics';
 import * as Location from 'expo-location';
@@ -401,6 +402,8 @@ export default function ContextualCheckInControl({ enabled, rightOffset = 10, bo
   const [creatingPrivatePlace, setCreatingPrivatePlace] = useState(false);
   const [privatePlaceError, setPrivatePlaceError] = useState('');
   const [locationInfoVisible, setLocationInfoVisible] = useState(false);
+  useOtaSafetyBlock(pickerVisible || externalSearchVisible || privateSetupVisible || creatingPrivatePlace
+    || confirmingReadiness || binding || locationInfoVisible || discovering);
   publicDiscoveryAllowedRef.current = enabled && isFocused && pickerVisible;
   const cancelPublicDiscovery = useCallback(() => {
     const request = publicDiscoveryRef.current;

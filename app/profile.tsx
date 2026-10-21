@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
+import OtaUpdateStatus from '../components/common/OtaUpdateStatus';
+import { useOtaSafetyBlock } from '../hooks/useOtaSafetyBlock';
 import { useQuery } from '@tanstack/react-query';
 import { 
   View, 
@@ -256,6 +258,7 @@ const FacebookPageSubmission = React.forwardRef<View, FacebookPageSubmissionProp
   const [isResolving, setIsResolving] = useState(false);
   const [dailyCount, setDailyCount] = useState(0);
   const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
+  useOtaSafetyBlock(Boolean(facebookUrl.trim()) || isSubmitting || isResolving || isExpanded);
 
   useEffect(() => {
     if (Platform.OS !== 'android' || !isExpanded) return;
@@ -757,6 +760,8 @@ export default function ProfileScreen() {
   const [newEmailInput, setNewEmailInput] = useState('');
   const [emailChangePassword, setEmailChangePassword] = useState('');
   const [emailChangeInProgress, setEmailChangeInProgress] = useState(false);
+  useOtaSafetyBlock(loading || isEditing || savingChanges || showPasswordModal || deletionInProgress
+    || showAccountModal || showEmailChangeModal || emailChangeInProgress || showUpdateNoticePreview);
 
   // Daily hotspot preference
   const showDailyHotspot = useUserPrefsStore((state) => state.showDailyHotspot);
@@ -1870,6 +1875,7 @@ const handleLogout = async () => {
                 </TouchableOpacity>
               </View>
 
+              <OtaUpdateStatus />
               <TouchableOpacity
                 style={styles.versionInfoContainer}
                 onPress={handleVersionInfoPress}

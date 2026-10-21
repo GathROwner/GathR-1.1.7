@@ -19,6 +19,8 @@
  */
 
 import React from 'react';
+import { useAutomaticOtaUpdates } from '../hooks/useAutomaticOtaUpdates';
+import { noteOtaInteraction } from '../lib/otaUpdates';
 import MapboxGL from '@rnmapbox/maps';
 import { Stack, useRouter, useSegments, usePathname } from 'expo-router';
 import { ShareIntentProvider } from 'expo-share-intent';
@@ -489,7 +491,7 @@ try {
     
     // â›‘ï¸ Root wrapper so GH gestures (ScrollView, handlers) work on Android.
     //This fixes callout ScrollView not scrolling and the GH error about GestureHandlerRootView.
-    <GestureHandlerRootView style={{ flex: 1 }}>
+    <GestureHandlerRootView style={{ flex: 1 }} onTouchStart={noteOtaInteraction}>
       <ShareIntentProvider options={{ scheme: 'gathr', resetOnBackground: false }}>
       <PersistQueryClientProvider
   client={queryClient}
@@ -523,6 +525,7 @@ try {
 
     // --- screen_view on route change (inside auth context) ---
     const pathname = usePathname();
+    useAutomaticOtaUpdates(pathname, user?.uid || null, isLoading || isRoutingShareIntent);
     const prevPathRef = useRef<string | null>(null);
     const prevUidRef = useRef<string | null>(null); // track last signed-in uid
     const screenActivatedAtRef = useRef<number>(Date.now()); // Track when current screen became active

@@ -1,3 +1,4 @@
+import { useOtaSafetyBlock } from '../../hooks/useOtaSafetyBlock';
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import {
   View,
@@ -1619,6 +1620,7 @@ useEffect(() => {
     events: Event[];
   } | null>(null);
   
+  useOtaSafetyBlock(detailsVisible || Boolean(selectedImageData) || feedChrome.filtersExpanded);
   const [selectedVenueEvents, setSelectedVenueEvents] = useState<Record<string, string>>({});
 
   // Read saved events, interests, and favorite venues from the centralized cache
