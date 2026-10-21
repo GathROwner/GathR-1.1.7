@@ -332,6 +332,140 @@ describe('ContextualCheckInControl', () => {
     expect(mockPush).not.toHaveBeenCalled();
   });
 
+  it('starts only one discovery request for two presses before React rerenders', async () => {
+    makeReady(90);
+    await open();
+    const onPress = byId('find-somewhere-else').props.onPress;
+    await act(async () => { onPress(); onPress(); });
+    expect(discoverNearbyCheckInPlaces).toHaveBeenCalledTimes(1);
+    expect(mockPush).not.toHaveBeenCalled();
+  });
+
+  it('cancels the confirmation wait when returning to known venues', async () => {
+    makeReady(90);
+    const receipt = useCheckInReadinessStore.getState().receipt!;
+    useCheckInReadinessStore.setState({ receipt: { ...receipt, placeQualifyingMs: 80_000 } });
+    await search();
+    let back = control().find((node) => node.type === Text && node.props.children === 'Nearby GathR venues');
+    while (!back.props.onPress && back.parent) back = back.parent;
+    await act(async () => back.props.onPress());
+    await act(async () => useCheckInReadinessStore.setState({ receipt }));
+    expect(discoverNearbyCheckInPlaces).not.toHaveBeenCalled();
+    await press('find-somewhere-else');
+    expect(discoverNearbyCheckInPlaces).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps an old confirmation timeout from changing a reopened search in the same session', async () => {
+    makeReady(90);
+    const receipt = useCheckInReadinessStore.getState().receipt!;
+    useCheckInReadinessStore.setState({ receipt: { ...receipt, placeQualifyingMs: 80_000 } });
+    await search();
+    await act(async () => { jest.advanceTimersByTime(2_000); });
+    act(() => control().findByType(Modal).props.onRequestClose());
+    await press('contextual-check-in-ready');
+    await press('find-somewhere-else');
+    await act(async () => { jest.advanceTimersByTime(10_000); });
+    expect(copy()).toMatch(/Confirming your location[.\u2026]/);
+    expect(copy()).not.toMatch(/Looking for other nearby public places[.\u2026]/);
+    expect(discoverNearbyCheckInPlaces).not.toHaveBeenCalled();
+    await act(async () => useCheckInReadinessStore.setState({ receipt }));
+    expect(discoverNearbyCheckInPlaces).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(['success', 'failure'])('ignores an old network %s after close and reopen', async (outcome) => {
+    makeReady(90);
+    let finishOld: (result: unknown) => void = () => undefined;
+    let rejectOld: (error: Error) => void = () => undefined;
+    let finishNew: (result: unknown) => void = () => undefined;
+    (discoverNearbyCheckInPlaces as jest.Mock)
+      .mockImplementationOnce(() => new Promise((resolve, reject) => { finishOld = resolve; rejectOld = reject; }))
+      .mockImplementationOnce(() => new Promise((resolve) => { finishNew = resolve; }));
+    await search();
+    act(() => control().findByType(Modal).props.onRequestClose());
+    await press('contextual-check-in-ready');
+    await press('find-somewhere-else');
+    expect(discoverNearbyCheckInPlaces).toHaveBeenCalledTimes(2);
+    await act(async () => {
+      if (outcome === 'success') finishOld({ candidates: [
+        { ...publicPlace('old-cafe', 'Old cafe'), type: 'external_place' },
+      ] });
+      else rejectOld(new Error('Old search failed.'));
+    });
+    expect(copy()).toMatch(/Looking for other nearby public places[.\u2026]/);
+    expect(copy()).not.toContain('Old cafe');
+    expect(copy()).not.toContain('Old search failed.');
+    await act(async () => finishNew({ candidates: [
+      { ...publicPlace('new-cafe', 'New cafe'), type: 'external_place' },
+    ] }));
+    expect(placeRow('New cafe').props.accessibilityState.selected).toBe(false);
+    expect(mockPush).not.toHaveBeenCalled();
+    expect(bindCheckInReadiness).not.toHaveBeenCalled();
+  });
+
+  it.each(['expired receipt', 'new session', 'interrupted', 'stale fix'])(
+    'rejects discovered places after %s while the request is in flight', async (change) => {
+      makeReady(90);
+      let finish: (result: unknown) => void = () => undefined;
+      (discoverNearbyCheckInPlaces as jest.Mock).mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
+      await search();
+      const before = useCheckInReadinessStore.getState();
+      if (change === 'stale fix') await act(async () => { jest.advanceTimersByTime(21_000); });
+      await act(async () => useCheckInReadinessStore.setState({
+        ...(change === 'expired receipt' ? { receipt: { ...before.receipt!, expiresAtMs: Date.now() } } : {}),
+        ...(change === 'new session' ? { sessionId: 'replacement-session' } : {}),
+        ...(change === 'interrupted' ? { interruptedAtMs: Date.now() } : {}),
+      }));
+      await act(async () => finish({ candidates: [
+        { ...publicPlace('stale-cafe', 'Stale cafe'), type: 'external_place' },
+      ] }));
+      expect(copy()).not.toContain('Stale cafe');
+      expect(copy()).toMatch(/Your location (?:changed during the search|needs to settle again)/);
+      expect(mockPush).not.toHaveBeenCalled();
+      expect(bindCheckInReadiness).not.toHaveBeenCalled();
+    }
+  );
+
+  it.each(['expired', 'wrong session', 'wrong protocol', 'rejected'])(
+    'does not resume discovery with a %s confirmation receipt', async (kind) => {
+      makeReady(90);
+      const receipt = useCheckInReadinessStore.getState().receipt!;
+      useCheckInReadinessStore.setState({ receipt: { ...receipt, placeQualifyingMs: 80_000 } });
+      await search();
+      await act(async () => { jest.advanceTimersByTime(12_000); });
+      const invalidReceipt = kind === 'rejected' ? null : { ...receipt,
+        ...(kind === 'expired' ? { expiresAtMs: Date.now() } : {}),
+        ...(kind === 'wrong session' ? { sessionId: 'other-session' } : {}),
+        ...(kind === 'wrong protocol' ? { protocolVersion: 2 as 1 } : {}),
+      };
+      await act(async () => useCheckInReadinessStore.setState({ receipt: invalidReceipt,
+        serviceError: kind === 'rejected' }));
+      expect(discoverNearbyCheckInPlaces).not.toHaveBeenCalled();
+      expect(byId('public-place-location-status').props.children).toBe('Confirming');
+      expect(mockPush).not.toHaveBeenCalled();
+      expect(bindCheckInReadiness).not.toHaveBeenCalled();
+      await act(async () => useCheckInReadinessStore.setState({ receipt, serviceError: false }));
+      expect(discoverNearbyCheckInPlaces).toHaveBeenCalledTimes(1);
+    }
+  );
+
+  it.each([0, 12_000])('offers manual retry after leaving and returning during confirmation at %sms', async (delayMs) => {
+    makeReady(90);
+    const receipt = useCheckInReadinessStore.getState().receipt!;
+    useCheckInReadinessStore.setState({ receipt: { ...receipt, placeQualifyingMs: 80_000 } });
+    await search();
+    if (delayMs) await act(async () => { jest.advanceTimersByTime(delayMs); });
+    mockIsFocused.mockReturnValue(false);
+    await act(async () => component!.update(<ContextualCheckInControl enabled />));
+    mockIsFocused.mockReturnValue(true);
+    await act(async () => component!.update(<ContextualCheckInControl enabled />));
+    await act(async () => useCheckInReadinessStore.setState({ receipt }));
+    expect(discoverNearbyCheckInPlaces).not.toHaveBeenCalled();
+    expect(copy()).toContain('Public place search was paused.');
+    expect(copy()).not.toContain('Nearby places will load automatically');
+    await press('retry-nearby-public-places');
+    expect(discoverNearbyCheckInPlaces).toHaveBeenCalledTimes(1);
+  });
+
   it.each(['closed', 'new session', 'stale fix', 'low accuracy', 'interrupted', 'disabled', 'unfocused'])(
     'does not resume a pending public-place search after %s', async (change) => {
       makeReady(90);
