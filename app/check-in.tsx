@@ -17,9 +17,10 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
+  useWindowDimensions,
   View,
 } from 'react-native';
-import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaProvider, SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useAuth } from '../contexts/AuthContext';
 import {
@@ -40,6 +41,7 @@ import type {
   FriendProjection,
 } from '../types/social';
 import { SOCIAL_FEATURE_ENABLED } from '../types/social';
+import { getBottomSystemInset } from '../utils/systemInsets';
 import {
   formatCheckInVisibilityCopy,
   getRecognizedVenueId,
@@ -78,6 +80,11 @@ export default function CheckInScreen() {
 
 function CheckInScreenContent() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
+  const windowSize = useWindowDimensions();
+  const androidBottomInset = Platform.OS === 'android'
+    ? getBottomSystemInset(Platform.OS, insets.bottom, windowSize)
+    : 0;
   const params = useLocalSearchParams<{
     venueId?: string;
     placeCandidateId?: string;
@@ -600,7 +607,10 @@ function CheckInScreenContent() {
           style={StyleSheet.absoluteFillObject}
         />
         <View accessibilityViewIsModal style={styles.activeOverviewSheet}>
-          <SafeAreaView edges={['bottom']} style={styles.activeOverviewSafeArea}>
+          <SafeAreaView
+            edges={Platform.OS === 'android' ? [] : ['bottom']}
+            style={[styles.activeOverviewSafeArea, Platform.OS === 'android' && { paddingBottom: androidBottomInset }]}
+          >
             <StatusBar style="dark" backgroundColor="transparent" />
             <View style={styles.header}>
               <TouchableOpacity accessibilityLabel="Back to map" onPress={() => router.back()} style={styles.iconButton}>
@@ -634,7 +644,11 @@ function CheckInScreenContent() {
         style={[StyleSheet.absoluteFillObject, styles.formModalScrim]}
       />
       <KeyboardAvoidingView pointerEvents="box-none" style={styles.formModalKeyboard} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-        <SafeAreaView accessibilityViewIsModal edges={['bottom']} style={styles.formSheet}>
+        <SafeAreaView
+          accessibilityViewIsModal
+          edges={Platform.OS === 'android' ? [] : ['bottom']}
+          style={[styles.formSheet, Platform.OS === 'android' && { paddingBottom: androidBottomInset }]}
+        >
           <View style={[styles.header, styles.formHeader]}>
           <TouchableOpacity accessibilityLabel="Back to place choices" disabled={busy} onPress={backToPreviousStep} style={styles.iconButton}>
             <Ionicons name="chevron-back" size={25} color="#101828" />
@@ -847,7 +861,7 @@ function CheckInScreenContent() {
 
       <Modal animationType="slide" onRequestClose={() => setVenuePickerVisible(false)} transparent visible={venuePickerVisible}>
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.modalBackdrop}>
-          <View accessibilityViewIsModal style={styles.pickerCard}>
+          <View accessibilityViewIsModal style={[styles.pickerCard, { paddingBottom: 18 + androidBottomInset }]}>
             <View style={styles.pickerHeader}>
               <View style={styles.flex}>
                 <Text style={styles.pickerTitle}>{eligibilitySessionId ? 'Choose a nearby venue' : 'Choose a venue'}</Text>
@@ -892,7 +906,7 @@ function CheckInScreenContent() {
 
       <Modal animationType="slide" onRequestClose={() => setAudiencePickerVisible(false)} transparent visible={audiencePickerVisible}>
         <View style={styles.modalBackdrop}>
-          <View accessibilityViewIsModal style={styles.pickerCard}>
+          <View accessibilityViewIsModal style={[styles.pickerCard, { paddingBottom: 18 + androidBottomInset }]}>
             <View style={styles.pickerHeader}>
               <View style={styles.flex}>
                 <Text style={styles.pickerTitle}>Choose friends</Text>
