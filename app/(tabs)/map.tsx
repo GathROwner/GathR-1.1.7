@@ -49,7 +49,6 @@ import type { InterestCarouselFilter } from '../../types/store';
 import type { ComponentMeasurement } from '../../types/tutorial';
 import { filterClusterForInterestCarouselFilter } from '../../utils/interestCarouselFilterUtils';
 import { isMapCameraGestureActive } from '../../utils/mapCameraGestures';
-import { getAndroidScaleBarLeft } from '../../utils/mapScaleBarLayout';
 import { isFriendEventDetailPath } from '../../utils/friendEventLightbox';
 
 // Import components
@@ -11153,11 +11152,7 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
           left: Math.round((Dimensions.get('window').width / 2) - 50),
         } : {
           bottom: mapboxOrnamentBottomOffset,
-          left: getAndroidScaleBarLeft(
-            windowDimensions.width,
-            mapDimensions?.width ?? windowDimensions.width,
-            mapScreenOffset.x,
-          ),
+          left: Math.round((Dimensions.get('window').width / 2) - 50),
         }}
         surfaceView={Platform.OS === 'android' ? false : undefined}
 onLayout={(event) => {

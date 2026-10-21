@@ -735,8 +735,6 @@ function TabNavigator() {
       lazy: !prewarmInactiveTabs,
       freezeOnBlur: Platform.OS === 'android' ? true : false,
       tabBarInactiveTintColor: 'rgba(255,255,255,0.78)',
-      // The custom dock stacks its children even when tablet/landscape defaults use horizontal labels.
-      tabBarLabelPosition: 'below-icon',
       tabBarLabelStyle: { fontSize: 10, fontWeight: '600', marginTop: -2 },
       tabBarIconStyle: { marginTop: -1 },
       tabBarStyle: {
