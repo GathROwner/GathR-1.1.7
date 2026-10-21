@@ -320,7 +320,7 @@ function localReadinessLocation(uid: string, requirePlace: boolean) {
 // A near-ready sample may still be in flight when the ring reaches its local
 // threshold. Allow the 8-second sample-call timeout plus a near-ready retry and
 // a small margin before telling the user server confirmation failed.
-function waitForServerReadiness(uid: string, requirePlace: boolean, sessionId: string, timeoutMs = 12_000) {
+function waitForServerReadiness(uid: string, requirePlace: boolean, sessionId: string, timeoutMs = 12_000, signal?: AbortSignal) {
   return new Promise<boolean>((resolve) => {
     let finished = false;
     let unsubscribe: (() => void) | undefined;
@@ -330,8 +330,10 @@ function waitForServerReadiness(uid: string, requirePlace: boolean, sessionId: s
       finished = true;
       if (timeout) clearTimeout(timeout);
       unsubscribe?.();
+      signal?.removeEventListener('abort', abort);
       resolve(ready);
     };
+    const abort = () => finish(false);
     const inspect = () => {
       const current = useCheckInReadinessStore.getState();
       const now = Date.now();
@@ -343,6 +345,8 @@ function waitForServerReadiness(uid: string, requirePlace: boolean, sessionId: s
       const levels = readinessLevels(current.evidence, current.receipt, current.sessionId, now);
       if (requirePlace ? levels.place : levels.here) finish(true);
     };
+    if (signal?.aborted) { finish(false); return; }
+    signal?.addEventListener('abort', abort);
     timeout = setTimeout(() => finish(false), timeoutMs);
     unsubscribe = useCheckInReadinessStore.subscribe(inspect);
     inspect();
@@ -372,6 +376,8 @@ export default function ContextualCheckInControl({ enabled, rightOffset = 10, bo
   const checkInRouteOpeningRef = useRef(false);
   const retryKnownVenuesRef = useRef<((capture: NonNullable<ReturnType<typeof localReadinessLocation>>, flowGeneration: number) => Promise<void>) | null>(null);
   const retryPublicPlacesRef = useRef<(() => Promise<void>) | null>(null);
+  const publicDiscoveryRef = useRef<AbortController | null>(null);
+  const publicDiscoveryAllowedRef = useRef(false);
 
 
 
@@ -395,6 +401,24 @@ export default function ContextualCheckInControl({ enabled, rightOffset = 10, bo
   const [creatingPrivatePlace, setCreatingPrivatePlace] = useState(false);
   const [privatePlaceError, setPrivatePlaceError] = useState('');
   const [locationInfoVisible, setLocationInfoVisible] = useState(false);
+  publicDiscoveryAllowedRef.current = enabled && isFocused && pickerVisible;
+  const cancelPublicDiscovery = useCallback(() => {
+    const request = publicDiscoveryRef.current;
+    publicDiscoveryRef.current = null;
+    request?.abort();
+    setDiscovering(false);
+    setConfirmingReadiness(false);
+    setPendingDiscoverySessionId('');
+  }, []);
+  useEffect(() => {
+    if (!enabled || !isFocused || !pickerVisible || !externalSearchVisible) {
+      const interruptedSearch = !!publicDiscoveryRef.current || !!pendingDiscoverySessionId;
+      cancelPublicDiscovery();
+      if (pickerVisible && externalSearchVisible && interruptedSearch) {
+        setDiscoveryError('Public place search was paused. Try again to search nearby.');
+      }
+    }
+  }, [cancelPublicDiscovery, enabled, externalSearchVisible, isFocused, pendingDiscoverySessionId, pickerVisible]);
   const canonicalCacheRef = useRef<{ sessionId: string; expiresAtMs: number; places: VenueCandidate[] } | null>(null);
   const venues = useMemo(() => {
     const byId = new Map<string, VenueCandidate>();
@@ -477,7 +501,11 @@ export default function ContextualCheckInControl({ enabled, rightOffset = 10, bo
   }, [discovering, externalSearchVisible, placeEntryReady, pickerVisible]);
   useEffect(() => {
     mountedRef.current = true;
-    return () => { mountedRef.current = false; };
+    return () => {
+      mountedRef.current = false;
+      publicDiscoveryRef.current?.abort();
+      publicDiscoveryRef.current = null;
+    };
   }, []);
   useEffect(() => {
     if (isFocused) checkInRouteOpeningRef.current = false;
@@ -640,7 +668,7 @@ export default function ContextualCheckInControl({ enabled, rightOffset = 10, bo
   };
 
   const searchSomewhereElse = async () => {
-    if (discovering) return;
+    if (publicDiscoveryRef.current || !publicDiscoveryAllowedRef.current) return;
     setPendingDiscoverySessionId('');
     const localCapture = localReadinessLocation(user.uid, true);
     setExternalSearchVisible(true);
@@ -653,12 +681,16 @@ export default function ContextualCheckInControl({ enabled, rightOffset = 10, bo
       return;
     }
     const flowGeneration = flowGenerationRef.current;
+    const request = new AbortController();
+    publicDiscoveryRef.current = request;
+    const currentRequest = () => mountedRef.current && publicDiscoveryAllowedRef.current
+      && flowGenerationRef.current === flowGeneration && publicDiscoveryRef.current === request;
     setDiscovering(true);
     setConfirmingReadiness(true);
     try {
-      const confirmed = await waitForServerReadiness(user.uid, true, localCapture.sessionId);
+      const confirmed = await waitForServerReadiness(user.uid, true, localCapture.sessionId, undefined, request.signal);
+      if (!currentRequest()) return;
       setConfirmingReadiness(false);
-      if (!mountedRef.current || flowGenerationRef.current !== flowGeneration) return;
       const capture = confirmed ? acceptedReadinessLocation(user.uid, true) : null;
       if (!capture || capture.sessionId !== localCapture.sessionId) {
         const stillLocal = localReadinessLocation(user.uid, true);
@@ -674,7 +706,7 @@ export default function ContextualCheckInControl({ enabled, rightOffset = 10, bo
       const result = await discoverNearbyCheckInPlaces(location);
       const current = useCheckInReadinessStore.getState();
       const stillReady = acceptedReadinessLocation(user.uid, true);
-      if (!mountedRef.current || flowGenerationRef.current !== flowGeneration) return;
+      if (!currentRequest()) return;
       if (!stillReady || current.sessionId !== sessionId || stillReady.sessionId !== sessionId) {
         setDiscoveryError('Your location changed during the search. Stay still until the blue ring is ready, then try again.');
         return;
@@ -691,14 +723,17 @@ export default function ContextualCheckInControl({ enabled, rightOffset = 10, bo
         setDiscoveryError('No additional public places showed up nearby. Your GathR venues are still available.');
       }
     } catch (error) {
-      if (!mountedRef.current || flowGenerationRef.current !== flowGeneration) return;
+      if (!currentRequest()) return;
       setDiscoveryError(isNearbyPublicPlacesLookupUnavailable(error)
         ? 'Nearby public places could not be loaded. Your GathR venues are still available.'
         : messageForError(error));
     } finally {
-      if (mountedRef.current && flowGenerationRef.current === flowGeneration) {
-        setDiscovering(false);
-        setConfirmingReadiness(false);
+      if (publicDiscoveryRef.current === request) {
+        publicDiscoveryRef.current = null;
+        if (mountedRef.current && flowGenerationRef.current === flowGeneration) {
+          setDiscovering(false);
+          setConfirmingReadiness(false);
+        }
       }
     }
   };
@@ -762,6 +797,7 @@ export default function ContextualCheckInControl({ enabled, rightOffset = 10, bo
   const selectedPlace = (externalSearchVisible ? nearbyPlaces : knownPlaces)
     .find((place) => place.id === selectedPlaceId) || null;
   const returnToKnownPlaces = () => {
+    cancelPublicDiscovery();
     setExternalSearchVisible(false);
     setLocationInfoVisible(false);
     setDiscoveryError('');
@@ -843,7 +879,7 @@ export default function ContextualCheckInControl({ enabled, rightOffset = 10, bo
       setCreatingPrivatePlace(false);
     }
   };
-  const closePicker = () => { flowGenerationRef.current += 1; setPickerVisible(false); };
+  const closePicker = () => { flowGenerationRef.current += 1; cancelPublicDiscovery(); setPickerVisible(false); };
 
   const defaultReadinessCopy = 'Here prepares a private check-in. Place prepares a nearby public venue.';
   const earlyCopy = readiness.mode === 'basic' || !readiness.foregroundGranted
