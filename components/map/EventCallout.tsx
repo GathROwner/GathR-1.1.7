@@ -4711,6 +4711,8 @@ useEffect(() => {
           onGestureEvent={browseSwipe.onGestureEvent}
           onHandlerStateChange={browseSwipe.onStateChange}
         >
+        {/* Native-driver handlers must attach to separate native hosts. */}
+        <Animated.View collapsable={false} style={{ flex: 1 }}>
         <PanGestureHandler
           ref={dismissPanRef}
           enabled={calloutState !== 'minimized' && !isLightboxOpen && !pullDismiss.isClosing}
@@ -4783,6 +4785,7 @@ useEffect(() => {
           </ScrollView>
         </Animated.View>
         </PanGestureHandler>
+        </Animated.View>
         </PanGestureHandler>
           
           {/* Vertical Scroll Progress Bar */}
