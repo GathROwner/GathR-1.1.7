@@ -179,35 +179,34 @@ async function callAppCheckedSocial<Request, Response>(
 ): Promise<Response> {
   const user = auth.currentUser;
   if (!user) throw new SocialServiceError('unauthenticated', 'Sign in to use this feature.');
-  const appCheckToken = await getSocialAppCheckToken();
-
-  // Internal Preview OTAs can intentionally use the Production web Firebase
-  // project from a staging-registered native shell. In that configuration an
-  // App Check token must not be attached because it belongs to a different
-  // Firebase app. Let the Firebase callable SDK carry the matching web Auth
-  // context instead of hand-building an unattested request.
-  if (!appCheckToken) {
-    if (options.signal?.aborted) {
-      const error = new Error('The operation was aborted.');
-      error.name = 'AbortError';
-      throw error;
-    }
-    return (await httpsCallable<Request, Response>(functions, name, {
-      timeout: options.timeoutMs ?? 30_000,
-    })(data)).data;
-  }
-
-  const idToken = await user.getIdToken();
+  const abortError = new Error('The social request was canceled or timed out. Try again shortly.');
+  abortError.name = 'AbortError';
+  if (options.signal?.aborted) throw abortError;
   const controller = new AbortController();
   const abortFromCaller = () => controller.abort();
-  if (options.signal?.aborted) {
-    controller.abort();
-  } else {
-    options.signal?.addEventListener('abort', abortFromCaller);
-  }
+  let rejectAbort: (error: Error) => void = () => undefined;
+  const aborted = new Promise<never>((_resolve, reject) => { rejectAbort = reject; });
+  // A token provider may remain pending after cancellation. Its eventual result
+  // must never start a late HTTP request or block the observer's next GPS fix.
+  void aborted.catch(() => undefined);
+  const onAbort = () => rejectAbort(abortError);
+  controller.signal.addEventListener('abort', onAbort);
+  options.signal?.addEventListener('abort', abortFromCaller);
   const timeout = setTimeout(() => controller.abort(), options.timeoutMs ?? 30_000);
+  const withinDeadline = <T>(operation: () => Promise<T>): Promise<T> => controller.signal.aborted
+    ? Promise.reject(abortError)
+    : Promise.race([operation(), aborted]);
   try {
-    const response = await fetch(callableUrl(name), {
+    const appCheckToken = await withinDeadline(() => getSocialAppCheckToken());
+    // Preserve the intentional Preview compatibility path; token failure must
+    // never fall back to an unattested request in Production.
+    if (!appCheckToken) {
+      return (await withinDeadline(() => httpsCallable<Request, Response>(functions, name, {
+        timeout: options.timeoutMs ?? 30_000,
+      })(data))).data;
+    }
+    const idToken = await withinDeadline(() => user.getIdToken());
+    const response = await withinDeadline(() => fetch(callableUrl(name), {
       method: 'POST',
       headers: {
         authorization: `Bearer ${idToken}`,
@@ -216,8 +215,8 @@ async function callAppCheckedSocial<Request, Response>(
       },
       body: JSON.stringify({ data }),
       signal: controller.signal,
-    });
-    const payload = await response.json() as {
+    }));
+    const payload = await withinDeadline(() => response.json()) as {
       result?: Response;
       data?: Response;
       error?: { status?: string; message?: string; details?: unknown };
@@ -232,6 +231,7 @@ async function callAppCheckedSocial<Request, Response>(
     return (payload.result ?? payload.data) as Response;
   } finally {
     clearTimeout(timeout);
+    controller.signal.removeEventListener('abort', onAbort);
     options.signal?.removeEventListener('abort', abortFromCaller);
   }
 }
