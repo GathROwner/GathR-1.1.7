@@ -1,0 +1,15 @@
+# Preview callout mount crash — 2026-10-22
+
+Release blocked: iOS Preview 74f12fb / OTA 01a165be and Production map candidate b2aa2ac contain the same native-handler nesting defect. Do not promote either. Production remains 7411351; no Production code/release change is included here.
+
+Recovery: the user authorized restoring the exact prior working Preview group a3a62fba. One supported iOS-only republish restored source a997bb7/runtime 1.1.10 as OTA 01a165de-ff11-7af5-abfc-e372cfe95ca3, group 7383234c-d760-4ee9-b1a2-3c3ee71b2577. Served manifest, bundle hash, all asset hashes, unchanged channel mapping and Production isolation were verified. This restores the Production-account-continuity Preview bundle, not embedded staging auth. Phone adoption still needs footer confirmation.
+
+Confirmed introduced error: the horizontal and dismissal legacy PanGestureHandlers were direct parent/child, both using native Animated.event. Installed RNGH 2.28.0 createHandler forwards the outer handler's native event to its immediate child and unconditionally throws at render: “Nesting touch handlers with native animated driver is not supported yet”. This occurs on callout mount even with gestures disabled. No physical crash log was provided; this reproducible mount error is consistent with every cluster tap closing the release app.
+
+Smallest runtime correction: three added lines (including comment) insert a flex:1, collapsable=false Animated.View between the two handlers. Each now attaches to its own concrete native host. Recognition policy, simultaneous refs, native animation mappings, sheet dimensions and static iOS child presentation remain unchanged.
+
+Regression: EventCalloutNativeGestureMount-test imports the real installed legacy Pan class and mocks only the native bridge. It compiles the actual production JSX handler subtree, replacing only list contents with a leaf View. Before the runtime fix, expanded/minimized mounts both fail with the exact installed guard; the historical direct-nesting reproducer passes. After the fix, all 3 cases pass, including 5 mount/unmount cycles per state. The prior hook-only tests did not exercise handler mounting, so they missed this integration invariant.
+
+Validation: 45/45 focused tests across 10 suites; TypeScript pass; targeted lint 0 errors; diff check pass. Independent reviewer approved source, before/after reproduction and regression coverage. No fix OTA or native build has been published.
+
+Remaining gate: separately approved Preview fix publication, exact phone adoption, native iOS first/repeated sheet paint/layout, actual finger tracking and scroll-versus-dismiss/horizontal arbitration, cancellation, buttons/lightbox/tabs/accessibility/Reduce Motion and puck/count behavior. The Jest reproduction proves the mount exception and removes that path; it does not certify native painting or device gesture behavior. Keep Production blocked until physical acceptance and separately approved integration/publication.
