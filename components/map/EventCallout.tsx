@@ -33,7 +33,8 @@ import { shouldRepublishTutorialCalloutReadiness } from '../../utils/tutorialCal
 import { createTutorialPresentationSettler } from '../../utils/tutorialPresentationSettler';
 import { runTutorialAction } from '../../utils/tutorialActions';
 import { shouldRouteTutorialCalloutBack } from '../../utils/tutorialCalloutClosing';
-import { settleCalloutCloseAttempt } from '../../utils/calloutInteractionSafety';
+import { useCalloutPullDismiss } from '../../hooks/useCalloutPullDismiss';
+import CalloutDismissSurface from './CalloutDismissSurface';
 import { useTutorialUiStore } from '../../store/tutorialUiStore';
 
 
@@ -3492,7 +3493,7 @@ try {
   
   const translateY = useRef(new Animated.Value(0)).current;
   const backgroundOpacity = useRef(new Animated.Value(0)).current;
-  const closeAnimationStartedRef = useRef(false);
+  const dismissPanRef = useRef<PanGestureHandler>(null);
   const indicatorRotation = useRef(new Animated.Value(0)).current;
   
   const browsePanRef = useRef<PanGestureHandler>(null);
@@ -3697,6 +3698,15 @@ const safeTopOffset = 0;
 // transform path on Android, where it is needed for the established sheet UX.
 const useStaticIosCalloutPresentation = Platform.OS === 'ios' && !EVENT_CALLOUT_SHELL_ISOLATION_DEBUG;
 const currentCalloutHeight = getCalloutHeightForState(calloutState);
+const pullDismiss = useCalloutPullDismiss({
+  enabled: !isLightboxOpen && !EVENT_CALLOUT_SHELL_ISOLATION_DEBUG,
+  reduceMotion,
+  sheetHeight: currentCalloutHeight,
+  screenHeight: SCREEN_HEIGHT,
+  scrollY: () => scrollYRef.current,
+  onClose,
+  onCloseAccepted: () => { setCompactTabRenderMode(null); onCloseStart?.(); },
+});
 const CalloutContainerComponent: any =
   EVENT_CALLOUT_SHELL_ISOLATION_DEBUG || useStaticIosCalloutPresentation ? View : Animated.View;
 const calloutContainerStyle = EVENT_CALLOUT_SHELL_ISOLATION_DEBUG
@@ -3908,6 +3918,7 @@ useEffect(() => {
 ]);
 
 const setCalloutStateWithAnimation = (state: CalloutState) => {
+  if (state !== currentStateRef.current) pullDismiss.reset();
   if (EVENT_CALLOUT_SHELL_ISOLATION_DEBUG || useStaticIosCalloutPresentation) {
     setCalloutState(state);
     currentStateRef.current = state;
@@ -4008,95 +4019,8 @@ const setCalloutStateWithAnimation = (state: CalloutState) => {
     });
   };
 
-  // Animated close function - slides callout down before unmounting
-  const animateClose = useCallback(() => {
-    if (closeAnimationStartedRef.current) {
-      traceMapEvent('event_callout_close_attempt_ignored', {
-        reason: 'close_already_started',
-        clusterId: cluster?.id ?? 'none',
-        venueCount: venues.length,
-      });
-      return;
-    }
-    closeAnimationStartedRef.current = true;
-    traceMapEvent('event_callout_close_attempt_started', {
-      clusterId: cluster?.id ?? 'none',
-      venueCount: venues.length,
-      calloutState: currentStateRef.current,
-      staticIosPresentation: useStaticIosCalloutPresentation,
-    });
-
-    const settleCloseRequest = (result: boolean | void) => {
-      const accepted = settleCalloutCloseAttempt(result, () => {
-        closeAnimationStartedRef.current = false;
-      });
-      traceMapEvent('event_callout_close_request_settled', {
-        accepted,
-        clusterId: cluster?.id ?? 'none',
-        venueCount: venues.length,
-      });
-    };
-
-    if (Platform.OS === 'android') {
-      (calloutRootRef.current as any)?.setNativeProps?.({
-        pointerEvents: 'none',
-        style: {
-          opacity: 0,
-          transform: [{ translateY: SCREEN_HEIGHT }],
-        },
-      });
-    }
-    onCloseStart?.();
-
-    if (useStaticIosCalloutPresentation) {
-      console.log('ANIMATE CLOSE - static iOS close path');
-      setCompactTabRenderMode(null);
-      settleCloseRequest(onClose());
-      return;
-    }
-
-    if (Platform.OS === 'android') {
-      console.log('ANIMATE CLOSE - immediate Android close path');
-      translateY.setValue(SCREEN_HEIGHT);
-      backgroundOpacity.setValue(0);
-      setCompactTabRenderMode(null);
-      settleCloseRequest(onClose());
-      return;
-    }
-
-    console.log('ANIMATE CLOSE - sliding callout down');
-    Animated.parallel([
-      Animated.timing(translateY, {
-        toValue: SCREEN_HEIGHT,
-        duration: 250,
-        useNativeDriver: true,
-      }),
-      Animated.timing(backgroundOpacity, {
-        toValue: 0,
-        duration: 200,
-        useNativeDriver: true,
-      }),
-    ]).start(({ finished }) => {
-      if (finished) {
-        setCompactTabRenderMode(null);
-        settleCloseRequest(onClose());
-      } else {
-        closeAnimationStartedRef.current = false;
-        traceMapEvent('event_callout_close_attempt_cancelled', {
-          clusterId: cluster?.id ?? 'none',
-          venueCount: venues.length,
-        });
-      }
-    });
-  }, [
-    backgroundOpacity,
-    cluster?.id,
-    onClose,
-    onCloseStart,
-    translateY,
-    useStaticIosCalloutPresentation,
-    venues.length,
-  ]);
+  // A separate fixed-size surface animates dismissal without changing iOS sheet layout.
+  const animateClose = pullDismiss.close;
 
   const isShellVerticalDrag = useCallback((gestureState: { dx: number; dy: number }) => {
     const { dx, dy } = gestureState;
@@ -4110,6 +4034,8 @@ const setCalloutStateWithAnimation = (state: CalloutState) => {
   // Tutorial and gesture handlers call through refs so mounted responders stay current.
   const setCalloutStateRef = useRef(setCalloutStateWithAnimation);
   const onCloseRef = useRef(animateClose);
+
+  const { begin: beginDismissDrag, move: moveDismissDrag, finish: finishDismissDrag, cancel: cancelDismissDrag } = pullDismiss;
 
   // Attach the PanResponder to the fixed shell controls above the scroll content.
   const createShellPanResponder = useCallback(
@@ -4147,6 +4073,7 @@ const setCalloutStateWithAnimation = (state: CalloutState) => {
         return false;
       },
       onPanResponderGrant: () => {
+        beginDismissDrag();
         translateY.stopAnimation();
         translateY.extractOffset();
         traceMapEvent('event_callout_shell_pan_granted', {
@@ -4158,6 +4085,11 @@ const setCalloutStateWithAnimation = (state: CalloutState) => {
       onPanResponderMove: (_, gestureState) => {
         // LOG: Pan gesture movement tracking
         // console.log('MOVE - dy:', gestureState.dy.toFixed(2), 'dx:', gestureState.dx.toFixed(2), 'vy:', gestureState.vy.toFixed(2));
+        if (gestureState.dy >= 0) {
+          moveDismissDrag(gestureState.dy);
+          return;
+        }
+        moveDismissDrag(0);
         translateY.setValue(gestureState.dy);
         let opacity = 0;
         if (currentStateRef.current === 'expanded') {
@@ -4174,6 +4106,8 @@ const setCalloutStateWithAnimation = (state: CalloutState) => {
       onPanResponderRelease: (_, gestureState) => {
         translateY.flattenOffset();
         const { dy, vy } = gestureState;
+        if (dy > 0) { finishDismissDrag(vy * 1000); return; }
+        cancelDismissDrag();
         traceMapEvent('event_callout_shell_pan_released', {
           clusterId: cluster?.id ?? 'none',
           venueCount: venues.length,
@@ -4183,25 +4117,11 @@ const setCalloutStateWithAnimation = (state: CalloutState) => {
         });
         console.log('RELEASE - dy:', dy.toFixed(2), 'vy:', vy.toFixed(2), 'current state:', currentStateRef.current);
 
-        // === LARGE SWIPE DOWN from ANY state → dismiss callout ===
-        if (dy > LARGE_SWIPE_DISTANCE || vy > LARGE_SWIPE_VELOCITY) {
-          console.log('LARGE SWIPE DOWN - dismissing callout (dy:', dy.toFixed(2), 'vy:', vy.toFixed(2), ')');
-          onCloseRef.current();
-          return;
-        }
-
         // === LARGE SWIPE UP from minimized → jump directly to expanded ===
         if (currentStateRef.current === 'minimized' &&
             (dy < -LARGE_SWIPE_DISTANCE || vy < -LARGE_SWIPE_VELOCITY)) {
           console.log('LARGE SWIPE UP from minimized - jumping to expanded (dy:', dy.toFixed(2), 'vy:', vy.toFixed(2), ')');
           setCalloutStateRef.current('expanded');
-          return;
-        }
-
-        // === Small down drag from minimized → dismiss ===
-        if (currentStateRef.current === 'minimized' && dy > 10) {
-          console.log('CLOSING callout from minimized');
-          onCloseRef.current();
           return;
         }
 
@@ -4236,6 +4156,7 @@ const setCalloutStateWithAnimation = (state: CalloutState) => {
       onPanResponderTerminationRequest: () => true,
       onPanResponderTerminate: (_, gestureState) => {
         translateY.flattenOffset();
+        cancelDismissDrag();
         traceMapEvent('event_callout_shell_pan_terminated', {
           clusterId: cluster?.id ?? 'none',
           venueCount: venues.length,
@@ -4251,6 +4172,10 @@ const setCalloutStateWithAnimation = (state: CalloutState) => {
       cluster?.id,
       indicatorRotation,
       isShellVerticalDrag,
+      beginDismissDrag,
+      moveDismissDrag,
+      finishDismissDrag,
+      cancelDismissDrag,
       translateY,
       venues.length,
     ]
@@ -4557,16 +4482,18 @@ useEffect(() => {
         <Animated.View 
           style={[
             styles.dimOverlay,
-            { opacity: backgroundOpacity }
+            { opacity: Animated.multiply(backgroundOpacity, pullDismiss.backdropFactor) }
           ]} 
           pointerEvents="none"
         />
       )}
       
       {/* Always render the callout, but apply style changes when lightbox is open */}
+      <CalloutDismissSurface translateY={pullDismiss.translateY} closing={pullDismiss.isClosing}>
       <CalloutContainerComponent
         ref={calloutRootRef}
         pointerEvents={isLightboxOpen ? 'none' : 'auto'}
+        onAccessibilityEscape={animateClose}
         style={calloutContainerStyle}
         onLayout={(event: LayoutChangeEvent) => {
           const { height, width, x, y } = event.nativeEvent.layout;
@@ -4649,6 +4576,8 @@ useEffect(() => {
               onPress={() => setCalloutStateWithAnimation(
                 currentStateRef.current === 'expanded' ? 'normal' : 'expanded'
               )}
+              accessibilityRole="button"
+              accessibilityLabel={calloutState === 'expanded' ? 'Reduce callout' : 'Expand callout'}
               style={styles.resetButton}
               activeOpacity={0.7}
             >
@@ -4668,6 +4597,8 @@ useEffect(() => {
                 });
                 animateClose();
               }}
+              accessibilityRole="button"
+              accessibilityLabel="Close callout"
               style={styles.closeButton}
               activeOpacity={0.7}
             >
@@ -4779,12 +4710,23 @@ useEffect(() => {
           onGestureEvent={browseSwipe.onGestureEvent}
           onHandlerStateChange={browseSwipe.onStateChange}
         >
+        <PanGestureHandler
+          ref={dismissPanRef}
+          enabled={calloutState !== 'minimized' && !isLightboxOpen && !pullDismiss.isClosing}
+          activeOffsetY={12}
+          failOffsetY={-12}
+          failOffsetX={[-20, 20]}
+          maxPointers={1}
+          simultaneousHandlers={[scrollViewRef, browsePanRef]}
+          onGestureEvent={pullDismiss.onGestureEvent}
+          onHandlerStateChange={pullDismiss.onStateChange}
+        >
         <Animated.View style={{ flex: 1, overflow: 'hidden', transform: [{ translateX: browseSwipe.translateX }] }}>
         <ScrollView 
             ref={scrollViewRef}
             style={styles.calloutContent}
             showsVerticalScrollIndicator={false}
-            simultaneousHandlers={browsePanRef}
+            simultaneousHandlers={[browsePanRef, dismissPanRef]}
             scrollEventThrottle={16}
             scrollEnabled={calloutState !== 'minimized'}
             bounces={false}
@@ -4840,6 +4782,7 @@ useEffect(() => {
           </ScrollView>
         </Animated.View>
         </PanGestureHandler>
+        </PanGestureHandler>
           
           {/* Vertical Scroll Progress Bar */}
           {canScrollMore && (
@@ -4874,6 +4817,7 @@ useEffect(() => {
           )}
         </GestureHandlerRootView>
       </CalloutContainerComponent>
+      </CalloutDismissSurface>
 
       {/* Render the lightbox modal when needed - supports both local and global state */}
       {!EVENT_CALLOUT_SHELL_ISOLATION_DEBUG &&

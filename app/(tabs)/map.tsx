@@ -198,6 +198,8 @@ import {
   getTutorialModalOverlay,
   subscribeTutorialModalOverlay,
 } from '../../utils/tutorialModalOverlay';
+import { useClusterPuckLayout } from '../../hooks/useClusterPuckLayout';
+import type { PuckDisplacement } from '../../utils/clusterPuckLayout';
 import { useReduceMotion } from '../../hooks/useReduceMotion';
 import {
   isAreaExperienceEvent,
@@ -328,7 +330,6 @@ const STARTUP_CLUSTER_MARKER_LIMIT = 12;
 const FULL_CLUSTER_MARKER_DELAY_MS = 1000;
 const RICH_CLUSTER_MARKER_DELAY_MS = Platform.OS === 'ios' ? 0 : 2000;
 const ANDROID_RICH_CLUSTER_MARKER_MIN_ZOOM = 13;
-const ANDROID_LOCATION_PUCK_MIN_ZOOM = 11.25;
 const ANDROID_FULL_CLUSTER_MARKER_HOTSPOT_SETTLE_MS = 0;
 const ANDROID_FULL_CLUSTER_MARKER_HOTSPOT_BACKUP_MS = 4000;
 const MAP_BLUR_CLEANUP_DELAY_MS = Platform.OS === 'android' ? 1000 : 0;
@@ -1130,6 +1131,7 @@ const buildAndroidClusterMarkerShape = (
     reduceMotionEnabled?: boolean;
     selectedClusterId: string | null;
     userInterests: string[];
+    puckOffsets?: Record<string, PuckDisplacement>;
   }
 ): AndroidClusterMarkerShape => ({
   type: 'FeatureCollection',
@@ -1141,6 +1143,7 @@ const buildAndroidClusterMarkerShape = (
       const isProcessing = cluster.id === options.processingClusterId;
       const detailsEnabled =
         options.detailsEnabled ||
+        !!options.puckOffsets?.[cluster.id] ||
         isSelected ||
         cluster.id === options.forceDetailsClusterId;
       const isBroadcasting = detailsEnabled && !!cluster.isBroadcasting;
@@ -1267,7 +1270,7 @@ const buildAndroidClusterMarkerShape = (
         },
         geometry: {
           type: 'Point',
-          coordinates: getClusterCoordinate(cluster),
+          coordinates: options.puckOffsets?.[cluster.id]?.coordinate ?? getClusterCoordinate(cluster),
         },
       };
     }),
@@ -2055,10 +2058,8 @@ const ClusterEventStage: React.FC<ClusterEventStageProps> = ({
  * Native user-location puck. Keeping this off MarkerView lets it appear without
  * waiting for the slower Android annotation path used by event cluster markers.
  */
-const UserLocationMarker: React.FC<{ visible: boolean; zoomLevel: number }> = ({ visible, zoomLevel }) => {
-  const shouldShowLocationPuck =
-    visible &&
-    (Platform.OS !== 'android' || zoomLevel >= ANDROID_LOCATION_PUCK_MIN_ZOOM);
+const UserLocationMarker: React.FC<{ visible: boolean; zoomLevel: number }> = ({ visible }) => {
+  const shouldShowLocationPuck = visible;
 
   if (!shouldShowLocationPuck) return null;
 
@@ -4633,6 +4634,22 @@ useEffect(() => {
   // Actual map viewport dimensions (accounting for header, tab bar, safe areas)
   const [mapDimensions, setMapDimensions] = useState<{ width: number; height: number } | null>(null);
   const mapDimensionsRef = useRef<{ width: number; height: number } | null>(null);
+  const puckTutorialVisible = useTutorialUiStore(state => state.isVisible);
+  const puckEligibleClusters = useMemo(() => clusters
+    .filter(cluster => shouldClusterBeVisible(cluster, filterCriteria))
+    .map(cluster => interestCarouselFilter?.status === 'active'
+      ? filterClusterForInterestCarouselFilter(cluster, interestCarouselFilter) : cluster)
+    .filter((cluster): cluster is Cluster => cluster !== null),
+  [clusters, filterCriteria, interestCarouselFilter, shouldClusterBeVisible]);
+  const clusterPuckLayout = useClusterPuckLayout({
+    map: mapRef,
+    clusters: puckEligibleClusters,
+    userCoordinate: location ? [location.coords.longitude, location.coords.latitude] : null,
+    width: mapDimensions?.width ?? 0,
+    height: mapDimensions?.height ?? 0,
+    enabled: isFocused && locationPermissionGranted && !puckTutorialVisible,
+    coordinateForCluster: USE_ANDROID_NATIVE_CLUSTER_MARKER_LAYERS ? getClusterCoordinate : getClusterRenderCoordinates,
+  });
   const [, setBeaconProjectionEpoch] = useState(0);
   const [mapScreenOffset, setMapScreenOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [iosMapViewRevision, setIosMapViewRevision] = useState(0);
@@ -5944,7 +5961,7 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
     );
     const projected = sourceClusters
       .map((cluster): AndroidClusterHitTarget | null => {
-        const coordinate = getClusterMapCoordinate(cluster);
+        const coordinate = clusterPuckLayout.offsets[cluster.id]?.coordinate ?? getClusterMapCoordinate(cluster);
         if (!coordinate) {
           return null;
         }
@@ -5968,6 +5985,7 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
   }, [
     clusters,
     clustersReadyForInteraction,
+    clusterPuckLayout.offsets,
     filterCriteria,
     isFocused,
     isLoading,
@@ -7464,41 +7482,9 @@ lastOpenedClusterIdRef.current = cluster.id;
         console.log(`[Hotspot]   ${idx + 1}. ${v.venue} (score: ${v.relevanceScore?.toFixed(2)}, top event: "${topEvent?.title}" ${topEvent?.category})`);
       });
       
-      const moveCameraToCluster = () => {
-        setIgnoreProgrammaticTrace(true, 'cluster_tap_camera_move');
-        logPills('PROGRAMMATIC MOVE START (cluster tap) — suppress hides 800ms');
-        setTimeout(() => {
-          setIgnoreProgrammaticTrace(false, 'cluster_tap_camera_move_complete');
-          logPills('PROGRAMMATIC MOVE END (cluster tap)');
-        }, 800);
+      // Cluster selection preserves the camera; explicit camera controls remain independent.
+      traceMapEvent('cluster_callout_camera_preserved', { clusterId: cluster.id });
 
-        cameraRef.current?.setCamera({
-          centerCoordinate: preparedCallout.coordinates,
-          zoomLevel: 14,
-          animationDuration: 500,
-        });
-      };
-
-      if (!shouldOpenCalloutForMarker) {
-        traceMapEvent('city_lightbox_only_camera_move_skipped', {
-          clusterId: cluster.id,
-          venueCount: sortedVenues.length,
-        });
-      } else if (Platform.OS === 'android') {
-        if (androidCalloutCameraMoveTimerRef.current) {
-          clearTimeout(androidCalloutCameraMoveTimerRef.current);
-          androidCalloutCameraMoveTimerRef.current = null;
-        }
-        traceMapEvent('android_callout_camera_move_skipped_freeze_map', {
-          clusterId: cluster.id,
-          venueCount: sortedVenues.length,
-        });
-      } else {
-        moveCameraToCluster();
-      }
-
-
-      // 🔥 ANALYTICS: TEMPORARILY COMMENTED OUT - Track successful cluster interaction
       // const interactionDuration = Date.now() - interactionStartTime;
       // analytics.trackMapInteraction('cluster_clicked', {
       //   cluster_id: cluster.id,
@@ -9622,7 +9608,7 @@ Clustering refresh: keep zoom → store → recluster in sync
       const DEBOUNCE_DELAY = 50; // Final fetch 50ms after movement stops
       const ANDROID_PRIORITY_FETCH_MIN_INTERVAL = 180;
       const ANDROID_PRIORITY_ZOOM_DELTA = 0.35;
-      const ANDROID_OVERVIEW_ZOOM = ANDROID_LOCATION_PUCK_MIN_ZOOM;
+      const ANDROID_OVERVIEW_ZOOM = 11.25;
       const ANDROID_LATE_DEBOUNCE_SKIP_MS = 750;
       const ANDROID_LATE_DEBOUNCE_MAX_SPAN_RATIO = 0.04;
       const ANDROID_LATE_DEBOUNCE_MAX_CENTER_DEGREES = 0.004;
@@ -10245,8 +10231,25 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
       console.log(`[MapLoad][${__ml_sessionIdRef.current}] startup_marker_subset_rendered +${delta}ms (visible=${visibleClustersForRender.length}, rendered=${clustersForRender.length})`);
     }
 
+    const puckLeaderFeatures = interestFilteredClustersForRender.flatMap(cluster => {
+      const offset = clusterPuckLayout.offsets[cluster.id];
+      return offset ? [
+        { type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: [offset.anchor, offset.coordinate] } },
+        { type: 'Feature', properties: {}, geometry: { type: 'Point', coordinates: offset.anchor } },
+      ] : [];
+    });
+    const puckLeaders = puckLeaderFeatures.length > 0 ? (
+      <MapboxGL.ShapeSource id="cluster-puck-leaders" shape={{ type: 'FeatureCollection', features: puckLeaderFeatures } as any}>
+        <MapboxGL.LineLayer id="cluster-puck-leader-lines" filter={['==', ['geometry-type'], 'LineString'] as any}
+          style={{ lineColor: '#8C6E31', lineWidth: 2, lineOpacity: 0.9 }} />
+        <MapboxGL.CircleLayer id="cluster-puck-leader-anchors" filter={['==', ['geometry-type'], 'Point'] as any}
+          style={{ circleRadius: 3, circleColor: '#8C6E31', circleStrokeColor: '#FFFFFF', circleStrokeWidth: 1 }} />
+      </MapboxGL.ShapeSource>
+    ) : null;
+
     if (USE_ANDROID_NATIVE_CLUSTER_MARKER_LAYERS) {
       const layerMarkerShape = buildAndroidClusterMarkerShape(interestFilteredClustersForRender, {
+        puckOffsets: clusterPuckLayout.offsets,
         categoryCycleTick: androidCategoryCycleTick,
         clustersReadyForInteraction,
         detailsEnabled: richClusterMarkerDetailsEnabled,
@@ -10259,6 +10262,8 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
       });
 
       return (
+        <>
+        {puckLeaders}
         <MapboxGL.ShapeSource
           key="android-cluster-layer-source"
           id="android-cluster-layer-source"
@@ -10297,7 +10302,7 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
                     )
                   )
                 : 0;
-            const friendCluster = friendHitRadiusMeters > 0
+            const friendCluster = !clusterPuckLayout.offsets[clusterId] && friendHitRadiusMeters > 0
               ? findFriendPresenceClusterNearCoordinate(
                   interestFilteredClustersForRender,
                   pressCoordinate,
@@ -10780,13 +10785,16 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
             }}
           />
         </MapboxGL.ShapeSource>
+        </>
       );
     }
 
-    return interestFilteredClustersForRender
+    return <>
+      {puckLeaders}
+      {interestFilteredClustersForRender
       .map((cluster: Cluster, index: number) => {
         // Calculate the coordinates for the cluster
-        const coordinates = getClusterRenderCoordinates(cluster);
+        const coordinates = clusterPuckLayout.offsets[cluster.id]?.coordinate ?? getClusterRenderCoordinates(cluster);
       
         // Check if this cluster contains the selected venue
         const isSelected =
@@ -10870,8 +10878,8 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
             id={markerKey}
             coordinate={coordinates}
             anchor={{ x: 0.5, y: 1.0 }}
-            allowOverlap={Platform.OS === 'android'}
-            allowOverlapWithPuck={Platform.OS === 'android'}
+            allowOverlap={Platform.OS === 'android' || !!clusterPuckLayout.offsets[cluster.id]}
+            allowOverlapWithPuck
             isSelected={isSelected}
              
           >
@@ -10926,12 +10934,16 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
                 }
                 void handleMarkerPress(cluster);
               }}
+              accessibilityRole="button"
+              accessibilityLabel={String(cluster.eventCount || 0) + ' events, ' + String(cluster.specialCount || 0) + ' specials at ' + String(cluster.venues.length) + ' venues'}
+              accessibilityHint="Opens event details without moving the map"
               testID={isClosestCluster ? "closest-cluster" : undefined}
               disabled={!clustersReadyForInteraction || processingClusterId !== null}
               activeOpacity={0.7}
               hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
               style={[
                 styles.clusterMarkerTouchableFrame,
+                clusterPuckLayout.offsets[cluster.id] && { minWidth: 44, minHeight: 44 },
                 isDimmedByInterestFilter && styles.interestFilteredMarkerDimmed,
                 isBeaconDocked && {
                   transform: [
@@ -10988,7 +11000,8 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
             </TouchableOpacity>
           </MapboxGL.MarkerView>
         );
-      });
+      })}
+    </>;
   };
 
   // Render error state if there is an error
@@ -11193,6 +11206,7 @@ onLayout={(event) => {
   }
 }}
 onMapIdle={() => {
+  clusterPuckLayout.refresh();
   lastMapIdleAtRef.current = Date.now();
   traceMapEvent('mapbox_on_map_idle', {
     sinceLastMeaningfulCameraMs: gestureTraceLastMeaningfulAtRef.current === null
