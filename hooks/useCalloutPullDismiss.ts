@@ -13,12 +13,15 @@ type Options = {
   onCloseAccepted?: () => void;
 };
 
-/** Transform a fixed-size surface; the iOS sheet itself keeps its static layout. */
+/** Raw native events and settling animations never own the same value. */
 export function useCalloutPullDismiss(options: Options) {
   const latest = useRef(options);
   useLayoutEffect(() => { latest.current = options; });
   const dragY = useRef(new Animated.Value(0)).current;
+  const positionY = useRef(new Animated.Value(0)).current;
   const gate = useRef(new Animated.Value(0)).current;
+  const position = useRef(0);
+  const lastRawY = useRef(0);
   const eligible = useRef(false);
   const active = useRef(false);
   const settling = useRef(false);
@@ -32,38 +35,63 @@ export function useCalloutPullDismiss(options: Options) {
     closing.current = false;
     setIsClosing(false);
     active.current = false;
+    eligible.current = false;
     settling.current = false;
     heldOnBegin.current = false;
-    eligible.current = false;
     gate.setValue(0);
-    dragY.stopAnimation();
-    dragY.setOffset(0);
+    positionY.stopAnimation();
+    positionY.setOffset(0);
+    positionY.setValue(0);
     dragY.setValue(0);
-  }, [dragY, gate]);
+    position.current = 0;
+    lastRawY.current = 0;
+  }, [dragY, gate, positionY]);
 
   const snapBack = useCallback(() => {
     const ticket = ++generation.current;
     closing.current = false;
     setIsClosing(false);
     active.current = false;
+    eligible.current = false;
+    heldOnBegin.current = false;
     settling.current = true;
-    dragY.flattenOffset();
+    gate.setValue(0);
     if (latest.current.reduceMotion) { reset(); return; }
-    Animated.spring(dragY, {
+    Animated.spring(positionY, {
       toValue: 0, stiffness: 260, damping: 30, mass: 0.8,
       overshootClamping: true, useNativeDriver: true,
-    }).start(({ finished }) => { if (finished && ticket === generation.current) reset(); });
-  }, [dragY, reset]);
+    }).start(() => { if (ticket === generation.current) reset(); });
+  }, [gate, positionY, reset]);
+
+  // Transfer the terminal payload exactly once. Offset operations preserve the
+  // actual native held base, including a spring interrupted by another gesture.
+  const handoff = useCallback((translation = lastRawY.current): number | undefined => {
+    if (!eligible.current || closing.current) return undefined;
+    const delta = active.current && Number.isFinite(translation) ? translation : 0;
+    const distance = Math.max(0, position.current + delta);
+    gate.setValue(0);
+    positionY.setOffset(delta);
+    positionY.flattenOffset();
+    position.current += delta;
+    dragY.setValue(0);
+    lastRawY.current = 0;
+    eligible.current = false;
+    active.current = false;
+    heldOnBegin.current = false;
+    return distance;
+  }, [dragY, gate, positionY]);
 
   const close = useCallback(() => {
     if (closing.current || !latest.current.enabled) return;
+    if (eligible.current) handoff();
     closing.current = true;
     setIsClosing(true);
-    active.current = false;
     eligible.current = false;
-    gate.setValue(1);
-    dragY.flattenOffset();
+    active.current = false;
+    settling.current = false;
+    gate.setValue(0);
     const ticket = ++generation.current;
+    positionY.stopAnimation();
     const complete = () => {
       if (ticket !== generation.current) return;
       const accepted = latest.current.onClose() !== false;
@@ -71,80 +99,98 @@ export function useCalloutPullDismiss(options: Options) {
       else snapBack();
     };
     if (latest.current.reduceMotion) { complete(); return; }
-    Animated.timing(dragY, {
+    Animated.timing(positionY, {
       toValue: latest.current.screenHeight, duration: 220, useNativeDriver: true,
     }).start(({ finished }) => {
       if (ticket !== generation.current) return;
-      if (finished) complete();
-      else snapBack();
+      if (finished) complete(); else snapBack();
     });
-  }, [dragY, gate, snapBack]);
+  }, [gate, handoff, positionY, snapBack]);
 
   const begin = useCallback((fromContent = false) => {
     if (closing.current) return;
     const allowed = latest.current.enabled && (!fromContent || isCalloutContentAtTop(latest.current.scrollY()));
+    // An ineligible scroll must not interrupt an already running snap-back.
+    if (!allowed) {
+      eligible.current = false;
+      active.current = false;
+      heldOnBegin.current = false;
+      gate.setValue(0);
+      return;
+    }
     generation.current += 1;
-    heldOnBegin.current = allowed && settling.current;
+    heldOnBegin.current = settling.current;
     settling.current = false;
     eligible.current = allowed;
-    active.current = false;
-    // extractOffset also runs on the native node. No asynchronous getValue
-    // callback can overwrite the next ACTIVE event during an interrupted settle.
-    dragY.stopAnimation();
-    if (allowed) dragY.extractOffset();
-    else { dragY.setOffset(0); dragY.setValue(0); }
-    gate.setValue(allowed ? 1 : 0);
-  }, [dragY, gate]);
+    active.current = allowed && !fromContent;
+    // Never wait for native getValue before recognition or terminal settling.
+    positionY.stopAnimation();
+    dragY.setValue(0);
+    lastRawY.current = 0;
+    gate.setValue(active.current ? 1 : 0);
+  }, [dragY, gate, positionY]);
 
   const move = useCallback((distance: number) => {
-    if (eligible.current && !closing.current) dragY.setValue(Math.max(0, distance));
+    if (eligible.current && !closing.current) {
+      lastRawY.current = Math.max(0, distance);
+      dragY.setValue(lastRawY.current);
+    }
   }, [dragY]);
 
-  const finish = useCallback((velocity: number) => {
-    if (!eligible.current || closing.current) return;
-    active.current = false;
-    const ticket = generation.current;
-    dragY.flattenOffset();
-    dragY.stopAnimation((distance) => {
-      if (ticket !== generation.current) return;
-      if (shouldDismissCalloutPull(distance, velocity, latest.current.sheetHeight)) close();
-      else snapBack();
-    });
-  }, [close, dragY, snapBack]);
+  const finish = useCallback((velocity: number, terminalTranslation?: number) => {
+    const distance = handoff(terminalTranslation);
+    if (distance === undefined) return;
+    if (shouldDismissCalloutPull(distance, velocity, latest.current.sheetHeight)) close();
+    else snapBack();
+  }, [close, handoff, snapBack]);
+
+  const cancel = useCallback((terminalTranslation?: number) => {
+    if (closing.current) return;
+    if (eligible.current) handoff(terminalTranslation);
+    snapBack();
+  }, [handoff, snapBack]);
 
   const onGestureEvent = useMemo(() => Animated.event(
     [{ nativeEvent: { translationY: dragY } }], { useNativeDriver: true },
   ), [dragY]);
   const onStateChange = useCallback(({ nativeEvent: e }: PanGestureHandlerStateChangeEvent) => {
+    if (closing.current) return;
     if (e.state === State.BEGAN) { begin(true); return; }
     if (e.state === State.ACTIVE) {
       eligible.current = eligible.current && e.translationY > 0 && e.translationY > Math.abs(e.translationX) * 1.5;
       active.current = eligible.current;
-      gate.setValue(eligible.current ? 1 : 0);
+      lastRawY.current = e.translationY;
+      gate.setValue(active.current ? 1 : 0);
       return;
     }
-    if (e.state === State.END) {
-      if (active.current) finish(e.velocityY);
-      else if (!closing.current) reset();
+    if (e.state !== State.END && e.state !== State.CANCELLED && e.state !== State.FAILED) return;
+    // Duplicate terminal events cannot add distance twice or stop a settle.
+    if (!eligible.current && !heldOnBegin.current) {
+      if (!settling.current) reset();
       return;
     }
-    if ((e.state === State.CANCELLED || e.state === State.FAILED) && !closing.current) {
-      if (active.current) snapBack();
-      else if (heldOnBegin.current) { dragY.setValue(0); gate.setValue(1); snapBack(); }
-      else reset();
-    }
-  }, [begin, dragY, finish, gate, reset, snapBack]);
+    if (e.state === State.END && active.current) { finish(e.velocityY, e.translationY); return; }
+    if (active.current) cancel(e.translationY);
+    else if (heldOnBegin.current) cancel(0);
+    else reset();
+  }, [begin, cancel, finish, gate, reset]);
 
   useEffect(() => { if (!options.enabled) reset(); }, [options.enabled, reset]);
-  useEffect(() => () => {
-    generation.current += 1;
-    dragY.stopAnimation();
-  }, [dragY]);
-  const translateY = useMemo(() => Animated.multiply(gate, dragY).interpolate({
+  useEffect(() => {
+    // A ref-only listener tracks the held base for regrab thresholds; animation
+    // position stays native, and terminal events never depend on this delivery.
+    const listener = positionY.addListener(({ value }) => { position.current = value; });
+    return () => {
+      generation.current += 1;
+      positionY.removeListener(listener);
+      positionY.stopAnimation();
+    };
+  }, [positionY]);
+  const translateY = useMemo(() => Animated.add(positionY, Animated.multiply(gate, dragY)).interpolate({
     inputRange: [0, options.screenHeight], outputRange: [0, options.screenHeight], extrapolate: 'clamp',
-  }), [dragY, gate, options.screenHeight]);
+  }), [dragY, gate, positionY, options.screenHeight]);
   const backdropFactor = useMemo(() => translateY.interpolate({
     inputRange: [0, options.screenHeight], outputRange: [1, 0], extrapolate: 'clamp',
   }), [translateY, options.screenHeight]);
-  return { translateY, backdropFactor, isClosing, begin, move, finish, cancel: snapBack, close, reset, onGestureEvent, onStateChange };
+  return { translateY, backdropFactor, isClosing, begin, move, finish, cancel, close, reset, onGestureEvent, onStateChange };
 }

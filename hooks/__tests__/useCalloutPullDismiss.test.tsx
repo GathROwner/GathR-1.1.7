@@ -92,15 +92,14 @@ describe('callout dismissal ownership and completion', () => {
     expect((pull.translateY as any).__getValue()).toBe(0);
     expect(Animated.spring).not.toHaveBeenCalled();
   });
-  it('begins synchronously and invalidates a delayed release value under UI pressure', () => {
+  it('settles immediately without waiting for a native value-read callback', () => {
     const value = (pull.onGestureEvent as any)._argMapping[0].nativeEvent.translationY;
     const pending: ((value: number) => void)[] = [];
     jest.spyOn(value, 'stopAnimation').mockImplementation((callback: any) => { if (callback) pending.push(callback); });
-    act(() => { pull.begin(); pull.move(120); });
-    expect(pending).toHaveLength(0);
-    act(() => pull.finish(0)); expect(pending).toHaveLength(1);
-    act(() => { pull.begin(); pull.move(15); pending[0](120); });
-    expect(close).not.toHaveBeenCalled(); expect(completions).toHaveLength(0);
+    act(() => { pull.begin(); pull.move(15); pull.finish(0, 120); });
+    expect(pending).toHaveLength(0); expect(completions).toHaveLength(1);
+    expect(close).not.toHaveBeenCalled();
+    act(() => completions[0]({ finished: true })); expect(close).toHaveBeenCalledTimes(1);
   });
   it('ignores interrupted or stale completion after lightbox ownership/unmount', () => {
     drag(120); act(() => { tree.update(<Probe enabled={false} />); });

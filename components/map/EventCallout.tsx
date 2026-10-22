@@ -4106,7 +4106,7 @@ const setCalloutStateWithAnimation = (state: CalloutState) => {
       onPanResponderRelease: (_, gestureState) => {
         translateY.flattenOffset();
         const { dy, vy } = gestureState;
-        if (dy > 0) { finishDismissDrag(vy * 1000); return; }
+        if (dy > 0) { finishDismissDrag(vy * 1000, dy); return; }
         cancelDismissDrag();
         traceMapEvent('event_callout_shell_pan_released', {
           clusterId: cluster?.id ?? 'none',
