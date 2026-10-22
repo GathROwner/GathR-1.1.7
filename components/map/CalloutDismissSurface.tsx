@@ -11,7 +11,7 @@ export default function CalloutDismissSurface({ children, translateY, closing }:
     <Animated.View
       pointerEvents={closing ? 'none' : 'box-none'}
       testID="callout-dismiss-translation-surface"
-      style={[StyleSheet.absoluteFillObject, { transform: [{ translateY }] }]}
+      style={[StyleSheet.absoluteFillObject, { zIndex: 2, elevation: 50, transform: [{ translateY }] }]}
     >
       {children}
     </Animated.View>
