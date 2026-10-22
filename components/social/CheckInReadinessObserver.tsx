@@ -21,6 +21,8 @@ import {
 } from '../../utils/checkInReadiness';
 import { validReadinessReceipt } from '../../utils/checkInReadinessContract';
 
+const LOCATION_FIX_WAIT_MS = 8_000;
+
 function asReadinessSample(location: Location.LocationObject): ReadinessSample {
   return {
     latitude: location.coords.latitude,
@@ -49,15 +51,19 @@ function freshSharedMapSample(location: Location.LocationObject | null, nowMs: n
   return sample;
 }
 
-function waitForFreshSharedMapSample(newerThanMs: number | null) {
+function waitForFreshReadinessSample(newerThanMs: number | null) {
   let settled = false;
   let unsubscribe: () => void = () => undefined;
   let resolveSample: (sample: ReadinessSample | null) => void = () => undefined;
+  let retry: ReturnType<typeof setTimeout> | undefined;
+  let deadline: ReturnType<typeof setTimeout> | undefined;
   const promise = new Promise<ReadinessSample | null>((resolve) => { resolveSample = resolve; });
   const finish = (sample: ReadinessSample | null) => {
     if (settled) return;
     settled = true;
     unsubscribe();
+    if (retry) clearTimeout(retry);
+    if (deadline) clearTimeout(deadline);
     resolveSample(sample);
   };
   const inspect = (location: Location.LocationObject | null) => {
@@ -67,7 +73,27 @@ function waitForFreshSharedMapSample(newerThanMs: number | null) {
   unsubscribe = useMapStore.subscribe((state, previous) => {
     if (state.userLocation !== previous.userLocation) inspect(state.userLocation);
   });
+  const requestFallback = () => {
+    if (settled) return;
+    void Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High }).then((location) => {
+      if (settled) return;
+      const sample = asReadinessSample(location);
+      const ageMs = Date.now() - sample.capturedAtMs;
+      if (Number.isFinite(sample.capturedAtMs) && ageMs >= 0 && ageMs <= CHECK_IN_READINESS.maxSampleAgeMs
+        && (newerThanMs === null || sample.capturedAtMs > newerThanMs)) {
+        // Fresh movement/low-accuracy samples must still reach the reducer so
+        // existing evidence is invalidated rather than silently retained.
+        finish(sample);
+      } else {
+        retry = setTimeout(requestFallback, CHECK_IN_READINESS.nearReadySampleIntervalMs);
+      }
+    }, () => {
+      if (!settled) retry = setTimeout(requestFallback, CHECK_IN_READINESS.nearReadySampleIntervalMs);
+    });
+  };
+  deadline = setTimeout(() => finish(null), LOCATION_FIX_WAIT_MS);
   inspect(useMapStore.getState().userLocation);
+  if (!settled) requestFallback();
   return { promise, cancel: () => finish(null) };
 }
 
@@ -164,23 +190,21 @@ export default function CheckInReadinessObserver() {
         // opening the app does not wait on a second location request.
         let sample = freshSharedMapSample(useMapStore.getState().userLocation, Date.now(), newerThanMs);
         if (!sample) {
-          const sharedMapSample = waitForFreshSharedMapSample(newerThanMs);
+          const sharedMapSample = waitForFreshReadinessSample(newerThanMs);
           cancelPendingMapSample = sharedMapSample.cancel;
-          let nextSample: { sample: ReadinessSample | null };
           try {
-            nextSample = await Promise.race([
-              sharedMapSample.promise.then((sharedSample) => ({ sample: sharedSample })),
-              Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High })
-                .then((location) => ({ sample: asReadinessSample(location) })),
-            ]);
+            sample = await sharedMapSample.promise;
           } finally {
             sharedMapSample.cancel();
             cancelPendingMapSample = null;
           }
           if (!currentRun()) return;
-          sample = nextSample.sample;
         }
-        if (!sample || !currentRun()) return;
+        if (!currentRun()) return;
+        if (!sample) {
+          nextDelayMs = CHECK_IN_READINESS.nearReadySampleIntervalMs;
+          return;
+        }
         // iOS can return the same cached fix from successive current-position
         // requests. It cannot add evidence, so don't resend it to the server or
         // let its old capture time schedule a zero-delay request loop.

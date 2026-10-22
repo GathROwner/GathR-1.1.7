@@ -349,4 +349,72 @@ describe('foreground readiness observer lifecycle', () => {
     expect(recordCheckInReadinessSample).toHaveBeenCalledTimes(1);
     expect(useCheckInReadinessStore.getState().sessionId).toBe(sessionId);
   });
+
+  it('keeps listening for a fresh map fix after the one-shot location request fails', async () => {
+    (Location.getCurrentPositionAsync as jest.Mock).mockRejectedValueOnce(new Error('Location temporarily unavailable'));
+    await mount();
+    await advance(1_000);
+    await act(async () => useMapStore.setState({ userLocation: { timestamp: Date.now(), coords: {
+      latitude: 46.08954, longitude: -64.77345, accuracy: 18, speed: 0,
+      altitude: null, altitudeAccuracy: null, heading: null,
+    } } }));
+    expect(recordCheckInReadinessSample).toHaveBeenCalledTimes(1);
+    expect(useCheckInReadinessStore.getState().serviceError).toBe(false);
+  });
+
+  it('does not let a cached one-shot result discard a newer shared map fix', async () => {
+    await mount();
+    const first = useCheckInReadinessStore.getState().evidence.previous!;
+    (Location.getCurrentPositionAsync as jest.Mock).mockResolvedValueOnce({
+      timestamp: first.capturedAtMs, coords: { latitude: first.latitude, longitude: first.longitude, accuracy: 10, speed: 0 },
+    });
+    await advance(10_000);
+    await advance(1_000);
+    await act(async () => useMapStore.setState({ userLocation: { timestamp: Date.now(), coords: {
+      latitude: first.latitude, longitude: first.longitude, accuracy: 14, speed: 0,
+      altitude: null, altitudeAccuracy: null, heading: null,
+    } } }));
+    expect(recordCheckInReadinessSample).toHaveBeenCalledTimes(2);
+    expect(useCheckInReadinessStore.getState().evidence.hereMs).toBe(11_000);
+  });
+
+  it('retries after a location request never resolves without inventing location evidence', async () => {
+    (Location.getCurrentPositionAsync as jest.Mock).mockImplementationOnce(() => new Promise(() => undefined));
+    await mount();
+    await advance(8_000);
+    expect(recordCheckInReadinessSample).not.toHaveBeenCalled();
+    expect(useCheckInReadinessStore.getState().evidence.hereMs).toBe(0);
+    await advance(2_000);
+    expect(Location.getCurrentPositionAsync).toHaveBeenCalledTimes(2);
+    expect(recordCheckInReadinessSample).toHaveBeenCalledTimes(1);
+    expect(useCheckInReadinessStore.getState().evidence.hereMs).toBe(0);
+  });
+
+  it('ignores the first location result after its deadline and a successful retry', async () => {
+    let finishOld: (location: unknown) => void = () => undefined;
+    (Location.getCurrentPositionAsync as jest.Mock).mockImplementationOnce(() => new Promise((resolve) => { finishOld = resolve; }));
+    await mount();
+    await advance(8_000);
+    await advance(2_000);
+    const accepted = useCheckInReadinessStore.getState();
+    expect(recordCheckInReadinessSample).toHaveBeenCalledTimes(1);
+    await act(async () => finishOld({ timestamp: Date.now(), coords: {
+      latitude: 46.24, longitude: -63.129, accuracy: 10, speed: 3,
+    } }));
+    expect(recordCheckInReadinessSample).toHaveBeenCalledTimes(1);
+    expect(useCheckInReadinessStore.getState().evidence).toEqual(accepted.evidence);
+    expect(useCheckInReadinessStore.getState().sessionId).toBe(accepted.sessionId);
+  });
+
+  it('cancels location retries while the app is backgrounded', async () => {
+    (Location.getCurrentPositionAsync as jest.Mock).mockRejectedValueOnce(new Error('Location temporarily unavailable'));
+    await mount();
+    act(() => { AppState.currentState = 'background'; mockChangeState('background'); });
+    await advance(10_000);
+    expect(Location.getCurrentPositionAsync).toHaveBeenCalledTimes(1);
+    expect(recordCheckInReadinessSample).not.toHaveBeenCalled();
+    await act(async () => { AppState.currentState = 'active'; mockChangeState('active'); });
+    expect(Location.getCurrentPositionAsync).toHaveBeenCalledTimes(2);
+    expect(recordCheckInReadinessSample).toHaveBeenCalledTimes(1);
+  });
 });
