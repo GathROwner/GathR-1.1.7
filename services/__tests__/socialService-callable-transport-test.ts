@@ -181,9 +181,62 @@ describe('social callable transport', () => {
     });
   });
 
+  it('preserves a generic Preview SDK discovery outage without automatic transport fallback', async () => {
+    const callable = jest.fn().mockRejectedValue({ code: 'functions/unavailable', message: 'Unavailable' });
+    mockGetSocialAppCheckToken.mockResolvedValue(null);
+    mockHttpsCallable.mockReturnValue(callable);
+    const fetchMock = jest.spyOn(global, 'fetch');
+
+    await expect(discoverNearbyCheckInPlaces(input)).rejects.toMatchObject({
+      code: 'unavailable',
+      message: 'GathR social is temporarily unavailable. Try again when you are online.',
+      details: undefined,
+    });
+    expect(callable).toHaveBeenCalledTimes(1);
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(mockGetIdToken).not.toHaveBeenCalled();
+  });
+
   describe('whole readiness request deadline', () => {
     beforeEach(() => jest.useFakeTimers());
     afterEach(() => jest.useRealTimers());
+
+    it.each(['deadline', 'cancellation'])('bounds the Preview callable SDK on %s without changing transport', async (stop) => {
+      let resolveCall: (value: { data: unknown }) => void = () => undefined;
+      const callable = jest.fn().mockReturnValue(new Promise((resolve) => { resolveCall = resolve; }));
+      mockGetSocialAppCheckToken.mockResolvedValue(null);
+      mockHttpsCallable.mockReturnValue(callable);
+      const fetchMock = jest.spyOn(global, 'fetch');
+      const controller = new AbortController();
+      let failure: Error | undefined;
+      let completed = false;
+      void recordCheckInReadinessSample(input, { signal: controller.signal })
+        .then(() => { completed = true; }, (error) => { failure = error; });
+      await jest.advanceTimersByTimeAsync(1);
+      expect(callable).toHaveBeenCalledTimes(1);
+      if (stop === 'cancellation') controller.abort();
+      await jest.advanceTimersByTimeAsync(stop === 'deadline' ? 8_000 : 1);
+      expect(failure?.name).toBe('AbortError');
+      resolveCall({ data: { accepted: true } });
+      await jest.advanceTimersByTimeAsync(1);
+      expect(completed).toBe(false);
+      expect(callable).toHaveBeenCalledTimes(1);
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(mockGetIdToken).not.toHaveBeenCalled();
+    });
+
+    it('does not start the Preview SDK after its App Check compatibility result arrives too late', async () => {
+      let resolveToken: (value: null) => void = () => undefined;
+      mockGetSocialAppCheckToken.mockReturnValue(new Promise((resolve) => { resolveToken = resolve; }));
+      let failure: Error | undefined;
+      void recordCheckInReadinessSample(input).catch((error) => { failure = error; });
+      await jest.advanceTimersByTimeAsync(8_000);
+      expect(failure?.name).toBe('AbortError');
+      resolveToken(null);
+      await jest.advanceTimersByTimeAsync(1);
+      expect(mockHttpsCallable).not.toHaveBeenCalled();
+      expect(mockGetIdToken).not.toHaveBeenCalled();
+    });
 
     it.each(['App Check', 'Auth'])('bounds a pending %s token before the HTTP request starts', async (stage) => {
       let resolveToken: (value: string) => void = () => undefined;
