@@ -12,7 +12,7 @@ export function PuckDiagnostics(props: Props) {
     if (!props.focused) { stopPuckDiagnostics(); setExpanded(false); }
   }, [props.focused]);
   useEffect(() => {
-    const listener = AppState.addEventListener('change', state => { if (state !== 'active') { stopPuckDiagnostics(); setExpanded(false); } });
+    const listener = AppState.addEventListener('change', state => { if (state === 'background') { stopPuckDiagnostics(); setExpanded(false); } });
     return () => { listener.remove(); stopPuckDiagnostics(); };
   }, []);
   if (!PUCK_DIAGNOSTICS_AVAILABLE) return null;
@@ -31,7 +31,8 @@ export function PuckDiagnostics(props: Props) {
         <Text style={styles.text}>Memory only · stops after 3 minutes or leaving this screen. No location is recorded or sent.</Text>
         <Text style={styles.text}>Focus {Number(props.focused)} · permission {Number(props.permission)} · blocked {Number(props.blocked)} · zoom {props.zoom.toFixed(1)} · view {Math.round(props.width)}×{Math.round(props.height)}</Text>
         <Text style={styles.text}>Native puck: visibility requested with permission; native pixels are not measured.</Text>
-        <Text style={styles.text}>Camera {capture.cameraMoves} · idle {capture.idles} · attempts {capture.attempts} · current offsets {capture.currentOffsets ?? 'not observed'}</Text>
+        <Text style={styles.text}>Camera {capture.cameraMoves} · idle {capture.idles} · verified {capture.verifiedCameras} · attempts {capture.attempts} · current offsets {capture.currentOffsets ?? 'not observed'}</Text>
+        <Text style={styles.text}>Last native gesture flag {capture.gestureActive ?? 'not observed'} · Touch: {line(capture.lastMapTouch)}</Text>
         <Text style={styles.text}>Sample: {line(capture.sample)}</Text>
         <Text style={styles.text}>Decision: {line(capture.decision)}</Text>
         <Text style={styles.text}>Current committed move: {capture.chosen ? line(capture.chosen) : 'none observed'}</Text>

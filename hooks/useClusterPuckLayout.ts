@@ -1,13 +1,11 @@
 import { useCallback, useLayoutEffect, useRef, useState } from 'react';
 import type { Cluster } from '../types/events';
 import { observePuck } from '../utils/puckDiagnostics';
+import { isMapCameraGestureActive } from '../utils/mapCameraGestures';
+import { matchesCameraProjection, sampleCameraProjection, type CameraProjection, type ProjectionMap } from '../utils/puckCameraProjection';
 import { canPlaceRect, getClusterPuckTranslation, MAX_PUCK_DISPLACEMENT, rectsOverlap, translateRect, type MapRect, type MarkerGeometry, type PuckDisplacement, type PuckSnapshot } from '../utils/clusterPuckLayout';
 export type { PuckSnapshot } from '../utils/clusterPuckLayout';
 
-type ProjectionMap = {
-  getPointInView: (coordinate: number[]) => Promise<number[]>;
-  getCoordinateFromView: (point: number[]) => Promise<number[]>;
-};
 type Options = {
   map: React.RefObject<ProjectionMap | null>;
   clusters: Cluster[];
@@ -35,20 +33,95 @@ export function useClusterPuckLayout(options: Options) {
   const settled = useRef(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const expiryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const quietTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const cancelFrames = useRef<(() => void) | null>(null);
+  const mounted = useRef(true);
+  const cameraSeen = useRef(false);
+  const lastCameraAt = useRef(0);
+  const nativeGesture = useRef(false);
+  const touch = useRef<'unknown' | 'down' | 'up'>('unknown');
+  const idleWhileTouched = useRef<number | null>(null);
+  const cameraProof = useRef<CameraProjection | null>(null);
+  const checking = useRef(false);
+  const checkAgain = useRef(false);
+  const checkRetries = useRef(0);
+  const nextCheckAt = useRef(0);
+  const resumeRun = useRef(false);
+  const refreshRef = useRef<() => void>(() => {});
+  const queueRef = useRef<() => void>(() => {});
   const measurements = useRef(new Map<string, MarkerGeometry>());
   const [offsets, setOffsets] = useState<Record<string, PuckDisplacement>>({});
+  const touchBlocked = useCallback(() => touch.current === 'down' || (nativeGesture.current && touch.current !== 'up'), []);
+  const cancelCameraCheck = useCallback(() => {
+    if (quietTimer.current) { clearTimeout(quietTimer.current); quietTimer.current = null; }
+    cancelFrames.current?.(); cancelFrames.current = null;
+  }, []);
   const invalidate = useCallback(() => {
     generation.current += 1;
+    cancelCameraCheck();
     observePuck('invalidated', { generation: generation.current });
     if (timer.current) { clearTimeout(timer.current); timer.current = null; }
     if (expiryTimer.current) { clearTimeout(expiryTimer.current); expiryTimer.current = null; }
     setOffsets(previous => Object.keys(previous).length ? {} : previous);
+  }, [cancelCameraCheck]);
+  const retryCameraCheck = useCallback(() => {
+    // Recover a transient native read/drift without requiring another camera
+    // callback, but never turn a missing/failed projection API into polling.
+    if (checkRetries.current >= 2) return;
+    checkRetries.current += 1;
+    nextCheckAt.current = Date.now() + 250 * 2 ** (checkRetries.current - 1);
+    queueRef.current();
   }, []);
+  const queueCameraCheck = useCallback(() => {
+    const o = latest.current;
+    if (settled.current || !mounted.current || !cameraSeen.current || !o.enabled || !o.map.current || o.width <= 0 || o.height <= 0) return;
+    if (touchBlocked()) { observePuck('waiting-touch'); return; }
+    if (checking.current) { checkAgain.current = true; return; }
+    if (quietTimer.current) return;
+    // Quiet only schedules a check. Native projection agreement across UI frames
+    // and again at commit is the proof; elapsed time alone never unlocks layout.
+    observePuck('camera-check-queued');
+    quietTimer.current = setTimeout(() => {
+      quietTimer.current = null;
+      const state = latest.current, map = state.map.current;
+      if (!map || !state.enabled || touchBlocked() || settled.current) return;
+      const ticket = generation.current;
+      const current = () => mounted.current && ticket === generation.current && latest.current.enabled && latest.current.map.current === map && !touchBlocked();
+      checking.current = true; checkAgain.current = false;
+      const waitFrames = () => new Promise<boolean>(resolve => {
+        let handle: number, remaining = 2, done = false;
+        const finish = (value: boolean) => { if (done) return; done = true; cancelFrames.current = null; resolve(value); };
+        const frame = () => { if (!current()) finish(false); else if (--remaining === 0) finish(true); else handle = requestAnimationFrame(frame); };
+        handle = requestAnimationFrame(frame);
+        cancelFrames.current = () => { cancelAnimationFrame(handle); finish(false); };
+      });
+      const verify = async () => {
+        observePuck('camera-check', { generation: ticket });
+        const proof = await sampleCameraProjection(map, state.width, state.height);
+        if (!current() || !(await waitFrames())) return;
+        const stable = await matchesCameraProjection(map, proof, latest.current.width, latest.current.height);
+        if (!current()) return;
+        if (!stable) { observePuck('camera-drift'); retryCameraCheck(); return; }
+        cameraProof.current = proof; settled.current = true;
+        observePuck('camera-verified', { generation: ticket });
+        refreshRef.current();
+      };
+      void verify().catch(() => { if (current()) { observePuck('camera-check-error'); retryCameraCheck(); } }).finally(() => {
+        checking.current = false;
+        if (!settled.current && mounted.current && (checkAgain.current || ticket !== generation.current)) queueRef.current();
+      });
+    }, Math.max(0, 250 - (Date.now() - lastCameraAt.current), nextCheckAt.current - Date.now()));
+  }, [retryCameraCheck, touchBlocked]);
+  useLayoutEffect(() => { queueRef.current = queueCameraCheck; }, [queueCameraCheck]);
   const refresh = useCallback(() => {
     invalidate();
-    if (!settled.current) { observePuck('waiting-idle'); return; }
+    if (!settled.current) { observePuck('waiting-idle'); queueRef.current(); return; }
     const ticket = generation.current;
-    const current = () => ticket === generation.current && settled.current;
+    const current = () => {
+      if (ticket !== generation.current || !settled.current || !mounted.current) return false;
+      if (touchBlocked()) { resumeRun.current = true; return false; }
+      return true;
+    };
     timer.current = setTimeout(() => {
       timer.current = null;
       const run = async () => {
@@ -103,20 +176,70 @@ export function useClusterPuckLayout(options: Options) {
           if (point(coordinate)) { next[c.cluster.id] = { anchor: c.anchor, coordinate, ...(compact ? { compact: true } : {}) }; placed.set(c.cluster.id, translateRect(chosenRect, delta)); committedMoves.push({ rank, dx: c.geometry.dock[0] + delta[0], dy: c.geometry.dock[1] + delta[1], compact: Number(compact) }); }
           else observePuck('invalid-reverse', { rank });
         }
-        // Location can change without a camera callback while native projection is pending.
+        // Read location first so a slow provider cannot create an unchecked
+        // camera gap after the final native projection proof.
         const finalPuck = await o.getPuckSnapshot();
+        if (!current()) return;
+        // A verified fallback camera must still match after all other awaited
+        // work. A delayed/missing camera callback cannot authorize stale work.
+        const proof = cameraProof.current;
+        if (proof && !(await matchesCameraProjection(map, proof, o.width, o.height))) {
+          if (current()) {
+            observePuck('camera-drift'); cameraProof.current = null; settled.current = false;
+            lastCameraAt.current = Date.now(); invalidate(); retryCameraCheck();
+          }
+          return;
+        }
+        if (!current()) return;
         if (current() && equal(finalPuck, puck) && (puck.validUntil == null || puck.validUntil > Date.now())) {
           setOffsets(next);
+          checkRetries.current = 0; nextCheckAt.current = 0;
           observePuck('committed', { generation: ticket, offsets: Object.keys(next).length });
           for (const move of committedMoves) observePuck('committed-move', { generation: ticket, ...move });
           if (puck.validUntil != null) expiryTimer.current = setTimeout(invalidate, Math.max(0, puck.validUntil - Date.now()));
         } else observePuck(!current() ? 'stale-generation' : puck.validUntil != null && puck.validUntil <= Date.now() ? 'sample-expired' : 'sample-changed');
       };
-      void run().catch(() => { observePuck('projection-error'); if (current()) invalidate(); });
+      void run().catch(() => {
+        observePuck('projection-error');
+        if (current()) {
+          const usedFallback = cameraProof.current !== null;
+          if (usedFallback) { cameraProof.current = null; settled.current = false; }
+          invalidate();
+          if (usedFallback) retryCameraCheck();
+        }
+      });
     }, 80);
+  }, [invalidate, retryCameraCheck, touchBlocked]);
+  useLayoutEffect(() => { refreshRef.current = refresh; }, [refresh]);
+  const onCameraChanged = useCallback((event?: unknown) => {
+    const active = isMapCameraGestureActive(event);
+    // A native camera event may be delivered after the real touch-end event.
+    // The observed map-surface touch state remains authoritative until the next
+    // touch-start/cancel; a cached isGestureActive=true must not relatch it.
+    nativeGesture.current = active; cameraSeen.current = true; lastCameraAt.current = Date.now();
+    checkRetries.current = 0; nextCheckAt.current = 0;
+    cameraProof.current = null; idleWhileTouched.current = null;
+    observePuck('camera-moving', { gestureActive: Number(active) }); settled.current = false; invalidate(); queueRef.current();
   }, [invalidate]);
-  const onCameraChanged = useCallback(() => { observePuck('camera-moving'); settled.current = false; invalidate(); }, [invalidate]);
-  const onMapIdle = useCallback(() => { observePuck('camera-idle'); settled.current = true; refresh(); }, [refresh]);
+  const onMapIdle = useCallback(() => {
+    observePuck('camera-idle'); cameraSeen.current = true; nativeGesture.current = false;
+    if (touch.current === 'down') { idleWhileTouched.current = generation.current; observePuck('waiting-touch'); return; }
+    cameraProof.current = null; settled.current = true; refresh();
+  }, [refresh]);
+  const onMapTouchStart = useCallback((count = 1) => {
+    touch.current = 'down'; cancelCameraCheck(); observePuck('map-touch-down', { touches: count });
+  }, [cancelCameraCheck]);
+  const onMapTouchEnd = useCallback((count = 0) => {
+    touch.current = count > 0 ? 'down' : 'up'; observePuck('map-touch-up', { touches: count });
+    if (count > 0) return;
+    if (idleWhileTouched.current === generation.current) {
+      idleWhileTouched.current = null; cameraProof.current = null; settled.current = true; refresh();
+    } else if (resumeRun.current && settled.current) { resumeRun.current = false; refresh(); }
+    else queueRef.current();
+  }, [refresh]);
+  const onMapTouchCancel = useCallback(() => {
+    touch.current = 'unknown'; cancelCameraCheck(); observePuck('map-touch-cancelled');
+  }, [cancelCameraCheck]);
   const recordMarkerBounds = useCallback((id: string, bounds: MapRect) => {
     const geometry: MarkerGeometry = { bounds, dock: [0, 0] };
     if (equal(measurements.current.get(id), geometry)) return;
@@ -130,10 +253,14 @@ export function useClusterPuckLayout(options: Options) {
   }, [refresh]);
   const safeViewportKey = JSON.stringify(options.safeViewport);
   useLayoutEffect(() => {
+    if (!options.enabled) { settled.current = false; cameraProof.current = null; nativeGesture.current = false; touch.current = 'unknown'; }
     const ids = new Set(options.clusters.map(c => c.id));
     for (const id of measurements.current.keys()) if (!ids.has(id)) measurements.current.delete(id);
     refresh();
   }, [options.clusters, userLongitude, userLatitude, options.puckRevision, options.width, options.height, options.enabled, options.getPuckSnapshot, options.layoutRevision, safeViewportKey, refresh]);
-  useLayoutEffect(() => () => { generation.current += 1; if (timer.current) clearTimeout(timer.current); if (expiryTimer.current) clearTimeout(expiryTimer.current); }, []);
-  return { offsets, refresh, onCameraChanged, onMapIdle, recordMarkerBounds, recordMarkerGeometry };
+  useLayoutEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; generation.current += 1; cancelCameraCheck(); if (timer.current) clearTimeout(timer.current); if (expiryTimer.current) clearTimeout(expiryTimer.current); };
+  }, [cancelCameraCheck]);
+  return { offsets, refresh, onCameraChanged, onMapIdle, onMapTouchStart, onMapTouchEnd, onMapTouchCancel, recordMarkerBounds, recordMarkerGeometry };
 }

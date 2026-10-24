@@ -19,7 +19,12 @@ describe('foreground stationary puck snapshot refresh', () => {
   let initial: PuckLocationSample;
   const startRead = jest.fn<PuckLocationRead, Parameters<typeof startPuckLocationRead>>();
   const clusters = [{ id: 'city', venues: [{ longitude: -63.129, latitude: 46.24 }] }] as Cluster[];
-  const map = { current: { getPointInView: jest.fn(async (p: number[]) => p[0] === -63.13 ? [200, 300] : [210, 310]), getCoordinateFromView: jest.fn(async (p: number[]) => p) } };
+  // Coherent native forward/inverse projection, including the camera proof's
+  // viewport points rather than only the two hardcoded marker coordinates.
+  const map = { current: {
+    getPointInView: jest.fn(async (p: number[]) => [200 + (p[0] + 63.13) * 10000, 300 + (p[1] - 46.24) * 10000]),
+    getCoordinateFromView: jest.fn(async (p: number[]) => [(p[0] - 200) / 10000 - 63.13, (p[1] - 300) / 10000 + 46.24]),
+  } };
   function Probe({ enabled = true, zoom = 8 }: { enabled?: boolean; zoom?: number }) {
     state = usePuckLocationSnapshot({ location: initial, enabled, zoom, startRead });
     layout = useClusterPuckLayout({ map, clusters, userCoordinate: [-63.13, 46.24], width: 390, height: 844, enabled: state.active, coordinateForCluster: () => [-63.129, 46.24], getPuckSnapshot: state.getPuckSnapshot, puckRevision: state.revision });
@@ -66,7 +71,9 @@ describe('foreground stationary puck snapshot refresh', () => {
     await tick(60000); expect(jobs).toHaveLength(1);
     act(() => onAppState('active')); await tick(1); expect(jobs).toHaveLength(2); expect(state.getPuckSnapshot()).toBeNull();
     await act(async () => { jobs[0].resolve(sample()); }); expect(state.getPuckSnapshot()).toBeNull();
-    await act(async () => { jobs[1].resolve(sample()); }); await tick(81);
+    await act(async () => { jobs[1].resolve(sample()); });
+    expect(layout.offsets).toEqual({}); // a fresh sample alone cannot reuse a pre-background camera
+    await tick(251); await tick(16); await tick(16); await tick(81);
     expect(state.getPuckSnapshot()).not.toBeNull(); expect(layout.offsets.city).toBeDefined();
   });
   it('bounds failed reads with retry delay, expires unsafe data, and recovers on a later successful read', async () => {

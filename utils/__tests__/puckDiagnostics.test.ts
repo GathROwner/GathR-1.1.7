@@ -29,6 +29,15 @@ describe('private bounded placement observation', () => {
     expect(puckDiagnosticSnapshot()).toMatchObject({ cameraMoves: 100 });
     expect(puckDiagnosticSnapshot().rows).toHaveLength(12); expect(puckDiagnosticSnapshot().candidates).toHaveLength(8); unsubscribe();
   });
+  it('retains only safe last touch and cached gesture status across camera traffic, then clears both', () => {
+    startPuckDiagnostics();
+    observePuck('map-touch-up', { touches: 0 });
+    for (let i = 0; i < 20; i++) observePuck('camera-moving', { gestureActive: 1 });
+    expect(puckDiagnosticSnapshot().lastMapTouch).toMatchObject({ event: 'map-touch-up', values: { touches: 0 } });
+    expect(puckDiagnosticSnapshot().gestureActive).toBe(1);
+    stopPuckDiagnostics();
+    expect(puckDiagnosticSnapshot()).toMatchObject({ lastMapTouch: null, gestureActive: null });
+  });
   it('shows only a current committed move and expires capture', () => {
     startPuckDiagnostics(); observePuck('chosen', { rank: 1 }); observePuck('sample-changed'); expect(puckDiagnosticSnapshot().chosen).toBeNull();
     observePuck('committed', { offsets: 1 }); observePuck('committed-move', { dx: 0, dy: -44 }); expect(puckDiagnosticSnapshot().chosen?.values.dy).toBe(-44);

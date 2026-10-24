@@ -9207,7 +9207,7 @@ useEffect(() => {
 }, [clusters?.length]);
 
 const handleCameraChange = useCallback((e: any) => {
-  onPuckCameraChanged();
+  onPuckCameraChanged(e);
   
 //  console.log('[DEBUG] handleCameraChange fired, tick count:', __ml_cameraTickCountRef.current);
   
@@ -11177,6 +11177,9 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
         <MapboxGL.MapView
         key={`ios-map-layout-${iosMapViewRevision}`}
         ref={mapRef}
+        onTouchStart={event => clusterPuckLayout.onMapTouchStart(event.nativeEvent.touches.length)}
+        onTouchEnd={event => clusterPuckLayout.onMapTouchEnd(event.nativeEvent.touches.length)}
+        onTouchCancel={clusterPuckLayout.onMapTouchCancel}
         style={styles.map}
         styleURL={mapStyleChoice === 'current' ? GATHR_MAPBOX_STYLE_URL : GATHR_MAPBOX_STANDARD_STYLE_URL}
         scaleBarEnabled={true}

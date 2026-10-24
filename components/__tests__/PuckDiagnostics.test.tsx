@@ -32,4 +32,12 @@ describe('deliberate local diagnostic controls', () => {
     act(() => entry().props.onLongPress()); act(() => tree.update(<PuckDiagnostics {...props} focused={false} />)); expect(puckDiagnosticSnapshot().active).toBe(false);
     act(() => tree.update(<PuckDiagnostics {...props} />)); act(() => entry().props.onLongPress()); act(() => tree.unmount()); expect(puckDiagnosticSnapshot().active).toBe(false);
   });
+  it('retains nonsensitive capture across a transient inactive state but clears on actual background', () => {
+    act(() => entry().props.onLongPress());
+    act(() => { observePuck('camera-moving'); jest.advanceTimersByTime(250); });
+    const captured = puckDiagnosticSnapshot();
+    act(() => appState('inactive')); expect(puckDiagnosticSnapshot()).toBe(captured);
+    act(() => appState('active')); expect(puckDiagnosticSnapshot()).toBe(captured);
+    act(() => appState('background')); expect(puckDiagnosticSnapshot()).toMatchObject({ active: false, rows: [], cameraMoves: 0 });
+  });
 });
