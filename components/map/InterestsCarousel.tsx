@@ -179,7 +179,7 @@ const EventCard = memo(({
 
   return (
     <TouchableOpacity
-      style={[styles.card, { width }, timingState.muted && styles.mutedTimingCard]}
+      style={[styles.card, { width }]}
       accessibilityLabel={`Open ${event.title}`}
       onPress={onPress}
       activeOpacity={0.8}
@@ -190,7 +190,7 @@ const EventCard = memo(({
           imageUrl={event.imageUrl || event.SharedPostThumbnail}
           category={event.category}
           type={event.type}
-          style={styles.eventImage}
+          style={[styles.eventImage, timingState.muted && styles.mutedTimingImage]}
           fallbackType="post"
           item={event}
           resizeMode="cover"
@@ -505,12 +505,36 @@ const InterestsCarousel: React.FC = () => {
 
   // Local state for lightbox (not mapStore)
   const [selectedImageData, setSelectedImageData] = useState<{
+    session: number;
     imageUrl: string;
     event: Event;
-    venue: Venue;
-    cluster: Cluster;
+    venue?: Venue;
+    cluster?: Cluster;
     currentIndex: number;
   } | null>(null);
+  const nextLightboxSessionRef = useRef(0);
+  const activeLightboxSessionRef = useRef<number | null>(null);
+  const selectedSession = selectedImageData?.session;
+  const closeLightbox = useCallback(() => {
+    if (activeLightboxSessionRef.current !== selectedSession) return;
+    activeLightboxSessionRef.current = null;
+    setSelectedImageData(null);
+  }, [selectedSession]);
+
+  // Swipes finish after an animation. Resolve their captured destination by
+  // identity against the latest committed source, never a stale array index.
+  const currentCarouselRef = useRef({ events: carouselEvents, getEventContext, stride, seamSpan });
+  useLayoutEffect(() => {
+    currentCarouselRef.current = { events: carouselEvents, getEventContext, stride, seamSpan };
+  }, [carouselEvents, getEventContext, stride, seamSpan]);
+
+  const resolveCurrentEvent = useCallback((id: Event['id']) => {
+    const source = currentCarouselRef.current;
+    const index = source.events.findIndex(event => String(event.id) === String(id));
+    if (index < 0) return null;
+    const event = source.events[index];
+    return { ...source, event, index, context: source.getEventContext(event.id) };
+  }, []);
 
   // Track whether component should render (stays true during exit animation)
   const [shouldRender, setShouldRender] = useState(false);
@@ -808,56 +832,65 @@ const InterestsCarousel: React.FC = () => {
   }, [activeMode, carouselEvents.length, isVisible, slideAnim, opacityAnim]);
 
   // Handle card press - open lightbox with event details
-  const handleCardPress = (event: Event, index: number) => {
-    const eventContext = getEventContext(event.id);
-    if (!eventContext) return;
+  const handleCardPress = (requestedEvent: Event) => {
+    const current = resolveCurrentEvent(requestedEvent.id);
+    if (!current) return;
+    const { event, index, context: eventContext } = current;
 
     // Track this individual event as viewed (for carousel red dot removal)
     // This is event-level tracking, NOT venue-level
     markCarouselEventViewed(event.id);
 
     // Set LOCAL state to show lightbox (not mapStore)
+    const session = ++nextLightboxSessionRef.current;
+    activeLightboxSessionRef.current = session;
     setSelectedImageData({
+      session,
       imageUrl: event.imageUrl || event.SharedPostThumbnail || '',
       event: event,
-      venue: eventContext.venue,
-      cluster: eventContext.cluster,
+      venue: eventContext?.venue,
+      cluster: eventContext?.cluster,
       currentIndex: index,
     });
   };
 
   // Handle navigation between events in lightbox
   const handleNavigate = useCallback((newIndex: number) => {
-    if (newIndex < 0 || newIndex >= carouselEvents.length) return;
-
-    const event = carouselEvents[newIndex];
-    const eventContext = getEventContext(event.id);
-    if (!eventContext) return;
+    // A late swipe must not reopen a dismissed detail or replace a newer open.
+    if (selectedSession === undefined || activeLightboxSessionRef.current !== selectedSession) return;
+    const requestedEvent = carouselEvents[newIndex];
+    if (!requestedEvent) return;
+    const current = resolveCurrentEvent(requestedEvent.id);
+    if (!current) return;
+    const { event, index, context: eventContext, events, stride: currentStride, seamSpan: currentSeamSpan } = current;
+    // Map marker eligibility is narrower than the displayed interest list
+    // (for example after an unknown-end cutoff). Context is optional for detail.
 
     // Track the new event as viewed when navigating
     markCarouselEventViewed(event.id);
 
     setSelectedImageData({
+      session: selectedSession,
       imageUrl: event.imageUrl || event.SharedPostThumbnail || '',
       event: event,
-      venue: eventContext.venue,
-      cluster: eventContext.cluster,
-      currentIndex: newIndex,
+      venue: eventContext?.venue,
+      cluster: eventContext?.cluster,
+      currentIndex: index,
     });
 
     // Only original indices enter the lightbox; repeated slots are private to the list.
     clearSettleTimer();
-    const offset = getCarouselAnchorOffset(newIndex, 0, carouselEvents.length, stride, seamSpan);
+    const offset = getCarouselAnchorOffset(index, 0, events.length, currentStride, currentSeamSpan);
     anchorRef.current = { id: String(event.id), fraction: 0 };
     physicalOffsetRef.current = offset;
-    scrollX.setValue(getLoopingCarouselLogicalOffset(offset, carouselEvents.length, stride, seamSpan));
+    scrollX.setValue(getLoopingCarouselLogicalOffset(offset, events.length, currentStride, currentSeamSpan));
     flatListRef.current?.scrollToOffset({ offset, animated: false });
-  }, [carouselEvents, stride, seamSpan, getEventContext, markCarouselEventViewed, clearSettleTimer, scrollX]);
+  }, [selectedSession, carouselEvents, resolveCurrentEvent, markCarouselEventViewed, clearSettleTimer, scrollX]);
 
   // Handle when user clicks "View Venue" in lightbox
   // This should record venue-level interaction to clear all red dots for that venue
   const handleViewVenueFromLightbox = useCallback(() => {
-    if (!selectedImageData) return;
+    if (!selectedImageData?.venue) return;
 
     const venue = selectedImageData.venue;
     const stableVenueId = venue.locationKey;
@@ -875,9 +908,14 @@ const InterestsCarousel: React.FC = () => {
       if (!previous) return previous;
       const index = carouselEvents.findIndex(event => String(event.id) === String(previous.event.id));
       const event = carouselEvents[index], context = event && getEventContext(event.id);
-      if (!event || !context) return null;
-      if (event === previous.event && index === previous.currentIndex && context.venue === previous.venue) return previous;
-      return { imageUrl: event.imageUrl || event.SharedPostThumbnail || '', event, venue: context.venue, cluster: context.cluster, currentIndex: index };
+      // Only removal from the actual carousel source invalidates selection.
+      // A disappearing map marker must not close an otherwise available detail.
+      if (!event) {
+        if (activeLightboxSessionRef.current === previous.session) activeLightboxSessionRef.current = null;
+        return null;
+      }
+      if (event === previous.event && index === previous.currentIndex && context?.venue === previous.venue && context?.cluster === previous.cluster) return previous;
+      return { session: previous.session, imageUrl: event.imageUrl || event.SharedPostThumbnail || '', event, venue: context?.venue, cluster: context?.cluster, currentIndex: index };
     });
   }, [carouselEvents, getEventContext]);
 
@@ -942,7 +980,7 @@ const InterestsCarousel: React.FC = () => {
               <View style={styles.seamHalf}><MaterialIcons name="arrow-back" size={18} color="#F1F5FA" /><Text style={styles.seamText}>Last</Text></View>
               <View style={styles.seamDivider} />
             </View>;
-            const { item, index } = slot;
+            const { item } = slot;
             // Check if this event has new content and hasn't been viewed yet
             const hasNew = eventNewContentMap.get(item.id) || false;
 
@@ -962,7 +1000,7 @@ const InterestsCarousel: React.FC = () => {
             return (
               <EventCard
                 event={item}
-                onPress={() => handleCardPress(item, index)}
+                onPress={() => handleCardPress(item)}
                 hasNewContent={showRedDot}
                 width={cardWidth}
               />
@@ -996,7 +1034,7 @@ const InterestsCarousel: React.FC = () => {
           transparent={true}
           visible={true}
           animationType="fade"
-          onRequestClose={() => setSelectedImageData(null)}
+          onRequestClose={closeLightbox}
           statusBarTranslucent={true}
           presentationStyle="overFullScreen"
         >
@@ -1006,7 +1044,7 @@ const InterestsCarousel: React.FC = () => {
             event={selectedImageData.event}
             venue={selectedImageData.venue}
             cluster={selectedImageData.cluster}
-            onClose={() => setSelectedImageData(null)}
+            onClose={closeLightbox}
             events={carouselEvents}
             currentIndex={selectedImageData.currentIndex}
             onNavigate={handleNavigate}
@@ -1049,8 +1087,8 @@ const styles = StyleSheet.create({
     shadowRadius: 10,
     elevation: 8,
   },
-  mutedTimingCard: {
-    opacity: 0.68,
+  mutedTimingImage: {
+    opacity: 0.85,
   },
   imageContainer: {
     width: '100%',

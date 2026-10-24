@@ -6,6 +6,7 @@ import { useMapStore } from '../../../store';
 import type { Event, Cluster, Venue } from '../../../types/events';
 import { DEFAULT_FILTER_CRITERIA, TimeFilterType } from '../../../types/filter';
 import { getAdjacentLightboxIndex } from '../../../utils/lightboxNavigation';
+import { createLegacyTimingContract, getEventScheduleState, getEventTimingBadge } from '../../../utils/eventTiming';
 jest.mock('../../../store', () => ({ useMapStore: jest.requireActual('zustand').create(() => ({})) }));
 jest.mock('../../../store/clusterInteractionStore', () => { const state = { hasNewContent: () => false, recordInteraction: jest.fn(),
   carouselViewedEventIds: new Set(), markCarouselEventViewed: jest.fn(), markCarouselEventsViewed: jest.fn() };
@@ -33,7 +34,7 @@ const seed = (count: number) => {
       timeFilter: TimeFilterType.ALL, category: 'Live Music', categoryFilterSource: 'interest-pills' } } });
 };
 beforeEach(() => { seed(2); act(() => { tree = renderer.create(<InterestsCarousel />); }); });
-afterEach(() => act(() => tree.unmount()));
+afterEach(() => { act(() => tree.unmount()); jest.useRealTimers(); });
 it('renders two finite actual cards and keeps their lightbox looping with the exact source list', () => {
   const list = tree.root.findByType(FlatList).props;
   expect(list.data).toHaveLength(2); expect(list.snapToOffsets).toBeUndefined();
@@ -89,4 +90,87 @@ it.each([2, 3])('keeps category lightbox boundary identities across %i separate 
   act(() => current().onNavigate(getAdjacentLightboxIndex(current().currentIndex, count, 1, current().loopNavigation)));
   expect(current().event.id).toBe(events[count - 1].id);
   expect(current().currentIndex).toBe(0);
+});
+
+const currentLightbox = () => tree.root.findByType('StandardLightbox' as any).props;
+const pressSourceCard = (index: number) => {
+  const list = tree.root.findByType(FlatList).props;
+  act(() => list.renderItem({ item: list.data.find((slot: any) => slot.kind === 'event' && slot.index === index) }).props.onPress());
+};
+
+it.each([0, 1, 2])('opens and traverses a status-unknown card at source position %i without map context', position => {
+  jest.useFakeTimers({ now: new Date('2040-10-18T19:00:00Z') });
+  const unknown = { ...events[0], id: 'soulfit', title: 'SoulFit PEI Rebound Fit', startTime: '08:30', endTime: '' };
+  unknown.timing = createLegacyTimingContract(unknown, { endStatus: 'unknown' });
+  const started = { ...events[1], id: 'bachata', title: 'Bachata Level 1', startTime: '15:00', endTime: '' };
+  started.timing = createLegacyTimingContract(started, { endStatus: 'unknown' });
+  const ongoing = { ...events[2], id: 'ongoing', startTime: '14:00', endTime: '18:00' };
+  ongoing.timing = createLegacyTimingContract(ongoing, { endStatus: 'observed' });
+  const ended = { ...events[3], id: 'ended', startTime: '12:00', endTime: '13:00' };
+  ended.timing = createLegacyTimingContract(ended, { endStatus: 'observed' });
+  const now = new Date('2040-10-18T19:00:00Z');
+  expect(getEventScheduleState(unknown, now)).toMatchObject({ code: 'unknown_cutoff_passed', defaultMapEligible: false, todayEligible: true });
+  expect(getEventTimingBadge(unknown, now)?.text).toBe('STATUS\nUNKNOWN');
+  expect(getEventScheduleState(started, now).code).toBe('started_unknown_end');
+  expect(getEventScheduleState(ongoing, now).code).toBe('happening_confirmed');
+  expect(getEventScheduleState(ended, now).code).toBe('confirmed_ended');
+  const visible = [started, ongoing]; visible.splice(position, 0, unknown);
+  act(() => useMapStore.setState({ onScreenEvents: [...visible, ended], clusters: [{ id: 'eligible', venues: [{ locationKey: 'eligible', events: [started, ongoing] }] } as Cluster] }));
+  pressSourceCard(position);
+  expect(currentLightbox().event.id).toBe('soulfit');
+  expect(currentLightbox().venue).toBeUndefined();
+  expect(currentLightbox().events).toHaveLength(3);
+  for (const direction of [-1, 1] as const) {
+    for (let step = 0; step < visible.length * 2; step++) {
+      const next = getAdjacentLightboxIndex(currentLightbox().currentIndex, visible.length, direction, true);
+      expect(next).not.toBeNull();
+      act(() => currentLightbox().onNavigate(next));
+      expect(currentLightbox().event.id).toBe(visible[next!].id);
+      expect(currentLightbox().currentIndex).toBe(next);
+    }
+  }
+});
+
+it('keeps an available selection when map context disappears and closes it only on source removal', () => {
+  pressSourceCard(1);
+  act(() => useMapStore.setState({ clusters: [] }));
+  expect(currentLightbox().event.id).toBe('qa_1');
+  expect(currentLightbox().venue).toBeUndefined();
+  act(() => currentLightbox().onNavigate(0));
+  expect(currentLightbox().event.id).toBe('qa_0');
+  act(() => useMapStore.setState({ onScreenEvents: [events[1]] }));
+  expect(tree.root.findAllByType('StandardLightbox' as any)).toHaveLength(0);
+});
+
+it('resolves delayed swipes by destination identity after reorder and rejects removed destinations and stale card taps', () => {
+  act(() => seed(3)); pressSourceCard(0);
+  const retainedNavigate = currentLightbox().onNavigate;
+  const oldList = tree.root.findByType(FlatList).props;
+  const retainedPress = oldList.renderItem({ item: oldList.data.find((slot: any) => slot.kind === 'event' && slot.index === 1) }).props.onPress;
+  act(() => useMapStore.setState({ onScreenEvents: [events[2], events[0], events[1]] }));
+  act(() => retainedNavigate(1));
+  expect(currentLightbox().event.id).toBe('qa_1');
+  expect(currentLightbox().currentIndex).toBe(2);
+  act(() => useMapStore.setState({ onScreenEvents: [events[2], events[0]] }));
+  expect(tree.root.findAllByType('StandardLightbox' as any)).toHaveLength(0);
+  act(() => { retainedNavigate(1); retainedPress(); });
+  expect(tree.root.findAllByType('StandardLightbox' as any)).toHaveLength(0);
+  pressSourceCard(0);
+  act(() => currentLightbox().onClose());
+  pressSourceCard(1);
+  expect(currentLightbox().event.id).toBe('qa_0');
+});
+
+it('ignores delayed navigation from a closed lightbox and preserves a newer open session', () => {
+  pressSourceCard(0);
+  const retainedNavigate = currentLightbox().onNavigate;
+  const retainedClose = currentLightbox().onClose;
+  act(() => currentLightbox().onClose());
+  act(() => retainedNavigate(1));
+  expect(tree.root.findAllByType('StandardLightbox' as any)).toHaveLength(0);
+  pressSourceCard(0);
+  act(() => { retainedNavigate(1); retainedClose(); });
+  expect(currentLightbox().event.id).toBe('qa_0');
+  act(() => currentLightbox().onNavigate(1));
+  expect(currentLightbox().event.id).toBe('qa_1');
 });
