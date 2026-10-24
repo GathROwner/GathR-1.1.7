@@ -31,7 +31,7 @@ export function PuckDiagnostics(props: Props) {
         <Text style={styles.text}>Memory only · stops after 3 minutes or leaving this screen. No location is recorded or sent.</Text>
         <Text style={styles.text}>Focus {Number(props.focused)} · permission {Number(props.permission)} · blocked {Number(props.blocked)} · zoom {props.zoom.toFixed(1)} · view {Math.round(props.width)}×{Math.round(props.height)}</Text>
         <Text style={styles.text}>Native puck: visibility requested with permission; native pixels are not measured.</Text>
-        <Text style={styles.text}>Camera {capture.cameraMoves} · idle {capture.idles} · attempts {capture.attempts} · current offsets {capture.currentOffsets}</Text>
+        <Text style={styles.text}>Camera {capture.cameraMoves} · idle {capture.idles} · attempts {capture.attempts} · current offsets {capture.currentOffsets ?? 'not observed'}</Text>
         <Text style={styles.text}>Sample: {line(capture.sample)}</Text>
         <Text style={styles.text}>Decision: {line(capture.decision)}</Text>
         <Text style={styles.text}>Current committed move: {capture.chosen ? line(capture.chosen) : 'none observed'}</Text>
@@ -47,5 +47,5 @@ const styles = StyleSheet.create({
   panel: { position: 'absolute', left: 12, width: 350, borderRadius: 10, padding: 8, backgroundColor: '#fff', borderWidth: 1, borderColor: '#666', zIndex: 201, elevation: 201 },
   buttons: { flexDirection: 'row', justifyContent: 'space-between', gap: 8 },
   button: { minHeight: 44, padding: 8, justifyContent: 'center' }, buttonText: { color: '#174889', fontWeight: '700', fontSize: 14 },
-  details: { maxHeight: 300 }, title: { fontSize: 16, color: '#111', fontWeight: '700', marginVertical: 4 }, text: { fontSize: 12, color: '#111', marginBottom: 5 },
+  details: { height: 300 }, title: { fontSize: 16, color: '#111', fontWeight: '700', marginVertical: 4 }, text: { fontSize: 12, color: '#111', marginBottom: 5 },
 });

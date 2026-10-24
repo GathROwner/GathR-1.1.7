@@ -42,6 +42,15 @@ describe('settled measured cluster/puck layout transaction', () => {
     expect(puckDiagnosticSnapshot().rows.some(row => row.event === 'invalid-reverse')).toBe(true);
     expect(puckDiagnosticSnapshot().rows.some(row => row.values.dx != null || row.values.dy != null)).toBe(false);
   });
+  it('keeps pre-capture placement unknown until a real callback without changing the map', async () => {
+    await idle(); expect(layout.offsets['0']).toBeDefined(); const calls = map.current.getPointInView.mock.calls.length;
+    startPuckDiagnostics(); await flush();
+    expect(puckDiagnosticSnapshot().currentOffsets).toBeNull(); expect(layout.offsets['0']).toBeDefined();
+    expect(map.current.getPointInView).toHaveBeenCalledTimes(calls);
+    act(() => layout.onCameraChanged()); expect(puckDiagnosticSnapshot().currentOffsets).toBe(0);
+    await idle(); expect(puckDiagnosticSnapshot().currentOffsets).toBe(1);
+    stopPuckDiagnostics(); startPuckDiagnostics(); expect(puckDiagnosticSnapshot().currentOffsets).toBeNull(); expect(layout.offsets['0']).toBeDefined();
+  });
   it('requires a settled camera and actual measured bounds before projecting', async () => {
     await flush(); expect(map.current.getPointInView).not.toHaveBeenCalled();
     await idle(); expect(layout.offsets['0'].anchor).toEqual([0.001, 0.001]); expect(map.current.getPointInView).toHaveBeenCalledTimes(9);
