@@ -199,6 +199,8 @@ import {
   subscribeTutorialModalOverlay,
 } from '../../utils/tutorialModalOverlay';
 import { useClusterPuckLayout } from '../../hooks/useClusterPuckLayout';
+import { getConservativePuckSnapshot } from '../../utils/clusterPuckLayout';
+import { PuckMarkerMeasurement } from '../../components/map/PuckMarkerMeasurement';
 import type { PuckDisplacement } from '../../utils/clusterPuckLayout';
 import { useReduceMotion } from '../../hooks/useReduceMotion';
 import {
@@ -4641,15 +4643,29 @@ useEffect(() => {
       ? filterClusterForInterestCarouselFilter(cluster, interestCarouselFilter) : cluster)
     .filter((cluster): cluster is Cluster => cluster !== null),
   [clusters, filterCriteria, interestCarouselFilter, shouldClusterBeVisible]);
+  // Overview-only proxy: the SDK puck remains unchanged. Its provider and Expo
+  // update independently, so reject old/inaccurate samples instead of moving far.
+  const getPuckSnapshot = useCallback(() => getConservativePuckSnapshot(location, zoomLevel), [location, zoomLevel]);
+  const puckSafeViewport = {
+    left: 8,
+    right: Math.max(8, (mapDimensions?.width ?? 0) - Math.max(74, 10 + measuredRailWidth + 8)),
+    top: mapChromeTopReserve + (Platform.OS === 'ios' ? 16 : 20) + pillsHeight + 8,
+    bottom: Math.max(0, (mapDimensions?.height ?? 0) - mapboxOrnamentBottomOffset - 16),
+  };
   const clusterPuckLayout = useClusterPuckLayout({
     map: mapRef,
     clusters: puckEligibleClusters,
     userCoordinate: location ? [location.coords.longitude, location.coords.latitude] : null,
     width: mapDimensions?.width ?? 0,
     height: mapDimensions?.height ?? 0,
-    enabled: isFocused && locationPermissionGranted && !puckTutorialVisible,
+    enabled: isFocused && locationPermissionGranted && !puckTutorialVisible && !hasRenderedCallout && !activeFilterPanel,
     coordinateForCluster: USE_ANDROID_NATIVE_CLUSTER_MARKER_LAYERS ? getClusterCoordinate : getClusterRenderCoordinates,
+    getPuckSnapshot,
+    puckRevision: location?.timestamp,
+    safeViewport: puckSafeViewport,
+    layoutRevision: mapStyleChoice,
   });
+  const onPuckCameraChanged = clusterPuckLayout.onCameraChanged;
   const [, setBeaconProjectionEpoch] = useState(0);
   const [mapScreenOffset, setMapScreenOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [iosMapViewRevision, setIosMapViewRevision] = useState(0);
@@ -9188,6 +9204,7 @@ useEffect(() => {
 }, [clusters?.length]);
 
 const handleCameraChange = useCallback((e: any) => {
+  onPuckCameraChanged();
   
 //  console.log('[DEBUG] handleCameraChange fired, tick count:', __ml_cameraTickCountRef.current);
   
@@ -9886,7 +9903,8 @@ Clustering refresh: keep zoom → store → recluster in sync
   fetchViewportEvents,
   isAndroidStartupCameraPayloadInvalid,
   logAndroidZoomTapLatencyProbe,
-  setZoomLevel
+  setZoomLevel,
+  onPuckCameraChanged
 ]);
 
 
@@ -10794,7 +10812,9 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
       {interestFilteredClustersForRender
       .map((cluster: Cluster, index: number) => {
         // Calculate the coordinates for the cluster
-        const coordinates = clusterPuckLayout.offsets[cluster.id]?.coordinate ?? getClusterRenderCoordinates(cluster);
+        const puckOffset = clusterPuckLayout.offsets[cluster.id];
+        const originalCoordinates = getClusterRenderCoordinates(cluster);
+        const coordinates = puckOffset?.coordinate ?? originalCoordinates;
       
         // Check if this cluster contains the selected venue
         const isSelected =
@@ -10823,7 +10843,7 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
           mapDimensions &&
           currentCameraStateRef.current?.visibleBbox
             ? projectCoordinateToViewportPoint(
-                coordinates,
+                originalCoordinates,
                 currentCameraStateRef.current.visibleBbox,
                 mapDimensions
               )
@@ -10832,7 +10852,7 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
           ? 38
           : cluster.venues.length > 1 ? 92 : 76;
         const estimatedMarkerWidth = gathrPresentation === 'summary' ? 84 : 136;
-        const beaconDock = !isTutorialTarget && projectedPoint && mapDimensions
+        const originalBeaconDock = !isTutorialTarget && projectedPoint && mapDimensions
           ? getGathrBeaconViewportDock({
               markerHeight: estimatedMarkerHeight,
               markerWidth: estimatedMarkerWidth,
@@ -10843,6 +10863,9 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
               safeTop: TOP_OFFSET + pillsHeight + 8,
             })
           : { direction: null, translateX: 0, translateY: 0 };
+        // Offset coordinates already contain the original visual dock plus the
+        // small clearance. Never apply the dock a second time after placement.
+        const beaconDock = puckOffset ? { direction: null, translateX: 0, translateY: 0 } : originalBeaconDock;
         const isBeaconDocked = beaconDock.direction !== null;
         const beaconEdgeCueIcon = beaconDock.direction === 'up'
           ? 'keyboard-arrow-up'
@@ -10943,7 +10966,6 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
               hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
               style={[
                 styles.clusterMarkerTouchableFrame,
-                clusterPuckLayout.offsets[cluster.id] && { minWidth: 44, minHeight: 44 },
                 isDimmedByInterestFilter && styles.interestFilteredMarkerDimmed,
                 isBeaconDocked && {
                   transform: [
@@ -10958,6 +10980,10 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
                   <MaterialIcons name={beaconEdgeCueIcon} size={10} color="#0B4F6C" />
                 </View>
               )}
+              <PuckMarkerMeasurement id={cluster.id} compact={!!puckOffset?.compact}
+                countLabel={String((cluster.eventCount ?? 0) + (cluster.specialCount ?? 0))}
+                dockX={originalBeaconDock.translateX} dockY={originalBeaconDock.translateY}
+                record={clusterPuckLayout.recordMarkerGeometry}>
               <TreeMarker
                 key={isTutorialTarget ? `tutorial-target-${tutorialTargetBindingRevision}` : undefined}
                 cluster={cluster}
@@ -10997,6 +11023,7 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
                     : undefined
                 }
               />
+              </PuckMarkerMeasurement>
             </TouchableOpacity>
           </MapboxGL.MarkerView>
         );
@@ -11206,7 +11233,7 @@ onLayout={(event) => {
   }
 }}
 onMapIdle={() => {
-  clusterPuckLayout.refresh();
+  clusterPuckLayout.onMapIdle();
   lastMapIdleAtRef.current = Date.now();
   traceMapEvent('mapbox_on_map_idle', {
     sinceLastMeaningfulCameraMs: gestureTraceLastMeaningfulAtRef.current === null
