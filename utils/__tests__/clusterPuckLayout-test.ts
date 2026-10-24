@@ -59,9 +59,14 @@ describe('conservative existing-location proxy', () => {
   it.each([
     [null, 10, 100500], [sample, 14, 100500], [sample, 10, 130000], [sample, 10, 98000],
     [{ ...sample, coords: { ...sample.coords, accuracy: null } }, 10, 100500],
-    [{ ...sample, coords: { ...sample.coords, accuracy: 76 } }, 10, 100500],
+    [{ ...sample, coords: { ...sample.coords, accuracy: 1000 } }, 10, 100500],
     [sample, 13.5, 100500],
   ])('declines stale, unknown, inaccurate or too-detailed geometry %#', (s, zoom, now) => {
     expect(getConservativePuckSnapshot(s as typeof sample, zoom as number, now as number)).toBeNull();
+  });
+  it.each([80, 500])('accepts %sm uncertainty when zoomed out and still within four screen points', accuracy => {
+    const s = getConservativePuckSnapshot({ ...sample, coords: { ...sample.coords, accuracy } }, 8, 100500);
+    expect(s).not.toBeNull(); expect(s!.bounds.right).toBeLessThanOrEqual(18);
+    expect(getConservativePuckSnapshot({ ...sample, coords: { ...sample.coords, accuracy } }, 13, 100500)).toBeNull();
   });
 });

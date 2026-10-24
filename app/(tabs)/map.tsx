@@ -199,7 +199,7 @@ import {
   subscribeTutorialModalOverlay,
 } from '../../utils/tutorialModalOverlay';
 import { useClusterPuckLayout } from '../../hooks/useClusterPuckLayout';
-import { getConservativePuckSnapshot } from '../../utils/clusterPuckLayout';
+import { usePuckLocationSnapshot } from '../../hooks/usePuckLocationSnapshot';
 import { PuckMarkerMeasurement } from '../../components/map/PuckMarkerMeasurement';
 import type { PuckDisplacement } from '../../utils/clusterPuckLayout';
 import { useReduceMotion } from '../../hooks/useReduceMotion';
@@ -4645,7 +4645,8 @@ useEffect(() => {
   [clusters, filterCriteria, interestCarouselFilter, shouldClusterBeVisible]);
   // Overview-only proxy: the SDK puck remains unchanged. Its provider and Expo
   // update independently, so reject old/inaccurate samples instead of moving far.
-  const getPuckSnapshot = useCallback(() => getConservativePuckSnapshot(location, zoomLevel), [location, zoomLevel]);
+  const puckLocation = usePuckLocationSnapshot({ location, zoom: zoomLevel,
+    enabled: isFocused && locationPermissionGranted && !puckTutorialVisible && !hasRenderedCallout && !activeFilterPanel });
   const puckSafeViewport = {
     left: 8,
     right: Math.max(8, (mapDimensions?.width ?? 0) - Math.max(74, 10 + measuredRailWidth + 8)),
@@ -4658,10 +4659,10 @@ useEffect(() => {
     userCoordinate: location ? [location.coords.longitude, location.coords.latitude] : null,
     width: mapDimensions?.width ?? 0,
     height: mapDimensions?.height ?? 0,
-    enabled: isFocused && locationPermissionGranted && !puckTutorialVisible && !hasRenderedCallout && !activeFilterPanel,
+    enabled: puckLocation.active,
     coordinateForCluster: USE_ANDROID_NATIVE_CLUSTER_MARKER_LAYERS ? getClusterCoordinate : getClusterRenderCoordinates,
-    getPuckSnapshot,
-    puckRevision: location?.timestamp,
+    getPuckSnapshot: puckLocation.getPuckSnapshot,
+    puckRevision: puckLocation.revision,
     safeViewport: puckSafeViewport,
     layoutRevision: mapStyleChoice,
   });
@@ -11233,6 +11234,7 @@ onLayout={(event) => {
   }
 }}
 onMapIdle={() => {
+  puckLocation.refreshIfNeeded();
   clusterPuckLayout.onMapIdle();
   lastMapIdleAtRef.current = Date.now();
   traceMapEvent('mapbox_on_map_idle', {

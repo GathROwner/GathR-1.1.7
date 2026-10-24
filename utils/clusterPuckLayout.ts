@@ -3,6 +3,8 @@ export type MapRect = { left: number; top: number; right: number; bottom: number
 export type PuckDisplacement = { anchor: [number, number]; coordinate: [number, number]; compact?: boolean };
 export type MarkerGeometry = { bounds: MapRect; compactBounds?: MapRect; dock: [number, number] };
 export type PuckSnapshot = { coordinate: [number, number]; bounds: MapRect; revision: number; validUntil?: number };
+export type PuckLocationSample = { timestamp: number; coords: { longitude: number; latitude: number; accuracy?: number | null } };
+export const PUCK_SAMPLE_MAX_AGE_MS = 30000;
 export const PUCK_CLEARANCE_GAP = 4;
 export const MAX_PUCK_DISPLACEMENT = 56;
 
@@ -19,15 +21,15 @@ export const canPlaceRect = (r: MapRect, puck: MapRect, viewport: MapRect, occup
 /** Existing Expo sample is a conservative proxy, not an exact native-puck observation.
  * Only overview views with <=4pt reported uncertainty are eligible. Accuracy halo is excluded.
  */
-export function getConservativePuckSnapshot(sample: { timestamp: number; coords: { longitude: number; latitude: number; accuracy?: number | null } } | null, zoom: number, now = Date.now()): PuckSnapshot | null {
+export function getConservativePuckSnapshot(sample: PuckLocationSample | null, zoom: number, now = Date.now()): PuckSnapshot | null {
   if (!sample || !Number.isFinite(zoom) || zoom > 13.5) return null;
   const { longitude, latitude, accuracy } = sample.coords;
   const age = now - sample.timestamp;
-  if (![longitude, latitude, sample.timestamp].every(Number.isFinite) || Math.abs(latitude) > 85 || Math.abs(longitude) > 180 || age < -1000 || age >= 30000 || accuracy == null || !Number.isFinite(accuracy) || accuracy < 0 || accuracy > 75) return null;
+  if (![longitude, latitude, sample.timestamp].every(Number.isFinite) || Math.abs(latitude) > 85 || Math.abs(longitude) > 180 || age < -1000 || age >= PUCK_SAMPLE_MAX_AGE_MS || accuracy == null || !Number.isFinite(accuracy) || accuracy < 0) return null;
   const pointsUncertainty = accuracy / (78271.51696 * Math.cos(latitude * Math.PI / 180) / 2 ** zoom);
   if (pointsUncertainty > 4) return null;
   const radius = 14 + pointsUncertainty;
-  return { coordinate: [longitude, latitude], bounds: { left: -radius, right: radius, top: -radius, bottom: radius }, revision: sample.timestamp, validUntil: sample.timestamp + 30000 };
+  return { coordinate: [longitude, latitude], bounds: { left: -radius, right: radius, top: -radius, bottom: radius }, revision: sample.timestamp, validUntil: sample.timestamp + PUCK_SAMPLE_MAX_AGE_MS };
 }
 
 /** Minimum separating translation in map-view points, never a geographic jump.
