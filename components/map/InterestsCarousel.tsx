@@ -1038,7 +1038,9 @@ const InterestsCarousel: React.FC = () => {
           statusBarTranslucent={true}
           presentationStyle="overFullScreen"
         >
+          {/* Reset native swipe position per destination; JS-only resets can stick on Fabric. */}
           <EventImageLightbox
+            key={`${selectedImageData.session}:${selectedImageData.event.id}`}
             imageUrl={selectedImageData.imageUrl}
             preferRelevantHero
             event={selectedImageData.event}
