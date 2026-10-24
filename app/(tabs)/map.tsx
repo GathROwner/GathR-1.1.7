@@ -200,6 +200,8 @@ import {
 } from '../../utils/tutorialModalOverlay';
 import { useClusterPuckLayout } from '../../hooks/useClusterPuckLayout';
 import { usePuckLocationSnapshot } from '../../hooks/usePuckLocationSnapshot';
+import { PuckDiagnostics } from '../../components/PuckDiagnostics';
+import { PUCK_DIAGNOSTICS_AVAILABLE } from '../../utils/puckDiagnostics';
 import { PuckMarkerMeasurement } from '../../components/map/PuckMarkerMeasurement';
 import type { PuckDisplacement } from '../../utils/clusterPuckLayout';
 import { useReduceMotion } from '../../hooks/useReduceMotion';
@@ -11817,7 +11819,7 @@ onDidFinishLoadingMap={() => {
       )}
 
       {/* Keep the app's globe mark visible above Mapbox's required attribution. */}
-      {!MAP_TRACE_UI_ENABLED && (
+      {!MAP_TRACE_UI_ENABLED && !PUCK_DIAGNOSTICS_AVAILABLE && (
         <View style={[styles.mapLogoContainer, { bottom: globeBottomOffset }]} pointerEvents="none">
           <Image
             source={require('../../assets/images/icon.png')}
@@ -12232,7 +12234,9 @@ Owner: Map UX stability on Android • Last validated: 2025-09-04
       {/* Deep link lightbox - renders when globalSelectedImageData is set from deep link */}
       <GlobalEventLightbox onShowRoute={showRouteOnMap} />
 
-      {MAP_TRACE_UI_ENABLED && (
+      {PUCK_DIAGNOSTICS_AVAILABLE && <PuckDiagnostics bottom={globeBottomOffset} focused={isFocused} permission={locationPermissionGranted} zoom={zoomLevel} blocked={!!(puckTutorialVisible || hasRenderedCallout || activeFilterPanel)} width={mapDimensions?.width ?? 0} height={mapDimensions?.height ?? 0} />}
+
+      {MAP_TRACE_UI_ENABLED && !PUCK_DIAGNOSTICS_AVAILABLE && (
         <TouchableOpacity
           activeOpacity={0.75}
           accessibilityActions={[{ name: 'activate', label: 'Open map trace' }]}
@@ -12269,7 +12273,7 @@ Owner: Map UX stability on Android • Last validated: 2025-09-04
         </TouchableOpacity>
       )}
 
-      {MAP_TRACE_UI_ENABLED && isTracePanelVisible && (
+      {MAP_TRACE_UI_ENABLED && !PUCK_DIAGNOSTICS_AVAILABLE && isTracePanelVisible && (
         <MapTracePanel
           visible={isTracePanelVisible}
           onClose={() => setIsTracePanelVisible(false)}

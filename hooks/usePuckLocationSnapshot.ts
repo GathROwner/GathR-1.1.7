@@ -2,6 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react
 import { AppState } from 'react-native';
 import * as Location from 'expo-location';
 import { getConservativePuckSnapshot, type PuckLocationSample } from '../utils/clusterPuckLayout';
+import { observePuck, type PuckDiagnosticEvent } from '../utils/puckDiagnostics';
 
 export type PuckLocationRead = { result: Promise<PuckLocationSample | null>; cancel: () => void };
 const REFRESH_AGE = 20000;
@@ -11,25 +12,27 @@ const RETRY_DELAY = 10000;
 /** Short, cancellable foreground read; never changes the map/check-in location store. */
 export function startPuckLocationRead(accept: (sample: PuckLocationSample) => boolean): PuckLocationRead {
   let subscription: Location.LocationSubscription | null = null;
-  let finish!: (sample: PuckLocationSample | null) => void;
+  observePuck('read-started');
+  let finish!: (sample: PuckLocationSample | null, reason?: PuckDiagnosticEvent) => void;
   const result = new Promise<PuckLocationSample | null>(resolve => {
     let done = false;
-    const timeout = setTimeout(() => finish(null), READ_TIMEOUT);
-    finish = sample => {
+    const timeout = setTimeout(() => finish(null, 'read-timeout'), READ_TIMEOUT);
+    finish = (sample, reason = 'read-accepted') => {
       if (done) return;
+      observePuck(reason);
       done = true; clearTimeout(timeout); subscription?.remove(); resolve(sample);
     };
     // Expo registers a JS callback before native watch setup; avoid knowingly
     // starting a permission-denied watch that cannot return its cleanup handle.
     void Location.getForegroundPermissionsAsync().then(permission => {
       if (done) return;
-      if (!permission.granted) { finish(null); return; }
+      if (!permission.granted) { finish(null, 'read-denied'); return; }
       return Location.watchPositionAsync({ accuracy: Location.Accuracy.Balanced, distanceInterval: 0 }, sample => {
         if (Date.now() - sample.timestamp < 10000 && accept(sample)) finish(sample);
       }).then(value => { subscription = value; if (done) value.remove(); });
-    }).catch(() => finish(null));
+    }).catch(() => finish(null, 'read-error'));
   });
-  return { result, cancel: () => finish(null) };
+  return { result, cancel: () => finish(null, 'read-cancelled') };
 }
 
 type Options = {
@@ -82,7 +85,13 @@ export function usePuckLocationSnapshot({ location, zoom, enabled, startRead = s
     timer = setTimeout(request, !resumeReadRequired && snapshot ? Math.max(0, sample!.timestamp + REFRESH_AGE - Date.now()) : 0);
     return () => { stopped = true; if (timer) clearTimeout(timer); pending?.cancel(); idleRefresh.current = () => {}; };
   }, [active, sample, zoom, resumeReadRequired, startRead]);
-  const getPuckSnapshot = useCallback(() => active && !resumeReadRequired ? getConservativePuckSnapshot(sample, zoom) : null, [active, resumeReadRequired, sample, zoom]);
+  const getPuckSnapshot = useCallback(() => {
+    const snapshot = active && !resumeReadRequired ? getConservativePuckSnapshot(sample, zoom) : null;
+    const age = sample ? Date.now() - sample.timestamp : 0;
+    const uncertainty = sample?.coords.accuracy == null ? NaN : sample.coords.accuracy / (78271.51696 * Math.cos(sample.coords.latitude * Math.PI / 180) / 2 ** zoom);
+    observePuck(!active ? 'sample-disabled' : resumeReadRequired ? 'sample-resume-required' : !sample ? 'sample-missing' : snapshot ? 'sample-ready' : age >= 30000 || age < -1000 ? 'sample-stale' : uncertainty > 4 ? 'sample-uncertain' : 'sample-rejected', { ageMs: age, puckWidth: snapshot ? snapshot.bounds.right - snapshot.bounds.left : 0, validForMs: snapshot?.validUntil ? snapshot.validUntil - Date.now() : 0 });
+    return snapshot;
+  }, [active, resumeReadRequired, sample, zoom]);
   const refreshIfNeeded = useCallback(() => idleRefresh.current(), []);
   return { active, getPuckSnapshot, refreshIfNeeded, revision: sample?.timestamp ?? 0 };
 }

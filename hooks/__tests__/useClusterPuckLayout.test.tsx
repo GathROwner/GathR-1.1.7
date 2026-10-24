@@ -3,6 +3,7 @@ import renderer, { act } from 'react-test-renderer';
 import type { Cluster } from '../../types/events';
 import { useClusterPuckLayout, type PuckSnapshot } from '../useClusterPuckLayout';
 import type { MapRect } from '../../utils/clusterPuckLayout';
+import { puckDiagnosticSnapshot, startPuckDiagnostics, stopPuckDiagnostics } from '../../utils/puckDiagnostics';
 
 describe('settled measured cluster/puck layout transaction', () => {
   let tree: renderer.ReactTestRenderer;
@@ -27,7 +28,20 @@ describe('settled measured cluster/puck layout transaction', () => {
     act(() => { tree = renderer.create(<Probe />); });
     act(() => { for (const c of clusters) layout.recordMarkerBounds(c.id, { left: -20, right: 20, top: -24, bottom: 0 }); });
   });
-  afterEach(() => { act(() => tree.unmount()); jest.useRealTimers(); });
+  afterEach(() => { act(() => tree.unmount()); stopPuckDiagnostics(); jest.useRealTimers(); });
+  it('observes the actual callbacks without triggering placement and reports only committed displacement', async () => {
+    startPuckDiagnostics(); await flush(); expect(map.current.getPointInView).not.toHaveBeenCalled();
+    await idle(); expect(puckDiagnosticSnapshot()).toMatchObject({ attempts: 1, currentOffsets: 1, idles: 1 });
+    expect(puckDiagnosticSnapshot().chosen?.event).toBe('committed-move');
+    expect(puckDiagnosticSnapshot().chosen?.values.dy).toBeDefined();
+    act(() => layout.onCameraChanged()); expect(puckDiagnosticSnapshot().chosen).toBeNull(); expect(puckDiagnosticSnapshot().currentOffsets).toBe(0);
+  });
+  it('never reports a proposed displacement as committed after reverse projection is invalid', async () => {
+    startPuckDiagnostics(); map.current.getCoordinateFromView.mockResolvedValue([NaN, NaN]); await idle();
+    expect(layout.offsets).toEqual({}); expect(puckDiagnosticSnapshot().chosen).toBeNull();
+    expect(puckDiagnosticSnapshot().rows.some(row => row.event === 'invalid-reverse')).toBe(true);
+    expect(puckDiagnosticSnapshot().rows.some(row => row.values.dx != null || row.values.dy != null)).toBe(false);
+  });
   it('requires a settled camera and actual measured bounds before projecting', async () => {
     await flush(); expect(map.current.getPointInView).not.toHaveBeenCalled();
     await idle(); expect(layout.offsets['0'].anchor).toEqual([0.001, 0.001]); expect(map.current.getPointInView).toHaveBeenCalledTimes(9);
