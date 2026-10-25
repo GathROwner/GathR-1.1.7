@@ -23,7 +23,7 @@ jest.mock('../../common/FallbackImage', () => 'Poster');
 jest.mock('../../common/FamilyFriendlyBadge', () => 'Badge');
 jest.mock('../../common/EventTimingBadge', () => ({ ...jest.requireActual('../../common/EventTimingBadge'), EventTimingBadge: () => null }));
 jest.mock('../../common/EventTimingSummaryText', () => ({ EventTimingSummaryText: () => null }));
-jest.mock('../../../hooks/useEventTimingMinute', () => ({ useEventTimingMinute: () => 0 }));
+jest.mock('../../../hooks/useEventTimingMinute', () => ({ useEventTimingMinute: () => Math.floor(Date.now() / 60000) }));
 const events = Array.from({ length: 13 }, (_, index) => ({ id: 'qa_' + index, title: 'Event ' + (index + 1), type: 'event',
   category: 'Live Music', venueId: 'qa', venue: 'QA venue', startDate: '2040-10-18', endDate: '2040-10-18', startTime: '12:00', endTime: '14:00' } as Event));
 let tree: renderer.ReactTestRenderer;
@@ -35,6 +35,38 @@ const seed = (count: number) => {
 };
 beforeEach(() => { seed(2); act(() => { tree = renderer.create(<InterestsCarousel />); }); });
 afterEach(() => { act(() => tree.unmount()); jest.useRealTimers(); });
+it('refreshes membership at overnight finish and day rollover without input or filter mutations', () => {
+  jest.useFakeTimers({ now: new Date('2026-10-25T04:59:00Z') }); // Halifax 1:59AM
+  const dance = { ...events[0], title: 'Weekend Dance Party - Music with DJ BraedenV (Friday)',
+    description: 'FRIDAY & SATURDAY — WEEKEND DANCE PARTY / Music with DJ BRAEDENV — NO COVER — 10 PM TO 2 AM — 19+',
+    isRecurring: true, recurringPattern: 'weekly_custom', recurringDaysOfWeek: ['friday','saturday'],
+    startDate: '2026-10-24', startTime: '22:00', endDate: '2026-10-25', endTime: '02:00' };
+  dance.timing = createLegacyTimingContract(dance, { endStatus: 'observed' });
+  const gray = { ...dance, id: 'unknown_finish', timing: createLegacyTimingContract(dance, { endStatus: 'unknown' }) };
+  act(() => useMapStore.setState({ onScreenEvents: [dance, gray], filterCriteria: { ...DEFAULT_FILTER_CRITERIA,
+    eventFilters: { timeFilter: TimeFilterType.TODAY, category: 'Live Music', categoryFilterSource: 'interest-pills' } } }));
+  expect(tree.root.findByType(FlatList).props.data).toHaveLength(2);
+  const selectedFilters = useMapStore.getState().filterCriteria;
+  const list = tree.root.findByType(FlatList).props;
+  act(() => list.renderItem({ item: list.data[1] }).props.onPress());
+  expect(tree.root.findByType('StandardLightbox' as any).props.event.id).toBe('unknown_finish');
+  jest.setSystemTime(new Date('2026-10-25T05:00:00Z'));
+  act(() => tree.update(<InterestsCarousel />));
+  expect(tree.root.findByType(FlatList).props.data).toHaveLength(2);
+  expect(getEventScheduleState(dance).nowEligibility).toBe('confirmed');
+  // Production's existing confirmed-end grace ends at 2:06, while unknown gray cards stay interactive.
+  jest.setSystemTime(new Date('2026-10-25T05:06:00Z'));
+  act(() => tree.update(<InterestsCarousel />));
+  expect(tree.root.findByType(FlatList).props.data).toHaveLength(1);
+  expect(tree.root.findByType(FlatList).props.data[0].item.id).toBe('unknown_finish');
+  expect(tree.root.findByType('StandardLightbox' as any).props.event.id).toBe('unknown_finish');
+  expect(tree.root.findByType('StandardLightbox' as any).props.currentIndex).toBe(0);
+  expect(useMapStore.getState().filterCriteria).toBe(selectedFilters);
+  jest.setSystemTime(new Date('2026-10-26T03:00:00Z'));
+  act(() => tree.update(<InterestsCarousel />));
+  expect(tree.root.findByType(FlatList).props.data).toHaveLength(0);
+  expect(tree.root.findAllByType('StandardLightbox' as any)).toHaveLength(0);
+});
 it('renders two finite actual cards and keeps their lightbox looping with the exact source list', () => {
   const list = tree.root.findByType(FlatList).props;
   expect(list.data).toHaveLength(2); expect(list.snapToOffsets).toBeUndefined();

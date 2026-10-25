@@ -26,7 +26,7 @@ import { useViewedEventTimeStatus } from '../../hooks/useVisitingHoursView';
 import FallbackImage from '../common/FallbackImage';
 import FamilyFriendlyBadge from '../common/FamilyFriendlyBadge';
 import { EventTimingBadge, getCarouselTimingBadge } from '../common/EventTimingBadge';
-import { getContinuousDonationCampaignRange } from '../../utils/campaignTimingPresentation';
+import { getContinuousCampaignRange } from '../../utils/campaignTimingPresentation';
 import EventImageLightbox from './EventImageLightbox';
 import { useClusterInteractionStore } from '../../store/clusterInteractionStore';
 import { getInterestCarouselEvents } from '../../utils/interestCarouselOrder';
@@ -155,7 +155,7 @@ const EventCard = memo(({
   useEventTimingMinute();
   const isNow = useViewedEventTimeStatus(event) === 'now';
   const timingState = getEventScheduleState(event);
-  const showUnknownEndSeparator = !isNow && !getContinuousDonationCampaignRange(event)
+  const showUnknownEndSeparator = !isNow && !getContinuousCampaignRange(event)
     && getCarouselTimingBadge(event)?.text === 'END\nUNKNOWN';
 
   const categoryBgColor = event.type === 'event' ? EVENT_COLOR : SPECIAL_COLOR;
@@ -353,6 +353,7 @@ type CarouselEventContext = {
 
 // Main Carousel Component
 const InterestsCarousel: React.FC = () => {
+  const timingMinute = useEventTimingMinute();
   const { width: viewportWidth } = useWindowDimensions();
   const [measuredWidth, setMeasuredWidth] = useState(viewportWidth);
   const insets = useSafeAreaInsets();
@@ -434,8 +435,8 @@ const InterestsCarousel: React.FC = () => {
   }, [filterCriteria, interestCarouselFilter]);
 
   const categoryCarouselEvents = useMemo(() => {
-    return getInterestCarouselEvents(onScreenEvents, carouselFilterCriteria);
-  }, [onScreenEvents, carouselFilterCriteria]);
+    return getInterestCarouselEvents(onScreenEvents, carouselFilterCriteria, new Date(timingMinute * 60000));
+  }, [onScreenEvents, carouselFilterCriteria, timingMinute]);
 
   // Only activate carousel for interest-pills filters, not filter-pills
   const optimisticFilterActive = interestCarouselFilter?.status === 'active';

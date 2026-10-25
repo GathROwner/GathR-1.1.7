@@ -12,7 +12,7 @@ import {
 
 import type { Event } from '../../types/events';
 import { getEventTimingBadge, getEventTimingDisclosure, getEventScheduleState, getEventTiming } from '../../utils/eventTiming';
-import { getContinuousDonationCampaignRange } from '../../utils/campaignTimingPresentation';
+import { getContinuousCampaignRange } from '../../utils/campaignTimingPresentation';
 
 interface EventTimingBadgeProps {
   event: Pick<Event, 'startDate' | 'startTime' | 'endDate' | 'endTime' | 'timing'>;
@@ -45,7 +45,7 @@ export function EventTimingBadge({
 }: EventTimingBadgeProps) {
   // Only this unknown-finish state gets carousel wording; other unknowns retain their meaning.
   const badge = carousel ? getCarouselTimingBadge(event) : getEventTimingBadge(event);
-  if (!badge || ((carousel || remainingCampaignDates) && getContinuousDonationCampaignRange(event))) return null;
+  if (!badge || ((carousel || remainingCampaignDates) && getContinuousCampaignRange(event))) return null;
   const hasInfoIndicator = Boolean(badge.infoTitle && showInfoIndicator);
 
   const badgeStyle = [
