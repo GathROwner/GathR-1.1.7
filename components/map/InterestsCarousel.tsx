@@ -1187,6 +1187,7 @@ const styles = StyleSheet.create({
   timeRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    minHeight: 18,
     gap: 3,
     marginTop: 'auto',
   },
