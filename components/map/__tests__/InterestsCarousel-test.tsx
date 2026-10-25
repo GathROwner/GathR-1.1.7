@@ -21,7 +21,7 @@ jest.mock('@expo/vector-icons/Ionicons', () => 'Icon');
 jest.mock('../EventImageLightbox', () => 'StandardLightbox');
 jest.mock('../../common/FallbackImage', () => 'Poster');
 jest.mock('../../common/FamilyFriendlyBadge', () => 'Badge');
-jest.mock('../../common/EventTimingBadge', () => ({ EventTimingBadge: () => null }));
+jest.mock('../../common/EventTimingBadge', () => ({ ...jest.requireActual('../../common/EventTimingBadge'), EventTimingBadge: () => null }));
 jest.mock('../../common/EventTimingSummaryText', () => ({ EventTimingSummaryText: () => null }));
 jest.mock('../../../hooks/useEventTimingMinute', () => ({ useEventTimingMinute: () => 0 }));
 const events = Array.from({ length: 13 }, (_, index) => ({ id: 'qa_' + index, title: 'Event ' + (index + 1), type: 'event',

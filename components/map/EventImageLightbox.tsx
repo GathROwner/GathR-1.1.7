@@ -2182,7 +2182,7 @@ const handleNonTicketAction = () => {
                   <MaterialIcons name={scheduleExpanded ? 'keyboard-arrow-up' : 'keyboard-arrow-down'} size={22} color="#D1D5DB" />
                 </TouchableOpacity>
               )}
-              {!isPrivateFriendEvent ? (
+              {!isPrivateFriendEvent && !remainingCampaignText ? (
                 <TouchableOpacity
                   accessibilityLabel={timingDisclosureExpanded ? 'Hide time details' : 'Explain event time'}
                   accessibilityRole="button"
@@ -2202,6 +2202,7 @@ const handleNonTicketAction = () => {
             <EventTimingBadge
               event={updatedEvent}
               compact
+              remainingCampaignDates
               showInfoIndicator={false}
               style={styles.timingBadge}
             />
@@ -2218,7 +2219,7 @@ const handleNonTicketAction = () => {
             </View>
           )}
 
-          {!isPrivateFriendEvent && timingDisclosureExpanded && (
+          {!isPrivateFriendEvent && !remainingCampaignText && timingDisclosureExpanded && (
             <View style={styles.timingDisclosureContainer}>
               <View style={styles.timingDisclosureBody}>
                 <Text style={styles.timingDisclosureText}>{timingHelpText}</Text>

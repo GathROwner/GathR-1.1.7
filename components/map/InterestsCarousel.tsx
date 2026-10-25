@@ -25,7 +25,8 @@ import { EventTimingSummaryText } from '../common/EventTimingSummaryText';
 import { useViewedEventTimeStatus } from '../../hooks/useVisitingHoursView';
 import FallbackImage from '../common/FallbackImage';
 import FamilyFriendlyBadge from '../common/FamilyFriendlyBadge';
-import { EventTimingBadge } from '../common/EventTimingBadge';
+import { EventTimingBadge, getCarouselTimingBadge } from '../common/EventTimingBadge';
+import { getContinuousDonationCampaignRange } from '../../utils/campaignTimingPresentation';
 import EventImageLightbox from './EventImageLightbox';
 import { useClusterInteractionStore } from '../../store/clusterInteractionStore';
 import { getInterestCarouselEvents } from '../../utils/interestCarouselOrder';
@@ -154,6 +155,8 @@ const EventCard = memo(({
   useEventTimingMinute();
   const isNow = useViewedEventTimeStatus(event) === 'now';
   const timingState = getEventScheduleState(event);
+  const showUnknownEndSeparator = !isNow && !getContinuousDonationCampaignRange(event)
+    && getCarouselTimingBadge(event)?.text === 'END\nUNKNOWN';
 
   const categoryBgColor = event.type === 'event' ? EVENT_COLOR : SPECIAL_COLOR;
 
@@ -240,10 +243,16 @@ const EventCard = memo(({
             event={event}
             carousel
             style={styles.timeText}
+            containerStyle={showUnknownEndSeparator ? styles.intrinsicTime : undefined}
             numberOfLines={1}
             adjustsFontSizeToFit
             minimumFontScale={0.8}
           />
+          {showUnknownEndSeparator && (
+            <View style={styles.endUnknownSeparator} testID="carousel-end-unknown-separator">
+              <Text accessible={false} importantForAccessibility="no" style={styles.separatorText}>-</Text>
+            </View>
+          )}
           {!isNow && (
             <EventTimingBadge event={event} carousel style={styles.carouselTimingBadge} />
           )}
@@ -1182,10 +1191,29 @@ const styles = StyleSheet.create({
     marginTop: 'auto',
   },
   timeText: {
-    flex: 1,
     fontSize: 10.5,
     color: '#1967D2',
     fontWeight: '700',
+  },
+  intrinsicTime: {
+    flex: 0,
+    flexGrow: 0,
+    flexShrink: 1,
+  },
+  endUnknownSeparator: {
+    flex: 1,
+    minWidth: 8,
+    height: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  separatorText: {
+    color: '#1967D2',
+    fontSize: 10.5,
+    fontWeight: '700',
+    lineHeight: 14,
+    includeFontPadding: false,
+    textAlign: 'center',
   },
   // Handle styles
   handleContainer: {

@@ -18,37 +18,35 @@ interface EventTimingBadgeProps {
   event: Pick<Event, 'startDate' | 'startTime' | 'endDate' | 'endTime' | 'timing'>;
   compact?: boolean;
   carousel?: boolean;
+  remainingCampaignDates?: boolean;
   onInfoPress?: () => void;
   showInfoIndicator?: boolean;
   style?: StyleProp<ViewStyle>;
+}
+
+export function getCarouselTimingBadge(event: EventTimingBadgeProps['event']) {
+  const originalBadge = getEventTimingBadge(event);
+  return originalBadge?.text === 'STATUS\nUNKNOWN'
+    && getEventScheduleState(event).code === 'unknown_cutoff_passed'
+    && getEventTiming(event).schedule.end.status === 'unknown'
+    ? { ...originalBadge, text: 'END\nUNKNOWN', accessibilityLabel: 'End time not provided',
+      infoTitle: 'End time not provided', tone: 'caution' as const }
+    : originalBadge;
 }
 
 export function EventTimingBadge({
   event,
   compact = false,
   carousel = false,
+  remainingCampaignDates = false,
   onInfoPress,
   showInfoIndicator = true,
   style,
 }: EventTimingBadgeProps) {
-  const originalBadge = getEventTimingBadge(event);
   // Only this unknown-finish state gets carousel wording; other unknowns retain their meaning.
-  const badge = carousel && originalBadge?.text === 'STATUS\nUNKNOWN'
-    && getEventScheduleState(event).code === 'unknown_cutoff_passed'
-    && getEventTiming(event).schedule.end.status === 'unknown'
-    ? { ...originalBadge, text: 'END\nUNKNOWN', accessibilityLabel: 'End time not provided',
-      infoTitle: 'End time not provided', tone: 'caution' as const }
-    : originalBadge;
-  if (!badge) return null;
+  const badge = carousel ? getCarouselTimingBadge(event) : getEventTimingBadge(event);
+  if (!badge || ((carousel || remainingCampaignDates) && getContinuousDonationCampaignRange(event))) return null;
   const hasInfoIndicator = Boolean(badge.infoTitle && showInfoIndicator);
-  const separator = carousel && badge.text === 'END\nUNKNOWN' && !getContinuousDonationCampaignRange(event) ? (
-    <Text
-      accessible={false}
-      importantForAccessibility="no"
-      style={styles.carouselSeparator}
-      testID="carousel-end-unknown-separator"
-    >-</Text>
-  ) : null;
 
   const badgeStyle = [
     styles.base,
@@ -94,8 +92,6 @@ export function EventTimingBadge({
     };
 
     return (
-      <>
-      {separator}
       <Pressable
         accessibilityHint="Shows why this time is uncertain"
         accessibilityLabel={`${badge.accessibilityLabel}. More information`}
@@ -108,13 +104,10 @@ export function EventTimingBadge({
       >
         {content}
       </Pressable>
-      </>
     );
   }
 
   return (
-    <>
-    {separator}
     <View
       accessible
       accessibilityRole="text"
@@ -124,7 +117,6 @@ export function EventTimingBadge({
     >
       {content}
     </View>
-    </>
   );
 }
 
@@ -177,11 +169,6 @@ const styles = StyleSheet.create({
     fontSize: 6.5,
     letterSpacing: 0.1,
     lineHeight: 7,
-  },
-  carouselSeparator: {
-    color: '#1967D2',
-    fontSize: 10.5,
-    fontWeight: '700',
   },
   infoCorner: {
     alignItems: 'center',

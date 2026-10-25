@@ -24,7 +24,6 @@ describe('EventTimingBadge', () => {
     let component: renderer.ReactTestRenderer;
     act(() => { component = renderer.create(<EventTimingBadge event={unknownEndEvent()} carousel />); });
     expect(JSON.stringify(component!.toJSON())).toContain('END\\nUNKNOWN');
-    expect(component!.root.findByProps({ testID: 'carousel-end-unknown-separator' }).props.children).toBe('-');
     const badge = component!.root.findByProps({ testID: 'event-timing-badge' });
     expect(StyleSheet.flatten(badge.props.style({ pressed: false })).backgroundColor).toBe('#B87800');
     act(() => component!.update(<EventTimingBadge event={unknownEndEvent()} />));
@@ -33,17 +32,23 @@ describe('EventTimingBadge', () => {
     act(() => component!.unmount());
     jest.useRealTimers();
   });
-  it('shows a separator only before the existing carousel End unknown badge, including passive badges', () => {
+  it('keeps ordinary unknown finishes and suppresses finite campaign uncertainty only on date-range surfaces', () => {
     let component: renderer.ReactTestRenderer;
     act(() => { component = renderer.create(<EventTimingBadge event={unknownEndEvent()} carousel showInfoIndicator={false} />); });
-    expect(component!.root.findByProps({ testID: 'carousel-end-unknown-separator' }).props.children).toBe('-');
+    expect(JSON.stringify(component!.toJSON())).toContain('END\\nUNKNOWN');
     expect(component!.root.findByProps({ testID: 'event-timing-badge' }).props.accessibilityRole).toBe('text');
     act(() => component!.update(<EventTimingBadge event={dateOnlyActivity()} carousel />));
     expect(JSON.stringify(component!.toJSON())).toContain('TIMES\\nUNKNOWN');
     expect(component!.root.findAllByProps({ testID: 'carousel-end-unknown-separator' })).toHaveLength(0);
     act(() => component!.update(<EventTimingBadge event={continuousDonationCampaign()} carousel />));
-    expect(component!.root.findAllByProps({ testID: 'carousel-end-unknown-separator' })).toHaveLength(0);
-    act(() => component!.update(<EventTimingBadge event={unknownEndEvent()} compact />));
+    expect(component!.toJSON()).toBeNull();
+    act(() => component!.update(<EventTimingBadge event={continuousDonationCampaign()} compact remainingCampaignDates />));
+    expect(component!.toJSON()).toBeNull();
+    act(() => component!.update(<EventTimingBadge event={continuousDonationCampaign()} compact />));
+    expect(component!.root.findAllByProps({ testID: 'event-timing-badge' }).length).toBeGreaterThan(0);
+    act(() => component!.update(<EventTimingBadge event={unknownEndEvent()} compact remainingCampaignDates />));
+    expect(component!.root.findAllByProps({ testID: 'event-timing-badge' }).length).toBeGreaterThan(0);
+    expect(component!.root.findAllByProps({ testID: 'event-timing-badge-info' }).length).toBeGreaterThan(0);
     expect(component!.root.findAllByProps({ testID: 'carousel-end-unknown-separator' })).toHaveLength(0);
     act(() => component!.unmount());
   });
