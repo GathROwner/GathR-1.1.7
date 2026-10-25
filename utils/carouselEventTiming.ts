@@ -22,7 +22,23 @@ export function getCarouselTimeParts(event: TimingEvent, now = new Date(), viewe
   const parts = getEventTimeRangeParts(event, now, viewedDate);
   const timing = getEventTiming(event);
   const startDate = timing.schedule.start.localDate || event.startDate;
-  const endDate = timing.schedule.end.localDate || event.endDate || startDate;
+  const localInstantDate = (instant?: string | null) => {
+    try { return instant ? visitingLocalNow({ ...event, timing }, new Date(instant)).date : ''; }
+    catch { return ''; }
+  };
+  let endDate = timing.schedule.end.localDate || event.endDate || startDate;
+  if (parts.endEstimated) {
+    // Ask the shared formatter which estimate supplies the displayed clock,
+    // then take its date too. Discovery cutoffs never supply display dates.
+    const endpointEstimate = getEventTimeRangeParts({ ...event, timing: { ...timing, estimate: null } }, now, viewedDate).endEstimated;
+    const point = timing.schedule.end;
+    const estimate = timing.estimate;
+    endDate = endpointEstimate
+      ? (point.localTime ? point.localDate || localInstantDate(point.at) : localInstantDate(point.at)) || endDate
+      : (estimate?.displayEndTime
+        ? estimate.displayEndDate || localInstantDate(estimate.displayEndAt || estimate.endAt)
+        : localInstantDate(estimate?.displayEndAt || estimate?.endAt)) || endDate;
+  }
   if (readVisitingHours(event)) {
     const date = viewedDate === undefined ? visitingLocalNow(event, now).date : viewedDate;
     return { ...parts, prefix: `${date ? `${dateLabel(date)} · ` : `${dateLabel(startDate)}–${dateLabel(endDate)} · `}${compactClocks(parts.prefix)}` };

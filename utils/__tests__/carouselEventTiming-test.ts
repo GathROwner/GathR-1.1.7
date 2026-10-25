@@ -33,6 +33,21 @@ it('retains future dates, both overnight dates, cross-meridiem clocks and nonzer
   expect(text(event({ startTime: '22:00', endTime: '01:30', endDate: '2026-10-25' })))
     .toBe('Oct 24 · 10PM–Oct 25 · 1:30AM');
 });
+it.each(['local estimate', 'instant estimate', 'endpoint instant'])('retains both overnight dates from the displayed %s clock', source => {
+  const overnight = event({ startTime: '22:00', endTime: '' });
+  overnight.timing!.estimate = { confidence: 'high', method: 'official_runtime',
+    displayEndDate: '2026-10-25', displayEndTime: '01:30',
+    discoveryCutoffDate: '2026-10-26', discoveryCutoffTime: '02:00' };
+  if (source === 'instant estimate') {
+    overnight.timing!.estimate = { confidence: 'high', method: 'official_runtime', displayEndAt: '2026-10-25T04:30:00Z' };
+  }
+  if (source === 'endpoint instant') {
+    overnight.timing!.schedule.end = { status: 'estimated', confidence: 'high', method: 'official_runtime', at: '2026-10-25T04:30:00Z' };
+    // Conflicting fallback must not override the endpoint supplying the clock.
+    overnight.timing!.estimate!.displayEndTime = '04:00';
+  }
+  expect(text(overnight)).toBe('Oct 24 · 10PM ~ Oct 25 · 1:30AM');
+});
 it('retains supported estimate provenance and truthful date-only/visiting-hours labels', () => {
   const estimated = event(); estimated.timing!.schedule.end.status = 'estimated';
   estimated.timing!.schedule.end.confidence = 'high'; estimated.timing!.schedule.end.method = 'official_runtime';
