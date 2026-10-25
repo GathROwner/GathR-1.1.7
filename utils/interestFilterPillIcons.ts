@@ -6,7 +6,7 @@ export const getInterestFilterPillIconName = (category: string): string => {
   if (categoryLower.includes('sport')) return 'sports-basketball';
   if (categoryLower.includes('trivia')) return 'psychology-alt';
   if (categoryLower.includes('workshop') || categoryLower.includes('class')) return 'history-edu';
-  if (categoryLower.includes('religious') || categoryLower.includes('church') || categoryLower.includes('pray')) return 'church';
+  if (categoryLower.includes('religious') || categoryLower.includes('church') || categoryLower === 'pray') return 'church';
   if (categoryLower.includes('family')) return 'family-restroom';
   if (categoryLower.includes('gathering') || categoryLower.includes('parties') || categoryLower.includes('party')) return 'nightlife';
   if (categoryLower.includes('cinema') || categoryLower.includes('movie') || categoryLower.includes('film')) return 'theaters';
