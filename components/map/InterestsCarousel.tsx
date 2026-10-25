@@ -21,9 +21,7 @@ import { useIsFocused } from '@react-navigation/native';
 import { useMapStore } from '../../store';
 import { useInterestCarouselUiStore } from '../../store/interestCarouselUiStore';
 import { Event, Venue, Cluster } from '../../types/events';
-import { getEventTimeStatus } from '../../utils/dateUtils';
 import { EventTimingSummaryText } from '../common/EventTimingSummaryText';
-import { readVisitingHours } from '../../utils/visitingHours';
 import { useViewedEventTimeStatus } from '../../hooks/useVisitingHoursView';
 import FallbackImage from '../common/FallbackImage';
 import FamilyFriendlyBadge from '../common/FamilyFriendlyBadge';
@@ -48,12 +46,7 @@ import {
 import { isAreaExperienceEvent } from '../../utils/locationScope';
 import { usePathname } from 'expo-router';
 import { isFriendEventDetailPath } from '../../utils/friendEventLightbox';
-import {
-  getEventScheduleState,
-  getEventTimeRangeParts,
-  getEventTimeRangeText,
-  isEventConfirmedNow,
-} from '../../utils/eventTiming';
+import { getEventScheduleState } from '../../utils/eventTiming';
 import { useEventTimingMinute } from '../../hooks/useEventTimingMinute';
 
 const readAnimatedValue = (value: Animated.Value): number | string =>
@@ -146,17 +139,6 @@ const getCategoryIconName = (category: string): string => {
   return 'category';
 };
 
-// Preserve the carousel's compact date-only treatment for exact future events.
-const formatEventTime = (event: Event): string => {
-  if (isEventConfirmedNow(event)) return `NOW · ${getEventTimeRangeText(event)}`;
-  if (getEventTimeStatus(event) === 'today') return getEventTimeRangeText(event);
-  try {
-    return new Date(event.startDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-  } catch {
-    return '';
-  }
-};
-
 // Event Card Component
 const EventCard = memo(({
   event,
@@ -172,8 +154,6 @@ const EventCard = memo(({
   useEventTimingMinute();
   const isNow = useViewedEventTimeStatus(event) === 'now';
   const timingState = getEventScheduleState(event);
-  const timingRangeParts = getEventTimeRangeParts(event);
-  const hasEstimatedEndpoint = timingRangeParts.startEstimated || timingRangeParts.endEstimated;
 
   const categoryBgColor = event.type === 'event' ? EVENT_COLOR : SPECIAL_COLOR;
 
@@ -256,20 +236,14 @@ const EventCard = memo(({
         </Text>
         <View style={styles.timeRow}>
           <MaterialIcons name="schedule" size={13} color="#1967D2" />
-          {hasEstimatedEndpoint || readVisitingHours(event) ? (
-            <EventTimingSummaryText
-              event={event}
-              style={styles.timeText}
-              numberOfLines={1}
-            />
-          ) : (
-            <Text
-              style={styles.timeText}
-              numberOfLines={1}
-            >
-              {formatEventTime(event)}
-            </Text>
-          )}
+          <EventTimingSummaryText
+            event={event}
+            carousel
+            style={styles.timeText}
+            numberOfLines={1}
+            adjustsFontSizeToFit
+            minimumFontScale={0.8}
+          />
           {!isNow && (
             <EventTimingBadge event={event} carousel style={styles.carouselTimingBadge} />
           )}

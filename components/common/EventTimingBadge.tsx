@@ -11,7 +11,7 @@ import {
 } from 'react-native';
 
 import type { Event } from '../../types/events';
-import { getEventTimingBadge, getEventTimingDisclosure } from '../../utils/eventTiming';
+import { getEventTimingBadge, getEventTimingDisclosure, getEventScheduleState, getEventTiming } from '../../utils/eventTiming';
 
 interface EventTimingBadgeProps {
   event: Pick<Event, 'startDate' | 'startTime' | 'endDate' | 'endTime' | 'timing'>;
@@ -30,7 +30,14 @@ export function EventTimingBadge({
   showInfoIndicator = true,
   style,
 }: EventTimingBadgeProps) {
-  const badge = getEventTimingBadge(event);
+  const originalBadge = getEventTimingBadge(event);
+  // Only this unknown-finish state gets carousel wording; other unknowns retain their meaning.
+  const badge = carousel && originalBadge?.text === 'STATUS\nUNKNOWN'
+    && getEventScheduleState(event).code === 'unknown_cutoff_passed'
+    && getEventTiming(event).schedule.end.status === 'unknown'
+    ? { ...originalBadge, text: 'END\nUNKNOWN', accessibilityLabel: 'End time not provided',
+      infoTitle: 'End time not provided', tone: 'caution' as const }
+    : originalBadge;
   if (!badge) return null;
   const hasInfoIndicator = Boolean(badge.infoTitle && showInfoIndicator);
 

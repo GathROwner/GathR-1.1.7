@@ -1,5 +1,5 @@
 import React from 'react';
-import { Alert } from 'react-native';
+import { Alert, StyleSheet } from 'react-native';
 import renderer, { act } from 'react-test-renderer';
 
 import { createLegacyTimingContract } from '../../../utils/eventTiming';
@@ -17,6 +17,18 @@ const unknownEndEvent = () => ({
 });
 
 describe('EventTimingBadge', () => {
+  it('uses the existing amber END UNKNOWN on carousel after cutoff while default surfaces keep STATUS UNKNOWN', () => {
+    jest.useFakeTimers({ now: new Date('2099-09-07T01:30:00Z') });
+    let component: renderer.ReactTestRenderer;
+    act(() => { component = renderer.create(<EventTimingBadge event={unknownEndEvent()} carousel />); });
+    expect(JSON.stringify(component!.toJSON())).toContain('END\\nUNKNOWN');
+    const badge = component!.root.findByProps({ testID: 'event-timing-badge' });
+    expect(StyleSheet.flatten(badge.props.style({ pressed: false })).backgroundColor).toBe('#B87800');
+    act(() => component!.update(<EventTimingBadge event={unknownEndEvent()} />));
+    expect(JSON.stringify(component!.toJSON())).toContain('STATUS\\nUNKNOWN');
+    act(() => component!.unmount());
+    jest.useRealTimers();
+  });
   it('makes an unknown ending visibly informational and explains it without opening the card', () => {
     const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => undefined);
     let component: renderer.ReactTestRenderer;

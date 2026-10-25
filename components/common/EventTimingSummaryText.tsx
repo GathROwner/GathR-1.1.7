@@ -14,6 +14,7 @@ import { formatEventTimingSummary } from '../../utils/dateUtils';
 import { getEventTimeRangeParts, getEventTimingDisclosure } from '../../utils/eventTiming';
 import { getAreaParticipationTimingLabel } from '../../utils/areaEventPresentation';
 import { useVisitingHoursView } from '../../hooks/useVisitingHoursView';
+import { getCarouselTimeParts } from '../../utils/carouselEventTiming';
 
 type TimingEvent = Pick<Event, 'startDate' | 'startTime' | 'endDate' | 'endTime' | 'timing'>
   & Partial<Pick<Event, 'title' | 'description' | 'locationScope' | 'areaData'>>;
@@ -30,6 +31,7 @@ interface EventTimingSummaryTextProps {
   infoColor?: string;
   showInfoMarker?: boolean;
   showStatusPrefix?: boolean;
+  carousel?: boolean;
 }
 
 /**
@@ -49,12 +51,17 @@ export function EventTimingSummaryText({
   infoColor = '#267DBD',
   showInfoMarker = true,
   showStatusPrefix = true,
+  carousel = false,
 }: EventTimingSummaryTextProps) {
   const [expanded, setExpanded] = useState(false);
   const viewedDate = useVisitingHoursView(event);
   const originalParts = getEventTimeRangeParts(event, new Date(), viewedDate);
   const participationLabel = getAreaParticipationTimingLabel(event, originalParts.text);
-  const parts = participationLabel ? { ...originalParts, prefix: participationLabel, text: participationLabel } : originalParts;
+  const displayParts = carousel ? getCarouselTimeParts(event, new Date(), viewedDate) : originalParts;
+  const participationPrefix = carousel && participationLabel && originalParts.prefix
+    ? displayParts.prefix.slice(0, -originalParts.prefix.length) + participationLabel
+    : participationLabel;
+  const parts = participationPrefix ? { ...displayParts, prefix: participationPrefix, text: participationPrefix } : displayParts;
   const disclosure = getEventTimingDisclosure(event);
   const summary = formatEventTimingSummary(event, viewedDate);
   const summaryPrefix = summary.endsWith(originalParts.text)
@@ -89,7 +96,7 @@ export function EventTimingSummaryText({
         adjustsFontSizeToFit={adjustsFontSizeToFit}
         minimumFontScale={minimumFontScale}
       >
-        {showStatusPrefix ? summaryPrefix : ''}{parts.prefix}{parts.start}
+        {showStatusPrefix && !carousel ? summaryPrefix : ''}{parts.prefix}{parts.start}
         {showInfoMarker && parts.startEstimated ? (
           <Text
             accessibilityRole="button"
