@@ -13,11 +13,11 @@ import type { Event } from '../../types/events';
 import { formatEventTimingSummary } from '../../utils/dateUtils';
 import { getEventTimeRangeParts, getEventTimingDisclosure } from '../../utils/eventTiming';
 import { getAreaParticipationTimingLabel } from '../../utils/areaEventPresentation';
-import { useVisitingHoursView } from '../../hooks/useVisitingHoursView';
+import { useRemainingCampaignDateText, useVisitingHoursView } from '../../hooks/useVisitingHoursView';
 import { getCarouselTimeParts } from '../../utils/carouselEventTiming';
 
 type TimingEvent = Pick<Event, 'startDate' | 'startTime' | 'endDate' | 'endTime' | 'timing'>
-  & Partial<Pick<Event, 'title' | 'description' | 'locationScope' | 'areaData'>>;
+  & Partial<Pick<Event, 'title' | 'description' | 'locationScope' | 'areaData' | 'type' | 'isRecurring' | 'isRecurringInstance' | 'recurringPattern'>>;
 
 interface EventTimingSummaryTextProps {
   event: TimingEvent;
@@ -32,6 +32,7 @@ interface EventTimingSummaryTextProps {
   showInfoMarker?: boolean;
   showStatusPrefix?: boolean;
   carousel?: boolean;
+  remainingCampaignDates?: boolean;
 }
 
 /**
@@ -52,12 +53,17 @@ export function EventTimingSummaryText({
   showInfoMarker = true,
   showStatusPrefix = true,
   carousel = false,
+  remainingCampaignDates = false,
 }: EventTimingSummaryTextProps) {
   const [expanded, setExpanded] = useState(false);
   const viewedDate = useVisitingHoursView(event);
+  const remainingCampaignText = useRemainingCampaignDateText(event, carousel || remainingCampaignDates);
+  const campaignText = carousel || remainingCampaignDates ? remainingCampaignText : null;
   const originalParts = getEventTimeRangeParts(event, new Date(), viewedDate);
   const participationLabel = getAreaParticipationTimingLabel(event, originalParts.text);
-  const displayParts = carousel ? getCarouselTimeParts(event, new Date(), viewedDate) : originalParts;
+  const displayParts = campaignText
+    ? { ...originalParts, prefix: campaignText, start: '', separator: '', end: '', startEstimated: false, endEstimated: false }
+    : carousel ? getCarouselTimeParts(event, new Date(), viewedDate) : originalParts;
   const participationPrefix = carousel && participationLabel && originalParts.prefix
     ? displayParts.prefix.slice(0, -originalParts.prefix.length) + participationLabel
     : participationLabel;
@@ -96,7 +102,7 @@ export function EventTimingSummaryText({
         adjustsFontSizeToFit={adjustsFontSizeToFit}
         minimumFontScale={minimumFontScale}
       >
-        {showStatusPrefix && !carousel ? summaryPrefix : ''}{parts.prefix}{parts.start}
+        {showStatusPrefix && !carousel && !campaignText ? summaryPrefix : ''}{parts.prefix}{parts.start}
         {showInfoMarker && parts.startEstimated ? (
           <Text
             accessibilityRole="button"

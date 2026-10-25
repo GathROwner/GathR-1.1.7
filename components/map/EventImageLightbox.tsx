@@ -43,7 +43,7 @@ import VenueProgrammeBrowser from '../area/VenueProgrammeBrowser';
 import { getVenueProgrammeLocation } from '../../utils/eventProgramme';
 import { EventTimingBadge } from '../common/EventTimingBadge';
 import { EventTimingSummaryText } from '../common/EventTimingSummaryText';
-import { useViewedEventTimeStatus, useVisitingHoursView } from '../../hooks/useVisitingHoursView';
+import { useViewedEventTimeStatus, useVisitingHoursView, useRemainingCampaignDateText } from '../../hooks/useVisitingHoursView';
 import { EventSeriesContextLine } from '../common/EventSeriesContextLine';
 import { EventTimingDisclosureActions } from './EventTimingDisclosureActions';
 import { VenueFavoriteButton } from '../common/VenueFavoriteButton';
@@ -1407,15 +1407,16 @@ const handleNonTicketAction = () => {
   const viewedDate = useVisitingHoursView(updatedEvent);
   const timeStatus = useViewedEventTimeStatus(updatedEvent);
   const isHappeningNow = timeStatus === 'now';
+  const remainingCampaignText = useRemainingCampaignDateText(updatedEvent);
 
   // One shared provenance-aware time sentence across every app surface.
-  const standardDateText = formatEventTimingSummary(updatedEvent, viewedDate);
+  const standardDateText = remainingCampaignText || formatEventTimingSummary(updatedEvent, viewedDate);
   const timeRangeText = getEventTimeRangeParts(updatedEvent, new Date(), viewedDate).text;
   const participationTimeLabel = getAreaParticipationTimingLabel(updatedEvent, timeRangeText);
   const baseDateText = participationTimeLabel && standardDateText.endsWith(timeRangeText)
     ? standardDateText.slice(0, -timeRangeText.length) + participationTimeLabel : standardDateText;
   const scheduleContext = getEventScheduleContext(updatedEvent);
-  const displayUntilDate = scheduleContext ? undefined : getEventDisplayUntilDate(updatedEvent);
+  const displayUntilDate = scheduleContext || remainingCampaignText ? undefined : getEventDisplayUntilDate(updatedEvent);
   const endDateSuffix =
     isFutureDate(displayUntilDate) ? ` • (Until ${formatEndDateLabel(displayUntilDate!)})` : '';
   const dateTimeDisplay = [
@@ -2159,6 +2160,7 @@ const handleNonTicketAction = () => {
             <View style={styles.timingSummaryGroup}>
               <EventTimingSummaryText
                 event={updatedEvent}
+                remainingCampaignDates
                 style={[styles.infoText, styles.timingSummaryLabel]}
                 containerStyle={styles.timingSummaryText}
                 showInfoMarker={false}

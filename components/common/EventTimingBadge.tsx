@@ -12,6 +12,7 @@ import {
 
 import type { Event } from '../../types/events';
 import { getEventTimingBadge, getEventTimingDisclosure, getEventScheduleState, getEventTiming } from '../../utils/eventTiming';
+import { getContinuousDonationCampaignRange } from '../../utils/campaignTimingPresentation';
 
 interface EventTimingBadgeProps {
   event: Pick<Event, 'startDate' | 'startTime' | 'endDate' | 'endTime' | 'timing'>;
@@ -40,6 +41,14 @@ export function EventTimingBadge({
     : originalBadge;
   if (!badge) return null;
   const hasInfoIndicator = Boolean(badge.infoTitle && showInfoIndicator);
+  const separator = carousel && badge.text === 'END\nUNKNOWN' && !getContinuousDonationCampaignRange(event) ? (
+    <Text
+      accessible={false}
+      importantForAccessibility="no"
+      style={styles.carouselSeparator}
+      testID="carousel-end-unknown-separator"
+    >-</Text>
+  ) : null;
 
   const badgeStyle = [
     styles.base,
@@ -85,6 +94,8 @@ export function EventTimingBadge({
     };
 
     return (
+      <>
+      {separator}
       <Pressable
         accessibilityHint="Shows why this time is uncertain"
         accessibilityLabel={`${badge.accessibilityLabel}. More information`}
@@ -97,10 +108,13 @@ export function EventTimingBadge({
       >
         {content}
       </Pressable>
+      </>
     );
   }
 
   return (
+    <>
+    {separator}
     <View
       accessible
       accessibilityRole="text"
@@ -110,6 +124,7 @@ export function EventTimingBadge({
     >
       {content}
     </View>
+    </>
   );
 }
 
@@ -162,6 +177,11 @@ const styles = StyleSheet.create({
     fontSize: 6.5,
     letterSpacing: 0.1,
     lineHeight: 7,
+  },
+  carouselSeparator: {
+    color: '#1967D2',
+    fontSize: 10.5,
+    fontWeight: '700',
   },
   infoCorner: {
     alignItems: 'center',
