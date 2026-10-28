@@ -997,7 +997,16 @@ const result = await userService.toggleSavedEvent(event.id, {
 
             {/* Venue identity and address disclosure - top left */}
             {!grouped && <View style={styles.venueIdentityOverlay}>
-              <View style={styles.venueIdentityPill}>
+              <TouchableOpacity
+                style={styles.venueIdentityPill}
+                onPress={handleVenuePress}
+                disabled={!hasVenueAddress}
+                activeOpacity={0.7}
+                accessible={false}
+                accessibilityRole="button"
+                accessibilityLabel={`${addressExpanded ? 'Hide' : 'Show'} venue address for ${event.venue}`}
+                accessibilityState={{ expanded: addressExpanded, disabled: !hasVenueAddress }}
+              >
                 <View style={styles.venueProfileImageContainer}>
                   <FallbackImage
                     imageUrl={event.profileUrl}
@@ -1030,27 +1039,26 @@ const result = await userService.toggleSavedEvent(event.id, {
                   <Text
                     style={styles.venueIdentityText}
                     numberOfLines={1}
-                    accessibilityLabel={event.venue}
+                    onPress={handleVenuePress}
+                    disabled={!hasVenueAddress}
+                    accessibilityRole="button"
+                    accessibilityLabel={`${addressExpanded ? 'Hide' : 'Show'} venue address for ${event.venue}`}
+                    accessibilityState={{ expanded: addressExpanded, disabled: !hasVenueAddress }}
                   >
                     {event.venue}
                   </Text>
                 </GestureScrollView>
                 {hasVenueAddress && (
-                  <TouchableOpacity
-                    style={styles.venueIdentityChevronButton}
-                    onPress={handleVenuePress}
-                    activeOpacity={0.7}
-                    accessibilityRole="button"
-                    accessibilityLabel={addressExpanded ? 'Hide venue address' : 'Show venue address'}
-                  >
+                  <View style={styles.venueIdentityChevronButton} pointerEvents="none"
+                    accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
                     <MaterialIcons
                       name={addressExpanded ? 'expand-less' : 'expand-more'}
                       size={18}
                       color="#FFFFFF"
                     />
-                  </TouchableOpacity>
+                  </View>
                 )}
-              </View>
+              </TouchableOpacity>
               {hasVenueAddress && addressExpanded && (
                 <View style={styles.venueAddressOverlay}>
                   <MaterialIcons name="place" size={13} color="#FFFFFF" />

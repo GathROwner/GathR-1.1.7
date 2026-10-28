@@ -57,34 +57,43 @@ export default function VenueEventRow({ group, timeFilter, selectedEventId, coun
   };
   return (
     <View style={styles.group} testID="venue-event-row">
-      <View style={styles.header}>
+      <TouchableOpacity style={styles.header} activeOpacity={0.75} disabled={!active.address?.trim()} accessible={false}
+        onPress={event => { event.stopPropagation(); setAddressExpanded(value => !value); }}
+        accessibilityRole="button"
+        accessibilityLabel={`${addressExpanded ? 'Hide' : 'Show'} venue address for ${active.venue}`}
+        accessibilityState={{ expanded: addressExpanded, disabled: !active.address?.trim() }}>
         <View style={styles.avatarWrap}>
           <FallbackImage imageUrl={active.profileUrl} category={active.category} type={active.type}
             style={styles.avatar} fallbackType="profile" item={active} resizeMode="cover" />
           <View style={styles.favorite}><VenueFavoriteButton locationKey={createLocationKeyFromEvent(active)}
             venueName={active.venue} size={12} source={active.type === 'special' ? 'specials_tab' : 'events_tab'} /></View>
         </View>
-        <TouchableOpacity style={styles.identity} activeOpacity={0.75} disabled={!active.address?.trim()}
-          onPress={() => setAddressExpanded(value => !value)} accessibilityRole="button"
-          accessibilityLabel={`${active.venue}${active.address?.trim() ? ', show or hide address' : ''}`}>
+        <View style={styles.identity} accessible accessibilityRole="button"
+          accessibilityLabel={`${addressExpanded ? 'Hide' : 'Show'} venue address for ${active.venue}`}
+          accessibilityState={{ expanded: addressExpanded, disabled: !active.address?.trim() }}
+          accessibilityActions={active.address?.trim() ? [{ name: 'activate' }] : []}
+          onAccessibilityAction={event => {
+            if (event.nativeEvent.actionName === 'activate' && active.address?.trim()) setAddressExpanded(value => !value);
+          }}
+          onAccessibilityTap={() => { if (active.address?.trim()) setAddressExpanded(value => !value); }}>
           <Text style={styles.name} numberOfLines={2}>{active.venue}</Text>
           <VenueEventCount active={countCueActive}>{`${group.events.length} ${noun}${period}`}</VenueEventCount>
-        </TouchableOpacity>
+        </View>
         <View style={styles.pagination} accessibilityLabel={`${noun}, ${index + 1} of ${group.events.length}`}>
           <Text style={styles.counter}>{index + 1} of {group.events.length}</Text>
           <View style={styles.dots}>{group.events.slice(dotStart, dotStart + 5).map((event, offset) => (
-            <TouchableOpacity key={String(event.id)} onPress={() => goTo(dotStart + offset)}
+            <TouchableOpacity key={String(event.id)} onPress={event => { event.stopPropagation(); goTo(dotStart + offset); }}
               accessibilityRole="button" accessibilityLabel={`Show ${event.title}`}
               accessibilityState={{ selected: dotStart + offset === index }} style={styles.dotTarget}>
               <View style={[styles.dot, dotStart + offset === index && styles.activeDot]} />
             </TouchableOpacity>
           ))}</View>
         </View>
-        {!!active.address?.trim() && <TouchableOpacity onPress={() => setAddressExpanded(value => !value)}
-          style={styles.chevron} accessibilityRole="button" accessibilityLabel={addressExpanded ? 'Hide venue address' : 'Show venue address'}>
+        {!!active.address?.trim() && <View style={styles.chevron} pointerEvents="none"
+          accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
           <MaterialIcons name={addressExpanded ? 'expand-less' : 'expand-more'} size={22} color="#626973" />
-        </TouchableOpacity>}
-      </View>
+        </View>}
+      </TouchableOpacity>
       {addressExpanded && <View style={styles.address}><MaterialIcons name="place" size={15} color="#626973" />
         <Text style={styles.addressText}>{active.address}</Text></View>}
       <View testID="venue-event-viewport" onLayout={event => setWidth(event.nativeEvent.layout.width)} style={styles.viewport}>

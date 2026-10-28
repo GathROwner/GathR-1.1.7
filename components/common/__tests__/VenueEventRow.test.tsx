@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Text } from 'react-native';
+import { Text, TouchableOpacity } from 'react-native';
 import renderer, { act } from 'react-test-renderer';
 import VenueEventRow from '../VenueEventRow';
 import type { Event } from '../../../types/events';
@@ -40,6 +40,54 @@ function mount(props = {}) {
 function settle(x: number) {
   act(() => tree.root.findAllByProps({ testID: 'venue-event-pager' })[0].props.onMomentumScrollEnd({ nativeEvent: { contentOffset: { x } } }));
 }
+
+describe.each(['event', 'special'])('%s venue address header', type => {
+  const header = () => tree.root.findAllByType(TouchableOpacity).find(node =>
+    node.props.accessibilityLabel?.includes('venue address for Soul Fit PEI'))!;
+  it('uses one disclosure target around avatar, name, whitespace and chevron and toggles once per repeated tap', () => {
+    mount({ records: events.map(event => ({ ...event, type })) });
+    expect(header().props.accessibilityState).toMatchObject({ expanded: false });
+    // The visual avatar/name/chevron have no independent toggle handler.
+    // Only page dots remain interactive inside the row.
+    expect(header().findAllByType(TouchableOpacity).filter(node =>
+      !node.props.accessibilityLabel?.startsWith('Show Event'))).toHaveLength(1);
+    for (let tap = 1; tap <= 8; tap++) {
+      const stopPropagation = jest.fn();
+      act(() => header().props.onPress({ stopPropagation }));
+      expect(stopPropagation).toHaveBeenCalledTimes(1);
+      expect(header().props.accessibilityState.expanded).toBe(tap % 2 === 1);
+      expect(header().props.accessibilityLabel).toBe(`${tap % 2 ? 'Hide' : 'Show'} venue address for Soul Fit PEI`);
+      expect(selection).not.toHaveBeenCalled();
+    }
+  });
+
+  it('keeps page selection from toggling the address', () => {
+    mount({ records: events.map(event => ({ ...event, type })) });
+    const stopPropagation = jest.fn();
+    act(() => tree.root.findAllByType(TouchableOpacity).find(node =>
+      node.props.accessibilityLabel === 'Show Event 1')!.props.onPress({ stopPropagation }));
+    expect(stopPropagation).toHaveBeenCalledTimes(1);
+    expect(mockScrollTo).toHaveBeenLastCalledWith({ x: 360, animated: true });
+    expect(header().props.accessibilityState.expanded).toBe(false);
+  });
+
+  it('exposes an independently accessible address action beside the page controls', () => {
+    mount({ records: events.map(event => ({ ...event, type })) });
+    expect(header().props.accessible).toBe(false);
+    const identity = () => tree.root.findAll(node => node.props.accessible === true &&
+      node.props.accessibilityRole === 'button')[0];
+    act(() => identity().props.onAccessibilityAction({ nativeEvent: { actionName: 'activate' } }));
+    expect(identity().props.accessibilityState.expanded).toBe(true);
+    act(() => identity().props.onAccessibilityTap());
+    expect(identity().props.accessibilityState.expanded).toBe(false);
+  });
+
+  it('disables disclosure when no venue address exists', () => {
+    mount({ records: events.map(event => ({ ...event, type, address: '  ', latitude: 46.2, longitude: -63.1 })) });
+    expect(header().props.disabled).toBe(true);
+    expect(header().props.accessibilityState).toEqual({ expanded: false, disabled: true });
+  });
+});
 
 it('renders only the current and adjacent event cards, not every heavy card in a large venue', () => {
   mount();
