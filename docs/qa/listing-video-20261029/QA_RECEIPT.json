@@ -1,0 +1,100 @@
+{
+  "atUTC": "2026-10-29T13:52:06.847874+00:00",
+  "device": "s24/emulator-5554",
+  "nativePackage": "com.craigb.gathr",
+  "debuggableVerified": true,
+  "sourceRoot": "C:\\Windows\\System32\\GathR-Project\\video-preview",
+  "sourceCommit": "bc86394745d694bd7b1025851666f9f06e368cd2",
+  "testedComponent": "actual ListingVideoButton and WebView player in isolated native entry",
+  "entryMode": "Ignored QA fixture, no auth/map/ads/live listing or registry access; public video metadata response mocked only for this synthetic fixture",
+  "syntheticCloudVideoActualPlayback": true,
+  "decodeObserved": "Frame37 at1.542s and frame191 at7.958s/end of8-second clip",
+  "nativeControlsMutedObserved": true,
+  "closeRestoresPhoto": true,
+  "backgroundResumesWithoutPlayer": true,
+  "surroundingCardTapCount": 0,
+  "eventAndSpecialVariantsRendered": true,
+  "nativeErrorFallbackVerified": true,
+  "statusBarContrastFixedAndRendered": true,
+  "screenshots": [
+    {
+      "path": "C:\\Windows\\System32\\GathR-Project\\video-preview\\qa-artifacts\\control-no-vulkan.png",
+      "sha256": "b0f6645c7e3fe9e3efe471b440b2ba93376a526c1b611ec4ccf2c88ccd4a0a46"
+    },
+    {
+      "path": "C:\\Windows\\System32\\GathR-Project\\video-preview\\qa-artifacts\\player-no-vulkan.png",
+      "sha256": "d873fb09ae001c0d4224670c143edaebaad6a77e683269cc51eaed6ea70513a7"
+    },
+    {
+      "path": "C:\\Windows\\System32\\GathR-Project\\video-preview\\qa-artifacts\\player-preopen-statusbar.png",
+      "sha256": "9a0400f9d7b6825cf73dd59c536fb033b00306c5986889d8b964d019584f514d"
+    },
+    {
+      "path": "C:\\Windows\\System32\\GathR-Project\\video-preview\\qa-artifacts\\closed.png",
+      "sha256": "e81b3ff02e5491b1187ec337bc0fad97b0433c13f8f309e97eee666fa4f2dc2c"
+    },
+    {
+      "path": "C:\\Windows\\System32\\GathR-Project\\video-preview\\qa-artifacts\\backgrounded.png",
+      "sha256": "ecf5b01fd05c3ecf592d093dbe70e196a6b21d35668012c191d0cf6ecbbea004"
+    },
+    {
+      "path": "C:\\Windows\\System32\\GathR-Project\\video-preview\\qa-artifacts\\resumed-closed.png",
+      "sha256": "712616bb63feac80e22608bc8fa267c681dfbaaad2310e265cfab39c6d740b34"
+    },
+    {
+      "path": "C:\\Windows\\System32\\GathR-Project\\video-preview\\qa-artifacts\\special-control.png",
+      "sha256": "65b5e9afdb2bb06c575fdb4e8393f1f1db1f8a94933157c068c8a48e29f8f6ba"
+    },
+    {
+      "path": "C:\\Windows\\System32\\GathR-Project\\video-preview\\qa-artifacts\\error-fallback.png",
+      "sha256": "fbbf8e0c2e66fae9a4a95c7cc37a82cd15a4960b7975474ccfb50566ca147c7b"
+    }
+  ],
+  "hostCrashWorkaround": "Same AVD, lavapipe with session-only -feature -Vulkan -no-snapshot-load. No app data wipe, APK change or map interaction. Initial QEMU0xc0000005 recorded separately.",
+  "fixtureCleanup": {
+    "purpose": "Synthetic isolated native playback QA; not linked to any real listing or registry",
+    "object": "listingvideos/ba152cc388bfdb01f79b2fd67945d2983d6e08d2119b0cc8f0c501c31baf0405.mp4",
+    "generation": "1793280133000028",
+    "assetId": "ba152cc388bfdb01f79b2fd67945d2983d6e08d2119b0cc8f0c501c31baf0405",
+    "url": "https://storage.googleapis.com/gathr-uploaded-images/listingvideos/ba152cc388bfdb01f79b2fd67945d2983d6e08d2119b0cc8f0c501c31baf0405.mp4",
+    "bytes": 460967,
+    "durationSeconds": 8,
+    "expiresAt": "2026-10-29T16:22:10.995Z",
+    "sourcePostId": "123",
+    "atUTC": "2026-10-29T13:22:10.998Z",
+    "cleanupRequired": false,
+    "deletedAtUTC": "2026-10-29T13:51:03.785Z",
+    "deleteVerified": true
+  },
+  "limitations": [
+    "Android debug native component/fixture QA only; no iOS adoption or full authenticated feed screen proof",
+    "Host audio output unavailable; native muted control observed but audible unmuted playback not claimed",
+    "Metadata RPC mocked for synthetic fixture; production backend end-to-end validation still pending"
+  ],
+  "proofCopies": [
+    {
+      "path": "C:\\Windows\\System32\\GathR-Project\\video-preview\\docs\\qa\\listing-video-20261029\\control-no-vulkan.png",
+      "sha256": "b0f6645c7e3fe9e3efe471b440b2ba93376a526c1b611ec4ccf2c88ccd4a0a46"
+    },
+    {
+      "path": "C:\\Windows\\System32\\GathR-Project\\video-preview\\docs\\qa\\listing-video-20261029\\player-preopen-statusbar.png",
+      "sha256": "9a0400f9d7b6825cf73dd59c536fb033b00306c5986889d8b964d019584f514d"
+    },
+    {
+      "path": "C:\\Windows\\System32\\GathR-Project\\video-preview\\docs\\qa\\listing-video-20261029\\error-fallback.png",
+      "sha256": "fbbf8e0c2e66fae9a4a95c7cc37a82cd15a4960b7975474ccfb50566ca147c7b"
+    },
+    {
+      "path": "C:\\Windows\\System32\\GathR-Project\\video-preview\\docs\\qa\\listing-video-20261029\\fixture-cleanup.json",
+      "sha256": "4353bbb658319454780137ee76472675f453b021ef7951c03bc774a12db4d40d"
+    },
+    {
+      "path": "C:\\Windows\\System32\\GathR-Project\\video-preview\\docs\\qa\\listing-video-20261029\\host-crash.json",
+      "sha256": "ca6847e9b74b1b5dee4eca7580f617206fc6843962f579f9a0be8e334d461d4c"
+    }
+  ],
+  "temporaryPackageOverrideRestored": true,
+  "qaServerStopped": true,
+  "ownReversePortRemoved": 8093,
+  "testObjectDeleted": true
+}

@@ -1,0 +1,15 @@
+{
+  "purpose": "Synthetic isolated native playback QA; not linked to any real listing or registry",
+  "object": "listingvideos/ba152cc388bfdb01f79b2fd67945d2983d6e08d2119b0cc8f0c501c31baf0405.mp4",
+  "generation": "1793280133000028",
+  "assetId": "ba152cc388bfdb01f79b2fd67945d2983d6e08d2119b0cc8f0c501c31baf0405",
+  "url": "https://storage.googleapis.com/gathr-uploaded-images/listingvideos/ba152cc388bfdb01f79b2fd67945d2983d6e08d2119b0cc8f0c501c31baf0405.mp4",
+  "bytes": 460967,
+  "durationSeconds": 8,
+  "expiresAt": "2026-10-29T16:22:10.995Z",
+  "sourcePostId": "123",
+  "atUTC": "2026-10-29T13:22:10.998Z",
+  "cleanupRequired": false,
+  "deletedAtUTC": "2026-10-29T13:51:03.785Z",
+  "deleteVerified": true
+}
