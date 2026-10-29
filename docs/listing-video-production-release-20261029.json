@@ -1,0 +1,73 @@
+{
+  "atUTC": "2026-10-29T16:05:08.149836+00:00",
+  "status": "PUBLISHED_AND_INDEPENDENTLY_VERIFIED_IOS_PRODUCTION",
+  "userAuthority": "Craig directly requested this video feature for his current Production app and a mockup, October 29.",
+  "baselineCommit": "875f6302d1ac28842e43cc09bd6fca051ca038a3",
+  "baselineGroup": "4f6c7f70-8da6-4a35-82a2-47b52e5c2307",
+  "baselineUpdate": "01a1801b-16ae-7b38-912f-dc64b28f179d",
+  "published": {
+    "id": "01a18865-96db-7e0d-91d9-064c4e42ea58",
+    "createdAt": "2026-10-29T16:02:01.563Z",
+    "group": "a7f701ad-64e5-48bb-a53d-c150afa98037",
+    "branch": "production",
+    "message": "Add reviewed event videos to iOS Production a14cffe",
+    "runtimeVersion": "1.1.20",
+    "platform": "ios",
+    "manifestPermalink": "https://u.expo.dev/update/01a18865-96db-7e0d-91d9-064c4e42ea58",
+    "isRollBackToEmbedded": false,
+    "gitCommitHash": "a14cffe1a7e432ce1301afa7bd1506f8bca45f5f"
+  },
+  "newestIosProductionVerified": true,
+  "channelUnpaused": true,
+  "allTrafficMappedToProduction": true,
+  "runtime": "1.1.20",
+  "installedNativeShell": "1.1.20 (79)",
+  "nativeFingerprint": "6baab265658bbf45b6735e70da70e3a41bfabd41",
+  "matchesPriorProductionNativeFingerprint": true,
+  "newNativeBuild": false,
+  "nativeDependenciesOrConfigurationChanged": false,
+  "productionProfileVerified": {
+    "socialFeature": true,
+    "socialReleaseTwo": true,
+    "firebaseTarget": "production",
+    "appCheckDisabled": false,
+    "appCheckDebug": false,
+    "videoPilot": true,
+    "MapboxMatchesLiveBaseline": true
+  },
+  "typecheck": "PASS",
+  "focusedTests": 7,
+  "lint": {
+    "exit": 0,
+    "errors": 0,
+    "warnings": 222
+  },
+  "exportModules": 2547,
+  "easIosAssets": 112,
+  "sourceScope": "Only reviewed video helper/component/tests plus six overlay import/render lines; newer Production fixes preserved by exact baseline ancestry.",
+  "implementationIdentity": "Video component/helper match reviewed Preview commit 7961bd894867db0bef02493d10bba78376c99ff6 byte for byte.",
+  "renderedProof": "Prior actual Android native component/player screenshots independently reviewed; identical component retained; full Production feed and physical iPhone playback not independently verified.",
+  "mockup": {
+    "path": "C:/Users/craig/.codex/generated_images/01a0ea83-7031-7423-b853-966f2180d186/exec-9d1d5423-a78c-40c8-94ae-9370adc25ba0.png",
+    "sha256": "b0a71550df11b778abd6932bee43795e350930fef804d4f6f191be0344617af7",
+    "method": "Built-in image generation skill, precise screenshot edit showing the existing control; illustration only, not runtime QA.",
+    "promptSummary": "Preserve Craig screenshot and add one centered dark navy Watch video 0:17 pill over the red concert photograph, white circular play icon, bold label, smaller duration."
+  },
+  "videos": [
+    "Ben Kunder \u2013 Night of Songs, October 30",
+    "George Canyon & Aaron Pritchett: A Coast-to-Coast Cowboy Christmas 2, November 12"
+  ],
+  "publicManifestFreshCheck": "Both exact reviewed existing listing paths returned valid metadata before release.",
+  "backendChangedThisRelease": false,
+  "liveDataWritesThisRelease": 0,
+  "parserOrGateChanges": false,
+  "androidPublished": false,
+  "previewChangedThisRelease": false,
+  "phoneAdoption": "UNVERIFIED \u2014 Craig should reopen twice and check OTA 01a18865.",
+  "rollbackAvailable": true,
+  "sourceBundle": {
+    "path": "C:/Users/craig/Documents/Codex/2026-10-29/task/listing-video-production-candidate.bundle",
+    "sha256": "60bde0b8e446b0717fd83a6325116b2a98888e5c0bce7e9d7ec21b5ef5f4af3c",
+    "requires": "875f6302d1ac28842e43cc09bd6fca051ca038a3"
+  }
+}
