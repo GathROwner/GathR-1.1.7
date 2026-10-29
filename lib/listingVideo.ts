@@ -72,15 +72,15 @@ export function videoPlayerHtml(video: ListingVideo, startAt = 0, options: Fulls
   return renderFullscreenVideo(video, startAt, options);
 }
 
-export function inlineVideoHtml(video: ListingVideo, startAt = 0): string {
+export function inlineVideoHtml(video: ListingVideo, startAt = 0, muted = true): string {
   if (!normalizeListingVideo(video)) throw new Error('Invalid listing video');
   const start = Math.max(0, Math.min(60, Number.isFinite(startAt) ? startAt : 0));
   return `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; media-src https://storage.googleapis.com; style-src 'unsafe-inline'; script-src 'unsafe-inline'">
   <style>html,body{margin:0;width:100%;height:100%;background:transparent;overflow:hidden}video{width:100%;height:100%;object-fit:cover}</style></head>
-  <body><video playsinline autoplay muted preload="none" disablepictureinpicture src="${video.url}"></video>
+  <body><video playsinline autoplay ${muted ? 'muted' : ''} preload="none" disablepictureinpicture src="${video.url}"></video>
   <script>const v=document.querySelector('video');const post=m=>window.ReactNativeWebView.postMessage(m);
-  window.__listingVideoPause=()=>v.pause();window.__listingVideoPlay=()=>v.play().catch(()=>post('blocked'));window.__listingVideoMute=m=>{v.muted=m};
+  v.muted=${muted};window.__listingVideoPause=()=>v.pause();window.__listingVideoPlay=()=>{v.muted=false;v.play().catch(()=>post('blocked'))};window.__listingVideoMute=m=>{v.muted=m};
   v.addEventListener('loadedmetadata',()=>{v.currentTime=Math.min(${start},Math.max(0,v.duration-0.1))});
   v.addEventListener('playing',()=>{if(v.requestVideoFrameCallback)v.requestVideoFrameCallback(()=>post('playing'));else post('playing')});
   v.addEventListener('ended',()=>post('ended'));v.addEventListener('error',()=>post('error'));

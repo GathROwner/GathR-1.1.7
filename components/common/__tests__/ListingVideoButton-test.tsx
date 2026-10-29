@@ -32,9 +32,12 @@ describe('listing video playback lifecycle', () => {
     act(() => tree.root.findByProps({ accessibilityLabel: 'Watch video for Halloween drinks, 12 seconds' }).props.onPress({ stopPropagation }));
     expect(stopPropagation).toHaveBeenCalled();
     expect(tree.root.findAllByType('MockWebView' as any)).toHaveLength(1);
+    expect(tree.root.findByType('MockWebView' as any).props.source.html).toContain('v.muted=false');
     act(() => tree.root.findByType('MockWebView' as any).props.onMessage({ nativeEvent: { data: 'playing' } }));
+    expect(tree.root.findByProps({ accessibilityLabel: 'Mute video' })).toBeTruthy();
     act(() => tree.root.findByProps({ accessibilityLabel: 'Expand video for Halloween drinks' }).props.onPress({ stopPropagation }));
     expect(tree.root.findByType('MockWebView' as any).props.testID).toBe('listing-fullscreen-video');
+    expect(tree.root.findByType('MockWebView' as any).props.source.html).toContain('v.muted=false');
     act(() => tree.root.findByType('MockWebView' as any).props.onMessage({ nativeEvent: { data: 'dismiss' } }));
     expect(tree.root.findAllByType('MockWebView' as any)).toHaveLength(0);
   });
@@ -67,17 +70,21 @@ describe('listing video playback lifecycle', () => {
       act(() => player.props.onMessage({ nativeEvent: { data: 'playing' } }));
       expect(tree.root.findByProps({ accessibilityLabel: 'Pause video' })).toBeTruthy();
       const source = player.props.source;
+      expect(source.html).toContain('v.muted=true');
+      expect(tree.root.findByProps({ accessibilityLabel: 'Turn video sound on' })).toBeTruthy();
       act(() => tree.root.findByProps({ accessibilityLabel: 'Pause video' }).props.onPress({ stopPropagation: jest.fn() }));
       expect(tree.root.findByProps({ accessibilityLabel: 'Resume video' })).toBeTruthy();
       expect(tree.root.findByType('MockWebView' as any).props.source).toBe(source);
       act(() => jest.advanceTimersByTime(250));
       expect(tree.root.findAllByType('MockWebView' as any)).toHaveLength(1);
       act(() => tree.root.findByProps({ accessibilityLabel: 'Resume video' }).props.onPress({ stopPropagation: jest.fn() }));
+      expect(tree.root.findByProps({ accessibilityLabel: 'Mute video' })).toBeTruthy();
       act(() => player.props.onMessage({ nativeEvent: { data: 'ended' } }));
       expect(tree.root.findAllByType('MockWebView' as any)).toHaveLength(0);
       const replay = tree.root.findByProps({ accessibilityLabel: 'Replay video for Halloween drinks, 12 seconds' });
       act(() => replay.props.onPress({ stopPropagation: jest.fn() }));
       expect(tree.root.findByType('MockWebView' as any).props.testID).toBe('listing-inline-video');
+      expect(tree.root.findByType('MockWebView' as any).props.source.html).toContain('v.muted=false');
       expect(tree.root.findAllByProps({ testID: 'listing-fullscreen-video' })).toHaveLength(0);
     } finally { AppState.currentState = previousState; jest.useRealTimers(); }
   });
@@ -91,6 +98,7 @@ describe('listing video playback lifecycle', () => {
       mockVideoY = 3000; act(() => jest.advanceTimersByTime(250));
       mockVideoY = 200; act(() => jest.advanceTimersByTime(1250));
       expect(tree.root.findByType('MockWebView' as any).props.testID).toBe('listing-inline-video');
+      expect(tree.root.findByType('MockWebView' as any).props.source.html).toContain('v.muted=true');
     } finally { jest.useRealTimers(); }
   });
   it('does not autoplay while preference hydration is incomplete or reduced motion is enabled', async () => {

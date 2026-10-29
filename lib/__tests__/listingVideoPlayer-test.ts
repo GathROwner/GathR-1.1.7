@@ -1,5 +1,5 @@
 /** @jest-environment node */
-import { videoPlayerHtml, type ListingVideo } from '../listingVideo';
+import { inlineVideoHtml, videoPlayerHtml, type ListingVideo } from '../listingVideo';
 const { JSDOM } = require('jsdom');
 const clip: ListingVideo = { assetId: 'a'.repeat(64), url: `https://storage.googleapis.com/gathr-uploaded-images/listingvideos/${'a'.repeat(64)}.mp4`, bytes: 2000, durationSeconds: 12, sourcePostId: '123', expiresAt: '2099-01-01' };
 function player(width = 1080, height = 1920, title = 'Concert') {
@@ -19,6 +19,29 @@ function player(width = 1080, height = 1920, title = 'Concert') {
   return { dom, w, doc, video, messages, swipe };
 }
 describe('fullscreen listing video interaction', () => {
+  it('starts automatic playback muted, but explicit resume and replay enable sound and allow re-muting', () => {
+    const p = player(); try {
+      expect(p.video.muted).toBe(true);
+      p.doc.getElementById('play').click(); expect(p.video.paused).toBe(true); expect(p.video.muted).toBe(true);
+      p.doc.getElementById('play').click(); expect(p.video.paused).toBe(false); expect(p.video.muted).toBe(false);
+      p.doc.getElementById('sound').click(); expect(p.video.muted).toBe(true);
+      Object.defineProperty(p.video, 'ended', { configurable: true, value: true });
+      p.video.currentTime = 12; p.video.dispatchEvent(new p.w.Event('ended'));
+      p.doc.getElementById('play').click(); expect(p.video.currentTime).toBe(0); expect(p.video.muted).toBe(false);
+      expect(p.doc.getElementById('sound').getAttribute('aria-label')).toBe('Mute video');
+      p.doc.getElementById('sound').click(); expect(p.video.muted).toBe(true);
+    } finally { p.dom.window.close(); }
+  });
+  it.each([true, false])('inline initial mute follows automatic/manual intent (%s) and explicit resume enables sound', (muted) => {
+    const dom = new JSDOM(inlineVideoHtml(clip, 0, muted), { runScripts: 'dangerously', beforeParse(w: any) {
+      w.ReactNativeWebView = { postMessage: jest.fn() }; w.HTMLMediaElement.prototype.play = jest.fn().mockResolvedValue(undefined);
+    } });
+    try {
+      const v = dom.window.document.querySelector('video'); expect(v.muted).toBe(muted);
+      dom.window.__listingVideoPlay(); expect(v.muted).toBe(false);
+      dom.window.__listingVideoMute(true); expect(v.muted).toBe(true);
+    } finally { dom.window.close(); }
+  });
   it.each([[1080, 1920, 'portrait'], [1080, 1080, 'square'], [1920, 1080, 'landscape']])('adapts to actual %s x %s metadata as %s', (w, h, layout) => {
     const p = player(Number(w), Number(h)); try { p.video.dispatchEvent(new p.w.Event('loadedmetadata')); expect(p.doc.documentElement.dataset.aspect).toBe(layout); expect(p.video.currentTime).toBe(3); expect(p.doc.querySelectorAll('video')).toHaveLength(1); } finally { p.dom.window.close(); }
   });

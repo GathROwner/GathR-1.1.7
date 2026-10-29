@@ -1,5 +1,7 @@
 # Listing video native follow-ups
 
+October 29 addition: explicit Play/Replay/Resume now enables sound through the existing WebView playback path; automatic starts stay muted. See `listing-video-manual-sound-20261029.md`. This OTA behavior does not implement hardware-volume observation below.
+
 ## VIDEO-NATIVE-001 - Volume adjustment unmutes the focused playing video
 
 Tag: potential native build. Product intent accepted by Craig on October 29, 2026. Deferred from the OTA refinement batch; no new native build is authorized by this entry.

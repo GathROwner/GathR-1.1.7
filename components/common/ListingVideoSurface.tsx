@@ -86,7 +86,10 @@ export default function ListingVideoSurface({ event, overlay = false, surface = 
         enabled: active && !suspended && ((enabled && hydrated && !reduceMotion && !manualHold) || manualInline) && !failed && !!normalizeListingVideo(video), paused, manual: manualInline }, owns => {
         if (!mounted.current) return;
         ownsInline.current = owns;
-        if (owns) inlineSource.current = { html: inlineVideoHtml(video, autoplay.position(video.assetId)), baseUrl: 'https://storage.googleapis.com/' };
+        if (owns) {
+          inlineSource.current = { html: inlineVideoHtml(video, autoplay.position(video.assetId), !manualInline), baseUrl: 'https://storage.googleapis.com/' };
+          setMuted(!manualInline);
+        }
         else { inline.current?.injectJavaScript('window.__listingVideoPause?.();true;'); opacity.setValue(0); setPlaying(false); setMuted(true); }
         setLease(owns);
       }, now);
@@ -126,7 +129,7 @@ export default function ListingVideoSurface({ event, overlay = false, surface = 
     <View pointerEvents="box-none" style={[styles.controls, { bottom: controlsBottom }]}>
       {playing ? <>
         <Pressable style={styles.control} accessibilityRole="button" accessibilityLabel={paused ? 'Resume video' : 'Pause video'} onPress={touch => {
-          touch.stopPropagation(); inline.current?.injectJavaScript(paused ? 'window.__listingVideoPlay?.();true;' : 'window.__listingVideoPause?.();true;'); setPaused(!paused);
+          touch.stopPropagation(); inline.current?.injectJavaScript(paused ? 'window.__listingVideoPlay?.();true;' : 'window.__listingVideoPause?.();true;'); if (paused) setMuted(false); setPaused(!paused);
         }}><Ionicons name={paused ? 'play' : 'pause'} size={19} color="#fff" /></Pressable>
         <Pressable style={styles.control} accessibilityRole="button" accessibilityLabel={muted ? 'Turn video sound on' : 'Mute video'} onPress={touch => {
           touch.stopPropagation(); inline.current?.injectJavaScript(`window.__listingVideoMute?.(${!muted});true;`); setMuted(!muted);
@@ -134,7 +137,7 @@ export default function ListingVideoSurface({ event, overlay = false, surface = 
       </> : <Pressable style={[styles.control, styles.posterControl]} accessibilityRole="button"
         accessibilityLabel={`${done ? 'Replay' : 'Watch'} video for ${event.title}, ${seconds} seconds`} onPress={touch => {
           touch.stopPropagation(); if (done) autoplay.replay(video.assetId);
-          autoplay.remove(id); setCompleted(false); setPaused(false); setMuted(true); setManualHold(false); setManualInline(true);
+          autoplay.remove(id); setCompleted(false); setPaused(false); setMuted(false); setManualHold(false); setManualInline(true);
         }}><Ionicons name={done ? 'refresh' : 'play'} size={18} color="#fff" /><Text style={styles.duration}>{done ? 'Replay' : duration}</Text></Pressable>}
     </View>
     <Modal visible={open} animationType="fade" presentationStyle="fullScreen" statusBarTranslucent navigationBarTranslucent onRequestClose={close}>
