@@ -60,7 +60,7 @@
     "path": "docs/listing-video-native-followups.md",
     "status": "Potential native build; volume-adjustment unmute not implemented in OTA"
   },
-  "phoneAdoption": "UNVERIFIED for this new refinement OTA; reopen twice and confirm Profile 01a188f6.",
+  "phoneAdoption": "CONFIRMED by Craig: Alright I can confirm that worked, before the additive manual-sound refinement.",
   "evidenceLimits": [
     "Actual Android shared-component visual QA is not physical iOS adoption",
     "Native square and landscape clips verified; portrait metadata classification covered by DOM tests",

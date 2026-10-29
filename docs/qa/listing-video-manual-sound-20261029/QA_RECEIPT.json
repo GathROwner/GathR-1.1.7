@@ -1,0 +1,29 @@
+{
+  "source": "1fb3c79c39b97eed50d75dc172c48fb3f17af746",
+  "mechanism": "Actual HTML player in mobile Chromium; native dark base supplied beneath transparent viewer",
+  "viewport": {
+    "width": 390,
+    "height": 844,
+    "scale": 2
+  },
+  "checked": [
+    "muted initial autoplay",
+    "explicit fullscreen resume/replay enables sound",
+    "re-mute",
+    "inline automatic/manual initial sound state",
+    "inline explicit resume"
+  ],
+  "independentVisualReview": "PASS: control hierarchy, alignment, spacing, contrast and decoded frame; no layout modifications",
+  "limits": [
+    "Not native Android or physical iOS verification",
+    "No human audio-listening claim",
+    "No exact native blur backdrop in browser"
+  ],
+  "hashes": {
+    "components/common/ListingVideoSurface.tsx": "74e78989c5c43cb4dff9b6015ec0f79ee12018fe2bd6364a17d921158b681c44",
+    "lib/listingVideo.ts": "a9f1bd4db0efeb92163c2e9a27cabef34bf6f96b67661c3111a2bfe4126e18bf",
+    "lib/listingVideoPlayer.ts": "320045fa3dc41d1274959beb225759856ae3660be04fd40e3d61a856d51d7182",
+    "docs/qa/listing-video-manual-sound-20261029/fullscreen-manual-sound.png": "388d2a4bd92fa8e3a0a8fbeb67305ec0e6a007bfd232b39c287888bd4f0823d8",
+    "docs/qa/listing-video-manual-sound-20261029/fullscreen-replay-sound.png": "68f3395976165dfbb8beeefea8570b5a418e0c4d988ce67591c295f5351a097e"
+  }
+}

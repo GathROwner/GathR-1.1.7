@@ -1,5 +1,7 @@
 # Reviewed listing videos: iOS Production
 
+Latest release: **iOS Production OTA 01a18910**, runtime **1.1.20**, source `1fb3c79`, group `b4512e78-5065-49c8-938b-712c14f63167`. Explicit Play/Replay/Resume enables sound; automatic starts stay muted. Exact EAS group/list/channel and unchanged native fingerprint verified. See `listing-video-manual-sound-20261029.md`. Physical iPhone adoption pending. Craig confirmed the preceding 01a188f6 refinements work; they remain part of this accepted baseline. Older release entries below are historical.
+
 Latest accepted-baseline refinement release: **iOS Production OTA 01a188f6**, runtime **1.1.20**, source `4176896`, group `40a99276-3c32-4cd7-a03d-7a217c5d7d03`. Inline Replay/scroll-return, one-second dwell and adaptive fullscreen/Fit/Fill/swipe-dismiss are published and independently verified. See `listing-video-refinements-20261029.md`; hardware-volume behavior is deferred as VIDEO-NATIVE-001. Phone adoption of this new OTA is pending.
 
 

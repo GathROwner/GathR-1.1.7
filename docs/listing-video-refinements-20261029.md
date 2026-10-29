@@ -1,6 +1,6 @@
 # Listing video refinements - October 29
 
-Status: PUBLISHED AND INDEPENDENTLY VERIFIED on iOS Production. Source 4176896; runtime 1.1.20; update 01a188f6-f176-7ce0-968e-8967db5cf856; group 40a99276-3c32-4cd7-a03d-7a217c5d7d03. Physical iPhone adoption pending. Craig accepted autoplay Production OTA 01a188ba, then authorized this OTA-compatible refinement batch. Working branch `codex/listing-video-refinements-20261029` in `C:/Windows/System32/GathR-Project/video-production` descends from accepted Production dd8a943 and its 23528ce documentation. Current rollback is group `b46ce890-450f-43d9-9f9d-82e4b64912bf`, runtime 1.1.20.
+Status: PUBLISHED AND INDEPENDENTLY VERIFIED on iOS Production. Source 4176896; runtime 1.1.20; update 01a188f6-f176-7ce0-968e-8967db5cf856; group 40a99276-3c32-4cd7-a03d-7a217c5d7d03. Physical iPhone adoption confirmed by Craig before the additive manual-sound refinement. Craig accepted autoplay Production OTA 01a188ba, then authorized this OTA-compatible refinement batch. Working branch `codex/listing-video-refinements-20261029` in `C:/Windows/System32/GathR-Project/video-production` descends from accepted Production dd8a943 and its 23528ce documentation. Current rollback is group `b46ce890-450f-43d9-9f9d-82e4b64912bf`, runtime 1.1.20.
 
 ## Resulting behavior
 
