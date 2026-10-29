@@ -35,7 +35,7 @@ export default function ListingVideoButton({ event, overlay = false }: { event: 
   const seconds = Math.ceil(video.durationSeconds);
   return <>
     <Pressable accessibilityRole="button" accessibilityLabel={`Watch video for ${event.title}, ${seconds} seconds`}
-      onPress={touch => { touch.stopPropagation(); if (normalizeListingVideo(video)) setOpen(true); }}
+      onPress={touch => { touch.stopPropagation(); if (normalizeListingVideo(video)) { StatusBar.setBarStyle('light-content'); setOpen(true); } }}
       style={[styles.button, overlay && styles.overlay]}>
       <Ionicons name="play-circle" size={26} color="#fff" />
       <Text style={styles.label}>Watch video</Text><Text style={styles.duration}>{Math.floor(seconds / 60)}:{String(seconds % 60).padStart(2, '0')}</Text>
