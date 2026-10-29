@@ -1,12 +1,12 @@
 # Poster-first listing video autoplay candidate
 
-Status: implemented, behavior-tested, native shared-JS visual acceptance PASSED; UNPUBLISHED pending release checks. Earlier emulator blocker is resolved as recorded below. No backend, Firestore, media upload, parser, gate, traffic, native package or Android release changes.
+Status: PUBLISHED AND INDEPENDENTLY VERIFIED on iOS Production. Source dd8a943; runtime 1.1.20; update 01a188ba-02c7-73e0-82d5-e0668515f92c; group b46ce890-450f-43d9-9f9d-82e4b64912bf. Native shared-JS visual checks passed; physical iPhone adoption is pending. No backend, Firestore, media upload, parser, gate, traffic, native package or Android release changes.
 
 ## Accepted scope and baseline
 
 Craig authorized trying the discussed poster-first experience after confirming the existing Production video feature works. Branch `codex/listing-video-autoplay-20261029` starts at accepted documentation descendant `5a37b4fcd722f2b4d64eee01997e0d63cf37bff1`; it includes Production runtime source `a14cffe1a7e432ce1301afa7bd1506f8bca45f5f` and its newer accepted gesture/header fixes.
 
-Current rollback is iOS Production group `a7f701ad-64e5-48bb-a53d-c150afa98037`, update `01a18865-96db-7e0d-91d9-064c4e42ea58`, runtime 1.1.20. No candidate export/publication has been performed. Re-read the live baseline immediately before any eventual release.
+Current rollback is iOS Production group `a7f701ad-64e5-48bb-a53d-c150afa98037`, update `01a18865-96db-7e0d-91d9-064c4e42ea58`, runtime 1.1.20. That accepted baseline was re-read immediately before the corrected release; the new release is recorded below.
 
 ## Resulting behavior
 
@@ -23,7 +23,7 @@ Source review covered exact-path metadata, restricted immutable URLs/CSP, bounde
 
 Seven coordinator/HTML tests and four existing metadata/helper tests passed. Five component lifecycle tests passed, including the two-second poster dwell, one inline WebView, pause/resume without source restart, end-to-poster Replay, preference hydration, Reduce Motion, manual expansion, background shutdown and photo fallback. The initial new lifecycle failure was traced to React Native Jest's no-op measureInWindow stub; supplying an actual measured rectangle fixed the test. TypeScript passed. Full lint passed with zero errors; changed video modules/tests pass focused lint with zero warnings after import-order cleanup. Logs are retained locally under qa-artifacts/autoplay/.
 
-## Required next step and blocker
+## Initial blocker history (resolved below)
 
 Automatic approval review rejected the combined existing-emulator launch and isolated QA setup command before execution, with `blocked by policy` and no stated reason. None of that command ran. No alternative launch, connection or workaround has been attempted. Craig has been asked for direction on starting the preserved existing emulator and connecting only to an isolated cards/video screen, with no maps or ads.
 
@@ -33,7 +33,7 @@ Then: run isolated native poster-to-play/end/pause/sound/offscreen/detail/fullsc
 
 The October 29 full source-to-output regular parse audit is a separate outstanding task; it has not been completed by this UI change.
 
-## Authorized emulator attempt and current blocker
+## First authorized emulator attempt (historical blocker)
 
 Craig explicitly approved the isolated emulator check. The existing s24 booted with Lavapipe/Vulkan disabled and preserved app data; the installed com.craigb.gathr package remained debuggable. Metro used this checkout's ordinary local dependencies and a temporary ignored cards-only entry on port 8093. The host produced the isolated 749-module Android bundle and development manifest with HTTP 200; neither is native-adoption proof. No auth, map, ad, Firestore write, parser or backend work was performed.
 
@@ -52,3 +52,11 @@ Evidence limits: this is a 360dp Android development harness with the exact shar
 ## Final badge-clearance correction
 
 Final integration review caught the existing Trending/area badge at bottom-left overlapping the proposed controls in shared lightboxes. The first Production attempt was cancelled during export; fresh EAS list confirmed no new update was created. Controls now receive a 52dp bottom offset when those badges exist (32dp badge at bottom 12, plus an 8dp gap); normal feed/detail placement stays at bottom 12. Actual native poster and playing states with the existing badge geometry were inspected independently and passed; screenshots and exact source hashes are added to QA_RECEIPT.json. TypeScript passed again for the changed prop/caller; targeted lint passed with zero errors and three existing lightbox hook warnings. The prior playback tests remain applicable because playback logic is unchanged. QA entry and Metro are removed again before the corrected release.
+
+## Published iOS Production result
+
+Published exact source `dd8a9437e25205d9ffbcaa8b4be625b056c713ca` to iOS Production runtime **1.1.20**, update **01a188ba-02c7-73e0-82d5-e0668515f92c**, group **b46ce890-450f-43d9-9f9d-82e4b64912bf**. Independent EAS group/list/channel reads verify the exact commit/platform/runtime, newest iOS update, active full-traffic Production mapping and unchanged native fingerprint `6baab265658bbf45b6735e70da70e3a41bfabd41`. Production profile, social flags, App Check, restored real app entry and matching public Mapbox token passed immediately before export. Export: 2,550 modules and 112 final EAS iOS assets.
+
+Source and exact candidate bundle are retained; detailed receipt is `listing-video-autoplay-release-20261029.json`. Rollback is prior accepted group `a7f701ad-64e5-48bb-a53d-c150afa98037`. No backend, event records, parser gates, native build, Android or Preview update changed. The earlier cancelled export created no update. Physical iPhone adoption remains pending; close/reopen twice and confirm Profile OTA `01a188ba`.
+
+Cleanup: real package entry is restored and the own QA Metro is stopped. The final bounded attempt to remove the Android reverse mapping for port 8093 timed out; only that cleanup client was stopped. No broad ADB server/device recovery was attempted. This leaves no local QA server listening; any leftover reverse mapping is local and inert.
