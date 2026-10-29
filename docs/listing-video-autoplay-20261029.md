@@ -1,6 +1,6 @@
 # Poster-first listing video autoplay candidate
 
-Status: implemented, behavior-tested, UNPUBLISHED. Native rendered visual acceptance remains blocked. No backend, Firestore, media upload, parser, gate, traffic, native package or Android release changes.
+Status: implemented, behavior-tested, native shared-JS visual acceptance PASSED; UNPUBLISHED pending release checks. Earlier emulator blocker is resolved as recorded below. No backend, Firestore, media upload, parser, gate, traffic, native package or Android release changes.
 
 ## Accepted scope and baseline
 
@@ -40,3 +40,11 @@ Craig explicitly approved the isolated emulator check. The existing s24 booted w
 Windows Computer Use screenshot capture failed with FrameArrived timeout; direct Android captures succeeded. The device showed System UI not responding during boot, then the GathR development client's SocketTimeoutException and repeated app-not-responding dialogs. The new code never rendered. Wait and Reload did not recover. Automatic review rejected the combined app force-stop/restart command before execution, without a stated reason. No alternative close/restart was attempted. Craig has been asked for permission to close/reopen only that frozen app while preserving its data.
 
 The QA-only package entry was restored byte-for-byte. Local diagnostic screenshots, logs and QA_RECEIPT.json are under qa-artifacts/autoplay/. No new OTA was exported or published. Fresh EAS group/list/channel readback still identifies iOS Production a14cffe, update 01a18865, runtime 1.1.20. The candidate remains unverified visually and unpublished. Resume only the narrow native QA/release sequence once the frozen client is recovered; do not repeat unchanged test suites.
+
+## Native acceptance after authorized app restart
+
+Craig explicitly authorized closing/reopening only the frozen emulator app. The exact restart and connection succeeded through smaller scoped tool requests after another combined request was rejected. The real isolated screen then rendered source bd92b47 through this checkout's own Metro, without changing the installed package, wiping app data, opening maps/ads/auth, or touching event records. The prior blocker is resolved.
+
+Primary-agent review of actual Android screenshots and recording passed for poster-to-muted-video transition, lower-left controls, pause/resume, sound-state control, offscreen poster restoration, autoplay opt-out, manual fullscreen, background removal, end-to-poster Replay, hierarchy, alignment, spacing and retained title/date context. Both original photo and decoded video states are visible in durable proof under `docs/qa/listing-video-autoplay-20261029/QA_RECEIPT.json`. The original enabled autoplay preference was restored; QA Metro was stopped and package.json restored byte-for-byte before release.
+
+Evidence limits: this is a 360dp Android development harness with the exact shared component, not physical iOS adoption, a complete live feed/Profile route check, or an audible listening test. The emulator lacks a reliable sound driver. Full app detail-priority coordination is covered by behavior tests and code review; no map lightbox session was opened. Existing tests/typechecking/lint were not needlessly repeated because runtime source was unchanged during QA.

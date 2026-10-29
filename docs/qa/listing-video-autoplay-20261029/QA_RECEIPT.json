@@ -1,0 +1,46 @@
+{
+  "atUTC": "2026-10-29T17:20:47.637004+00:00",
+  "sourceCommit": "bd92b47648d61369a0d8dc901b6b51886905630b",
+  "status": "SHARED_JS_NATIVE_VISUAL_ACCEPTANCE_PASS",
+  "emulator": "s24 / emulator-5554",
+  "package": "com.craigb.gathr",
+  "screen": "Isolated cards with the two real approved listings and exact ListingVideoSurface code; no map, ads, auth, data writes or fixture media uploads.",
+  "sourceTransport": "Own local dependency install, Metro8093, exact isolated entry requested by device; Running main and visible bd92b47 QA label.",
+  "nativeChecks": [
+    "poster remains until decoded frame",
+    "muted inline playback",
+    "compact pause/resume controls",
+    "pause retains frame and resumes",
+    "sound control icon changes",
+    "scroll below visibility threshold restores poster",
+    "autoplay disabled keeps poster while visible",
+    "explicit fullscreen works with autoplay disabled",
+    "fullscreen removed on background/return",
+    "end returns poster and Replay",
+    "original autoplay preference restored"
+  ],
+  "unitAndBehaviorTests": 16,
+  "typecheck": "PASS",
+  "lint": "zero errors; video modules/tests zero warnings",
+  "independentVisualReview": "Primary agent inspected real native screenshots/recording for layout, alignment, hierarchy, controls and retained event context. No clipping/overlap observed on 360dp s24 card surface.",
+  "limits": [
+    "Android development harness proves shared JS only, not iOS adoption",
+    "Full live feed and full Profile route were not opened",
+    "Native detail-priority coordination covered by behavior tests, not a full app lightbox session",
+    "Emulator has no reliable sound driver; sound state UI checked, no new listening claim; Craig previously reviewed clip audio"
+  ],
+  "sha256": {
+    "native-poster.png": "29f4d39d0f65df054703cfdccd6988c132f858c63fa5e95e38a118c811679ad3",
+    "native-transition-20.png": "6821287c08b8d191880682538c6b21b92486a1aaa9a37bf28e67b3d7790587f6",
+    "native-cowboy-inline.png": "74c1e3f53f221cf7b861e7685f2453dab671511333f04af10d5de3ea11a316b6",
+    "native-paused.png": "4c27b074b5bd4657eed75cd4f585e9cd5227324d26d82070fc6e9c00425b5bfc",
+    "native-playing.png": "3c2bc3e8835041702e69cfedfef67ebef2f65f90152a03363bb3d8bdc61646d1",
+    "native-fullscreen-ready.png": "027b8351f8d4b828511b09d62d8477e08ad15d32cccbd20208912f2e5c97786c"
+  },
+  "nativeRecordingLocal": "qa-artifacts/autoplay/native-transition.mp4",
+  "packageEntryRestored": true,
+  "nativePackageReplaced": false,
+  "dataWiped": false,
+  "backendOrParserChanges": false,
+  "automaticReviewHistory": "Earlier combined commands rejected without stated reasons. After explicit restart permission, app force-stop succeeded. Smaller reviewed read-only warmup, reverse and exact reopen steps succeeded and native QA completed."
+}
