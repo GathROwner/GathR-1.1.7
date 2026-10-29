@@ -1,5 +1,8 @@
 # Reviewed listing videos: iOS Production
 
+Latest accepted-baseline refinement release: **iOS Production OTA 01a188f6**, runtime **1.1.20**, source `4176896`, group `40a99276-3c32-4cd7-a03d-7a217c5d7d03`. Inline Replay/scroll-return, one-second dwell and adaptive fullscreen/Fit/Fill/swipe-dismiss are published and independently verified. See `listing-video-refinements-20261029.md`; hardware-volume behavior is deferred as VIDEO-NATIVE-001. Phone adoption of this new OTA is pending.
+
+
 Current iOS Production autoplay release: source **dd8a943**, runtime **1.1.20**, update **01a188ba**, group `b46ce890-450f-43d9-9f9d-82e4b64912bf`. Poster-first muted inline playback, controls, opt-out and Replay are now published after native shared-component visual checks. Independent EAS readbacks and unchanged native fingerprint passed; phone adoption is pending. See `listing-video-autoplay-20261029.md` and `listing-video-autoplay-release-20261029.json`.
 
 ## Original tap-to-play release

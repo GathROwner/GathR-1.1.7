@@ -1,0 +1,87 @@
+{
+  "atUTC": "2026-10-29T18:45:55.806572+00:00",
+  "status": "PUBLISHED_AND_INDEPENDENTLY_VERIFIED_IOS_PRODUCTION",
+  "published": {
+    "id": "01a188f6-f176-7ce0-968e-8967db5cf856",
+    "group": "40a99276-3c32-4cd7-a03d-7a217c5d7d03",
+    "createdAt": "2026-10-29T18:40:47.478Z",
+    "branch": "production",
+    "platform": "ios",
+    "runtimeVersion": "1.1.20",
+    "gitCommitHash": "41768963d92d4db7fbcdc5587548d6edefc5895f",
+    "message": "Inline replay, one-second preview and adaptive fullscreen video viewer (4176896)",
+    "manifestPermalink": "https://u.expo.dev/update/01a188f6-f176-7ce0-968e-8967db5cf856"
+  },
+  "nativeShell": "iOS 1.1.20 (79)",
+  "nativeFingerprint": "6baab265658bbf45b6735e70da70e3a41bfabd41",
+  "nativeFingerprintUnchanged": true,
+  "newestIosProductionVerified": true,
+  "channelUnpaused": true,
+  "allTrafficMappedToProduction": true,
+  "acceptedBaseCommit": "dd8a9437e25205d9ffbcaa8b4be625b056c713ca",
+  "acceptedPhoneBehavior": "Craig confirmed the prior 01a188ba autoplay release works; this is an additive refinement batch.",
+  "rollbackGroup": "b46ce890-450f-43d9-9f9d-82e4b64912bf",
+  "environmentPreserved": {
+    "firebase": "production",
+    "socialFeature": true,
+    "socialReleaseTwo": true,
+    "emulators": false,
+    "appCheckDisabled": false,
+    "appCheckDebug": false,
+    "nativePlist": "GoogleService-Info.plist",
+    "MapboxMatchesServingBaseline": true,
+    "videoPilot": true
+  },
+  "exportModules": 2551,
+  "easIosAssets": 112,
+  "focusedChecks": 25,
+  "typecheck": "PASS",
+  "lint": "PASS, zero errors; full lint has 221 existing warnings; final changed component/player lint clean",
+  "nativeVisualProof": "docs/qa/listing-video-refinements-20261029/QA_RECEIPT.json",
+  "sourceBranch": "codex/listing-video-refinements-20261029",
+  "sourcePushedAndReadBack": true,
+  "sourceBundle": {
+    "path": "C:/Users/craig/Documents/Codex/2026-10-29/task/listing-video-refinements-candidate.bundle",
+    "sha256": "60aced5a66ce103b32dd234cb2d9a4c77c74aaefe08979773ceacfc52ad8d443",
+    "requires": "dd8a9437e25205d9ffbcaa8b4be625b056c713ca"
+  },
+  "features": [
+    "one-second intentional poster dwell",
+    "completed posters reset only after actual exit from view, allowing return autoplay",
+    "Replay starts inline, including when autoplay is off",
+    "adaptive full-viewport viewer reads actual video dimensions",
+    "whole-frame default over blurred original-poster backdrop",
+    "explicit Fill screen and Fit frame modes preserve playback position",
+    "floating fading controls, event title and seeking",
+    "downward swipe dismisses active fullscreen playback; control/horizontal gestures excluded"
+  ],
+  "nativeFollowup": {
+    "id": "VIDEO-NATIVE-001",
+    "path": "docs/listing-video-native-followups.md",
+    "status": "Potential native build; volume-adjustment unmute not implemented in OTA"
+  },
+  "phoneAdoption": "UNVERIFIED for this new refinement OTA; reopen twice and confirm Profile 01a188f6.",
+  "evidenceLimits": [
+    "Actual Android shared-component visual QA is not physical iOS adoption",
+    "Native square and landscape clips verified; portrait metadata classification covered by DOM tests",
+    "No full live feed/Profile/map/ad QA",
+    "No new audio listening claim; prior source clips already accepted by Craig",
+    "One-second dwell is separate from network/decoder buffering"
+  ],
+  "scope": {
+    "nativeBuild": false,
+    "nativeDependencyOrConfigurationChange": false,
+    "backendDeployment": false,
+    "eventDataWrites": 0,
+    "mediaUpload": false,
+    "parserOrGateChange": false,
+    "androidPublication": false,
+    "previewPublication": false
+  },
+  "qaCleanup": {
+    "originalEntryRestored": true,
+    "ownMetroStopped": true,
+    "reverse8093Removed": true,
+    "appDataPreserved": true
+  }
+}
