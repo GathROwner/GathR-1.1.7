@@ -1,0 +1,61 @@
+{
+  "atUTC": "2026-10-29T18:34:19.305221+00:00",
+  "status": "NATIVE_SHARED_JS_VISUAL_ACCEPTANCE_PASS",
+  "sourceCommit": "a61e013d925dd12c2cc401048b792d0c5ee8b7e7",
+  "fixtureLabel": "5b27f2c is implementation base; final source a61e013 adds explicit no-auto-inset props included during QA. Exact source hashes below bind the rendered code.",
+  "sourceHashes": {
+    "components/common/ListingVideoSurface.tsx": "8dad2f4cd94f2cbe2c7514d53b833bf29b2ebf6783c331d77180d66776c430ff",
+    "lib/listingVideoAutoplay.ts": "6f4069bdc4d885f9eeb581fb68dc9bd821eb5f887496820ae410a0207a7b7fea",
+    "lib/listingVideoPlayer.ts": "e8a856135f71437be9b6d83ed9e1e93a1dab9d50534422e0d7ef4dc72488f8ec",
+    "lib/listingVideo.ts": "bd512a49c4e71b0524b8d58cce8991c3e9876b63fd5b227bd140c8837eab6169"
+  },
+  "sha256": {
+    "native-inline-replay-playing.png": "408b33faf7aa65fc388f560afc17f0526b658afb96c40481cd52e68ae88df106",
+    "native-return-autoplay.png": "2653ea6e0a1608b89e7fcea37dc06648444c4ffb4ef4a675e773f35f896ca516",
+    "native-landscape-frame.png": "0e573f8f581d42328c48153798c4b9632ea1aaa849304ac1a87a030f63bd2883",
+    "native-square-fit-frame.png": "cc114a9079e1594af8719d2ea536a9ed081b4cab2ec6beb4a6e281cdf0c398bd",
+    "native-square-fill.png": "c53fa474b9a8b9f31a4c7bb24c33aaf893e26f8df1e00ac67cf2ef9f96d9266d",
+    "native-playing-swipe-closed.png": "5e71e393df36016bced2abe1516bdeac7830664769bfc3afd705f18bbbb08c35"
+  },
+  "emulator": "s24 / emulator-5554; existing debuggable com.craigb.gathr; app data preserved",
+  "entry": "Temporary isolated two-card screen only; own ordinary local dependencies, Metro8093, visible QA implementation label and fresh native entry requests. Real existing approved public clips.",
+  "windowsCapture": "Computer Use FrameArrived timeout; direct Android binary-safe captures used.",
+  "bridgeRecovery": "Prior adb device inventory hung; only own stalled probe and confirmed unresponsive ADB server were restarted. Existing emulator/app data were retained.",
+  "checks": [
+    "completed clip Replay restarts inline without fullscreen",
+    "completed poster persists while remaining onscreen",
+    "actual scroll-away and return starts inline playback again",
+    "default one-second settled dwell covered by behavior tests",
+    "landscape clip fits full-width over blurred original-poster backdrop",
+    "square clip preserves full frame and source captions by default",
+    "Fill screen crops on request; Fit frame restores entire source without resetting currentTime",
+    "native seek retains fullscreen",
+    "native downward swipe dismisses during active fullscreen playback",
+    "full viewport with floating controls/title and safe-area clearance; no reserved header/footer bands"
+  ],
+  "primaryVisualReview": "Actual native screenshots independently inspected by primary agent for complete frames, hierarchy, alignment, spacing, readable controls, preserved source proportions and lack of overlay collisions.",
+  "tests": {
+    "coordinatorAndMetadata": 13,
+    "componentLifecycle": 6,
+    "fullscreenDOM": 6,
+    "total": 25,
+    "result": "PASS"
+  },
+  "typecheck": "PASS including final viewport props",
+  "lint": "PASS, 0 errors, 221 existing repository warnings; final changed component/player lint clean",
+  "ratioCoverage": "Real native square and landscape clips; portrait/square/landscape metadata classification and interaction exercised in DOM tests. No newly approved or uploaded portrait source clip.",
+  "limits": [
+    "Shared Android native evidence does not prove physical iOS adoption",
+    "No full live feed/Profile/map/ad interaction",
+    "No new audible listening claim; prior source audio accepted by Craig",
+    "One-second intentional dwell does not guarantee first decoded frame in one second under buffering"
+  ],
+  "cleanup": {
+    "originalPackageEntryRestored": true,
+    "ownMetroStopped": true,
+    "reverse8093Removed": true,
+    "nativeBuildOrReplacement": false,
+    "appDataWiped": false
+  },
+  "nativeFollowup": "VIDEO-NATIVE-001 in docs/listing-video-native-followups.md, deferred; no new module, dependency, plugin, permissions, native build or volume simulation."
+}
