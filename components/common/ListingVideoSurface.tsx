@@ -146,7 +146,7 @@ export default function ListingVideoSurface({ event, overlay = false, surface = 
           style={styles.web} originWhitelist={['https://storage.googleapis.com']}
           onShouldStartLoadWithRequest={request => request.url === 'about:blank' || request.url === 'https://storage.googleapis.com/' || request.url === video.url}
           javaScriptEnabled allowsInlineMediaPlayback mediaPlaybackRequiresUserAction={false} allowsFullscreenVideo={false}
-          allowsAirPlayForMediaPlayback={false} setSupportMultipleWindows={false} allowFileAccess={false} mixedContentMode="never" cacheEnabled={false} scrollEnabled={false} bounces={false}
+          allowsAirPlayForMediaPlayback={false} setSupportMultipleWindows={false} allowFileAccess={false} mixedContentMode="never" cacheEnabled={false} scrollEnabled={false} bounces={false} automaticallyAdjustContentInsets={false} contentInsetAdjustmentBehavior="never"
           onMessage={message => {
             const text = message.nativeEvent.data;
             if (text === 'dismiss') close();
