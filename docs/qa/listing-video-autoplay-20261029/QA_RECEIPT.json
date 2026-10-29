@@ -35,12 +35,22 @@
     "native-cowboy-inline.png": "74c1e3f53f221cf7b861e7685f2453dab671511333f04af10d5de3ea11a316b6",
     "native-paused.png": "4c27b074b5bd4657eed75cd4f585e9cd5227324d26d82070fc6e9c00425b5bfc",
     "native-playing.png": "3c2bc3e8835041702e69cfedfef67ebef2f65f90152a03363bb3d8bdc61646d1",
-    "native-fullscreen-ready.png": "027b8351f8d4b828511b09d62d8477e08ad15d32cccbd20208912f2e5c97786c"
+    "native-fullscreen-ready.png": "027b8351f8d4b828511b09d62d8477e08ad15d32cccbd20208912f2e5c97786c",
+    "clearance-poster.png": "11ba1f5d55148cba3f2f24f8e9d469ae684056c08a85524bcd1e2a05544e534b",
+    "clearance-playing.png": "ea41f3d28f9417baefde14863bd20de67c9a23ddecac8d80cf037b2f27286bda"
   },
   "nativeRecordingLocal": "qa-artifacts/autoplay/native-transition.mp4",
   "packageEntryRestored": true,
   "nativePackageReplaced": false,
   "dataWiped": false,
   "backendOrParserChanges": false,
-  "automaticReviewHistory": "Earlier combined commands rejected without stated reasons. After explicit restart permission, app force-stop succeeded. Smaller reviewed read-only warmup, reverse and exact reopen steps succeeded and native QA completed."
+  "automaticReviewHistory": "Earlier combined commands rejected without stated reasons. After explicit restart permission, app force-stop succeeded. Smaller reviewed read-only warmup, reverse and exact reopen steps succeeded and native QA completed.",
+  "layoutCorrection": "Lightbox controls use bottom=52 when Trending/area badges exist, leaving 8dp above their 32dp badge at bottom=12. Native isolated badge-geometry poster/playing screenshots independently reviewed; both controls and badge readable and separated.",
+  "layoutSourceHashes": {
+    "components/common/ListingVideoSurface.tsx": "a13984555d8b5308add7ab090a2d2f1847e7574b6e086701875c018e2fd2bbec",
+    "components/map/EventImageLightbox.tsx": "3e14f5e3a78f3644e05ac25b7de6d0327bb7ea924788521328d9758e26793242"
+  },
+  "layoutTypecheck": "PASS",
+  "layoutLint": "0 errors; three pre-existing lightbox hook warnings",
+  "cancelledFirstPublish": "Stopped during export after discovering badge collision; subsequent EAS list confirmed no new group."
 }

@@ -1725,7 +1725,8 @@ const handleNonTicketAction = () => {
           </View>
 
           <ListingVideoButton event={updatedEvent} overlay surface="detail" active={videoSurfaceFocused}
-            suspended={isImageViewerVisible || programmeOpen || privateGuestSheetVisible} />
+            suspended={isImageViewerVisible || programmeOpen || privateGuestSheetVisible}
+            controlsBottom={showTrendingOverlay || showAreaExperience ? 52 : 12} />
 
           {/* The whole image opens full-screen; this is only a visual affordance. */}
           <View style={styles.zoomIconOverlay}>

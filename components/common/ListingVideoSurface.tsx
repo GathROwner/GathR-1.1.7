@@ -9,8 +9,8 @@ import { listingVideoAutoplay as autoplay, videoVisibility, type VideoSurface } 
 import { useListingVideoPrefs } from '../../store/listingVideoPrefsStore';
 
 /** Original photos stay mounted underneath. Only the elected visible listing creates media. */
-export default function ListingVideoSurface({ event, overlay = false, surface = 'detail', active = true, suspended = false }: {
-  event: Event; overlay?: boolean; surface?: VideoSurface; active?: boolean; suspended?: boolean;
+export default function ListingVideoSurface({ event, overlay = false, surface = 'detail', active = true, suspended = false, controlsBottom = 12 }: {
+  event: Event; overlay?: boolean; surface?: VideoSurface; active?: boolean; suspended?: boolean; controlsBottom?: number;
 }) {
   const id = useId(); const path = videoListingPath(event); const latestPath = useRef(path); latestPath.current = path;
   const insets = useSafeAreaInsets(); const viewport = useWindowDimensions();
@@ -116,7 +116,7 @@ export default function ListingVideoSurface({ event, overlay = false, surface = 
         }} onError={() => { setManualHold(true); autoplay.remove(id); }} />
     </Animated.View>}
     {playing && <Pressable style={StyleSheet.absoluteFill} accessibilityRole="button" accessibilityLabel={`Expand video for ${event.title}`} onPress={openPlayer} />}
-    <View pointerEvents="box-none" style={styles.controls}>
+    <View pointerEvents="box-none" style={[styles.controls, { bottom: controlsBottom }]}>
       {playing ? <>
         <Pressable style={styles.control} accessibilityRole="button" accessibilityLabel={paused ? 'Resume video' : 'Pause video'} onPress={touch => {
           touch.stopPropagation(); inline.current?.injectJavaScript(paused ? 'window.__listingVideoPlay?.();true;' : 'window.__listingVideoPause?.();true;'); setPaused(!paused);
