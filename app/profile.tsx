@@ -1,3 +1,4 @@
+import { useListingVideoPrefs } from '../store/listingVideoPrefsStore';
 import React, { useState, useEffect, useRef } from 'react';
 import OtaUpdateStatus from '../components/common/OtaUpdateStatus';
 import { useOtaSafetyBlock } from '../hooks/useOtaSafetyBlock';
@@ -764,6 +765,8 @@ export default function ProfileScreen() {
     || showAccountModal || showEmailChangeModal || emailChangeInProgress || showUpdateNoticePreview);
 
   // Daily hotspot preference
+  const autoplayVideos = useListingVideoPrefs(state => state.autoplay);
+  const setAutoplayVideos = useListingVideoPrefs(state => state.setAutoplay);
   const showDailyHotspot = useUserPrefsStore((state) => state.showDailyHotspot);
   const friendCount = useSocialStore((state) => state.friends.length);
   const ownCheckIn = useSocialStore((state) => state.ownCheckIn);
@@ -1806,6 +1809,17 @@ const handleLogout = async () => {
 
               <View style={styles.preferencesCard}>
                 <Text style={styles.sectionHeading}>Preferences</Text>
+                <View style={styles.compactPreferenceRow}>
+                  <View style={styles.featureIcon}><Ionicons name="play-circle-outline" size={22} color={BRAND.primary} /></View>
+                  <View style={styles.featureCopy}>
+                    <Text style={styles.featureTitle}>Autoplay videos</Text>
+                    <Text style={styles.featureSubtitle}>Muted playback while browsing</Text>
+                  </View>
+                  <Switch value={autoplayVideos} onValueChange={setAutoplayVideos}
+                    trackColor={{ false: '#D9E1EA', true: '#9ECFFF' }} thumbColor={autoplayVideos ? BRAND.primary : '#FFFFFF'}
+                    ios_backgroundColor="#D9E1EA" accessibilityLabel="Autoplay videos" />
+                </View>
+                <View style={styles.featureDivider} />
                 {SOCIAL_FEATURE_ENABLED && <>
                   <TouchableOpacity style={styles.compactPreferenceRow} accessibilityRole="button"
                     accessibilityLabel="Location and check-in preferences" onPress={() => router.push('/check-in-settings')}>

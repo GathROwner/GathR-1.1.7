@@ -39,6 +39,7 @@ import UpcomingDateOptions from '../../components/map/UpcomingDateOptions';
 import { useFeedBackToTop } from '../../hooks/useFeedBackToTop';
 import FallbackImage from '../../components/common/FallbackImage';
 import ListingVideoButton from '../../components/common/ListingVideoButton';
+import { listingVideoAutoplay } from '../../lib/listingVideoAutoplay';
 import TicketCtaPill from '../../components/common/TicketCtaPill';
 import EventActionLinkPill from '../../components/common/EventActionLinkPill';
 import FamilyFriendlyBadge from '../../components/common/FamilyFriendlyBadge';
@@ -988,7 +989,7 @@ const result = await userService.toggleSavedEvent(event.id, {
               />
             </TouchableOpacity>
             
-            <ListingVideoButton event={event} overlay />
+            <ListingVideoButton event={event} overlay surface="events" />
 
             {/* Badge container positioned at top right of hero image */}
             <BadgeContainer
@@ -1632,6 +1633,10 @@ useEffect(() => {
   } | null>(null);
   
   useOtaSafetyBlock(detailsVisible || Boolean(selectedImageData) || feedChrome.filtersExpanded);
+  useFocusEffect(useCallback(() => {
+    listingVideoAutoplay.setScope('events', !(detailsVisible || selectedImageData || feedChrome.filtersExpanded || tutorialVisible));
+    return () => listingVideoAutoplay.setScope('events', false);
+  }, [detailsVisible, selectedImageData, feedChrome.filtersExpanded, tutorialVisible]));
   const [selectedVenueEvents, setSelectedVenueEvents] = useState<Record<string, string>>({});
 
   // Read saved events, interests, and favorite venues from the centralized cache
@@ -2026,6 +2031,7 @@ setSelectedImageData({ imageUrl, event, events: groupEvents });
     {
       useNativeDriver: false,
       listener: (event: any) => {
+        listingVideoAutoplay.motion('events');
         const currentScrollY = event.nativeEvent.contentOffset.y;
         const scrollDiff = currentScrollY - lastScrollY.current;
         

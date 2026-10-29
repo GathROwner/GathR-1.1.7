@@ -63,7 +63,7 @@
   "parserOrGateChanges": false,
   "androidPublished": false,
   "previewChangedThisRelease": false,
-  "phoneAdoption": "UNVERIFIED \u2014 Craig should reopen twice and check OTA 01a18865.",
+  "phoneAdoption": "Craig confirmed the videos work in his current iOS Production app and supplied card/lightbox screenshots with Watch video controls. Exact new OTA footer was not included in those screenshots.",
   "rollbackAvailable": true,
   "sourceBundle": {
     "path": "C:/Users/craig/Documents/Codex/2026-10-29/task/listing-video-production-candidate.bundle",

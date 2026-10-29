@@ -66,12 +66,28 @@ export function getListingVideo(path: string): Promise<ListingVideo | null> {
   void request.finally(() => pending.delete(path));
   return request;
 }
-export function videoPlayerHtml(video: ListingVideo): string {
+export function videoPlayerHtml(video: ListingVideo, startAt = 0): string {
   if (!normalizeListingVideo(video)) throw new Error('Invalid listing video');
   // URL is restricted to our immutable MP4 namespace before interpolation.
   return `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; media-src https://storage.googleapis.com; style-src 'unsafe-inline'; script-src 'unsafe-inline'">
   <style>html,body{margin:0;width:100%;height:100%;background:#080b10}video{width:100%;height:100%;object-fit:contain}</style></head>
   <body><video controls playsinline autoplay muted preload="none" controlslist="nodownload noremoteplayback" disablepictureinpicture src="${video.url}"></video>
-  <script>const v=document.querySelector('video');v.addEventListener('error',()=>window.ReactNativeWebView.postMessage('error'));document.addEventListener('visibilitychange',()=>{if(document.hidden)v.pause()});</script></body></html>`;
+  <script>const v=document.querySelector('video');v.addEventListener('loadedmetadata',()=>{v.currentTime=Math.min(${Math.max(0, Math.min(60, Number.isFinite(startAt) ? startAt : 0))},Math.max(0,v.duration-0.1))});v.addEventListener('error',()=>window.ReactNativeWebView.postMessage('error'));v.addEventListener('ended',()=>window.ReactNativeWebView.postMessage('ended'));document.addEventListener('visibilitychange',()=>{if(document.hidden)v.pause()});</script></body></html>`;
+}
+
+export function inlineVideoHtml(video: ListingVideo, startAt = 0): string {
+  if (!normalizeListingVideo(video)) throw new Error('Invalid listing video');
+  const start = Math.max(0, Math.min(60, Number.isFinite(startAt) ? startAt : 0));
+  return `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; media-src https://storage.googleapis.com; style-src 'unsafe-inline'; script-src 'unsafe-inline'">
+  <style>html,body{margin:0;width:100%;height:100%;background:transparent;overflow:hidden}video{width:100%;height:100%;object-fit:cover}</style></head>
+  <body><video playsinline autoplay muted preload="none" disablepictureinpicture src="${video.url}"></video>
+  <script>const v=document.querySelector('video');const post=m=>window.ReactNativeWebView.postMessage(m);
+  window.__listingVideoPause=()=>v.pause();window.__listingVideoPlay=()=>v.play().catch(()=>post('blocked'));window.__listingVideoMute=m=>{v.muted=m};
+  v.addEventListener('loadedmetadata',()=>{v.currentTime=Math.min(${start},Math.max(0,v.duration-0.1))});
+  v.addEventListener('playing',()=>{if(v.requestVideoFrameCallback)v.requestVideoFrameCallback(()=>post('playing'));else post('playing')});
+  v.addEventListener('ended',()=>post('ended'));v.addEventListener('error',()=>post('error'));
+  let last=0;v.addEventListener('timeupdate',()=>{if(Date.now()-last>500){last=Date.now();post(JSON.stringify({type:'progress',seconds:v.currentTime}))}});
+  document.addEventListener('visibilitychange',()=>{if(document.hidden)v.pause()});</script></body></html>`;
 }

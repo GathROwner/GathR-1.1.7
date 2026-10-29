@@ -9,3 +9,7 @@ The two manually reviewed pilot clips are Ben Kunder and Cowboy Christmas. The e
 Validation: seven video tests, TypeScript, lint (zero errors, 222 repository warnings), exact current Production profile/auth/social/App Check/Mapbox and native fingerprint checks. Full clean export: 2,547 modules and 112 final EAS iOS assets. Video component/helper are byte-identical to the independently reviewed Android native-rendered Preview implementation; those real control/player screenshots were reused with that limited scope. The screenshot mockup is an illustration and is not native acceptance evidence. No physical iPhone adoption/playback or full Production-feed test is claimed. Craig should reopen twice and check Profile OTA `01a18865`, then test Watch video on the two listings.
 
 Detailed proof: `listing-video-production-release-20261029.json`. The previous Production group `4f6c7f70-8da6-4a35-82a2-47b52e5c2307` is retained as rollback. This authorization is for this iOS Production video release; no Android, six-target or native-store rollout is implied.
+
+## Phone acceptance and autoplay follow-up
+
+Craig confirmed the released Watch video feature works in his current Production app and supplied card/lightbox screenshots. This is user-reported playback acceptance; the new OTA footer was not shown in that screenshot set. He then authorized trying poster-first muted autoplay. That separate candidate is tracked in `listing-video-autoplay-20261029.md`; it is not yet published.

@@ -1,3 +1,4 @@
+import { useIsFocused } from '@react-navigation/native';
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import {
   View,
@@ -259,6 +260,7 @@ const EventImageLightbox: React.FC<EventImageLightboxProps> = ({
   onViewVenue,
   managedEventDetails = false,
 }) => {
+  const videoSurfaceFocused = useIsFocused();
   useEventTimingMinute();
   const router = useRouter();
   const safeAreaInsets = useSafeAreaInsets();
@@ -1722,7 +1724,8 @@ const handleNonTicketAction = () => {
             )}
           </View>
 
-          <ListingVideoButton event={updatedEvent} overlay />
+          <ListingVideoButton event={updatedEvent} overlay surface="detail" active={videoSurfaceFocused}
+            suspended={isImageViewerVisible || programmeOpen || privateGuestSheetVisible} />
 
           {/* The whole image opens full-screen; this is only a visual affordance. */}
           <View style={styles.zoomIconOverlay}>
