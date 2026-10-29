@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { AppState, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import { AppState, Modal, Pressable, StatusBar, StyleSheet, Text, View } from 'react-native';
 import { WebView } from 'react-native-webview';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -42,6 +42,7 @@ export default function ListingVideoButton({ event, overlay = false }: { event: 
     </Pressable>
     <Modal visible={open} animationType="fade" presentationStyle="fullScreen" onRequestClose={() => setOpen(false)}>
       <View style={[styles.player, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
+        {open && <StatusBar barStyle="light-content" backgroundColor="#080B10" />}
         <View style={styles.heading}><Text numberOfLines={2} style={styles.title}>{event.title}</Text>
           <Pressable accessibilityRole="button" accessibilityLabel="Close video" onPress={() => setOpen(false)} style={styles.close}>
             <Ionicons name="close" size={28} color="#fff" />
