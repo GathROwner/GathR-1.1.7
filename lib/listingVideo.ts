@@ -1,3 +1,4 @@
+import { renderFullscreenVideo, type FullscreenVideoOptions } from './listingVideoPlayer';
 import type { Event } from '../types/events';
 import { toFirestoreEventId } from '../utils/firestoreEventIds';
 
@@ -66,14 +67,9 @@ export function getListingVideo(path: string): Promise<ListingVideo | null> {
   void request.finally(() => pending.delete(path));
   return request;
 }
-export function videoPlayerHtml(video: ListingVideo, startAt = 0): string {
+export function videoPlayerHtml(video: ListingVideo, startAt = 0, options: FullscreenVideoOptions = {}): string {
   if (!normalizeListingVideo(video)) throw new Error('Invalid listing video');
-  // URL is restricted to our immutable MP4 namespace before interpolation.
-  return `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; media-src https://storage.googleapis.com; style-src 'unsafe-inline'; script-src 'unsafe-inline'">
-  <style>html,body{margin:0;width:100%;height:100%;background:#080b10}video{width:100%;height:100%;object-fit:contain}</style></head>
-  <body><video controls playsinline autoplay muted preload="none" controlslist="nodownload noremoteplayback" disablepictureinpicture src="${video.url}"></video>
-  <script>const v=document.querySelector('video');v.addEventListener('loadedmetadata',()=>{v.currentTime=Math.min(${Math.max(0, Math.min(60, Number.isFinite(startAt) ? startAt : 0))},Math.max(0,v.duration-0.1))});v.addEventListener('error',()=>window.ReactNativeWebView.postMessage('error'));v.addEventListener('ended',()=>window.ReactNativeWebView.postMessage('ended'));document.addEventListener('visibilitychange',()=>{if(document.hidden)v.pause()});</script></body></html>`;
+  return renderFullscreenVideo(video, startAt, options);
 }
 
 export function inlineVideoHtml(video: ListingVideo, startAt = 0): string {

@@ -6,6 +6,7 @@ import ListingVideoButton from '../ListingVideoButton';
 import { listingVideoAutoplay } from '../../../lib/listingVideoAutoplay';
 
 const mockGetVideo = jest.fn();
+let mockVideoY = 200;
 const mockPreferences = { autoplay: true, hydrated: true };
 jest.mock('../../../store/listingVideoPrefsStore', () => ({ useListingVideoPrefs: (selector: any) => selector(mockPreferences) }));
 jest.mock('../../../lib/listingVideo', () => {
@@ -20,9 +21,9 @@ const media = { assetId: 'a'.repeat(64), url: `https://storage.googleapis.com/ga
 const event = { id: 'fb_offer', venueId: 'pub', source: 'firestore', title: 'Halloween drinks' } as Event;
 describe('listing video playback lifecycle', () => {
   jest.setTimeout(15000);
-  let tree: ReactTestRenderer;
-  beforeEach(() => { mockPreferences.autoplay = true; mockPreferences.hydrated = true; listingVideoAutoplay.replay(media.assetId); jest.spyOn(View.prototype as any, 'measureInWindow').mockImplementation((...args: any[]) => args[0](0, 200, 390, 260)); jest.spyOn(AccessibilityInfo, 'isReduceMotionEnabled').mockResolvedValue(false); });
-  afterEach(() => { if (tree) act(() => tree.unmount()); jest.restoreAllMocks(); });
+  let tree: ReactTestRenderer; let originalAppState = AppState.currentState;
+  beforeEach(() => { originalAppState = AppState.currentState; mockVideoY = 200; AppState.currentState = 'active'; mockPreferences.autoplay = true; mockPreferences.hydrated = true; listingVideoAutoplay.replay(media.assetId); jest.spyOn(View.prototype as any, 'measureInWindow').mockImplementation((...args: any[]) => args[0](0, mockVideoY, 390, 260)); jest.spyOn(AccessibilityInfo, 'isReduceMotionEnabled').mockResolvedValue(false); });
+  afterEach(() => { if (tree) act(() => tree.unmount()); jest.restoreAllMocks(); AppState.currentState = originalAppState; });
   it('loads no player until a tap, stops propagation and unmounts on close', async () => {
     mockGetVideo.mockResolvedValue(media);
     await act(async () => { tree = create(<ListingVideoButton event={event} />); });
@@ -31,7 +32,10 @@ describe('listing video playback lifecycle', () => {
     act(() => tree.root.findByProps({ accessibilityLabel: 'Watch video for Halloween drinks, 12 seconds' }).props.onPress({ stopPropagation }));
     expect(stopPropagation).toHaveBeenCalled();
     expect(tree.root.findAllByType('MockWebView' as any)).toHaveLength(1);
-    act(() => tree.root.findByProps({ accessibilityLabel: 'Close video' }).props.onPress());
+    act(() => tree.root.findByType('MockWebView' as any).props.onMessage({ nativeEvent: { data: 'playing' } }));
+    act(() => tree.root.findByProps({ accessibilityLabel: 'Expand video for Halloween drinks' }).props.onPress({ stopPropagation }));
+    expect(tree.root.findByType('MockWebView' as any).props.testID).toBe('listing-fullscreen-video');
+    act(() => tree.root.findByType('MockWebView' as any).props.onMessage({ nativeEvent: { data: 'dismiss' } }));
     expect(tree.root.findAllByType('MockWebView' as any)).toHaveLength(0);
   });
   it('stops playback when backgrounded and falls back to the photo on player failure', async () => {
@@ -39,20 +43,25 @@ describe('listing video playback lifecycle', () => {
     jest.spyOn(AppState, 'addEventListener').mockImplementation((_event, listener) => { onChange = listener; return { remove: jest.fn() }; });
     await act(async () => { tree = create(<ListingVideoButton event={event} />); });
     act(() => tree.root.findByProps({ accessibilityLabel: 'Watch video for Halloween drinks, 12 seconds' }).props.onPress({ stopPropagation: jest.fn() }));
+    act(() => tree.root.findByType('MockWebView' as any).props.onMessage({ nativeEvent: { data: 'playing' } }));
+    act(() => tree.root.findByProps({ accessibilityLabel: 'Expand video for Halloween drinks' }).props.onPress({ stopPropagation: jest.fn() }));
     act(() => onChange('background'));
     expect(tree.root.findAllByType('MockWebView' as any)).toHaveLength(0);
     act(() => tree.root.findByProps({ accessibilityLabel: 'Watch video for Halloween drinks, 12 seconds' }).props.onPress({ stopPropagation: jest.fn() }));
+    act(() => onChange('active'));
+    act(() => tree.root.findByType('MockWebView' as any).props.onMessage({ nativeEvent: { data: 'playing' } }));
+    act(() => tree.root.findByProps({ accessibilityLabel: 'Expand video for Halloween drinks' }).props.onPress({ stopPropagation: jest.fn() }));
     act(() => tree.root.findByType('MockWebView' as any).props.onError());
     expect(tree.root.findAllByType('MockWebView' as any)).toHaveLength(0);
     expect(tree.toJSON()).toBeNull();
   });
-  it('shows the poster for two settled seconds, renders one inline player, and restores Replay after real end', async () => {
+  it('shows the poster for one settled second, renders one inline player, and restores Replay after real end', async () => {
     jest.useFakeTimers(); const previousState = AppState.currentState; AppState.currentState = 'active';
     mockGetVideo.mockResolvedValue(media);
     try {
       await act(async () => { tree = create(<ListingVideoButton event={event} />, { createNodeMock: () => ({ measureInWindow: (f: any) => f(0, 200, 390, 260), injectJavaScript: jest.fn() }) }); });
       expect(tree.root.findAllByType('MockWebView' as any)).toHaveLength(0);
-      act(() => jest.advanceTimersByTime(1999)); expect(tree.root.findAllByType('MockWebView' as any)).toHaveLength(0);
+      act(() => jest.advanceTimersByTime(999)); expect(tree.root.findAllByType('MockWebView' as any)).toHaveLength(0);
       act(() => jest.advanceTimersByTime(251)); expect(tree.root.findAllByType('MockWebView' as any)).toHaveLength(1);
       const player = tree.root.findByType('MockWebView' as any);
       act(() => player.props.onMessage({ nativeEvent: { data: 'playing' } }));
@@ -66,8 +75,23 @@ describe('listing video playback lifecycle', () => {
       act(() => tree.root.findByProps({ accessibilityLabel: 'Resume video' }).props.onPress({ stopPropagation: jest.fn() }));
       act(() => player.props.onMessage({ nativeEvent: { data: 'ended' } }));
       expect(tree.root.findAllByType('MockWebView' as any)).toHaveLength(0);
-      expect(tree.root.findByProps({ accessibilityLabel: 'Replay video for Halloween drinks, 12 seconds' })).toBeTruthy();
+      const replay = tree.root.findByProps({ accessibilityLabel: 'Replay video for Halloween drinks, 12 seconds' });
+      act(() => replay.props.onPress({ stopPropagation: jest.fn() }));
+      expect(tree.root.findByType('MockWebView' as any).props.testID).toBe('listing-inline-video');
+      expect(tree.root.findAllByProps({ testID: 'listing-fullscreen-video' })).toHaveLength(0);
     } finally { AppState.currentState = previousState; jest.useRealTimers(); }
+  });
+  it('keeps the completed poster until scrolling away and then autoplays when the card returns', async () => {
+    jest.useFakeTimers(); mockGetVideo.mockResolvedValue(media);
+    try {
+      await act(async () => { tree = create(<ListingVideoButton event={event} />); });
+      act(() => jest.advanceTimersByTime(1250));
+      act(() => tree.root.findByType('MockWebView' as any).props.onMessage({ nativeEvent: { data: 'ended' } }));
+      act(() => jest.advanceTimersByTime(2000)); expect(tree.root.findAllByType('MockWebView' as any)).toHaveLength(0);
+      mockVideoY = 3000; act(() => jest.advanceTimersByTime(250));
+      mockVideoY = 200; act(() => jest.advanceTimersByTime(1250));
+      expect(tree.root.findByType('MockWebView' as any).props.testID).toBe('listing-inline-video');
+    } finally { jest.useRealTimers(); }
   });
   it('does not autoplay while preference hydration is incomplete or reduced motion is enabled', async () => {
     jest.useFakeTimers(); const previousState = AppState.currentState; AppState.currentState = 'active'; mockGetVideo.mockResolvedValue(media);

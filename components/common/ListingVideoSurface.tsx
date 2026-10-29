@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useId, useRef, useState } from 'react';
-import { AccessibilityInfo, Animated, AppState, Modal, Pressable, StatusBar, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { AccessibilityInfo, Animated, AppState, Image, Modal, Pressable, StatusBar, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { WebView } from 'react-native-webview';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -18,12 +18,14 @@ export default function ListingVideoSurface({ event, overlay = false, surface = 
   const hydrated = useListingVideoPrefs(s => s.hydrated);
   const root = useRef<View>(null); const inline = useRef<WebView>(null); const mounted = useRef(true);
   const position = useRef({ x: NaN, y: NaN, width: 0, height: 0, settledAt: Date.now() });
-  const ownsInline = useRef(false);
+  const ownsInline = useRef(false); const wasOnScreen = useRef(false);
   const opacity = useRef(new Animated.Value(0)).current;
   const [video, setVideo] = useState<ListingVideo | null>(null);
   const [open, setOpen] = useState(false); const [failed, setFailed] = useState(false);
   const [lease, setLease] = useState(false); const [playing, setPlaying] = useState(false);
   const [paused, setPaused] = useState(false); const [muted, setMuted] = useState(true);
+  const [manualInline, setManualInline] = useState(false);
+  const fullscreenSource = useRef({ html: '', baseUrl: 'https://storage.googleapis.com/' });
   const [manualHold, setManualHold] = useState(false); const [completed, setCompleted] = useState(false);
   const [reduceMotion, setReduceMotion] = useState(true);
   const inlineSource = useRef({ html: '', baseUrl: 'https://storage.googleapis.com/' });
@@ -34,7 +36,7 @@ export default function ListingVideoSurface({ event, overlay = false, surface = 
   }, [id]);
   useEffect(() => {
     let current = true; autoplay.remove(id); setVideo(null); setOpen(false); setFailed(false);
-    setManualHold(false); setPaused(false); setCompleted(false); position.current.settledAt = Date.now();
+    setManualHold(false); setManualInline(false); setPaused(false); setCompleted(false); wasOnScreen.current = false; position.current.settledAt = Date.now();
     if (path) void getListingVideo(path).then(value => {
       if (current) { setVideo(value); if (value) setCompleted(autoplay.hasFinished(value.assetId)); }
     });
@@ -75,9 +77,13 @@ export default function ListingVideoSurface({ event, overlay = false, surface = 
       if (!mounted.current || path !== latestPath.current) return;
       const now = Date.now(); const previous = position.current;
       if (!Number.isFinite(previous.y) || Math.abs(y - previous.y) > 3 || Math.abs(x - previous.x) > 3 || height !== previous.height || width !== previous.width) position.current = { x, y, width, height, settledAt: now };
-      const visibility = videoVisibility(y, height, insets.top + (surface === 'detail' ? 48 : 100), viewport.height - insets.bottom - 72, x, width, viewport.width);
+      const visibility = videoVisibility(y, height, insets.top + (surface === 'detail' ? 48 : 100), viewport.height - insets.bottom - 72, x, width, viewport.width, manualInline ? 0.01 : 0.75);
+      if (!visibility.onScreen && wasOnScreen.current) {
+        setCompleted(false); setManualInline(false); setManualHold(false); setPaused(false);
+      }
+      wasOnScreen.current = visibility.onScreen;
       autoplay.update(id, { assetId: video.assetId, surface, ...visibility, settledAt: position.current.settledAt,
-        enabled: active && !suspended && enabled && hydrated && !reduceMotion && !manualHold && !failed && !!normalizeListingVideo(video), paused }, owns => {
+        enabled: active && !suspended && ((enabled && hydrated && !reduceMotion && !manualHold) || manualInline) && !failed && !!normalizeListingVideo(video), paused, manual: manualInline }, owns => {
         if (!mounted.current) return;
         ownsInline.current = owns;
         if (owns) inlineSource.current = { html: inlineVideoHtml(video, autoplay.position(video.assetId)), baseUrl: 'https://storage.googleapis.com/' };
@@ -85,7 +91,7 @@ export default function ListingVideoSurface({ event, overlay = false, surface = 
         setLease(owns);
       }, now);
     });
-  }, [path, video, failed, insets.top, insets.bottom, viewport.height, viewport.width, surface, id, active, suspended, enabled, hydrated, reduceMotion, manualHold, paused, opacity]);
+  }, [path, video, failed, insets.top, insets.bottom, viewport.height, viewport.width, surface, id, active, suspended, enabled, hydrated, reduceMotion, manualHold, manualInline, paused, opacity]);
   useEffect(() => {
     measure(); if (!video || failed) return;
     const timer = setInterval(measure, 250); return () => clearInterval(timer);
@@ -94,7 +100,8 @@ export default function ListingVideoSurface({ event, overlay = false, surface = 
   const close = () => { setOpen(false); autoplay.setFullscreen(id, false); };
   const openPlayer = (touch: { stopPropagation: () => void }) => {
     touch.stopPropagation(); if (!video || !normalizeListingVideo(video)) return;
-    setManualHold(true); autoplay.setFullscreen(id, true); StatusBar.setBarStyle('light-content'); setOpen(true);
+    fullscreenSource.current = { html: videoPlayerHtml(video, autoplay.position(video.assetId), { title: event.title, topInset: insets.top, bottomInset: insets.bottom, muted }), baseUrl: 'https://storage.googleapis.com/' };
+    setManualHold(true); setManualInline(false); autoplay.setFullscreen(id, true); StatusBar.setBarStyle('light-content'); setOpen(true);
   };
   if (!video || failed || !normalizeListingVideo(video)) return null;
   const seconds = Math.ceil(video.durationSeconds); const duration = `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
@@ -110,10 +117,10 @@ export default function ListingVideoSurface({ event, overlay = false, surface = 
           if (!ownsInline.current) return;
           const text = message.nativeEvent.data;
           if (text === 'playing') { setPlaying(true); Animated.timing(opacity, { toValue: 1, duration: 180, useNativeDriver: true }).start(); }
-          else if (text === 'ended') { setCompleted(true); autoplay.complete(video.assetId); }
-          else if (text === 'error' || text === 'blocked') { setManualHold(true); autoplay.remove(id); }
+          else if (text === 'ended') { setCompleted(true); setManualInline(false); autoplay.complete(video.assetId); }
+          else if (text === 'error' || text === 'blocked') { setManualInline(false); setManualHold(true); autoplay.remove(id); }
           else { try { const p = JSON.parse(text); if (p.type === 'progress') autoplay.remember(video.assetId, p.seconds); } catch { /* Ignore unknown messages. */ } }
-        }} onError={() => { setManualHold(true); autoplay.remove(id); }} />
+        }} onError={() => { setManualInline(false); setManualHold(true); autoplay.remove(id); }} />
     </Animated.View>}
     {playing && <Pressable style={StyleSheet.absoluteFill} accessibilityRole="button" accessibilityLabel={`Expand video for ${event.title}`} onPress={openPlayer} />}
     <View pointerEvents="box-none" style={[styles.controls, { bottom: controlsBottom }]}>
@@ -126,23 +133,27 @@ export default function ListingVideoSurface({ event, overlay = false, surface = 
         }}><Ionicons name={muted ? 'volume-mute' : 'volume-high'} size={19} color="#fff" /></Pressable>
       </> : <Pressable style={[styles.control, styles.posterControl]} accessibilityRole="button"
         accessibilityLabel={`${done ? 'Replay' : 'Watch'} video for ${event.title}, ${seconds} seconds`} onPress={touch => {
-          if (done) autoplay.replay(video.assetId); openPlayer(touch);
+          touch.stopPropagation(); if (done) autoplay.replay(video.assetId);
+          autoplay.remove(id); setCompleted(false); setPaused(false); setMuted(true); setManualHold(false); setManualInline(true);
         }}><Ionicons name={done ? 'refresh' : 'play'} size={18} color="#fff" /><Text style={styles.duration}>{done ? 'Replay' : duration}</Text></Pressable>}
     </View>
-    <Modal visible={open} animationType="fade" presentationStyle="fullScreen" onRequestClose={close}>
-      <View style={[styles.player, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
-        {open && <StatusBar barStyle="light-content" backgroundColor="#080B10" />}
-        <View style={styles.heading}><Text numberOfLines={2} style={styles.title}>{event.title}</Text>
-          <Pressable accessibilityRole="button" accessibilityLabel="Close video" onPress={close} style={styles.control}><Ionicons name="close" size={28} color="#fff" /></Pressable></View>
-        {open && <WebView testID="listing-fullscreen-video" source={{ html: videoPlayerHtml(video, autoplay.position(video.assetId)), baseUrl: 'https://storage.googleapis.com/' }}
+    <Modal visible={open} animationType="fade" presentationStyle="fullScreen" statusBarTranslucent navigationBarTranslucent onRequestClose={close}>
+      <View style={styles.player}>
+        {open && <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />}
+        {!!(event.relevantImageUrl || event.imageUrl) && <Image accessible={false} source={{ uri: event.relevantImageUrl || event.imageUrl }} blurRadius={24} style={StyleSheet.absoluteFill} resizeMode="cover" />}
+        <View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(3,8,14,0.78)' }]} />
+        {open && <WebView testID="listing-fullscreen-video" source={fullscreenSource.current}
           style={styles.web} originWhitelist={['https://storage.googleapis.com']}
           onShouldStartLoadWithRequest={request => request.url === 'about:blank' || request.url === 'https://storage.googleapis.com/' || request.url === video.url}
           javaScriptEnabled allowsInlineMediaPlayback mediaPlaybackRequiresUserAction={false} allowsFullscreenVideo={false}
-          allowsAirPlayForMediaPlayback={false} setSupportMultipleWindows={false} allowFileAccess={false} mixedContentMode="never" cacheEnabled={false}
-          onMessage={message => { if (message.nativeEvent.data === 'error') { setFailed(true); close(); }
-            else if (message.nativeEvent.data === 'ended') { setCompleted(true); autoplay.complete(video.assetId); } }}
-          onError={() => { setFailed(true); close(); }} />}
-        <Text style={styles.hint}>Video from the venue’s post · Sound starts muted</Text>
+          allowsAirPlayForMediaPlayback={false} setSupportMultipleWindows={false} allowFileAccess={false} mixedContentMode="never" cacheEnabled={false} scrollEnabled={false} bounces={false}
+          onMessage={message => {
+            const text = message.nativeEvent.data;
+            if (text === 'dismiss') close();
+            else if (text === 'error') { setFailed(true); close(); }
+            else if (text === 'ended') { setCompleted(true); autoplay.complete(video.assetId); }
+            else { try { const p = JSON.parse(text); if (p.type === 'progress') autoplay.remember(video.assetId, p.seconds); } catch { /* Ignore unknown messages. */ } }
+          }} onError={() => { setFailed(true); close(); }} />}
       </View>
     </Modal>
   </View>;
@@ -152,7 +163,5 @@ const styles = StyleSheet.create({
   inline: { flex: 1, backgroundColor: 'transparent' }, controls: { position: 'absolute', bottom: 12, left: 12, flexDirection: 'row', gap: 8 },
   control: { minWidth: 44, height: 44, borderRadius: 22, backgroundColor: 'rgba(8,20,32,0.88)', alignItems: 'center', justifyContent: 'center' },
   posterControl: { flexDirection: 'row', gap: 5, paddingHorizontal: 13 }, duration: { color: '#fff', fontSize: 12, fontWeight: '600' },
-  player: { flex: 1, backgroundColor: '#080B10' }, heading: { flexDirection: 'row', alignItems: 'center', padding: 16, gap: 12 },
-  title: { flex: 1, color: '#fff', fontSize: 18, fontWeight: '700' }, web: { flex: 1, backgroundColor: '#080B10' },
-  hint: { color: '#B9C4D0', textAlign: 'center', padding: 14, fontSize: 12 },
+  player: { flex: 1, backgroundColor: '#05090E' }, web: { flex: 1, backgroundColor: 'transparent' },
 });
