@@ -33,6 +33,7 @@ import FeedFilterSummary, { FEED_FILTER_SUMMARY_HEIGHT } from '../../components/
 import UpcomingDateOptions from '../../components/map/UpcomingDateOptions';
 import { useFeedBackToTop } from '../../hooks/useFeedBackToTop';
 import FallbackImage from '../../components/common/FallbackImage';
+import ListingVideoButton from '../../components/common/ListingVideoButton';
 import TicketCtaPill from '../../components/common/TicketCtaPill';
 import EventActionLinkPill from '../../components/common/EventActionLinkPill';
 import FamilyFriendlyBadge from '../../components/common/FamilyFriendlyBadge';
@@ -984,6 +985,8 @@ const result = await userService.toggleSavedEvent(event.id, {
               />
             </TouchableOpacity>
             
+            <ListingVideoButton event={event} overlay />
+
             {/* Badge container positioned at top right of hero image */}
             <BadgeContainer
               isNow={timeStatus === 'now'}

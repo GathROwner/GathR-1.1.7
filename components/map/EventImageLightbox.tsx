@@ -35,6 +35,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 
 import ImageView from "react-native-image-viewing";
 import FallbackImage from '../common/FallbackImage';
+import ListingVideoButton from '../common/ListingVideoButton';
 import GathRShimmerPill from '../common/GathRShimmerPill';
 import TicketCtaPill from '../common/TicketCtaPill';
 import EventActionLinkPill from '../common/EventActionLinkPill';
@@ -1718,6 +1719,8 @@ const handleNonTicketAction = () => {
               </View>
             )}
           </View>
+
+          <ListingVideoButton event={updatedEvent} overlay />
 
           {/* The whole image opens full-screen; this is only a visual affordance. */}
           <View style={styles.zoomIconOverlay}>
