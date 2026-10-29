@@ -1,0 +1,99 @@
+{
+  "atUTC": "2026-10-29T15:09:33.655330+00:00",
+  "status": "PUBLISHED_IOS_PREVIEW_TWO_REVIEWED_CLIPS",
+  "backendRuntimeCommit": "523df663af2a79c402ccf1a0628a3c899d4ffcd2",
+  "appRuntimeCommit": "7961bd894867db0bef02493d10bba78376c99ff6",
+  "recoveredAppBaseline": "b27a8081331ff5739f066ba607ddcbb97510cc6e",
+  "backendSourceHash": "7e000b9f110232fe16272bb5e8e58d481da550ff",
+  "functions": [
+    {
+      "name": "getListingVideos",
+      "state": "ACTIVE",
+      "revision": "getlistingvideos-00001-cut",
+      "latestTraffic": true
+    },
+    {
+      "name": "scheduledListingVideoCleanup",
+      "state": "ACTIVE",
+      "revision": "scheduledlistingvideocleanup-00001-pif",
+      "latestTraffic": true
+    }
+  ],
+  "deliveryEnabled": true,
+  "iosPreview": {
+    "id": "01a18831-e888-7d58-89b1-9747e5619eb5",
+    "createdAt": "2026-10-29T15:05:34.600Z",
+    "group": "b8e11827-0cc9-4bbe-a17a-9aafbcefa216",
+    "branch": "preview",
+    "message": "Reviewed event video pilot 7961bd8",
+    "runtimeVersion": "1.1.10",
+    "platform": "ios",
+    "manifestPermalink": "https://u.expo.dev/update/01a18831-e888-7d58-89b1-9747e5619eb5",
+    "isRollBackToEmbedded": false,
+    "gitCommitHash": "7961bd894867db0bef02493d10bba78376c99ff6"
+  },
+  "newestIosVerified": true,
+  "iosExportModules": 2530,
+  "easIosAssets": 112,
+  "nativeDependenciesChanged": false,
+  "nativeConfigChanged": false,
+  "iosPhoneAdoptionVerified": false,
+  "visualEvidenceScope": "Actual Android native component/player fixture QA; no full authenticated feed or iPhone adoption claim",
+  "pilotClips": [
+    {
+      "path": "venues/BKaKU7O4J56sipdJRrHM/events/ko0acxhAluPpblFGlvXN",
+      "unchangedPublicDocumentVersion": "1793195347:128372000",
+      "assetId": "7efb5b92223a59987044171151bfbcdd6f520b9aa824b8d78d322cf453f55b3d",
+      "state": "ready",
+      "expiresAt": "2026-10-31T04:00:00.000Z"
+    },
+    {
+      "path": "venues/slug_harbourfronttheatre/events/z8SX5iklVWSITkroSaht",
+      "unchangedPublicDocumentVersion": "1793195921:77896000",
+      "assetId": "86b3ffbeb17e0e9180c70e6816e57169b72557acf176841dbccba8e7e100995b",
+      "state": "ready",
+      "expiresAt": "2026-11-13T05:00:00.000Z"
+    }
+  ],
+  "totalStoredVideoBytes": 2073269,
+  "publicHashAndRangeChecks": "2 exact public SHA256 matches; both HTTP206 byte ranges matched local reviewed files",
+  "publicEventWrites": 0,
+  "privateRegistryTransactionWrites": 10,
+  "realObjectCreates": 2,
+  "syntheticProbeCreatesAndDeletes": 4,
+  "cleanupSchedule": "04:30 America/Halifax daily",
+  "cleanupLiveExecution": {
+    "httpStatus": 200,
+    "revision": "scheduledlistingvideocleanup-00001-pif",
+    "activeAssetsProtected": 2
+  },
+  "parserSourceHashUnchanged": "7d0b1ba37f453531818cef3f82559ea1455bd970",
+  "parserRevisionsUnchanged": [
+    "processdataset-00518-hef",
+    "processdatasetresume-00484-lat",
+    "processdatasetselectedrows-00476-les"
+  ],
+  "automaticResolutionGatesChanged": false,
+  "automaticVideoApproval": false,
+  "excluded": [
+    "Blackbush filmed poster",
+    "Market poster/giveaway animation",
+    "PonyBoat supplied rendition missing expected audio",
+    "Faith Talk failed preparation"
+  ],
+  "backupAndApplyReceiptSHA256": {
+    "0fd85fd0-d267-436b-ae59-421f2297ab17-BACKUP.json": "5ebc339fa7bda27be3573cf7a7beb552b69a69c6e2f9379e3391530b7f894148",
+    "0fd85fd0-d267-436b-ae59-421f2297ab17-COMMITTED.json": "794cc9284332a9ee3a9ba08babba1c18e949c773e1e14b25b84784eac23f9bf2",
+    "208b8590-6d7c-435b-9d06-52e672b3cd42-BACKUP.json": "4d448a27e72884bcf7518e756b065f65470813860c77226f7005176b171200be",
+    "208b8590-6d7c-435b-9d06-52e672b3cd42-COMMITTED.json": "8cefd833cbae9d2fbc20b609b31d28ba4e9020e56f7b2e4b72f7300be765650e"
+  },
+  "warnings": [
+    "Initial Google 502 creating cleanup: resource absence verified, cleanup-only retry succeeded.",
+    "Existing firebase-functions/eas-cli update notices; no dependency upgrades.",
+    "EAS compatible-fingerprint advisory; runtime/native configuration unchanged, physical iPhone adoption still needs confirmation."
+  ],
+  "remaining": [
+    "Physical iOS Preview adoption and video interaction confirmation.",
+    "Separate usual source-to-output audit of completed October 29 regular parse remains outstanding."
+  ]
+}
