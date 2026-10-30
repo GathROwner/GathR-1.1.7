@@ -108,7 +108,35 @@ function CheckInScreenContent() {
   const [nowMs, setNowMs] = useState(Date.now());
   const [renewedReadinessSessionId, setRenewedReadinessSessionId] = useState('');
   const submittingRef = useRef(false);
+  const mountedRef = useRef(false);
+  const submissionGenerationRef = useRef(0);
+  const submittedReadinessRef = useRef<{ uid: string; sessionId: string } | null>(null);
   const [submissionError, setSubmissionError] = useState('');
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      submissionGenerationRef.current += 1;
+      const submitted = submittedReadinessRef.current;
+      if (!submitted) return;
+      const current = useCheckInReadinessStore.getState();
+      if (current.uid !== submitted.uid) return;
+      const matchingSession = current.sessionId === submitted.sessionId;
+      const matchingGrant = current.grant?.readinessSessionId === submitted.sessionId;
+      const matchingArrival = current.arrival?.sessionId === submitted.sessionId;
+      const matchingAttempt = current.attempt?.arrival.sessionId === submitted.sessionId;
+      if (!matchingSession && !matchingGrant && !matchingArrival && !matchingAttempt) return;
+      // The request may already have bound its one-use server session. Retire
+      // only this flow's local evidence, even if its grant has not returned yet.
+      useCheckInReadinessStore.setState({
+        ...(matchingSession ? { evidence: emptyReadiness(current.evidence.revision + 1, current.evidence.suppressedUntilMs),
+          receipt: null, sessionId: '', interruptedAtMs: null, resumeAfterCheckIn: false } : {}),
+        ...(matchingGrant ? { grant: null } : {}),
+        ...(matchingArrival ? { arrival: null } : {}),
+        ...(matchingAttempt ? { attempt: null } : {}),
+      });
+    };
+  }, []);
   useEffect(() => {
     if (params.readinessVersion !== '1') return;
     const timer = setInterval(() => setNowMs(Date.now()), 1000);
@@ -215,9 +243,10 @@ function CheckInScreenContent() {
   const readinessSessionId = renewedReadinessSessionId || String(params.readinessSessionId || '').trim();
   useEffect(() => {
     if (params.readinessVersion !== '1') return;
+    const ownerUid = user?.uid;
     return () => {
       const current = useCheckInReadinessStore.getState();
-      if (current.grant?.readinessSessionId === readinessSessionId) {
+      if (ownerUid && current.uid === ownerUid && current.grant?.readinessSessionId === readinessSessionId) {
         useCheckInReadinessStore.setState({
           grant: null,
           arrival: null,
@@ -230,7 +259,7 @@ function CheckInScreenContent() {
         });
       }
     };
-  }, [readinessSessionId, params.readinessVersion]);
+  }, [readinessSessionId, params.readinessVersion, user?.uid]);
 
   const contextualEligibleVenueIds = useMemo(() => {
     const serialized = Array.isArray(params.eligibleVenueIds)
@@ -416,7 +445,9 @@ function CheckInScreenContent() {
     }
 
     const perform = async () => {
-      if (submittingRef.current) return;
+      if (submittingRef.current || !mountedRef.current) return;
+      const generation = submissionGenerationRef.current;
+      const currentFlow = () => mountedRef.current && submissionGenerationRef.current === generation;
       submittingRef.current = true;
       setSubmissionError('');
       setBusy(true);
@@ -451,6 +482,7 @@ function CheckInScreenContent() {
             if (pendingBindRef.current?.key !== bindKey) {
               pendingBindRef.current = { key: bindKey, operationId: createSocialOperationId() };
             }
+            submittedReadinessRef.current = { uid: user.uid, sessionId: readinessSessionId };
             grant = await bindCheckInReadiness({
               protocolVersion: 1,
               readinessSessionId,
@@ -465,6 +497,7 @@ function CheckInScreenContent() {
               speedMetersPerSecond: null,
               capturedAtMs: Math.floor(arrival.capturedAtMs),
             });
+            if (!currentFlow()) return;
             const after = useCheckInReadinessStore.getState();
             // A matching server grant is authoritative. Raw sampling receipts can
             // expire or be rejected after binding without revoking this one-use grant.
@@ -500,10 +533,13 @@ function CheckInScreenContent() {
             operationId: createSocialOperationId(),
           };
         }
+        if (!currentFlow()) return;
         await createCheckIn({
           ...input,
           operationId: pendingOperationRef.current.operationId,
         });
+        if (!currentFlow()) return;
+        submittedReadinessRef.current = null;
         pendingOperationRef.current = null;
         if (params.readinessVersion === '1' && !canReuseActiveVenue) {
           const currentReadiness = useCheckInReadinessStore.getState();
@@ -524,11 +560,12 @@ function CheckInScreenContent() {
         useCheckInReadinessStore.setState({ restorePickerOnReturn: false });
         await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => undefined);
       } catch (error) {
+        if (!currentFlow()) return;
         setSubmissionError(messageForError(error));
         Alert.alert('Could not check in', messageForError(error));
       } finally {
         submittingRef.current = false;
-        setBusy(false);
+        if (currentFlow()) setBusy(false);
       }
     };
 

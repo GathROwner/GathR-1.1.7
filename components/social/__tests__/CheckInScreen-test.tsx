@@ -82,6 +82,36 @@ describe('qualified-arrival final confirmation', () => {
     expect(createCheckIn).not.toHaveBeenCalled(); expect(Alert.alert).toHaveBeenCalled();
   });
 
+  it('does not create a check-in or retain a late grant after leaving during a pending bind', async () => {
+    let finish: (value: unknown) => void = () => undefined;
+    (bindCheckInReadiness as jest.Mock).mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
+    await mount(); await act(async () => { confirm().props.onPress(); });
+    expect(bindCheckInReadiness).toHaveBeenCalledTimes(1);
+    act(() => component?.unmount()); component = undefined;
+    await act(async () => { finish(grant()); });
+    expect(createCheckIn).not.toHaveBeenCalled();
+    expect(useCheckInReadinessStore.getState().grant).toBeNull();
+    expect(useCheckInReadinessStore.getState().attempt).toBeNull();
+    expect(useCheckInReadinessStore.getState().sessionId).toBe('');
+  });
+
+  it.each(['owner', 'session'])('leaves replacement %s evidence untouched when a pending screen unmounts', async replacement => {
+    let finish: (value: unknown) => void = () => undefined;
+    (bindCheckInReadiness as jest.Mock).mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
+    await mount(); await act(async () => { confirm().props.onPress(); });
+    const replacementSessionId = replacement === 'owner' ? mockParams.readinessSessionId : 'replacement-readiness-session';
+    const replacementArrival = { ...arrival(), sessionId: replacementSessionId };
+    const replacementState = { uid: replacement === 'owner' ? 'replacement-check-in-owner' : 'check-in-test-user',
+      sessionId: replacementSessionId, arrival: replacementArrival, attempt: { arrival: replacementArrival, capturedAtMs: Date.now() },
+      grant: { ...grant(), protocolVersion: 1 as const, locationType: 'gathr_venue' as const,
+        readinessSessionId: replacementSessionId, eligibilitySessionId: replacementSessionId } };
+    act(() => useCheckInReadinessStore.setState(replacementState));
+    act(() => component?.unmount()); component = undefined;
+    await act(async () => { finish(grant()); });
+    expect(createCheckIn).not.toHaveBeenCalled();
+    expect(useCheckInReadinessStore.getState()).toMatchObject(replacementState);
+  });
+
   it('deduplicates rapid confirm taps before React has updated busy state', async () => {
     let finish: (value: unknown) => void = () => undefined;
     (bindCheckInReadiness as jest.Mock).mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
