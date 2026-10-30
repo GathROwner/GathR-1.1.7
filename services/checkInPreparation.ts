@@ -7,14 +7,26 @@ type Kind = 'canonical' | 'external';
 const CACHE_MS = 5 * 60_000;
 const CACHE_RADIUS_METRES = 20;
 const RETRY_MS = 60_000;
+const MANUAL_LOOKUP_MAX_SAMPLE_AGE_MS = 60_000;
 const DAY_MS = 24 * 60 * 60_000;
-// Leave four of the existing server's twenty daily searches for explicit retry.
+// One combined warmup uses one of the existing twenty daily OSM searches.
+// Reserve four for explicit retry. Manual canonical refresh uses this same
+// request/budget unless exhausted allowance requires canonical-only fallback.
 const AUTOMATIC_EXTERNAL_BUDGET = 16;
 const TOTAL_EXTERNAL_BUDGET = 20;
-type Cached = { uid: string; latitude: number; longitude: number; expiresAtMs: number; result: NearbyCheckInPlacesResult };
-const cache: Partial<Record<Kind, Cached>> = {};
+const VERSION_ERROR = 'Nearby place preparation is unavailable in this server version. Your choices are saved.';
+const PROVIDER_ERROR = 'Public places could not be prepared. Your nearby GathR venues are still available.';
+const ALLOWANCE_ERROR = 'Nearby public-place preparation has reached its search allowance. GathR venues are still available.';
+type Cached = { uid: string; latitude: number; longitude: number; expiresAtMs: number;
+  result: NearbyCheckInPlacesResult; externalError: string; retryAtMs: number };
+// Failure retention is independent of candidate TTL. Clocks and disposable
+// readiness sessions cannot silently restart a failed lookup in this area.
+type FailedArea = { uid: string; latitude: number; longitude: number; accuracyMeters: number; canonicalError?: string; externalError: string; retryAtMs: number };
+type Request = { uid: string; sessionId: string; latitude: number; longitude: number; accuracyMeters: number; controller: AbortController; canonicalOnly: boolean };
+let cache: Cached | null = null;
+let active: Request | null = null;
+let failedArea: FailedArea | null = null;
 const requestTimes = new Map<string, number[]>();
-const active = new Map<Kind, { uid: string; sessionId: string; controller: AbortController }>();
 
 function listPatch(kind: Kind, value: Partial<CheckInPreparedList>, sessionId: string) {
   const state = useCheckInReadinessStore.getState();
@@ -33,7 +45,18 @@ function expiry(value: NearbyCheckInPlacesResult, now: number) {
   return Math.min(now + CACHE_MS, timestamp);
 }
 
-/** Starts lookups during the countdown. Calls on subsequent GPS samples are no-ops. */
+function applyCache(saved: Cached, sessionId: string) {
+  listPatch('canonical', { status: 'ready', candidates: saved.result.candidates.filter(place => place.type === 'gathr_venue'), error: '', retryAtMs: 0 }, sessionId);
+  listPatch('external', saved.externalError
+    ? { status: 'error', candidates: [], error: saved.externalError, retryAtMs: saved.retryAtMs }
+    : { status: 'ready', candidates: saved.result.candidates.filter(place => place.type === 'external_place'), error: '', retryAtMs: 0 }, sessionId);
+  const state = useCheckInReadinessStore.getState();
+  if (state.sessionId === sessionId) useCheckInReadinessStore.setState({ preparation: {
+    ...state.preparation, expiresAtMs: Math.min(state.preparation.expiresAtMs, saved.expiresAtMs),
+  } });
+}
+
+/** One coordinated warmup supplies both lists during countdown, not one call per list/sample. */
 export function prepareCheckInPlaces(manual: Kind | 'all' | null = null): void {
   const now = Date.now();
   let state = useCheckInReadinessStore.getState();
@@ -41,88 +64,120 @@ export function prepareCheckInPlaces(manual: Kind | 'all' | null = null): void {
   if (!state.uid || state.mode === 'basic' || !state.appActive || !state.foregroundGranted || !state.sessionId || !sample
     || sample.accuracyMeters === null || !Number.isFinite(sample.accuracyMeters) || sample.accuracyMeters < 0
     || sample.accuracyMeters > CHECK_IN_READINESS.hereAccuracyMetres
-    || now - sample.capturedAtMs < 0 || now - sample.capturedAtMs > CHECK_IN_READINESS.maxSampleAgeMs) return;
+    || (!manual && state.evidence.hereMs < 20_000)) return;
   const uid = state.uid;
   const sessionId = state.sessionId;
-  if (state.preparation.sessionId !== sessionId || state.preparation.expiresAtMs <= now) {
-    const fresh = emptyCheckInPreparation();
-    useCheckInReadinessStore.setState({ preparation: { ...fresh, sessionId,
+  const maxSampleAgeMs = manual ? MANUAL_LOOKUP_MAX_SAMPLE_AGE_MS : CHECK_IN_READINESS.maxSampleAgeMs;
+  if (!Number.isFinite(sample.capturedAtMs) || now - sample.capturedAtMs < 0 || now - sample.capturedAtMs > maxSampleAgeMs) {
+    if (manual) {
+      if (state.preparation.sessionId !== sessionId || state.preparation.expiresAtMs <= now) {
+        useCheckInReadinessStore.setState({ preparation: { ...emptyCheckInPreparation(), sessionId,
+          latitude: sample.latitude, longitude: sample.longitude, expiresAtMs: now + CACHE_MS } });
+      }
+      for (const kind of ['canonical', 'external'] as const) {
+        if (manual === kind || manual === 'all') listPatch(kind, { status: 'error',
+          error: 'Location is updating. Retry once a recent location is available.' }, sessionId);
+      }
+    }
+    return;
+  }
+  const failedAreaChanged = !!failedArea && (failedArea.uid !== uid
+    || readinessDistance(failedArea, sample) - Math.max(failedArea.accuracyMeters, sample.accuracyMeters) > CACHE_RADIUS_METRES);
+  if (failedAreaChanged) failedArea = null;
+  if (state.preparation.sessionId !== sessionId || state.preparation.expiresAtMs <= now || failedAreaChanged) {
+    useCheckInReadinessStore.setState({ preparation: { ...emptyCheckInPreparation(), sessionId,
       latitude: sample.latitude, longitude: sample.longitude, expiresAtMs: now + CACHE_MS } });
     state = useCheckInReadinessStore.getState();
   }
   const origin = { latitude: state.preparation.latitude, longitude: state.preparation.longitude };
   if (readinessDistance(origin, sample) > CACHE_RADIUS_METRES + sample.accuracyMeters) return;
-  for (const kind of ['canonical', 'external'] as const) {
-    const explicit = manual === kind || manual === 'all';
-    const current = state.preparation[kind];
-    if (active.get(kind)?.sessionId === sessionId && active.get(kind)?.uid === uid) continue;
-    if (current.status === 'ready') continue;
-    // No automatic retry loop on a failed/free public endpoint. Retry is explicit
-    // after backoff; changing location/session may use an existing nearby cache.
-    if (current.status === 'error' && !explicit) continue;
-    if (current.retryAtMs > now) continue;
-    if (kind === 'external' && (sample.accuracyMeters > CHECK_IN_READINESS.placeAccuracyMetres
-      || (!explicit && state.evidence.hereMs < 20_000))) continue;
-    if (kind === 'canonical' && !explicit && state.evidence.hereMs < 10_000) continue;
-    const saved = cache[kind];
-    if (saved?.uid === uid && saved.expiresAtMs > now && readinessDistance(saved, sample) <= CACHE_RADIUS_METRES) {
-      listPatch(kind, { status: 'ready', candidates: saved.result.candidates.filter(place => kind === 'canonical'
-        ? place.type === 'gathr_venue' : place.type === 'external_place'), error: '', retryAtMs: 0 }, sessionId);
-      const currentState = useCheckInReadinessStore.getState();
-      if (currentState.sessionId === sessionId) useCheckInReadinessStore.setState({ preparation: {
-        ...currentState.preparation, expiresAtMs: Math.min(currentState.preparation.expiresAtMs, saved.expiresAtMs),
-      } });
-      continue;
-    }
-    if (kind === 'external') {
-      const times = (requestTimes.get(uid) || []).filter(time => time > now - DAY_MS);
-      const budget = explicit ? TOTAL_EXTERNAL_BUDGET : AUTOMATIC_EXTERNAL_BUDGET;
-      if (times.length >= budget) {
-        listPatch(kind, { status: 'error', error: 'Nearby public-place preparation has reached its search allowance. GathR venues are still available.',
-          retryAtMs: times.length >= TOTAL_EXTERNAL_BUDGET ? times[0] + DAY_MS : 0 }, sessionId);
-        requestTimes.set(uid, times);
-        continue;
-      }
-      requestTimes.set(uid, [...times, now]);
-    }
-    active.get(kind)?.controller.abort();
-    const controller = new AbortController();
-    const request = { uid, sessionId, controller };
-    active.set(kind, request);
-    listPatch(kind, { status: 'loading', error: '', retryAtMs: 0 }, sessionId);
-    const input = { latitude: sample.latitude, longitude: sample.longitude,
-      accuracyMeters: sample.accuracyMeters, capturedAtMs: sample.capturedAtMs, preparation: true as const };
-    const lookup = kind === 'canonical' ? listNearbyCanonicalCheckInVenues : discoverNearbyCheckInPlaces;
-    void lookup(input, { signal: controller.signal, timeoutMs: 25_000 }).then(result => {
-      const latest = useCheckInReadinessStore.getState();
-      if (active.get(kind) !== request || latest.uid !== uid || latest.sessionId !== sessionId || controller.signal.aborted) return;
-      if (result.preparationRadiusMetres !== 175) {
-        throw new Error('Nearby place preparation is unavailable in this server version. Your choices are saved.');
-      }
-      // Provider outages may still return usable canonical results; never label
-      // an unavailable external provider as a successful empty public list.
-      if (kind === 'external' && result.externalLookupStatus === 'partial_unavailable') {
-        const canonical = result.candidates.filter(place => place.type === 'gathr_venue');
-        if (canonical.length && latest.preparation.canonical.status !== 'ready') {
-          listPatch('canonical', { status: 'ready', candidates: canonical, error: '', retryAtMs: 0 }, sessionId);
-        }
-        throw new Error('Public places could not be prepared. Your nearby GathR venues are still available.');
-      }
-      const expiresAtMs = expiry(result, Date.now());
-      if (expiresAtMs <= Date.now()) throw new Error('Nearby places expired while loading. Try preparing them again.');
-      cache[kind] = { uid, ...input, expiresAtMs, result };
-      listPatch(kind, { status: 'ready', candidates: result.candidates.filter(place => kind === 'canonical'
-        ? place.type === 'gathr_venue' : place.type === 'external_place'), error: '', retryAtMs: 0 }, sessionId);
-      const currentState = useCheckInReadinessStore.getState();
-      if (currentState.sessionId === sessionId) useCheckInReadinessStore.setState({ preparation: {
-        ...currentState.preparation, expiresAtMs: Math.min(currentState.preparation.expiresAtMs, expiresAtMs),
-      } });
-    }).catch(error => {
-      if (active.get(kind) !== request || controller.signal.aborted) return;
-      listPatch(kind, { status: 'error', error: error instanceof Error ? error.message : 'Nearby places could not be prepared. Try again.',
-        retryAtMs: Date.now() + RETRY_MS }, sessionId);
-    }).finally(() => { if (active.get(kind) === request) active.delete(kind); });
+  if (active?.uid === uid && readinessDistance(active, sample) <= CACHE_RADIUS_METRES) {
+    // A nearby session replacement attaches to the area/owner's existing work.
+    active.sessionId = sessionId;
+    if (state.preparation.canonical.status !== 'ready') listPatch('canonical', { status: 'loading', error: '' }, sessionId);
+    if (!active.canonicalOnly) listPatch('external', { status: 'loading', error: '' }, sessionId);
+    return;
   }
+  if (cache?.uid === uid && cache.expiresAtMs > now && readinessDistance(cache, sample) <= CACHE_RADIUS_METRES) {
+    applyCache(cache, sessionId);
+    state = useCheckInReadinessStore.getState();
+  }
+  const canonicalReady = state.preparation.canonical.status === 'ready';
+  const externalReady = state.preparation.external.status === 'ready';
+  if (failedArea && (!manual || failedArea.retryAtMs > now)) {
+    listPatch('external', { status: 'error', candidates: [], error: failedArea.externalError, retryAtMs: failedArea.retryAtMs }, sessionId);
+    if (!canonicalReady) listPatch('canonical', { status: 'error', candidates: [],
+      error: failedArea.canonicalError || 'Nearby GathR venue preparation expired. Retry to refresh your choices.', retryAtMs: failedArea.retryAtMs }, sessionId);
+    return;
+  }
+  if (canonicalReady && externalReady) return;
+  if (manual && manual !== 'all' && state.preparation[manual].status === 'ready') return;
+  if (!manual && (state.preparation.canonical.status === 'error' || state.preparation.external.status === 'error')) return;
+  if (manual && Math.max(state.preparation.canonical.retryAtMs, state.preparation.external.retryAtMs) > now) return;
+
+  const times = (requestTimes.get(uid) || []).filter(time => time > now - DAY_MS);
+  requestTimes.set(uid, times);
+  const budget = manual ? TOTAL_EXTERNAL_BUDGET : AUTOMATIC_EXTERNAL_BUDGET;
+  const canonicalOnly = times.length >= budget;
+  const allowanceRetryAtMs = times.length >= TOTAL_EXTERNAL_BUDGET ? times[0] + DAY_MS : 0;
+  if (canonicalOnly) {
+    failedArea = { uid, latitude: sample.latitude, longitude: sample.longitude, accuracyMeters: sample.accuracyMeters,
+      externalError: ALLOWANCE_ERROR, retryAtMs: allowanceRetryAtMs };
+    listPatch('external', { status: 'error', error: ALLOWANCE_ERROR, candidates: [], retryAtMs: allowanceRetryAtMs }, sessionId);
+    // Keep usable canonical choices. When absent, one standalone fallback may
+    // prepare them without spending another OSM search; never mark full public.
+    if (canonicalReady) return;
+  } else {
+    requestTimes.set(uid, [...times, now]);
+    // Only an explicit permitted retry or a genuinely new area reaches this
+    // path after failure; candidate/session expiry alone cannot clear it.
+    failedArea = null;
+  }
+
+  active?.controller.abort();
+  const controller = new AbortController();
+  const request: Request = { uid, sessionId, latitude: sample.latitude, longitude: sample.longitude,
+    accuracyMeters: sample.accuracyMeters, controller, canonicalOnly };
+  active = request;
+  if (!canonicalReady) listPatch('canonical', { status: 'loading', error: '', retryAtMs: 0 }, sessionId);
+  if (!canonicalOnly) listPatch('external', { status: 'loading', error: '', retryAtMs: 0 }, sessionId);
+  const input = { latitude: sample.latitude, longitude: sample.longitude,
+    accuracyMeters: sample.accuracyMeters, capturedAtMs: sample.capturedAtMs, preparation: true as const };
+  const lookup = canonicalOnly ? listNearbyCanonicalCheckInVenues : discoverNearbyCheckInPlaces;
+  void lookup(input, { signal: controller.signal, timeoutMs: 25_000 }).then(result => {
+    const latest = useCheckInReadinessStore.getState();
+    if (active !== request || latest.uid !== uid || latest.sessionId !== request.sessionId || controller.signal.aborted) return;
+    if (result.preparationRadiusMetres !== 175) throw new Error(VERSION_ERROR);
+    if (!canonicalOnly && result.externalLookupStatus !== 'complete' && result.externalLookupStatus !== 'partial_unavailable') {
+      throw new Error('Nearby place preparation could not be confirmed. Your choices are saved.');
+    }
+    const expiresAtMs = expiry(result, Date.now());
+    if (expiresAtMs <= Date.now()) throw new Error('Nearby places expired while loading. Try preparing them again.');
+    const externalError = canonicalOnly ? ALLOWANCE_ERROR
+      : result.externalLookupStatus === 'partial_unavailable' ? PROVIDER_ERROR : '';
+    cache = { uid, ...input, expiresAtMs, result, externalError,
+      retryAtMs: canonicalOnly ? allowanceRetryAtMs : externalError ? Date.now() + RETRY_MS : 0 };
+    failedArea = externalError ? { uid, latitude: request.latitude, longitude: request.longitude, accuracyMeters: request.accuracyMeters,
+      externalError, retryAtMs: cache.retryAtMs } : null;
+    // A marked partial response proves the canonical pool complete even if empty.
+    applyCache(cache, request.sessionId);
+  }).catch(error => {
+    if (active !== request || controller.signal.aborted) return;
+    const latest = useCheckInReadinessStore.getState();
+    if (latest.uid !== uid || latest.sessionId !== request.sessionId) return;
+    const message = error instanceof Error ? error.message : 'Nearby places could not be prepared. Try again.';
+    // Carry retry backoff across disposable sessions. A failed retry preserves
+    // the last complete canonical pool and its original expiry, never extends it.
+    const previous = cache?.uid === uid && cache.expiresAtMs > Date.now() && readinessDistance(cache, request) <= CACHE_RADIUS_METRES ? cache : null;
+    cache = previous ? { ...previous, externalError: canonicalOnly ? ALLOWANCE_ERROR : message, retryAtMs: Date.now() + RETRY_MS } : null;
+    failedArea = { uid, latitude: request.latitude, longitude: request.longitude, accuracyMeters: request.accuracyMeters,
+      ...(!previous ? { canonicalError: message } : {}),
+      externalError: canonicalOnly ? ALLOWANCE_ERROR : message, retryAtMs: Date.now() + RETRY_MS };
+    if (latest.preparation.canonical.status !== 'ready') {
+      listPatch('canonical', { status: 'error', error: message, retryAtMs: Date.now() + RETRY_MS }, request.sessionId);
+    }
+    if (!canonicalOnly) listPatch('external', { status: 'error', error: message, retryAtMs: Date.now() + RETRY_MS }, request.sessionId);
+  }).finally(() => { if (active === request) active = null; });
 }
 
 export function requestCheckInPreparationRetry(kind: Kind | 'all' = 'all') {
@@ -130,8 +185,7 @@ export function requestCheckInPreparationRetry(kind: Kind | 'all' = 'all') {
 }
 
 export function cancelCheckInPreparation() {
-  for (const request of active.values()) request.controller.abort();
-  active.clear();
+  active?.controller.abort(); active = null;
   const state = useCheckInReadinessStore.getState();
   const preparation = { ...state.preparation };
   for (const kind of ['canonical', 'external'] as const) {
@@ -140,9 +194,7 @@ export function cancelCheckInPreparation() {
   useCheckInReadinessStore.setState({ preparation });
 }
 
-/** Clear owner-scoped transient cache on logout; timestamps contain no location. */
+/** Clear owner-scoped transient cache on logout; budget timestamps contain no location. */
 export function clearCheckInPreparationCache() {
-  cancelCheckInPreparation();
-  delete cache.canonical;
-  delete cache.external;
+  cancelCheckInPreparation(); cache = null; failedArea = null;
 }
