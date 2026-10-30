@@ -19,7 +19,7 @@ export function normalizeListingVideo(value: unknown, now = Date.now()): Listing
   const v = value as ListingVideo;
   if (!/^[a-f0-9]{64}$/.test(v.assetId) ||
       v.url !== `https://storage.googleapis.com/gathr-uploaded-images/listingvideos/${v.assetId}.mp4` ||
-      !Number.isFinite(v.durationSeconds) || v.durationSeconds <= 0 || v.durationSeconds > 60 ||
+      !Number.isFinite(v.durationSeconds) || v.durationSeconds <= 0 ||
       !Number.isInteger(v.bytes) || v.bytes <= 0 || v.bytes > 8_000_000 ||
       !Number.isFinite(Date.parse(v.expiresAt)) || Date.parse(v.expiresAt) <= now || !/^\d+$/.test(v.sourcePostId)) return null;
   return v;
@@ -74,7 +74,7 @@ export function videoPlayerHtml(video: ListingVideo, startAt = 0, options: Fulls
 
 export function inlineVideoHtml(video: ListingVideo, startAt = 0, muted = true): string {
   if (!normalizeListingVideo(video)) throw new Error('Invalid listing video');
-  const start = Math.max(0, Math.min(60, Number.isFinite(startAt) ? startAt : 0));
+  const start = Math.max(0, Math.min(video.durationSeconds, Number.isFinite(startAt) ? startAt : 0));
   return `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; media-src https://storage.googleapis.com; style-src 'unsafe-inline'; script-src 'unsafe-inline'">
   <style>html,body{margin:0;width:100%;height:100%;background:transparent;overflow:hidden}video{width:100%;height:100%;object-fit:cover}</style></head>

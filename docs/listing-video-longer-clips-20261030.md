@@ -1,0 +1,9 @@
+# Reviewed longer listing videos
+
+Craig requested publication of his explicit Use selections and a cost trial for the 83-second Hokum clip. This additive iOS Production change starts from the exact live source 1fb3c79 and its accepted documentation descendant 433409b. It preserves the accepted replay, manual sound, swipe-dismiss and aspect-aware fullscreen behavior.
+
+Managed video metadata no longer rejects a clip solely for exceeding 60 seconds. The existing immutable managed URL, positive finite duration, 8 MB byte bound and future expiry checks remain. Inline and fullscreen resume positions use the clip's duration rather than a hard-coded minute. No native dependency, configuration, runtime or platform change is included. The daily worker's general 60-second review limit remains unchanged; Hokum is a separately authorized manual trial.
+
+Validation: 15 focused boundary and actual player DOM tests passed; TypeScript passed; lint exited zero with zero errors and the same 221 existing warnings. Production Firebase, both Social flags, App Attest and Mapbox configuration passed. The actual HTML player decoded the 83.059-second Hokum rendition at 390 by 844, resumed beyond 70 seconds, and paused at 73.75 seconds with no media error. The rendered controls, landscape fit, hierarchy, spacing and progress bar were reviewed. Evidence: C:/Users/craig/Documents/Codex/2026-10-30/video-model-comparison/hokum-longer-trial/PLAYER_PHONE_QA.png. QA changes only the media transport URL, WebView bridge stub and native dark base; the player implementation is the release code.
+
+This is rendered player proof, not physical iPhone adoption or a new human listening review. Source and human approval remain in the private video-review records. The full clip was not truncated.

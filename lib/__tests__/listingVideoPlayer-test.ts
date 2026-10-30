@@ -2,11 +2,11 @@
 import { inlineVideoHtml, videoPlayerHtml, type ListingVideo } from '../listingVideo';
 const { JSDOM } = require('jsdom');
 const clip: ListingVideo = { assetId: 'a'.repeat(64), url: `https://storage.googleapis.com/gathr-uploaded-images/listingvideos/${'a'.repeat(64)}.mp4`, bytes: 2000, durationSeconds: 12, sourcePostId: '123', expiresAt: '2099-01-01' };
-function player(width = 1080, height = 1920, title = 'Concert') {
+function player(width = 1080, height = 1920, title = 'Concert', duration = 12, startAt = 3) {
   const messages: string[] = []; const paused = new WeakMap();
-  const dom = new JSDOM(videoPlayerHtml(clip, 3, { title, topInset: 48, bottomInset: 34 }), { runScripts: 'dangerously', beforeParse(w: any) {
+  const dom = new JSDOM(videoPlayerHtml({ ...clip, durationSeconds: duration }, startAt, { title, topInset: 48, bottomInset: 34 }), { runScripts: 'dangerously', beforeParse(w: any) {
     w.ReactNativeWebView = { postMessage: (m: string) => messages.push(m) };
-    Object.defineProperties(w.HTMLMediaElement.prototype, { duration: { get: () => 12 }, paused: { get() { return paused.get(this) !== false; } } });
+    Object.defineProperties(w.HTMLMediaElement.prototype, { duration: { get: () => duration }, paused: { get() { return paused.get(this) !== false; } } });
     Object.defineProperties(w.HTMLVideoElement.prototype, { videoWidth: { get: () => width }, videoHeight: { get: () => height } });
     w.HTMLMediaElement.prototype.play = function () { paused.set(this, false); this.dispatchEvent(new w.Event('playing')); return Promise.resolve(); };
     w.HTMLMediaElement.prototype.pause = function () { paused.set(this, true); this.dispatchEvent(new w.Event('pause')); };
@@ -19,6 +19,16 @@ function player(width = 1080, height = 1920, title = 'Concert') {
   return { dom, w, doc, video, messages, swipe };
 }
 describe('fullscreen listing video interaction', () => {
+  it('resumes and seeks beyond one minute using the full clip timeline', () => {
+    const p = player(640, 360, 'Hokum', 83.06, 70);
+    try {
+      p.video.dispatchEvent(new p.w.Event('loadedmetadata'));
+      expect(p.video.currentTime).toBe(70);
+      const seek = p.doc.getElementById('seek'); expect(Number(seek.max)).toBe(83.06);
+      seek.value = '81'; seek.dispatchEvent(new p.w.Event('input')); seek.dispatchEvent(new p.w.Event('change'));
+      expect(p.video.currentTime).toBe(81);
+    } finally { p.dom.window.close(); }
+  });
   it('starts automatic playback muted, but explicit resume and replay enable sound and allow re-muting', () => {
     const p = player(); try {
       expect(p.video.muted).toBe(true);

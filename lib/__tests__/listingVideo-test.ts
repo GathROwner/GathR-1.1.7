@@ -6,7 +6,7 @@ describe('listing video boundary', () => {
   it('accepts only bounded, unexpired managed video assets', () => {
     expect(normalizeListingVideo(video())).not.toBeNull();
     for (const patch of [{ url: 'https://video.fbcdn.net/temporary.mp4' }, { url: 'javascript:alert(1)' },
-      { assetId: '../../images' }, { expiresAt: '2000-01-01' }, { bytes: 9_000_000 }, { durationSeconds: 61 }])
+      { assetId: '../../images' }, { expiresAt: '2000-01-01' }, { bytes: 9_000_000 }, { durationSeconds: Infinity }, { durationSeconds: 0 }])
       expect(normalizeListingVideo({ ...video(), ...patch })).toBeNull();
   });
   it('never looks up private shares or friend event paths', () => {
@@ -14,6 +14,9 @@ describe('listing video boundary', () => {
     expect(videoListingPath({ id: 'fb_area', locationScope: 'city', source: 'firestore' })).toBe('events/area');
     expect(videoListingPath({ id: 'private', venueId: 'pub', source: 'private_shared' })).toBeNull();
     expect(videoListingPath({ id: '../private', venueId: 'pub', source: 'firestore' })).toBeNull();
+  });
+  it('accepts reviewed longer clips within the managed byte and expiry safeguards', () => {
+    expect(normalizeListingVideo({ ...video(), durationSeconds: 83.06, bytes: 2_546_243 })).not.toBeNull();
   });
   it('player uses muted inline playback, no preload and a restricted content policy', () => {
     const html = videoPlayerHtml(video());
