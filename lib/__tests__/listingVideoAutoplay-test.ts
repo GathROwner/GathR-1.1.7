@@ -51,8 +51,8 @@ describe('poster-first listing video coordination', () => {
   it('halts on background/unfocus and retains bounded position without immediate return autoplay', () => {
     const c = new ListingVideoAutoplay(), notify = jest.fn(); c.setScope('specials', true);
     c.update('a', candidate({ surface: 'specials' }), notify); jest.advanceTimersByTime(1000); c.evaluate();
-    c.remember('clip', 6); c.remember('clip', Infinity); c.setForeground(false); expect(notify).toHaveBeenLastCalledWith(false);
-    c.setForeground(true); c.evaluate(); expect(notify).toHaveBeenLastCalledWith(false); expect(c.position('clip')).toBe(6);
+    c.remember('clip', 73.75); c.remember('clip', Infinity); c.remember('clip', -1); c.setForeground(false); expect(notify).toHaveBeenLastCalledWith(false);
+    c.setForeground(true); c.evaluate(); expect(notify).toHaveBeenLastCalledWith(false); expect(c.position('clip')).toBe(73.75);
     jest.advanceTimersByTime(1000); c.evaluate(); c.setScope('specials', false); expect(notify).toHaveBeenLastCalledWith(false);
   });
   it('requires a mostly visible image in both axes and excludes empty/recycled measurements', () => {

@@ -59,7 +59,7 @@ export class ListingVideoAutoplay {
   replay(asset: string) { this.finished.delete(asset); this.positions.delete(asset); }
   position(asset: string) { return this.positions.get(asset) || 0; }
   remember(asset: string, seconds: number) {
-    if (!Number.isFinite(seconds) || seconds < 0 || seconds > 60 || this.finished.has(asset)) return;
+    if (!Number.isFinite(seconds) || seconds < 0 || this.finished.has(asset)) return;
     this.positions.set(asset, seconds);
     if (this.positions.size > 200) this.positions.delete(this.positions.keys().next().value!);
   }
