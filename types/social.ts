@@ -149,6 +149,19 @@ export interface CheckInReadinessReceipt {
   hereQualifyingMs: number;
   placeQualifyingMs: number;
   expiresAtMs: number;
+  /** Server-qualified arrival on this same readiness session; never client-timed. */
+  arrival?: CheckInQualifiedArrival;
+}
+
+export interface CheckInQualifiedArrival {
+  sessionId: string;
+  expiresAtMs: number;
+  latitude: number;
+  longitude: number;
+  accuracyMeters: number;
+  capturedAtMs: number;
+  here: boolean;
+  place: boolean;
 }
 
 export interface BindCheckInReadinessInput {
@@ -163,6 +176,8 @@ export interface BindCheckInReadinessInput {
   accuracyMeters: number | null;
   speedMetersPerSecond: number | null;
   capturedAtMs: number;
+  /** Use the still-valid server arrival snapshot instead of retiming the form. */
+  useQualifiedArrival?: true;
 }
 
 export interface BoundCheckInReadiness {
@@ -186,10 +201,14 @@ export interface NearbyCheckInPlaceCandidate {
   latitude: number;
   longitude: number;
   distanceMetres: number;
+  /** Public OSM footprint used to filter a prepared pool against arrival. */
+  checkInBoundary?: { lat: number; lon: number }[];
 }
 
 export interface NearbyCheckInPlacesResult {
   candidates: NearbyCheckInPlaceCandidate[];
+  /** Capability marker: the server honored the bounded preparation pool request. */
+  preparationRadiusMetres?: 175;
   /**
    * `complete` includes a successful empty provider result. When the backend
    * can still return canonical GathR venues but its public-place lookup is

@@ -50,7 +50,7 @@ describe('real check-in readiness evidence', () => {
     expect(state).toMatchObject({ hereMs: 30_000, placeMs: 90_000, reason: 'qualifying', revision: 0 });
     expect(readinessDistance(state.anchor!, state.previous!)).toBeLessThan(CHECK_IN_READINESS.stationaryRadiusMetres);
   });
-  it('clears only Place for accuracy wobble above 25 m, then resets both rings above 50 m', () => {
+  it('pauses evidence through accuracy wobble without crediting uncertain endpoints', () => {
     const times = [0, 10, 20, 31, 40, 50, 60, 70, 80, 90, 100];
     const accuracies = [10, 18, 28, 12, 16, 24, 28, 14, 15, 20, 52];
     const speeds = [0.2, 0.2, 0.4, 0.1, 0, 0.5, 0.4, 0.2, null, 0.3, 0.1];
@@ -68,10 +68,10 @@ describe('real check-in readiness evidence', () => {
       snapshots.set(times[index], state);
     }
 
-    expect(snapshots.get(20)).toMatchObject({ hereMs: 20_000, placeMs: 0, reason: 'qualifying' });
-    expect(snapshots.get(50)).toMatchObject({ hereMs: 30_000, placeMs: 19_000, reason: 'qualifying' });
-    expect(snapshots.get(90)).toMatchObject({ hereMs: 30_000, placeMs: 20_000, reason: 'qualifying' });
-    expect(state).toMatchObject({ hereMs: 0, placeMs: 0, reason: 'low_accuracy', revision: 1 });
+    expect(snapshots.get(20)).toMatchObject({ hereMs: 20_000, placeMs: 10_000, reason: 'qualifying' });
+    expect(snapshots.get(50)).toMatchObject({ hereMs: 30_000, placeMs: 29_000, reason: 'qualifying' });
+    expect(snapshots.get(90)).toMatchObject({ hereMs: 30_000, placeMs: 49_000, reason: 'qualifying' });
+    expect(state).toMatchObject({ hereMs: 30_000, placeMs: 49_000, reason: 'low_accuracy', revision: 0 });
   });
   it('resets both rings while moving toward and away from an adjacent candidate, even within 20 m', () => {
     const ready = dwell(30);
@@ -159,10 +159,39 @@ describe('real check-in readiness evidence', () => {
     expect(dwell(90, 40)).toMatchObject({ hereMs: 30_000, placeMs: 0 });
     expect(dwell(90, 51)).toMatchObject({ hereMs: 0, placeMs: 0, reason: 'low_accuracy' });
     for (const accuracyMeters of [null, NaN, -1, Infinity]) {
-      expect(advanceReadiness(dwell(30), fix(40, { accuracyMeters }), start + 40_000).hereMs).toBe(0);
+      const uncertain = advanceReadiness(dwell(30), fix(40, { accuracyMeters }), start + 40_000);
+      expect(uncertain.hereMs).toBe(30_000);
+      expect(isFreshReadiness(uncertain, start + 40_000)).toBe(false);
     }
     const weak = advanceReadiness(dwell(30), fix(40, { accuracyMeters: 40 }), start + 40_000);
-    expect(advanceReadiness(weak, fix(50), start + 50_000).placeMs).toBe(0);
+    expect(advanceReadiness(weak, fix(50), start + 50_000).placeMs).toBe(30_000);
+  });
+  it('eventually prepares a stationary user despite intermittent 26m accuracy without crediting weak intervals', () => {
+    let state = emptyReadiness();
+    for (let seconds = 0; seconds <= 300; seconds += 10) {
+      const sample = fix(seconds, { accuracyMeters: seconds % 50 === 40 ? 26 : 17 });
+      state = advanceReadiness(state, sample, sample.capturedAtMs);
+    }
+    expect(state).toMatchObject({ hereMs: 30_000, placeMs: 90_000, revision: 0 });
+  });
+  it('expires retained Here and Place after five total minutes of uncertainty, not five minutes between bad fixes', () => {
+    let unknown = dwell(30);
+    let weak = dwell(30);
+    for (let seconds = 40; seconds <= 340; seconds += 10) {
+      unknown = advanceReadiness(unknown, fix(seconds, { accuracyMeters: 80 }), start + seconds * 1000);
+      weak = advanceReadiness(weak, fix(seconds, { accuracyMeters: 40 }), start + seconds * 1000);
+    }
+    expect(unknown).toMatchObject({ hereMs: 0, placeMs: 0, reason: 'low_accuracy' });
+    expect(weak).toMatchObject({ hereMs: 30_000, placeMs: 0 });
+  });
+  it('does not infer movement from a wildly inaccurate prior fix when speed is unavailable', () => {
+    const ready = dwell(30);
+    const uncertain = advanceReadiness(ready, fix(40, { latitude: 46.237, accuracyMeters: 200 }), start + 40_000);
+    const returnFix = fix(50, { accuracyMeters: 17, speedMetersPerSecond: null });
+    const returned = advanceReadiness(uncertain, returnFix, returnFix.capturedAtMs);
+    expect(returned).toMatchObject({ hereMs: 30_000, placeMs: 30_000, reason: 'qualifying', revision: ready.revision });
+    const next = fix(60, { accuracyMeters: 17, speedMetersPerSecond: null });
+    expect(advanceReadiness(returned, next, next.capturedAtMs).placeMs).toBe(40_000);
   });
   it('resets walking and cumulative drift even when reported speed is absent', () => {
     const unknownFirst = advanceReadiness(emptyReadiness(), fix(0, { speedMetersPerSecond: null }), start);

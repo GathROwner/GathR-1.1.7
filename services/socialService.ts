@@ -418,9 +418,12 @@ export const discoverNearbyCheckInPlaces = async (input: {
   longitude: number;
   accuracyMeters: number;
   capturedAtMs: number;
-}) => callSocial<typeof input, NearbyCheckInPlacesResult>(
+  /** Fetch a bounded nearby pool while the stationary countdown is running. */
+  preparation?: true;
+}, options: { signal?: AbortSignal; timeoutMs?: number } = {}) => callSocial<typeof input, NearbyCheckInPlacesResult>(
   'discoverNearbyCheckInPlacesCallable',
-  normalizeLocationCaptureTime(input)
+  normalizeLocationCaptureTime(input),
+  options
 );
 
 export const listNearbyCanonicalCheckInVenues = async (input: {
@@ -428,13 +431,17 @@ export const listNearbyCanonicalCheckInVenues = async (input: {
   longitude: number;
   accuracyMeters: number;
   capturedAtMs: number;
-}) => callSocial<typeof input, NearbyCheckInPlacesResult>(
+  preparation?: true;
+}, options: { signal?: AbortSignal; timeoutMs?: number } = {}) => callSocial<typeof input, NearbyCheckInPlacesResult>(
   'listNearbyCanonicalCheckInVenuesCallable',
-  normalizeLocationCaptureTime(input)
+  normalizeLocationCaptureTime(input),
+  options
 );
 
 export const createPrivateCheckInPlaceCandidate = async (input: {
   label: string;
+  /** Reuse the server-qualified arrival; never refresh the timestamp of an old fix. */
+  readinessSessionId?: string;
   latitude: number;
   longitude: number;
   accuracyMeters: number;

@@ -30,6 +30,7 @@ import {
   bindCheckInReadiness,
   createPrivateCheckInPlaceCandidate,
   discoverNearbyCheckInPlaces,
+  listNearbyCanonicalCheckInVenues,
   recordCheckInReadinessSample,
 } from '../socialService';
 
@@ -179,6 +180,31 @@ describe('social callable transport', () => {
       message: 'GathR social is temporarily unavailable. Try again when you are online.',
       details: undefined,
     });
+  });
+
+  it.each([discoverNearbyCheckInPlaces, listNearbyCanonicalCheckInVenues])('does not start a canceled preparation lookup', async (lookup) => {
+    const controller = new AbortController();
+    controller.abort();
+    await expect(lookup(input, { signal: controller.signal })).rejects.toMatchObject({ name: 'AbortError' });
+    expect(mockGetSocialAppCheckToken).not.toHaveBeenCalled();
+    expect(mockHttpsCallable).not.toHaveBeenCalled();
+  });
+
+  it('passes the bounded preparation deadline to the compatible callable transport', async () => {
+    mockGetSocialAppCheckToken.mockResolvedValue(null);
+    mockHttpsCallable.mockReturnValue(jest.fn().mockResolvedValue({ data: { candidates: [] } }));
+    await discoverNearbyCheckInPlaces(input, { timeoutMs: 24_000 });
+    expect(mockHttpsCallable).toHaveBeenCalledWith(expect.anything(), 'discoverNearbyCheckInPlacesCallable', { timeout: 24_000 });
+  });
+
+  it('passes the qualified private arrival reference without making its capture time appear fresh', async () => {
+    const callable = jest.fn().mockResolvedValue({ data: { candidate: { id: 'private-candidate' } } });
+    mockGetSocialAppCheckToken.mockResolvedValue(null);
+    mockHttpsCallable.mockReturnValue(callable);
+    await createPrivateCheckInPlaceCandidate({ ...input, label: 'Home', readinessSessionId: input.sessionId });
+    expect(callable).toHaveBeenCalledWith(expect.objectContaining({
+      readinessSessionId: input.sessionId, capturedAtMs: input.capturedAtMs,
+    }));
   });
 
   describe('whole readiness request deadline', () => {

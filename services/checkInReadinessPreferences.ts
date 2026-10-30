@@ -1,6 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-import { useCheckInReadinessStore } from '../store/checkInReadinessStore';
+import { emptyCheckInPreparation, useCheckInReadinessStore } from '../store/checkInReadinessStore';
 import { pauseReadiness, type CheckInLocationMode } from '../utils/checkInReadiness';
 
 const preferenceKey = (uid: string) => `check-in-readiness-preferences-v1:${uid}`;
@@ -29,8 +29,9 @@ async function savePreferences() {
 }
 
 export async function setReadinessMode(mode: Exclude<CheckInLocationMode, 'proactive'>) {
-  const { evidence } = useCheckInReadinessStore.getState();
-  useCheckInReadinessStore.setState({ mode, evidence: pauseReadiness(evidence), receipt: null, sessionId: '', grant: null });
+  const { evidence, revocationRevision } = useCheckInReadinessStore.getState();
+  useCheckInReadinessStore.setState({ mode, evidence: pauseReadiness(evidence), receipt: null, sessionId: '', grant: null,
+    arrival: null, attempt: null, preparation: emptyCheckInPreparation(), revocationRevision: revocationRevision + 1 });
   await savePreferences();
 }
 

@@ -32,9 +32,12 @@ import {
 } from '../services/socialService';
 import { useMapStore } from '../store';
 import { useSocialStore } from '../store/socialStore';
-import { useCheckInReadinessStore } from '../store/checkInReadinessStore';
-import { CHECK_IN_READINESS, emptyReadiness, mayOfferExactPrivateLocation, mayShareExactPrivateLocation } from '../utils/checkInReadiness';
-import { readinessLevels, validBoundReadiness } from '../utils/checkInReadinessContract';
+import {
+  captureCheckInAttempt, clearCheckInAttempt, qualifiedArrivalForState, useCheckInReadinessStore,
+} from '../store/checkInReadinessStore';
+import { requestCheckInPreparationRetry } from '../services/checkInPreparation';
+import { emptyReadiness, mayOfferExactPrivateLocation, mayShareExactPrivateLocation } from '../utils/checkInReadiness';
+import { validBoundReadiness } from '../utils/checkInReadinessContract';
 import type {
   CheckInAudienceMode,
   CheckInDurationMinutes,
@@ -103,27 +106,14 @@ function CheckInScreenContent() {
   const { friends, ownCheckIn, fromCache } = useSocialStore();
   const readiness = useCheckInReadinessStore();
   const [nowMs, setNowMs] = useState(Date.now());
+  const [renewedReadinessSessionId, setRenewedReadinessSessionId] = useState('');
+  const submittingRef = useRef(false);
+  const [submissionError, setSubmissionError] = useState('');
   useEffect(() => {
     if (params.readinessVersion !== '1') return;
     const timer = setInterval(() => setNowMs(Date.now()), 1000);
     return () => clearInterval(timer);
   }, [params.readinessVersion]);
-  useEffect(() => {
-    if (params.readinessVersion !== '1') return;
-    return () => {
-      const current = useCheckInReadinessStore.getState();
-      if (current.grant?.readinessSessionId === params.readinessSessionId) {
-        useCheckInReadinessStore.setState({
-          grant: null,
-          evidence: emptyReadiness(current.evidence.revision + 1, current.evidence.suppressedUntilMs),
-          receipt: null,
-          sessionId: '',
-          interruptedAtMs: null,
-          resumeAfterCheckIn: false,
-        });
-      }
-    };
-  }, [params.readinessSessionId, params.readinessVersion]);
   const options = useMemo(() => {
     const byId = new Map<string, CheckInPlaceOption>();
     for (const event of allEvents) {
@@ -222,7 +212,26 @@ function CheckInScreenContent() {
   const selectedVenue = contextualPlace ?? options.find((option) => option.venueId === venueId) ?? null;
   const isPrivatePlace = selectedVenue?.locationType === 'private_place';
   const eligibilitySessionId = String(params.eligibilitySessionId || '').trim();
-  const readinessSessionId = String(params.readinessSessionId || '').trim();
+  const readinessSessionId = renewedReadinessSessionId || String(params.readinessSessionId || '').trim();
+  useEffect(() => {
+    if (params.readinessVersion !== '1') return;
+    return () => {
+      const current = useCheckInReadinessStore.getState();
+      if (current.grant?.readinessSessionId === readinessSessionId) {
+        useCheckInReadinessStore.setState({
+          grant: null,
+          arrival: null,
+          attempt: null,
+          evidence: emptyReadiness(current.evidence.revision + 1, current.evidence.suppressedUntilMs),
+          receipt: null,
+          sessionId: '',
+          interruptedAtMs: null,
+          resumeAfterCheckIn: false,
+        });
+      }
+    };
+  }, [readinessSessionId, params.readinessVersion]);
+
   const contextualEligibleVenueIds = useMemo(() => {
     const serialized = Array.isArray(params.eligibleVenueIds)
       ? params.eligibleVenueIds.join(',')
@@ -243,7 +252,11 @@ function CheckInScreenContent() {
     && selectedVenue?.locationType === 'gathr_venue'
     && ownCheckIn.venueId === selectedVenue.venueId
   );
-  const currentReadinessLevels = readinessLevels(readiness.evidence, readiness.receipt, readiness.sessionId, nowMs);
+  const qualifiedArrival = qualifiedArrivalForState(readiness, nowMs);
+  const currentReadinessLevels = {
+    here: !!qualifiedArrival?.here,
+    place: !!qualifiedArrival?.place,
+  };
   const readinessTarget = selectedVenue ? {
     type: selectedVenue.locationType,
     venueId: selectedVenue.venueId,
@@ -263,7 +276,7 @@ function CheckInScreenContent() {
     && readiness.uid === user?.uid
     && readiness.sessionId === readinessSessionId
     && readiness.appActive
-    && readiness.interruptedAtMs === null
+    && qualifiedArrival?.sessionId === readinessSessionId
     && (isPrivatePlace ? currentReadinessLevels.here : currentReadinessLevels.place)
   );
   const hasContextualEligibility = Boolean(
@@ -341,9 +354,30 @@ function CheckInScreenContent() {
   };
 
   const cancelCheckInFlow = () => {
-    if (busy) return;
+    if (busy || submittingRef.current) return;
+    clearCheckInAttempt();
     useCheckInReadinessStore.setState({ restorePickerOnReturn: false });
     router.replace('/(tabs)/map');
+  };
+
+  const refreshPreparedArrival = () => {
+    if (!user || busy || submittingRef.current) return;
+    const current = useCheckInReadinessStore.getState();
+    if (current.uid === user.uid && readinessTarget
+      && validBoundReadiness(current.grant, readinessTarget, readinessSessionId, Date.now())) {
+      // A failed transport can be retried immediately with the existing one-use
+      // grant and operation ID, even after its original arrival lease expired.
+      setSubmissionError('');
+      return;
+    }
+    const arrival = captureCheckInAttempt(user.uid, !isPrivatePlace);
+    if (arrival) {
+      setRenewedReadinessSessionId(arrival.sessionId);
+      setSubmissionError('');
+    } else {
+      requestCheckInPreparationRetry('all');
+      setSubmissionError('Your choices are saved. Stay nearby while location verification prepares, then refresh verification.');
+    }
   };
 
   const toggleFriend = (uid: string) => setSelectedUids((current) =>
@@ -371,7 +405,7 @@ function CheckInScreenContent() {
   };
 
   const submit = async () => {
-    if (!canSubmit) return;
+    if (!canSubmit || submittingRef.current) return;
     if (!selectedVenue) {
       Alert.alert('Choose a place', 'Return to the map and choose a nearby public place.');
       return;
@@ -382,6 +416,9 @@ function CheckInScreenContent() {
     }
 
     const perform = async () => {
+      if (submittingRef.current) return;
+      submittingRef.current = true;
+      setSubmissionError('');
       setBusy(true);
       try {
         let boundEligibilitySessionId = eligibilitySessionId;
@@ -395,26 +432,20 @@ function CheckInScreenContent() {
             placeCandidateId: selectedVenue.placeCandidateId,
           };
           const current = useCheckInReadinessStore.getState();
+          if (current.uid !== user.uid) throw new Error('This check-in account changed. Return to the map to start again.');
           let grant = current.grant?.readinessSessionId === readinessSessionId
             && validBoundReadiness(current.grant, target, readinessSessionId, Date.now())
             ? current.grant
             : null;
           if (!grant) {
+            const revocationRevision = current.revocationRevision;
             const requirePlace = selectedVenue.locationType !== 'private_place';
-            const levels = readinessLevels(current.evidence, current.receipt, current.sessionId, Date.now());
-            const fix = current.evidence.previous;
-            const accuracyLimit = requirePlace
-              ? CHECK_IN_READINESS.placeAccuracyMetres
-              : CHECK_IN_READINESS.hereAccuracyMetres;
-            const fixAgeMs = fix ? Date.now() - fix.capturedAtMs : Number.POSITIVE_INFINITY;
-            if (current.uid !== user.uid || !current.appActive || current.interruptedAtMs !== null
+            const arrival = qualifiedArrivalForState(current);
+            if (current.uid !== user.uid || !current.appActive
               || current.sessionId !== readinessSessionId
-              || !(requirePlace ? levels.place : levels.here)
-              || !fix
-              || !Number.isFinite(fix.latitude) || !Number.isFinite(fix.longitude)
-              || !Number.isFinite(fix.accuracyMeters) || fix.accuracyMeters! < 0 || fix.accuracyMeters! > accuracyLimit
-              || fixAgeMs < 0 || fixAgeMs > CHECK_IN_READINESS.maxSampleGapMs) {
-              throw new Error('Your location changed. Stay here until the check-in ring is ready, then try again.');
+              || arrival?.sessionId !== readinessSessionId
+              || !(requirePlace ? arrival.place : arrival.here)) {
+              throw new Error('Your prepared arrival expired or you left the area. Your place and privacy choices are saved; refresh verification to try again.');
             }
             const bindKey = `${readinessSessionId}:${selectedVenue.locationType}:${selectedVenue.venueId || selectedVenue.placeCandidateId}`;
             if (pendingBindRef.current?.key !== bindKey) {
@@ -424,23 +455,23 @@ function CheckInScreenContent() {
               protocolVersion: 1,
               readinessSessionId,
               operationId: pendingBindRef.current.operationId,
+              useQualifiedArrival: true,
               ...(selectedVenue.locationType === 'gathr_venue'
                 ? { venueId: selectedVenue.venueId }
                 : { placeCandidateId: selectedVenue.placeCandidateId }),
-              latitude: fix.latitude,
-              longitude: fix.longitude,
-              accuracyMeters: fix.accuracyMeters,
-              speedMetersPerSecond: fix.speedMetersPerSecond,
-              capturedAtMs: Math.floor(fix.capturedAtMs),
+              latitude: arrival.latitude,
+              longitude: arrival.longitude,
+              accuracyMeters: arrival.accuracyMeters,
+              speedMetersPerSecond: null,
+              capturedAtMs: Math.floor(arrival.capturedAtMs),
             });
             const after = useCheckInReadinessStore.getState();
-            const afterLevels = readinessLevels(after.evidence, after.receipt, after.sessionId, Date.now());
-            if (after.uid !== user.uid || !after.appActive || after.interruptedAtMs !== null
-              || after.sessionId !== readinessSessionId
-              || !(requirePlace ? afterLevels.place : afterLevels.here)
+            // A matching server grant is authoritative. Raw sampling receipts can
+            // expire or be rejected after binding without revoking this one-use grant.
+            if (after.uid !== user.uid || after.revocationRevision !== revocationRevision
               || !validBoundReadiness(grant, target, readinessSessionId, Date.now())
               || (exactSharing && !grant.exactPrivateAllowed)) {
-              throw new Error('Location changed during check-in confirmation. Wait for the ring to fill again.');
+              throw new Error('This confirmation is no longer available. Your choices are saved; refresh verification to try again.');
             }
             useCheckInReadinessStore.setState({ grant });
           }
@@ -481,6 +512,8 @@ function CheckInScreenContent() {
               || currentReadiness.grant?.readinessSessionId === readinessSessionId)) {
             useCheckInReadinessStore.setState({
               grant: null,
+              arrival: null,
+              attempt: null,
               receipt: null,
               sessionId: '',
               interruptedAtMs: Date.now(),
@@ -491,8 +524,10 @@ function CheckInScreenContent() {
         useCheckInReadinessStore.setState({ restorePickerOnReturn: false });
         await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => undefined);
       } catch (error) {
+        setSubmissionError(messageForError(error));
         Alert.alert('Could not check in', messageForError(error));
       } finally {
+        submittingRef.current = false;
         setBusy(false);
       }
     };
@@ -845,6 +880,14 @@ function CheckInScreenContent() {
           </ScrollView>
           {isEditing && (
             <View style={styles.submitArea}>
+              {params.readinessVersion === '1' && !canReuseActiveVenue && (!hasContextualEligibility || !!submissionError) && (
+                <View testID="check-in-preparation-status">
+                  <Text style={styles.confirmationCopy}>{submissionError || 'Your prepared arrival expired or you left the area. Your place, audience and message are saved.'}</Text>
+                  <TouchableOpacity accessibilityRole="button" testID="refresh-check-in-verification" onPress={refreshPreparedArrival} disabled={busy}>
+                    <Text style={styles.confirmationCopy}>Refresh verification</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
               <View style={styles.privacyPill}>
                 <Ionicons name="lock-closed" size={15} color="#175CD3" />
                 <Text maxFontSizeMultiplier={1.1} numberOfLines={2} style={styles.confirmationCopy}>
