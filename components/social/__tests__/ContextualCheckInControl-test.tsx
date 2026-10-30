@@ -185,6 +185,22 @@ describe('prepared check-in control', () => {
     await press('contextual-check-in-ready'); expect(row('Holy Whale')).toBeTruthy(); expect(discoverNearbyCheckInPlaces).not.toHaveBeenCalled();
   });
 
+  it('shows the sanitized App Check failure identifier in the existing readiness notice', async () => {
+    seed(90);
+    const current = useCheckInReadinessStore.getState();
+    const error = 'GathR could not verify this app installation. Try again shortly. [AC-INIT-NETWORK]';
+    useCheckInReadinessStore.setState({ arrival: null, receipt: null, serviceError: true,
+      preparation: { ...current.preparation,
+        canonical: { status: 'error', candidates: [], error, retryAtMs: Date.now() + 60_000 },
+        external: { status: 'error', candidates: [], error, retryAtMs: Date.now() + 60_000 },
+      },
+    });
+    await mount(); await press('contextual-check-in-idle');
+    expect(copy()).toContain('[AC-INIT-NETWORK]');
+    expect(copy()).toContain('Preparing');
+    expect(mockPush).not.toHaveBeenCalled();
+  });
+
   it('preserves Android taskbar inset and private setup layout', async () => {
     jest.replaceProperty(Platform, 'OS', 'android'); jest.spyOn(Dimensions, 'get').mockReturnValue({ width: 800, height: 1280, scale: 1, fontScale: 1 });
     seed(30); await open(); expect(StyleSheet.flatten(root().findByProps({ accessibilityViewIsModal: true }).props.style).paddingBottom).toBe(52);

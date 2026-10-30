@@ -267,9 +267,9 @@ describe('social callable transport', () => {
     });
 
     it('never falls back to an unattested request when attestation rejects', async () => {
-      mockGetSocialAppCheckToken.mockRejectedValue(new Error('App attestation unavailable'));
+      mockGetSocialAppCheckToken.mockRejectedValue(new Error('GathR could not verify this app installation. Try again shortly. [AC-INIT-NETWORK]'));
       const fetchMock = jest.spyOn(global, 'fetch');
-      await expect(recordCheckInReadinessSample(input)).rejects.toBeInstanceOf(Error);
+      await expect(recordCheckInReadinessSample(input)).rejects.toThrow('[AC-INIT-NETWORK]');
       expect(fetchMock).not.toHaveBeenCalled();
       expect(mockHttpsCallable).not.toHaveBeenCalled();
       expect(mockGetIdToken).not.toHaveBeenCalled();
