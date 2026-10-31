@@ -870,7 +870,7 @@ export default function ContextualCheckInControl({ enabled, rightOffset = 10, bo
                           <Text style={styles.inlineSearchCopy}>Checking nearby GathR venues…</Text>
                         </View>
                       )}
-                      {!knownPlaces.length && !knownVenuesLoading && (
+                      {!knownPlaces.length && preparationMatches && prep.canonical.status === 'ready' && (
                         <View style={styles.emptyPlacesCard}>
                           <Ionicons name="business-outline" size={22} color="#667085" />
                           <Text style={styles.emptyPlacesCopy}>No known GathR venues are close by.</Text>

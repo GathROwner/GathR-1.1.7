@@ -191,6 +191,35 @@ describe('prepared check-in control', () => {
     await press('continue-public-check-in'); expect(mockPush).toHaveBeenCalledWith(expect.objectContaining({ params: expect.objectContaining({ placeCandidateId: 'osm-candidate' }) }));
   });
 
+  it('shows a canonical lookup timeout without claiming the unknown venue list is empty', async () => {
+    seed(); const state = useCheckInReadinessStore.getState();
+    const error = 'The social request was canceled or timed out. Try again.';
+    useCheckInReadinessStore.setState({ preparation: { ...state.preparation,
+      canonical: { status: 'error', candidates: [], error, retryAtMs: Date.now() + 30_000 } } });
+    await open();
+    expect(copy()).toContain(error);
+    expect(copy()).not.toContain('No known GathR venues are close by.');
+    expect(byId('retry-nearby-gathr-venues')).toBeTruthy();
+  });
+
+  it('does not claim an empty canonical list before that lookup has completed', async () => {
+    seed(); const state = useCheckInReadinessStore.getState();
+    useCheckInReadinessStore.setState({ preparation: { ...state.preparation,
+      canonical: { status: 'idle', candidates: [], error: '', retryAtMs: 0 } } });
+    await open();
+    expect(copy()).not.toContain('No known GathR venues are close by.');
+  });
+
+  it('keeps the empty-venue message for a successfully completed empty canonical lookup', async () => {
+    seed(); const state = useCheckInReadinessStore.getState();
+    useCheckInReadinessStore.setState({ preparation: { ...state.preparation,
+      canonical: { status: 'ready', candidates: [], error: '', retryAtMs: 0 } } });
+    await open();
+    expect(copy()).toContain('No known GathR venues are close by.');
+    expect(root().findAllByProps({ testID: 'retry-nearby-gathr-venues' })).toHaveLength(0);
+    expect(byId('find-somewhere-else').props.disabled).toBe(false);
+  });
+
   it('retains selection when a raw receipt disappears across an app switch', async () => {
     seed(); await open(); act(() => row('Nearby cafe').props.onPress());
     act(() => useCheckInReadinessStore.setState({ appActive: false, interruptedAtMs: Date.now(), receipt: null }));
