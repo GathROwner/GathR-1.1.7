@@ -916,10 +916,10 @@ export default function ContextualCheckInControl({ enabled, rightOffset = 10, bo
                   {externalSearchVisible && (
                     <TouchableOpacity
                       accessibilityRole="link"
-                      onPress={() => void Linking.openURL('https://www.openstreetmap.org/copyright')}
+                      onPress={() => void Linking.openURL('https://gathr-migrated.web.app/open-data/osm/pei/index.html')}
                       style={styles.attributionRow}
                     >
-                      <Text style={styles.attributionText}>Place data © OpenStreetMap contributors</Text>
+                      <Text style={styles.attributionText}>© OpenStreetMap contributors · PEI data &amp; licence</Text>
                     </TouchableOpacity>
                   )}
                   {(externalSearchVisible ? externalEntryReady : placeEntryReady) ? (
