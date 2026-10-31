@@ -27,6 +27,7 @@ import {
   bindCheckInReadiness,
   checkOut,
   createCheckIn,
+  createPrivateCheckInPlaceCandidate,
   createSocialOperationId,
   SocialServiceError,
 } from '../services/socialService';
@@ -36,9 +37,10 @@ import {
   captureCheckInAttempt, clearCheckInAttempt, qualifiedArrivalForState, useCheckInReadinessStore,
 } from '../store/checkInReadinessStore';
 import { requestCheckInPreparationRetry } from '../services/checkInPreparation';
-import { emptyReadiness, mayOfferExactPrivateLocation, mayShareExactPrivateLocation } from '../utils/checkInReadiness';
+import { CHECK_IN_READINESS, emptyReadiness, mayOfferExactPrivateLocation, mayShareExactPrivateLocation, readinessDistance } from '../utils/checkInReadiness';
 import { validBoundReadiness } from '../utils/checkInReadinessContract';
-import { captureSelectedExternalPlace, resolveSelectedExternalPlace, type SelectedExternalPlace } from '../utils/checkInSelectedPlace';
+import { captureSelectedExternalPlace, captureSelectedPrivatePlace, resolveSelectedExternalPlace, resolveSelectedPrivateArrival,
+  type SelectedExternalPlace, type SelectedPrivatePlace } from '../utils/checkInSelectedPlace';
 import type {
   CheckInAudienceMode,
   CheckInDurationMinutes,
@@ -113,6 +115,9 @@ function CheckInScreenContent() {
   const submissionGenerationRef = useRef(0);
   const submittedReadinessRef = useRef<{ uid: string; sessionId: string } | null>(null);
   const selectedExternalRef = useRef<SelectedExternalPlace | null>(null);
+  const selectedPrivateRef = useRef<SelectedPrivatePlace | null>(null);
+  const refreshingPrivateRef = useRef(false);
+  const [privateReplacement, setPrivateReplacement] = useState<{ uid: string; originalId: string; id: string } | null>(null);
   const boundExternalRef = useRef<{ uid: string; locationKey: string | null; candidateId: string; sessionId: string } | null>(null);
   const [submissionError, setSubmissionError] = useState('');
   useEffect(() => {
@@ -216,7 +221,9 @@ function CheckInScreenContent() {
   }, [ownCheckIn?.revision]);
 
   const contextualPlace = useMemo<CheckInPlaceOption | null>(() => {
-    const placeCandidateId = String(params.placeCandidateId || '').trim();
+    const originalId = String(params.placeCandidateId || '').trim();
+    const placeCandidateId = params.placeType === 'private_place' && privateReplacement && privateReplacement.uid === user?.uid
+      && privateReplacement.originalId === originalId ? privateReplacement.id : originalId;
     const venueName = String(params.placeName || '').trim();
     // Discovery may return a recognized venue with no event in the current viewport.
     // The final readiness binding, not this route's display snapshot, authorizes check-in.
@@ -239,7 +246,10 @@ function CheckInScreenContent() {
       category: String(params.placeCategory || '').trim()
         || (locationType === 'private_place' ? 'Private location' : 'Public place'),
     };
-  }, [params.placeAddress, params.placeCandidateId, params.placeCategory, params.placeName, params.placeType, params.readinessVersion, params.venueId]);
+  }, [params.placeAddress, params.placeCandidateId, params.placeCategory, params.placeName, params.placeType, params.readinessVersion, params.venueId, privateReplacement, user?.uid]);
+  if (!selectedPrivateRef.current && contextualPlace?.locationType === 'private_place' && readiness.uid === user?.uid) {
+    selectedPrivateRef.current = captureSelectedPrivatePlace(readiness, String(params.placeCandidateId || ''), String(params.readinessSessionId || ''), nowMs);
+  }
   if (!selectedExternalRef.current && contextualPlace?.locationType === 'external_place') {
     selectedExternalRef.current = captureSelectedExternalPlace(readiness, contextualPlace.placeCandidateId || '', nowMs);
   }
@@ -346,9 +356,14 @@ function CheckInScreenContent() {
   });
   const exactSharing = mayShareExactPrivateLocation({ isPrivatePlace, audienceMode,
     selectedFriendCount: selectedUids.length, exactAllowed, explicitlyEnabled: shareExactLocation });
+  const samePrivateDraft = isPrivatePlace && selectedPrivateRef.current
+    && selectedPrivateRef.current.uid === user?.uid && readiness.uid === user?.uid
+    && selectedPrivateRef.current.revocationRevision === readiness.revocationRevision;
   useEffect(() => {
-    if (!exactAllowed || selectedUids.length === 0) setShareExactLocation(false);
-  }, [exactAllowed, selectedUids.length]);
+    // Lease expiry pauses authorization, not the user's explicit draft choice.
+    // Account change/departure still clears the intent; final sharing uses exactSharing.
+    if ((!exactAllowed && !samePrivateDraft) || selectedUids.length === 0) setShareExactLocation(false);
+  }, [exactAllowed, samePrivateDraft, selectedUids.length]);
   const filteredOptions = useMemo(() => {
     const query = venueQuery.trim().toLowerCase();
     if (!query) return selectableOptions.slice(0, 8);
@@ -409,8 +424,8 @@ function CheckInScreenContent() {
     router.replace('/(tabs)/map');
   };
 
-  const refreshPreparedArrival = () => {
-    if (!user || busy || submittingRef.current) return;
+  const refreshPreparedArrival = async () => {
+    if (!user || busy || submittingRef.current || refreshingPrivateRef.current) return;
     const current = useCheckInReadinessStore.getState();
     if (selectedVenue?.locationType === 'external_place'
       && !resolveSelectedExternalPlace(current, selectedExternalRef.current)
@@ -424,6 +439,55 @@ function CheckInScreenContent() {
       // A failed transport can be retried immediately with the existing one-use
       // grant and operation ID, even after its original arrival lease expired.
       setSubmissionError('');
+      return;
+    }
+    if (isPrivatePlace) {
+      // A lost bind/create response may already have committed. Never exchange
+      // its target or operation for a fresh candidate while that is uncertain.
+      if (pendingBindRef.current || pendingOperationRef.current) {
+        setSubmissionError('Your previous confirmation may still be pending. Retry that confirmation before refreshing this private place. Your choices are saved.');
+        return;
+      }
+      const original = selectedPrivateRef.current;
+      const qualified = resolveSelectedPrivateArrival(current, original);
+      if (!original || original.uid !== user.uid || !qualified) {
+        setSubmissionError('Your choices are saved. Verify your arrival in the original area, or return to place choices to select a new private place.');
+        return;
+      }
+      const arrival = captureCheckInAttempt(user.uid, false);
+      if (!arrival || arrival.sessionId !== qualified.sessionId) return;
+      const generation = submissionGenerationRef.current;
+      const currentFlow = () => mountedRef.current && submissionGenerationRef.current === generation;
+      refreshingPrivateRef.current = true;
+      setBusy(true);
+      setSubmissionError('');
+      try {
+        const result = await createPrivateCheckInPlaceCandidate({ label: selectedVenue!.venueName,
+          readinessSessionId: arrival.sessionId, latitude: arrival.latitude, longitude: arrival.longitude,
+          accuracyMeters: arrival.accuracyMeters, capturedAtMs: arrival.capturedAtMs });
+        if (!currentFlow()) return;
+        const after = useCheckInReadinessStore.getState();
+        const stillQualified = resolveSelectedPrivateArrival(after, original);
+        if (after.uid !== user.uid || stillQualified?.sessionId !== arrival.sessionId) {
+          throw new Error('This arrival changed while refreshing. Your choices are saved; verify your arrival before trying again.');
+        }
+        const candidate = result?.candidate;
+        if (!candidate || candidate.type !== 'private_place' || typeof candidate.id !== 'string' || !candidate.id || candidate.name !== selectedVenue!.venueName
+          || !Number.isFinite(candidate.latitude) || !Number.isFinite(candidate.longitude)
+          || Math.abs(candidate.latitude) > 90 || Math.abs(candidate.longitude) > 180
+          || readinessDistance(original.arrival, candidate) - original.arrival.accuracyMeters > CHECK_IN_READINESS.departureRadiusMetres) {
+          throw new Error('This private place could not be refreshed safely. Your choices are saved; try again.');
+        }
+        setPrivateReplacement({ uid: user.uid, originalId: original.candidateId, id: candidate.id });
+        setRenewedReadinessSessionId(arrival.sessionId);
+        submittedReadinessRef.current = null;
+        setSubmissionError('');
+      } catch (error) {
+        if (currentFlow() && useCheckInReadinessStore.getState().uid === user.uid) setSubmissionError(messageForError(error));
+      } finally {
+        refreshingPrivateRef.current = false;
+        if (currentFlow()) setBusy(false);
+      }
       return;
     }
     const arrival = captureCheckInAttempt(user.uid, !isPrivatePlace);
@@ -928,7 +992,9 @@ function CheckInScreenContent() {
                     </View>
                     <View style={styles.flex}>
                       <Text style={styles.privateLocationTitle}>
-                        {exactSharing ? 'Precise location for selected friends' : 'Approximate area'}
+                        {shareExactLocation && audienceMode === 'selected_friends' && !exactAllowed
+                          ? 'Precise sharing awaits verification'
+                          : exactSharing ? 'Precise location for selected friends' : 'Approximate area'}
                       </Text>
                       <Text style={styles.privateLocationCopy}>
                         {!exactAllowed
@@ -946,7 +1012,7 @@ function CheckInScreenContent() {
                         onValueChange={setShareExactLocation}
                         trackColor={{ false: '#D6BBFB', true: '#9E77ED' }}
                         thumbColor="#FFFFFF"
-                        value={exactSharing}
+                        value={shareExactLocation}
                       />
                     )}
                   </View>

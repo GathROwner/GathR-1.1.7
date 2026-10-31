@@ -2,7 +2,7 @@ import React from 'react';
 import { Alert } from 'react-native';
 import renderer, { act } from 'react-test-renderer';
 import CheckInScreen from '../../../app/check-in';
-import { bindCheckInReadiness, createCheckIn, createSocialOperationId } from '../../../services/socialService';
+import { bindCheckInReadiness, createCheckIn, createPrivateCheckInPlaceCandidate, createSocialOperationId } from '../../../services/socialService';
 import { requestCheckInPreparationRetry } from '../../../services/checkInPreparation';
 import { resetCheckInReadinessOwner, useCheckInReadinessStore } from '../../../store/checkInReadinessStore';
 
@@ -28,7 +28,7 @@ jest.mock('../../../types/social', () => ({ SOCIAL_FEATURE_ENABLED: true, SOCIAL
 jest.mock('../../../services/checkInPreparation', () => ({ requestCheckInPreparationRetry: jest.fn() }));
 jest.mock('../../../utils/friendPresence', () => ({ formatCheckInVisibilityCopy: () => 'Only your friends can see this check-in.', getRecognizedVenueId: () => '' }));
 jest.mock('../../../services/socialService', () => ({
-  bindCheckInReadiness: jest.fn(), createCheckIn: jest.fn(), checkOut: jest.fn(), createSocialOperationId: jest.fn(), SocialServiceError: class extends Error {},
+  bindCheckInReadiness: jest.fn(), createCheckIn: jest.fn(), createPrivateCheckInPlaceCandidate: jest.fn(), checkOut: jest.fn(), createSocialOperationId: jest.fn(), SocialServiceError: class extends Error {},
 }));
 
 describe('qualified-arrival final confirmation', () => {
@@ -72,6 +72,155 @@ describe('qualified-arrival final confirmation', () => {
       placeCandidateId: input.placeCandidateId, locationType: 'external_place', exactPrivateAllowed: false, expiresAtMs: Date.now() + 300_000 }));
     return candidate;
   };
+
+  const seedPrivate = () => {
+    Object.assign(mockParams, { venueId: '', placeCandidateId: 'expired-private', placeType: 'private_place', placeName: 'Home', placeAddress: '' });
+    const candidate = { id: 'fresh-private', type: 'private_place' as const, name: 'Home', address: '', category: 'Private location',
+      latitude: 46.235, longitude: -63.129, distanceMetres: 0 };
+    (createPrivateCheckInPlaceCandidate as jest.Mock).mockResolvedValue({ candidate });
+    (bindCheckInReadiness as jest.Mock).mockImplementation(async input => ({ protocolVersion: 1,
+      readinessSessionId: input.readinessSessionId, eligibilitySessionId: input.readinessSessionId,
+      placeCandidateId: input.placeCandidateId, locationType: 'private_place', exactPrivateAllowed: false, expiresAtMs: Date.now() + 300_000 }));
+    (bindCheckInReadiness as jest.Mock).mockRejectedValueOnce(Object.assign(new Error('Refresh this check-in place and try again.'), { code: 'failed-precondition' }));
+    return candidate;
+  };
+  const refresh = () => control().findByProps({ testID: 'refresh-check-in-verification' });
+
+  it('refreshes an expired private selection after21 minutes using current Here-only presence without losing the draft', async () => {
+    seedPrivate(); await mount();
+    act(() => { note().props.onChangeText('Saved private note'); control().findByProps({ accessibilityLabel: '120 minute check-in' }).props.onPress(); });
+    await act(async () => confirm().props.onPress());
+    act(() => {
+      jest.setSystemTime(Date.now() + 21 * 60_000); jest.advanceTimersByTime(1000);
+      const renewed = { ...arrival(), sessionId: 'fresh-here-session', place: false };
+      useCheckInReadinessStore.setState({ sessionId: renewed.sessionId, arrival: renewed, attempt: null });
+    });
+    await act(async () => refresh().props.onPress());
+    expect(createPrivateCheckInPlaceCandidate).toHaveBeenCalledTimes(1);
+    expect(createPrivateCheckInPlaceCandidate).toHaveBeenCalledWith(expect.objectContaining({ label: 'Home', readinessSessionId: 'fresh-here-session', capturedAtMs: Date.now() }));
+    expect(note().props.value).toBe('Saved private note'); expect(confirm().props.disabled).toBe(false);
+    expect(control().findByProps({ accessibilityLabel: '120 minute check-in' }).props.accessibilityState.selected).toBe(true);
+    await act(async () => confirm().props.onPress());
+    expect(bindCheckInReadiness).toHaveBeenLastCalledWith(expect.objectContaining({ placeCandidateId: 'fresh-private', readinessSessionId: 'fresh-here-session' }));
+    expect(createCheckIn).toHaveBeenCalledWith(expect.objectContaining({ placeCandidateId: 'fresh-private', durationMinutes: 120,
+      audienceMode: 'all_friends', shareExactLocation: false, message: 'Saved private note' }));
+    expect(requestCheckInPreparationRetry).not.toHaveBeenCalled();
+  }, 20_000);
+
+  it.each(['unqualified', 'departure', 'revoked', 'owner'])('refuses private remint for %s presence and preserves the draft', async reason => {
+    seedPrivate(); await mount(); act(() => note().props.onChangeText('Do not discard'));
+    await act(async () => confirm().props.onPress());
+    act(() => {
+      const state = useCheckInReadinessStore.getState();
+      if (reason === 'unqualified') useCheckInReadinessStore.setState({ arrival: null, attempt: null });
+      if (reason === 'departure') useCheckInReadinessStore.setState({ arrival: { ...arrival(), latitude: 46.245 }, attempt: null });
+      if (reason === 'revoked') useCheckInReadinessStore.setState({ revocationRevision: state.revocationRevision + 1 });
+      if (reason === 'owner') useCheckInReadinessStore.setState({ uid: 'another-user' });
+    });
+    await act(async () => refresh().props.onPress());
+    expect(createPrivateCheckInPlaceCandidate).not.toHaveBeenCalled(); expect(createCheckIn).not.toHaveBeenCalled();
+    expect(note().props.value).toBe('Do not discard');
+  });
+
+  it('deduplicates private refresh taps before React updates busy state', async () => {
+    const candidate = seedPrivate(); await mount(); await act(async () => confirm().props.onPress());
+    let finish!: (value: unknown) => void;
+    (createPrivateCheckInPlaceCandidate as jest.Mock).mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+    const button = refresh();
+    await act(async () => { void button.props.onPress(); void button.props.onPress(); });
+    expect(createPrivateCheckInPlaceCandidate).toHaveBeenCalledTimes(1);
+    await act(async () => finish({ candidate }));
+    await act(async () => confirm().props.onPress());
+    expect(createCheckIn).toHaveBeenCalledTimes(1);
+  });
+
+  it('retains selected audience and explicit precise-sharing intent while expiry pauses authorization', async () => {
+    seedPrivate(); await mount();
+    act(() => control().findByProps({ accessibilityLabel: 'Selected friends, 0' }).props.onPress());
+    act(() => control().findByProps({ accessibilityLabel: 'Friend, @friend' }).props.onPress());
+    act(() => control().findByProps({ accessibilityLabel: 'Done choosing friends, 1 selected' }).props.onPress());
+    const exact = () => control().findByProps({ accessibilityLabel: 'Share precise location with selected friends' });
+    act(() => exact().props.onValueChange(true));
+    act(() => jest.advanceTimersByTime(181_000));
+    expect(exact().props.value).toBe(true); expect(exact().props.disabled).toBe(true); expect(confirm().props.disabled).toBe(true);
+    act(() => {
+      const renewed = { ...arrival(), sessionId: 'fresh-private-session', place: false };
+      useCheckInReadinessStore.setState({ sessionId: renewed.sessionId, arrival: renewed, attempt: null });
+    });
+    await act(async () => refresh().props.onPress());
+    expect(exact().props.value).toBe(true); expect(exact().props.disabled).toBe(false);
+    (bindCheckInReadiness as jest.Mock).mockReset().mockImplementation(async input => ({ protocolVersion: 1,
+      readinessSessionId: input.readinessSessionId, eligibilitySessionId: input.readinessSessionId, placeCandidateId: input.placeCandidateId,
+      locationType: 'private_place', exactPrivateAllowed: true, expiresAtMs: Date.now() + 300_000 }));
+    await act(async () => confirm().props.onPress());
+    expect(createCheckIn).toHaveBeenCalledWith(expect.objectContaining({ placeCandidateId: 'fresh-private', audienceMode: 'selected_friends',
+      selectedUids: ['friend-01'], shareExactLocation: true }));
+  });
+
+  it.each(['owner', 'session', 'departure'])('ignores a private refresh response after %s changed', async change => {
+    const candidate = seedPrivate(); await mount(); await act(async () => confirm().props.onPress());
+    const originalRevision = useCheckInReadinessStore.getState().revocationRevision;
+    let finish!: (value: unknown) => void;
+    (createPrivateCheckInPlaceCandidate as jest.Mock).mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+    await act(async () => { void refresh().props.onPress(); });
+    act(() => {
+      if (change === 'owner') useCheckInReadinessStore.setState({ uid: 'replacement-owner' });
+      if (change === 'session') useCheckInReadinessStore.setState({ sessionId: 'replacement-session', arrival: { ...arrival(), sessionId: 'replacement-session' }, attempt: null });
+      if (change === 'departure') useCheckInReadinessStore.setState({ revocationRevision: originalRevision + 1 });
+    });
+    await act(async () => finish({ candidate }));
+    act(() => useCheckInReadinessStore.setState({ uid: 'check-in-test-user', sessionId: mockParams.readinessSessionId,
+      arrival: arrival(), attempt: null, revocationRevision: originalRevision }));
+    await act(async () => confirm().props.onPress());
+    expect(bindCheckInReadiness).toHaveBeenLastCalledWith(expect.objectContaining({ placeCandidateId: 'expired-private' }));
+  });
+
+  it('keeps the private draft on refresh failure and permits one explicit retry', async () => {
+    seedPrivate(); await mount(); act(() => note().props.onChangeText('Keep after network failure'));
+    await act(async () => confirm().props.onPress());
+    (createPrivateCheckInPlaceCandidate as jest.Mock).mockRejectedValueOnce(new Error('Network unavailable'));
+    await act(async () => refresh().props.onPress());
+    expect(note().props.value).toBe('Keep after network failure');
+    await act(async () => refresh().props.onPress());
+    expect(createPrivateCheckInPlaceCandidate).toHaveBeenCalledTimes(2);
+    await act(async () => confirm().props.onPress());
+    expect(createCheckIn).toHaveBeenCalledWith(expect.objectContaining({ placeCandidateId: 'fresh-private', message: 'Keep after network failure' }));
+  });
+
+  it('rejects an invalid refreshed private target without changing the draft or creating', async () => {
+    const candidate = seedPrivate(); await mount(); act(() => note().props.onChangeText('Keep safe'));
+    await act(async () => confirm().props.onPress());
+    (createPrivateCheckInPlaceCandidate as jest.Mock).mockResolvedValueOnce({ candidate: { ...candidate, longitude: candidate.longitude + 360 } });
+    await act(async () => refresh().props.onPress());
+    expect(note().props.value).toBe('Keep safe'); expect(createCheckIn).not.toHaveBeenCalled();
+    expect(JSON.stringify(component!.toJSON())).toContain('could not be refreshed safely');
+  });
+
+  it('retries an uncertain private bind with its original candidate and operation instead of reminting', async () => {
+    seedPrivate(); (bindCheckInReadiness as jest.Mock).mockReset().mockRejectedValueOnce(new Error('Connection lost')).mockImplementation(async input => ({
+      protocolVersion: 1, readinessSessionId: input.readinessSessionId, eligibilitySessionId: input.readinessSessionId,
+      placeCandidateId: input.placeCandidateId, locationType: 'private_place', exactPrivateAllowed: false, expiresAtMs: Date.now() + 300_000 }));
+    await mount(); await act(async () => confirm().props.onPress());
+    await act(async () => refresh().props.onPress());
+    expect(createPrivateCheckInPlaceCandidate).not.toHaveBeenCalled();
+    await act(async () => confirm().props.onPress());
+    expect((bindCheckInReadiness as jest.Mock).mock.calls[1][0]).toEqual((bindCheckInReadiness as jest.Mock).mock.calls[0][0]);
+    expect(createCheckIn).toHaveBeenCalledWith(expect.objectContaining({ placeCandidateId: 'expired-private' }));
+  });
+
+  it('reuses the private grant and create operation after an uncertain create even when arrival expires', async () => {
+    seedPrivate(); (bindCheckInReadiness as jest.Mock).mockReset().mockImplementation(async input => ({ protocolVersion: 1,
+      readinessSessionId: input.readinessSessionId, eligibilitySessionId: input.readinessSessionId, placeCandidateId: input.placeCandidateId,
+      locationType: 'private_place', exactPrivateAllowed: false, expiresAtMs: Date.now() + 300_000 }));
+    (createCheckIn as jest.Mock).mockRejectedValueOnce(new Error('Connection lost'));
+    await mount(); await act(async () => confirm().props.onPress());
+    act(() => { jest.advanceTimersByTime(181_000); useCheckInReadinessStore.setState({ arrival: null, attempt: null, sessionId: '' }); });
+    await act(async () => refresh().props.onPress());
+    expect(createPrivateCheckInPlaceCandidate).not.toHaveBeenCalled();
+    await act(async () => confirm().props.onPress());
+    expect(bindCheckInReadiness).toHaveBeenCalledTimes(1);
+    expect((createCheckIn as jest.Mock).mock.calls[1][0]).toEqual((createCheckIn as jest.Mock).mock.calls[0][0]);
+  });
 
   // Measured local RN setup took8.4s under host load; the fake-clock/store step took40ms.
   // This wall-clock harness allowance changes no product timer or other test budget.

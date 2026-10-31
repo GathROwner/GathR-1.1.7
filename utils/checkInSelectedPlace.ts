@@ -10,6 +10,24 @@ export interface SelectedExternalPlace {
   revocationRevision: number;
 }
 
+export type SelectedPrivatePlace = Omit<SelectedExternalPlace, 'locationKey'>;
+
+/** Remember the original private area in memory, never in a URL or persistent draft. */
+export function captureSelectedPrivatePlace(state: CheckInReadinessStore, candidateId: string, sessionId: string, nowMs = Date.now()): SelectedPrivatePlace | null {
+  const arrival = qualifiedArrivalForState(state, nowMs);
+  if (!state.uid || !state.appActive || !candidateId || !arrival?.here || arrival.sessionId !== sessionId) return null;
+  return { uid: state.uid, candidateId, arrival: { ...arrival }, revocationRevision: state.revocationRevision };
+}
+
+/** A fresh private candidate may replace an expired ID only for the same qualified visit. */
+export function resolveSelectedPrivateArrival(state: CheckInReadinessStore, selected: SelectedPrivatePlace | null, nowMs = Date.now()) {
+  if (!selected || state.uid !== selected.uid || !state.appActive || state.revocationRevision !== selected.revocationRevision) return null;
+  const arrival = qualifiedArrivalForState(state, nowMs);
+  if (!arrival?.here || readinessDistance(selected.arrival, arrival)
+    - Math.max(selected.arrival.accuracyMeters, arrival.accuracyMeters) > CHECK_IN_READINESS.departureRadiusMetres) return null;
+  return arrival;
+}
+
 /** Capture identity from the owner-scoped server-prepared pool, never route labels. */
 export function captureSelectedExternalPlace(state: CheckInReadinessStore, candidateId: string, nowMs = Date.now()): SelectedExternalPlace | null {
   const arrival = qualifiedArrivalForState(state, nowMs);
