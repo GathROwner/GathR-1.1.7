@@ -207,8 +207,20 @@ export interface NearbyCheckInPlaceCandidate {
   checkInBoundary?: { lat: number; lon: number }[];
 }
 
+export interface CheckInPreparationPool {
+  id: string;
+  expiresAtMs: number;
+  refreshAtMs: number;
+  sourceExpiresAtMs: number;
+  originLatitude: number;
+  originLongitude: number;
+}
+
 export interface NearbyCheckInPlacesResult {
   candidates: NearbyCheckInPlaceCandidate[];
+  preparationPool?: CheckInPreparationPool;
+  /** Only true after a server-authorized renewal of the original candidate IDs. */
+  preparationReused?: boolean;
   /** Capability marker: the server honored the bounded preparation pool request. */
   preparationRadiusMetres?: 175;
   /**

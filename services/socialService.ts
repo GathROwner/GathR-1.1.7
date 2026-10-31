@@ -420,6 +420,7 @@ export const discoverNearbyCheckInPlaces = async (input: {
   capturedAtMs: number;
   /** Fetch a bounded nearby pool while the stationary countdown is running. */
   preparation?: true;
+  renewPreparationPool?: { poolId: string; readinessSessionId: string };
 }, options: { signal?: AbortSignal; timeoutMs?: number } = {}) => callSocial<typeof input, NearbyCheckInPlacesResult>(
   'discoverNearbyCheckInPlacesCallable',
   normalizeLocationCaptureTime(input),
