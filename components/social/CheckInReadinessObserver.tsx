@@ -133,7 +133,7 @@ export default function CheckInReadinessObserver() {
     const invalidate = (revoke = false) => {
       const current = useCheckInReadinessStore.getState();
       useCheckInReadinessStore.setState({
-        evidence: pauseReadiness(current.evidence), receipt: null, sessionId: '', interruptedAtMs: null,
+        evidence: pauseReadiness(current.evidence), receipt: null, acceptedProgress: null, progressPaused: false, sessionId: '', interruptedAtMs: null,
         resumeAfterCheckIn: false,
         arrival: null, attempt: null, preparation: emptyCheckInPreparation(),
         ...(revoke ? { revocationRevision: current.revocationRevision + 1 } : {}),
@@ -143,6 +143,7 @@ export default function CheckInReadinessObserver() {
       const current = useCheckInReadinessStore.getState();
       useCheckInReadinessStore.setState({
         receipt: null,
+        acceptedProgress: null, progressPaused: false,
         sessionId: '',
         grant: null,
         arrival: null, attempt: null, preparation: emptyCheckInPreparation(),
@@ -246,7 +247,7 @@ export default function CheckInReadinessObserver() {
           ? createSocialOperationId() : before.sessionId;
         if (sessionId !== before.sessionId) sequence = 0;
         useCheckInReadinessStore.setState({ evidence, sessionId, interruptedAtMs: null, resumeAfterCheckIn: false,
-          ...(sessionId !== before.sessionId ? { receipt: null, arrival: null, attempt: null, preparation: emptyCheckInPreparation(), sampleSequence: 0 } : {}),
+          ...(sessionId !== before.sessionId ? { receipt: null, acceptedProgress: null, arrival: null, attempt: null, preparation: emptyCheckInPreparation(), sampleSequence: 0 } : {}),
           ...(departed ? { revocationRevision: before.revocationRevision + 1 } : {}) });
         prepareCheckInPlaces();
         if (evidence.reason === 'stale') return;
@@ -269,7 +270,7 @@ export default function CheckInReadinessObserver() {
         if (!currentRun() || useCheckInReadinessStore.getState().sessionId !== sessionId) return;
         if (!validReadinessReceipt(receipt, sessionId, sentSequence, Date.now())) {
           const current = useCheckInReadinessStore.getState();
-          useCheckInReadinessStore.setState({ arrival: null, attempt: null,
+          useCheckInReadinessStore.setState({ arrival: null, attempt: null, acceptedProgress: null,
             ...(qualifiedArrivalForState(current) ? { revocationRevision: current.revocationRevision + 1 } : {}) });
           throw new Error('Invalid readiness receipt');
         }
@@ -277,6 +278,8 @@ export default function CheckInReadinessObserver() {
         const latest = useCheckInReadinessStore.getState();
         const revoked = !serverArrival && !!qualifiedArrivalForState(latest);
         useCheckInReadinessStore.setState({ receipt, serviceError: false,
+          acceptedProgress: { sessionId, hereMs: receipt.hereQualifyingMs, placeMs: receipt.placeQualifyingMs, receivedAtMs: Date.now() },
+          progressPaused: false,
           // Successful server answers are authoritative. A network failure can
           // retain a lease, but a reply that removed it cannot retain an attempt.
           arrival: serverArrival,
@@ -313,6 +316,7 @@ export default function CheckInReadinessObserver() {
       const active = state === 'active';
       useCheckInReadinessStore.setState({
         appActive: active,
+        ...(!active ? { progressPaused: true } : {}),
         ...(!active && current.interruptedAtMs === null ? { interruptedAtMs: Date.now() } : {}),
       });
       if (ownCheckIn) {
@@ -352,7 +356,7 @@ export default function CheckInReadinessObserver() {
         if (state.grant.expiresAtMs <= now) {
           // A failed create may leave a bound one-use grant on the foreground
           // form. Expiry must restart preparation without waiting for app exit.
-          useCheckInReadinessStore.setState({ grant: null, receipt: null, sessionId: '', arrival: null, attempt: null,
+          useCheckInReadinessStore.setState({ grant: null, receipt: null, acceptedProgress: null, progressPaused: false, sessionId: '', arrival: null, attempt: null,
             evidence: pauseReadiness(state.evidence), preparation: emptyCheckInPreparation() });
         }
         return;

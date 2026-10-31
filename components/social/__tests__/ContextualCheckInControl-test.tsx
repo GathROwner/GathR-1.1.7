@@ -55,6 +55,7 @@ describe('prepared check-in control', () => {
     const arrival = { sessionId: 'readiness-session', latitude: 46.235, longitude: -63.129, accuracyMeters: 10,
       capturedAtMs: Date.now(), expiresAtMs: Date.now() + 180_000, here: true, place: seconds >= 90 };
     useCheckInReadinessStore.setState({ evidence, sessionId: arrival.sessionId, arrival,
+      acceptedProgress: { sessionId: arrival.sessionId, hereMs: Math.min(30_000, seconds * 1000), placeMs: seconds * 1000, receivedAtMs: Date.now() },
       preferencesLoaded: true, appActive: true, foregroundGranted: true, lastPromptAtMs: Date.now(),
       receipt: { protocolVersion: 1, sessionId: arrival.sessionId, sequence: 10,
         hereQualifyingMs: 30_000, placeQualifyingMs: seconds >= 90 ? 90_000 : 0, expiresAtMs: Date.now() + 20_000 },
@@ -88,7 +89,31 @@ describe('prepared check-in control', () => {
   it('does not complete a locally elapsed ring without a server-qualified arrival', async () => {
     seed(); useCheckInReadinessStore.setState({ arrival: null, receipt: null }); await mount();
     expect(byId('contextual-check-in-idle')).toBeTruthy();
-    expect(byId('check-in-place-ring').props.strokeDashoffset).toBeGreaterThan(0);
+    for (const name of ['here', 'place']) {
+      const ring = byId(`check-in-${name}-ring`);
+      // A positive dash offset alone is insufficient: round caps can close a tiny gap.
+      expect(ring.props.strokeDashoffset).toBeGreaterThan(ring.props.strokeWidth);
+    }
+  });
+
+  it('shows verification rather than a locally completed timer before any server acknowledgement', async () => {
+    seed(); useCheckInReadinessStore.setState({ arrival: null, receipt: null, acceptedProgress: null });
+    await mount(); await press('contextual-check-in-idle');
+    expect(root().findAllByProps({ testID: 'check-in-here-ring' })).toHaveLength(0);
+    expect(copy()).toContain('Verifying');
+    act(() => useCheckInReadinessStore.setState({ serviceError: true }));
+    expect(copy()).toContain('Unavailable');
+    expect(root().findAllByProps({ testID: 'check-in-here-ring' })).toHaveLength(0);
+  });
+
+  it('completes Here immediately when a server-qualified arrival is accepted', async () => {
+    seed(30); const arrival = useCheckInReadinessStore.getState().arrival;
+    useCheckInReadinessStore.setState({ arrival: null, acceptedProgress: null });
+    await mount(); expect(byId('contextual-check-in-idle')).toBeTruthy();
+    act(() => useCheckInReadinessStore.setState({ arrival,
+      acceptedProgress: { sessionId: 'readiness-session', hereMs: 30_000, placeMs: 30_000, receivedAtMs: Date.now() } }));
+    expect(byId('contextual-check-in-ready')).toBeTruthy();
+    expect(byId('check-in-here-ring').props.strokeDashoffset).toBe(0);
   });
 
   it('opens prepared canonical and external choices with no lookup or verification wait', async () => {
@@ -118,6 +143,7 @@ describe('prepared check-in control', () => {
     expect(byId('check-in-place-ring').props.strokeDashoffset).toBeGreaterThan(0);
     await press('find-somewhere-else'); expect(copy()).toContain('OpenStreetMap is unavailable');
     expect(byId('public-place-location-status').props.children).toBe('Unavailable'); await press('retry-nearby-public-places');
+    expect(root().findAllByProps({ testID: 'public-place-status-spinner' })).toHaveLength(0);
     expect(requestCheckInPreparationRetry).toHaveBeenCalledWith('external');
     if (process.env.GATHR_QA_OUTPUT_DIR) writeFileSync(`${process.env.GATHR_QA_OUTPUT_DIR}/checkin-external-failure-render.json`, JSON.stringify(component!.toJSON(), null, 2));
   });
@@ -197,7 +223,7 @@ describe('prepared check-in control', () => {
     });
     await mount(); await press('contextual-check-in-idle');
     expect(copy()).toContain('[AC-INIT-NETWORK]');
-    expect(copy()).toContain('Preparing');
+    expect(copy()).toContain('Unavailable');
     expect(mockPush).not.toHaveBeenCalled();
   });
 

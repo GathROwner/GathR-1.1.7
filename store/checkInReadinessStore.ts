@@ -34,6 +34,9 @@ export interface CheckInReadinessStore {
   evidence: ReadinessState;
   sessionId: string;
   receipt: CheckInReadinessReceipt | null;
+  acceptedProgress: { sessionId: string; hereMs: number; placeMs: number; receivedAtMs: number } | null;
+  /** Resume must receive an acknowledgement before projecting elapsed time again. */
+  progressPaused: boolean;
   serviceError: boolean;
   lastPromptAtMs: number;
   grant: BoundCheckInReadiness | null;
@@ -51,7 +54,7 @@ export interface CheckInReadinessStore {
 export const useCheckInReadinessStore = create<CheckInReadinessStore>(() => ({
   uid: null, mode: 'standard', preferencesLoaded: false, foregroundGranted: false,
   appActive: false, interruptedAtMs: null, resumeAfterCheckIn: false,
-  evidence: emptyReadiness(), sessionId: '', receipt: null,
+  evidence: emptyReadiness(), sessionId: '', receipt: null, acceptedProgress: null, progressPaused: false,
   serviceError: false, lastPromptAtMs: 0, grant: null, restorePickerOnReturn: false,
   arrival: null, attempt: null, preparation: emptyCheckInPreparation(),
   revocationRevision: 0,
@@ -63,7 +66,7 @@ export function resetCheckInReadinessOwner(uid: string | null) {
   useCheckInReadinessStore.setState({
     uid, mode: 'standard', preferencesLoaded: false, foregroundGranted: false,
     interruptedAtMs: null, resumeAfterCheckIn: false,
-    evidence: emptyReadiness(), sessionId: '', receipt: null, serviceError: false,
+    evidence: emptyReadiness(), sessionId: '', receipt: null, acceptedProgress: null, progressPaused: false, serviceError: false,
     lastPromptAtMs: 0, grant: null, restorePickerOnReturn: false,
     arrival: null, attempt: null, preparation: emptyCheckInPreparation(),
     revocationRevision: useCheckInReadinessStore.getState().revocationRevision + 1,

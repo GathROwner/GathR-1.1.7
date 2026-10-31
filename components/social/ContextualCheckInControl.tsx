@@ -38,7 +38,8 @@ import {
 } from '../../store/checkInReadinessStore';
 import { requestCheckInPreparationRetry } from '../../services/checkInPreparation';
 import { claimReadinessPrompt } from '../../services/checkInReadinessPreferences';
-import { CHECK_IN_READINESS, mayPromptReadiness, projectedReadinessMs } from '../../utils/checkInReadiness';
+import { CHECK_IN_READINESS, mayPromptReadiness } from '../../utils/checkInReadiness';
+import { presentedCheckInReadiness, UNVERIFIED_RING_PROGRESS_MAX } from '../../utils/checkInReadinessPresentation';
 import { getBottomSystemInset } from '../../utils/systemInsets';
 
 
@@ -160,9 +161,8 @@ export function ReadinessRings({ here, place, hereReady, placeReady, emphasizedR
 }) {
   const ring = (name: 'here' | 'place', radius: number, progress: number, ready: boolean, color: string, readyColor: string) => {
     const circumference = 2 * Math.PI * radius;
-    // A fresh local stationary threshold opens the choices immediately. The
-    // server receipt remains mandatory before any check-in is saved.
-    const displayedProgress = ready ? 1 : Math.min(0.98, Math.max(0, progress));
+    // Rounded caps must leave a visible gap until server readiness and preparation succeed.
+    const displayedProgress = ready ? 1 : Math.min(UNVERIFIED_RING_PROGRESS_MAX, Math.max(0, progress));
     return <React.Fragment key={radius}>
       <Circle cx={24} cy={24} r={radius} stroke={color} strokeOpacity={0.16} strokeWidth={3.5} fill="none" />
       {displayedProgress > 0 && <Circle testID={`check-in-${name}-ring`} cx={24} cy={24} r={radius}
@@ -181,22 +181,16 @@ export function ReadinessRings({ here, place, hereReady, placeReady, emphasizedR
 }
 
 function usePresentedReadiness(
-  evidence: ReturnType<typeof useCheckInReadinessStore.getState>['evidence'],
-  interrupted: boolean
+  state: ReturnType<typeof useCheckInReadinessStore.getState>
 ) {
   const [nowMs, setNowMs] = useState(() => Date.now());
   useEffect(() => {
     setNowMs(Date.now());
-    if (evidence.reason !== 'qualifying'
-      || (evidence.hereMs >= CHECK_IN_READINESS.hereMs && evidence.placeMs >= CHECK_IN_READINESS.placeMs)) return;
+    if (!state.appActive || !state.acceptedProgress || state.progressPaused || state.serviceError) return;
     const timer = setInterval(() => setNowMs(Date.now()), 100);
     return () => clearInterval(timer);
-  }, [evidence.hereMs, evidence.placeMs, evidence.previous?.capturedAtMs, evidence.reason]);
-  return projectedReadinessMs(
-    evidence,
-    nowMs,
-    interrupted ? CHECK_IN_READINESS.maxResumeGapMs : CHECK_IN_READINESS.maxSampleGapMs
-  );
+  }, [state.appActive, state.acceptedProgress, state.progressPaused, state.serviceError]);
+  return presentedCheckInReadiness(state, nowMs);
 }
 
 function messageForError(error: unknown) {
@@ -281,7 +275,7 @@ export default function ContextualCheckInControl({ enabled, rightOffset = 10, bo
     return [...byId.values()];
   }, [allEvents]);
 
-  const presentedReadiness = usePresentedReadiness(readiness.evidence, readiness.interruptedAtMs !== null);
+  const presentedReadiness = usePresentedReadiness(readiness);
   const levels = preparedReadinessLevels(readiness, nowMs);
   const arrival = qualifiedArrivalForState(readiness, nowMs);
   const hereEntryReady = levels.here;
@@ -513,9 +507,9 @@ export default function ContextualCheckInControl({ enabled, rightOffset = 10, bo
           ? 'Your arrival has been verified. Tap the checkmark to choose.'
         : readiness.serviceError
           ? 'Check-in verification is unavailable right now. You can keep browsing.'
-          : defaultReadinessCopy;
-  const hereProgress = hereEntryReady ? 1 : Math.min(0.98, presentedReadiness.hereMs / CHECK_IN_READINESS.hereMs);
-  const placeProgress = levels.place ? 1 : Math.min(0.98, presentedReadiness.placeMs / CHECK_IN_READINESS.placeMs);
+          : !readiness.acceptedProgress ? 'Verifying your location before the rings begin. You can keep browsing.' : defaultReadinessCopy;
+  const hereProgress = hereEntryReady ? 1 : Math.min(UNVERIFIED_RING_PROGRESS_MAX, presentedReadiness.hereMs / CHECK_IN_READINESS.hereMs);
+  const placeProgress = levels.place ? 1 : Math.min(UNVERIFIED_RING_PROGRESS_MAX, presentedReadiness.placeMs / CHECK_IN_READINESS.placeMs);
   const explanation = autoBubbleRef.current && levels.place ? bubble : hereEntryReady
     ? levels.place ? 'Your location and nearby places are ready. Tap the checkmark to choose.'
       : placeEntryReady ? 'GathR venues and private check-in are ready. Other public places are still preparing.'
@@ -524,10 +518,12 @@ export default function ContextualCheckInControl({ enabled, rightOffset = 10, bo
   const preparationFailure = prep.canonical.status === 'error' ? prep.canonical.error
     : prep.external.status === 'error' ? prep.external.error : '';
   const readinessNotice = preparationFailure || (explanation === defaultReadinessCopy ? '' : explanation);
+  const waitingStatus = (required: number) => readiness.serviceError || (required === CHECK_IN_READINESS.placeMs && preparationFailure)
+    ? 'Unavailable' : !readiness.acceptedProgress || readiness.progressPaused ? 'Verifying' : '';
   const ringStatus = (ready: boolean, elapsed: number, required: number) => ready ? 'Ready'
-    : elapsed >= required ? 'Preparing' : `${Math.floor(elapsed / 1000)}/${required / 1000}s`;
+    : waitingStatus(required) || (elapsed >= required ? 'Preparing' : `${Math.floor(elapsed / 1000)}/${required / 1000}s`);
   const progressCopy = (ready: boolean, elapsed: number, required: number) => ready ? 'Ready'
-    : elapsed >= required ? 'Preparing' : `${Math.floor(elapsed / 1000)} / ${required / 1000} sec`;
+    : waitingStatus(required) || (elapsed >= required ? 'Preparing' : `${Math.floor(elapsed / 1000)} / ${required / 1000} sec`);
   const control = <>
     {!!bubble && isFocused && <View style={[styles.bubble, { right: rightOffset + 44, bottom: 42 + bottomOffset }]} testID="check-in-readiness-explanation" accessibilityLiveRegion="polite">
       <View style={styles.bubbleHeading}>
@@ -644,11 +640,12 @@ export default function ContextualCheckInControl({ enabled, rightOffset = 10, bo
                   <>
                     <View style={styles.locationStatusRow}>
                       <Ionicons name="navigate-outline" size={17} color="#2F80ED" />
-                      <Text numberOfLines={1} style={styles.locationStatusCopy}>Prepared for your arrival</Text>
+                      <Text style={styles.locationStatusCopy}>Your arrival</Text>
                       <View style={styles.locationReadyStatus}>
                         {externalEntryReady
                           ? <Ionicons name="checkmark-circle" size={16} color="#039855" />
-                          : <ActivityIndicator size="small" color="#2F80ED" />}
+                          : discoveryError ? <Ionicons name="alert-circle-outline" size={16} color="#B54708" />
+                            : <ActivityIndicator testID="public-place-status-spinner" size="small" color="#2F80ED" />}
                         <Text testID="public-place-location-status" style={[styles.locationReadyText, !externalEntryReady && styles.locationCheckingText]}>
                           {externalEntryReady ? 'Ready' : discoveryError ? 'Unavailable' : 'Preparing'}
                         </Text>
@@ -911,7 +908,7 @@ export default function ContextualCheckInControl({ enabled, rightOffset = 10, bo
                     <Ionicons name="shield-checkmark-outline" size={18} color="#0F766E" />
                     <Text style={styles.privacyCopy}>{placeEntryReady
                       ? 'Nothing is shared yet. Choose who can see your check-in next.'
-                      : hereEntryReady ? 'Private check-in is ready. Public places are preparing.'
+                      : hereEntryReady ? preparationFailure ? 'Private check-in is ready. Public place lookup is unavailable.' : 'Private check-in is ready. Public places are preparing.'
                         : 'Your choices are saved. Check-in verification needs to prepare again.'}</Text>
                   </View>
                   {externalSearchVisible && (
@@ -929,7 +926,7 @@ export default function ContextualCheckInControl({ enabled, rightOffset = 10, bo
                       <Ionicons name="arrow-forward" size={19} color="#FFFFFF" />
                     </TouchableOpacity>
                   ) : (
-                    <Text style={styles.placeReadinessHint}>{arrival ? preparationFailure || 'Preparing nearby public places.' : 'Your choices are saved while check-in prepares again.'}</Text>
+                    !discoveryError && <Text style={styles.placeReadinessHint}>{arrival ? preparationFailure || 'Preparing nearby public places.' : 'Your choices are saved while check-in prepares again.'}</Text>
                   )}
                 </View>
               </>

@@ -30,7 +30,7 @@ async function savePreferences() {
 
 export async function setReadinessMode(mode: Exclude<CheckInLocationMode, 'proactive'>) {
   const { evidence, revocationRevision } = useCheckInReadinessStore.getState();
-  useCheckInReadinessStore.setState({ mode, evidence: pauseReadiness(evidence), receipt: null, sessionId: '', grant: null,
+  useCheckInReadinessStore.setState({ mode, evidence: pauseReadiness(evidence), receipt: null, acceptedProgress: null, progressPaused: false, sessionId: '', grant: null,
     arrival: null, attempt: null, preparation: emptyCheckInPreparation(), revocationRevision: revocationRevision + 1 });
   await savePreferences();
 }

@@ -88,6 +88,47 @@ describe('foreground readiness observer lifecycle', () => {
   const mount = async () => { await act(async () => { component = renderer.create(<CheckInReadinessObserver />); }); };
   const advance = async (milliseconds: number) => { await act(async () => { jest.advanceTimersByTime(milliseconds); }); };
 
+  it('does not invent server progress during failed attestation, then accepts the first zero baseline', async () => {
+    const record = recordCheckInReadinessSample as jest.Mock;
+    record.mockRejectedValue(new Error('Attestation unavailable'));
+    await mount();
+    for (let index = 0; index < 3; index += 1) await advance(10_000);
+    expect(useCheckInReadinessStore.getState()).toMatchObject({
+      evidence: { hereMs: 30_000 }, acceptedProgress: null, serviceError: true,
+    });
+    record.mockImplementation(async (input: CheckInReadinessSampleInput) => ({
+      protocolVersion: 1, sessionId: input.sessionId, sequence: input.sequence,
+      hereQualifyingMs: 0, placeQualifyingMs: 0, expiresAtMs: Date.now() + 20_000,
+    }));
+    await advance(10_000);
+    const state = useCheckInReadinessStore.getState();
+    expect(state.acceptedProgress).toEqual({ sessionId: state.sessionId, hereMs: 0, placeMs: 0, receivedAtMs: Date.now() });
+    expect(state.serviceError).toBe(false);
+  });
+
+  it('preserves accepted counters on failure and pauses resume projection until an accepted reply', async () => {
+    await mount(); await advance(10_000);
+    const accepted = useCheckInReadinessStore.getState().acceptedProgress;
+    expect(accepted?.hereMs).toBe(10_000);
+    (recordCheckInReadinessSample as jest.Mock).mockRejectedValueOnce(new Error('Network unavailable'));
+    await advance(10_000);
+    expect(useCheckInReadinessStore.getState()).toMatchObject({ acceptedProgress: accepted, receipt: null, serviceError: true });
+    act(() => { AppState.currentState = 'background'; mockChangeState('background'); });
+    expect(useCheckInReadinessStore.getState().progressPaused).toBe(true);
+    await advance(2_000);
+    let resolveReceipt!: (value: unknown) => void;
+    (recordCheckInReadinessSample as jest.Mock).mockImplementationOnce(() => new Promise(resolve => { resolveReceipt = resolve; }));
+    await act(async () => { AppState.currentState = 'active'; mockChangeState('active'); });
+    // Cadence may defer this return request; a cleared interruption alone cannot resume projection.
+    expect(useCheckInReadinessStore.getState().progressPaused).toBe(true);
+    await advance(8_000);
+    const input = (recordCheckInReadinessSample as jest.Mock).mock.calls.at(-1)![0];
+    await act(async () => resolveReceipt({ protocolVersion: 1, sessionId: input.sessionId, sequence: input.sequence,
+      hereQualifyingMs: 20_000, placeQualifyingMs: 20_000, expiresAtMs: Date.now() + 20_000 }));
+    expect(useCheckInReadinessStore.getState()).toMatchObject({ progressPaused: false, serviceError: false,
+      acceptedProgress: { hereMs: 20_000, placeMs: 20_000, receivedAtMs: Date.now() } });
+  });
+
   it('samples before any place selection and requests no permissions or check-in mutation', async () => {
     await mount();
     await advance(10_000);

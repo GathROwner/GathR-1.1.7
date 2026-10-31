@@ -13,6 +13,7 @@ describe('explicit check-in location preference revocation', () => {
       latitude: 46.2, longitude: -63.1, accuracyMeters: 17, capturedAtMs: Date.now(), here: true, place: true };
     const current = useCheckInReadinessStore.getState();
     useCheckInReadinessStore.setState({ arrival, attempt: { arrival, capturedAtMs: Date.now() }, sessionId: arrival.sessionId,
+      acceptedProgress: { sessionId: arrival.sessionId, hereMs: 30_000, placeMs: 90_000, receivedAtMs: Date.now() },
       preparation: { ...current.preparation, sessionId: arrival.sessionId, expiresAtMs: arrival.expiresAtMs,
         canonical: { status: 'ready', candidates: [], error: '', retryAtMs: 0 } } });
   });
@@ -21,7 +22,7 @@ describe('explicit check-in location preference revocation', () => {
     const revision = useCheckInReadinessStore.getState().revocationRevision;
     await setReadinessMode('basic');
     const state = useCheckInReadinessStore.getState();
-    expect(state).toMatchObject({ mode: 'basic', arrival: null, attempt: null, grant: null, sessionId: '', receipt: null });
+    expect(state).toMatchObject({ mode: 'basic', arrival: null, attempt: null, grant: null, sessionId: '', receipt: null, acceptedProgress: null });
     expect(state.preparation.canonical.status).toBe('idle');
     expect(state.revocationRevision).toBe(revision + 1);
   });
