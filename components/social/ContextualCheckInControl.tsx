@@ -180,19 +180,6 @@ export function ReadinessRings({ here, place, hereReady, placeReady, emphasizedR
   </View>;
 }
 
-function usePresentedReadiness(
-  state: ReturnType<typeof useCheckInReadinessStore.getState>
-) {
-  const [nowMs, setNowMs] = useState(() => Date.now());
-  useEffect(() => {
-    setNowMs(Date.now());
-    if (!state.appActive || !state.acceptedProgress || state.progressPaused || state.serviceError) return;
-    const timer = setInterval(() => setNowMs(Date.now()), 100);
-    return () => clearInterval(timer);
-  }, [state.appActive, state.acceptedProgress, state.progressPaused, state.serviceError]);
-  return presentedCheckInReadiness(state, nowMs);
-}
-
 function messageForError(error: unknown) {
   return error instanceof SocialServiceError || error instanceof Error
     ? error.message
@@ -275,7 +262,7 @@ export default function ContextualCheckInControl({ enabled, rightOffset = 10, bo
     return [...byId.values()];
   }, [allEvents]);
 
-  const presentedReadiness = usePresentedReadiness(readiness);
+  const presentedReadiness = presentedCheckInReadiness(readiness);
   const levels = preparedReadinessLevels(readiness, nowMs);
   const arrival = qualifiedArrivalForState(readiness, nowMs);
   const hereEntryReady = levels.here;

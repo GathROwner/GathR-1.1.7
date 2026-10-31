@@ -116,6 +116,33 @@ describe('prepared check-in control', () => {
     expect(byId('check-in-here-ring').props.strokeDashoffset).toBe(0);
   });
 
+  it('holds the public ring at confirmed dwell through pauses and advances only on acknowledgement', async () => {
+    seed(60);
+    const accepted = { sessionId: 'readiness-session', hereMs: 30_000, placeMs: 63_000, receivedAtMs: Date.now() };
+    useCheckInReadinessStore.setState({ acceptedProgress: accepted });
+    await mount();
+    const circumference = 2 * Math.PI * 21.5;
+    const confirmedOffset = circumference * 0.3;
+    expect(byId('check-in-place-ring').props.strokeDashoffset).toBeCloseTo(confirmedOffset);
+    await act(async () => { jest.advanceTimersByTime(18_000); });
+    expect(byId('check-in-place-ring').props.strokeDashoffset).toBeCloseTo(confirmedOffset);
+    act(() => useCheckInReadinessStore.setState({ appActive: false, progressPaused: true, interruptedAtMs: Date.now() }));
+    expect(byId('check-in-place-ring').props.strokeDashoffset).toBeCloseTo(confirmedOffset);
+    act(() => useCheckInReadinessStore.setState({ appActive: true, serviceError: true }));
+    await act(async () => { jest.advanceTimersByTime(42_000); });
+    expect(byId('check-in-place-ring').props.strokeDashoffset).toBeCloseTo(confirmedOffset);
+    act(() => useCheckInReadinessStore.setState({ serviceError: false, progressPaused: false, interruptedAtMs: null,
+      acceptedProgress: { ...accepted, placeMs: 75_000, receivedAtMs: Date.now() } }));
+    expect(byId('check-in-place-ring').props.strokeDashoffset).toBeCloseTo(circumference * (1 - 75 / 90));
+    expect(byId('check-in-place-ring').props.strokeDashoffset).toBeGreaterThan(0);
+    expect(discoverNearbyCheckInPlaces).not.toHaveBeenCalled();
+    expect(bindCheckInReadiness).not.toHaveBeenCalled();
+    act(() => useCheckInReadinessStore.setState({ sessionId: 'departure-session', acceptedProgress: null,
+      evidence: emptyReadiness(), arrival: null, attempt: null }));
+    expect(root().findAllByProps({ testID: 'check-in-place-ring' })).toHaveLength(0);
+    expect(byId('contextual-check-in-idle')).toBeTruthy();
+  });
+
   it('opens prepared canonical and external choices with no lookup or verification wait', async () => {
     seed(); await open(); expect(row('Holy Whale').props.disabled).toBe(false);
     expect(byId('find-somewhere-else').props.disabled).toBe(false); expect(byId('check-in-place-ring').props.strokeDashoffset).toBe(0);
