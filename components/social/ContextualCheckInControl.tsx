@@ -298,6 +298,8 @@ export default function ContextualCheckInControl({ enabled, rightOffset = 10, bo
     ? preparedCandidatesForArrival(readiness, 'canonical', nowMs).map(decoratePreparedCandidate) : knownNearbyPlaces;
   const nearbyPlaces = preparationMatches && prep.external.status === 'ready'
     ? preparedCandidatesForArrival(readiness, 'external', nowMs).map(decoratePreparedCandidate) : cachedNearbyPlaces;
+  const availableCanonicalCopy = placeEntryReady && knownPlaces.length > 0
+    ? ' Your nearby GathR venues are still available.' : '';
   const knownVenuesLoading = preparationMatches && prep.canonical.status === 'loading';
   const knownVenuesNotice = preparationMatches && prep.canonical.status === 'error'
     ? prep.canonical.error || 'Nearby GathR venues could not be prepared. Try again.' : '';
@@ -306,7 +308,7 @@ export default function ContextualCheckInControl({ enabled, rightOffset = 10, bo
   const discoveryError = !arrival
     ? 'Your prepared arrival expired or you left the area. Your choices are saved while check-in prepares again.'
     : preparationMatches && prep.external.status === 'error'
-      ? prep.external.error || 'Other public places could not be prepared. Nearby GathR venues are still available.' : '';
+      ? `${prep.external.error || 'Other public places could not be prepared.'}${availableCanonicalCopy}` : '';
   const partialDiscoveryNotice = '';
   visibleRef.current = enabled && isFocused && readiness.appActive && !pickerVisible && !checkInRouteOpeningRef.current;
   const candidate = knownPlaces.length === 1 && knownPlaces[0].distanceMetres <= 25 && placeEntryReady ? knownPlaces[0] : null;
@@ -512,7 +514,7 @@ export default function ContextualCheckInControl({ enabled, rightOffset = 10, bo
   const placeProgress = levels.place ? 1 : Math.min(UNVERIFIED_RING_PROGRESS_MAX, presentedReadiness.placeMs / CHECK_IN_READINESS.placeMs);
   const explanation = autoBubbleRef.current && levels.place ? bubble : hereEntryReady
     ? levels.place ? 'Your location and nearby places are ready. Tap the checkmark to choose.'
-      : placeEntryReady ? 'GathR venues and private check-in are ready. Other public places are still preparing.'
+      : placeEntryReady && knownPlaces.length > 0 ? 'GathR venues and private check-in are ready. Other public places are still preparing.'
         : 'Private check-in is ready. Nearby public places are preparing while the blue ring fills.'
     : earlyCopy;
   const preparationFailure = prep.canonical.status === 'error' ? prep.canonical.error
@@ -818,7 +820,7 @@ export default function ContextualCheckInControl({ enabled, rightOffset = 10, bo
                       {!discovering && !discoveryError && !partialDiscoveryNotice && nearbyPlaces.length === 0 && (
                         <View style={styles.emptyPlacesCard}>
                           <Ionicons name="search-outline" size={22} color="#667085" />
-                          <Text style={styles.emptyPlacesCopy}>No other public places showed up nearby. Your GathR venues are still available.</Text>
+                          <Text style={styles.emptyPlacesCopy}>No other public places showed up nearby.{availableCanonicalCopy}</Text>
                         </View>
                       )}
                     </>
@@ -871,7 +873,7 @@ export default function ContextualCheckInControl({ enabled, rightOffset = 10, bo
                       {!knownPlaces.length && !knownVenuesLoading && (
                         <View style={styles.emptyPlacesCard}>
                           <Ionicons name="business-outline" size={22} color="#667085" />
-                          <Text style={styles.emptyPlacesCopy}>No known GathR venues are close by. You can search public places instead.</Text>
+                          <Text style={styles.emptyPlacesCopy}>No known GathR venues are close by.</Text>
                         </View>
                       )}
                       <TouchableOpacity

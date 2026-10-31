@@ -88,6 +88,7 @@ describe('arrival preparation before ring completion', () => {
     (discoverNearbyCheckInPlaces as jest.Mock).mockResolvedValueOnce({ candidates: [], preparationRadiusMetres: 175, externalLookupStatus: 'partial_unavailable' });
     prepareCheckInPlaces(); await flush();
     expect(useCheckInReadinessStore.getState().preparation.canonical).toMatchObject({ status: 'ready', candidates: [], error: '' });
+    expect(useCheckInReadinessStore.getState().preparation.external.error).toBe('Public places could not be prepared.');
     expect(useCheckInReadinessStore.getState().preparation.external.status).toBe('error');
     expect(listNearbyCanonicalCheckInVenues).not.toHaveBeenCalled();
   });

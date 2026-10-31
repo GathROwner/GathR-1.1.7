@@ -62,7 +62,7 @@ describe('prepared check-in control', () => {
       preparation: { sessionId: arrival.sessionId, latitude: arrival.latitude, longitude: arrival.longitude, expiresAtMs: Date.now() + 300_000,
         canonical: { status: 'ready', candidates: canonical, error: '', retryAtMs: 0 },
         external: { status: externalStatus, candidates: externalStatus === 'ready' ? external : [],
-          error: externalStatus === 'error' ? 'OpenStreetMap is unavailable. Nearby GathR venues are ready.' : '', retryAtMs: Date.now() + 30_000 },
+          error: externalStatus === 'error' ? 'OpenStreetMap is unavailable.' : '', retryAtMs: Date.now() + 30_000 },
       },
     });
   }
@@ -153,6 +153,29 @@ describe('prepared check-in control', () => {
     expect(mockPush).toHaveBeenCalledWith(expect.objectContaining({ params: expect.objectContaining({ venueId: 'holy-whale' }) }));
   });
 
+  it.each([
+    { name: 'empty canonical pool', candidates: [] },
+    { name: 'canonical candidates outside the qualified arrival area', candidates: [{ ...canonical[0], latitude: canonical[0].latitude + 0.01 }] },
+  ])('does not claim GathR venues are available during provider failure with $name', async ({ candidates }) => {
+    seed(90, 'error');
+    const state = useCheckInReadinessStore.getState();
+    useCheckInReadinessStore.setState({ preparation: { ...state.preparation,
+      canonical: { ...state.preparation.canonical, candidates } } });
+    await open(); expect(copy()).toContain('No known GathR venues are close by.');
+    await press('find-somewhere-else');
+    expect(copy()).toContain('OpenStreetMap is unavailable.');
+    expect(copy()).not.toContain('GathR venues are still available');
+    expect(copy()).not.toContain('No other public places showed up nearby');
+    expect(byId('public-place-location-status').props.children).toBe('Unavailable');
+  });
+
+  it('mentions available GathR venues during provider failure only when usable canonical rows exist', async () => {
+    seed(90, 'error'); await open(); expect(row('Holy Whale').props.disabled).toBe(false);
+    await press('find-somewhere-else');
+    expect(copy()).toContain('Your nearby GathR venues are still available.');
+    expect(copy()).toContain('OpenStreetMap is unavailable.');
+  });
+
   it('shows preparing rather than ready while public lists are loading after dwell', async () => {
     seed(90, 'loading'); await open(); expect(byId('find-somewhere-else').props.disabled).toBe(true);
     expect(byId('check-in-place-ring').props.strokeDashoffset).toBeGreaterThan(0); expect(copy()).toContain('Preparing nearby places');
@@ -203,6 +226,17 @@ describe('prepared check-in control', () => {
     useCheckInReadinessStore.setState({ preparation: { ...state.preparation, external: { ...state.preparation.external, candidates: [] } } });
     await open(); await press('find-somewhere-else'); expect(byId('public-place-location-status').props.children).toBe('Ready');
     expect(copy()).toContain('No other public places'); expect(discoverNearbyCheckInPlaces).not.toHaveBeenCalled();
+  });
+
+  it('reports successful empty public discovery without promising nonexistent GathR alternatives', async () => {
+    seed(); const state = useCheckInReadinessStore.getState();
+    useCheckInReadinessStore.setState({ preparation: { ...state.preparation,
+      canonical: { ...state.preparation.canonical, candidates: [] },
+      external: { ...state.preparation.external, candidates: [] } } });
+    await open(); await press('find-somewhere-else');
+    expect(copy()).toContain('No other public places showed up nearby.');
+    expect(copy()).not.toContain('GathR venues are still available');
+    expect(byId('public-place-location-status').props.children).toBe('Ready');
   });
 
   it('cancels only the captured attempt and reopens prepared choices without another lookup', async () => {

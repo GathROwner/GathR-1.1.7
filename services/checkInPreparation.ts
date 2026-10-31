@@ -15,8 +15,8 @@ const DAY_MS = 24 * 60 * 60_000;
 const AUTOMATIC_EXTERNAL_BUDGET = 16;
 const TOTAL_EXTERNAL_BUDGET = 20;
 const VERSION_ERROR = 'Nearby place preparation is unavailable in this server version. Your choices are saved.';
-const PROVIDER_ERROR = 'Public places could not be prepared. Your nearby GathR venues are still available.';
-const ALLOWANCE_ERROR = 'Nearby public-place preparation has reached its search allowance. GathR venues are still available.';
+const PROVIDER_ERROR = 'Public places could not be prepared.';
+const ALLOWANCE_ERROR = 'Nearby public-place preparation has reached its search allowance.';
 type Cached = { uid: string; latitude: number; longitude: number; expiresAtMs: number;
   result: NearbyCheckInPlacesResult; externalError: string; retryAtMs: number };
 // Failure retention is independent of candidate TTL. Clocks and disposable
