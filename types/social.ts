@@ -193,6 +193,8 @@ export interface BoundCheckInReadiness {
 
 export interface NearbyCheckInPlaceCandidate {
   id: string;
+  /** Stable public source identity; candidate UUID remains the binding authority. */
+  locationKey?: string;
   type: 'gathr_venue' | 'external_place' | 'private_place';
   venueId?: string;
   name: string;

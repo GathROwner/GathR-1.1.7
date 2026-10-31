@@ -38,6 +38,7 @@ import {
 import { requestCheckInPreparationRetry } from '../services/checkInPreparation';
 import { emptyReadiness, mayOfferExactPrivateLocation, mayShareExactPrivateLocation } from '../utils/checkInReadiness';
 import { validBoundReadiness } from '../utils/checkInReadinessContract';
+import { captureSelectedExternalPlace, resolveSelectedExternalPlace, type SelectedExternalPlace } from '../utils/checkInSelectedPlace';
 import type {
   CheckInAudienceMode,
   CheckInDurationMinutes,
@@ -111,6 +112,8 @@ function CheckInScreenContent() {
   const mountedRef = useRef(false);
   const submissionGenerationRef = useRef(0);
   const submittedReadinessRef = useRef<{ uid: string; sessionId: string } | null>(null);
+  const selectedExternalRef = useRef<SelectedExternalPlace | null>(null);
+  const boundExternalRef = useRef<{ uid: string; locationKey: string | null; candidateId: string; sessionId: string } | null>(null);
   const [submissionError, setSubmissionError] = useState('');
   useEffect(() => {
     mountedRef.current = true;
@@ -188,7 +191,7 @@ function CheckInScreenContent() {
   const [venuePickerVisible, setVenuePickerVisible] = useState(false);
   const [audiencePickerVisible, setAudiencePickerVisible] = useState(false);
   const pendingOperationRef = useRef<{ fingerprint: string; operationId: string } | null>(null);
-  const pendingBindRef = useRef<{ key: string; operationId: string } | null>(null);
+  const pendingBindRef = useRef<{ key: string; operationId: string; uid: string; sessionId: string; revocationRevision: number; placeCandidateId?: string } | null>(null);
   const activeRevisionRef = useRef<string | null>(ownCheckIn?.revision ?? null);
 
   useEffect(() => {
@@ -237,10 +240,26 @@ function CheckInScreenContent() {
         || (locationType === 'private_place' ? 'Private location' : 'Public place'),
     };
   }, [params.placeAddress, params.placeCandidateId, params.placeCategory, params.placeName, params.placeType, params.readinessVersion, params.venueId]);
-  const selectedVenue = contextualPlace ?? options.find((option) => option.venueId === venueId) ?? null;
+  if (!selectedExternalRef.current && contextualPlace?.locationType === 'external_place') {
+    selectedExternalRef.current = captureSelectedExternalPlace(readiness, contextualPlace.placeCandidateId || '', nowMs);
+  }
+  const latestExternal = contextualPlace?.locationType === 'external_place'
+    ? resolveSelectedExternalPlace(readiness, selectedExternalRef.current, nowMs) : null;
+  const baseReadinessSessionId = renewedReadinessSessionId || String(params.readinessSessionId || '').trim();
+  const heldExternalGrant = contextualPlace?.locationType === 'external_place' && readiness.uid === user?.uid
+    && readiness.grant && (readiness.grant.placeCandidateId === contextualPlace.placeCandidateId
+      || (boundExternalRef.current?.uid === user?.uid
+        && boundExternalRef.current.locationKey === selectedExternalRef.current?.locationKey
+        && boundExternalRef.current.candidateId === readiness.grant.placeCandidateId
+        && boundExternalRef.current.sessionId === readiness.grant.readinessSessionId))
+    && validBoundReadiness(readiness.grant, { type: 'external_place', placeCandidateId: readiness.grant.placeCandidateId },
+      readiness.grant.readinessSessionId, nowMs) ? readiness.grant : null;
+  const selectedVenue = contextualPlace?.locationType === 'external_place'
+    ? { ...contextualPlace, placeCandidateId: heldExternalGrant?.placeCandidateId || latestExternal?.candidate.id || contextualPlace.placeCandidateId }
+    : contextualPlace ?? options.find((option) => option.venueId === venueId) ?? null;
   const isPrivatePlace = selectedVenue?.locationType === 'private_place';
   const eligibilitySessionId = String(params.eligibilitySessionId || '').trim();
-  const readinessSessionId = renewedReadinessSessionId || String(params.readinessSessionId || '').trim();
+  const readinessSessionId = heldExternalGrant?.readinessSessionId || latestExternal?.arrival.sessionId || baseReadinessSessionId;
   useEffect(() => {
     if (params.readinessVersion !== '1') return;
     const ownerUid = user?.uid;
@@ -306,6 +325,7 @@ function CheckInScreenContent() {
     && readiness.sessionId === readinessSessionId
     && readiness.appActive
     && qualifiedArrival?.sessionId === readinessSessionId
+    && (selectedVenue?.locationType !== 'external_place' || !!latestExternal)
     && (isPrivatePlace ? currentReadinessLevels.here : currentReadinessLevels.place)
   );
   const hasContextualEligibility = Boolean(
@@ -392,6 +412,13 @@ function CheckInScreenContent() {
   const refreshPreparedArrival = () => {
     if (!user || busy || submittingRef.current) return;
     const current = useCheckInReadinessStore.getState();
+    if (selectedVenue?.locationType === 'external_place'
+      && !resolveSelectedExternalPlace(current, selectedExternalRef.current)
+      && !heldExternalGrant) {
+      requestCheckInPreparationRetry('external');
+      setSubmissionError('This place needs a current nearby match. Your privacy choices are saved; retry preparation or return to place choices.');
+      return;
+    }
     if (current.uid === user.uid && readinessTarget
       && validBoundReadiness(current.grant, readinessTarget, readinessSessionId, Date.now())) {
       // A failed transport can be retried immediately with the existing one-use
@@ -453,58 +480,89 @@ function CheckInScreenContent() {
       setBusy(true);
       try {
         let boundEligibilitySessionId = eligibilitySessionId;
+        let submissionPlace = selectedVenue;
+        let submissionSessionId = readinessSessionId;
         if (params.readinessVersion === '1' && !canReuseActiveVenue) {
           if (!readinessSessionId || !selectedVenue || !user) {
             throw new Error('Check-in readiness expired. Return to the map and wait for the ring to fill again.');
           }
-          const target = {
-            type: selectedVenue.locationType,
-            venueId: selectedVenue.venueId,
-            placeCandidateId: selectedVenue.placeCandidateId,
-          };
           const current = useCheckInReadinessStore.getState();
           if (current.uid !== user.uid) throw new Error('This check-in account changed. Return to the map to start again.');
-          let grant = current.grant?.readinessSessionId === readinessSessionId
-            && validBoundReadiness(current.grant, target, readinessSessionId, Date.now())
+          let target = { type: submissionPlace.locationType, venueId: submissionPlace.venueId, placeCandidateId: submissionPlace.placeCandidateId };
+          let grant = current.grant?.readinessSessionId === submissionSessionId
+            && validBoundReadiness(current.grant, target, submissionSessionId, Date.now())
             ? current.grant
             : null;
+          if (!grant && submissionPlace.locationType === 'external_place') {
+            const latest = resolveSelectedExternalPlace(current, selectedExternalRef.current);
+            if (!latest) throw new Error('This place is no longer prepared nearby. Your privacy choices are saved; refresh preparation or return to place choices.');
+            // An earlier bind may have committed before a transport failure.
+            // Recover its exact UUID/operation while the same qualified session
+            // and selected stable target remain eligible; do not silently rebind.
+            const pending = pendingBindRef.current;
+            const recoverPending = pending?.uid === user.uid && pending.sessionId === latest.arrival.sessionId
+              && pending.revocationRevision === current.revocationRevision && pending.placeCandidateId;
+            submissionPlace = { ...submissionPlace, placeCandidateId: recoverPending ? pending!.placeCandidateId : latest.candidate.id };
+            submissionSessionId = latest.arrival.sessionId;
+            target = { type: submissionPlace.locationType, venueId: submissionPlace.venueId, placeCandidateId: submissionPlace.placeCandidateId };
+          }
           if (!grant) {
             const revocationRevision = current.revocationRevision;
             const requirePlace = selectedVenue.locationType !== 'private_place';
             const arrival = qualifiedArrivalForState(current);
             if (current.uid !== user.uid || !current.appActive
-              || current.sessionId !== readinessSessionId
-              || arrival?.sessionId !== readinessSessionId
+              || current.sessionId !== submissionSessionId
+              || arrival?.sessionId !== submissionSessionId
               || !(requirePlace ? arrival.place : arrival.here)) {
               throw new Error('Your prepared arrival expired or you left the area. Your place and privacy choices are saved; refresh verification to try again.');
             }
-            const bindKey = `${readinessSessionId}:${selectedVenue.locationType}:${selectedVenue.venueId || selectedVenue.placeCandidateId}`;
+            const bindKey = `${submissionSessionId}:${submissionPlace.locationType}:${submissionPlace.venueId || submissionPlace.placeCandidateId}`;
             if (pendingBindRef.current?.key !== bindKey) {
-              pendingBindRef.current = { key: bindKey, operationId: createSocialOperationId() };
+              pendingBindRef.current = { key: bindKey, operationId: createSocialOperationId(), uid: user.uid,
+                sessionId: submissionSessionId, revocationRevision, placeCandidateId: submissionPlace.placeCandidateId };
             }
-            submittedReadinessRef.current = { uid: user.uid, sessionId: readinessSessionId };
-            grant = await bindCheckInReadiness({
+            submittedReadinessRef.current = { uid: user.uid, sessionId: submissionSessionId };
+            try {
+              grant = await bindCheckInReadiness({
               protocolVersion: 1,
-              readinessSessionId,
+              readinessSessionId: submissionSessionId,
               operationId: pendingBindRef.current.operationId,
               useQualifiedArrival: true,
-              ...(selectedVenue.locationType === 'gathr_venue'
-                ? { venueId: selectedVenue.venueId }
-                : { placeCandidateId: selectedVenue.placeCandidateId }),
+              ...(submissionPlace.locationType === 'gathr_venue'
+                ? { venueId: submissionPlace.venueId }
+                : { placeCandidateId: submissionPlace.placeCandidateId }),
               latitude: arrival.latitude,
               longitude: arrival.longitude,
               accuracyMeters: arrival.accuracyMeters,
               speedMetersPerSecond: null,
               capturedAtMs: Math.floor(arrival.capturedAtMs),
-            });
+              });
+            } catch (error) {
+              const code = String((error as { code?: unknown })?.code || '').replace(/^functions\//, '');
+              if (['failed-precondition', 'invalid-argument', 'not-found', 'permission-denied', 'unauthenticated'].includes(code)) {
+                pendingBindRef.current = null;
+                const existing = useCheckInReadinessStore.getState().grant;
+                if (!existing || !validBoundReadiness(existing, target, submissionSessionId, Date.now())) {
+                  // A definitive refusal did not consume readiness. Back may
+                  // retain qualification; uncertain requests still retire it.
+                  submittedReadinessRef.current = null;
+                }
+              }
+              throw error;
+            }
             if (!currentFlow()) return;
             const after = useCheckInReadinessStore.getState();
             // A matching server grant is authoritative. Raw sampling receipts can
             // expire or be rejected after binding without revoking this one-use grant.
             if (after.uid !== user.uid || after.revocationRevision !== revocationRevision
-              || !validBoundReadiness(grant, target, readinessSessionId, Date.now())
+              || !validBoundReadiness(grant, target, submissionSessionId, Date.now())
               || (exactSharing && !grant.exactPrivateAllowed)) {
               throw new Error('This confirmation is no longer available. Your choices are saved; refresh verification to try again.');
+            }
+            if (submissionPlace.locationType === 'external_place' && selectedExternalRef.current) {
+              boundExternalRef.current = { uid: user.uid, locationKey: selectedExternalRef.current.locationKey,
+                candidateId: submissionPlace.placeCandidateId!, sessionId: submissionSessionId };
+              setRenewedReadinessSessionId(submissionSessionId);
             }
             useCheckInReadinessStore.setState({ grant });
           }
@@ -514,9 +572,9 @@ function CheckInScreenContent() {
           boundEligibilitySessionId = grant.eligibilitySessionId;
         }
         const input = {
-          ...(selectedVenue.locationType !== 'gathr_venue'
-            ? { placeCandidateId: selectedVenue.placeCandidateId }
-            : { venueId: selectedVenue.venueId }),
+          ...(submissionPlace.locationType !== 'gathr_venue'
+            ? { placeCandidateId: submissionPlace.placeCandidateId }
+            : { venueId: submissionPlace.venueId }),
           eligibilitySessionId: canReuseActiveVenue ? undefined : boundEligibilitySessionId,
           durationMinutes,
           audienceMode,
@@ -544,8 +602,8 @@ function CheckInScreenContent() {
         if (params.readinessVersion === '1' && !canReuseActiveVenue) {
           const currentReadiness = useCheckInReadinessStore.getState();
           if (currentReadiness.uid === user?.uid
-            && (currentReadiness.sessionId === readinessSessionId
-              || currentReadiness.grant?.readinessSessionId === readinessSessionId)) {
+            && (currentReadiness.sessionId === submissionSessionId
+              || currentReadiness.grant?.readinessSessionId === submissionSessionId)) {
             useCheckInReadinessStore.setState({
               grant: null,
               arrival: null,
@@ -919,7 +977,9 @@ function CheckInScreenContent() {
             <View style={styles.submitArea}>
               {params.readinessVersion === '1' && !canReuseActiveVenue && (!hasContextualEligibility || !!submissionError) && (
                 <View testID="check-in-preparation-status">
-                  <Text style={styles.confirmationCopy}>{submissionError || 'Your prepared arrival expired or you left the area. Your place, audience and message are saved.'}</Text>
+                  <Text style={styles.confirmationCopy}>{submissionError || (selectedVenue?.locationType === 'external_place' && !latestExternal
+                    ? 'Your selected place needs a current nearby match. Your privacy choices are saved; refresh preparation or return to place choices.'
+                    : 'Your prepared arrival expired or you left the area. Your place, audience and message are saved.')}</Text>
                   <TouchableOpacity accessibilityRole="button" testID="refresh-check-in-verification" onPress={refreshPreparedArrival} disabled={busy}>
                     <Text style={styles.confirmationCopy}>Refresh verification</Text>
                   </TouchableOpacity>

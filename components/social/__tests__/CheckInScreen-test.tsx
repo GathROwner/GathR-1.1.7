@@ -8,7 +8,8 @@ import { resetCheckInReadinessOwner, useCheckInReadinessStore } from '../../../s
 
 const mockReplace = jest.fn();
 const mockBack = jest.fn();
-const mockParams = { readinessVersion: '1', readinessSessionId: 'prepared-session-01', venueId: 'holy-whale', placeType: 'gathr_venue', placeName: 'Holy Whale', placeAddress: 'Public address' };
+const mockInitialParams = { readinessVersion: '1', readinessSessionId: 'prepared-session-01', venueId: 'holy-whale', placeType: 'gathr_venue', placeName: 'Holy Whale', placeAddress: 'Public address' };
+const mockParams: Record<string, string> = { ...mockInitialParams };
 const mockMapState = { allEvents: [], selectedVenues: [] };
 const mockSocialState = { friends: [{ uid: 'friend-01', displayName: 'Friend', socialHandle: 'friend' }], ownCheckIn: null, fromCache: false };
 jest.mock('@expo/vector-icons/Ionicons', () => () => null);
@@ -42,6 +43,8 @@ describe('qualified-arrival final confirmation', () => {
     accuracyMeters: 10, capturedAtMs: Date.now(), expiresAtMs: Date.now() + 180_000, here: true, place: true });
   beforeEach(() => {
     jest.useFakeTimers(); jest.setSystemTime(2_000_000_100_000); jest.clearAllMocks();
+    for (const key of Object.keys(mockParams)) delete mockParams[key];
+    Object.assign(mockParams, mockInitialParams);
     resetCheckInReadinessOwner('check-in-test-user');
     useCheckInReadinessStore.setState({ sessionId: mockParams.readinessSessionId, foregroundGranted: true, appActive: true, preferencesLoaded: true,
       arrival: arrival(), attempt: { arrival: arrival(), capturedAtMs: Date.now() }, receipt: null });
@@ -53,6 +56,122 @@ describe('qualified-arrival final confirmation', () => {
     });
   });
   afterEach(() => { act(() => component?.unmount()); component = undefined; jest.useRealTimers(); jest.restoreAllMocks(); });
+
+  const externalKey = `external:${'a'.repeat(32)}`;
+  const seedExternal = () => {
+    Object.assign(mockParams, { venueId: '', placeCandidateId: 'original-candidate', placeType: 'external_place', placeName: 'Fox and Crow' });
+    const state = useCheckInReadinessStore.getState();
+    const candidate = { id: 'original-candidate', locationKey: externalKey, type: 'external_place' as const,
+      name: 'Fox and Crow', address: '', category: 'Pub', latitude: 46.235, longitude: -63.129, distanceMetres: 0 };
+    useCheckInReadinessStore.setState({ preparation: { ...state.preparation, sessionId: state.sessionId,
+      latitude: candidate.latitude, longitude: candidate.longitude, expiresAtMs: Date.now() + 300_000,
+      canonical: { status: 'ready', candidates: [], error: '', retryAtMs: 0 },
+      external: { status: 'ready', candidates: [candidate], error: '', retryAtMs: 0 } } });
+    (bindCheckInReadiness as jest.Mock).mockImplementation(async input => ({ protocolVersion: 1,
+      readinessSessionId: input.readinessSessionId, eligibilitySessionId: input.readinessSessionId,
+      placeCandidateId: input.placeCandidateId, locationType: 'external_place', exactPrivateAllowed: false, expiresAtMs: Date.now() + 300_000 }));
+    return candidate;
+  };
+
+  // Measured local RN setup took8.4s under host load; the fake-clock/store step took40ms.
+  // This wall-clock harness allowance changes no product timer or other test budget.
+  it('keeps a 21-minute privacy draft and binds/creates the latest same-source candidate without a lookup', async () => {
+    const candidate = seedExternal(); await mount(); act(() => note().props.onChangeText('Preserved long-form note'));
+    act(() => control().findByProps({ accessibilityLabel: '120 minute check-in' }).props.onPress());
+    jest.setSystemTime(Date.now() + 21 * 60_000);
+    act(() => {
+      jest.advanceTimersByTime(1000);
+      const state = useCheckInReadinessStore.getState();
+      const renewed = { ...arrival(), sessionId: 'renewed-session' };
+      useCheckInReadinessStore.setState({ sessionId: renewed.sessionId, arrival: renewed, attempt: null,
+        preparation: { ...state.preparation, sessionId: renewed.sessionId, expiresAtMs: Date.now() + 300_000,
+          external: { ...state.preparation.external, candidates: [{ ...candidate, id: 'fresh-candidate' }] } } });
+    });
+    expect(confirm().props.disabled).toBe(false);
+    expect(note().props.value).toBe('Preserved long-form note');
+    await act(async () => confirm().props.onPress());
+    expect(bindCheckInReadiness).toHaveBeenCalledWith(expect.objectContaining({ readinessSessionId: 'renewed-session', placeCandidateId: 'fresh-candidate' }));
+    expect(createCheckIn).toHaveBeenCalledWith(expect.objectContaining({ placeCandidateId: 'fresh-candidate', message: 'Preserved long-form note', audienceMode: 'all_friends', durationMinutes: 120 }));
+    expect(requestCheckInPreparationRetry).not.toHaveBeenCalled();
+  }, 20_000);
+
+  it('retains a matching bound UUID for retry after candidate rotation and arrival expiry', async () => {
+    const candidate = seedExternal();
+    (createCheckIn as jest.Mock).mockRejectedValueOnce(new Error('Connection lost'));
+    await mount(); await act(async () => confirm().props.onPress());
+    act(() => { const state = useCheckInReadinessStore.getState(); useCheckInReadinessStore.setState({ arrival: null, attempt: null,
+      preparation: { ...state.preparation, external: { ...state.preparation.external, candidates: [{ ...candidate, id: 'rotated-again' }] } } }); });
+    await act(async () => confirm().props.onPress());
+    expect(bindCheckInReadiness).toHaveBeenCalledTimes(1);
+    expect((createCheckIn as jest.Mock).mock.calls[1][0]).toEqual((createCheckIn as jest.Mock).mock.calls[0][0]);
+  });
+
+  it('preserves the note and disables confirmation when the same source target is no longer eligible', async () => {
+    seedExternal(); await mount(); act(() => note().props.onChangeText('Keep this draft'));
+    act(() => { const state = useCheckInReadinessStore.getState(); useCheckInReadinessStore.setState({ preparation: {
+      ...state.preparation, external: { ...state.preparation.external, candidates: [] } } }); });
+    expect(confirm().props.disabled).toBe(true);
+    expect(note().props.value).toBe('Keep this draft');
+    expect(bindCheckInReadiness).not.toHaveBeenCalled(); expect(createCheckIn).not.toHaveBeenCalled();
+  });
+
+  it('keeps the original eligible UUID usable when an older server omits the optional stable key', async () => {
+    seedExternal(); const state = useCheckInReadinessStore.getState();
+    useCheckInReadinessStore.setState({ preparation: { ...state.preparation,
+      external: { ...state.preparation.external, candidates: state.preparation.external.candidates.map(({ locationKey: _key, ...candidate }) => candidate) } } });
+    await mount(); await act(async () => confirm().props.onPress());
+    expect(bindCheckInReadiness).toHaveBeenCalledWith(expect.objectContaining({ placeCandidateId: 'original-candidate' }));
+  });
+
+  it('retries the same pending bind target and operation after an uncertain response and pool rotation', async () => {
+    const candidate = seedExternal(); let rejectBind!: (error: Error) => void;
+    (bindCheckInReadiness as jest.Mock).mockImplementationOnce(() => new Promise((_resolve, reject) => { rejectBind = reject; }));
+    await mount(); await act(async () => confirm().props.onPress());
+    act(() => { const state = useCheckInReadinessStore.getState(); useCheckInReadinessStore.setState({ preparation: {
+      ...state.preparation, external: { ...state.preparation.external, candidates: [{ ...candidate, id: 'pool-rotated' }] } } }); });
+    await act(async () => rejectBind(new Error('Network unavailable')));
+    await act(async () => confirm().props.onPress());
+    expect((bindCheckInReadiness as jest.Mock).mock.calls[1][0]).toEqual((bindCheckInReadiness as jest.Mock).mock.calls[0][0]);
+    expect(createSocialOperationId).toHaveBeenCalledTimes(2); // One bind operation, one final create.
+    expect(createCheckIn).toHaveBeenCalledWith(expect.objectContaining({ placeCandidateId: 'original-candidate' }));
+  });
+
+  it('uses a newly prepared UUID after a definitive expired-candidate rejection', async () => {
+    const candidate = seedExternal();
+    (bindCheckInReadiness as jest.Mock).mockRejectedValueOnce(Object.assign(new Error('Refresh this place'), { code: 'failed-precondition' }));
+    await mount(); await act(async () => confirm().props.onPress());
+    act(() => { const state = useCheckInReadinessStore.getState(); useCheckInReadinessStore.setState({ preparation: {
+      ...state.preparation, external: { ...state.preparation.external, candidates: [{ ...candidate, id: 'fresh-after-rejection' }] } } }); });
+    await act(async () => confirm().props.onPress());
+    expect((bindCheckInReadiness as jest.Mock).mock.calls[1][0]).toMatchObject({ placeCandidateId: 'fresh-after-rejection' });
+    expect(createCheckIn).toHaveBeenCalledWith(expect.objectContaining({ placeCandidateId: 'fresh-after-rejection' }));
+  });
+
+  it('cancels a pending renewed-UUID bind without creating or retaining its late grant', async () => {
+    const candidate = seedExternal(); await mount();
+    act(() => { const state = useCheckInReadinessStore.getState(); const renewed = { ...arrival(), sessionId: 'renewed-session' };
+      useCheckInReadinessStore.setState({ sessionId: renewed.sessionId, arrival: renewed, attempt: null,
+        preparation: { ...state.preparation, sessionId: renewed.sessionId,
+          external: { ...state.preparation.external, candidates: [{ ...candidate, id: 'renewed-candidate' }] } } }); });
+    let finish!: (value: unknown) => void;
+    (bindCheckInReadiness as jest.Mock).mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+    await act(async () => confirm().props.onPress());
+    act(() => component?.unmount()); component = undefined;
+    expect(useCheckInReadinessStore.getState().sessionId).toBe('');
+    await act(async () => finish({ protocolVersion: 1, readinessSessionId: 'renewed-session', eligibilitySessionId: 'renewed-session',
+      placeCandidateId: 'renewed-candidate', locationType: 'external_place', exactPrivateAllowed: false, expiresAtMs: Date.now() + 300_000 }));
+    expect(createCheckIn).not.toHaveBeenCalled(); expect(useCheckInReadinessStore.getState().grant).toBeNull();
+  });
+
+  it('preserves qualification on Back after a definitive bind rejection without a grant', async () => {
+    seedExternal();
+    (bindCheckInReadiness as jest.Mock).mockRejectedValueOnce(Object.assign(new Error('Refresh this place'), { code: 'failed-precondition' }));
+    await mount(); await act(async () => confirm().props.onPress());
+    const before = useCheckInReadinessStore.getState();
+    act(() => component?.unmount()); component = undefined;
+    expect(useCheckInReadinessStore.getState()).toMatchObject({ sessionId: before.sessionId, arrival: before.arrival, grant: null });
+    expect(before.arrival?.place).toBe(true);
+  });
 
   it('uses the captured server arrival even without a current raw receipt and sends public privacy explicitly', async () => {
     await mount(); act(() => note().props.onChangeText('Meeting friends'));
