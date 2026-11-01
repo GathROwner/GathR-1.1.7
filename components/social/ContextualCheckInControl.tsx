@@ -4,7 +4,7 @@ import { useIsFocused } from '@react-navigation/native';
 import * as Haptics from 'expo-haptics';
 import { useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import Svg, { Circle } from 'react-native-svg';
+import { ReadinessRings } from './ReadinessRings';
 import {
   ActivityIndicator,
   Image,
@@ -153,31 +153,6 @@ export function closestNearbyPlaceId(candidates: VenueCandidate[]): string {
   return candidates.reduce<VenueCandidate | null>((closest, current) => (
     !closest || current.distanceMetres < closest.distanceMetres ? current : closest
   ), null)?.id || '';
-}
-
-export function ReadinessRings({ here, place, hereReady, placeReady, emphasizedRing, children }: {
-  here: number; place: number; hereReady: boolean; placeReady: boolean;
-  emphasizedRing?: 'here' | 'place'; children: React.ReactNode;
-}) {
-  const ring = (name: 'here' | 'place', radius: number, progress: number, ready: boolean, color: string, readyColor: string) => {
-    const circumference = 2 * Math.PI * radius;
-    // Rounded caps must leave a visible gap until server readiness and preparation succeed.
-    const displayedProgress = ready ? 1 : Math.min(UNVERIFIED_RING_PROGRESS_MAX, Math.max(0, progress));
-    return <React.Fragment key={radius}>
-      <Circle cx={24} cy={24} r={radius} stroke={color} strokeOpacity={0.16} strokeWidth={3.5} fill="none" />
-      {displayedProgress > 0 && <Circle testID={`check-in-${name}-ring`} cx={24} cy={24} r={radius}
-        stroke={ready ? readyColor : color} strokeWidth={ready ? (emphasizedRing === name ? 5.5 : 4.5) : 3.5} fill="none"
-        strokeLinecap="round" strokeDasharray={`${circumference} ${circumference}`}
-        strokeDashoffset={circumference * (1 - displayedProgress)} rotation={-90} origin="24, 24" />}
-    </React.Fragment>;
-  };
-  return <View style={styles.rings} pointerEvents="none">
-    <Svg width={36} height={36} viewBox="0 0 48 48" style={StyleSheet.absoluteFill}>
-      {ring('place', 21.5, place, placeReady, '#2F80ED', '#175CD3')}
-      {ring('here', 16, here, hereReady, '#8B5CF6', '#6D28D9')}
-    </Svg>
-    {children}
-  </View>;
 }
 
 function messageForError(error: unknown) {
@@ -596,7 +571,8 @@ export default function ContextualCheckInControl({ enabled, rightOffset = 10, bo
           </View>
         </View>
       </ReadinessRings> : <ReadinessRings
-        here={hereProgress} place={placeProgress} hereReady={hereEntryReady} placeReady={levels.place}>
+        here={hereProgress} place={placeProgress} hereReady={hereEntryReady} placeReady={levels.place}
+        resetKey={readiness.sessionId}>
         {hereEntryReady ? <View testID="check-in-ready-mark" style={[styles.readyMark, levels.place && styles.placeReadyMark]}>
           <Ionicons name="checkmark" color="#FFFFFF" size={16} />
         </View> : candidate ? <View style={styles.smallAvatar}><VenueAvatar venue={candidate} /></View>
@@ -941,7 +917,6 @@ const styles = StyleSheet.create({
   },
   readyControl: { backgroundColor: '#F0F7FF' },
   checkedInControl: { backgroundColor: '#FFFFFF' },
-  rings: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
   smallAvatar: { transform: [{ scale: 0.55 }] },
   readyMark: { width: 22, height: 22, borderRadius: 11, alignItems: 'center', justifyContent: 'center', backgroundColor: '#6D28D9' },
   placeReadyMark: { backgroundColor: '#175CD3' },

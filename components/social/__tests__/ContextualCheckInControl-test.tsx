@@ -113,6 +113,7 @@ describe('prepared check-in control', () => {
     act(() => useCheckInReadinessStore.setState({ arrival,
       acceptedProgress: { sessionId: 'readiness-session', hereMs: 30_000, placeMs: 30_000, receivedAtMs: Date.now() } }));
     expect(byId('contextual-check-in-ready')).toBeTruthy();
+    await act(async () => { jest.advanceTimersByTime(650); });
     expect(byId('check-in-here-ring').props.strokeDashoffset).toBe(0);
   });
 
@@ -133,6 +134,7 @@ describe('prepared check-in control', () => {
     expect(byId('check-in-place-ring').props.strokeDashoffset).toBeCloseTo(confirmedOffset);
     act(() => useCheckInReadinessStore.setState({ serviceError: false, progressPaused: false, interruptedAtMs: null,
       acceptedProgress: { ...accepted, placeMs: 75_000, receivedAtMs: Date.now() } }));
+    await act(async () => { jest.advanceTimersByTime(650); });
     expect(byId('check-in-place-ring').props.strokeDashoffset).toBeCloseTo(circumference * (1 - 75 / 90));
     expect(byId('check-in-place-ring').props.strokeDashoffset).toBeGreaterThan(0);
     expect(discoverNearbyCheckInPlaces).not.toHaveBeenCalled();
