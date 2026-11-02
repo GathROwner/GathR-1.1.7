@@ -472,18 +472,21 @@ export default function ContextualCheckInControl({ enabled, rightOffset = 10, bo
         : readiness.serviceError
           ? 'Check-in verification is unavailable right now. You can keep browsing.'
           : !readiness.acceptedProgress ? 'Verifying your location before the rings begin. You can keep browsing.' : defaultReadinessCopy;
-  const hereProgress = hereEntryReady ? 1 : Math.min(UNVERIFIED_RING_PROGRESS_MAX, presentedReadiness.hereMs / CHECK_IN_READINESS.hereMs);
-  const placeProgress = levels.place ? 1 : Math.min(UNVERIFIED_RING_PROGRESS_MAX, presentedReadiness.placeMs / CHECK_IN_READINESS.placeMs);
+  const noDwell = readiness.acceptedProgress?.noDwell === true;
+  const waitingProgress = (elapsed: number, target: number) => noDwell ? 0 : Math.min(UNVERIFIED_RING_PROGRESS_MAX, elapsed / target);
+  const hereProgress = hereEntryReady ? 1 : waitingProgress(presentedReadiness.hereMs, CHECK_IN_READINESS.hereMs);
+  const placeProgress = levels.place ? 1 : waitingProgress(presentedReadiness.placeMs, CHECK_IN_READINESS.placeMs);
   const explanation = autoBubbleRef.current && levels.place ? bubble : hereEntryReady
     ? levels.place ? 'Your location and nearby places are ready. Tap the checkmark to choose.'
       : placeEntryReady && knownPlaces.length > 0 ? 'GathR venues and private check-in are ready. Other public places are still preparing.'
-        : 'Private check-in is ready. Nearby public places are preparing while the blue ring fills.'
+        : 'Private check-in is ready. GathR is checking nearby public places.'
     : earlyCopy;
   const preparationFailure = prep.canonical.status === 'error' ? prep.canonical.error
     : prep.external.status === 'error' ? prep.external.error : '';
   const readinessNotice = preparationFailure || (explanation === defaultReadinessCopy ? '' : explanation);
   const waitingStatus = (required: number) => readiness.serviceError || (required === CHECK_IN_READINESS.placeMs && preparationFailure)
-    ? 'Unavailable' : !readiness.acceptedProgress || readiness.progressPaused ? 'Verifying' : '';
+    ? 'Unavailable' : !readiness.acceptedProgress || readiness.progressPaused ? 'Verifying'
+      : noDwell ? (required === CHECK_IN_READINESS.placeMs && arrival?.place ? 'Preparing' : 'Verifying') : '';
   const ringStatus = (ready: boolean, elapsed: number, required: number) => ready ? 'Ready'
     : waitingStatus(required) || (elapsed >= required ? 'Preparing' : `${Math.floor(elapsed / 1000)}/${required / 1000}s`);
   const progressCopy = (ready: boolean, elapsed: number, required: number) => ready ? 'Ready'

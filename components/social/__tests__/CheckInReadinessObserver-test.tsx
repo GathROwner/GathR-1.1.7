@@ -88,6 +88,23 @@ describe('foreground readiness observer lifecycle', () => {
   const mount = async () => { await act(async () => { component = renderer.create(<CheckInReadinessObserver />); }); };
   const advance = async (milliseconds: number) => { await act(async () => { jest.advanceTimersByTime(milliseconds); }); };
 
+  it('keeps a pending fresh sample in its session when the local evidence expires before the reply', async () => {
+    const now = Date.now();
+    useMapStore.setState({ userLocation: { timestamp: now - 14_000,
+      coords: { latitude: 46.235, longitude: -63.129, accuracy: 10, speed: 0, altitude: null, altitudeAccuracy: null, heading: null } } });
+    let reply!: (receipt: unknown) => void;
+    (recordCheckInReadinessSample as jest.Mock).mockImplementationOnce(() => new Promise(resolve => { reply = resolve; }));
+    await mount();
+    const input = (recordCheckInReadinessSample as jest.Mock).mock.calls[0][0];
+    await advance(9_500);
+    expect(useCheckInReadinessStore.getState()).toMatchObject({ sessionId: input.sessionId, arrival: null, receipt: null });
+    await act(async () => reply({ protocolVersion: 1, sessionId: input.sessionId, sequence: input.sequence,
+      hereQualifyingMs: 0, placeQualifyingMs: 0, expiresAtMs: Date.now() + 20_000,
+      arrival: { sessionId: input.sessionId, latitude: input.latitude, longitude: input.longitude,
+        accuracyMeters: 10, capturedAtMs: input.capturedAtMs, expiresAtMs: Date.now() + 180_000, here: true, place: true } }));
+    expect(useCheckInReadinessStore.getState().arrival?.place).toBe(true);
+  });
+
   it('does not invent server progress during failed attestation, then accepts the first zero baseline', async () => {
     const record = recordCheckInReadinessSample as jest.Mock;
     record.mockRejectedValue(new Error('Attestation unavailable'));

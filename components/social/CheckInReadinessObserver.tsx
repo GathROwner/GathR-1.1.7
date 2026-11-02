@@ -152,6 +152,7 @@ export default function CheckInReadinessObserver() {
       });
     };
     const run = async (epoch: number) => {
+      let requestForRun: AbortController | null = null;
       let nextDelayMs: number = CHECK_IN_READINESS.sampleIntervalMs;
       let nextSampleDueAtMs: number | null = null;
       const currentRun = () => !disposed && epoch === generation && AppState.currentState === 'active'
@@ -263,7 +264,8 @@ export default function CheckInReadinessObserver() {
         }
         const sentSequence = before.sessionId === sessionId ? Math.max(sequence, before.sampleSequence) + 1 : 1;
         sequence = sentSequence;
-        pendingRequest = new AbortController();
+        requestForRun = new AbortController();
+        pendingRequest = requestForRun;
         useCheckInReadinessStore.setState({ lastSampleRequestAtMs: Date.now(), sampleSequence: sentSequence });
         const receipt = await recordCheckInReadinessSample({ protocolVersion: 1, sessionId, sequence: sentSequence,
           reset: departed || (!arrival && evidence.reason !== 'qualifying' && evidence.reason !== 'low_accuracy'), ...sample }, { signal: pendingRequest.signal });
@@ -278,7 +280,8 @@ export default function CheckInReadinessObserver() {
         const latest = useCheckInReadinessStore.getState();
         const revoked = !serverArrival && !!qualifiedArrivalForState(latest);
         useCheckInReadinessStore.setState({ receipt, serviceError: false,
-          acceptedProgress: { sessionId, hereMs: receipt.hereQualifyingMs, placeMs: receipt.placeQualifyingMs, receivedAtMs: Date.now() },
+          acceptedProgress: { sessionId, hereMs: receipt.hereQualifyingMs, placeMs: receipt.placeQualifyingMs, receivedAtMs: Date.now(),
+            ...(receipt.hereRequiredMs === 0 && receipt.placeRequiredMs === 0 ? { noDwell: true } : {}) },
           progressPaused: false,
           // Successful server answers are authoritative. A network failure can
           // retain a lease, but a reply that removed it cannot retain an attempt.
@@ -290,6 +293,7 @@ export default function CheckInReadinessObserver() {
       } catch {
         if (currentRun()) useCheckInReadinessStore.setState({ receipt: null, serviceError: true });
       } finally {
+        if (pendingRequest === requestForRun) pendingRequest = null;
         if (currentRun()) {
           const scheduledDelayMs = nextSampleDueAtMs === null
             ? nextDelayMs
@@ -368,8 +372,12 @@ export default function CheckInReadinessObserver() {
         return;
       }
       if (state.arrival || state.attempt) useCheckInReadinessStore.setState({ arrival: null, attempt: null });
+      // Keep the session available to its in-flight reply. This grants no time
+      // or arrival. An expired or mismatched receipt still fails validation.
+      const awaitingReceipt = pendingRequest !== null && !pendingRequest.signal.aborted
+        && state.lastSampleRequestAtMs !== null && now - state.lastSampleRequestAtMs <= CHECK_IN_READINESS.maxSampleGapMs;
       if (state.appActive && state.interruptedAtMs === null
-        && state.evidence.previous && !isFreshReadiness(state.evidence, now)
+        && !awaitingReceipt && state.evidence.previous && !isFreshReadiness(state.evidence, now)
         && !(state.evidence.reason === 'low_accuracy' && now - state.evidence.previous.capturedAtMs <= CHECK_IN_READINESS.maxSampleGapMs)) invalidate();
       else if (state.receipt && state.receipt.expiresAtMs <= now) useCheckInReadinessStore.setState({ receipt: null });
     }, 1_000);

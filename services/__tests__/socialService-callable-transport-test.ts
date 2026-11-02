@@ -33,6 +33,7 @@ import {
   listNearbyCanonicalCheckInVenues,
   recordCheckInReadinessSample,
 } from '../socialService';
+import { Platform } from 'react-native';
 
 const input = {
   protocolVersion: 1 as const,
@@ -110,9 +111,9 @@ describe('social callable transport', () => {
     expect(mockHttpsCallable).toHaveBeenCalledWith(
       { project: 'gathr-m1' },
       'recordCheckInReadinessSampleCallable',
-      { timeout: 8_000 }
+      { timeout: 20_000 }
     );
-    expect(callable).toHaveBeenCalledWith(input);
+    expect(callable).toHaveBeenCalledWith({ ...input, ...(Platform.OS === 'ios' ? { arrivalPolicy: 'verified_stop_v1' } : {}) });
     expect(mockGetIdToken).not.toHaveBeenCalled();
   });
 
@@ -219,7 +220,7 @@ describe('social callable transport', () => {
       const fetchMock = jest.spyOn(global, 'fetch');
       let failure: Error | undefined;
       void recordCheckInReadinessSample(input).catch((error) => { failure = error; });
-      await jest.advanceTimersByTimeAsync(8_000);
+      await jest.advanceTimersByTimeAsync(20_000);
       expect(failure?.name).toBe('AbortError');
       expect(fetchMock).not.toHaveBeenCalled();
       resolveToken('late-token');
@@ -252,7 +253,7 @@ describe('social callable transport', () => {
       await jest.advanceTimersByTimeAsync(7_000);
       expect(fetchMock).toHaveBeenCalledTimes(1);
       expect(failure).toBeUndefined();
-      await jest.advanceTimersByTimeAsync(1_000);
+      await jest.advanceTimersByTimeAsync(13_000);
       expect(failure?.name).toBe('AbortError');
       expect(fetchMock.mock.calls[0][1]?.signal?.aborted).toBe(true);
     });

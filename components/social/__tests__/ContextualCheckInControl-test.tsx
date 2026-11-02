@@ -117,6 +117,15 @@ describe('prepared check-in control', () => {
     expect(byId('check-in-here-ring').props.strokeDashoffset).toBe(0);
   });
 
+  it('shows verification instead of a fixed countdown when the server has removed dwell', async () => {
+    seed();
+    useCheckInReadinessStore.setState({ arrival: null, receipt: null, acceptedProgress: {
+      sessionId: 'readiness-session', hereMs: 12_000, placeMs: 12_000, receivedAtMs: Date.now(), noDwell: true } });
+    await mount(); await press('contextual-check-in-idle');
+    expect(copy()).toContain('Verifying');
+    expect(copy()).not.toMatch(/\/ (30|90) sec/);
+  });
+
   it('holds the public ring at confirmed dwell through pauses and advances only on acknowledgement', async () => {
     seed(60);
     const accepted = { sessionId: 'readiness-session', hereMs: 30_000, placeMs: 63_000, receivedAtMs: Date.now() };

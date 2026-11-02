@@ -34,7 +34,7 @@ export interface CheckInReadinessStore {
   evidence: ReadinessState;
   sessionId: string;
   receipt: CheckInReadinessReceipt | null;
-  acceptedProgress: { sessionId: string; hereMs: number; placeMs: number; receivedAtMs: number } | null;
+  acceptedProgress: { sessionId: string; hereMs: number; placeMs: number; receivedAtMs: number; noDwell?: boolean } | null;
   /** Resume must receive an acknowledgement before projecting elapsed time again. */
   progressPaused: boolean;
   serviceError: boolean;

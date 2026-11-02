@@ -93,6 +93,9 @@ function applyCache(saved: Cached, sessionId: string) {
 function renewPool(saved: Cached, state: CheckInReadinessStore, manual: Kind | 'all' | null, now: number) {
   const pool = saved.pool!;
   if (saved.renewalDisabled || now < (saved.renewalRetryAtMs || 0) || (!manual && now < pool.refreshAtMs)) return;
+  // The existing renewal endpoint requires 30 seconds of observed Here evidence.
+  // The current pool remains usable until expiry and discovery can then replace it.
+  if (state.acceptedProgress?.noDwell && state.acceptedProgress.hereMs < CHECK_IN_READINESS.hereMs) return;
   const arrival = qualifiedArrivalForState(state, now);
   const sample = state.evidence.previous!;
   if (!arrival?.here || arrival.sessionId !== state.sessionId || readinessDistance(saved, sample) > CACHE_RADIUS_METRES) return;

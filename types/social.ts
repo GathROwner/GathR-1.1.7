@@ -143,6 +143,8 @@ export interface CheckInReadinessSampleInput {
 }
 
 export interface CheckInReadinessReceipt {
+  hereRequiredMs?: number;
+  placeRequiredMs?: number;
   protocolVersion: 1;
   sessionId: string;
   sequence: number;

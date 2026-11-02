@@ -7,6 +7,7 @@ import {
   type Unsubscribe,
 } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
+import { Platform } from 'react-native';
 
 import {
   app,
@@ -19,6 +20,7 @@ import {
 import { amplitudeTrack } from '../lib/amplitudeAnalytics';
 import { SOCIAL_RELEASE_TWO_ENABLED } from '../types/social';
 import { getSocialAppCheckToken } from './appCheckService';
+import { CHECK_IN_READINESS } from '../utils/checkInReadiness';
 import type {
   BlockProjection,
   CheckInInput,
@@ -405,7 +407,9 @@ function normalizeLocationCaptureTime<T extends { capturedAtMs: number }>(input:
 
 export const recordCheckInReadinessSample = async (input: CheckInReadinessSampleInput, options: { signal?: AbortSignal } = {}) =>
   callSocial<CheckInReadinessSampleInput, CheckInReadinessReceipt>(
-    'recordCheckInReadinessSampleCallable', normalizeLocationCaptureTime(input), { ...options, timeoutMs: 8_000 }
+    'recordCheckInReadinessSampleCallable', normalizeLocationCaptureTime({ ...input,
+      ...(Platform.OS === 'ios' ? { arrivalPolicy: 'verified_stop_v1' as const } : {}) }),
+    { ...options, timeoutMs: CHECK_IN_READINESS.maxSampleGapMs }
   );
 
 export const bindCheckInReadiness = async (input: BindCheckInReadinessInput) =>
