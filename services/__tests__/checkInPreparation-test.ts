@@ -25,6 +25,19 @@ describe('arrival preparation before ring completion', () => {
     (discoverNearbyCheckInPlaces as jest.Mock).mockReset().mockResolvedValue({ candidates: [canonical, external], preparationRadiusMetres: 175, externalLookupStatus: 'complete', expiresAt: start + 900_000 });
   });
   afterEach(() => { clearCheckInPreparationCache(); jest.useRealTimers(); });
+  it('starts discovery at zero dwell only after the server qualifies the current arrival', async () => {
+    const state = useCheckInReadinessStore.getState();
+    useCheckInReadinessStore.setState({ evidence: { ...state.evidence, hereMs: 0, placeMs: 0 } });
+    prepareCheckInPlaces();
+    expect(discoverNearbyCheckInPlaces).not.toHaveBeenCalled();
+    useCheckInReadinessStore.setState({ arrival: { sessionId: state.sessionId, ...position,
+      accuracyMeters: 17, capturedAtMs: start, expiresAtMs: start + 180_000, here: true, place: true } });
+    prepareCheckInPlaces();
+    expect(discoverNearbyCheckInPlaces).toHaveBeenCalledTimes(1);
+    expect(preparedReadinessLevels(useCheckInReadinessStore.getState()).place).toBe(false);
+    await flush();
+    expect(preparedReadinessLevels(useCheckInReadinessStore.getState()).place).toBe(true);
+  });
   it('warms both lists during countdown once, then full-ready waits for server arrival', async () => {
     prepareCheckInPlaces(); prepareCheckInPlaces();
     expect(listNearbyCanonicalCheckInVenues).not.toHaveBeenCalled();

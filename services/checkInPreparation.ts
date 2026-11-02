@@ -171,7 +171,7 @@ export function prepareCheckInPlaces(manual: Kind | 'all' | null = null): void {
   if (!state.uid || state.mode === 'basic' || !state.appActive || !state.foregroundGranted || !state.sessionId || !sample
     || sample.accuracyMeters === null || !Number.isFinite(sample.accuracyMeters) || sample.accuracyMeters < 0
     || sample.accuracyMeters > CHECK_IN_READINESS.hereAccuracyMetres
-    || (!manual && state.evidence.hereMs < 20_000)) return;
+    || (!manual && state.evidence.hereMs < 20_000 && !qualifiedArrivalForState(state, now)?.here)) return;
   const uid = state.uid;
   const sessionId = state.sessionId;
   const maxSampleAgeMs = manual ? MANUAL_LOOKUP_MAX_SAMPLE_AGE_MS : CHECK_IN_READINESS.maxSampleAgeMs;
