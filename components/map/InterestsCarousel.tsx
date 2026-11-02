@@ -240,6 +240,7 @@ const EventCard = memo(({
         <View style={styles.timeRow}>
           <MaterialIcons name="schedule" size={13} color="#1967D2" />
           <EventTimingSummaryText
+            estimateBadgeVisible
             event={event}
             carousel
             style={styles.timeText}

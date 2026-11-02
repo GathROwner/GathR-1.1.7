@@ -94,6 +94,8 @@ export interface EventTiming {
   policyVersion?: string | null;
   /** Source-advertised visitor access; never a replacement for session clocks. */
   visitingHours?: EventVisitingHours;
+  /** Estimated dated offer availability; legacy clocks remain blank. */
+  availability?: import('./offerAvailability').MultiDayOfferAvailability;
 }
 
 export interface EventVisitingHours {
@@ -296,6 +298,9 @@ export interface Event {
   // Event details (from Firestore metadata)
   sourceUrl?: string;
   sourceUniqueId?: string;
+  sourceUniqueIds?: string[];
+  /** Trusted producer context, persisted separately from the rich timing child. */
+  offerAvailabilityBinding?: import('./offerAvailability').AvailabilityBinding;
   facebookUrl?: string;
   eventType?: string;
   ageRestriction?: string;

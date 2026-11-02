@@ -1,0 +1,107 @@
+{
+  "renderer": "React Native Web + exact production parent JSX/styles + real icon component/font",
+  "sourceRoot": "C:\\Users\\craig\\.codex\\worktrees\\2ea9\\GathR-upgrade-sdk54",
+  "viewport": {
+    "width": 390,
+    "height": 844,
+    "deviceScaleFactor": 2
+  },
+  "fixtureClock": "2026-11-02T17:00:00.000Z",
+  "sources": [
+    {
+      "file": "C:\\Users\\craig\\.codex\\worktrees\\2ea9\\GathR-upgrade-sdk54\\app\\(tabs)\\specials.tsx",
+      "sha256": "ab51585e63cbb6eefb830487d94fbfd293d1815e57752ebc1d2b0465ae884493"
+    },
+    {
+      "file": "C:\\Users\\craig\\.codex\\worktrees\\2ea9\\GathR-upgrade-sdk54\\components\\map\\EventImageLightbox.tsx",
+      "sha256": "701089b32be4fa61c91a15df23c1f822fdd272981a2ea639670ebd634a62bcec"
+    }
+  ],
+  "substitutions": [
+    "selected filter store snapshot",
+    "Expo font already-loaded provider for server render",
+    "RNW Text scales native font size/line height at160%; icons retain production allowFontScaling=false"
+  ],
+  "records": [
+    {
+      "name": "selected-open",
+      "date": "2026-11-02",
+      "fontScale": 1,
+      "htmlPath": "C:\\Users\\craig\\Documents\\Codex\\2026-11-02\\followups\\frontend-hours\\parent-renders\\selected-open.html",
+      "htmlSHA256": "cf29ffc03ee3c2a457fcfe84b3097a84f647b566303935d409f5d14d0604e4f8",
+      "text": "selected-open · actual parent timing subtrees\nSpecials card · production styles\n\nToday • 11:00 AM – 10:00 PM\nTIMES\nESTIMATED\ni\n\nRuns through Nov 15\nPayDay Pizza Deal\nLightbox · collapsed\n\nToday • 11:00 AM – 10:00 PM\n\nTIMES\nESTIMATED\nLightbox · time details expanded\n\nToday • 11:00 AM – 10:00 PM\n\nTIMES\nESTIMATED\nHours estimated from restaurant opening hours. Holiday hours may differ. Check the original post before travelling.\nReport incorrect time\nView original post\nSynthetic offer. Exact source JSX and styles extracted from production card/lightbox; actual components and MaterialIcons font. No app, map, ads or device runtime.",
+      "horizontalOverflow": false,
+      "screenshotSHA256": "d0637718d5d3e072801c74dd7100982b5e44171523d81c7896525b59ae72221f"
+    },
+    {
+      "name": "selected-closed",
+      "date": "2026-11-03",
+      "fontScale": 1,
+      "htmlPath": "C:\\Users\\craig\\Documents\\Codex\\2026-11-02\\followups\\frontend-hours\\parent-renders\\selected-closed.html",
+      "htmlSHA256": "043b4617c41abf8bf8d41f1c4baffe9e2202f372c5f43d3161b994f1401e21cf",
+      "text": "selected-closed · actual parent timing subtrees\nSpecials card · production styles\n\nTomorrow • Closed\n\nRuns through Nov 15\nPayDay Pizza Deal\nLightbox · collapsed\n\nTomorrow • Closed\n\nLightbox · time details expanded\n\nTomorrow • Closed\n\nThe restaurant is closed on this date. Check the original post for details.\nReport incorrect time\nView original post\nSynthetic offer. Exact source JSX and styles extracted from production card/lightbox; actual components and MaterialIcons font. No app, map, ads or device runtime.",
+      "horizontalOverflow": false,
+      "screenshotSHA256": "90583de270cdaf6ed489ab3749a49157297a31bb4fc3cf073a6730631816323c"
+    },
+    {
+      "name": "unknown-holiday",
+      "date": "2026-11-11",
+      "fontScale": 1,
+      "htmlPath": "C:\\Users\\craig\\Documents\\Codex\\2026-11-02\\followups\\frontend-hours\\parent-renders\\unknown-holiday.html",
+      "htmlSHA256": "2313609315b9dd04f9e29bcac1e68b2a6c063d0d1157ebac1eed86e606fbb8b7",
+      "text": "unknown-holiday · actual parent timing subtrees\nSpecials card · production styles\n\nNov 11 • Times unknown\nTIMES\nUNKNOWN\ni\n\nRuns through Nov 15\nPayDay Pizza Deal\nLightbox · collapsed\n\nNov 11 • Times unknown\n\nTIMES\nUNKNOWN\nLightbox · time details expanded\n\nNov 11 • Times unknown\n\nTIMES\nUNKNOWN\nHours have not been confirmed for this date. Usual restaurant hours: 11:00 AM – 10:00 PM. These do not confirm this date’s offer hours. Holiday hours may differ.\nReport incorrect time\nView original post\nSynthetic offer. Exact source JSX and styles extracted from production card/lightbox; actual components and MaterialIcons font. No app, map, ads or device runtime.",
+      "horizontalOverflow": false,
+      "screenshotSHA256": "a59e3034dad33641102665732d6010981cfa7cdae539a65fdcdf24424b752f10"
+    },
+    {
+      "name": "overnight",
+      "date": "2026-11-06",
+      "fontScale": 1,
+      "htmlPath": "C:\\Users\\craig\\Documents\\Codex\\2026-11-02\\followups\\frontend-hours\\parent-renders\\overnight.html",
+      "htmlSHA256": "82a85ee4acfcc7a0b765e9dba96188a30f2d44b1c5a0c12a421ad7116a3aa615",
+      "text": "overnight · actual parent timing subtrees\nSpecials card · production styles\n\nNov 6 • 11:00 AM – 12:00 AM (+1 day)\nTIMES\nESTIMATED\ni\n\nRuns through Nov 15\nPayDay Pizza Deal\nLightbox · collapsed\n\nNov 6 • 11:00 AM – 12:00 AM (+1 day)\n\nTIMES\nESTIMATED\nLightbox · time details expanded\n\nNov 6 • 11:00 AM – 12:00 AM (+1 day)\n\nTIMES\nESTIMATED\nHours estimated from restaurant opening hours. Holiday hours may differ. Check the original post before travelling.\nReport incorrect time\nView original post\nSynthetic offer. Exact source JSX and styles extracted from production card/lightbox; actual components and MaterialIcons font. No app, map, ads or device runtime.",
+      "horizontalOverflow": false,
+      "screenshotSHA256": "f25da5c4b50389f4dfb18c40eec8cfc8853829706bd77383f70bcce14e4ea7ea"
+    },
+    {
+      "name": "range",
+      "date": null,
+      "fontScale": 1,
+      "htmlPath": "C:\\Users\\craig\\Documents\\Codex\\2026-11-02\\followups\\frontend-hours\\parent-renders\\range.html",
+      "htmlSHA256": "fcb7153490adbaeaca441d553e64ad011241d41867e96bbb0e94b84f749dc477",
+      "text": "range · actual parent timing subtrees\nSpecials card · production styles\n\nNov 1 – Nov 15 • Hours vary by date\nHOURS\nVARY\ni\n\nRuns through Nov 15\nPayDay Pizza Deal\nLightbox · collapsed\n\nNov 1 – Nov 15 • Hours vary by date\n\nHOURS\nVARY\nLightbox · time details expanded\n\nNov 1 – Nov 15 • Hours vary by date\n\nHOURS\nVARY\nHours vary by date. Some hours are estimated from restaurant opening hours. Check the original post for the day you plan to visit.\nReport incorrect time\nView original post\nSynthetic offer. Exact source JSX and styles extracted from production card/lightbox; actual components and MaterialIcons font. No app, map, ads or device runtime.",
+      "horizontalOverflow": false,
+      "screenshotSHA256": "4d5c81bd9613362ef054de88134a68b762627ab79f058c8627613671b100ee34"
+    },
+    {
+      "name": "split",
+      "date": "2026-11-02",
+      "fontScale": 1,
+      "htmlPath": "C:\\Users\\craig\\Documents\\Codex\\2026-11-02\\followups\\frontend-hours\\parent-renders\\split.html",
+      "htmlSHA256": "56f40f83cf5f04a329e3baa6e11f3159edb18467e0ca0ad7dd2cbc4f7131761a",
+      "text": "split · actual parent timing subtrees\nSpecials card · production styles\n\nToday • 11:00 AM – 1:00 PM, 5:00 PM – 10:00 PM\nTIMES\nESTIMATED\ni\n\nRuns through Nov 15\nPayDay Pizza Deal\nLightbox · collapsed\n\nToday • 11:00 AM – 1:00 PM, 5:00 PM – 10:00 PM\n\nTIMES\nESTIMATED\nLightbox · time details expanded\n\nToday • 11:00 AM – 1:00 PM, 5:00 PM – 10:00 PM\n\nTIMES\nESTIMATED\nHours estimated from restaurant opening hours. Holiday hours may differ. Check the original post before travelling.\nReport incorrect time\nView original post\nSynthetic offer. Exact source JSX and styles extracted from production card/lightbox; actual components and MaterialIcons font. No app, map, ads or device runtime.",
+      "horizontalOverflow": false,
+      "screenshotSHA256": "a842674fb14d4536d1d77d73a58c5da2e5c43b6d84141148ccc0f0fb9e3258ab"
+    },
+    {
+      "name": "unknown-with-tail",
+      "date": "2026-11-07",
+      "fontScale": 1,
+      "htmlPath": "C:\\Users\\craig\\Documents\\Codex\\2026-11-02\\followups\\frontend-hours\\parent-renders\\unknown-with-tail.html",
+      "htmlSHA256": "d3fb0aada46deeb30fa0ff7218893fdd8a348c1568250ad3985c9989e8d3224b",
+      "text": "unknown-with-tail · actual parent timing subtrees\nSpecials card · production styles\n\nNov 7 • 12:00 AM – 2:00 AM (estimated); other times unknown\nTIMES\nUNKNOWN\ni\n\nRuns through Nov 15\nPayDay Pizza Deal\nLightbox · collapsed\n\nNov 7 • 12:00 AM – 2:00 AM (estimated); other times unknown\n\nTIMES\nUNKNOWN\nLightbox · time details expanded\n\nNov 7 • 12:00 AM – 2:00 AM (estimated); other times unknown\n\nTIMES\nUNKNOWN\nHours have not been confirmed for this date. The overnight hours shown are estimates. Holiday hours may differ.\nReport incorrect time\nView original post\nSynthetic offer. Exact source JSX and styles extracted from production card/lightbox; actual components and MaterialIcons font. No app, map, ads or device runtime.",
+      "horizontalOverflow": false,
+      "screenshotSHA256": "58ee591f3fcf6e026e2c38c088ac8122e478f88c4036ffd8defe97c851de9593"
+    },
+    {
+      "name": "large-font-160",
+      "date": "2026-11-06",
+      "fontScale": 1.6,
+      "htmlPath": "C:\\Users\\craig\\Documents\\Codex\\2026-11-02\\followups\\frontend-hours\\parent-renders\\large-font-160.html",
+      "htmlSHA256": "f1579710d992ec378dac3466ee809ff6dfeac973142c0cf4fd91453bb1748e6a",
+      "text": "large-font-160 · actual parent timing subtrees\nSpecials card · production styles\n\nNov 6 • 11:00 AM – 12:00 AM (+1 day)\nTIMES\nESTIMATED\ni\n\nRuns through Nov 15\nPayDay Pizza Deal\nLightbox · collapsed\n\nNov 6 • 11:00 AM – 12:00 AM (+1 day)\n\nTIMES\nESTIMATED\nLightbox · time details expanded\n\nNov 6 • 11:00 AM – 12:00 AM (+1 day)\n\nTIMES\nESTIMATED\nHours estimated from restaurant opening hours. Holiday hours may differ. Check the original post before travelling.\nReport incorrect time\nView original post\nSynthetic offer. Exact source JSX and styles extracted from production card/lightbox; actual components and MaterialIcons font. No app, map, ads or device runtime.",
+      "horizontalOverflow": false,
+      "screenshotSHA256": "de50b69eeba609706008a0206d6210ed3296fdc212d299d52d432d82b34b99d1"
+    }
+  ]
+}

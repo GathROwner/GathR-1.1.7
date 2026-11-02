@@ -1261,7 +1261,7 @@ const EventCard: React.FC<EventCardProps> = ({ event, isSelected, onPress }) => 
       </Text>
       
       <View style={styles.compactTimingRow}>
-        <EventTimingSummaryText event={event} style={styles.cardDateTime} numberOfLines={2} />
+        <EventTimingSummaryText event={event} estimateBadgeVisible style={styles.cardDateTime} numberOfLines={2} />
         <EventTimingBadge event={event} compact />
       </View>
       
@@ -1328,7 +1328,7 @@ const EventDetailsContent: React.FC<EventDetailsProps> = ({ event, onImagePress 
         
         <View style={styles.timeContainer}>
           <MaterialIcons name="access-time" size={16} color="#666666" />
-          <EventTimingSummaryText event={event} style={styles.eventTime} />
+          <EventTimingSummaryText event={event} estimateBadgeVisible style={styles.eventTime} />
           <EventTimingBadge event={event} compact style={styles.timingBadge} />
         </View>
         {timingDisclosure && !hasEstimatedEndpoint && (
@@ -1765,6 +1765,7 @@ const VenueInfoContent: React.FC<VenueInfoProps> = ({ venue }) => {
                     <View style={styles.venueEventDetails}>
                       <EventTimingSummaryText
                         event={event}
+                        estimateBadgeVisible
                         style={styles.venueEventTime}
                         numberOfLines={2}
                       />
@@ -2405,6 +2406,7 @@ return (
   <>
     <EventTimingSummaryText
       event={event}
+      estimateBadgeVisible
       suffix={endDateSuffix}
       style={styles.dateTimeText}
       numberOfLines={2}

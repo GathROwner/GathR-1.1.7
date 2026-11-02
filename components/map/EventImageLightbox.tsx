@@ -48,6 +48,7 @@ import { EventTimingSummaryText } from '../common/EventTimingSummaryText';
 import { useViewedEventTimeStatus, useVisitingHoursView, useRemainingCampaignDateText } from '../../hooks/useVisitingHoursView';
 import { EventSeriesContextLine } from '../common/EventSeriesContextLine';
 import { EventTimingDisclosureActions } from './EventTimingDisclosureActions';
+import { readOfferAvailability } from '../../utils/offerAvailability';
 import { VenueFavoriteButton } from '../common/VenueFavoriteButton';
 import Autolink from 'react-native-autolink';
 
@@ -1426,9 +1427,9 @@ const handleNonTicketAction = () => {
     `${baseDateText}${endDateSuffix}`,
     scheduleContext?.label,
   ].filter(Boolean).join(' · ');
-  const timingDisclosure = getEventTimingDisclosure(updatedEvent);
+  const timingDisclosure = getEventTimingDisclosure(updatedEvent, new Date(), viewedDate);
   const timingState = getEventScheduleState(updatedEvent);
-  const timingHelpText = timingDisclosure
+  const timingHelpText = readOfferAvailability(updatedEvent) ? timingDisclosure || 'Check the original post for offer hours.' : timingDisclosure
     ? `${timingDisclosure} Event times can change after GathR receives them. Check the original post for the latest details or report a correction if this listing no longer matches.`
     : 'Event times can change after GathR receives them. Check the original post for the latest details or report a correction if this listing no longer matches.';
   const handleReportIncorrectTime = async () => {
@@ -2167,6 +2168,7 @@ const handleNonTicketAction = () => {
             <View style={styles.timingSummaryGroup}>
               <EventTimingSummaryText
                 event={updatedEvent}
+                estimateBadgeVisible
                 remainingCampaignDates
                 style={[styles.infoText, styles.timingSummaryLabel]}
                 containerStyle={styles.timingSummaryText}

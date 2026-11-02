@@ -1168,6 +1168,7 @@ const result = await userService.toggleSavedEvent(event.id, {
               <>
                 <EventTimingSummaryText
                   event={event}
+                  estimateBadgeVisible
                   suffix={endDateSuffix}
                   style={styles.dateTimeText}
                   numberOfLines={2}

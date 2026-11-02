@@ -4,6 +4,7 @@ import type { Event } from '../types/events';
 import { combineDateAndTime } from './dateUtils';
 import { getCalendarEndDecision, getEventTiming, getDateOnlyScheduleRange } from './eventTiming';
 import { readVisitingHours } from './visitingHours';
+import { readOfferAvailability } from './offerAvailability';
 
 interface CalendarEvent {
   title: string;
@@ -116,10 +117,12 @@ export const addEventToCalendarWithTiming = async (
 ): Promise<boolean> => {
   if (getDateOnlyScheduleRange(event)) {
     const visiting = readVisitingHours(event);
-    const sourceUrl = visiting?.source.url || event.facebookUrl || event.sharedEventProvenance?.sourceUrl
+    const availability = readOfferAvailability(event);
+    const sourceUrl = availability?.sourceOffer.url || visiting?.source.url || event.facebookUrl || event.sharedEventProvenance?.sourceUrl
       || event.timing?.schedule.start.sourceUrl || event.timing?.schedule.end.sourceUrl;
-    const choice = await ask(visiting ? 'Choose your visiting time' : 'Time not provided',
-      visiting ? `${visiting.source.evidence} ${visiting.caveat} Choose your own visit time from the source; the exhibition dates are not a continuous calendar appointment.`
+    const choice = await ask(availability ? 'Choose your offer time' : visiting ? 'Choose your visiting time' : 'Time not provided',
+      availability ? 'Offer hours are estimates from service hours. Check the original source and choose your own time; the offer dates are not a continuous calendar appointment.'
+        : visiting ? `${visiting.source.evidence} ${visiting.caveat} Choose your own visit time from the source; the exhibition dates are not a continuous calendar appointment.`
         : 'The organizer did not provide a start time. Check the original source before adding a timed calendar entry.',
       [{ text: 'Cancel', value: 'cancel', style: 'cancel' },
         ...(sourceUrl ? [{ text: 'View original post', value: 'source' }] : [])]);

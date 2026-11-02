@@ -7,6 +7,7 @@ import { doesEventMatchCategoryOrFacet } from './familyFriendly';
 import { MAP_TRACE_ENABLED, measureMapScheduleState, type MapScheduleStateCaller } from './mapTrace';
 import { eventOverlapsDateWindow, getUpcomingDateWindow } from './upcomingDateWindow';
 import { readVisitingHours, visitingIntervals, visitingLocalNow, visitingDateAfter, visitingWindowHasHours } from './visitingHours';
+import { readOfferAvailability, offerMatchesWindow } from './offerAvailability';
 
 export type EventTimeContext = {
   todayKey: string;
@@ -40,6 +41,11 @@ export const getFilterScheduleState = (
 };
 
 export const matchesUpcomingDate = (event: Event, selection: UpcomingDateFilter | undefined, context: EventTimeContext): boolean => {
+  if (readOfferAvailability(event, context.now)) {
+    const today = visitingLocalNow(event, context.now).date;
+    const window = getUpcomingDateWindow(selection, today);
+    return offerMatchesWindow(event, window?.startDate || visitingDateAfter(today, 1), window?.endDate, context.now);
+  }
   if (readVisitingHours(event)) {
     const today = visitingLocalNow(event, context.now).date;
     const window = getUpcomingDateWindow(selection, today);
@@ -57,6 +63,11 @@ export const getEventFilterTimeFacts = (
   const past = event.timing?.version === 2 ? state.code === 'confirmed_ended' : isEventPastFast(event, context);
   const now = state.nowEligibility === 'confirmed';
   const today = state.todayEligible;
+  if (readOfferAvailability(event, context.now)) {
+    const date = visitingLocalNow(event, context.now).date, tomorrow = visitingDateAfter(date, 1);
+    return {past, now, today, tomorrow: offerMatchesWindow(event, tomorrow, tomorrow, context.now),
+      upcoming: !past && offerMatchesWindow(event, tomorrow, undefined, context.now)};
+  }
   if (readVisitingHours(event)) {
     const date = visitingLocalNow(event, context.now).date, tomorrow = visitingDateAfter(date, 1);
     return { past, now, today, tomorrow: visitingIntervals(event, tomorrow).length > 0,

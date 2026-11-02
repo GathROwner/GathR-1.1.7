@@ -29,7 +29,7 @@ export function getContinuousCampaignRange(event: CampaignTimingInput) {
   const startDate = timing.schedule.start.localDate || event.startDate;
   const endDate = event.endDate;
   if (timing.scheduleKind !== 'multi_day' || timing.schedule.end.status !== 'unknown'
-    || timing.schedule.start.status === 'estimated' || readVisitingHours(event)
+    || timing.schedule.start.status === 'estimated' || readVisitingHours(event) || timing.availability
     || !validDate(startDate) || !validDate(endDate)
     || Date.parse(endDate) - Date.parse(startDate) <= 86400000) return null;
   // A cocktail competition entry/promotion needs a bounded source date span

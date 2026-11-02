@@ -1,12 +1,13 @@
 import { useMapStore } from '../store';
 import type { Event } from '../types/events';
 import { readVisitingHours, visitingViewDate, visitingLocalNow } from '../utils/visitingHours';
+import { readOfferAvailability } from '../utils/offerAvailability';
 import { getEventTimeStatusFromTiming } from '../utils/eventTiming';
 import { getContinuousCampaignRange, getRemainingCampaignDateText, type CampaignTimingInput } from '../utils/campaignTimingPresentation';
 
 /** Shared selected-date context for cards, carousel and lightbox. No record mutation. */
 function useVisitingContext(event: Pick<Event, 'startDate' | 'startTime' | 'endDate' | 'endTime' | 'timing'> & Partial<Pick<Event, 'type'>>) {
-  const active = Boolean(readVisitingHours(event));
+  const active = Boolean(readVisitingHours(event) || readOfferAvailability(event));
   const filters = useMapStore(s => active ? event.type === 'special' ? s.filterCriteria.specialFilters : s.filterCriteria.eventFilters : undefined);
   return { date: active ? visitingViewDate(event, filters) : undefined, filters };
 }

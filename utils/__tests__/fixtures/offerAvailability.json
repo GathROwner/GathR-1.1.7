@@ -1,0 +1,63 @@
+{
+  "fixtureOnly": true,
+  "description": "Synthetic qualifying pizza offer, not live Greco evidence. The capturedAt, now and expiresAt values are deterministic test context, not current service verification.",
+  "now": "2026-11-02T17:00:00Z",
+  "binding": {
+    "venueId": "fixture-sherwood", "placeId": "fixture-place",
+    "startDate": "2026-11-01", "endDate": "2026-11-15",
+    "sourceOfferId": "offer-source", "generationId": "parse-fixture"
+  },
+  "eventFields": {
+    "name": "PayDay Pizza Deal", "description": "Pizza offer November 1-15, 2026. Pickup and online orders.",
+    "venueId": "fixture-sherwood", "startDate": "2026-11-01", "endDate": "2026-11-15", "startTime": "", "endTime": "",
+    "category": "Food Special", "isFoodSpecial": "Yes", "isEvent": "No", "isRecurring": "No", "recurringPattern": "none",
+    "sourceUniqueIds": ["corroborating-source", "offer-source"],
+    "offerAvailabilityBinding": {
+      "venueId": "fixture-sherwood", "placeId": "fixture-place", "startDate": "2026-11-01", "endDate": "2026-11-15",
+      "sourceOfferId": "offer-source", "generationId": "parse-fixture"
+    }
+  },
+  "timing": {
+    "version": 2, "timeZone": "America/Halifax", "scheduleKind": "multi_day",
+    "schedule": {
+      "start": {"localDate": "2026-11-01", "localTime": null, "timeZone": "America/Halifax", "status": "unknown"},
+      "end": {"localDate": "2026-11-15", "localTime": null, "timeZone": "America/Halifax", "status": "unknown"}
+    },
+    "estimate": {"confidence": "low", "discoveryCutoffDate": "2026-11-15", "discoveryCutoffTime": "23:59", "method": "source_dated_activity_unknown_clock", "estimateVersion": "date-only-activity-v1"},
+    "policyVersion": "honest-end-times-v2",
+    "availability": {
+      "version": 1, "kind": "offer_availability", "venueId": "fixture-sherwood", "placeId": "fixture-place", "service": "food",
+      "startDate": "2026-11-01", "endDate": "2026-11-15", "timeZone": "America/Halifax",
+      "generatedAt": "2026-11-02T17:00:00Z", "expiresAt": "2026-11-08T16:00:00Z", "revision": "fixture-v1",
+      "sourceOffer": {"id": "offer-source", "url": "https://example.org/offer", "evidence": "Pizza offer November 1-15, 2026. Pickup and online orders.", "generationId": "parse-fixture"},
+      "hoursSources": [
+        {"id": "current_dated", "provider": "google_places", "kind": "current_dated", "url": "https://example.org/hours",
+          "capturedAt": "2026-11-02T16:00:00Z", "expiresAt": "2026-11-08T16:00:00Z", "validFrom": "2026-11-02", "validThrough": "2026-11-08",
+          "venueId": "fixture-sherwood", "placeId": "fixture-place", "returnedPlaceId": "fixture-place",
+          "canonicalAddress": "180 Brackley Point Road, Charlottetown, PE", "returnedAddress": "180 Brackley Point Rd, Charlottetown, PE",
+          "businessStatus": "OPERATIONAL", "service": "food", "types": ["restaurant"]},
+        {"id": "regular_weekly", "provider": "google_places", "kind": "regular_weekly", "url": "https://example.org/hours",
+          "capturedAt": "2026-11-02T16:00:00Z", "expiresAt": "2026-11-08T16:00:00Z", "validFrom": "2026-11-02", "validThrough": "2026-11-15",
+          "venueId": "fixture-sherwood", "placeId": "fixture-place", "returnedPlaceId": "fixture-place",
+          "canonicalAddress": "180 Brackley Point Road, Charlottetown, PE", "returnedAddress": "180 Brackley Point Rd, Charlottetown, PE",
+          "businessStatus": "OPERATIONAL", "service": "food", "types": ["restaurant"]}
+      ],
+      "dateRules": {
+        "2026-11-02": {"state": "open", "segments": [{"open": "11:00", "close": "22:00", "endDayOffset": 0}], "sourceId": "current_dated"},
+        "2026-11-03": {"state": "closed", "segments": [], "sourceId": "current_dated"},
+        "2026-11-04": {"state": "unknown", "segments": [], "sourceId": "current_dated", "reason": "Exceptional hours not provided"},
+        "2026-11-06": {"state": "open", "segments": [{"open": "11:00", "close": "00:00", "endDayOffset": 1}], "sourceId": "current_dated"},
+        "2026-11-07": {"state": "unknown", "segments": [], "sourceId": "current_dated", "reason": "Current service endpoint is truncated"}
+      },
+      "usualWeek": {"3": {"state": "open", "segments": [{"open": "11:00", "close": "22:00", "endDayOffset": 0}], "sourceId": "regular_weekly"}}
+    }
+  },
+  "expected": {
+    "2026-11-02": {"state": "scheduled", "certainty": "estimated", "nowEligibility": "none", "withinEstimatedWindow": true},
+    "2026-11-03": {"state": "closed"},
+    "2026-11-04": {"state": "unknown", "usualIntervals": []},
+    "2026-11-07": {"state": "unknown", "intervals": []},
+    "2026-11-11": {"state": "unknown", "intervals": [], "usualIntervals": [{"open": "11:00", "close": "22:00", "endDayOffset": 0}]},
+    "afterExpiry": "Reject rich child and fall back to original date-only timing; do not erase the dated offer or revive old fallback clocks."
+  }
+}

@@ -12,6 +12,7 @@ import { isWithinInterval } from 'date-fns/isWithinInterval';
 import { isSameDay } from 'date-fns/isSameDay';
 import type { TimeStatus } from '../types/events';
 import { readVisitingHours, visitingHoursSummary, visitingLocalNow } from './visitingHours';
+import { readOfferAvailability, offerHoursSummary } from './offerAvailability';
 import {
   getEventScheduleState,
   getEventTimeRangeText,
@@ -435,6 +436,7 @@ export const formatEventTimingSummary = (event: {
   endTime?: string;
   timing?: import('../types/events').EventTiming | null;
 }, viewedDate?: string | null): string => {
+  if (readOfferAvailability(event)) return offerHoursSummary(event, viewedDate === undefined ? visitingLocalNow(event).date : viewedDate);
   if (readVisitingHours(event)) return visitingHoursSummary(event, viewedDate === undefined ? visitingLocalNow(event).date : viewedDate);
   if (getEventTiming({ ...event, endDate: event.endDate || event.startDate, endTime: event.endTime || '' }).scheduleKind === 'date_range_overview') {
     return `${format(parseISO(event.startDate), 'MMM d')} – ${format(parseISO(event.endDate || event.startDate), 'MMM d')} • See individual event times`;

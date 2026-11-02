@@ -11,7 +11,7 @@ import {
 
 import type { Event } from '../../types/events';
 import { formatEventTimingSummary } from '../../utils/dateUtils';
-import { getEventTimeRangeParts, getEventTimingDisclosure } from '../../utils/eventTiming';
+import { getEventTimeRangeParts, getEventTimingDisclosure, getEventTimingBadge } from '../../utils/eventTiming';
 import { getAreaParticipationTimingLabel } from '../../utils/areaEventPresentation';
 import { useRemainingCampaignDateText, useVisitingHoursView } from '../../hooks/useVisitingHoursView';
 import { getCarouselTimeParts } from '../../utils/carouselEventTiming';
@@ -33,6 +33,8 @@ interface EventTimingSummaryTextProps {
   showStatusPrefix?: boolean;
   carousel?: boolean;
   remainingCampaignDates?: boolean;
+  /** Suppress repeated estimate wording only when the adjacent badge says it. */
+  estimateBadgeVisible?: boolean;
 }
 
 /**
@@ -54,6 +56,7 @@ export function EventTimingSummaryText({
   showStatusPrefix = true,
   carousel = false,
   remainingCampaignDates = false,
+  estimateBadgeVisible = false,
 }: EventTimingSummaryTextProps) {
   const [expanded, setExpanded] = useState(false);
   const viewedDate = useVisitingHoursView(event);
@@ -67,8 +70,11 @@ export function EventTimingSummaryText({
   const participationPrefix = carousel && participationLabel && originalParts.prefix
     ? displayParts.prefix.slice(0, -originalParts.prefix.length) + participationLabel
     : participationLabel;
-  const parts = participationPrefix ? { ...displayParts, prefix: participationPrefix, text: participationPrefix } : displayParts;
-  const disclosure = getEventTimingDisclosure(event);
+  const presentationParts = participationPrefix ? { ...displayParts, prefix: participationPrefix, text: participationPrefix } : displayParts;
+  const parts = estimateBadgeVisible && getEventTimingBadge(event, new Date(), viewedDate)?.text === 'TIMES\nESTIMATED'
+    ? { ...presentationParts, prefix: presentationParts.prefix.replace(/ \(estimated\)/g, '') }
+    : presentationParts;
+  const disclosure = getEventTimingDisclosure(event, new Date(), viewedDate);
   const summary = formatEventTimingSummary(event, viewedDate);
   const summaryPrefix = summary.endsWith(originalParts.text)
     ? summary.slice(0, -originalParts.text.length)

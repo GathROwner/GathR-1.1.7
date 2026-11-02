@@ -13,6 +13,7 @@ import {
 import type { Event } from '../../types/events';
 import { getEventTimingBadge, getEventTimingDisclosure, getEventScheduleState, getEventTiming } from '../../utils/eventTiming';
 import { getContinuousCampaignRange } from '../../utils/campaignTimingPresentation';
+import { useVisitingHoursView } from '../../hooks/useVisitingHoursView';
 
 interface EventTimingBadgeProps {
   event: Pick<Event, 'startDate' | 'startTime' | 'endDate' | 'endTime' | 'timing'>;
@@ -24,8 +25,8 @@ interface EventTimingBadgeProps {
   style?: StyleProp<ViewStyle>;
 }
 
-export function getCarouselTimingBadge(event: EventTimingBadgeProps['event']) {
-  const originalBadge = getEventTimingBadge(event);
+export function getCarouselTimingBadge(event: EventTimingBadgeProps['event'], viewedDate?: string | null) {
+  const originalBadge = getEventTimingBadge(event, new Date(), viewedDate);
   return originalBadge?.text === 'STATUS\nUNKNOWN'
     && getEventScheduleState(event).code === 'unknown_cutoff_passed'
     && getEventTiming(event).schedule.end.status === 'unknown'
@@ -43,8 +44,9 @@ export function EventTimingBadge({
   showInfoIndicator = true,
   style,
 }: EventTimingBadgeProps) {
+  const viewedDate = useVisitingHoursView(event);
   // Only this unknown-finish state gets carousel wording; other unknowns retain their meaning.
-  const badge = carousel ? getCarouselTimingBadge(event) : getEventTimingBadge(event);
+  const badge = carousel ? getCarouselTimingBadge(event, viewedDate) : getEventTimingBadge(event, new Date(), viewedDate);
   if (!badge || ((carousel || remainingCampaignDates) && getContinuousCampaignRange(event))) return null;
   const hasInfoIndicator = Boolean(badge.infoTitle && showInfoIndicator);
 
@@ -78,7 +80,7 @@ export function EventTimingBadge({
   );
 
   if (hasInfoIndicator) {
-    const disclosure = getEventTimingDisclosure(event);
+    const disclosure = getEventTimingDisclosure(event, new Date(), viewedDate);
     const handleInfoPress = (pressEvent: GestureResponderEvent) => {
       pressEvent.stopPropagation?.();
       if (onInfoPress) {

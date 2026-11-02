@@ -1,4 +1,5 @@
 import React from 'react';
+jest.mock('../../../store', () => ({ useMapStore: (selector: (state: unknown) => unknown) => selector({}) }));
 import { Alert, StyleSheet } from 'react-native';
 import renderer, { act } from 'react-test-renderer';
 
@@ -19,6 +20,7 @@ const unknownEndEvent = () => ({
 });
 
 describe('EventTimingBadge', () => {
+  afterEach(() => jest.useRealTimers());
   it('uses the existing amber END UNKNOWN on carousel after cutoff while default surfaces keep STATUS UNKNOWN', () => {
     jest.useFakeTimers({ now: new Date('2099-09-07T01:30:00Z') });
     let component: renderer.ReactTestRenderer;
@@ -33,6 +35,7 @@ describe('EventTimingBadge', () => {
     jest.useRealTimers();
   });
   it('keeps ordinary unknown finishes and suppresses finite campaign uncertainty only on date-range surfaces', () => {
+    jest.useFakeTimers({ now: new Date('2026-10-25T15:00:00Z') });
     let component: renderer.ReactTestRenderer;
     act(() => { component = renderer.create(<EventTimingBadge event={unknownEndEvent()} carousel showInfoIndicator={false} />); });
     expect(JSON.stringify(component!.toJSON())).toContain('END\\nUNKNOWN');

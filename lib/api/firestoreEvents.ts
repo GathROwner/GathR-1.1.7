@@ -413,6 +413,10 @@ export function normalizeFirestoreEvent(fsEvent: FirestoreEvent): Event {
       : fsEvent.metadata?.mediaUrls || [],
     sourceUrl: firstText(fsEvent.sourceUrl, fsEvent.metadata?.sourceUrl) || undefined,
     sourceUniqueId: firstText(fsEvent.metadata?.uniqueId) || undefined,
+    sourceUniqueIds: Array.isArray(fsEvent.metadata?.sourceUniqueIds)
+      ? fsEvent.metadata.sourceUniqueIds.filter((id: unknown): id is string => typeof id === 'string' && Boolean(id.trim()))
+      : undefined,
+    offerAvailabilityBinding: fsEvent.offerAvailabilityBinding ?? fsEvent.metadata?.offerAvailabilityBinding,
     facebookUrl: firstText(
       fsEvent.metadata?.facebookUrl,
       fsEvent.metadata?.cleanedFacebookUrl

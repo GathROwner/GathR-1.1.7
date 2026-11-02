@@ -71,6 +71,8 @@ export interface FirestoreEventMetadata {
   cleanedFacebookUrl?: string;
   sourceUrl?: string;
   uniqueId?: string;
+  sourceUniqueIds?: string[];
+  offerAvailabilityBinding?: import('./offerAvailability').AvailabilityBinding;
   eventType?: string;
   ageRestriction?: string;
   familyFriendlyScore?: number | null;
@@ -143,6 +145,7 @@ export interface FirestoreVenue {
  * Single event from Firestore API
  */
 export interface FirestoreEvent {
+  offerAvailabilityBinding?: import('./offerAvailability').AvailabilityBinding;
   status?: string;
   isCancelled?: boolean | string | number;
   cancelled?: boolean | string | number;

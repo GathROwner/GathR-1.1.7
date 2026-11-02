@@ -1,4 +1,5 @@
 import type { Event, EventTiming } from '../types/events';
+import { offerAvailabilityCacheIdentity } from './offerAvailability';
 import {
   getEventScheduleLocalScalar,
   getEventScheduleState,
@@ -9,7 +10,7 @@ type ScheduleEvent = Pick<
   Event,
   'startDate' | 'startTime' | 'endDate' | 'endTime' | 'timing' | 'locationScope'
   | 'isRecurring' | 'isRecurringInstance' | 'recurringPattern'
-> & Partial<Pick<Event, 'venueId'>>;
+> & Partial<Pick<Event, 'venueId' | 'sourceUniqueId' | 'sourceUniqueIds' | 'offerAvailabilityBinding'>>;
 
 type ScheduleStateCacheEntry = {
   evaluatedLocalScalar: number;
@@ -20,6 +21,16 @@ type ScheduleStateCacheEntry = {
   timing: EventTiming | null | undefined;
   venueId?: Event['venueId'];
   visitingHours?: EventTiming['visitingHours'];
+  availability?: EventTiming['availability'];
+  availabilityRevision?: string;
+  evaluatedAt: number;
+  availabilityExpiresAt?: string;
+  timeZone?: string;
+  sourceUniqueId?: string;
+  sourceUniqueIds?: string[];
+  availabilityGeneration?: string;
+  offerAvailabilityBinding?: Event['offerAvailabilityBinding'];
+  availabilityIdentity?: string | null;
   locationScope: Event['locationScope'];
   isRecurring: Event['isRecurring'];
   isRecurringInstance: Event['isRecurringInstance'];
@@ -45,6 +56,7 @@ export const getCachedEventScheduleState = (
   );
   const cached = scheduleStateCache.get(event);
   const nextTransition = cached?.state.nextTransitionLocalScalar;
+  const availabilityIdentity = event.timing?.availability ? offerAvailabilityCacheIdentity(event) : undefined;
 
   if (
     cached &&
@@ -61,6 +73,18 @@ export const getCachedEventScheduleState = (
     cached.recurringPattern === event.recurringPattern &&
     cached.timing === event.timing && cached.venueId === event.venueId
     && cached.visitingHours === event.timing?.visitingHours
+    && cached.availability === event.timing?.availability
+    && cached.availabilityRevision === event.timing?.availability?.revision
+    && cached.availabilityExpiresAt === event.timing?.availability?.expiresAt
+    && cached.timeZone === event.timing?.timeZone
+    && cached.sourceUniqueId === event.sourceUniqueId && cached.sourceUniqueIds === event.sourceUniqueIds
+    && cached.availabilityGeneration === event.timing?.availability?.sourceOffer?.generationId
+    && cached.offerAvailabilityBinding === event.offerAvailabilityBinding
+    && cached.availabilityIdentity === availabilityIdentity
+    // Rich hours are freshness-bound even when the date-only parent has no transition.
+    && (!event.timing?.availability || (now.getTime() >= cached.evaluatedAt
+      && now.getTime() < cached.evaluatedAt + 60000
+      && now.getTime() < Date.parse(event.timing.availability.expiresAt)))
   ) {
     return cached.state;
   }
@@ -75,6 +99,16 @@ export const getCachedEventScheduleState = (
     timing: event.timing,
     venueId: event.venueId,
     visitingHours: event.timing?.visitingHours,
+    availability: event.timing?.availability,
+    availabilityRevision: event.timing?.availability?.revision,
+    availabilityExpiresAt: event.timing?.availability?.expiresAt,
+    evaluatedAt: now.getTime(),
+    timeZone: event.timing?.timeZone,
+    sourceUniqueId: event.sourceUniqueId,
+    sourceUniqueIds: event.sourceUniqueIds,
+    availabilityGeneration: event.timing?.availability?.sourceOffer?.generationId,
+    offerAvailabilityBinding: event.offerAvailabilityBinding,
+    availabilityIdentity,
     locationScope: event.locationScope,
     isRecurring: event.isRecurring,
     isRecurringInstance: event.isRecurringInstance,

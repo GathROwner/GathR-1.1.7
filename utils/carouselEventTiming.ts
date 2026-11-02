@@ -1,6 +1,7 @@
 import type { Event } from '../types/events';
 import { getEventTimeRangeParts, getEventTiming } from './eventTiming';
 import { readVisitingHours, visitingLocalNow } from './visitingHours';
+import { readOfferAvailability } from './offerAvailability';
 
 type TimingEvent = Pick<Event, 'startDate' | 'startTime' | 'endDate' | 'endTime' | 'timing'>;
 
@@ -39,7 +40,7 @@ export function getCarouselTimeParts(event: TimingEvent, now = new Date(), viewe
         ? estimate.displayEndDate || localInstantDate(estimate.displayEndAt || estimate.endAt)
         : localInstantDate(estimate?.displayEndAt || estimate?.endAt)) || endDate;
   }
-  if (readVisitingHours(event)) {
+  if (readVisitingHours(event) || readOfferAvailability(event, now)) {
     const date = viewedDate === undefined ? visitingLocalNow(event, now).date : viewedDate;
     return { ...parts, prefix: `${date ? `${dateLabel(date)} · ` : `${dateLabel(startDate)}–${dateLabel(endDate)} · `}${compactClocks(parts.prefix)}` };
   }
