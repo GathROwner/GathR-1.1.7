@@ -1,4 +1,4 @@
-Current design proposal: [venue category counts](venue-category-counts/README.md), adding a venue-specific category breakdown to the accepted small-summary-ring baseline.
+Current design proposal: [single-row venue categories](venue-category-strip/README.md), replacing the rejected two-row venue summary while retaining the accepted small-ring proportions.
 
 # Refined segmented ring — cluster and venue hierarchy
 
