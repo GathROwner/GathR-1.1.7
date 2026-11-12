@@ -38,7 +38,7 @@ export default function FullSizeSdkAdCard({ nativeAd, loading, allowMedia = true
   });
 
   const icon = iconUrl ? <NativeAsset assetType={NativeAssetType.ICON}>
-    <Image source={{ uri: iconUrl }} style={[styles.icon, layout.split && styles.portraitIcon]} />
+    <Image source={{ uri: iconUrl }} style={layout.split ? styles.portraitIcon : styles.icon} />
   </NativeAsset> : null;
   const title = headline ? <NativeAsset assetType={NativeAssetType.HEADLINE}>
     <Text style={[styles.headline, { color: colors.headline }]} numberOfLines={layout.split ? 3 : 2}>{headline}</Text>
@@ -111,7 +111,9 @@ const styles = StyleSheet.create({
   stackedMedia: { alignItems: 'center', marginBottom: 8 },
   splitRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
   splitDetails: { flex: 1, minWidth: 0, marginRight: COPY_SIDE_MARGIN, justifyContent: 'center', paddingTop: 26 },
-  portraitIcon: { marginRight: 0, marginBottom: 8 },
+  // Follow the details column width while keeping the icon balanced on phones/tablets.
+  portraitIcon: { width: '32%', minWidth: 48, maxWidth: 64, aspectRatio: 1, borderRadius: 8,
+    alignSelf: 'center', marginBottom: 8 },
   portraitBody: { marginTop: 8 },
   portraitAction: { marginTop: 12 },
   footerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginHorizontal: COPY_SIDE_MARGIN },
