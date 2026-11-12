@@ -1,0 +1,12 @@
+{
+  "status": "PASS",
+  "counts": [
+    1,
+    4,
+    8
+  ],
+  "nextVenue": true,
+  "oneHighlightedSegment": true,
+  "narrowWidth": 320,
+  "errors": []
+}

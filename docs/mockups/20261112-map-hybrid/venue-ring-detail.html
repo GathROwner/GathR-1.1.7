@@ -1,0 +1,57 @@
+<div id="gathr-venue-ring-detail">
+  <div class="viz-controls">
+    <label class="form-label">Total venues
+      <select class="form-select" aria-label="Total venues">
+        <option value="1">1</option><option value="2">2</option><option value="4" selected>4</option><option value="6">6</option><option value="8">8</option><option value="12">12</option>
+      </select>
+    </label>
+    <button class="btn" type="button" data-step="-1">Previous venue</button>
+    <button class="btn" type="button" data-step="1">Next venue</button>
+  </div>
+  <div class="ring-stage">
+    <svg viewBox="0 0 240 240" role="img" aria-label="Venue 2 of 4; second of four segments highlighted">
+      <g class="segments"></g>
+      <circle cx="120" cy="120" r="75" class="image-space"></circle>
+      <text x="120" y="117" text-anchor="middle" class="venue-label">Venue 2</text>
+      <circle cx="104" cy="139" r="4" class="time-dot"></circle>
+      <text x="129" y="144" text-anchor="middle" class="time-label">Now</text>
+    </svg>
+    <div class="total-label tabular-nums" aria-live="polite">4 venues</div>
+    <div class="position-label text-small">Showing 2 of 4</div>
+  </div>
+</div>
+<style>
+  #gathr-venue-ring-detail .ring-stage{display:flex;flex-direction:column;align-items:center;gap:calc(var(--font-size-base)*.35);padding-block:calc(var(--font-size-base)*.7)}
+  #gathr-venue-ring-detail svg{display:block;width:min(100%,240px);overflow:visible}
+  #gathr-venue-ring-detail .image-space{fill:var(--muted)}
+  #gathr-venue-ring-detail .venue-label,#gathr-venue-ring-detail .time-label{fill:var(--foreground);font-family:inherit;font-weight:500}
+  #gathr-venue-ring-detail .time-dot{fill:var(--green)}
+  #gathr-venue-ring-detail .total-label{font-weight:500;color:var(--foreground)}
+  #gathr-venue-ring-detail .position-label{color:var(--muted-foreground)}
+</style>
+<script>
+(() => {
+  const root=document.getElementById('gathr-venue-ring-detail');
+  const selector=root.querySelector('select');
+  const state={count:4,index:2};
+  const saved=window.openai?.widgetState?.modelContent;
+  if([1,2,4,6,8,12].includes(saved?.count)){state.count=saved.count;state.index=Math.max(1,Math.min(state.count,Number(saved.index)||1));}
+  function render(){
+    selector.value=String(state.count);
+    const circumference=2*Math.PI*92;
+    const step=circumference/state.count;
+    const gap=state.count===1?0:7;
+    root.querySelector('.segments').innerHTML=Array.from({length:state.count},(_,i)=>'<circle cx="120" cy="120" r="92" fill="none" stroke="'+(i+1===state.index?'var(--blue)':'var(--border)')+'" stroke-width="7" stroke-linecap="butt" stroke-dasharray="'+(step-gap)+' '+(circumference-step+gap)+'" stroke-dashoffset="'+(-i*step-gap/2)+'" transform="rotate(-90 120 120)" data-venue="'+(i+1)+'"></circle>').join('');
+    root.querySelector('.venue-label').textContent='Venue '+state.index;
+    root.querySelector('.total-label').textContent=state.count+(state.count===1?' venue':' venues');
+    root.querySelector('.position-label').textContent='Showing '+state.index+' of '+state.count;
+    root.querySelector('svg').setAttribute('aria-label','Venue '+state.index+' of '+state.count+'; segment '+state.index+' highlighted');
+    root.querySelectorAll('[data-step]').forEach(button=>{button.disabled=state.count===1;});
+  }
+  function save(){const promise=window.openai?.setWidgetState?.({modelContent:{count:state.count,index:state.index},privateContent:null});promise?.catch(()=>{});}
+  selector.addEventListener('change',()=>{state.count=Number(selector.value);state.index=Math.min(state.index,state.count);render();save();});
+  root.querySelectorAll('[data-step]').forEach(button=>button.addEventListener('click',()=>{state.index=((state.index-1+Number(button.dataset.step)+state.count)%state.count)+1;render();save();}));
+  window.addEventListener('openai:set_globals',event=>{const incoming=event.detail?.globals?.widgetState?.modelContent;if([1,2,4,6,8,12].includes(incoming?.count)){state.count=incoming.count;state.index=Math.max(1,Math.min(state.count,Number(incoming.index)||1));render();}});
+  render();
+})();
+</script>
