@@ -1,4 +1,4 @@
-Current design proposal: [static cluster-summary ring](static-cluster-ring/README.md), retaining single-row venue categories and removing selected-position feedback from the cluster-wide summary.
+Current design proposal: [smaller friends badge](small-friends-badge/README.md), retaining the static cluster ring and single-row venue categories.
 
 # Refined segmented ring — cluster and venue hierarchy
 

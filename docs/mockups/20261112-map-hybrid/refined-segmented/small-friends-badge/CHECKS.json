@@ -1,0 +1,19 @@
+{
+  "status": "PASS",
+  "badge": {
+    "icon": "10px",
+    "count": "9px",
+    "height": 15,
+    "width": 25,
+    "padding": "1px 3px",
+    "border": "1px",
+    "label": "3 friends checked in across this cluster"
+  },
+  "clusterCountStillThree": true,
+  "venueBadgesSameScale": true,
+  "summaryRingRemainsStatic": true,
+  "lightAndDark": true,
+  "narrowWidth": 320,
+  "noHorizontalOverflow": true,
+  "pageErrors": []
+}
