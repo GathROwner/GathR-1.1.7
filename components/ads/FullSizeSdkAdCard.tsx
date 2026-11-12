@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { Image, StyleSheet, Text, View, useColorScheme, useWindowDimensions } from 'react-native';
 import { NativeAdView, NativeAsset, NativeAssetType, NativeMediaView } from 'react-native-google-mobile-ads';
 import { AdColors, AdRadius, type AdColorScheme } from '@/constants/AdTheme';
@@ -13,6 +13,9 @@ export default function FullSizeSdkAdCard({ nativeAd, loading, allowMedia = true
   const colors = AdColors[colorScheme];
   const window = useWindowDimensions();
   const [cardWidth, setCardWidth] = useState(() => Math.max(200, window.width - 16));
+  const currentAd = useRef(nativeAd);
+  currentAd.current = nativeAd;
+  const [unavailableIcon, setUnavailableIcon] = useState<{ ad: any; url: string } | null>(null);
   const onLayout = (event: { nativeEvent: { layout: { width: number } } }) => {
     const width = event.nativeEvent.layout.width;
     if (width > 0) setCardWidth(previous => Math.abs(previous - width) < 1 ? previous : width);
@@ -30,7 +33,13 @@ export default function FullSizeSdkAdCard({ nativeAd, loading, allowMedia = true
   const advertiser = safeText(nativeAd.advertiser);
   const body = safeText(nativeAd.body);
   const cta = safeText(nativeAd.callToAction);
-  const iconUrl = nativeAd.icon?.url;
+  const iconUrl = typeof nativeAd.icon?.url === 'string' ? nativeAd.icon.url.trim() : '';
+  const iconUnavailable = unavailableIcon?.ad === nativeAd && unavailableIcon?.url === iconUrl;
+  const collapseUnavailableIcon = () => {
+    if (currentAd.current !== nativeAd) return;
+    setUnavailableIcon(previous => previous && previous.ad === nativeAd && previous.url === iconUrl
+      ? previous : { ad: nativeAd, url: iconUrl });
+  };
   const layout = getNativeAdMediaLayout({
     cardWidth, aspectRatio: nativeAd.mediaContent?.aspectRatio,
     hasMediaContent: Boolean(nativeAd.mediaContent), hasVideoContent: Boolean(nativeAd.mediaContent?.hasVideoContent),
@@ -38,7 +47,14 @@ export default function FullSizeSdkAdCard({ nativeAd, loading, allowMedia = true
   });
 
   const icon = iconUrl ? <NativeAsset assetType={NativeAssetType.ICON}>
-    <Image source={{ uri: iconUrl }} style={layout.split ? styles.portraitIcon : styles.icon} />
+    <Image source={{ uri: iconUrl }}
+      // Keep the registered SDK asset mounted even if its remote image is unusable.
+      style={iconUnavailable ? styles.unavailableIcon : layout.split ? styles.portraitIcon : styles.icon}
+      onError={collapseUnavailableIcon}
+      onLoad={({ nativeEvent }) => {
+        const { width, height } = nativeEvent.source;
+        if (width > 0 && height > 0 && (width <= 1 || height <= 1)) collapseUnavailableIcon();
+      }} />
   </NativeAsset> : null;
   const title = headline ? <NativeAsset assetType={NativeAssetType.HEADLINE}>
     <Text style={[styles.headline, { color: colors.headline }]} numberOfLines={layout.split ? 3 : 2}>{headline}</Text>
@@ -61,7 +77,7 @@ export default function FullSizeSdkAdCard({ nativeAd, loading, allowMedia = true
     />
   </View> : null;
   const disclosure = <View testID="native-ad-disclosure"
-    style={[styles.disclosureRow, layout.split && (iconUrl ? styles.portraitIconDisclosure : styles.portraitDisclosure)]}>
+    style={[styles.disclosureRow, layout.split && styles.portraitDisclosure]}>
     <View style={[styles.badge, { backgroundColor: colors.badgeBackground, borderColor: colors.badgeBorder }]}>
       <Text style={[styles.badgeText, { color: colors.badgeText }]}>Sponsored</Text>
     </View>
@@ -78,7 +94,7 @@ export default function FullSizeSdkAdCard({ nativeAd, loading, allowMedia = true
     {!layout.split && disclosure}
     {layout.split ? <View style={styles.splitRow}>
       {media}
-      <View style={[styles.splitDetails, iconUrl && styles.splitIconDetails, { minHeight: layout.mediaHeight }]}>
+      <View style={[styles.splitDetails, { minHeight: layout.mediaHeight }]}>
         {disclosure}
         {icon}{title}{advertiserText}
         {description && <View style={styles.portraitBody}>{description}</View>}
@@ -103,17 +119,15 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 1 }, shadowRadius: 4, elevation: 3 },
   sdkView: { width: '100%' },
   disclosureRow: { minHeight: 18, paddingRight: 24, marginHorizontal: COPY_SIDE_MARGIN, marginBottom: 8, alignItems: 'flex-start' },
-  portraitDisclosure: { position: 'absolute', top: 0, left: 0, right: 0, marginHorizontal: 0, marginBottom: 0 },
-  portraitIconDisclosure: { marginHorizontal: 0 },
+  portraitDisclosure: { marginHorizontal: 0 },
   badge: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, borderWidth: 1 },
   badgeText: { fontSize: 10, lineHeight: 12, fontWeight: '500', letterSpacing: 0.2 },
   media: { borderRadius: 10, overflow: 'hidden', alignSelf: 'center' },
   mediaView: { width: '100%', height: '100%' },
   stackedMedia: { alignItems: 'center', marginBottom: 8 },
   splitRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
-  splitDetails: { flex: 1, minWidth: 0, marginRight: COPY_SIDE_MARGIN, justifyContent: 'center', paddingTop: 26 },
-  // Flow disclosure, icon and copy together so the icon has equal gaps above/below.
-  splitIconDetails: { justifyContent: 'flex-start', paddingTop: 0 },
+  // The supplied assets flow beneath Sponsored without reserving a missing icon slot.
+  splitDetails: { flex: 1, minWidth: 0, marginRight: COPY_SIDE_MARGIN, justifyContent: 'flex-start' },
   portraitIcon: { width: '56%', minWidth: 64, maxWidth: 112, aspectRatio: 1, borderRadius: 8,
     alignSelf: 'center', marginBottom: 8 },
   portraitBody: { marginTop: 8 },
@@ -122,6 +136,7 @@ const styles = StyleSheet.create({
   identity: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center' },
   identityText: { flex: 1, minWidth: 0 },
   icon: { width: 36, height: 36, borderRadius: 8, marginRight: 8 },
+  unavailableIcon: { width: 0, height: 0, opacity: 0 },
   headline: { fontSize: 14, fontWeight: '600', lineHeight: 18 },
   advertiser: { fontSize: 11, lineHeight: 15, marginTop: 2 },
   body: { fontSize: 14, lineHeight: 20 },
