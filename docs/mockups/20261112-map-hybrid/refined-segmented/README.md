@@ -1,4 +1,4 @@
-Current design proposal: [small summary ring](small-summary-ring/README.md), retaining the accepted photo ring plus additional summary count ring with corrected icon sizing and interior clearance.
+Current design proposal: [venue category counts](venue-category-counts/README.md), adding a venue-specific category breakdown to the accepted small-summary-ring baseline.
 
 # Refined segmented ring — cluster and venue hierarchy
 
