@@ -674,8 +674,8 @@ const getCategoryIcon = (category: string): string => {
   return 'category';
 };
 
-// Enlarge rich GathR venue photos while keeping labels and overview markers at their current scale.
-const GATHR_VENUE_PHOTO_SCALE = 1.5;
+// Keep every rich GathR venue photo readable, with a smaller size spread than the category markers.
+const GATHR_VENUE_PHOTO_DIAMETERS: Record<InterestLevel, number> = { low: 40, medium: 44, high: 48 };
 
 // Base unit used by each marker presentation, rather than a displayed diameter.
 const getInterestLevelSize = (interestLevel: InterestLevel): number => {
@@ -2292,7 +2292,7 @@ interface VenueLensProps {
   fallbackGlyphColor: string;
   fallbackLabel?: string;
   imageUrl: string;
-  size: number;
+  diameter: number;
   venueName: string;
 }
 
@@ -2302,12 +2302,12 @@ const VenueLens: React.FC<VenueLensProps> = ({
   fallbackGlyphColor,
   fallbackLabel = '',
   imageUrl,
-  size,
+  diameter,
   venueName,
 }) => {
   const [imageFailed, setImageFailed] = useState(false);
   const imageOpacity = useRef(new Animated.Value(0)).current;
-  const lensSize = size * 1.44 * GATHR_VENUE_PHOTO_SCALE;
+  const lensSize = diameter;
 
   useEffect(() => {
     setImageFailed(false);
@@ -2362,7 +2362,7 @@ const VenueLens: React.FC<VenueLensProps> = ({
             styles.beaconVenueLensFallbackText,
             {
               color: fallbackGlyphColor,
-              fontSize: Math.max(8, size * 0.46) * GATHR_VENUE_PHOTO_SCALE,
+              fontSize: diameter * 0.34,
             },
           ]}
           numberOfLines={1}
@@ -2372,7 +2372,7 @@ const VenueLens: React.FC<VenueLensProps> = ({
       ) : (
         <MaterialIcons
           name={fallbackGlyph}
-          size={size * 0.58 * GATHR_VENUE_PHOTO_SCALE}
+          size={diameter * 0.4}
           color={fallbackGlyphColor}
         />
       )}
@@ -2619,7 +2619,8 @@ const TreeMarker: React.FC<TreeMarkerProps> = React.memo(({ cluster, isSelected,
   }, [cluster.id, publishTutorialLocalGeometry, tutorialBindingRevision, tutorialGeometryRef]);
   const isBeacon = appearance === 'beacon';
   const isStoryBeacon = isBeacon && presentation === 'story';
-  const venuePhotoScale = isStoryBeacon ? GATHR_VENUE_PHOTO_SCALE : 1;
+  const venuePhotoDiameter = (GATHR_VENUE_PHOTO_DIAMETERS[cluster.interestLevel] ?? 40) * scaleFactor;
+  const venuePhotoScale = isStoryBeacon ? venuePhotoDiameter / (adjustedSize * 1.44) : 1;
   const markerDiameter = adjustedSize * 1.5 * venuePhotoScale;
   const venuePhotoExpansion = markerDiameter - adjustedSize * 1.5;
   const isMultiVenue = cluster.venues.length > 1;
@@ -2814,7 +2815,7 @@ const TreeMarker: React.FC<TreeMarkerProps> = React.memo(({ cluster, isSelected,
             fallbackGlyphColor="#FFFFFF"
             fallbackLabel={fallbackVenueLabel}
             imageUrl={venueLensMedia?.imageUrl ?? ''}
-            size={adjustedSize}
+            diameter={venuePhotoDiameter}
             venueName={venueLensMedia?.venueName ?? fallbackVenueName}
           />
         ) : (
