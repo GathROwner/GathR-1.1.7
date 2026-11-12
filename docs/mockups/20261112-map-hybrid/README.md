@@ -18,4 +18,4 @@ Keep an explicit numeric total, such as "4 venues", visible. Use one ring segmen
 
 Browser checks passed for 1/4/8 exact segments, one highlighted segment, next-venue interaction, disabled single-venue navigation, updated totals and a 320px-wide layout without horizontal overflow. The first native click check was affected by the standalone wrapper's initial resize; waiting for the initial layout before interaction resolved it. [Check receipt](ring-checks.json). No runtime page errors. The diagram was independently reviewed at 4 and 8 venues.
 
-No hybrid source changes, Current/Standard marker changes or hybrid OTA publication occurred. User preference between the concepts is pending.
+No hybrid source changes, Current/Standard marker changes or hybrid OTA publication occurred. Craig prefers the segmented-ring direction; he likes inline summary but finds its footprint too large. Continue with the [refined segmented prototype](refined-segmented/README.md).
