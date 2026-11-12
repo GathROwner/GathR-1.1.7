@@ -1,0 +1,42 @@
+{
+  "status": "PASS",
+  "venueAndClusterSections": true,
+  "dividers": {
+    "padding": "1px 7px",
+    "fill": "rgba(0, 0, 0, 0)",
+    "dividerWidth": "1px",
+    "dividerHeight": "14px"
+  },
+  "summaryDividers": {
+    "afterRing": "1px",
+    "betweenCounts": "1px"
+  },
+  "nonOverlappingCountGroups": true,
+  "perVenueFriends": [
+    {
+      "venue": 0,
+      "count": 2,
+      "label": "2 friends checked in at Hunter's; venue segment 1 of 4"
+    },
+    {
+      "venue": 2,
+      "count": 1,
+      "label": "1 friends checked in at Pilot House; venue segment 3 of 4"
+    }
+  ],
+  "badgesAttachToOwnSegmentMidpoints": true,
+  "friendBadgeScale": {
+    "icon": 10,
+    "count": 9
+  },
+  "badgesClearVenueAndClusterRails": true,
+  "newDotOnMatchingCategoryOnly": true,
+  "dotFollowsSelectedVenue": true,
+  "noDotForUnchangedVenue": true,
+  "hiddenNewCategoryMarksEllipsis": true,
+  "noFooterStatusIndicators": true,
+  "summaryRingStillStatic": true,
+  "narrowWidth": 320,
+  "lightAndDark": true,
+  "pageErrors": []
+}

@@ -1,4 +1,4 @@
-Current design proposal: [venue-linked friends and category newness](venue-linked-indicators/README.md), retaining the accepted badge scale, static cluster ring and single-row venue categories.
+Current design proposal: [sectioned counts](sectioned-counts/README.md), adding slim internal dividers to the accepted venue-linked indicators and summaries.
 
 # Refined segmented ring — cluster and venue hierarchy
 
