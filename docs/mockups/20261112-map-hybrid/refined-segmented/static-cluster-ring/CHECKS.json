@@ -1,0 +1,34 @@
+{
+  "status": "PASS",
+  "summaryRingStaticAcrossManualAndAutoRotation": true,
+  "summaryButtonDoesNotAnnounceSelectedPosition": true,
+  "photoRingAndOutlineStillFollowVenue": true,
+  "noVenueTotalsRow": true,
+  "noVenueHouseIcon": true,
+  "typicalCategories": [
+    "music",
+    "trivia",
+    "happyhour"
+  ],
+  "overflowShowsThreeCategories": true,
+  "ellipsisRevealsAllSix": true,
+  "categorySumsMatchVenueTotals": true,
+  "windowTotals": {
+    "today": {
+      "events": 8,
+      "specials": 5
+    },
+    "upcoming": {
+      "events": 18,
+      "specials": 12
+    }
+  },
+  "dismissal": [
+    "close",
+    "escape",
+    "outside"
+  ],
+  "acceptedRingsPreserved": true,
+  "narrowWidth": 320,
+  "pageErrors": []
+}

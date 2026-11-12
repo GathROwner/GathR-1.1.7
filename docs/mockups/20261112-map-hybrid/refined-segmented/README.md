@@ -1,4 +1,4 @@
-Current design proposal: [single-row venue categories](venue-category-strip/README.md), replacing the rejected two-row venue summary while retaining the accepted small-ring proportions.
+Current design proposal: [static cluster-summary ring](static-cluster-ring/README.md), retaining single-row venue categories and removing selected-position feedback from the cluster-wide summary.
 
 # Refined segmented ring — cluster and venue hierarchy
 
