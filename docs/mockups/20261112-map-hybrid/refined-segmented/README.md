@@ -29,3 +29,5 @@ Existing app photo rotation is category/image-option dependent (getVenueLensMedi
 Latest refinement: [icon labels and visible halo](icons-halo/README.md), following Craig's feedback on halo visibility and wording.
 
 Current refinement: [halo origin and explicit hierarchy](halo-origin-hierarchy/README.md), superseding the separate outer halo and timing dots.
+
+Latest comparison: [venue above and cluster summary below](bottom-summary/README.md), preserving the familiar order Craig described.
