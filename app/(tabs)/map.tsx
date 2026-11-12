@@ -675,7 +675,7 @@ const getCategoryIcon = (category: string): string => {
 };
 
 // Keep every rich GathR venue photo readable, with a smaller size spread than the category markers.
-const GATHR_VENUE_PHOTO_DIAMETERS: Record<InterestLevel, number> = { low: 40, medium: 44, high: 48 };
+const GATHR_VENUE_PHOTO_DIAMETERS: Record<InterestLevel, number> = { low: 36, medium: 40, high: 44 };
 
 // Base unit used by each marker presentation, rather than a displayed diameter.
 const getInterestLevelSize = (interestLevel: InterestLevel): number => {
@@ -2619,7 +2619,7 @@ const TreeMarker: React.FC<TreeMarkerProps> = React.memo(({ cluster, isSelected,
   }, [cluster.id, publishTutorialLocalGeometry, tutorialBindingRevision, tutorialGeometryRef]);
   const isBeacon = appearance === 'beacon';
   const isStoryBeacon = isBeacon && presentation === 'story';
-  const venuePhotoDiameter = (GATHR_VENUE_PHOTO_DIAMETERS[cluster.interestLevel] ?? 40) * scaleFactor;
+  const venuePhotoDiameter = (GATHR_VENUE_PHOTO_DIAMETERS[cluster.interestLevel] ?? GATHR_VENUE_PHOTO_DIAMETERS.low) * scaleFactor;
   const venuePhotoScale = isStoryBeacon ? venuePhotoDiameter / (adjustedSize * 1.44) : 1;
   const markerDiameter = adjustedSize * 1.5 * venuePhotoScale;
   const venuePhotoExpansion = markerDiameter - adjustedSize * 1.5;
