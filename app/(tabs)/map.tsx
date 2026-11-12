@@ -674,16 +674,19 @@ const getCategoryIcon = (category: string): string => {
   return 'category';
 };
 
-// Helper function to get size based on interest level
+// Enlarge rich GathR venue photos while keeping labels and overview markers at their current scale.
+const GATHR_VENUE_PHOTO_SCALE = 1.5;
+
+// Base unit used by each marker presentation, rather than a displayed diameter.
 const getInterestLevelSize = (interestLevel: InterestLevel): number => {
   switch (interestLevel) {
     case 'high':
-      return 18; // 50px diameter (25px radius)
+      return 18;
     case 'medium':
-      return 15; // 40px diameter (20px radius)
+      return 15;
     case 'low':
     default:
-      return 12; // 30px diameter (15px radius)
+      return 12;
   }
 };
 
@@ -2304,7 +2307,7 @@ const VenueLens: React.FC<VenueLensProps> = ({
 }) => {
   const [imageFailed, setImageFailed] = useState(false);
   const imageOpacity = useRef(new Animated.Value(0)).current;
-  const lensSize = size * 1.44;
+  const lensSize = size * 1.44 * GATHR_VENUE_PHOTO_SCALE;
 
   useEffect(() => {
     setImageFailed(false);
@@ -2359,7 +2362,7 @@ const VenueLens: React.FC<VenueLensProps> = ({
             styles.beaconVenueLensFallbackText,
             {
               color: fallbackGlyphColor,
-              fontSize: Math.max(8, size * 0.46),
+              fontSize: Math.max(8, size * 0.46) * GATHR_VENUE_PHOTO_SCALE,
             },
           ]}
           numberOfLines={1}
@@ -2369,7 +2372,7 @@ const VenueLens: React.FC<VenueLensProps> = ({
       ) : (
         <MaterialIcons
           name={fallbackGlyph}
-          size={size * 0.58}
+          size={size * 0.58 * GATHR_VENUE_PHOTO_SCALE}
           color={fallbackGlyphColor}
         />
       )}
@@ -2616,6 +2619,9 @@ const TreeMarker: React.FC<TreeMarkerProps> = React.memo(({ cluster, isSelected,
   }, [cluster.id, publishTutorialLocalGeometry, tutorialBindingRevision, tutorialGeometryRef]);
   const isBeacon = appearance === 'beacon';
   const isStoryBeacon = isBeacon && presentation === 'story';
+  const venuePhotoScale = isStoryBeacon ? GATHR_VENUE_PHOTO_SCALE : 1;
+  const markerDiameter = adjustedSize * 1.5 * venuePhotoScale;
+  const venuePhotoExpansion = markerDiameter - adjustedSize * 1.5;
   const isMultiVenue = cluster.venues.length > 1;
   const clusterCategoryItems = isBeacon && detailsEnabled
     ? getAndroidClusterCategoryItems(cluster, getUserInterestsSync())
@@ -2728,12 +2734,12 @@ const TreeMarker: React.FC<TreeMarkerProps> = React.memo(({ cluster, isSelected,
 
       {/* Broadcasting effect for 'now' events */}
       {detailsEnabled && cluster.isBroadcasting && (
-        <BroadcastingEffect size={adjustedSize} color={color} isActive={isActive} />
+        <BroadcastingEffect size={adjustedSize * venuePhotoScale} color={color} isActive={isActive} />
       )}
 
       {/* Gold fireworks for city-level (festival) events */}
       {detailsEnabled && CITY_EVENT_UI_ENABLED && cluster.containsCityLevelEvent && (
-        <CityEventEffect size={adjustedSize} isActive={isActive} />
+        <CityEventEffect size={adjustedSize * venuePhotoScale} isActive={isActive} />
       )}
 
       {friendEventCount > 0 && (
@@ -2742,9 +2748,9 @@ const TreeMarker: React.FC<TreeMarkerProps> = React.memo(({ cluster, isSelected,
           style={[
             styles.friendEventHalo,
             {
-              width: adjustedSize * (friendPresence ? 2.35 : 2.05),
-              height: adjustedSize * (friendPresence ? 2.35 : 2.05),
-              borderRadius: adjustedSize * 1.2,
+              width: adjustedSize * (friendPresence ? 2.35 : 2.05) * venuePhotoScale,
+              height: adjustedSize * (friendPresence ? 2.35 : 2.05) * venuePhotoScale,
+              borderRadius: adjustedSize * 1.2 * venuePhotoScale,
             },
           ]}
         />
@@ -2764,9 +2770,9 @@ const TreeMarker: React.FC<TreeMarkerProps> = React.memo(({ cluster, isSelected,
           isBeacon && isSelected && styles.beaconTopSelected,
           {
             backgroundColor: color,
-            width: adjustedSize * 1.5,
-            height: adjustedSize * 1.5,
-            borderRadius: adjustedSize, // Circular shape
+            width: markerDiameter,
+            height: markerDiameter,
+            borderRadius: markerDiameter / 2,
             justifyContent: 'center',
             alignItems: 'center',
             opacity: !isReady ? 0.4 : isProcessing ? 0.6 : 1, // Dim when not ready or processing
@@ -2805,7 +2811,7 @@ const TreeMarker: React.FC<TreeMarkerProps> = React.memo(({ cluster, isSelected,
           <VenueLens
             accentColor={primaryCategoryAccent}
             fallbackGlyph={beaconGlyph}
-            fallbackGlyphColor={['#34A853', '#FBBC05'].includes(color) ? '#000000' : '#FFFFFF'}
+            fallbackGlyphColor="#FFFFFF"
             fallbackLabel={fallbackVenueLabel}
             imageUrl={venueLensMedia?.imageUrl ?? ''}
             size={adjustedSize}
@@ -2890,7 +2896,7 @@ const TreeMarker: React.FC<TreeMarkerProps> = React.memo(({ cluster, isSelected,
         )}
 
         {friendPresence && (
-          <FriendCheckInBadge count={friendPresence.friendCount} style={{ position: 'absolute', top: -6, right: adjustedSize * 0.95 }} />
+          <FriendCheckInBadge count={friendPresence.friendCount} style={{ position: 'absolute', top: -6, right: adjustedSize * 0.95 + venuePhotoExpansion }} />
         )}
         {friendEventCount > 0 && (
           <View
@@ -2902,8 +2908,8 @@ const TreeMarker: React.FC<TreeMarkerProps> = React.memo(({ cluster, isSelected,
                 minWidth: adjustedSize * 0.72,
                 height: adjustedSize * 0.58,
                 borderRadius: adjustedSize * 0.29,
-                top: adjustedSize * 0.42,
-                left: -(adjustedSize * 0.42),
+                top: Math.max(adjustedSize * 0.42, isStoryBeacon && friendPresence ? 12 : 0),
+                left: -(adjustedSize * 0.42 + venuePhotoExpansion / 2),
               },
             ]}
           >
