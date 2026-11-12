@@ -27,3 +27,5 @@ Photos are displayed from Craig's supplied screenshot using CSS clipping; no sou
 Existing app photo rotation is category/image-option dependent (getVenueLensMediaOptions and activeVenueMediaIndex in app/(tabs)/map.tsx). Implementation of this proposal would need one stable venue ID driving its photo, counts, status and local friend context, using the same filters/time window as the cluster totals. Include image-less venues via a fallback, preserve zero counts, and avoid independently cycling a category label that appears to describe the wrong photo. None of those app changes were made here.
 
 Latest refinement: [icon labels and visible halo](icons-halo/README.md), following Craig's feedback on halo visibility and wording.
+
+Current refinement: [halo origin and explicit hierarchy](halo-origin-hierarchy/README.md), superseding the separate outer halo and timing dots.

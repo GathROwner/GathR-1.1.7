@@ -1,0 +1,31 @@
+{
+  "status": "PASS",
+  "haloOriginMatchesSegmentedRing": true,
+  "origin": {
+    "x": 317.5999755859375,
+    "y": 482.76251220703125,
+    "width": 100.80001831054688,
+    "height": 100.79998779296875
+  },
+  "ring": {
+    "x": 317.5999755859375,
+    "y": 482.76251220703125,
+    "width": 100.80001831054688,
+    "height": 100.79998779296875
+  },
+  "nowColor": "#34A853",
+  "todayColor": "#FBBC05",
+  "separateStatusDots": false,
+  "noPermanentOuterRing": true,
+  "clusterTotalsStable": true,
+  "venuePhotoCountsAndExplanationSync": true,
+  "independentHaloAnimation": true,
+  "rotation6000ms": true,
+  "fanSums": {
+    "events": 8,
+    "specials": 5
+  },
+  "reducedMotion": true,
+  "narrowWidth": 320,
+  "pageErrors": []
+}
