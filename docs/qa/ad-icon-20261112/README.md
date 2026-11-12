@@ -1,5 +1,13 @@
 # Responsive split-ad icon — November 12, 2026
 
+## Current refinement
+
+Craig reviewed the centered icon and requested a larger result. Starting from db4d743, the width increases to 42% of the details column with 56–88-point bounds. The typical 390-point viewport now renders a 74.328-point square (previously 56.625); 340-point split renders 63.203; 430 renders 83.234; tablet caps at 88. Sizing responds to column width rather than measuring unused vertical space. Narrow cards can grow slightly to accommodate copy without overlap.
+
+Reviewed actual-component RNW renders at 340, 390, 430/dark and 768: centered square icon, clear disclosure, balanced spacing and legible title/body/CTA. All nine fixture measurements show no horizontal overflow; ordinary stacked layouts retain the 36-point icon. [Previous refinement](larger-before-390.png) and [larger result](larger-after-390.png). The SDK media/icon/overlay remain simulated; no native device validation or publication. Three focused suites / 28 tests, focused ESLint and diff whitespace checks passed. Harness and metrics: ignored artifacts/ad-icon-20261112-larger/.
+
+## Initial refinement
+
 Requested change: center and enlarge the app icon in the right-hand column of split portrait ads. Craig asked whether sizing could respond to the available space.
 
 The split icon now occupies 32% of the details column, bounded to 48–64 points, with a square aspect ratio and horizontal centering. At a 390-point viewport / 374-point card it renders at 56.625 × 56.625. Separate split/ordinary styles prevent the ordinary 36-point height from overriding the square ratio. Text remains left-aligned. The shared component covers feed and normal SDK callout cards.

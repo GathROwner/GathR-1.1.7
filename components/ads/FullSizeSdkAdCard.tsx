@@ -112,7 +112,7 @@ const styles = StyleSheet.create({
   splitRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
   splitDetails: { flex: 1, minWidth: 0, marginRight: COPY_SIDE_MARGIN, justifyContent: 'center', paddingTop: 26 },
   // Follow the details column width while keeping the icon balanced on phones/tablets.
-  portraitIcon: { width: '32%', minWidth: 48, maxWidth: 64, aspectRatio: 1, borderRadius: 8,
+  portraitIcon: { width: '42%', minWidth: 56, maxWidth: 88, aspectRatio: 1, borderRadius: 8,
     alignSelf: 'center', marginBottom: 8 },
   portraitBody: { marginTop: 8 },
   portraitAction: { marginTop: 12 },
