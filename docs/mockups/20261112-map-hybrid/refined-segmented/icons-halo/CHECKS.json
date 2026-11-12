@@ -1,0 +1,28 @@
+{
+  "status": "PASS",
+  "totals": {
+    "venues": 4,
+    "events": 8,
+    "specials": 5,
+    "friends": 3
+  },
+  "atomicPhotoAndVenueCounts": true,
+  "rotation6000ms": true,
+  "friendScopes": true,
+  "fanSums": {
+    "events": 8,
+    "specials": 5
+  },
+  "zeroCountsVisible": true,
+  "reducedMotion": true,
+  "narrowWidth": 320,
+  "iconOnlyScopes": true,
+  "staticHaloStyle": {
+    "border": 2,
+    "color": "rgb(42, 181, 104)",
+    "width": 72,
+    "height": 72
+  },
+  "independentHaloPulse": true,
+  "pageErrors": []
+}
