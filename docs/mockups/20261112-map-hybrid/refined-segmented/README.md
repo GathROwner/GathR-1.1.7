@@ -1,3 +1,5 @@
+Current design proposal: [single-row cluster summary and linked venue outline](linked-venue-outline/README.md).
+
 # Refined segmented ring — cluster and venue hierarchy
 
 Craig prefers the segmented-ring direction. He also likes the inline summary, but considers its footprint too large. This refinement is a design prototype, not an implementation or OTA. Preserve the accepted 36/40/44-point venue-photo sizes. This close-up uses a 40-point photo with responsive preview magnification.
