@@ -71,7 +71,8 @@ it('measures the callout width during the skeleton and retains it for the shared
   expect(size.width / size.height).toBeCloseTo(9 / 16);
   expect(size.width).toBeCloseTo((342 - 8) * 0.47);
   const disclosure = tree!.root.findByProps({ testID: 'native-ad-disclosure' });
-  expect(StyleSheet.flatten(disclosure.props.style).position).toBe('absolute');
+  // The disclosure reserves its own height above the icon in the shared layout.
+  expect(StyleSheet.flatten(disclosure.props.style).position).toBeUndefined();
   expect(mockMounts).toEqual([nativeAd]);
 });
 it('never carries readiness from an old SDK object into a replacement ad', () => {

@@ -2,6 +2,12 @@
 
 ## Current refinement
 
+Craig annotated the remaining space above the icon and asked for equal gaps to Sponsored and the title. Starting from af73713, split cards with an icon now flow the disclosure, icon and copy from the top instead of centering the icon/copy group beneath an absolute disclosure. Both gaps are 8 points. Width is 56% of the column with 64–112-point bounds: 99.109 square at a 390-point viewport, 84.265 at 340, 110.984 at 430 and 112 at 768. The title at 390 moves only about 4 points while the icon grows into the former upper gap. No-icon and non-split layouts retain their previous behavior.
+
+Reviewed actual-component RNW renders at 340, 390, 430/dark and 768: icon centered, equal gaps measured, disclosure/AdChoices clear, text and CTA readable. Narrow cards grow to fit the larger icon/copy. All nine fixtures show no horizontal overflow. [Previous](spacing-before-390.png) and [equal-gap result](spacing-after-390.png). This is simulated SDK layout evidence, with no native device validation or publication. Focused suites / 28 tests, focused ESLint and diff checks passed. The callout test's old absolute-position expectation was updated to require in-flow disclosure height. Harness and measurements: ignored artifacts/ad-icon-20261112-spacing/.
+
+## Larger-icon refinement
+
 Craig reviewed the centered icon and requested a larger result. Starting from db4d743, the width increases to 42% of the details column with 56–88-point bounds. The typical 390-point viewport now renders a 74.328-point square (previously 56.625); 340-point split renders 63.203; 430 renders 83.234; tablet caps at 88. Sizing responds to column width rather than measuring unused vertical space. Narrow cards can grow slightly to accommodate copy without overlap.
 
 Reviewed actual-component RNW renders at 340, 390, 430/dark and 768: centered square icon, clear disclosure, balanced spacing and legible title/body/CTA. All nine fixture measurements show no horizontal overflow; ordinary stacked layouts retain the 36-point icon. [Previous refinement](larger-before-390.png) and [larger result](larger-after-390.png). The SDK media/icon/overlay remain simulated; no native device validation or publication. Three focused suites / 28 tests, focused ESLint and diff whitespace checks passed. Harness and metrics: ignored artifacts/ad-icon-20261112-larger/.

@@ -61,7 +61,7 @@ export default function FullSizeSdkAdCard({ nativeAd, loading, allowMedia = true
     />
   </View> : null;
   const disclosure = <View testID="native-ad-disclosure"
-    style={[styles.disclosureRow, layout.split && styles.portraitDisclosure]}>
+    style={[styles.disclosureRow, layout.split && (iconUrl ? styles.portraitIconDisclosure : styles.portraitDisclosure)]}>
     <View style={[styles.badge, { backgroundColor: colors.badgeBackground, borderColor: colors.badgeBorder }]}>
       <Text style={[styles.badgeText, { color: colors.badgeText }]}>Sponsored</Text>
     </View>
@@ -78,7 +78,7 @@ export default function FullSizeSdkAdCard({ nativeAd, loading, allowMedia = true
     {!layout.split && disclosure}
     {layout.split ? <View style={styles.splitRow}>
       {media}
-      <View style={[styles.splitDetails, { minHeight: layout.mediaHeight }]}>
+      <View style={[styles.splitDetails, iconUrl && styles.splitIconDetails, { minHeight: layout.mediaHeight }]}>
         {disclosure}
         {icon}{title}{advertiserText}
         {description && <View style={styles.portraitBody}>{description}</View>}
@@ -104,6 +104,7 @@ const styles = StyleSheet.create({
   sdkView: { width: '100%' },
   disclosureRow: { minHeight: 18, paddingRight: 24, marginHorizontal: COPY_SIDE_MARGIN, marginBottom: 8, alignItems: 'flex-start' },
   portraitDisclosure: { position: 'absolute', top: 0, left: 0, right: 0, marginHorizontal: 0, marginBottom: 0 },
+  portraitIconDisclosure: { marginHorizontal: 0 },
   badge: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, borderWidth: 1 },
   badgeText: { fontSize: 10, lineHeight: 12, fontWeight: '500', letterSpacing: 0.2 },
   media: { borderRadius: 10, overflow: 'hidden', alignSelf: 'center' },
@@ -111,8 +112,9 @@ const styles = StyleSheet.create({
   stackedMedia: { alignItems: 'center', marginBottom: 8 },
   splitRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
   splitDetails: { flex: 1, minWidth: 0, marginRight: COPY_SIDE_MARGIN, justifyContent: 'center', paddingTop: 26 },
-  // Follow the details column width while keeping the icon balanced on phones/tablets.
-  portraitIcon: { width: '42%', minWidth: 56, maxWidth: 88, aspectRatio: 1, borderRadius: 8,
+  // Flow disclosure, icon and copy together so the icon has equal gaps above/below.
+  splitIconDetails: { justifyContent: 'flex-start', paddingTop: 0 },
+  portraitIcon: { width: '56%', minWidth: 64, maxWidth: 112, aspectRatio: 1, borderRadius: 8,
     alignSelf: 'center', marginBottom: 8 },
   portraitBody: { marginTop: 8 },
   portraitAction: { marginTop: 12 },
