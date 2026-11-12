@@ -1,4 +1,4 @@
-Current design proposal: [photo ring plus summary count ring](two-linked-rings/README.md). This supersedes the preceding single-ring interpretation.
+Current design proposal: [compact summary ring](compact-summary-ring/README.md), retaining the accepted photo ring plus additional summary count ring.
 
 # Refined segmented ring — cluster and venue hierarchy
 
