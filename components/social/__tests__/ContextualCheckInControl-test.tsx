@@ -86,6 +86,50 @@ describe('prepared check-in control', () => {
     expect(mockPush).not.toHaveBeenCalled();
   });
 
+  it('never automatically opens readiness details even when the old daily prompt is due', async () => {
+    seed(); useCheckInReadinessStore.setState({ lastPromptAtMs: 0 });
+    await mount();
+    await act(async () => { jest.advanceTimersByTime(5000); });
+    expect(root().findAllByProps({ testID: 'check-in-readiness-explanation' })).toHaveLength(0);
+    expect(root().findAllByProps({ testID: 'check-in-readiness-dismiss-backdrop' })).toHaveLength(0);
+    expect(useCheckInReadinessStore.getState().lastPromptAtMs).toBe(0);
+    expect(mockPush).not.toHaveBeenCalled();
+  });
+
+  it('dismisses manual readiness details by tapping outside and leaves the check-in flow closed', async () => {
+    await mount(); await press('contextual-check-in-idle');
+    await press('check-in-readiness-dismiss-backdrop');
+    expect(root().findAllByProps({ testID: 'check-in-readiness-explanation' })).toHaveLength(0);
+    expect(root().findAllByProps({ testID: 'check-in-readiness-dismiss-backdrop' })).toHaveLength(0);
+    expect(root().findByType(Modal).props.visible).toBe(false);
+    expect(mockPush).not.toHaveBeenCalled();
+    await press('contextual-check-in-idle');
+    await act(async () => root().findByProps({ accessibilityLabel: 'Dismiss check-in hint' }).props.onPress());
+    expect(root().findAllByProps({ testID: 'check-in-readiness-explanation' })).toHaveLength(0);
+  });
+
+  it('keeps ready tap for place choices and exposes readiness details by holding or accessibility action', async () => {
+    seed(); await mount();
+    await act(async () => byId('contextual-check-in-ready').props.onLongPress());
+    expect(byId('check-in-readiness-explanation')).toBeTruthy();
+    expect(root().findByType(Modal).props.visible).toBe(false);
+    await press('check-in-readiness-dismiss-backdrop');
+    await act(async () => byId('contextual-check-in-ready').props.onAccessibilityAction({ nativeEvent: { actionName: 'showReadiness' } }));
+    expect(byId('check-in-readiness-explanation')).toBeTruthy();
+    await press('contextual-check-in-ready');
+    expect(root().findByType(Modal).props.visible).toBe(true);
+    expect(root().findAllByProps({ testID: 'check-in-readiness-explanation' })).toHaveLength(0);
+  });
+
+  it('does not bring a dismissed readiness panel back after leaving and returning to the map', async () => {
+    await mount(); await press('contextual-check-in-idle');
+    mockIsFocused.mockReturnValue(false);
+    await act(async () => component!.update(<ContextualCheckInControl enabled />));
+    mockIsFocused.mockReturnValue(true);
+    await act(async () => component!.update(<ContextualCheckInControl enabled />));
+    expect(root().findAllByProps({ testID: 'check-in-readiness-explanation' })).toHaveLength(0);
+  });
+
   it('does not complete a locally elapsed ring without a server-qualified arrival', async () => {
     seed(); useCheckInReadinessStore.setState({ arrival: null, receipt: null }); await mount();
     expect(byId('contextual-check-in-idle')).toBeTruthy();

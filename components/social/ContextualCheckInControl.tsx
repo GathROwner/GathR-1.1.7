@@ -5,12 +5,14 @@ import * as Haptics from 'expo-haptics';
 import { useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ReadinessRings } from './ReadinessRings';
+import { CheckInReadyShimmer } from './CheckInReadyShimmer';
 import {
   ActivityIndicator,
   Image,
   Linking,
   Modal,
   Platform,
+  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -37,8 +39,7 @@ import {
   qualifiedArrivalForState, useCheckInReadinessStore,
 } from '../../store/checkInReadinessStore';
 import { requestCheckInPreparationRetry } from '../../services/checkInPreparation';
-import { claimReadinessPrompt } from '../../services/checkInReadinessPreferences';
-import { CHECK_IN_READINESS, mayPromptReadiness } from '../../utils/checkInReadiness';
+import { CHECK_IN_READINESS } from '../../utils/checkInReadiness';
 import { presentedCheckInReadiness, UNVERIFIED_RING_PROGRESS_MAX } from '../../utils/checkInReadinessPresentation';
 import { getBottomSystemInset } from '../../utils/systemInsets';
 
@@ -179,8 +180,6 @@ export default function ContextualCheckInControl({ enabled, rightOffset = 10, bo
   const privateCreationRef = useRef(false);
   const flowGenerationRef = useRef(0);
   const mountedRef = useRef(true);
-  const autoBubbleRef = useRef(false);
-  const visibleRef = useRef(false);
   const checkInRouteOpeningRef = useRef(false);
   const [pickerVisible, setPickerVisible] = useState(false);
   const [externalSearchVisible, setExternalSearchVisible] = useState(false);
@@ -272,10 +271,8 @@ export default function ContextualCheckInControl({ enabled, rightOffset = 10, bo
     : preparationMatches && prep.external.status === 'error'
       ? `${prep.external.error || 'Other public places could not be prepared.'}${availableCanonicalCopy}` : '';
   const partialDiscoveryNotice = '';
-  visibleRef.current = enabled && isFocused && readiness.appActive && !pickerVisible && !checkInRouteOpeningRef.current;
   const candidate = knownPlaces.length === 1 && knownPlaces[0].distanceMetres <= 25 && placeEntryReady ? knownPlaces[0] : null;
-  const showBubble = useCallback((message: string, automatic = false) => {
-    autoBubbleRef.current = automatic;
+  const showBubble = useCallback((message: string) => {
     setBubble(message);
   }, []);
   useEffect(() => {
@@ -296,19 +293,8 @@ export default function ContextualCheckInControl({ enabled, rightOffset = 10, bo
     setSelectionError('');
   }, [enabled, isFocused, readiness.restorePickerOnReturn, user]);
   useEffect(() => {
-    const now = Date.now();
-    if (!ownCheckIn && readiness.uid === user?.uid && readiness.preferencesLoaded
-      && mayPromptReadiness(readiness.evidence, now, readiness.lastPromptAtMs,
-        enabled && isFocused && readiness.appActive && !pickerVisible && !checkInRouteOpeningRef.current, levels.place)) {
-      void claimReadinessPrompt(now).then((claimed) => {
-        const current = useCheckInReadinessStore.getState();
-        if (claimed && mountedRef.current && visibleRef.current && current.uid === user?.uid && current.appActive
-          && preparedReadinessLevels(current, Date.now()).place) {
-          showBubble(candidate ? `You can check in at ${candidate.venueName}` : 'You can check in here.', true);
-        }
-      });
-    }
-  }, [candidate, enabled, isFocused, levels.place, ownCheckIn, pickerVisible, readiness, showBubble, user?.uid]);
+    setBubble('');
+  }, [enabled, isFocused, readiness.appActive, user?.uid]);
   // Hydrate from work completed during the countdown. Never erase an explicit
   // choice merely because a raw GPS receipt expires or the app is interrupted.
   useEffect(() => {
@@ -366,13 +352,11 @@ export default function ContextualCheckInControl({ enabled, rightOffset = 10, bo
     setBinding(true);
     try {
       checkInRouteOpeningRef.current = true;
-      visibleRef.current = false;
       setPickerVisible(false);
       setPrivateSetupVisible(false);
       setExternalSearchVisible(false);
       setLocationInfoVisible(false);
       setBubble('');
-      autoBubbleRef.current = false;
       const route = buildNearbyCheckInRoute(place, capture.sessionId, knownPlaces);
       router.push({ ...route, params: { ...route.params, readinessVersion: '1',
         ...(place.type === 'gathr_venue' ? { placeType: 'gathr_venue', placeName: place.venueName, placeAddress: place.address } : {}),
@@ -476,7 +460,7 @@ export default function ContextualCheckInControl({ enabled, rightOffset = 10, bo
   const waitingProgress = (elapsed: number, target: number) => noDwell ? 0 : Math.min(UNVERIFIED_RING_PROGRESS_MAX, elapsed / target);
   const hereProgress = hereEntryReady ? 1 : waitingProgress(presentedReadiness.hereMs, CHECK_IN_READINESS.hereMs);
   const placeProgress = levels.place ? 1 : waitingProgress(presentedReadiness.placeMs, CHECK_IN_READINESS.placeMs);
-  const explanation = autoBubbleRef.current && levels.place ? bubble : hereEntryReady
+  const explanation = hereEntryReady
     ? levels.place ? 'Your location and nearby places are ready. Tap the checkmark to choose.'
       : placeEntryReady && knownPlaces.length > 0 ? 'GathR venues and private check-in are ready. Other public places are still preparing.'
         : 'Private check-in is ready. GathR is checking nearby public places.'
@@ -492,6 +476,9 @@ export default function ContextualCheckInControl({ enabled, rightOffset = 10, bo
   const progressCopy = (ready: boolean, elapsed: number, required: number) => ready ? 'Ready'
     : waitingStatus(required) || (elapsed >= required ? 'Preparing' : `${Math.floor(elapsed / 1000)} / ${required / 1000} sec`);
   const control = <>
+    {!!bubble && isFocused && <Pressable
+      testID="check-in-readiness-dismiss-backdrop" accessible={false}
+      onPress={() => setBubble('')} style={styles.bubbleBackdrop} />}
     {!!bubble && isFocused && <View style={[styles.bubble, { right: rightOffset + 44, bottom: 42 + bottomOffset }]} testID="check-in-readiness-explanation" accessibilityLiveRegion="polite">
       <View style={styles.bubbleHeading}>
         <View style={styles.bubbleTitleIcon}>
@@ -553,14 +540,24 @@ export default function ContextualCheckInControl({ enabled, rightOffset = 10, bo
       </TouchableOpacity>
     </View>}
     <TouchableOpacity accessibilityRole="button" activeOpacity={0.85}
+      hitSlop={4}
       accessibilityLabel={ownCheckIn ? `Manage active check-in at ${ownCheckIn.venueNameSnapshot}`
         : `${hereEntryReady ? 'Check-in ready' : 'Check-in readiness'}. Here ${ringStatus(hereEntryReady, presentedReadiness.hereMs, CHECK_IN_READINESS.hereMs)}. Place ${ringStatus(levels.place, presentedReadiness.placeMs, CHECK_IN_READINESS.placeMs)}.`}
       onPress={() => {
         if (ownCheckIn) router.push('/check-in');
         else if (hereEntryReady && readiness.uid === user.uid) openCheckInPicker();
-        else showBubble(earlyCopy);
+        else setBubble((current) => current ? '' : earlyCopy);
       }}
-        style={[styles.control, { right: rightOffset, bottom: 42 + bottomOffset }, ownCheckIn ? styles.checkedInControl : hereEntryReady && styles.readyControl]}
+      onLongPress={ownCheckIn ? undefined : () => setBubble((current) => current ? '' : earlyCopy)}
+      accessibilityHint={ownCheckIn ? undefined : hereEntryReady
+        ? 'Tap to choose a check-in. Touch and hold for readiness details.'
+        : 'Shows your check-in readiness details.'}
+      accessibilityActions={ownCheckIn ? undefined : [{ name: 'showReadiness', label: 'Show readiness details' }]}
+      onAccessibilityAction={(event) => {
+        if (!ownCheckIn && event.nativeEvent.actionName === 'showReadiness') showBubble(earlyCopy);
+      }}
+        style={[styles.control, { right: rightOffset, bottom: 42 + bottomOffset }, ownCheckIn ? styles.checkedInControl : hereEntryReady && styles.readyControl,
+          !!bubble && styles.controlWithBubble]}
       testID={ownCheckIn ? 'contextual-check-in-active' : hereEntryReady ? 'contextual-check-in-ready' : 'contextual-check-in-idle'}>
       {ownCheckIn ? <ReadinessRings
         here={1} place={1} hereReady placeReady
@@ -581,6 +578,8 @@ export default function ContextualCheckInControl({ enabled, rightOffset = 10, bo
         </View> : candidate ? <View style={styles.smallAvatar}><VenueAvatar venue={candidate} /></View>
           : <Ionicons name="location-outline" size={18} color={hereEntryReady ? '#175CD3' : '#667085'} />}
       </ReadinessRings>}
+      <CheckInReadyShimmer active={Boolean(hereEntryReady && !ownCheckIn && readiness.uid === user.uid
+        && isFocused && readiness.appActive && !bubble && !pickerVisible && !checkInRouteOpeningRef.current)} />
     </TouchableOpacity>
   </>;
 
@@ -920,13 +919,15 @@ const styles = StyleSheet.create({
   },
   readyControl: { backgroundColor: '#F0F7FF' },
   checkedInControl: { backgroundColor: '#FFFFFF' },
+  bubbleBackdrop: { ...StyleSheet.absoluteFillObject, zIndex: 34, elevation: 34 },
+  controlWithBubble: { zIndex: 36, elevation: 36 },
   smallAvatar: { transform: [{ scale: 0.55 }] },
   readyMark: { width: 22, height: 22, borderRadius: 11, alignItems: 'center', justifyContent: 'center', backgroundColor: '#6D28D9' },
   placeReadyMark: { backgroundColor: '#175CD3' },
   checkedInMark: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
   checkedInPinCircle: { width: 20, height: 20, borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: '#175CD3' },
   checkedInBadge: { position: 'absolute', top: 0, right: 0, width: 13, height: 13, borderRadius: 7, alignItems: 'center', justifyContent: 'center', backgroundColor: '#12B76A', borderWidth: 1.5, borderColor: '#FFFFFF' },
-  bubble: { position: 'absolute', right: 54, bottom: 42, width: 254, maxWidth: '76%', backgroundColor: '#FFFFFF', borderRadius: 18, padding: 12, elevation: 6, zIndex: 11, shadowColor: '#101828', shadowOpacity: 0.14, shadowRadius: 8, shadowOffset: { width: 0, height: 3 } },
+  bubble: { position: 'absolute', right: 54, bottom: 42, width: 254, maxWidth: '76%', backgroundColor: '#FFFFFF', borderRadius: 18, padding: 12, elevation: 35, zIndex: 35, shadowColor: '#101828', shadowOpacity: 0.14, shadowRadius: 8, shadowOffset: { width: 0, height: 3 } },
   bubbleHeading: { minHeight: 36, flexDirection: 'row', alignItems: 'center', gap: 7, paddingBottom: 8, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#EAECF0' },
   bubbleTitleIcon: { width: 28, height: 28, alignItems: 'center', justifyContent: 'center', borderRadius: 14, backgroundColor: '#F4EBFF' },
   bubbleTitle: { flex: 1, minWidth: 0, color: '#344054', fontSize: 14, lineHeight: 18, fontWeight: '800' },
