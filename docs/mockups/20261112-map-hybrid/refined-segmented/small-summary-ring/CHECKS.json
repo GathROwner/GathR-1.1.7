@@ -1,0 +1,64 @@
+{
+  "status": "PASS",
+  "fit": {
+    "iconSize": "7.5px",
+    "countSize": "9px",
+    "innerRadius": 10.125,
+    "maxCornerRadius": 8.400156455759934
+  },
+  "summarySizing": {
+    "width": 24,
+    "height": 24,
+    "countSize": "9px",
+    "hitInset": "-10px"
+  },
+  "twoSegmentedRings": true,
+  "photoRingRestored": true,
+  "houseAndCountInsideSummaryRing": true,
+  "bothRingHighlightsAndVenueOutlineSynchronized": true,
+  "noCategoryRow": true,
+  "noSplitIcon": true,
+  "fixedTotalVenues": 4,
+  "fixedClusterTotals": {
+    "events": 8,
+    "specials": 5,
+    "friends": 3
+  },
+  "venueAccents": [
+    "#3478f6",
+    "#8b5bd6",
+    "#c3477d",
+    "#147caa"
+  ],
+  "singleHalo": true,
+  "haloAtPhotoRingWhenCollapsed": true,
+  "haloAtSummaryRingWhenExpanded": true,
+  "halo": {
+    "x": 317.5999755859375,
+    "y": 406.36248779296875,
+    "width": 100.80001831054688,
+    "height": 100.79998779296875
+  },
+  "photoRing": {
+    "x": 317.5999755859375,
+    "y": 406.36248779296875,
+    "width": 100.80001831054688,
+    "height": 100.79998779296875
+  },
+  "summaryRing": {
+    "x": 276.20001220703125,
+    "y": 535.9625244140625,
+    "width": 43.199981689453125,
+    "height": 43.199951171875
+  },
+  "summaryRingExpandsCluster": true,
+  "rotation6000ms": true,
+  "fanSums": {
+    "events": 8,
+    "specials": 5
+  },
+  "zeroCountsVisible": true,
+  "reducedMotion": true,
+  "narrowWidth": 320,
+  "pageErrors": []
+}

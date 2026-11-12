@@ -1,4 +1,4 @@
-Current design proposal: [compact summary ring](compact-summary-ring/README.md), retaining the accepted photo ring plus additional summary count ring.
+Current design proposal: [small summary ring](small-summary-ring/README.md), retaining the accepted photo ring plus additional summary count ring with corrected icon sizing and interior clearance.
 
 # Refined segmented ring — cluster and venue hierarchy
 
