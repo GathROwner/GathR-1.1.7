@@ -1,4 +1,4 @@
-Current design proposal: [single-row cluster summary and linked venue outline](linked-venue-outline/README.md).
+Current design proposal: [photo ring plus summary count ring](two-linked-rings/README.md). This supersedes the preceding single-ring interpretation.
 
 # Refined segmented ring — cluster and venue hierarchy
 
