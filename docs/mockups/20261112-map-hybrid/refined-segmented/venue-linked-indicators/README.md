@@ -1,0 +1,15 @@
+# Venue-linked friends and category newness
+
+Craig requested friend check-in badges coming off their corresponding venue segments and red new-content dots attached to the matching category icons. This proposal makes both indicators specific to the venue/category represented, replacing the combined friends badge and generic red dot previously attached to the lower cluster totals.
+
+[Prototype](prototype.html), [initial](initial-736-light.png), [dark](initial-736-dark.png), [phone width](initial-320-light.png), [next venue](next-venue-736-light.png), [venue with no new content](no-new-content-736-light.png), [crowded category example](upcoming-736-light.png), [checks](CHECKS.json).
+
+Each venue with friends gets its own small purple badge attached by a short leader to the midpoint of its segment on the main photo ring. Hunter's two friends attach to segment one; Pilot House's one friend attaches to segment three. These positions and venue-owned counts stay fixed as the displayed photo changes. Gallery has no badge of its own. The active photo segment and upper outline still rotate together. Friend icon/count sizes remain the accepted 10/9 points. The lower summary ring and cluster totals retain their static styling and have no generic status badges attached.
+
+The upper category icon gets a red dot when its venue/category has qualifying new content. In the fictional fixture, Hunter's Music, Gallery's Classes and City Cinema's Cinema have dots; Pilot House's Happy Hour does not. Hunter also has a new Classes item in the crowded upcoming fixture. Because that category is hidden by the cap, the ellipsis gets a red dot and accessible notice; the category is marked in the existing overflow preview as well. A dot means at least one new item, not that the whole numeric category count is new. Fan-preview categories use their own venue's flags.
+
+No new click/navigation handlers were added for badges or dots, and no app tap behavior changed. The pre-existing exploratory preview controls remain; they do not authorize changing native cluster interactions.
+
+Browser checks passed for per-venue friend counts, connectors originating at the correct segment midpoint/radius and ending at the corresponding badge, accepted badge scale, clearance from venue/cluster rails, unchanged friend positions while photos rotate, category-specific dots, no dot for the unchanged venue, hidden-category newness on ellipsis, removal of footer status indicators, static summary ring and 320px fit. Light, dark, narrow and second-venue screenshots were independently inspected for hierarchy, spacing, alignment and clipping. No page errors.
+
+Mockup only; no app source or OTA changed. Counts, check-ins and newness flags are fictional. Production would need stable venue identity shared by photo order, ring segments and authorized friend presence, with category newness derived from the underlying event/special records under the same active filters. Many simultaneous friend badges, image fallback/reordering and dense native-map collisions remain to be validated.

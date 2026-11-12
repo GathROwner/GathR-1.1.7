@@ -1,4 +1,4 @@
-Current design proposal: [smaller friends badge](small-friends-badge/README.md), retaining the static cluster ring and single-row venue categories.
+Current design proposal: [venue-linked friends and category newness](venue-linked-indicators/README.md), retaining the accepted badge scale, static cluster ring and single-row venue categories.
 
 # Refined segmented ring — cluster and venue hierarchy
 
