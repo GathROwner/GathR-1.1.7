@@ -63,6 +63,7 @@ interface Props {
   enabled: boolean;
   rightOffset?: number;
   bottomOffset?: number;
+  interestRailWidth?: number;
 }
 
 function remoteImageUrl(value: unknown): string {
@@ -162,10 +163,17 @@ function messageForError(error: unknown) {
     : 'Nearby places could not be loaded right now.';
 }
 
-export default function ContextualCheckInControl({ enabled, rightOffset = 10, bottomOffset = 0 }: Props) {
+export default function ContextualCheckInControl({ enabled, rightOffset = 10, bottomOffset = 0, interestRailWidth = 70 }: Props) {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const windowSize = useWindowDimensions();
+  // Reserve the rail's real width rather than drawing the hint over its pills.
+  const railWidth = Number.isFinite(interestRailWidth) && interestRailWidth >= 36 && interestRailWidth <= 220
+    ? interestRailWidth : 70;
+  const hintRight = insets.right + 10 + railWidth + 12;
+  const hintWidth = Math.min(254, Math.max(1, windowSize.width - hintRight - insets.left - 12));
+  const hintBottom = 42 + bottomOffset + 36 + 12;
+  const hintMaxHeight = Math.max(1, windowSize.height - hintBottom - insets.top - 12);
   const androidBottomInset = Platform.OS === 'android'
     ? getBottomSystemInset(Platform.OS, insets.bottom, windowSize)
     : 0;
@@ -479,7 +487,9 @@ export default function ContextualCheckInControl({ enabled, rightOffset = 10, bo
     {!!bubble && isFocused && <Pressable
       testID="check-in-readiness-dismiss-backdrop" accessible={false}
       onPress={() => setBubble('')} style={styles.bubbleBackdrop} />}
-    {!!bubble && isFocused && <View style={[styles.bubble, { right: rightOffset + 44, bottom: 42 + bottomOffset }]} testID="check-in-readiness-explanation" accessibilityLiveRegion="polite">
+    {!!bubble && isFocused && <View style={[styles.bubble, { right: hintRight, bottom: hintBottom, width: hintWidth }]} testID="check-in-readiness-explanation" accessibilityLiveRegion="polite">
+      <ScrollView testID="check-in-readiness-scroll" bounces={false}
+        style={[styles.bubbleScroll, { maxHeight: hintMaxHeight }]} contentContainerStyle={styles.bubbleContent}>
       <View style={styles.bubbleHeading}>
         <View style={styles.bubbleTitleIcon}>
           <Ionicons name="location-outline" size={18} color="#6941C6" />
@@ -497,7 +507,7 @@ export default function ContextualCheckInControl({ enabled, rightOffset = 10, bo
             <View style={styles.readinessRowHeading}>
               <View style={styles.readinessLabelGroup}>
                 <Text style={styles.hereReadinessLabel}>Here</Text>
-                <Text numberOfLines={1} style={styles.readinessDescription}>Private check-in</Text>
+                <Text style={styles.readinessDescription}>Private check-in</Text>
               </View>
               <Text numberOfLines={1} style={styles.hereProgressText}>
                 {progressCopy(hereEntryReady, presentedReadiness.hereMs, CHECK_IN_READINESS.hereMs)}
@@ -516,7 +526,7 @@ export default function ContextualCheckInControl({ enabled, rightOffset = 10, bo
             <View style={styles.readinessRowHeading}>
               <View style={styles.readinessLabelGroup}>
                 <Text style={styles.placeReadinessLabel}>Place</Text>
-                <Text numberOfLines={1} style={styles.readinessDescription}>Nearby public venue</Text>
+                <Text style={styles.readinessDescription}>Nearby public venue</Text>
               </View>
               <Text numberOfLines={1} style={styles.placeProgressText}>
                 {progressCopy(levels.place, presentedReadiness.placeMs, CHECK_IN_READINESS.placeMs)}
@@ -538,6 +548,7 @@ export default function ContextualCheckInControl({ enabled, rightOffset = 10, bo
         <Text style={styles.settingsText}>Location &amp; arrival reminders</Text>
         <Ionicons name="chevron-forward" size={15} color="#175CD3" />
       </TouchableOpacity>
+      </ScrollView>
     </View>}
     <TouchableOpacity accessibilityRole="button" activeOpacity={0.85}
       hitSlop={4}
@@ -927,7 +938,9 @@ const styles = StyleSheet.create({
   checkedInMark: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
   checkedInPinCircle: { width: 20, height: 20, borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: '#175CD3' },
   checkedInBadge: { position: 'absolute', top: 0, right: 0, width: 13, height: 13, borderRadius: 7, alignItems: 'center', justifyContent: 'center', backgroundColor: '#12B76A', borderWidth: 1.5, borderColor: '#FFFFFF' },
-  bubble: { position: 'absolute', right: 54, bottom: 42, width: 254, maxWidth: '76%', backgroundColor: '#FFFFFF', borderRadius: 18, padding: 12, elevation: 35, zIndex: 35, shadowColor: '#101828', shadowOpacity: 0.14, shadowRadius: 8, shadowOffset: { width: 0, height: 3 } },
+  bubble: { position: 'absolute', backgroundColor: '#FFFFFF', borderRadius: 18, elevation: 35, zIndex: 35, shadowColor: '#101828', shadowOpacity: 0.14, shadowRadius: 8, shadowOffset: { width: 0, height: 3 } },
+  bubbleScroll: { borderRadius: 18, overflow: 'hidden' },
+  bubbleContent: { padding: 12 },
   bubbleHeading: { minHeight: 36, flexDirection: 'row', alignItems: 'center', gap: 7, paddingBottom: 8, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#EAECF0' },
   bubbleTitleIcon: { width: 28, height: 28, alignItems: 'center', justifyContent: 'center', borderRadius: 14, backgroundColor: '#F4EBFF' },
   bubbleTitle: { flex: 1, minWidth: 0, color: '#344054', fontSize: 14, lineHeight: 18, fontWeight: '800' },

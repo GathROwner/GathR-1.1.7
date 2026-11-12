@@ -130,6 +130,18 @@ describe('prepared check-in control', () => {
     expect(root().findAllByProps({ testID: 'check-in-readiness-explanation' })).toHaveLength(0);
   });
 
+  it.each([320, 390, 768])('keeps the hint clear of the measured interest rail and above the ready button at width %s', async width => {
+    jest.spyOn(Dimensions, 'get').mockReturnValue({ width, height: 844, scale: 1, fontScale: 1 });
+    await act(async () => { component = renderer.create(<ContextualCheckInControl enabled rightOffset={24} bottomOffset={100} interestRailWidth={64} />); });
+    await press('contextual-check-in-idle');
+    const hint = StyleSheet.flatten(byId('check-in-readiness-explanation').props.style);
+    const button = StyleSheet.flatten(byId('contextual-check-in-idle').props.style);
+    expect(hint.right).toBeGreaterThanOrEqual(10 + 64 + 12);
+    expect(width - hint.right - hint.width).toBeGreaterThanOrEqual(12);
+    expect(hint.bottom - (button.bottom + button.height)).toBeGreaterThanOrEqual(12);
+    expect(StyleSheet.flatten(byId('check-in-readiness-scroll').props.style).maxHeight + hint.bottom).toBeLessThanOrEqual(844 - 12);
+  });
+
   it('does not complete a locally elapsed ring without a server-qualified arrival', async () => {
     seed(); useCheckInReadinessStore.setState({ arrival: null, receipt: null }); await mount();
     expect(byId('contextual-check-in-idle')).toBeTruthy();
