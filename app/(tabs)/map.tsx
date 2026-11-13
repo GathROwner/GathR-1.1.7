@@ -61,6 +61,8 @@ import MapLegend, {
   type MapPerspective,
   type MapStyleChoice,
 } from '../../components/map/MapLegend';
+import HybridClusterMarker from '../../components/map/HybridClusterMarker';
+import { usesCurrentBasemap } from '../../utils/hybridClusterPresentation';
 import InterestFilterPills from '../../components/map/InterestFilterPills';
 import InterestsCarousel from '../../components/map/InterestsCarousel';
 import HotFlamePill from '../../components/map/HotFlamePill';
@@ -4929,10 +4931,10 @@ const handleMapStyleChange = useCallback(async (nextStyle: MapStyleChoice) => {
   mapStyleSwitchInFlightRef.current = true;
   setMapStyleChanging(true);
 
-  // Standard and GathR Standard share the same native basemap. RNMapbox can
-  // update the imported Standard configuration in place, so do not trigger a
-  // full style reload (or disturb the camera) when comparing those two.
-  if (mapStyleChoice !== 'current' && nextStyle !== 'current') {
+  // Current/Hybrid and Standard/GathR each share a native basemap.
+  // Switch marker presentation/configuration in place without reloading tiles
+  // or disturbing the camera when staying within either pair.
+  if (usesCurrentBasemap(mapStyleChoice) === usesCurrentBasemap(nextStyle)) {
     traceMapEvent('map_style_import_config_change_requested', {
       from: mapStyleChoice,
       to: nextStyle,
@@ -10847,7 +10849,7 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
           richClusterMarkersEnabled || shouldForceHotspotPreviewDetails || isTutorialTarget;
         const gathrPresentation = getGathrClusterPresentation(cluster, zoomLevel, isSelected);
         const projectedPoint =
-          mapStyleChoice === 'gathr' &&
+          (mapStyleChoice === 'gathr' || mapStyleChoice === 'hybrid') &&
           markerDetailsEnabled &&
           !isMapMoving &&
           mapDimensions &&
@@ -10858,10 +10860,10 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
                 mapDimensions
               )
             : null;
-        const estimatedMarkerHeight = gathrPresentation === 'summary'
+        const estimatedMarkerHeight = mapStyleChoice === 'hybrid' ? (gathrPresentation === 'summary' ? 44 : 170) : gathrPresentation === 'summary'
           ? 38
           : cluster.venues.length > 1 ? 92 : 76;
-        const estimatedMarkerWidth = gathrPresentation === 'summary' ? 84 : 136;
+        const estimatedMarkerWidth = mapStyleChoice === 'hybrid' ? 160 : gathrPresentation === 'summary' ? 84 : 136;
         const originalBeaconDock = !isTutorialTarget && projectedPoint && mapDimensions
           ? getGathrBeaconViewportDock({
               markerHeight: estimatedMarkerHeight,
@@ -10994,7 +10996,16 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
                 countLabel={String((cluster.eventCount ?? 0) + (cluster.specialCount ?? 0))}
                 dockX={originalBeaconDock.translateX} dockY={originalBeaconDock.translateY}
                 record={clusterPuckLayout.recordMarkerGeometry}>
-              <TreeMarker
+              {mapStyleChoice === 'hybrid' && !isTutorialTarget ? <HybridClusterMarker
+                cluster={cluster}
+                isSelected={isSelected}
+                isProcessing={processingClusterId === cluster.id}
+                isReady={clustersReadyForInteraction}
+                isActive={clusterMarkerAnimationsActive}
+                reduceMotionEnabled={reduceMotionEnabled}
+                compact={!markerDetailsEnabled || gathrPresentation === 'summary'}
+                categoryIcon={getCategoryIcon}
+              /> : <TreeMarker
                 key={isTutorialTarget ? `tutorial-target-${tutorialTargetBindingRevision}` : undefined}
                 cluster={cluster}
                 isSelected={isSelected}
@@ -11032,7 +11043,7 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
                     ? tutorialTargetBindingRevision
                     : undefined
                 }
-              />
+              />}
               </PuckMarkerMeasurement>
             </TouchableOpacity>
           </MapboxGL.MarkerView>
@@ -11188,7 +11199,7 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
         onTouchEnd={event => clusterPuckLayout.onMapTouchEnd(event.nativeEvent.touches.length)}
         onTouchCancel={clusterPuckLayout.onMapTouchCancel}
         style={styles.map}
-        styleURL={mapStyleChoice === 'current' ? GATHR_MAPBOX_STYLE_URL : GATHR_MAPBOX_STANDARD_STYLE_URL}
+        styleURL={usesCurrentBasemap(mapStyleChoice) ? GATHR_MAPBOX_STYLE_URL : GATHR_MAPBOX_STANDARD_STYLE_URL}
         scaleBarEnabled={true}
         logoPosition={{
           bottom: mapboxBrandingBottomOffset,
@@ -11452,7 +11463,7 @@ onDidFinishLoadingMap={() => {
 
         onPress={handleMapPress}
       >
-{mapStyleChoice !== 'current' && (
+{!usesCurrentBasemap(mapStyleChoice) && (
   // RNMapbox 10.3 types this dictionary as string-only, while its native
   // bridge correctly accepts the boolean and numeric Standard properties.
   <MapboxGL.StyleImport
