@@ -46,3 +46,24 @@ it('does not regenerate for repeated profile selection or move clusters on uncha
   expect(queried.map(c => c.id)).toEqual(before.map(c => c.id));
   expect(queried.flatMap(c => c.venues).map(v => [v.latitude, v.longitude])).toEqual(before.flatMap(c => c.venues).map(v => [v.latitude, v.longitude]));
 });
+
+it('leaves venues with substantial screen separation unmerged', () => {
+  const events = useMapStore.getState().filteredEvents.map(item => item.venue === 'Beta' ? { ...item, longitude: lng(130) } : item);
+  useMapStore.setState({ filteredEvents: events });
+  useMapStore.getState().setMarkerClusterProfile('hybrid');
+  const clusters = useMapStore.getState().clusters;
+  expect(clusters).toHaveLength(3);
+  expect(clusters.reduce((total, cluster) => total + cluster.eventCount + cluster.specialCount, 0)).toBe(4);
+});
+
+it('splits earlier between integer zoom levels while keeping genuinely close venues combined', () => {
+  useMapStore.getState().setMarkerClusterProfile('hybrid');
+  expect(useMapStore.getState().getClustersForZoom(15.49)).toHaveLength(2);
+  expect(useMapStore.getState().getClustersForZoom(15.51)).toHaveLength(3);
+  const events = useMapStore.getState().filteredEvents.map(item => item.venue === 'Beta' ? { ...item, longitude: lng(35) } : item);
+  useMapStore.setState({ filteredEvents: events });
+  useMapStore.getState().setMarkerClusterProfile('default');
+  expect(useMapStore.getState().getClustersForZoom(15.51)).toHaveLength(2);
+  useMapStore.getState().setMarkerClusterProfile('hybrid');
+  expect(useMapStore.getState().getClustersForZoom(15.51)).toHaveLength(2);
+});
