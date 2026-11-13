@@ -1,0 +1,32 @@
+[
+  {
+    "label": "Venue categories",
+    "before": 105.705,
+    "after": 85.005,
+    "reductionPercent": 19.5828011919966
+  },
+  {
+    "label": "Both totals",
+    "before": 100.44,
+    "after": 85.14,
+    "reductionPercent": 15.232974910394258
+  },
+  {
+    "label": "Events only",
+    "before": 100.44,
+    "after": 58.32,
+    "reductionPercent": 41.93548387096774
+  },
+  {
+    "label": "Specials only",
+    "before": 100.44,
+    "after": 58.32,
+    "reductionPercent": 41.93548387096774
+  },
+  {
+    "label": "Large totals",
+    "before": 126.89999999999999,
+    "after": 111.60000000000002,
+    "reductionPercent": 12.056737588652455
+  }
+]

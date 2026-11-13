@@ -1,0 +1,38 @@
+{
+  "name": "production",
+  "id": "019ed566-a2f6-7cd0-b9af-5ab95668b916",
+  "currentPage": [
+    {
+      "branch": "production",
+      "message": "\"Narrow Hybrid summaries and repair compact badge redraw\" (18 seconds ago by craigb)",
+      "runtimeVersion": "1.1.20",
+      "isRollBackToEmbedded": false,
+      "group": "1430f5a3-8ed8-4e87-a52b-5e844458a0db",
+      "platforms": "ios"
+    },
+    {
+      "branch": "production",
+      "message": "\"Reduce Hybrid grouping and split venues sooner\" (30 minutes ago by craigb)",
+      "runtimeVersion": "1.1.20",
+      "isRollBackToEmbedded": false,
+      "group": "f41f2993-8b7e-424c-8214-24005e5558a5",
+      "platforms": "ios"
+    },
+    {
+      "branch": "production",
+      "message": "\"Refine Hybrid clustering and thin venue rings\" (48 minutes ago by craigb)",
+      "runtimeVersion": "1.1.20",
+      "isRollBackToEmbedded": false,
+      "group": "4546ebd9-2b62-4857-8445-8793b2eb20df",
+      "platforms": "ios"
+    },
+    {
+      "branch": "production",
+      "message": "\"Restore Hybrid map summary icons and counts on iOS\" (1 hour ago by craigb)",
+      "runtimeVersion": "1.1.20",
+      "isRollBackToEmbedded": false,
+      "group": "6c5fafe6-5396-4fbc-a68c-5a27d5bf4fca",
+      "platforms": "ios"
+    }
+  ]
+}

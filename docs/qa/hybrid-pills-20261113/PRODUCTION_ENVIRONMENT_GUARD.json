@@ -1,0 +1,28 @@
+{
+  "status": "PASS_PRODUCTION_IOS_ENVIRONMENT_GUARD",
+  "runtime": "1.1.20",
+  "runtimePolicy": "appVersion",
+  "channel": "production",
+  "environment": "production",
+  "platform": "ios",
+  "firebaseTarget": "production",
+  "nativeFirebaseProject": "gathr-m1",
+  "nativePlist": "./GoogleService-Info.plist",
+  "appCheckDisabled": false,
+  "appCheckDebug": false,
+  "emulators": false,
+  "socialFeature": true,
+  "socialReleaseTwo": true,
+  "mapboxPublicTokenPresent": true,
+  "mapboxTokenLength": 97,
+  "ordinaryLocalDependencies": true,
+  "nodeEnv": "production",
+  "previewWrapper": "not applicable: hard-coded old1.1.10 hybrid Preview native/AppCheck policy; relevant social checks use committed Production environment",
+  "sha256": {
+    "appConfig": "08bde109f1774f5b1a0e68f9bf68185e97ba5b5297894a6dfccdfd159210e867",
+    "eas": "5a01805ef590b989e06a59a35bead45a677fa0bd7ce2f3bcd9413aaeaf3c5b71",
+    "nativePlist": "88339ec71883fe07b329e57afb4cf59e0e5849aae876e2a752e0968a45baa541",
+    "packageLock": "53860f47093e1662a45f3e1be792261198ad16c76174cd976260ef8316ed7d3e"
+  },
+  "at": "2026-11-13T13:11:22.813Z"
+}
