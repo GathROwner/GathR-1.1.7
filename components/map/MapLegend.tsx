@@ -1,12 +1,13 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Animated, Pressable, StyleSheet, Text, TouchableOpacity, View, ViewStyle } from 'react-native';
+import { Animated, Pressable, ScrollView, StyleSheet, Text, TouchableOpacity, View, ViewStyle, useWindowDimensions } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { useIsFocused } from '@react-navigation/native';
 import { useMapStore } from '../../store';
 import { registerMapTraceSampler, traceMapEvent } from '../../utils/mapTrace';
 import { SOCIAL_FEATURE_ENABLED } from '../../types/social';
 
-export type MapStyleChoice = 'current' | 'standard' | 'gathr';
+export type MapStyleChoice = 'current' | 'standard' | 'gathr' | 'hybrid';
 export type MapLightPreset = 'day' | 'dusk' | 'night';
 export type MapPerspective = '2d' | '3d';
 type MapLegendProps = {
@@ -170,6 +171,8 @@ const MapLegend: React.FC<MapLegendProps> = ({
   onMapPerspectiveChange,
 }) => {
   const [open, setOpen] = useState(false);
+  const { height: screenHeight } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
   const panelAnim = useRef(new Animated.Value(0)).current;
   const isFocused = useIsFocused();
   const activeFilterPanel = useMapStore((state) => state.activeFilterPanel);
@@ -314,7 +317,7 @@ const MapLegend: React.FC<MapLegendProps> = ({
       <View style={[styles.anchor, { right: rightOffset }, verticalStyle]} pointerEvents="box-none">
         <Animated.View
           pointerEvents={open ? 'auto' : 'none'}
-          style={[styles.panel, panelPlacement, panelStyle]}
+          style={[styles.panel, panelPlacement, panelStyle, { maxHeight: Math.max(260, screenHeight - (topOffset ?? 18) - 48 - insets.bottom - 150) }]}
         >
         <View style={styles.panelHeader}>
           <View style={styles.panelHeaderText}>
@@ -331,13 +334,13 @@ const MapLegend: React.FC<MapLegendProps> = ({
             <Text style={styles.sectionTitle}>Map Style</Text>
           </View>
           <View style={styles.styleSwitcher} accessibilityRole="radiogroup">
-            {(['current', 'standard', 'gathr'] as MapStyleChoice[]).map((styleChoice) => {
+            {(['current', 'standard', 'gathr', 'hybrid'] as MapStyleChoice[]).map((styleChoice) => {
               const selected = mapStyle === styleChoice;
               const label = styleChoice === 'current'
                 ? 'Current'
                 : styleChoice === 'standard'
                   ? 'Standard'
-                  : 'GathR';
+                  : styleChoice === 'hybrid' ? 'Hybrid' : 'GathR';
               return (
                 <Pressable
                   key={styleChoice}
@@ -356,6 +359,7 @@ const MapLegend: React.FC<MapLegendProps> = ({
                 >
                   <Text style={[styles.styleChoiceText, selected && styles.styleChoiceTextSelected]}>
                     {label}
+                    {styleChoice === 'hybrid' ? ' · Beta' : ''}
                   </Text>
                 </Pressable>
               );
@@ -393,6 +397,8 @@ const MapLegend: React.FC<MapLegendProps> = ({
             <Text testID="map-style-status" style={styles.styleStatus} numberOfLines={2}>
               {mapStyleChanging
                 ? 'Switching basemap...'
+                : mapStyle === 'hybrid'
+                  ? 'Current map · new venue markers'
                 : mapStyle === 'standard'
                   ? 'Faded day style | low-density POIs | 3D enabled'
                   : 'Mapbox Streets v12'}
@@ -400,6 +406,7 @@ const MapLegend: React.FC<MapLegendProps> = ({
           )}
         </View>
 
+        <ScrollView style={styles.legendScroll} showsVerticalScrollIndicator nestedScrollEnabled contentContainerStyle={{ paddingBottom: 4 }}>
         <View style={[styles.sectionCard, styles.sectionCardGreen]}>
           <View style={styles.sectionHeader}>
             <View style={[styles.sectionPill, styles.sectionPillGreen]}>
@@ -497,6 +504,7 @@ const MapLegend: React.FC<MapLegendProps> = ({
             </LegendRow>
           </View>
         </View>
+        </ScrollView>
       </Animated.View>
 
         <TouchableOpacity
@@ -707,13 +715,14 @@ const styles = StyleSheet.create({
   },
   styleSwitcher: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     padding: 2,
     borderRadius: 9,
     backgroundColor: '#DFEAF0',
   },
   styleChoice: {
-    flex: 1,
-    minHeight: 28,
+    width: '50%',
+    minHeight: 26,
     borderRadius: 7,
     alignItems: 'center',
     justifyContent: 'center',
@@ -750,6 +759,7 @@ const styles = StyleSheet.create({
     color: '#5F6E76',
     textAlign: 'center',
   },
+  legendScroll: { flexShrink: 1, minHeight: 0 },
   lightingRow: {
     flexDirection: 'row',
     alignItems: 'center',
