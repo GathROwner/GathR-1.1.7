@@ -1,0 +1,240 @@
+{
+  "status": "PASS",
+  "method": "Actual React Native component rendering through RN Web; iOS props; SVG primitive bridge; fixture images/data; open legend animation frozen",
+  "markers": [
+    {
+      "name": "four venues",
+      "marker": {
+        "x": 74.328125,
+        "y": 71.609375,
+        "width": 113.34375,
+        "height": 133.78125
+      },
+      "touchTarget": {
+        "x": 74.328125,
+        "y": 71.609375,
+        "width": 113.34375,
+        "height": 133.78125
+      },
+      "summary": {
+        "x": 74.328125,
+        "y": 177.390625,
+        "width": 113.34375,
+        "height": 28
+      },
+      "topGap": 11.890625,
+      "bottomGap": 11.890625
+    },
+    {
+      "name": "single, no friends",
+      "marker": {
+        "x": 318.5,
+        "y": 79.5,
+        "width": 112.984375,
+        "height": 118
+      },
+      "touchTarget": {
+        "x": 318.5,
+        "y": 79.5,
+        "width": 112.984375,
+        "height": 118
+      },
+      "summary": {
+        "x": 319.234375,
+        "y": 169.5,
+        "width": 111.5,
+        "height": 28
+      },
+      "topGap": 4,
+      "bottomGap": 4
+    },
+    {
+      "name": "two venues",
+      "marker": {
+        "x": 562.328125,
+        "y": 79.5,
+        "width": 113.34375,
+        "height": 118
+      },
+      "touchTarget": {
+        "x": 562.328125,
+        "y": 79.5,
+        "width": 113.34375,
+        "height": 118
+      },
+      "summary": {
+        "x": 562.328125,
+        "y": 169.5,
+        "width": 113.34375,
+        "height": 28
+      },
+      "topGap": 4,
+      "bottomGap": 4
+    },
+    {
+      "name": "three venues",
+      "marker": {
+        "x": 74.328125,
+        "y": 298.5,
+        "width": 113.34375,
+        "height": 118
+      },
+      "touchTarget": {
+        "x": 74.328125,
+        "y": 298.5,
+        "width": 113.34375,
+        "height": 118
+      },
+      "summary": {
+        "x": 74.328125,
+        "y": 388.5,
+        "width": 113.34375,
+        "height": 28
+      },
+      "topGap": 4,
+      "bottomGap": 4
+    },
+    {
+      "name": "many venues",
+      "marker": {
+        "x": 311.671875,
+        "y": 288.65625,
+        "width": 126.65625,
+        "height": 137.671875
+      },
+      "touchTarget": {
+        "x": 311.671875,
+        "y": 288.65625,
+        "width": 126.65625,
+        "height": 137.671875
+      },
+      "summary": {
+        "x": 311.671875,
+        "y": 398.328125,
+        "width": 126.65625,
+        "height": 28
+      },
+      "topGap": 23.671875,
+      "bottomGap": 4
+    },
+    {
+      "name": "missing image",
+      "marker": {
+        "x": 562.5,
+        "y": 294.546875,
+        "width": 112.984375,
+        "height": 125.890625
+      },
+      "touchTarget": {
+        "x": 562.5,
+        "y": 294.546875,
+        "width": 112.984375,
+        "height": 125.890625
+      },
+      "summary": {
+        "x": 563.234375,
+        "y": 392.4375,
+        "width": 111.5,
+        "height": 28
+      },
+      "topGap": 11.890625,
+      "bottomGap": 4
+    },
+    {
+      "name": "overview 126 venues",
+      "marker": {
+        "x": 58.921875,
+        "y": 514.5,
+        "width": 144.15625,
+        "height": 124
+      },
+      "touchTarget": {
+        "x": 58.921875,
+        "y": 514.5,
+        "width": 144.15625,
+        "height": 124
+      },
+      "summary": {
+        "x": 58.921875,
+        "y": 604.5,
+        "width": 144.15625,
+        "height": 34
+      },
+      "topGap": 4,
+      "bottomGap": 4
+    },
+    {
+      "name": "selected",
+      "marker": {
+        "x": 318.328125,
+        "y": 506.78125,
+        "width": 113.34375,
+        "height": 139.4375
+      },
+      "touchTarget": {
+        "x": 318.328125,
+        "y": 506.78125,
+        "width": 113.34375,
+        "height": 139.4375
+      },
+      "summary": {
+        "x": 318.328125,
+        "y": 618.21875,
+        "width": 113.34375,
+        "height": 28
+      },
+      "topGap": 10.71875,
+      "bottomGap": 10.71875
+    },
+    {
+      "name": "category overflow",
+      "marker": {
+        "x": 548,
+        "y": 509.609375,
+        "width": 141.984375,
+        "height": 133.78125
+      },
+      "touchTarget": {
+        "x": 548,
+        "y": 509.609375,
+        "width": 141.984375,
+        "height": 133.78125
+      },
+      "summary": {
+        "x": 562.3125,
+        "y": 615.390625,
+        "width": 113.34375,
+        "height": 28
+      },
+      "topGap": 11.890625,
+      "bottomGap": 11.890625
+    }
+  ],
+  "selectorButtons": [
+    {
+      "x": 188,
+      "y": 224,
+      "width": 90,
+      "height": 26
+    },
+    {
+      "x": 278,
+      "y": 224,
+      "width": 90,
+      "height": 26
+    },
+    {
+      "x": 188,
+      "y": 250,
+      "width": 90,
+      "height": 26
+    },
+    {
+      "x": 278,
+      "y": 250,
+      "width": 90,
+      "height": 26
+    }
+  ],
+  "buttonHeight": 26
+}
