@@ -1,0 +1,14 @@
+[
+  {
+    "id": "01a1d4df-4eec-7526-b271-f26da2169647",
+    "createdAt": "2026-11-13T12:26:06.956Z",
+    "group": "4546ebd9-2b62-4857-8445-8793b2eb20df",
+    "branch": "production",
+    "message": "Refine Hybrid clustering and thin venue rings",
+    "runtimeVersion": "1.1.20",
+    "platform": "ios",
+    "manifestPermalink": "https://u.expo.dev/update/01a1d4df-4eec-7526-b271-f26da2169647",
+    "isRollBackToEmbedded": false,
+    "gitCommitHash": "526cc4a9d4ba9a2f7d95ff793db0daeeccbd67e8"
+  }
+]
