@@ -1,0 +1,14 @@
+[
+  {
+    "id": "01a1d4be-d604-7d34-960d-e9a27f239e07",
+    "createdAt": "2026-11-13T11:50:38.852Z",
+    "group": "6c5fafe6-5396-4fbc-a68c-5a27d5bf4fca",
+    "branch": "production",
+    "message": "Restore Hybrid map summary icons and counts on iOS",
+    "runtimeVersion": "1.1.20",
+    "platform": "ios",
+    "manifestPermalink": "https://u.expo.dev/update/01a1d4be-d604-7d34-960d-e9a27f239e07",
+    "isRollBackToEmbedded": false,
+    "gitCommitHash": "32ba9b762c69f8a3239b64c111fcc352fc297f66"
+  }
+]

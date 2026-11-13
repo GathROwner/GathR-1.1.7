@@ -1,0 +1,38 @@
+{
+  "name": "production",
+  "id": "019ed566-a2f6-7cd0-b9af-5ab95668b916",
+  "currentPage": [
+    {
+      "branch": "production",
+      "message": "\"Restore Hybrid map summary icons and counts on iOS\" (25 seconds ago by craigb)",
+      "runtimeVersion": "1.1.20",
+      "isRollBackToEmbedded": false,
+      "group": "6c5fafe6-5396-4fbc-a68c-5a27d5bf4fca",
+      "platforms": "ios"
+    },
+    {
+      "branch": "production",
+      "message": "\"Use native map graphics for Hybrid gestures and refine marker sizing\" (9 hours ago by craigb)",
+      "runtimeVersion": "1.1.20",
+      "isRollBackToEmbedded": false,
+      "group": "504afe48-6b46-4947-8025-8b0fe0c46e6c",
+      "platforms": "ios"
+    },
+    {
+      "branch": "production",
+      "message": "\"Speed up Hybrid venue rotation and improve map gestures\" (10 hours ago by craigb)",
+      "runtimeVersion": "1.1.20",
+      "isRollBackToEmbedded": false,
+      "group": "9e7c6860-46b1-4d8e-b822-8b5683f4dc30",
+      "platforms": "ios"
+    },
+    {
+      "branch": "production",
+      "message": "\"Keep Hybrid photos at all zooms and tighten summaries\" (10 hours ago by craigb)",
+      "runtimeVersion": "1.1.20",
+      "isRollBackToEmbedded": false,
+      "group": "d3764dce-b974-4c85-a4b9-cb96fa095982",
+      "platforms": "ios"
+    }
+  ]
+}

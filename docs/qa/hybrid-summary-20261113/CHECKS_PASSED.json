@@ -1,0 +1,11 @@
+{
+  "nativePNGReviewed": true,
+  "cleanIOSExport": true,
+  "lintExit": 0,
+  "visualReviewed": true,
+  "typescriptExit": 0,
+  "testsPassed": 26,
+  "atUTC": "2026-11-13T11:48:04.3995362Z",
+  "commit": "32ba9b762c69f8a3239b64c111fcc352fc297f66",
+  "iOSDeviceVerified": false
+}
