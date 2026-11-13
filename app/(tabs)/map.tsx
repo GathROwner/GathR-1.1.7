@@ -61,8 +61,7 @@ import MapLegend, {
   type MapPerspective,
   type MapStyleChoice,
 } from '../../components/map/MapLegend';
-import HybridClusterMarker from '../../components/map/HybridClusterMarker';
-import HybridMarkerTouchTarget from '../../components/map/HybridMarkerTouchTarget';
+import HybridMapAnnotation from '../../components/map/HybridMapAnnotation';
 import { usesCurrentBasemap } from '../../utils/hybridClusterPresentation';
 import InterestFilterPills from '../../components/map/InterestFilterPills';
 import InterestsCarousel from '../../components/map/InterestsCarousel';
@@ -10907,8 +10906,19 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
         const markerKey = isTutorialTarget
           ? `cluster-${cluster.id}-${markerViewEpoch}-tutorial-coordinate-${coordinates[0]}-${coordinates[1]}`
           : `cluster-${cluster.id}-${markerViewEpoch}`;
-        const ClusterMarkerTouchTarget = mapStyleChoice === 'hybrid' && !isTutorialTarget
-          ? HybridMarkerTouchTarget : TouchableOpacity;
+        if (mapStyleChoice === 'hybrid' && !isTutorialTarget) {
+          return <HybridMapAnnotation key={markerKey} id={markerKey} cluster={cluster} coordinate={coordinates}
+            isSelected={isSelected} isReady={clustersReadyForInteraction} isProcessing={processingClusterId === cluster.id}
+            disabled={!clustersReadyForInteraction || processingClusterId !== null}
+            isActive={clusterMarkerAnimationsActive} reduceMotionEnabled={reduceMotionEnabled}
+            compact={!!puckOffset?.compact} dockX={beaconDock.translateX} dockY={beaconDock.translateY}
+            measurementDockX={originalBeaconDock.translateX} measurementDockY={originalBeaconDock.translateY}
+            record={clusterPuckLayout.recordMarkerGeometry} categoryIcon={getCategoryIcon}
+            onPress={() => {
+              traceMapEvent('hybrid_native_annotation_tap', { clusterId: cluster.id, venueCount: cluster.venues.length }, { gestureSessionId: gestureTraceSessionIdRef.current });
+              void handleMarkerPress(cluster);
+            }} onBackgroundPress={handleMapPress} />;
+        }
 
         return (
           <MapboxGL.MarkerView
@@ -10921,7 +10931,7 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
             isSelected={isSelected}
              
           >
-            <ClusterMarkerTouchTarget
+            <TouchableOpacity
               onPressIn={() => {
                 traceMapEvent('cluster_touchable_press_in_received', {
                   clusterId: cluster.id,
@@ -10978,7 +10988,7 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
               testID={isClosestCluster ? "closest-cluster" : undefined}
               disabled={!clustersReadyForInteraction || processingClusterId !== null}
               activeOpacity={0.7}
-              hitSlop={mapStyleChoice === 'hybrid' && !isTutorialTarget ? undefined : { top: 10, bottom: 10, left: 10, right: 10 }}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
               style={[
                 styles.clusterMarkerTouchableFrame,
                 isDimmedByInterestFilter && styles.interestFilteredMarkerDimmed,
@@ -10999,15 +11009,7 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
                 countLabel={String((cluster.eventCount ?? 0) + (cluster.specialCount ?? 0))}
                 dockX={originalBeaconDock.translateX} dockY={originalBeaconDock.translateY}
                 record={clusterPuckLayout.recordMarkerGeometry}>
-              {mapStyleChoice === 'hybrid' && !isTutorialTarget ? <HybridClusterMarker
-                cluster={cluster}
-                isSelected={isSelected}
-                isProcessing={processingClusterId === cluster.id}
-                isReady={clustersReadyForInteraction}
-                isActive={clusterMarkerAnimationsActive}
-                reduceMotionEnabled={reduceMotionEnabled}
-                categoryIcon={getCategoryIcon}
-              /> : <TreeMarker
+              <TreeMarker
                 key={isTutorialTarget ? `tutorial-target-${tutorialTargetBindingRevision}` : undefined}
                 cluster={cluster}
                 isSelected={isSelected}
@@ -11045,9 +11047,9 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
                     ? tutorialTargetBindingRevision
                     : undefined
                 }
-              />}
+              />
               </PuckMarkerMeasurement>
-            </ClusterMarkerTouchTarget>
+            </TouchableOpacity>
           </MapboxGL.MarkerView>
         );
       })}
