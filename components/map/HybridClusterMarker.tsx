@@ -45,7 +45,7 @@ export default function HybridClusterMarker({ cluster, isActive, isSelected, isR
 
   useEffect(() => {
     if (!isActive || reduceMotionEnabled || venues.length < 2 || isSelected) return;
-    const timer = setInterval(() => setActiveKey(key => { const at = Math.max(0, venues.findIndex(v => v.key === key)); return venues[(at + 1) % venues.length].key; }), 6000);
+    const timer = setInterval(() => setActiveKey(key => { const at = Math.max(0, venues.findIndex(v => v.key === key)); return venues[(at + 1) % venues.length].key; }), 3000);
     return () => clearInterval(timer);
   }, [venueKey, venues, isActive, isSelected, reduceMotionEnabled]);
   useEffect(() => {
@@ -70,7 +70,8 @@ export default function HybridClusterMarker({ cluster, isActive, isSelected, isR
   const photoTopGap = Math.max(visible.length ? 4 : 0, ...attachedFriends.map(v => 9.5 - center - (radius + 18) * Math.sin(friendAngle(v.index))));
   const photoBottomGap = Math.max(4, ...attachedFriends.map(v => center + (radius + 18) * Math.sin(friendAngle(v.index)) + 9.5 - ringSize));
 
-  return <View testID="hybrid-cluster-marker" pointerEvents="none" style={[s.marker, { minWidth: 140, opacity: !isReady ? .4 : isProcessing ? .6 : 1 }]}
+  const friendWidth = Math.max(0, ...attachedFriends.map(v => 2 * (Math.abs((radius + 18) * Math.cos(friendAngle(v.index))) + 12.5)));
+  return <View testID="hybrid-cluster-marker" pointerEvents="none" style={[s.marker, { minWidth: friendWidth, opacity: !isReady ? .4 : isProcessing ? .6 : 1 }]}
     accessibilityLabel={`${current.venue.venue}, venue ${index + 1} of ${venues.length}; ${current.categories.map(c => `${c.category} ${c.count}`).join(', ')}; cluster totals ${cluster.eventCount} events, ${cluster.specialCount} specials`}>
       {visible.length > 0 && <View testID="hybrid-venue-summary" style={[s.venueSummary, { borderColor: accent }]}>
         {visible.map((item, at) => <View key={item.key} style={[s.category, at > 0 && s.sectionBorder]} accessibilityLabel={`${item.category}: ${item.count}${item.isNew ? ', new content' : ''}`}>
@@ -100,7 +101,7 @@ export default function HybridClusterMarker({ cluster, isActive, isSelected, isR
 }
 
 const s = StyleSheet.create({
-  marker: { alignItems: 'center', paddingHorizontal: 15, paddingVertical: 3, overflow: 'visible' },
+  marker: { alignItems: 'center', overflow: 'visible' },
   venueSummary: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 4, paddingVertical: 3, borderWidth: 2, borderRadius: 15, backgroundColor: '#FFFEFA', shadowColor: '#143247', shadowOpacity: .12, shadowRadius: 3, shadowOffset: { width: 0, height: 2 }, elevation: 2 },
   category: { flexDirection: 'row', alignItems: 'center', gap: 3, paddingHorizontal: 7, minHeight: 16 },
   categoryCount: { fontSize: 11, fontWeight: '600', lineHeight: 14 },

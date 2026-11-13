@@ -27,7 +27,9 @@ it('rotates venue and category together while summary ring/totals stay fixed', (
   const strokes = () => summary().findAllByType('Circle' as any).map(n => n.props.stroke);
   const before = strokes();
   expect(tree.root.findByProps({ testID: 'hybrid-cluster-marker' }).props.accessibilityLabel).toContain('Alpha');
-  act(() => jest.advanceTimersByTime(6000));
+  act(() => jest.advanceTimersByTime(2999));
+  expect(tree.root.findByProps({ testID: 'hybrid-cluster-marker' }).props.accessibilityLabel).toContain('Alpha');
+  act(() => jest.advanceTimersByTime(1));
   expect(tree.root.findByProps({ testID: 'hybrid-cluster-marker' }).props.accessibilityLabel).toContain('Beta');
   expect(tree.root.findByProps({ testID: 'hybrid-cluster-marker' }).props.accessibilityLabel).toContain('Trivia 2');
   expect(strokes()).toEqual(before);
@@ -48,7 +50,7 @@ it('stops rotation with reduced motion and selected callouts', () => {
 it('marks the specific new category and removes the dot for another venue', () => {
   act(() => { tree = renderer.create(<HybridClusterMarker cluster={fixture()} {...props} />); });
   expect(tree.root.findAllByType(View).filter(n => n.props.testID === 'hybrid-category-new')).toHaveLength(1);
-  act(() => jest.advanceTimersByTime(6000));
+  act(() => jest.advanceTimersByTime(3000));
   expect(tree.root.findAllByProps({ testID: 'hybrid-category-new' })).toHaveLength(0);
 });
 
@@ -59,6 +61,6 @@ it('keeps venue detail and rotation for large overview clusters', () => {
   expect(tree.root.findAllByType(View).filter(n => n.props.testID === 'hybrid-photo-ring')).toHaveLength(1);
   expect(tree.root.findAllByType(View).filter(n => n.props.testID === 'hybrid-venue-summary')).toHaveLength(1);
   expect(tree.root.findAllByType(View).filter(n => n.props.testID === 'hybrid-cluster-summary')).toHaveLength(1);
-  act(() => jest.advanceTimersByTime(6000));
+  act(() => jest.advanceTimersByTime(3000));
   expect(tree.root.findByProps({ testID: 'hybrid-cluster-marker' }).props.accessibilityLabel).toContain('Beta, venue 2 of 126');
 });

@@ -62,6 +62,7 @@ import MapLegend, {
   type MapStyleChoice,
 } from '../../components/map/MapLegend';
 import HybridClusterMarker from '../../components/map/HybridClusterMarker';
+import HybridMarkerTouchTarget from '../../components/map/HybridMarkerTouchTarget';
 import { usesCurrentBasemap } from '../../utils/hybridClusterPresentation';
 import InterestFilterPills from '../../components/map/InterestFilterPills';
 import InterestsCarousel from '../../components/map/InterestsCarousel';
@@ -10906,6 +10907,8 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
         const markerKey = isTutorialTarget
           ? `cluster-${cluster.id}-${markerViewEpoch}-tutorial-coordinate-${coordinates[0]}-${coordinates[1]}`
           : `cluster-${cluster.id}-${markerViewEpoch}`;
+        const ClusterMarkerTouchTarget = mapStyleChoice === 'hybrid' && !isTutorialTarget
+          ? HybridMarkerTouchTarget : TouchableOpacity;
 
         return (
           <MapboxGL.MarkerView
@@ -10918,7 +10921,7 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
             isSelected={isSelected}
              
           >
-            <TouchableOpacity
+            <ClusterMarkerTouchTarget
               onPressIn={() => {
                 traceMapEvent('cluster_touchable_press_in_received', {
                   clusterId: cluster.id,
@@ -10975,7 +10978,7 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
               testID={isClosestCluster ? "closest-cluster" : undefined}
               disabled={!clustersReadyForInteraction || processingClusterId !== null}
               activeOpacity={0.7}
-              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              hitSlop={mapStyleChoice === 'hybrid' && !isTutorialTarget ? undefined : { top: 10, bottom: 10, left: 10, right: 10 }}
               style={[
                 styles.clusterMarkerTouchableFrame,
                 isDimmedByInterestFilter && styles.interestFilteredMarkerDimmed,
@@ -11044,7 +11047,7 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
                 }
               />}
               </PuckMarkerMeasurement>
-            </TouchableOpacity>
+            </ClusterMarkerTouchTarget>
           </MapboxGL.MarkerView>
         );
       })}
