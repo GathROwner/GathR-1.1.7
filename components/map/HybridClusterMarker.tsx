@@ -8,6 +8,7 @@ import { buildHybridVenues, HYBRID_ACCENTS, visibleHybridCategories } from '../.
 import { clusterSummaryGraphic, countGraphic, friendBadgeGraphic, venueSummaryGraphic } from '../../utils/hybridSummaryGraphic';
 import HybridSummaryImage from './HybridSummaryImage';
 import { hybridMarkerGeometry } from '../../utils/hybridMarkerGeometry';
+import { hybridRingGeometry } from '../../utils/hybridRingGeometry';
 
 type Props = {
   cluster: Cluster; isActive: boolean; isSelected: boolean; isReady: boolean; isProcessing: boolean;
@@ -22,14 +23,16 @@ const p = (value: number) => value * .9;
 
 function Segments({ diameter, count, active = -1, staticRing = false }: { diameter: number; count: number; active?: number; staticRing?: boolean }) {
   // The thinner arc still meets the photo's existing white border.
-  const stroke = staticRing ? p(1.25) : 3.15, radius = diameter / 2 - stroke / 2, circumference = 2 * Math.PI * radius;
-  // Individual arcs cease to be useful in large clusters; the numeric total remains explicit.
-  const segments = count > 12 ? 1 : Math.max(1, count), step = circumference / segments, gap = segments === 1 ? 0 : p(staticRing ? 1.5 : 3.2);
+  const stroke = staticRing ? p(1.25) : 3.15;
+  const { radius, circumference, step, gap, arc } = hybridRingGeometry(diameter, stroke, count, p(staticRing ? 1.5 : 3.2));
   return <Svg width={diameter} height={diameter} style={StyleSheet.absoluteFill} pointerEvents="none">
-    {Array.from({ length: segments }, (_, index) => <Circle key={index} cx={diameter / 2} cy={diameter / 2} r={radius} fill="none"
-      stroke={staticRing ? '#8DA8B8' : (segments === 1 || index === active) ? HYBRID_ACCENTS[active % HYBRID_ACCENTS.length] : '#CFDBE3'}
-      strokeWidth={stroke} strokeDasharray={`${Math.max(0, step - gap)} ${circumference - step + gap}`}
-      strokeDashoffset={-index * step - gap / 2} rotation={-90} origin={`${diameter / 2}, ${diameter / 2}`} />)}
+    <Circle cx={diameter / 2} cy={diameter / 2} r={radius} fill="none" stroke={staticRing ? '#8DA8B8' : '#CFDBE3'}
+      strokeWidth={stroke} strokeDasharray={`${arc} ${gap}`} strokeDashoffset={-gap / 2}
+      rotation={-90} origin={`${diameter / 2}, ${diameter / 2}`} />
+    {!staticRing && active >= 0 && <Circle cx={diameter / 2} cy={diameter / 2} r={radius} fill="none"
+      stroke={HYBRID_ACCENTS[active % HYBRID_ACCENTS.length]} strokeWidth={stroke}
+      strokeDasharray={`${arc} ${circumference - arc}`} strokeDashoffset={-active * step - gap / 2}
+      rotation={-90} origin={`${diameter / 2}, ${diameter / 2}`} />}
   </Svg>;
 }
 

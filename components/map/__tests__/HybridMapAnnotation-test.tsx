@@ -2,7 +2,7 @@ import React from 'react';
 import renderer, { act } from 'react-test-renderer';
 import { View } from 'react-native';
 import HybridMapAnnotation from '../HybridMapAnnotation';
-import HybridSummaryImage from '../HybridSummaryImage';
+import HybridCompactCount from '../HybridCompactCount';
 import type { Cluster } from '../../../types/events';
 
 const mockRefresh = jest.fn();
@@ -14,7 +14,7 @@ jest.mock('@rnmapbox/maps', () => {
       React.useImperativeHandle(ref, () => ({ refresh: mockRefresh }));
       React.useEffect(() => { mockNativeMount(); }, []);
       return React.createElement('PointAnnotation', props, props.children);
-    }), ShapeSource: 'ShapeSource', CircleLayer: 'CircleLayer',
+    }), ShapeSource: 'ShapeSource', CircleLayer: 'CircleLayer', SymbolLayer: 'SymbolLayer',
   } };
 });
 jest.mock('../HybridClusterMarker', () => 'HybridGraphics');
@@ -39,7 +39,7 @@ it('uses a native map graphic without a view annotation or touch/responder handl
   expect(point().props.draggable).toBe(false);
   expect(graphics().props.snapshotMode).toBe(true);
   expect(tree.root.findAllByType('MarkerView' as any)).toHaveLength(0);
-  expect(tree.root.findAll(n => (n.type === View || typeof n.type === 'string') && (n.props.onTouchStart || n.props.onResponderGrant || n.props.onPress || n.props.onDragStart))).toHaveLength(0);
+  expect(tree.root.findAll(n => n.type === View && (n.props.onTouchStart || n.props.onResponderGrant || n.props.onPress || n.props.onDragStart))).toHaveLength(0);
   expect(tree.root.findAllByType(View).find(v => v.props.onLayout)?.props.pointerEvents).toBe('none');
 });
 
@@ -67,14 +67,39 @@ it('refreshes the bitmap after native layout and decoded/rotated graphics, coale
   act(() => jest.advanceTimersByTime(1)); expect(mockRefresh).toHaveBeenCalledTimes(1);
 });
 
-it('only renders the visible variant’s raster content while preserving native gesture ownership', () => {
-  expect(tree.root.findByType(HybridSummaryImage).props.visible).toBe(false);
+it('renders compact counts directly in map layers without raster callbacks or a painted snapshot underneath', () => {
+  expect(tree.root.findAllByType(HybridCompactCount)).toHaveLength(0);
   act(() => tree.update(render({ compact: true })));
-  expect(tree.root.findByType(HybridSummaryImage).props.visible).toBe(true);
+  expect(tree.root.findByType('SymbolLayer' as any).props.style.textField).toEqual(['get', 'count']);
+  const source = tree.root.findByType('ShapeSource' as any);
+  expect(source.props.shape.properties.count).toBe('5');
+  expect(source.props.shape.geometry.coordinates).toEqual(base.coordinate);
+  const measured = tree.root.findAllByType(View).filter(v => v.props.onLayout);
+  const compactStyle = measured.at(-1)!.props.style;
+  expect(compactStyle).toContainEqual(expect.objectContaining({ backgroundColor: 'transparent', borderColor: 'transparent' }));
   expect(graphics().props.snapshotVisible).toBe(false);
   act(() => tree.update(render({ compact: false })));
-  expect(tree.root.findByType(HybridSummaryImage).props.visible).toBe(false);
+  expect(tree.root.findAllByType(HybridCompactCount)).toHaveLength(0);
   expect(graphics().props.snapshotVisible).toBe(true);
+  expect(mockNativeMount).toHaveBeenCalledTimes(1);
+});
+
+it('updates native count and placement at rest and retains completed-tap gates for the compact fallback', () => {
+  act(() => tree.update(render({ compact: true })));
+  const badge = () => tree.root.findByType(HybridCompactCount);
+  act(() => badge().props.onPress()); expect(press).toHaveBeenCalledTimes(1);
+  act(() => tree.update(render({ compact: true, disabled: true })));
+  act(() => badge().props.onPress()); expect(press).toHaveBeenCalledTimes(1);
+  act(() => tree.update(render({ compact: true, isSelected: true })));
+  act(() => badge().props.onPress()); expect(press).toHaveBeenCalledTimes(1);
+  act(() => tree.update(render({ compact: true, cluster: { ...cluster, eventCount: 123, specialCount: 42 }, coordinate: [-63.2, 46.3], dockX: 8, dockY: -4 })));
+  expect(tree.root.findByType('ShapeSource' as any).props.shape).toMatchObject({ properties: { count: '165' }, geometry: { coordinates: [-63.2, 46.3] } });
+  const body = tree.root.findByType('CircleLayer' as any).props.style;
+  const number = tree.root.findByType('SymbolLayer' as any).props.style;
+  expect(number.textTranslate).toEqual(body.circleTranslate);
+  expect(number.textTranslate).toEqual([8, -25]);
+  expect(number.textAllowOverlap).toBe(true); expect(number.textIgnorePlacement).toBe(true);
+  expect(body.circlePitchScale).toBe('viewport');
   expect(mockNativeMount).toHaveBeenCalledTimes(1);
 });
 
