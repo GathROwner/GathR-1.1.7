@@ -1,0 +1,249 @@
+{
+  "status": "PASS",
+  "method": "Actual React Native component rendering through RN Web; iOS props; SVG primitive bridge; fixture images/data; open legend animation frozen",
+  "markers": [
+    {
+      "name": "four venues",
+      "marker": {
+        "x": 78.140625,
+        "y": 79.5625,
+        "width": 105.703125,
+        "height": 117.875
+      },
+      "summary": {
+        "x": 80.765625,
+        "y": 172.21875,
+        "width": 100.4375,
+        "height": 25.1875
+      },
+      "photo": {
+        "x": 112.984375,
+        "y": 119.578125,
+        "width": 36,
+        "height": 36
+      },
+      "ringInnerGap": 0,
+      "topGap": 13.484375,
+      "bottomGap": 13.484375
+    },
+    {
+      "name": "single, no friends",
+      "marker": {
+        "x": 322.140625,
+        "y": 89.453125,
+        "width": 105.703125,
+        "height": 98.09375
+      },
+      "summary": {
+        "x": 324.765625,
+        "y": 162.328125,
+        "width": 100.4375,
+        "height": 25.1875
+      },
+      "photo": {
+        "x": 356.984375,
+        "y": 119.578125,
+        "width": 36,
+        "height": 36
+      },
+      "ringInnerGap": 0,
+      "topGap": 3.59375,
+      "bottomGap": 3.59375
+    },
+    {
+      "name": "two venues",
+      "marker": {
+        "x": 566.140625,
+        "y": 89.453125,
+        "width": 105.703125,
+        "height": 98.09375
+      },
+      "summary": {
+        "x": 568.765625,
+        "y": 162.328125,
+        "width": 100.4375,
+        "height": 25.1875
+      },
+      "photo": {
+        "x": 600.984375,
+        "y": 119.578125,
+        "width": 36,
+        "height": 36
+      },
+      "ringInnerGap": 0,
+      "topGap": 3.59375,
+      "bottomGap": 3.59375
+    },
+    {
+      "name": "three venues",
+      "marker": {
+        "x": 78.140625,
+        "y": 307.328125,
+        "width": 105.703125,
+        "height": 100.34375
+      },
+      "summary": {
+        "x": 80.765625,
+        "y": 382.453125,
+        "width": 100.4375,
+        "height": 25.1875
+      },
+      "photo": {
+        "x": 112.984375,
+        "y": 339.703125,
+        "width": 36,
+        "height": 36
+      },
+      "ringInnerGap": 0,
+      "topGap": 5.84375,
+      "bottomGap": 3.59375
+    },
+    {
+      "name": "many venues",
+      "marker": {
+        "x": 317.765625,
+        "y": 298.453125,
+        "width": 114.46875,
+        "height": 118.078125
+      },
+      "summary": {
+        "x": 317.765625,
+        "y": 391.3125,
+        "width": 114.46875,
+        "height": 25.1875
+      },
+      "photo": {
+        "x": 356.984375,
+        "y": 348.5625,
+        "width": 36,
+        "height": 36
+      },
+      "ringInnerGap": 0,
+      "topGap": 23.578125,
+      "bottomGap": 3.59375
+    },
+    {
+      "name": "missing image",
+      "marker": {
+        "x": 566.140625,
+        "y": 303.5,
+        "width": 105.703125,
+        "height": 107.984375
+      },
+      "summary": {
+        "x": 568.765625,
+        "y": 386.265625,
+        "width": 100.4375,
+        "height": 25.1875
+      },
+      "photo": {
+        "x": 600.984375,
+        "y": 343.515625,
+        "width": 36,
+        "height": 36
+      },
+      "ringInnerGap": 0,
+      "topGap": 13.484375,
+      "bottomGap": 3.59375
+    },
+    {
+      "name": "overview 126 venues",
+      "marker": {
+        "x": 64.046875,
+        "y": 524.75,
+        "width": 133.90625,
+        "height": 103.5
+      },
+      "summary": {
+        "x": 64.046875,
+        "y": 597.625,
+        "width": 133.90625,
+        "height": 30.59375
+      },
+      "photo": {
+        "x": 112.984375,
+        "y": 554.875,
+        "width": 36,
+        "height": 36
+      },
+      "ringInnerGap": 0,
+      "topGap": 3.59375,
+      "bottomGap": 3.59375
+    },
+    {
+      "name": "selected",
+      "marker": {
+        "x": 322.140625,
+        "y": 515.015625,
+        "width": 105.703125,
+        "height": 122.96875
+      },
+      "summary": {
+        "x": 324.765625,
+        "y": 612.78125,
+        "width": 100.4375,
+        "height": 25.1875
+      },
+      "photo": {
+        "x": 353.375,
+        "y": 553.984375,
+        "width": 43.1875,
+        "height": 43.1875
+      },
+      "ringInnerGap": 0.006250000000001421,
+      "topGap": 12.4375,
+      "bottomGap": 12.4375
+    },
+    {
+      "name": "category overflow",
+      "marker": {
+        "x": 553.546875,
+        "y": 517.5625,
+        "width": 130.890625,
+        "height": 117.875
+      },
+      "summary": {
+        "x": 568.765625,
+        "y": 610.21875,
+        "width": 100.4375,
+        "height": 25.1875
+      },
+      "photo": {
+        "x": 600.984375,
+        "y": 557.578125,
+        "width": 36,
+        "height": 36
+      },
+      "ringInnerGap": 0,
+      "topGap": 13.484375,
+      "bottomGap": 13.484375
+    }
+  ],
+  "selectorButtons": [
+    {
+      "x": 188,
+      "y": 224,
+      "width": 90,
+      "height": 26
+    },
+    {
+      "x": 278,
+      "y": 224,
+      "width": 90,
+      "height": 26
+    },
+    {
+      "x": 188,
+      "y": 250,
+      "width": 90,
+      "height": 26
+    },
+    {
+      "x": 278,
+      "y": 250,
+      "width": 90,
+      "height": 26
+    }
+  ],
+  "buttonHeight": 26
+}

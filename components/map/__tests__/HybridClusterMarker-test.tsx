@@ -87,3 +87,16 @@ it('exports rotating venue details and fixed cluster totals without detached nat
   expect(after[0]).not.toEqual(before[0]);
   expect(after[after.length - 1]).toEqual(before[before.length - 1]);
 });
+
+it('keeps the entire rotation envelope fixed with differently sized category summaries and thinner photo arcs', () => {
+  const cluster = fixture();
+  cluster.venues[1].events.push({ ...cluster.venues[1].events[0], id: 'other', category: 'Food', type: 'special' });
+  act(() => { tree = renderer.create(<HybridClusterMarker cluster={cluster} {...props} snapshotMode />); });
+  const marker = () => tree.root.findByProps({ testID: 'hybrid-cluster-marker' });
+  const before = marker().props.style;
+  const arcs = tree.root.findByProps({ testID: 'hybrid-photo-ring' }).findAllByType('Circle' as any);
+  expect(arcs[0].props.strokeWidth).toBe(3.15);
+  expect(arcs[0].props.r - arcs[0].props.strokeWidth / 2).toBeCloseTo(18);
+  act(() => jest.advanceTimersByTime(3000));
+  expect(marker().props.style).toEqual(before);
+});

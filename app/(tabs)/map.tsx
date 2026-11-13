@@ -3534,6 +3534,9 @@ useEffect(() => {
     (location) => location.certainty === 'approximate'
   );
   const [mapStyleChoice, setMapStyleChoice] = useState<MapStyleChoice>('current');
+  useEffect(() => {
+    useMapStore.getState().setMarkerClusterProfile(mapStyleChoice === 'hybrid' ? 'hybrid' : 'default');
+  }, [mapStyleChoice]);
   const [mapStyleChanging, setMapStyleChanging] = useState(false);
   const [mapLightPreset, setMapLightPreset] = useState<MapLightPreset>('day');
   const [mapPerspective, setMapPerspective] = useState<MapPerspective>('2d');
