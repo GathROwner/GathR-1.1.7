@@ -10,7 +10,7 @@ jest.mock('../../../store/clusterInteractionStore', () => ({
   getHasNewContent: (_key: string, ids: string[]) => ids.includes('new'),
 }));
 jest.mock('@expo/vector-icons/MaterialIcons', () => 'MaterialIcons');
-jest.mock('react-native-svg', () => ({ __esModule: true, default: 'Svg', Circle: 'Circle', Line: 'Line' }));
+jest.mock('react-native-svg', () => ({ __esModule: true, default: 'Svg', SvgXml: 'SvgXml', Circle: 'Circle', Line: 'Line' }));
 const fixture = () => ({ id: 'cluster', timeStatus: 'future', interestLevel: 'medium', eventCount: 3, specialCount: 1,
   venues: [{ locationKey: 'a', venue: 'Alpha', events: [{ id: 'new', type: 'event', category: 'Music', profileUrl: '' }] },
     { locationKey: 'b', venue: 'Beta', events: [{ id: 'b1', type: 'event', category: 'Trivia', profileUrl: '' }, { id: 'b2', type: 'event', category: 'Trivia', profileUrl: '' }] }],
@@ -74,4 +74,16 @@ it('refreshes the map bitmap after profile decoding without snapshotting an imag
   expect(photo.props.fadeDuration).toBe(0);
   act(() => photo.props.onLoad()); expect(refresh).toHaveBeenCalledTimes(1);
   act(() => jest.advanceTimersByTime(3000)); expect(refresh).toHaveBeenCalledTimes(2);
+});
+
+it('exports rotating venue details and fixed cluster totals without detached native text/icon views', () => {
+  act(() => { tree = renderer.create(<HybridClusterMarker cluster={fixture()} {...props} snapshotMode />); });
+  const xml = () => tree.root.findAllByType('SvgXml' as any).map(n => n.props.xml as string);
+  const before = xml();
+  expect(before.some(value => value.includes('>3</text>') && value.includes('>1</text>'))).toBe(true);
+  expect(tree.root.findAllByType('MaterialIcons' as any)).toHaveLength(0);
+  act(() => jest.advanceTimersByTime(3000));
+  const after = xml();
+  expect(after[0]).not.toEqual(before[0]);
+  expect(after[after.length - 1]).toEqual(before[before.length - 1]);
 });
