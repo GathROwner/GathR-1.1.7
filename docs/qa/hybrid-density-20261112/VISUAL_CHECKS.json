@@ -1,0 +1,186 @@
+{
+  "status": "PASS",
+  "method": "Actual React Native component rendering through RN Web; iOS props; SVG primitive bridge; fixture images/data; open legend animation frozen",
+  "markers": [
+    {
+      "name": "four venues",
+      "marker": {
+        "x": 59.328125,
+        "y": 68.609375,
+        "width": 143.34375,
+        "height": 139.78125
+      },
+      "summary": {
+        "x": 74.328125,
+        "y": 177.390625,
+        "width": 113.34375,
+        "height": 28
+      },
+      "topGap": 11.890625,
+      "bottomGap": 11.890625
+    },
+    {
+      "name": "single, no friends",
+      "marker": {
+        "x": 303.5,
+        "y": 76.5,
+        "width": 142.984375,
+        "height": 124
+      },
+      "summary": {
+        "x": 319.234375,
+        "y": 169.5,
+        "width": 111.5,
+        "height": 28
+      },
+      "topGap": 4,
+      "bottomGap": 4
+    },
+    {
+      "name": "two venues",
+      "marker": {
+        "x": 547.328125,
+        "y": 76.5,
+        "width": 143.34375,
+        "height": 124
+      },
+      "summary": {
+        "x": 562.328125,
+        "y": 169.5,
+        "width": 113.34375,
+        "height": 28
+      },
+      "topGap": 4,
+      "bottomGap": 4
+    },
+    {
+      "name": "three venues",
+      "marker": {
+        "x": 59.328125,
+        "y": 295.5,
+        "width": 143.34375,
+        "height": 124
+      },
+      "summary": {
+        "x": 74.328125,
+        "y": 388.5,
+        "width": 113.34375,
+        "height": 28
+      },
+      "topGap": 4,
+      "bottomGap": 4
+    },
+    {
+      "name": "many venues",
+      "marker": {
+        "x": 296.671875,
+        "y": 285.65625,
+        "width": 156.65625,
+        "height": 143.671875
+      },
+      "summary": {
+        "x": 311.671875,
+        "y": 398.328125,
+        "width": 126.65625,
+        "height": 28
+      },
+      "topGap": 23.671875,
+      "bottomGap": 4
+    },
+    {
+      "name": "missing image",
+      "marker": {
+        "x": 547.5,
+        "y": 291.546875,
+        "width": 142.984375,
+        "height": 131.890625
+      },
+      "summary": {
+        "x": 563.234375,
+        "y": 392.4375,
+        "width": 111.5,
+        "height": 28
+      },
+      "topGap": 11.890625,
+      "bottomGap": 4
+    },
+    {
+      "name": "overview 126 venues",
+      "marker": {
+        "x": 43.921875,
+        "y": 511.5,
+        "width": 174.15625,
+        "height": 130
+      },
+      "summary": {
+        "x": 58.921875,
+        "y": 604.5,
+        "width": 144.15625,
+        "height": 34
+      },
+      "topGap": 4,
+      "bottomGap": 4
+    },
+    {
+      "name": "selected",
+      "marker": {
+        "x": 303.328125,
+        "y": 503.78125,
+        "width": 143.34375,
+        "height": 145.4375
+      },
+      "summary": {
+        "x": 318.328125,
+        "y": 618.21875,
+        "width": 113.34375,
+        "height": 28
+      },
+      "topGap": 10.71875,
+      "bottomGap": 10.71875
+    },
+    {
+      "name": "category overflow",
+      "marker": {
+        "x": 533,
+        "y": 506.609375,
+        "width": 171.984375,
+        "height": 139.78125
+      },
+      "summary": {
+        "x": 562.3125,
+        "y": 615.390625,
+        "width": 113.34375,
+        "height": 28
+      },
+      "topGap": 11.890625,
+      "bottomGap": 11.890625
+    }
+  ],
+  "selectorButtons": [
+    {
+      "x": 188,
+      "y": 224,
+      "width": 90,
+      "height": 26
+    },
+    {
+      "x": 278,
+      "y": 224,
+      "width": 90,
+      "height": 26
+    },
+    {
+      "x": 188,
+      "y": 250,
+      "width": 90,
+      "height": 26
+    },
+    {
+      "x": 278,
+      "y": 250,
+      "width": 90,
+      "height": 26
+    }
+  ],
+  "buttonHeight": 26
+}
