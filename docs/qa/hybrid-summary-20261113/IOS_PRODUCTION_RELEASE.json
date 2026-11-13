@@ -26,5 +26,8 @@
   "existingLintWarnings": 227,
   "nativeConfigurationOrDependenciesChanged": false,
   "otherPlatformsPublished": false,
-  "atUTC": "2026-11-13T11:51:45.817967+00:00"
+  "atUTC": "2026-11-13T11:51:45.817967+00:00",
+  "iOSVisualUserConfirmed": true,
+  "userConfirmationScope": "Summary details restored in supplied iPhone screenshot; Profile OTA ID and native pinch not verified",
+  "releaseWorktreeRemoved": true
 }

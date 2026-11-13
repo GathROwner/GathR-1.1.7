@@ -11,3 +11,7 @@ One publish attempt completed successfully. EAS update:list and update:view inde
 The clean candidate passed TypeScript, 26 focused tests, Expo lint (zero errors / 227 pre-existing warnings), Mapbox preflight, Production Firebase/App Check/social environment guard, iOS Production configuration and a clean iOS export. Native PNG outputs and nine actual-component cases were visually reviewed before release. iPhone visual behavior and adoption remain unverified.
 
 To adopt, fully close/reopen GathR twice. The Profile footer should show Production / runtime 1.1.20 / OTA `01a1d4be`. Verify category details, venue totals, static cluster counts during rotation, and pinch/pan starting over a cluster independently on iOS. This is a follow-up verification checklist, not a claim those iOS gestures were device-tested.
+
+## User confirmation
+
+Craig confirmed "that fixed it" and supplied an iPhone screenshot showing venue category counts, icons and cluster totals restored. The screenshot does not include the Profile OTA footer, so exact device update-ID adoption is not independently confirmed. Nearby marker groups visibly overlap, particularly the top pair and lower group; overlap handling is the next visual concern, with no new implementation requested yet. Native pinch behavior remains unconfirmed. Release worktree cleanup completed and implementation/protected-main dependency states were unchanged.
