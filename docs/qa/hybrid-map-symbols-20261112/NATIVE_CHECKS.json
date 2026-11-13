@@ -1,0 +1,17 @@
+{
+  "apkInstalled": false,
+  "iosVerification": "not performed",
+  "source": "actual HybridMapAnnotation and HybridClusterMarker",
+  "automatedPinch": "INCONCLUSIVE: multi-pointer injection did not zoom on empty map either; do not claim pinch passed",
+  "device": "emulator-5554 s24",
+  "nativeGraphics": "profile asset, category strip, static totals, friend badge and rotating segment rendered",
+  "nativeZoom": "double-tap on empty map changed HUD zoom 15 to 16",
+  "photoPan": "drag from photo 230,540 to 500,740 moved map and photo; tap counter remained 1",
+  "firebaseAndAds": "standalone fixture; no Firebase app code or ads imported",
+  "status": "NATIVE_ANDROID_FIXTURE_REVIEWED_WITH_LIMITS",
+  "renderingLimits": "headless software renderer: initial SurfaceView artifacts; TextureView fixture used for input checks; component render is layout/polish evidence",
+  "dataCleared": false,
+  "tap": "native selection counter 0 to 1 after tap at photo 540,1040",
+  "nativeClient": "existing debuggable com.craigb.gathr",
+  "fixtureEntryPointRestored": true
+}
