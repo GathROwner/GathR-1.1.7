@@ -1,6 +1,6 @@
 import React from 'react';
 import renderer, { act } from 'react-test-renderer';
-import { View } from 'react-native';
+import { Image, View } from 'react-native';
 import HybridClusterMarker from '../HybridClusterMarker';
 import type { Cluster } from '../../../types/events';
 
@@ -63,4 +63,15 @@ it('keeps venue detail and rotation for large overview clusters', () => {
   expect(tree.root.findAllByType(View).filter(n => n.props.testID === 'hybrid-cluster-summary')).toHaveLength(1);
   act(() => jest.advanceTimersByTime(3000));
   expect(tree.root.findByProps({ testID: 'hybrid-cluster-marker' }).props.accessibilityLabel).toContain('Beta, venue 2 of 126');
+});
+
+it('refreshes the map bitmap after profile decoding without snapshotting an image fade', () => {
+  const cluster = fixture(); cluster.venues[0].events[0].profileUrl = 'https://example.com/profile.jpg';
+  const refresh = jest.fn();
+  act(() => { tree = renderer.create(<HybridClusterMarker cluster={cluster} {...props} snapshotMode onSnapshotChange={refresh} />); });
+  refresh.mockClear();
+  const photo = tree.root.findByType(Image);
+  expect(photo.props.fadeDuration).toBe(0);
+  act(() => photo.props.onLoad()); expect(refresh).toHaveBeenCalledTimes(1);
+  act(() => jest.advanceTimersByTime(3000)); expect(refresh).toHaveBeenCalledTimes(2);
 });
