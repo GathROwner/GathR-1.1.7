@@ -1,0 +1,19 @@
+{
+  "featureCommit": "bf6e724",
+  "runtime": "1.1.20",
+  "retainedBranch": "codex/ios-production-hybrid-20261112",
+  "branch": "production",
+  "visualReview": "Actual RN components rendered through RN Web with iOS props; not native device verification",
+  "baseCommit": "d019fa256c494c45d4fa1e3d0c6e79e1cef6d253",
+  "update": "01a1d260-40aa-7465-9b3b-7b004af164da",
+  "dashboard": "https://expo.dev/accounts/craigb/projects/gathr/updates/65e3db2c-c156-4a22-b1eb-5ca6c90d3e57",
+  "sourceCommit": "d0e661963531b602e65b038507207addca3da6e3",
+  "channel": "production",
+  "bundleModules": 2560,
+  "iosAssets": 112,
+  "atUTC": "2026-11-13T00:49:00.4635716Z",
+  "status": "VERIFIED_PUBLISHED_LATEST_IOS_PRODUCTION",
+  "deviceAdoption": "UNVERIFIED",
+  "platform": "ios",
+  "group": "65e3db2c-c156-4a22-b1eb-5ca6c90d3e57"
+}

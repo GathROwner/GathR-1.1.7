@@ -1,0 +1,168 @@
+{
+  "status": "PASS",
+  "method": "Actual React Native component rendering through RN Web; iOS props; SVG primitive bridge; fixture images/data; open legend animation frozen",
+  "markers": [
+    {
+      "name": "four venues",
+      "marker": {
+        "x": 59.328125,
+        "y": 66.5,
+        "width": 143.34375,
+        "height": 144
+      },
+      "summary": {
+        "x": 74.328125,
+        "y": 179.5,
+        "width": 113.34375,
+        "height": 28
+      }
+    },
+    {
+      "name": "single + friends",
+      "marker": {
+        "x": 303.5,
+        "y": 66.5,
+        "width": 142.984375,
+        "height": 144
+      },
+      "summary": {
+        "x": 319.234375,
+        "y": 179.5,
+        "width": 111.5,
+        "height": 28
+      }
+    },
+    {
+      "name": "two venues",
+      "marker": {
+        "x": 547.328125,
+        "y": 66.5,
+        "width": 143.34375,
+        "height": 144
+      },
+      "summary": {
+        "x": 562.328125,
+        "y": 179.5,
+        "width": 113.34375,
+        "height": 28
+      }
+    },
+    {
+      "name": "three venues",
+      "marker": {
+        "x": 59.328125,
+        "y": 285.828125,
+        "width": 143.34375,
+        "height": 144
+      },
+      "summary": {
+        "x": 74.328125,
+        "y": 398.828125,
+        "width": 113.34375,
+        "height": 28
+      }
+    },
+    {
+      "name": "many venues",
+      "marker": {
+        "x": 296.671875,
+        "y": 280,
+        "width": 156.65625,
+        "height": 155.671875
+      },
+      "summary": {
+        "x": 311.671875,
+        "y": 404.671875,
+        "width": 126.65625,
+        "height": 28
+      }
+    },
+    {
+      "name": "missing image",
+      "marker": {
+        "x": 547.5,
+        "y": 285.828125,
+        "width": 142.984375,
+        "height": 144
+      },
+      "summary": {
+        "x": 563.234375,
+        "y": 398.828125,
+        "width": 111.5,
+        "height": 28
+      }
+    },
+    {
+      "name": "compact 126 venues",
+      "marker": {
+        "x": 23.921875,
+        "y": 557.171875,
+        "width": 214.15625,
+        "height": 40
+      },
+      "summary": {
+        "x": 38.921875,
+        "y": 560.171875,
+        "width": 184.15625,
+        "height": 34
+      }
+    },
+    {
+      "name": "selected",
+      "marker": {
+        "x": 303.328125,
+        "y": 501.171875,
+        "width": 143.34375,
+        "height": 152
+      },
+      "summary": {
+        "x": 318.328125,
+        "y": 622.171875,
+        "width": 113.34375,
+        "height": 28
+      }
+    },
+    {
+      "name": "category overflow",
+      "marker": {
+        "x": 533,
+        "y": 505.171875,
+        "width": 171.984375,
+        "height": 144
+      },
+      "summary": {
+        "x": 562.3125,
+        "y": 618.171875,
+        "width": 113.34375,
+        "height": 28
+      }
+    }
+  ],
+  "selectorButtons": [
+    {
+      "x": 188,
+      "y": 224,
+      "width": 90,
+      "height": 26
+    },
+    {
+      "x": 278,
+      "y": 224,
+      "width": 90,
+      "height": 26
+    },
+    {
+      "x": 188,
+      "y": 250,
+      "width": 90,
+      "height": 26
+    },
+    {
+      "x": 278,
+      "y": 250,
+      "width": 90,
+      "height": 26
+    }
+  ],
+  "buttonHeight": 26
+}
