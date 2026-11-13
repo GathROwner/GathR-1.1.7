@@ -1,0 +1,21 @@
+{
+  "method": "Actual mapStore fixtures using the installed real Supercluster + actual HybridClusterMarker component via RNWeb. Fixture map backdrop; no displacement. Native timing halos omitted.",
+  "panels": [
+    {
+      "name": "Previous radius",
+      "markers": 2,
+      "venues": 4,
+      "events": 8,
+      "specials": 4,
+      "overlappingGroups": 0
+    },
+    {
+      "name": "Reduced radius",
+      "markers": 3,
+      "venues": 4,
+      "events": 8,
+      "specials": 4,
+      "overlappingGroups": 0
+    }
+  ]
+}

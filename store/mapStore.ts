@@ -66,7 +66,7 @@ import * as Location from 'expo-location';
 import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Supercluster from 'supercluster';
-import { markerClusterConfig, type MarkerClusterProfile } from '../utils/markerClusterConfig';
+import { markerClusterConfig, markerClusterZoom, type MarkerClusterProfile } from '../utils/markerClusterConfig';
 
 
 // Import default filter criteria
@@ -933,7 +933,7 @@ const clusterVenues = (venues: Venue[], zoom: number = 12, profile: MarkerCluste
   }
 
   // Query clusters for the current zoom; world bbox (minimal change)
-  const z = Math.max(0, Math.min(22, Math.floor(zoom)));
+  const z = markerClusterZoom(profile, zoom);
   const features = __scIndex.getClusters([-180, -85, 180, 85], z);
 
   const clusters: Cluster[] = [];

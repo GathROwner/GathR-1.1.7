@@ -6,6 +6,11 @@ export type MarkerClusterProfile = 'default' | 'hybrid';
  */
 export function markerClusterConfig(profile: MarkerClusterProfile, radius: number, extent: number, maxZoom: number) {
   return profile === 'hybrid'
-    ? { radius: 160 * extent / 512, extent, maxZoom: Math.max(20, maxZoom) }
+    ? { radius: 112 * extent / 512, extent, maxZoom: Math.max(20, maxZoom) }
     : { radius, extent, maxZoom };
+}
+
+/** Use the nearer index level for Hybrid so fractional camera zoom doesn't nearly double its reach. */
+export function markerClusterZoom(profile: MarkerClusterProfile, zoom: number) {
+  return Math.max(0, Math.min(22, profile === 'hybrid' ? Math.round(zoom) : Math.floor(zoom)));
 }
