@@ -1,0 +1,13 @@
+# Hybrid summary widths and puck badge refresh
+
+Craig accepted the existing grouping balance and requested narrower summary pills plus a fix for the empty compact circle near the user puck. This patch leaves clustering, marker displacement, photo sizes, fonts, native tap handling, and callout behavior unchanged.
+
+Summary SVGs use less horizontal padding and omit zero-event/zero-special sections. Accessible totals retain zeros. Representative reductions: three-category venue summary 19.6%; both-positive one-digit cluster totals 15.2%; one positive total with the other zero 41.9%.
+
+The compact badge previously prepared its raster while hidden inside the measured variant. Graphics now remain unmounted until their variant is visible, and stale visibility-cycle exports cannot populate the shared bitmap cache. Decoded images request a native annotation refresh. Coordinate-only changes also refresh the annotation. The hidden full variant retains its geometry and selected venue while pausing rotation.
+
+Visual evidence, independently reviewed before publication, is retained under the implementation worktree's ignored `artifacts/hybrid-pills-20261113/`: `pill-comparison.png`, `markers.png`, and native screenshots `native-compact-ready.png`, `native-compact-moved.png`, `native-full-restored.png`, `native-compact-second.png`. The comparison renders the actual summary SVGs and marker components with iOS props through React Native Web. Nine cases cover counts, overflow, missing images, selection, and friend badges; glyphs, alignment, dividers, spacing and containment were reviewed.
+
+The existing Android debug client ran the actual HybridMapAnnotation/PuckMarkerMeasurement components against controlled full/compact and coordinate transitions. Count 165 rendered on first reveal and cached reveal, survived a coordinate-only move, and the full marker restored its details. Header decode counts advanced from 1 to 2. No pan/zoom was needed. The emulator's Mapbox texture is washed out; standalone native rendering is normal. This proves shared rendering behavior, not reproduction or verification on a physical iPhone. No app data was cleared or binary installed. Temporary fixture entrypoint and Metro/reverse configuration were restored/removed.
+
+Six focused regression cases cover hidden rendering, stale capture rejection, cached bitmap reveal, coordinate refresh, native annotation identity, and retained venue state. Release checks and exact OTA receipt follow in the release record.

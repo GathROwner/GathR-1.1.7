@@ -23,10 +23,14 @@ it('keeps the static venue ring, house and every cluster total together for sing
   }
 });
 
-it('allows room for two-character friend counts and keeps zero totals visible', () => {
+it('allows room for two-character friend counts and omits zero sections while retaining accessible totals', () => {
   const badge = friendBadgeGraphic(12);
   expect(badge.xml).toContain('>9+</text>');
   expect(badge.width).toBeGreaterThan(friendBadgeGraphic(1).width);
-  expect(clusterSummaryGraphic(2, 0, 0, true).xml.match(/>0<\/text>/g)).toHaveLength(2);
-  expect(clusterSummaryGraphic(2, 0, 0, true).label).toContain('city-wide');
+  const empty = clusterSummaryGraphic(2, 0, 0, true);
+  expect(empty.xml).not.toContain('>0</text>');
+  expect(empty.label).toContain('0 events; 0 specials; city-wide');
+  const positive = clusterSummaryGraphic(2, 9, 0, false);
+  expect(positive.xml).toContain('>9</text>'); expect(positive.xml).not.toContain('>0</text>');
+  expect(positive.width).toBeLessThan(clusterSummaryGraphic(2, 9, 1, false).width);
 });

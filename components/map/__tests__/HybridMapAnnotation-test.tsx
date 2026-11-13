@@ -2,6 +2,7 @@ import React from 'react';
 import renderer, { act } from 'react-test-renderer';
 import { View } from 'react-native';
 import HybridMapAnnotation from '../HybridMapAnnotation';
+import HybridSummaryImage from '../HybridSummaryImage';
 import type { Cluster } from '../../../types/events';
 
 const mockRefresh = jest.fn();
@@ -64,6 +65,24 @@ it('refreshes the bitmap after native layout and decoded/rotated graphics, coale
   act(() => { graphics().props.onSnapshotChange(); graphics().props.onSnapshotChange(); });
   act(() => jest.advanceTimersByTime(31)); expect(mockRefresh).not.toHaveBeenCalled();
   act(() => jest.advanceTimersByTime(1)); expect(mockRefresh).toHaveBeenCalledTimes(1);
+});
+
+it('only renders the visible variant’s raster content while preserving native gesture ownership', () => {
+  expect(tree.root.findByType(HybridSummaryImage).props.visible).toBe(false);
+  act(() => tree.update(render({ compact: true })));
+  expect(tree.root.findByType(HybridSummaryImage).props.visible).toBe(true);
+  expect(graphics().props.snapshotVisible).toBe(false);
+  act(() => tree.update(render({ compact: false })));
+  expect(tree.root.findByType(HybridSummaryImage).props.visible).toBe(false);
+  expect(graphics().props.snapshotVisible).toBe(true);
+  expect(mockNativeMount).toHaveBeenCalledTimes(1);
+});
+
+it('refreshes when user-dot clearance changes coordinates even if dimensions and variant stay the same', () => {
+  act(() => jest.advanceTimersByTime(32)); mockRefresh.mockClear();
+  act(() => tree.update(render({ coordinate: [-63.1001, 46.2001] })));
+  act(() => jest.advanceTimersByTime(32)); expect(mockRefresh).toHaveBeenCalledTimes(1);
+  expect(mockNativeMount).toHaveBeenCalledTimes(1);
 });
 
 it('aligns the native halo with the rounded snapshot and viewport docking', () => {

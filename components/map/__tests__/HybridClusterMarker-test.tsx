@@ -100,3 +100,16 @@ it('keeps the entire rotation envelope fixed with differently sized category sum
   act(() => jest.advanceTimersByTime(3000));
   expect(marker().props.style).toEqual(before);
 });
+
+it('pauses a hidden full marker and remounts its graphics when returning from the compact badge', () => {
+  const cluster = fixture(); cluster.venues.forEach(v => v.events.forEach(e => { e.profileUrl = 'https://example.com/profile.jpg'; }));
+  act(() => { tree = renderer.create(<HybridClusterMarker cluster={cluster} {...props} snapshotMode />); });
+  act(() => jest.advanceTimersByTime(3000));
+  expect(tree.root.findByProps({ testID: 'hybrid-cluster-marker' }).props.accessibilityLabel).toContain('Beta');
+  act(() => tree.update(<HybridClusterMarker cluster={cluster} {...props} snapshotMode snapshotVisible={false} />));
+  expect(tree.root.findAllByType(Image)).toHaveLength(0); expect(tree.root.findAllByType('Svg' as any)).toHaveLength(0);
+  act(() => jest.advanceTimersByTime(9000));
+  expect(tree.root.findByProps({ testID: 'hybrid-cluster-marker' }).props.accessibilityLabel).toContain('Beta');
+  act(() => tree.update(<HybridClusterMarker cluster={cluster} {...props} snapshotMode snapshotVisible />));
+  expect(tree.root.findAllByType(Image)).toHaveLength(1); expect(tree.root.findAllByType('Svg' as any).length).toBeGreaterThan(0);
+});

@@ -41,3 +41,39 @@ it('rejects an old venue export completing after a newer summary is requested', 
   act(() => mockExports[1]('current-png'));
   expect(tree.root.findByType(Image).props.source.uri).toContain('current-png');
 });
+
+it('measures a hidden badge without exporting pixels, then decodes and refreshes when it becomes visible', () => {
+  const graphic = clusterSummaryGraphic(27, 41, 14, false), refresh = jest.fn();
+  act(() => { tree = renderer.create(<HybridSummaryImage graphic={graphic} visible={false} onLoad={refresh} />); });
+  expect(tree.root.findAllByType('Svg' as any)).toHaveLength(0); expect(tree.root.findAllByType(Image)).toHaveLength(0);
+  expect(tree.toJSON()).toMatchObject({ props: { style: { width: graphic.width, height: graphic.height } } });
+  act(() => tree.update(<HybridSummaryImage graphic={graphic} visible onLoad={refresh} />));
+  act(() => tree.root.findByType('Svg' as any).props.onLayout());
+  act(() => mockExports[0]('visible-count'));
+  act(() => tree.root.findByType(Image).props.onLoad()); expect(refresh).toHaveBeenCalledTimes(1);
+});
+
+it('discards an export from a previous visibility cycle before it can poison the shared cache', () => {
+  const graphic = clusterSummaryGraphic(28, 42, 15, false);
+  act(() => { tree = renderer.create(<HybridSummaryImage graphic={graphic} />); });
+  act(() => tree.root.findByType('Svg' as any).props.onLayout());
+  act(() => tree.update(<HybridSummaryImage graphic={graphic} visible={false} />));
+  act(() => tree.update(<HybridSummaryImage graphic={graphic} visible />));
+  act(() => mockExports[0]('hidden-stale-count'));
+  expect(tree.root.findAllByType(Image)).toHaveLength(0);
+  act(() => tree.root.findByType('Svg' as any).props.onLayout());
+  act(() => mockExports[1]('new-visible-count'));
+  expect(tree.root.findByType(Image).props.source.uri).toContain('new-visible-count');
+});
+
+it('remounts a decoded image on reveal and ignores old decode callbacks across visibility changes', () => {
+  const graphic = clusterSummaryGraphic(29, 43, 16, false), refresh = jest.fn();
+  act(() => { tree = renderer.create(<HybridSummaryImage graphic={graphic} onLoad={refresh} />); });
+  act(() => tree.root.findByType('Svg' as any).props.onLayout()); act(() => mockExports[0]('cached-visible-count'));
+  const oldDecode = tree.root.findByType(Image).props.onLoad;
+  act(() => tree.update(<HybridSummaryImage graphic={graphic} visible={false} onLoad={refresh} />));
+  expect(tree.root.findAllByType(Image)).toHaveLength(0);
+  act(() => tree.update(<HybridSummaryImage graphic={graphic} visible onLoad={refresh} />));
+  act(() => oldDecode()); expect(refresh).not.toHaveBeenCalled();
+  act(() => tree.root.findByType(Image).props.onLoad()); expect(refresh).toHaveBeenCalledTimes(1);
+});
