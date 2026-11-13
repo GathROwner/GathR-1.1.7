@@ -33,7 +33,8 @@ import { shouldRepublishTutorialCalloutReadiness } from '../../utils/tutorialCal
 import { createTutorialPresentationSettler } from '../../utils/tutorialPresentationSettler';
 import { runTutorialAction } from '../../utils/tutorialActions';
 import { shouldRouteTutorialCalloutBack } from '../../utils/tutorialCalloutClosing';
-import { settleCalloutCloseAttempt } from '../../utils/calloutInteractionSafety';
+import { useCalloutPullDismiss } from '../../hooks/useCalloutPullDismiss';
+import CalloutDismissSurface from './CalloutDismissSurface';
 import { useTutorialUiStore } from '../../store/tutorialUiStore';
 
 
@@ -156,7 +157,7 @@ import {
 import * as Haptics from 'expo-haptics';
 
 // Import for lazy-loading venue details
-import { fetchVenueDetailsByName, VenueContactInfo } from '../../lib/api/firestoreEvents';
+import { fetchVenueDetails, fetchVenueDetailsByName, normalizeVenueInstagramUrl, VenueContactInfo } from '../../lib/api/firestoreEvents';
 
 // Import ad components and hooks
 import useNativeAds from '../../hooks/useNativeAds';
@@ -167,6 +168,7 @@ import EventActionLinkPill from '../common/EventActionLinkPill';
 import FamilyFriendlyBadge from '../common/FamilyFriendlyBadge';
 import { EventTimingBadge } from '../common/EventTimingBadge';
 import { EventTimingSummaryText } from '../common/EventTimingSummaryText';
+import { useViewedEventTimeStatus } from '../../hooks/useVisitingHoursView';
 import { EventSeriesContextLine } from '../common/EventSeriesContextLine';
 import { MAP_TRACE_ENABLED, traceMapEvent } from '../../utils/mapTrace';
 import { doesEventMatchAnyInterest } from '../../utils/familyFriendly';
@@ -1229,7 +1231,7 @@ interface EventCardProps {
 }
 
 const EventCard: React.FC<EventCardProps> = ({ event, isSelected, onPress }) => {
-  const timeStatus = getEventTimeStatus(event);
+  const timeStatus = useViewedEventTimeStatus(event);
   const timingState = getEventScheduleState(event);
   
   return (
@@ -1259,7 +1261,7 @@ const EventCard: React.FC<EventCardProps> = ({ event, isSelected, onPress }) => 
       </Text>
       
       <View style={styles.compactTimingRow}>
-        <EventTimingSummaryText event={event} style={styles.cardDateTime} numberOfLines={2} />
+        <EventTimingSummaryText event={event} estimateBadgeVisible style={styles.cardDateTime} numberOfLines={2} />
         <EventTimingBadge event={event} compact />
       </View>
       
@@ -1285,7 +1287,7 @@ interface EventDetailsProps {
 const EventDetailsContent: React.FC<EventDetailsProps> = ({ event, onImagePress }) => {
   const [expanded, setExpanded] = useState(false);
   const needsReadMore = event.description.length > 120;
-  const timeStatus = getEventTimeStatus(event);
+  const timeStatus = useViewedEventTimeStatus(event);
   const timingDisclosure = getEventTimingDisclosure(event);
   const timingRangeParts = getEventTimeRangeParts(event);
   const hasEstimatedEndpoint = timingRangeParts.startEstimated || timingRangeParts.endEstimated;
@@ -1326,7 +1328,7 @@ const EventDetailsContent: React.FC<EventDetailsProps> = ({ event, onImagePress 
         
         <View style={styles.timeContainer}>
           <MaterialIcons name="access-time" size={16} color="#666666" />
-          <EventTimingSummaryText event={event} style={styles.eventTime} />
+          <EventTimingSummaryText event={event} estimateBadgeVisible style={styles.eventTime} />
           <EventTimingBadge event={event} compact style={styles.timingBadge} />
         </View>
         {timingDisclosure && !hasEstimatedEndpoint && (
@@ -1410,7 +1412,7 @@ const VenueInfoContent: React.FC<VenueInfoProps> = ({ venue }) => {
         return {
           website: event.venueWebsite,
           facebook: event.venueFacebookUrl,
-          instagram: event.venueInstagramUrl,
+          instagram: normalizeVenueInstagramUrl(event.venueInstagramUrl),
           phone: event.venuePhone,
           rating: event.venueRating,
           // Note: profileImage is NOT cached from events - it comes from fetched venue details only
@@ -1435,7 +1437,12 @@ const VenueInfoContent: React.FC<VenueInfoProps> = ({ venue }) => {
 
       setIsLoadingContact(true);
       try {
-        const details = await fetchVenueDetailsByName(venue.venue);
+        const venueIds = Array.from(new Set(
+          venue.events.map(event => event.venueId?.trim()).filter((id): id is string => Boolean(id))
+        ));
+        const details = venueIds.length === 1
+          ? await fetchVenueDetails(venueIds[0])
+          : await fetchVenueDetailsByName(venue.venue);
         setFetchedContactInfo(details);
       } catch (error) {
         console.error('[VenueInfoContent] Error fetching venue details:', error);
@@ -1446,7 +1453,7 @@ const VenueInfoContent: React.FC<VenueInfoProps> = ({ venue }) => {
     };
 
     loadVenueDetails();
-  }, [venue.venue, cachedContactInfo, hasFetched]);
+  }, [venue.venue, venue.events, cachedContactInfo, hasFetched]);
 
   // Merge cached and fetched contact info (fetched takes priority for missing fields)
   const venueContactInfo = useMemo(() => {
@@ -1455,7 +1462,7 @@ const VenueInfoContent: React.FC<VenueInfoProps> = ({ venue }) => {
     return {
       website: cachedContactInfo?.website || fetchedContactInfo?.website,
       facebook: cachedContactInfo?.facebook || fetchedContactInfo?.facebook,
-      instagram: cachedContactInfo?.instagram || fetchedContactInfo?.instagram,
+      instagram: cachedContactInfo?.instagram || normalizeVenueInstagramUrl(fetchedContactInfo?.instagram),
       phone: cachedContactInfo?.phone || fetchedContactInfo?.phone,
       email: fetchedContactInfo?.email,
       rating: cachedContactInfo?.rating || fetchedContactInfo?.rating,
@@ -1758,6 +1765,7 @@ const VenueInfoContent: React.FC<VenueInfoProps> = ({ venue }) => {
                     <View style={styles.venueEventDetails}>
                       <EventTimingSummaryText
                         event={event}
+                        estimateBadgeVisible
                         style={styles.venueEventTime}
                         numberOfLines={2}
                       />
@@ -1818,7 +1826,7 @@ export const SpecialCard: React.FC<SpecialCardProps> = ({
   const [bookmarked, setBookmarked] = useState(isSaved);
   const [isToggling, setIsToggling] = useState(false);
   const [isHeroLikeToggling, setIsHeroLikeToggling] = useState(false);
-  const timeStatus = getEventTimeStatus(event);
+  const timeStatus = useViewedEventTimeStatus(event);
   const friendEventBadgeLabel = event.friendEvent
     ? event.friendEvent.viewerRole === 'host'
       ? 'PRIVATE · HOSTING'
@@ -2398,6 +2406,7 @@ return (
   <>
     <EventTimingSummaryText
       event={event}
+      estimateBadgeVisible
       suffix={endDateSuffix}
       style={styles.dateTimeText}
       numberOfLines={2}
@@ -3487,7 +3496,7 @@ try {
   
   const translateY = useRef(new Animated.Value(0)).current;
   const backgroundOpacity = useRef(new Animated.Value(0)).current;
-  const closeAnimationStartedRef = useRef(false);
+  const dismissPanRef = useRef<PanGestureHandler>(null);
   const indicatorRotation = useRef(new Animated.Value(0)).current;
   
   const browsePanRef = useRef<PanGestureHandler>(null);
@@ -3692,6 +3701,15 @@ const safeTopOffset = 0;
 // transform path on Android, where it is needed for the established sheet UX.
 const useStaticIosCalloutPresentation = Platform.OS === 'ios' && !EVENT_CALLOUT_SHELL_ISOLATION_DEBUG;
 const currentCalloutHeight = getCalloutHeightForState(calloutState);
+const pullDismiss = useCalloutPullDismiss({
+  enabled: !isLightboxOpen && !EVENT_CALLOUT_SHELL_ISOLATION_DEBUG,
+  reduceMotion,
+  sheetHeight: currentCalloutHeight,
+  screenHeight: SCREEN_HEIGHT,
+  scrollY: () => scrollYRef.current,
+  onClose,
+  onCloseAccepted: () => { setCompactTabRenderMode(null); onCloseStart?.(); },
+});
 const CalloutContainerComponent: any =
   EVENT_CALLOUT_SHELL_ISOLATION_DEBUG || useStaticIosCalloutPresentation ? View : Animated.View;
 const calloutContainerStyle = EVENT_CALLOUT_SHELL_ISOLATION_DEBUG
@@ -3903,6 +3921,7 @@ useEffect(() => {
 ]);
 
 const setCalloutStateWithAnimation = (state: CalloutState) => {
+  if (state !== currentStateRef.current) pullDismiss.reset();
   if (EVENT_CALLOUT_SHELL_ISOLATION_DEBUG || useStaticIosCalloutPresentation) {
     setCalloutState(state);
     currentStateRef.current = state;
@@ -4003,95 +4022,8 @@ const setCalloutStateWithAnimation = (state: CalloutState) => {
     });
   };
 
-  // Animated close function - slides callout down before unmounting
-  const animateClose = useCallback(() => {
-    if (closeAnimationStartedRef.current) {
-      traceMapEvent('event_callout_close_attempt_ignored', {
-        reason: 'close_already_started',
-        clusterId: cluster?.id ?? 'none',
-        venueCount: venues.length,
-      });
-      return;
-    }
-    closeAnimationStartedRef.current = true;
-    traceMapEvent('event_callout_close_attempt_started', {
-      clusterId: cluster?.id ?? 'none',
-      venueCount: venues.length,
-      calloutState: currentStateRef.current,
-      staticIosPresentation: useStaticIosCalloutPresentation,
-    });
-
-    const settleCloseRequest = (result: boolean | void) => {
-      const accepted = settleCalloutCloseAttempt(result, () => {
-        closeAnimationStartedRef.current = false;
-      });
-      traceMapEvent('event_callout_close_request_settled', {
-        accepted,
-        clusterId: cluster?.id ?? 'none',
-        venueCount: venues.length,
-      });
-    };
-
-    if (Platform.OS === 'android') {
-      (calloutRootRef.current as any)?.setNativeProps?.({
-        pointerEvents: 'none',
-        style: {
-          opacity: 0,
-          transform: [{ translateY: SCREEN_HEIGHT }],
-        },
-      });
-    }
-    onCloseStart?.();
-
-    if (useStaticIosCalloutPresentation) {
-      console.log('ANIMATE CLOSE - static iOS close path');
-      setCompactTabRenderMode(null);
-      settleCloseRequest(onClose());
-      return;
-    }
-
-    if (Platform.OS === 'android') {
-      console.log('ANIMATE CLOSE - immediate Android close path');
-      translateY.setValue(SCREEN_HEIGHT);
-      backgroundOpacity.setValue(0);
-      setCompactTabRenderMode(null);
-      settleCloseRequest(onClose());
-      return;
-    }
-
-    console.log('ANIMATE CLOSE - sliding callout down');
-    Animated.parallel([
-      Animated.timing(translateY, {
-        toValue: SCREEN_HEIGHT,
-        duration: 250,
-        useNativeDriver: true,
-      }),
-      Animated.timing(backgroundOpacity, {
-        toValue: 0,
-        duration: 200,
-        useNativeDriver: true,
-      }),
-    ]).start(({ finished }) => {
-      if (finished) {
-        setCompactTabRenderMode(null);
-        settleCloseRequest(onClose());
-      } else {
-        closeAnimationStartedRef.current = false;
-        traceMapEvent('event_callout_close_attempt_cancelled', {
-          clusterId: cluster?.id ?? 'none',
-          venueCount: venues.length,
-        });
-      }
-    });
-  }, [
-    backgroundOpacity,
-    cluster?.id,
-    onClose,
-    onCloseStart,
-    translateY,
-    useStaticIosCalloutPresentation,
-    venues.length,
-  ]);
+  // A separate fixed-size surface animates dismissal without changing iOS sheet layout.
+  const animateClose = pullDismiss.close;
 
   const isShellVerticalDrag = useCallback((gestureState: { dx: number; dy: number }) => {
     const { dx, dy } = gestureState;
@@ -4105,6 +4037,8 @@ const setCalloutStateWithAnimation = (state: CalloutState) => {
   // Tutorial and gesture handlers call through refs so mounted responders stay current.
   const setCalloutStateRef = useRef(setCalloutStateWithAnimation);
   const onCloseRef = useRef(animateClose);
+
+  const { begin: beginDismissDrag, move: moveDismissDrag, finish: finishDismissDrag, cancel: cancelDismissDrag } = pullDismiss;
 
   // Attach the PanResponder to the fixed shell controls above the scroll content.
   const createShellPanResponder = useCallback(
@@ -4142,6 +4076,7 @@ const setCalloutStateWithAnimation = (state: CalloutState) => {
         return false;
       },
       onPanResponderGrant: () => {
+        beginDismissDrag();
         translateY.stopAnimation();
         translateY.extractOffset();
         traceMapEvent('event_callout_shell_pan_granted', {
@@ -4153,6 +4088,11 @@ const setCalloutStateWithAnimation = (state: CalloutState) => {
       onPanResponderMove: (_, gestureState) => {
         // LOG: Pan gesture movement tracking
         // console.log('MOVE - dy:', gestureState.dy.toFixed(2), 'dx:', gestureState.dx.toFixed(2), 'vy:', gestureState.vy.toFixed(2));
+        if (gestureState.dy >= 0) {
+          moveDismissDrag(gestureState.dy);
+          return;
+        }
+        moveDismissDrag(0);
         translateY.setValue(gestureState.dy);
         let opacity = 0;
         if (currentStateRef.current === 'expanded') {
@@ -4169,6 +4109,8 @@ const setCalloutStateWithAnimation = (state: CalloutState) => {
       onPanResponderRelease: (_, gestureState) => {
         translateY.flattenOffset();
         const { dy, vy } = gestureState;
+        if (dy > 0) { finishDismissDrag(vy * 1000, dy); return; }
+        cancelDismissDrag();
         traceMapEvent('event_callout_shell_pan_released', {
           clusterId: cluster?.id ?? 'none',
           venueCount: venues.length,
@@ -4178,25 +4120,11 @@ const setCalloutStateWithAnimation = (state: CalloutState) => {
         });
         console.log('RELEASE - dy:', dy.toFixed(2), 'vy:', vy.toFixed(2), 'current state:', currentStateRef.current);
 
-        // === LARGE SWIPE DOWN from ANY state → dismiss callout ===
-        if (dy > LARGE_SWIPE_DISTANCE || vy > LARGE_SWIPE_VELOCITY) {
-          console.log('LARGE SWIPE DOWN - dismissing callout (dy:', dy.toFixed(2), 'vy:', vy.toFixed(2), ')');
-          onCloseRef.current();
-          return;
-        }
-
         // === LARGE SWIPE UP from minimized → jump directly to expanded ===
         if (currentStateRef.current === 'minimized' &&
             (dy < -LARGE_SWIPE_DISTANCE || vy < -LARGE_SWIPE_VELOCITY)) {
           console.log('LARGE SWIPE UP from minimized - jumping to expanded (dy:', dy.toFixed(2), 'vy:', vy.toFixed(2), ')');
           setCalloutStateRef.current('expanded');
-          return;
-        }
-
-        // === Small down drag from minimized → dismiss ===
-        if (currentStateRef.current === 'minimized' && dy > 10) {
-          console.log('CLOSING callout from minimized');
-          onCloseRef.current();
           return;
         }
 
@@ -4231,6 +4159,7 @@ const setCalloutStateWithAnimation = (state: CalloutState) => {
       onPanResponderTerminationRequest: () => true,
       onPanResponderTerminate: (_, gestureState) => {
         translateY.flattenOffset();
+        cancelDismissDrag();
         traceMapEvent('event_callout_shell_pan_terminated', {
           clusterId: cluster?.id ?? 'none',
           venueCount: venues.length,
@@ -4246,6 +4175,10 @@ const setCalloutStateWithAnimation = (state: CalloutState) => {
       cluster?.id,
       indicatorRotation,
       isShellVerticalDrag,
+      beginDismissDrag,
+      moveDismissDrag,
+      finishDismissDrag,
+      cancelDismissDrag,
       translateY,
       venues.length,
     ]
@@ -4552,16 +4485,18 @@ useEffect(() => {
         <Animated.View 
           style={[
             styles.dimOverlay,
-            { opacity: backgroundOpacity }
+            { opacity: Animated.multiply(backgroundOpacity, pullDismiss.backdropFactor) }
           ]} 
           pointerEvents="none"
         />
       )}
       
       {/* Always render the callout, but apply style changes when lightbox is open */}
+      <CalloutDismissSurface translateY={pullDismiss.translateY} closing={pullDismiss.isClosing}>
       <CalloutContainerComponent
         ref={calloutRootRef}
         pointerEvents={isLightboxOpen ? 'none' : 'auto'}
+        onAccessibilityEscape={animateClose}
         style={calloutContainerStyle}
         onLayout={(event: LayoutChangeEvent) => {
           const { height, width, x, y } = event.nativeEvent.layout;
@@ -4644,6 +4579,8 @@ useEffect(() => {
               onPress={() => setCalloutStateWithAnimation(
                 currentStateRef.current === 'expanded' ? 'normal' : 'expanded'
               )}
+              accessibilityRole="button"
+              accessibilityLabel={calloutState === 'expanded' ? 'Reduce callout' : 'Expand callout'}
               style={styles.resetButton}
               activeOpacity={0.7}
             >
@@ -4663,6 +4600,8 @@ useEffect(() => {
                 });
                 animateClose();
               }}
+              accessibilityRole="button"
+              accessibilityLabel="Close callout"
               style={styles.closeButton}
               activeOpacity={0.7}
             >
@@ -4774,12 +4713,25 @@ useEffect(() => {
           onGestureEvent={browseSwipe.onGestureEvent}
           onHandlerStateChange={browseSwipe.onStateChange}
         >
+        {/* Native-driver handlers must attach to separate native hosts. */}
+        <Animated.View collapsable={false} style={{ flex: 1 }}>
+        <PanGestureHandler
+          ref={dismissPanRef}
+          enabled={calloutState !== 'minimized' && !isLightboxOpen && !pullDismiss.isClosing}
+          activeOffsetY={12}
+          failOffsetY={-12}
+          failOffsetX={[-20, 20]}
+          maxPointers={1}
+          simultaneousHandlers={[scrollViewRef, browsePanRef]}
+          onGestureEvent={pullDismiss.onGestureEvent}
+          onHandlerStateChange={pullDismiss.onStateChange}
+        >
         <Animated.View style={{ flex: 1, overflow: 'hidden', transform: [{ translateX: browseSwipe.translateX }] }}>
         <ScrollView 
             ref={scrollViewRef}
             style={styles.calloutContent}
             showsVerticalScrollIndicator={false}
-            simultaneousHandlers={browsePanRef}
+            simultaneousHandlers={[browsePanRef, dismissPanRef]}
             scrollEventThrottle={16}
             scrollEnabled={calloutState !== 'minimized'}
             bounces={false}
@@ -4825,11 +4777,16 @@ useEffect(() => {
             )}
             
             {activeTab === 'venue' && (
-              <VenueInfoContent venue={activeVenue} />
+              <VenueInfoContent
+                key={JSON.stringify([activeVenue.locationKey, activeVenue.venue, activeVenue.address])}
+                venue={activeVenue}
+              />
             )}
             
             {/* bottom spacer replaced by dynamic paddingBottom */}
           </ScrollView>
+        </Animated.View>
+        </PanGestureHandler>
         </Animated.View>
         </PanGestureHandler>
           
@@ -4866,6 +4823,7 @@ useEffect(() => {
           )}
         </GestureHandlerRootView>
       </CalloutContainerComponent>
+      </CalloutDismissSurface>
 
       {/* Render the lightbox modal when needed - supports both local and global state */}
       {!EVENT_CALLOUT_SHELL_ISOLATION_DEBUG &&
@@ -5626,10 +5584,10 @@ const styles = StyleSheet.create({
     paddingBottom: 0,
     overflow: 'hidden',
     position: 'relative',
-    borderRadius: 18,
+    borderRadius: 16,
     borderWidth: 1,
     borderColor: 'rgba(0, 0, 0, 0.08)',
-    marginHorizontal: 2,
+    marginHorizontal: 0,
     marginBottom: 6,
     // Modern floating shadow
     shadowColor: '#000',
@@ -5654,9 +5612,9 @@ const styles = StyleSheet.create({
     width: '100%',
     height: 200,
     backgroundColor: '#F5F5F5',
-    borderRadius: 14,
-    borderWidth: 2,
-    borderColor: 'rgba(255, 255, 255, 0.8)', // Glass-like white border
+    borderRadius: 12,
+    borderWidth: 3,
+    borderColor: '#FFFFFF', // Match the thin photo frame in Events and Specials.
     // Premium floating shadow
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 6 },
@@ -5733,7 +5691,7 @@ const styles = StyleSheet.create({
   heroImageContainer: {
     backgroundColor: 'rgba(255, 255, 255, 0.5)', // Soft glass frame
     borderRadius: 16,
-    padding: 5,
+    padding: 0,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.12,

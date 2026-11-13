@@ -1,3 +1,4 @@
+import { useOtaSafetyBlock } from '../hooks/useOtaSafetyBlock';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import DateTimePicker, { type DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import Ionicons from '@expo/vector-icons/Ionicons';
@@ -132,6 +133,7 @@ function errorMessage(error: unknown) {
 }
 
 export default function CreateEventScreen() {
+  useOtaSafetyBlock(true);
   const router = useRouter();
   const params = useLocalSearchParams<{ eventId?: string }>();
   const { user } = useAuth();

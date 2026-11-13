@@ -1,0 +1,49 @@
+{
+  "status": "PUBLISHED_AND_INDEPENDENTLY_VERIFIED",
+  "branch": "production",
+  "platform": "ios",
+  "runtime": "1.1.20",
+  "commit": "1fb3c79c39b97eed50d75dc172c48fb3f17af746",
+  "group": "b4512e78-5065-49c8-938b-712c14f63167",
+  "id": "01a18910-d569-7d96-bb1a-08cf5588d1be",
+  "nativeFingerprint": "6baab265658bbf45b6735e70da70e3a41bfabd41",
+  "nativeFingerprintUnchanged": true,
+  "newestIosProduction": true,
+  "channelActive": true,
+  "allTrafficMappedToProduction": true,
+  "acceptedBase": "41768963d92d4db7fbcdc5587548d6edefc5895f",
+  "acceptedBasePhoneConfirmed": true,
+  "rollbackGroup": "40a99276-3c32-4cd7-a03d-7a217c5d7d03",
+  "exportModules": 2551,
+  "easIosAssets": 112,
+  "focusedTests": 19,
+  "typecheck": "PASS",
+  "lint": "PASS, zero errors; 221 existing warnings",
+  "renderCheck": "PASS with real decoded approved clip",
+  "nativeCheck": "UNAVAILABLE: emulator client startup ANR before requesting test entry; no reinstall or wipe",
+  "physicalIosAdoption": "PENDING",
+  "behavior": [
+    "Automatic card and detail starts muted",
+    "Explicit inline Play and Replay start unmuted",
+    "Explicit inline and fullscreen Resume or Replay enable sound",
+    "Mute remains available",
+    "Expansion preserves current mute choice"
+  ],
+  "scope": {
+    "nativeBuild": false,
+    "nativeDependencyOrConfigurationChange": false,
+    "hardwareVolumeObservation": false,
+    "backendDeployment": false,
+    "eventWrites": 0,
+    "mediaUpload": false,
+    "parserOrGateChange": false,
+    "androidPublication": false,
+    "previewPublication": false
+  },
+  "qaCleanup": {
+    "normalEntryRestored": true,
+    "ownMetroStopped": true,
+    "reverse8093Removed": true,
+    "appDataPreserved": true
+  }
+}

@@ -143,12 +143,27 @@ export interface CheckInReadinessSampleInput {
 }
 
 export interface CheckInReadinessReceipt {
+  hereRequiredMs?: number;
+  placeRequiredMs?: number;
   protocolVersion: 1;
   sessionId: string;
   sequence: number;
   hereQualifyingMs: number;
   placeQualifyingMs: number;
   expiresAtMs: number;
+  /** Server-qualified arrival on this same readiness session; never client-timed. */
+  arrival?: CheckInQualifiedArrival;
+}
+
+export interface CheckInQualifiedArrival {
+  sessionId: string;
+  expiresAtMs: number;
+  latitude: number;
+  longitude: number;
+  accuracyMeters: number;
+  capturedAtMs: number;
+  here: boolean;
+  place: boolean;
 }
 
 export interface BindCheckInReadinessInput {
@@ -163,6 +178,8 @@ export interface BindCheckInReadinessInput {
   accuracyMeters: number | null;
   speedMetersPerSecond: number | null;
   capturedAtMs: number;
+  /** Use the still-valid server arrival snapshot instead of retiming the form. */
+  useQualifiedArrival?: true;
 }
 
 export interface BoundCheckInReadiness {
@@ -178,6 +195,8 @@ export interface BoundCheckInReadiness {
 
 export interface NearbyCheckInPlaceCandidate {
   id: string;
+  /** Stable public source identity; candidate UUID remains the binding authority. */
+  locationKey?: string;
   type: 'gathr_venue' | 'external_place' | 'private_place';
   venueId?: string;
   name: string;
@@ -186,10 +205,26 @@ export interface NearbyCheckInPlaceCandidate {
   latitude: number;
   longitude: number;
   distanceMetres: number;
+  /** Public OSM footprint used to filter a prepared pool against arrival. */
+  checkInBoundary?: { lat: number; lon: number }[];
+}
+
+export interface CheckInPreparationPool {
+  id: string;
+  expiresAtMs: number;
+  refreshAtMs: number;
+  sourceExpiresAtMs: number;
+  originLatitude: number;
+  originLongitude: number;
 }
 
 export interface NearbyCheckInPlacesResult {
   candidates: NearbyCheckInPlaceCandidate[];
+  preparationPool?: CheckInPreparationPool;
+  /** Only true after a server-authorized renewal of the original candidate IDs. */
+  preparationReused?: boolean;
+  /** Capability marker: the server honored the bounded preparation pool request. */
+  preparationRadiusMetres?: 175;
   /**
    * `complete` includes a successful empty provider result. When the backend
    * can still return canonical GathR venues but its public-place lookup is

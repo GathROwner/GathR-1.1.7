@@ -7,9 +7,10 @@ import { doesEventMatchInterestCarouselActiveCategory } from './interestCarousel
 /** Select cards from the already viewport-filtered input, then order Upcoming events. */
 export const getInterestCarouselEvents = (
   onScreenEvents: Event[],
-  criteria: FilterCriteria
+  criteria: FilterCriteria,
+  now = new Date()
 ): Event[] => {
-  const context = createEventTimeContext();
+  const context = createEventTimeContext(now);
   const cards = onScreenEvents.filter((event) =>
     doesEventMatchInterestCarouselActiveCategory(event, criteria, context)
   );

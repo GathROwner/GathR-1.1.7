@@ -1,0 +1,21 @@
+{
+  "method": "Actual mapStore fixtures using the installed real Supercluster + actual HybridClusterMarker component via RNWeb. Fixture map backdrop; no displacement. Native timing halos omitted.",
+  "panels": [
+    {
+      "name": "Existing grouping",
+      "markers": 6,
+      "venues": 6,
+      "events": 12,
+      "specials": 6,
+      "overlappingGroups": 2
+    },
+    {
+      "name": "Hybrid grouping · same zoom",
+      "markers": 2,
+      "venues": 6,
+      "events": 12,
+      "specials": 6,
+      "overlappingGroups": 0
+    }
+  ]
+}

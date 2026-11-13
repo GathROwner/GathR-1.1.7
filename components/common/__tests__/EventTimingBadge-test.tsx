@@ -1,9 +1,12 @@
 import React from 'react';
-import { Alert } from 'react-native';
+jest.mock('../../../store', () => ({ useMapStore: (selector: (state: unknown) => unknown) => selector({}) }));
+import { Alert, StyleSheet } from 'react-native';
 import renderer, { act } from 'react-test-renderer';
 
 import { createLegacyTimingContract } from '../../../utils/eventTiming';
 import { EventTimingBadge } from '../EventTimingBadge';
+import { dateOnlyActivity } from '../../../utils/__tests__/fixtures/dateOnlyActivity';
+import { continuousDonationCampaign } from '../../../utils/__tests__/fixtures/continuousDonationCampaign';
 
 const unknownEndEvent = () => ({
   startDate: '2099-09-06',
@@ -17,6 +20,41 @@ const unknownEndEvent = () => ({
 });
 
 describe('EventTimingBadge', () => {
+  afterEach(() => jest.useRealTimers());
+  it('uses the existing amber END UNKNOWN on carousel after cutoff while default surfaces keep STATUS UNKNOWN', () => {
+    jest.useFakeTimers({ now: new Date('2099-09-07T01:30:00Z') });
+    let component: renderer.ReactTestRenderer;
+    act(() => { component = renderer.create(<EventTimingBadge event={unknownEndEvent()} carousel />); });
+    expect(JSON.stringify(component!.toJSON())).toContain('END\\nUNKNOWN');
+    const badge = component!.root.findByProps({ testID: 'event-timing-badge' });
+    expect(StyleSheet.flatten(badge.props.style({ pressed: false })).backgroundColor).toBe('#B87800');
+    act(() => component!.update(<EventTimingBadge event={unknownEndEvent()} />));
+    expect(JSON.stringify(component!.toJSON())).toContain('STATUS\\nUNKNOWN');
+    expect(component!.root.findAllByProps({ testID: 'carousel-end-unknown-separator' })).toHaveLength(0);
+    act(() => component!.unmount());
+    jest.useRealTimers();
+  });
+  it('keeps ordinary unknown finishes and suppresses finite campaign uncertainty only on date-range surfaces', () => {
+    jest.useFakeTimers({ now: new Date('2026-10-25T15:00:00Z') });
+    let component: renderer.ReactTestRenderer;
+    act(() => { component = renderer.create(<EventTimingBadge event={unknownEndEvent()} carousel showInfoIndicator={false} />); });
+    expect(JSON.stringify(component!.toJSON())).toContain('END\\nUNKNOWN');
+    expect(component!.root.findByProps({ testID: 'event-timing-badge' }).props.accessibilityRole).toBe('text');
+    act(() => component!.update(<EventTimingBadge event={dateOnlyActivity()} carousel />));
+    expect(JSON.stringify(component!.toJSON())).toContain('TIMES\\nUNKNOWN');
+    expect(component!.root.findAllByProps({ testID: 'carousel-end-unknown-separator' })).toHaveLength(0);
+    act(() => component!.update(<EventTimingBadge event={continuousDonationCampaign()} carousel />));
+    expect(component!.toJSON()).toBeNull();
+    act(() => component!.update(<EventTimingBadge event={continuousDonationCampaign()} compact remainingCampaignDates />));
+    expect(component!.toJSON()).toBeNull();
+    act(() => component!.update(<EventTimingBadge event={continuousDonationCampaign()} compact />));
+    expect(component!.root.findAllByProps({ testID: 'event-timing-badge' }).length).toBeGreaterThan(0);
+    act(() => component!.update(<EventTimingBadge event={unknownEndEvent()} compact remainingCampaignDates />));
+    expect(component!.root.findAllByProps({ testID: 'event-timing-badge' }).length).toBeGreaterThan(0);
+    expect(component!.root.findAllByProps({ testID: 'event-timing-badge-info' }).length).toBeGreaterThan(0);
+    expect(component!.root.findAllByProps({ testID: 'carousel-end-unknown-separator' })).toHaveLength(0);
+    act(() => component!.unmount());
+  });
   it('makes an unknown ending visibly informational and explains it without opening the card', () => {
     const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => undefined);
     let component: renderer.ReactTestRenderer;

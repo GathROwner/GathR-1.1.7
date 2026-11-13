@@ -11,11 +11,13 @@ import {
 
 import type { Event } from '../../types/events';
 import { formatEventTimingSummary } from '../../utils/dateUtils';
-import { getEventTimeRangeParts, getEventTimingDisclosure } from '../../utils/eventTiming';
+import { getEventTimeRangeParts, getEventTimingDisclosure, getEventTimingBadge } from '../../utils/eventTiming';
 import { getAreaParticipationTimingLabel } from '../../utils/areaEventPresentation';
+import { useRemainingCampaignDateText, useVisitingHoursView } from '../../hooks/useVisitingHoursView';
+import { getCarouselTimeParts } from '../../utils/carouselEventTiming';
 
 type TimingEvent = Pick<Event, 'startDate' | 'startTime' | 'endDate' | 'endTime' | 'timing'>
-  & Partial<Pick<Event, 'title' | 'description' | 'locationScope' | 'areaData'>>;
+  & Partial<Pick<Event, 'title' | 'description' | 'locationScope' | 'areaData' | 'type' | 'isRecurring' | 'isRecurringInstance' | 'recurringPattern'>>;
 
 interface EventTimingSummaryTextProps {
   event: TimingEvent;
@@ -29,6 +31,10 @@ interface EventTimingSummaryTextProps {
   infoColor?: string;
   showInfoMarker?: boolean;
   showStatusPrefix?: boolean;
+  carousel?: boolean;
+  remainingCampaignDates?: boolean;
+  /** Suppress repeated estimate wording only when the adjacent badge says it. */
+  estimateBadgeVisible?: boolean;
 }
 
 /**
@@ -48,13 +54,28 @@ export function EventTimingSummaryText({
   infoColor = '#267DBD',
   showInfoMarker = true,
   showStatusPrefix = true,
+  carousel = false,
+  remainingCampaignDates = false,
+  estimateBadgeVisible = false,
 }: EventTimingSummaryTextProps) {
   const [expanded, setExpanded] = useState(false);
-  const originalParts = getEventTimeRangeParts(event);
+  const viewedDate = useVisitingHoursView(event);
+  const remainingCampaignText = useRemainingCampaignDateText(event, carousel || remainingCampaignDates);
+  const campaignText = carousel || remainingCampaignDates ? remainingCampaignText : null;
+  const originalParts = getEventTimeRangeParts(event, new Date(), viewedDate);
   const participationLabel = getAreaParticipationTimingLabel(event, originalParts.text);
-  const parts = participationLabel ? { ...originalParts, prefix: participationLabel, text: participationLabel } : originalParts;
-  const disclosure = getEventTimingDisclosure(event);
-  const summary = formatEventTimingSummary(event);
+  const displayParts = campaignText
+    ? { ...originalParts, prefix: campaignText, start: '', separator: '', end: '', startEstimated: false, endEstimated: false }
+    : carousel ? getCarouselTimeParts(event, new Date(), viewedDate) : originalParts;
+  const participationPrefix = carousel && participationLabel && originalParts.prefix
+    ? displayParts.prefix.slice(0, -originalParts.prefix.length) + participationLabel
+    : participationLabel;
+  const presentationParts = participationPrefix ? { ...displayParts, prefix: participationPrefix, text: participationPrefix } : displayParts;
+  const parts = estimateBadgeVisible && getEventTimingBadge(event, new Date(), viewedDate)?.text === 'TIMES\nESTIMATED'
+    ? { ...presentationParts, prefix: presentationParts.prefix.replace(/ \(estimated\)/g, '') }
+    : presentationParts;
+  const disclosure = getEventTimingDisclosure(event, new Date(), viewedDate);
+  const summary = formatEventTimingSummary(event, viewedDate);
   const summaryPrefix = summary.endsWith(originalParts.text)
     ? summary.slice(0, -originalParts.text.length)
     : '';
@@ -87,7 +108,7 @@ export function EventTimingSummaryText({
         adjustsFontSizeToFit={adjustsFontSizeToFit}
         minimumFontScale={minimumFontScale}
       >
-        {showStatusPrefix ? summaryPrefix : ''}{parts.prefix}{parts.start}
+        {showStatusPrefix && !carousel && !campaignText ? summaryPrefix : ''}{parts.prefix}{parts.start}
         {showInfoMarker && parts.startEstimated ? (
           <Text
             accessibilityRole="button"

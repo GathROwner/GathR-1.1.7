@@ -34,6 +34,9 @@ jest.mock('../../../store/socialStore', () => ({
 }));
 jest.mock('../../../types/social', () => ({ SOCIAL_FEATURE_ENABLED: true, SOCIAL_RELEASE_TWO_ENABLED: true }));
 jest.mock('../../../services/checkInReadinessPreferences', () => ({ loadReadinessPreferences: jest.fn() }));
+jest.mock('../../../services/checkInPreparation', () => ({
+  prepareCheckInPlaces: jest.fn(), clearCheckInPreparationCache: jest.fn(), cancelCheckInPreparation: jest.fn(),
+}));
 jest.mock('../../../services/socialService', () => ({
   createSocialOperationId: () => `session-${++mockOperationSequence}`,
   recordCheckInReadinessSample: jest.fn(),
@@ -65,10 +68,10 @@ describe('foreground readiness observer lifecycle', () => {
       useCheckInReadinessStore.setState({ preferencesLoaded: true, mode: mockMode });
     });
     (Location.getForegroundPermissionsAsync as jest.Mock).mockResolvedValue({ status: 'granted' });
-    (Location.getCurrentPositionAsync as jest.Mock).mockImplementation(async () => ({
+    (Location.getCurrentPositionAsync as jest.Mock).mockReset().mockImplementation(async () => ({
       timestamp: Date.now(), coords: { latitude: 46.235, longitude: -63.129, accuracy: 10, speed: 0 },
     }));
-    (recordCheckInReadinessSample as jest.Mock).mockImplementation(async (input: CheckInReadinessSampleInput) => ({
+    (recordCheckInReadinessSample as jest.Mock).mockReset().mockImplementation(async (input: CheckInReadinessSampleInput) => ({
       protocolVersion: 1, sessionId: input.sessionId, sequence: input.sequence,
       hereQualifyingMs: input.reset ? 0 : Math.min(30_000, (input.sequence - 1) * 10_000),
       placeQualifyingMs: input.reset ? 0 : Math.min(90_000, (input.sequence - 1) * 10_000),
@@ -84,6 +87,64 @@ describe('foreground readiness observer lifecycle', () => {
   });
   const mount = async () => { await act(async () => { component = renderer.create(<CheckInReadinessObserver />); }); };
   const advance = async (milliseconds: number) => { await act(async () => { jest.advanceTimersByTime(milliseconds); }); };
+
+  it('keeps a pending fresh sample in its session when the local evidence expires before the reply', async () => {
+    const now = Date.now();
+    useMapStore.setState({ userLocation: { timestamp: now - 14_000,
+      coords: { latitude: 46.235, longitude: -63.129, accuracy: 10, speed: 0, altitude: null, altitudeAccuracy: null, heading: null } } });
+    let reply!: (receipt: unknown) => void;
+    (recordCheckInReadinessSample as jest.Mock).mockImplementationOnce(() => new Promise(resolve => { reply = resolve; }));
+    await mount();
+    const input = (recordCheckInReadinessSample as jest.Mock).mock.calls[0][0];
+    await advance(9_500);
+    expect(useCheckInReadinessStore.getState()).toMatchObject({ sessionId: input.sessionId, arrival: null, receipt: null });
+    await act(async () => reply({ protocolVersion: 1, sessionId: input.sessionId, sequence: input.sequence,
+      hereQualifyingMs: 0, placeQualifyingMs: 0, expiresAtMs: Date.now() + 20_000,
+      arrival: { sessionId: input.sessionId, latitude: input.latitude, longitude: input.longitude,
+        accuracyMeters: 10, capturedAtMs: input.capturedAtMs, expiresAtMs: Date.now() + 180_000, here: true, place: true } }));
+    expect(useCheckInReadinessStore.getState().arrival?.place).toBe(true);
+  });
+
+  it('does not invent server progress during failed attestation, then accepts the first zero baseline', async () => {
+    const record = recordCheckInReadinessSample as jest.Mock;
+    record.mockRejectedValue(new Error('Attestation unavailable'));
+    await mount();
+    for (let index = 0; index < 3; index += 1) await advance(10_000);
+    expect(useCheckInReadinessStore.getState()).toMatchObject({
+      evidence: { hereMs: 30_000 }, acceptedProgress: null, serviceError: true,
+    });
+    record.mockImplementation(async (input: CheckInReadinessSampleInput) => ({
+      protocolVersion: 1, sessionId: input.sessionId, sequence: input.sequence,
+      hereQualifyingMs: 0, placeQualifyingMs: 0, expiresAtMs: Date.now() + 20_000,
+    }));
+    await advance(10_000);
+    const state = useCheckInReadinessStore.getState();
+    expect(state.acceptedProgress).toEqual({ sessionId: state.sessionId, hereMs: 0, placeMs: 0, receivedAtMs: Date.now() });
+    expect(state.serviceError).toBe(false);
+  });
+
+  it('preserves accepted counters on failure and pauses resume projection until an accepted reply', async () => {
+    await mount(); await advance(10_000);
+    const accepted = useCheckInReadinessStore.getState().acceptedProgress;
+    expect(accepted?.hereMs).toBe(10_000);
+    (recordCheckInReadinessSample as jest.Mock).mockRejectedValueOnce(new Error('Network unavailable'));
+    await advance(10_000);
+    expect(useCheckInReadinessStore.getState()).toMatchObject({ acceptedProgress: accepted, receipt: null, serviceError: true });
+    act(() => { AppState.currentState = 'background'; mockChangeState('background'); });
+    expect(useCheckInReadinessStore.getState().progressPaused).toBe(true);
+    await advance(2_000);
+    let resolveReceipt!: (value: unknown) => void;
+    (recordCheckInReadinessSample as jest.Mock).mockImplementationOnce(() => new Promise(resolve => { resolveReceipt = resolve; }));
+    await act(async () => { AppState.currentState = 'active'; mockChangeState('active'); });
+    // Cadence may defer this return request; a cleared interruption alone cannot resume projection.
+    expect(useCheckInReadinessStore.getState().progressPaused).toBe(true);
+    await advance(8_000);
+    const input = (recordCheckInReadinessSample as jest.Mock).mock.calls.at(-1)![0];
+    await act(async () => resolveReceipt({ protocolVersion: 1, sessionId: input.sessionId, sequence: input.sequence,
+      hereQualifyingMs: 20_000, placeQualifyingMs: 20_000, expiresAtMs: Date.now() + 20_000 }));
+    expect(useCheckInReadinessStore.getState()).toMatchObject({ progressPaused: false, serviceError: false,
+      acceptedProgress: { hereMs: 20_000, placeMs: 20_000, receivedAtMs: Date.now() } });
+  });
 
   it('samples before any place selection and requests no permissions or check-in mutation', async () => {
     await mount();
@@ -348,5 +409,130 @@ describe('foreground readiness observer lifecycle', () => {
     } }));
     expect(recordCheckInReadinessSample).toHaveBeenCalledTimes(1);
     expect(useCheckInReadinessStore.getState().sessionId).toBe(sessionId);
+  });
+
+  it('keeps listening for a fresh map fix after the one-shot location request fails', async () => {
+    (Location.getCurrentPositionAsync as jest.Mock).mockRejectedValueOnce(new Error('Location temporarily unavailable'));
+    await mount();
+    await advance(1_000);
+    await act(async () => useMapStore.setState({ userLocation: { timestamp: Date.now(), coords: {
+      latitude: 46.08954, longitude: -64.77345, accuracy: 18, speed: 0,
+      altitude: null, altitudeAccuracy: null, heading: null,
+    } } }));
+    expect(recordCheckInReadinessSample).toHaveBeenCalledTimes(1);
+    expect(useCheckInReadinessStore.getState().serviceError).toBe(false);
+  });
+
+  it('does not let a cached one-shot result discard a newer shared map fix', async () => {
+    await mount();
+    const first = useCheckInReadinessStore.getState().evidence.previous!;
+    (Location.getCurrentPositionAsync as jest.Mock).mockResolvedValueOnce({
+      timestamp: first.capturedAtMs, coords: { latitude: first.latitude, longitude: first.longitude, accuracy: 10, speed: 0 },
+    });
+    await advance(10_000);
+    await advance(1_000);
+    await act(async () => useMapStore.setState({ userLocation: { timestamp: Date.now(), coords: {
+      latitude: first.latitude, longitude: first.longitude, accuracy: 14, speed: 0,
+      altitude: null, altitudeAccuracy: null, heading: null,
+    } } }));
+    expect(recordCheckInReadinessSample).toHaveBeenCalledTimes(2);
+    expect(useCheckInReadinessStore.getState().evidence.hereMs).toBe(11_000);
+  });
+
+  it('retries after a location request never resolves without inventing location evidence', async () => {
+    (Location.getCurrentPositionAsync as jest.Mock).mockImplementationOnce(() => new Promise(() => undefined));
+    await mount();
+    await advance(8_000);
+    expect(recordCheckInReadinessSample).not.toHaveBeenCalled();
+    expect(useCheckInReadinessStore.getState().evidence.hereMs).toBe(0);
+    await advance(2_000);
+    expect(Location.getCurrentPositionAsync).toHaveBeenCalledTimes(2);
+    expect(recordCheckInReadinessSample).toHaveBeenCalledTimes(1);
+    expect(useCheckInReadinessStore.getState().evidence.hereMs).toBe(0);
+  });
+
+  it('ignores the first location result after its deadline and a successful retry', async () => {
+    let finishOld: (location: unknown) => void = () => undefined;
+    (Location.getCurrentPositionAsync as jest.Mock).mockImplementationOnce(() => new Promise((resolve) => { finishOld = resolve; }));
+    await mount();
+    await advance(8_000);
+    await advance(2_000);
+    const accepted = useCheckInReadinessStore.getState();
+    expect(recordCheckInReadinessSample).toHaveBeenCalledTimes(1);
+    await act(async () => finishOld({ timestamp: Date.now(), coords: {
+      latitude: 46.24, longitude: -63.129, accuracy: 10, speed: 3,
+    } }));
+    expect(recordCheckInReadinessSample).toHaveBeenCalledTimes(1);
+    expect(useCheckInReadinessStore.getState().evidence).toEqual(accepted.evidence);
+    expect(useCheckInReadinessStore.getState().sessionId).toBe(accepted.sessionId);
+  });
+
+  it('cancels location retries while the app is backgrounded', async () => {
+    (Location.getCurrentPositionAsync as jest.Mock).mockRejectedValueOnce(new Error('Location temporarily unavailable'));
+    await mount();
+    act(() => { AppState.currentState = 'background'; mockChangeState('background'); });
+    await advance(10_000);
+    expect(Location.getCurrentPositionAsync).toHaveBeenCalledTimes(1);
+    expect(recordCheckInReadinessSample).not.toHaveBeenCalled();
+    await act(async () => { AppState.currentState = 'active'; mockChangeState('active'); });
+    expect(Location.getCurrentPositionAsync).toHaveBeenCalledTimes(2);
+    expect(recordCheckInReadinessSample).toHaveBeenCalledTimes(1);
+  });
+  it('revokes a captured attempt when a successful server reply removes its still-valid arrival', async () => {
+    await mount();
+    const state = useCheckInReadinessStore.getState();
+    const arrival = { sessionId: state.sessionId, latitude: 46.235, longitude: -63.129,
+      accuracyMeters: 10, capturedAtMs: Date.now(), expiresAtMs: Date.now() + 180_000, here: true, place: true };
+    act(() => useCheckInReadinessStore.setState({ arrival, attempt: { arrival, capturedAtMs: Date.now() } }));
+    await advance(10_000); await advance(20_000);
+    const after = useCheckInReadinessStore.getState();
+    expect(after.arrival).toBeNull(); expect(after.attempt).toBeNull();
+    expect(after.revocationRevision).toBe(state.revocationRevision + 1);
+  });
+  it('retains a qualified arrival during a network error instead of treating it as server revocation', async () => {
+    await mount();
+    const state = useCheckInReadinessStore.getState();
+    const arrival = { sessionId: state.sessionId, latitude: 46.235, longitude: -63.129,
+      accuracyMeters: 10, capturedAtMs: Date.now(), expiresAtMs: Date.now() + 180_000, here: true, place: true };
+    act(() => useCheckInReadinessStore.setState({ arrival, attempt: { arrival, capturedAtMs: Date.now() } }));
+    (recordCheckInReadinessSample as jest.Mock).mockRejectedValueOnce(new Error('Network unavailable'));
+    await advance(10_000); await advance(20_000);
+    const after = useCheckInReadinessStore.getState();
+    expect(after.arrival).toEqual(arrival); expect(after.attempt?.arrival).toEqual(arrival);
+    expect(after.revocationRevision).toBe(state.revocationRevision);
+    expect(after.serviceError).toBe(true);
+  });
+  it('expires a bound grant in the foreground and resumes preparation without discarding the form route', async () => {
+    await mount();
+    act(() => useCheckInReadinessStore.setState({ grant: { protocolVersion: 1,
+      readinessSessionId: 'bound-session', eligibilitySessionId: 'bound-session', locationType: 'gathr_venue',
+      venueId: 'one', exactPrivateAllowed: false, expiresAtMs: Date.now() + 2_000 } }));
+    const count = (recordCheckInReadinessSample as jest.Mock).mock.calls.length;
+    await advance(2_000);
+    expect(useCheckInReadinessStore.getState().grant).toBeNull();
+    await advance(8_000);
+    expect(recordCheckInReadinessSample).toHaveBeenCalledTimes(count + 1);
+  });
+  it('never sends faster than ten seconds when every unique shared GPS fix is fourteen seconds old', async () => {
+    (Location.getCurrentPositionAsync as jest.Mock).mockImplementation(async () => ({
+      timestamp: Date.now() - 14_000, coords: { latitude: 46.235, longitude: -63.129, accuracy: 10, speed: 0 },
+    }));
+    await mount();
+    for (let i = 0; i < 29; i++) await advance(2_000);
+    expect(recordCheckInReadinessSample).toHaveBeenCalledTimes(6);
+  });
+  it('keeps monotonic server sequence when a qualified arrival survives an observer route-effect restart', async () => {
+    await mount();
+    const state = useCheckInReadinessStore.getState();
+    const arrival = { sessionId: state.sessionId, latitude: 46.235, longitude: -63.129,
+      accuracyMeters: 10, capturedAtMs: Date.now(), expiresAtMs: Date.now() + 180_000, here: true, place: true };
+    act(() => useCheckInReadinessStore.setState({ arrival }));
+    await advance(5_000);
+    mockPathname = '/(tabs)/map';
+    await act(async () => { component!.update(<CheckInReadinessObserver />); });
+    await advance(25_000);
+    const calls = (recordCheckInReadinessSample as jest.Mock).mock.calls;
+    expect(calls).toHaveLength(2);
+    expect(calls[1][0]).toMatchObject({ sessionId: state.sessionId, sequence: 2 });
   });
 });

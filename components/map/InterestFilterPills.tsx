@@ -17,6 +17,7 @@ import {
 } from '../../utils/cityEventLightbox';
 import { amplitudeTrack } from '../../lib/amplitudeAnalytics';
 import { getEventFacetKeys, isFamilyFriendlyInterest } from '../../utils/familyFriendly';
+import { getInterestFilterPillIconName } from '../../utils/interestFilterPillIcons';
 
 type PillItem = {
   label: string;
@@ -58,23 +59,6 @@ const getShortLabel = (interest: string): string => {
   if (lower.includes('happy hour') || lower.includes('drink')) return 'Drink';
   if (lower.includes('food') || lower.includes('wing')) return 'Food';
   return interest;
-};
-
-const getCategoryIconName = (category: string): string => {
-  const categoryLower = category.toLowerCase();
-  if (categoryLower.includes('live music') || categoryLower.includes('music')) return 'audiotrack';
-  if (categoryLower.includes('comedy') || categoryLower.includes('laugh')) return 'sentiment-very-satisfied';
-  if (categoryLower.includes('sport')) return 'sports-basketball';
-  if (categoryLower.includes('trivia')) return 'psychology-alt';
-  if (categoryLower.includes('workshop') || categoryLower.includes('class')) return 'history-edu';
-  if (categoryLower.includes('religious') || categoryLower.includes('church')) return 'church';
-  if (categoryLower.includes('family')) return 'family-restroom';
-  if (categoryLower.includes('gathering') || categoryLower.includes('parties') || categoryLower.includes('party')) return 'nightlife';
-  if (categoryLower.includes('cinema') || categoryLower.includes('movie') || categoryLower.includes('film')) return 'theaters';
-  if (categoryLower.includes('happy hour')) return 'local-bar';
-  if (categoryLower.includes('food') || categoryLower.includes('wing')) return 'restaurant';
-  if (categoryLower.includes('drink')) return 'wine-bar';
-  return 'category';
 };
 
 const AnimatedTouchableOpacity = Animated.createAnimatedComponent(TouchableOpacity);
@@ -981,7 +965,7 @@ const InterestFilterPills: React.FC<{ availableHeight?: number }> = ({ available
                     />
                   ) : (
                     <MaterialIcons
-                      name={getCategoryIconName(item.label) as any}
+                      name={getInterestFilterPillIconName(item.label) as any}
                       size={18}
                       color={
                         selected

@@ -8,6 +8,8 @@ import type {
   TimeStatus,
 } from '../types/events';
 import { normalizeRecurrenceFlag } from './eventRecurrence';
+import { readVisitingHours, visitingIntervals, visitingLocalNow, visitingHoursText, visitingClock } from './visitingHours';
+import { readOfferAvailability, offerAvailabilityView, offerHoursText } from './offerAvailability';
 
 export const EVENT_TIMING_POLICY_VERSION = 'honest-end-times-v2';
 export const DEFAULT_UNKNOWN_END_CUTOFF_MINUTES = 120;
@@ -478,6 +480,29 @@ export const getEventScheduleState = (
 
   const dateOnly = getDateOnlyScheduleRange(event, timing);
   if (dateOnly) {
+    const availability = readOfferAvailability(event, now);
+    if (availability) {
+      if (zonedNow.dateKey > dateOnly.endDate) return { code: 'confirmed_ended', nowEligibility: 'none', defaultMapEligible: false, todayEligible: false, muted: true };
+      const view = offerAvailabilityView(event, zonedNow.dateKey, now);
+      const today = view.state === 'scheduled' || view.state === 'unknown';
+      const boundaries = [1440, ...view.intervals.flatMap(s => [s.open, s.close])]
+        .filter(m => m > zonedNow.minutes && m <= 1440);
+      const expires = getEventScheduleLocalScalar(new Date(availability.expiresAt), timing.timeZone);
+      return { code: view.withinEstimatedWindow ? 'expected_happening' : today ? 'date_only_today' : 'date_only_upcoming',
+        nowEligibility: 'none', todayEligible: today, defaultMapEligible: true, muted: view.state === 'closed',
+        nextTransitionLocalScalar: Math.min(localScalar(zonedNow.dateKey, Math.min(...boundaries)), expires) };
+    }
+    if (readVisitingHours(event)) {
+      if (zonedNow.dateKey > dateOnly.endDate) return { code: 'confirmed_ended', nowEligibility: 'none', defaultMapEligible: false, todayEligible: false, muted: true };
+      const intervals = visitingIntervals(event, zonedNow.dateKey);
+      const active = intervals.some(s => zonedNow.minutes >= s.open && zonedNow.minutes < s.close);
+      const next = [1440, ...intervals.flatMap(s => [s.open, s.close])].filter(m => m > zonedNow.minutes && m <= 1440);
+      return { code: active ? 'happening_confirmed' : intervals.length ? 'date_only_today' : 'date_only_upcoming',
+        nowEligibility: active ? 'confirmed' : 'none', todayEligible: intervals.length > 0,
+        // Day filters decide closure; a closed today must not remove a valid Tomorrow/Upcoming pin.
+        defaultMapEligible: true, muted: !intervals.length,
+        nextTransitionLocalScalar: localScalar(zonedNow.dateKey, Math.min(...next)) };
+    }
     if (zonedNow.dateKey > dateOnly.endDate) return { code: 'confirmed_ended', nowEligibility: 'none',
       defaultMapEligible: false, todayEligible: false, muted: true };
     const today = zonedNow.dateKey >= dateOnly.startDate;
@@ -631,9 +656,18 @@ export const isEventTimingPast = (
 
 export const getEventTimingBadge = (
   event: LegacyTimingInput & { timing?: EventTiming | null },
-  now = new Date()
+  now = new Date(),
+  viewedDate?: string | null
 ): EventTimingBadge | null => {
   const timing = getEventTiming(event);
+  if (readOfferAvailability(event, now)) {
+    const date = viewedDate === undefined ? visitingLocalNow(event, now).date : viewedDate;
+    const view = date === null ? null : offerAvailabilityView(event, date, now);
+    if (view?.state === 'closed' || view?.state === 'outside') return null;
+    if (view?.state === 'unknown') return { text: 'TIMES\nUNKNOWN', accessibilityLabel: 'Date-specific offer times unknown', tone: 'caution', infoTitle: 'Offer availability' };
+    return { text: date === null ? 'HOURS\nVARY' : 'TIMES\nESTIMATED', accessibilityLabel: date === null ? 'Offer hours vary by date' : 'Offer times estimated from dated service hours', tone: 'neutral', infoTitle: 'Offer availability' };
+  }
+  if (readVisitingHours(event)) return { text: 'VISITING\nHOURS', accessibilityLabel: 'Source-advertised visiting hours', tone: 'neutral', infoTitle: 'Visiting hours' };
   if (timing.scheduleKind === 'date_range_overview') return null;
   if (getDateOnlyScheduleRange(event, timing)) return { text: 'TIMES\nUNKNOWN',
     accessibilityLabel: 'Start and end times not provided', tone: 'caution', infoTitle: 'Times not provided' };
@@ -703,10 +737,19 @@ const getEstimateDisplayTime = (timing: EventTiming): string => {
 
 export const getEventTimeRangeParts = (
   event: LegacyTimingInput & { timing?: EventTiming | null },
-  now = new Date()
+  now = new Date(),
+  viewedDate?: string | null
 ): EventTimeRangeParts => {
   const timing = getEventTiming(event);
   const state = getEventScheduleState(event, now);
+  if (readOfferAvailability(event, now)) {
+    const text = offerHoursText(event, viewedDate === undefined ? visitingLocalNow(event, now).date : viewedDate, now);
+    return { prefix: text, start: '', separator: '', end: '', startEstimated: false, endEstimated: false, text };
+  }
+  if (readVisitingHours(event)) {
+    const text = visitingHoursText(event, viewedDate === undefined ? visitingLocalNow(event, now).date : viewedDate);
+    return { prefix: text, start: '', separator: '', end: '', startEstimated: false, endEstimated: false, text };
+  }
   if (timing.scheduleKind === 'date_range_overview') {
     return { prefix: 'See individual event times', start: '', separator: '', end: '', startEstimated: false, endEstimated: false, text: 'See individual event times' };
   }
@@ -758,10 +801,27 @@ export const getEventTimeRangeText = (
 
 export const getEventTimingDisclosure = (
   event: LegacyTimingInput & { timing?: EventTiming | null },
-  now = new Date()
+  now = new Date(),
+  viewedDate?: string | null
 ): string | null => {
   const timing = getEventTiming(event);
   const state = getEventScheduleState(event, now);
+  const availability = readOfferAvailability(event, now);
+  if (availability) {
+    const date = viewedDate === undefined ? visitingLocalNow(event, now).date : viewedDate;
+    const view = date === null ? null : offerAvailabilityView(event, date, now);
+    const service = availability.service === 'food' ? 'restaurant' : 'bar';
+    if (date === null) return `Hours vary by date. Some hours are estimated from ${service} opening hours. Check the original post for the day you plan to visit.`;
+    if (view?.state === 'unknown') {
+      const usual = view.usualIntervals.map(s => `${visitingClock(parseEventTimeMinutes(s.open)!)} – ${visitingClock(parseEventTimeMinutes(s.close)!)}${s.endDayOffset ? ' (+1 day)' : ''}`).join(', ');
+      return `Hours have not been confirmed for this date.${view.intervals.length ? ' The overnight hours shown are estimates.' : ''}${usual ? ` Usual ${service} hours: ${usual}. These do not confirm this date’s offer hours.` : ''} Holiday hours may differ.`;
+    }
+    if (view?.state === 'closed') return `The ${service} is closed on this date. Check the original post for details.`;
+    if (view?.state === 'outside') return 'This date is outside the advertised offer dates.';
+    return `Hours estimated from ${service} opening hours. Holiday hours may differ. Check the original post before travelling.`;
+  }
+  const visiting = readVisitingHours(event);
+  if (visiting) return `${visiting.source.evidence} ${visiting.caveat} Exhibition dates: ${visiting.startDate} to ${visiting.endDate}. Source: ${visiting.source.url}`;
   if (getDateOnlyScheduleRange(event, timing)) {
     return 'The organizer provided dates but no start or end time. Check the original source for details.';
   }

@@ -30,8 +30,10 @@ import {
   bindCheckInReadiness,
   createPrivateCheckInPlaceCandidate,
   discoverNearbyCheckInPlaces,
+  listNearbyCanonicalCheckInVenues,
   recordCheckInReadinessSample,
 } from '../socialService';
+import { Platform } from 'react-native';
 
 const input = {
   protocolVersion: 1 as const,
@@ -109,9 +111,9 @@ describe('social callable transport', () => {
     expect(mockHttpsCallable).toHaveBeenCalledWith(
       { project: 'gathr-m1' },
       'recordCheckInReadinessSampleCallable',
-      { timeout: 8_000 }
+      { timeout: 20_000 }
     );
-    expect(callable).toHaveBeenCalledWith(input);
+    expect(callable).toHaveBeenCalledWith({ ...input, ...(Platform.OS === 'ios' ? { arrivalPolicy: 'verified_stop_v1' } : {}) });
     expect(mockGetIdToken).not.toHaveBeenCalled();
   });
 
@@ -178,6 +180,100 @@ describe('social callable transport', () => {
       code: 'unavailable',
       message: 'GathR social is temporarily unavailable. Try again when you are online.',
       details: undefined,
+    });
+  });
+
+  it.each([discoverNearbyCheckInPlaces, listNearbyCanonicalCheckInVenues])('does not start a canceled preparation lookup', async (lookup) => {
+    const controller = new AbortController();
+    controller.abort();
+    await expect(lookup(input, { signal: controller.signal })).rejects.toMatchObject({ name: 'AbortError' });
+    expect(mockGetSocialAppCheckToken).not.toHaveBeenCalled();
+    expect(mockHttpsCallable).not.toHaveBeenCalled();
+  });
+
+  it('passes the bounded preparation deadline to the compatible callable transport', async () => {
+    mockGetSocialAppCheckToken.mockResolvedValue(null);
+    mockHttpsCallable.mockReturnValue(jest.fn().mockResolvedValue({ data: { candidates: [] } }));
+    await discoverNearbyCheckInPlaces(input, { timeoutMs: 24_000 });
+    expect(mockHttpsCallable).toHaveBeenCalledWith(expect.anything(), 'discoverNearbyCheckInPlacesCallable', { timeout: 24_000 });
+  });
+
+  it('passes the qualified private arrival reference without making its capture time appear fresh', async () => {
+    const callable = jest.fn().mockResolvedValue({ data: { candidate: { id: 'private-candidate' } } });
+    mockGetSocialAppCheckToken.mockResolvedValue(null);
+    mockHttpsCallable.mockReturnValue(callable);
+    await createPrivateCheckInPlaceCandidate({ ...input, label: 'Home', readinessSessionId: input.sessionId });
+    expect(callable).toHaveBeenCalledWith(expect.objectContaining({
+      readinessSessionId: input.sessionId, capturedAtMs: input.capturedAtMs,
+    }));
+  });
+
+  describe('whole readiness request deadline', () => {
+    beforeEach(() => jest.useFakeTimers());
+    afterEach(() => jest.useRealTimers());
+
+    it.each(['App Check', 'Auth'])('bounds a pending %s token before the HTTP request starts', async (stage) => {
+      let resolveToken: (value: string) => void = () => undefined;
+      const pendingToken = new Promise<string>((resolve) => { resolveToken = resolve; });
+      mockGetSocialAppCheckToken.mockReturnValue(stage === 'App Check' ? pendingToken : Promise.resolve('attested-token'));
+      if (stage === 'Auth') mockGetIdToken.mockReturnValue(pendingToken);
+      const fetchMock = jest.spyOn(global, 'fetch');
+      let failure: Error | undefined;
+      void recordCheckInReadinessSample(input).catch((error) => { failure = error; });
+      await jest.advanceTimersByTimeAsync(20_000);
+      expect(failure?.name).toBe('AbortError');
+      expect(fetchMock).not.toHaveBeenCalled();
+      resolveToken('late-token');
+      await jest.advanceTimersByTimeAsync(1);
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it('honors cancellation while App Check is still pending and never sends late credentials', async () => {
+      let resolveToken: (value: string) => void = () => undefined;
+      mockGetSocialAppCheckToken.mockReturnValue(new Promise<string>((resolve) => { resolveToken = resolve; }));
+      const fetchMock = jest.spyOn(global, 'fetch');
+      const controller = new AbortController();
+      let failure: Error | undefined;
+      void recordCheckInReadinessSample(input, { signal: controller.signal }).catch((error) => { failure = error; });
+      controller.abort();
+      await jest.advanceTimersByTimeAsync(1);
+      expect(failure?.name).toBe('AbortError');
+      resolveToken('late-token');
+      await jest.advanceTimersByTimeAsync(1);
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(mockGetIdToken).not.toHaveBeenCalled();
+    });
+
+    it('uses one deadline across App Check, sign-in and HTTP rather than restarting the budget', async () => {
+      mockGetSocialAppCheckToken.mockImplementation(() => new Promise((resolve) => setTimeout(() => resolve('attested-token'), 4_000)));
+      mockGetIdToken.mockImplementation(() => new Promise((resolve) => setTimeout(() => resolve('auth-token'), 3_000)));
+      const fetchMock = jest.spyOn(global, 'fetch').mockImplementation(() => new Promise(() => undefined));
+      let failure: Error | undefined;
+      void recordCheckInReadinessSample(input).catch((error) => { failure = error; });
+      await jest.advanceTimersByTimeAsync(7_000);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(failure).toBeUndefined();
+      await jest.advanceTimersByTimeAsync(13_000);
+      expect(failure?.name).toBe('AbortError');
+      expect(fetchMock.mock.calls[0][1]?.signal?.aborted).toBe(true);
+    });
+
+    it('rejects an already canceled request before asking for attestation or sign-in tokens', async () => {
+      const controller = new AbortController();
+      controller.abort();
+      await expect(recordCheckInReadinessSample(input, { signal: controller.signal })).rejects.toMatchObject({ name: 'AbortError' });
+      expect(mockGetSocialAppCheckToken).not.toHaveBeenCalled();
+      expect(mockGetIdToken).not.toHaveBeenCalled();
+      expect(mockHttpsCallable).not.toHaveBeenCalled();
+    });
+
+    it('never falls back to an unattested request when attestation rejects', async () => {
+      mockGetSocialAppCheckToken.mockRejectedValue(new Error('GathR could not verify this app installation. Try again shortly. [AC-INIT-NETWORK]'));
+      const fetchMock = jest.spyOn(global, 'fetch');
+      await expect(recordCheckInReadinessSample(input)).rejects.toThrow('[AC-INIT-NETWORK]');
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(mockHttpsCallable).not.toHaveBeenCalled();
+      expect(mockGetIdToken).not.toHaveBeenCalled();
     });
   });
 });

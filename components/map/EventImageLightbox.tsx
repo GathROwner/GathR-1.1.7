@@ -1,3 +1,4 @@
+import { useIsFocused } from '@react-navigation/native';
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import {
   View,
@@ -35,6 +36,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 
 import ImageView from "react-native-image-viewing";
 import FallbackImage from '../common/FallbackImage';
+import ListingVideoButton from '../common/ListingVideoButton';
 import GathRShimmerPill from '../common/GathRShimmerPill';
 import TicketCtaPill from '../common/TicketCtaPill';
 import EventActionLinkPill from '../common/EventActionLinkPill';
@@ -43,8 +45,10 @@ import VenueProgrammeBrowser from '../area/VenueProgrammeBrowser';
 import { getVenueProgrammeLocation } from '../../utils/eventProgramme';
 import { EventTimingBadge } from '../common/EventTimingBadge';
 import { EventTimingSummaryText } from '../common/EventTimingSummaryText';
+import { useViewedEventTimeStatus, useVisitingHoursView, useRemainingCampaignDateText } from '../../hooks/useVisitingHoursView';
 import { EventSeriesContextLine } from '../common/EventSeriesContextLine';
 import { EventTimingDisclosureActions } from './EventTimingDisclosureActions';
+import { readOfferAvailability } from '../../utils/offerAvailability';
 import { VenueFavoriteButton } from '../common/VenueFavoriteButton';
 import Autolink from 'react-native-autolink';
 
@@ -62,7 +66,6 @@ import {
 } from '../../utils/eventImageGallery';
 import {
   formatEventTimingSummary,
-  getEventTimeStatus,
   getEventDisplayUntilDate
 } from '../../utils/dateUtils';
 import { createLocationKeyFromEvent } from '../../utils/priorityUtils';
@@ -258,6 +261,7 @@ const EventImageLightbox: React.FC<EventImageLightboxProps> = ({
   onViewVenue,
   managedEventDetails = false,
 }) => {
+  const videoSurfaceFocused = useIsFocused();
   useEventTimingMinute();
   const router = useRouter();
   const safeAreaInsets = useSafeAreaInsets();
@@ -1404,26 +1408,28 @@ const handleNonTicketAction = () => {
   };
 
   // Determine time status
-  const timeStatus = getEventTimeStatus(updatedEvent);
+  const viewedDate = useVisitingHoursView(updatedEvent);
+  const timeStatus = useViewedEventTimeStatus(updatedEvent);
   const isHappeningNow = timeStatus === 'now';
+  const remainingCampaignText = useRemainingCampaignDateText(updatedEvent);
 
   // One shared provenance-aware time sentence across every app surface.
-  const standardDateText = formatEventTimingSummary(updatedEvent);
-  const timeRangeText = getEventTimeRangeParts(updatedEvent).text;
+  const standardDateText = remainingCampaignText || formatEventTimingSummary(updatedEvent, viewedDate);
+  const timeRangeText = getEventTimeRangeParts(updatedEvent, new Date(), viewedDate).text;
   const participationTimeLabel = getAreaParticipationTimingLabel(updatedEvent, timeRangeText);
   const baseDateText = participationTimeLabel && standardDateText.endsWith(timeRangeText)
     ? standardDateText.slice(0, -timeRangeText.length) + participationTimeLabel : standardDateText;
   const scheduleContext = getEventScheduleContext(updatedEvent);
-  const displayUntilDate = scheduleContext ? undefined : getEventDisplayUntilDate(updatedEvent);
+  const displayUntilDate = scheduleContext || remainingCampaignText ? undefined : getEventDisplayUntilDate(updatedEvent);
   const endDateSuffix =
     isFutureDate(displayUntilDate) ? ` • (Until ${formatEndDateLabel(displayUntilDate!)})` : '';
   const dateTimeDisplay = [
     `${baseDateText}${endDateSuffix}`,
     scheduleContext?.label,
   ].filter(Boolean).join(' · ');
-  const timingDisclosure = getEventTimingDisclosure(updatedEvent);
+  const timingDisclosure = getEventTimingDisclosure(updatedEvent, new Date(), viewedDate);
   const timingState = getEventScheduleState(updatedEvent);
-  const timingHelpText = timingDisclosure
+  const timingHelpText = readOfferAvailability(updatedEvent) ? timingDisclosure || 'Check the original post for offer hours.' : timingDisclosure
     ? `${timingDisclosure} Event times can change after GathR receives them. Check the original post for the latest details or report a correction if this listing no longer matches.`
     : 'Event times can change after GathR receives them. Check the original post for the latest details or report a correction if this listing no longer matches.';
   const handleReportIncorrectTime = async () => {
@@ -1718,6 +1724,10 @@ const handleNonTicketAction = () => {
               </View>
             )}
           </View>
+
+          <ListingVideoButton event={updatedEvent} overlay surface="detail" active={videoSurfaceFocused}
+            suspended={isImageViewerVisible || programmeOpen || privateGuestSheetVisible}
+            controlsBottom={showTrendingOverlay || showAreaExperience ? 52 : 12} />
 
           {/* The whole image opens full-screen; this is only a visual affordance. */}
           <View style={styles.zoomIconOverlay}>
@@ -2158,6 +2168,8 @@ const handleNonTicketAction = () => {
             <View style={styles.timingSummaryGroup}>
               <EventTimingSummaryText
                 event={updatedEvent}
+                estimateBadgeVisible
+                remainingCampaignDates
                 style={[styles.infoText, styles.timingSummaryLabel]}
                 containerStyle={styles.timingSummaryText}
                 showInfoMarker={false}
@@ -2179,7 +2191,7 @@ const handleNonTicketAction = () => {
                   <MaterialIcons name={scheduleExpanded ? 'keyboard-arrow-up' : 'keyboard-arrow-down'} size={22} color="#D1D5DB" />
                 </TouchableOpacity>
               )}
-              {!isPrivateFriendEvent ? (
+              {!isPrivateFriendEvent && !remainingCampaignText ? (
                 <TouchableOpacity
                   accessibilityLabel={timingDisclosureExpanded ? 'Hide time details' : 'Explain event time'}
                   accessibilityRole="button"
@@ -2199,6 +2211,7 @@ const handleNonTicketAction = () => {
             <EventTimingBadge
               event={updatedEvent}
               compact
+              remainingCampaignDates
               showInfoIndicator={false}
               style={styles.timingBadge}
             />
@@ -2215,7 +2228,7 @@ const handleNonTicketAction = () => {
             </View>
           )}
 
-          {!isPrivateFriendEvent && timingDisclosureExpanded && (
+          {!isPrivateFriendEvent && !remainingCampaignText && timingDisclosureExpanded && (
             <View style={styles.timingDisclosureContainer}>
               <View style={styles.timingDisclosureBody}>
                 <Text style={styles.timingDisclosureText}>{timingHelpText}</Text>

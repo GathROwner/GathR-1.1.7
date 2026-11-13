@@ -1,4 +1,7 @@
+import { useListingVideoPrefs } from '../store/listingVideoPrefsStore';
 import React, { useState, useEffect, useRef } from 'react';
+import OtaUpdateStatus from '../components/common/OtaUpdateStatus';
+import { useOtaSafetyBlock } from '../hooks/useOtaSafetyBlock';
 import { useQuery } from '@tanstack/react-query';
 import { 
   View, 
@@ -25,6 +28,9 @@ import {
 import { useRouter, useNavigation, usePathname } from 'expo-router';
 import * as Application from 'expo-application';
 import Constants from 'expo-constants';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { UpdateRequiredNotice } from '../components/common/UpdateRequiredNotice';
+import { useAppStoreLink } from '../hooks/useAppStoreLink';
 import * as Updates from 'expo-updates';
 import { auth, firestore, storage } from '../config/firebaseConfig';
 import { doc, getDoc, setDoc, updateDoc, deleteDoc, addDoc, collection, query, where, getDocs, serverTimestamp } from 'firebase/firestore';
@@ -253,6 +259,7 @@ const FacebookPageSubmission = React.forwardRef<View, FacebookPageSubmissionProp
   const [isResolving, setIsResolving] = useState(false);
   const [dailyCount, setDailyCount] = useState(0);
   const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
+  useOtaSafetyBlock(Boolean(facebookUrl.trim()) || isSubmitting || isResolving || isExpanded);
 
   useEffect(() => {
     if (Platform.OS !== 'android' || !isExpanded) return;
@@ -730,6 +737,9 @@ const FacebookPageSubmission = React.forwardRef<View, FacebookPageSubmissionProp
 
 export default function ProfileScreen() {
   // State variables
+  const [showUpdateNoticePreview, setShowUpdateNoticePreview] = useState(false);
+  const { storeError: updateNoticeStoreError, openStore: openUpdateNoticeStore, resetStoreError: resetUpdateNoticeStoreError } =
+    useAppStoreLink(Platform.OS === 'android' ? 'android' : 'ios');
   const [displayName, setDisplayName] = useState('');
   const [email, setEmail] = useState('');
   const [photoURL, setPhotoURL] = useState('');
@@ -751,8 +761,12 @@ export default function ProfileScreen() {
   const [newEmailInput, setNewEmailInput] = useState('');
   const [emailChangePassword, setEmailChangePassword] = useState('');
   const [emailChangeInProgress, setEmailChangeInProgress] = useState(false);
+  useOtaSafetyBlock(loading || isEditing || savingChanges || showPasswordModal || deletionInProgress
+    || showAccountModal || showEmailChangeModal || emailChangeInProgress || showUpdateNoticePreview);
 
   // Daily hotspot preference
+  const autoplayVideos = useListingVideoPrefs(state => state.autoplay);
+  const setAutoplayVideos = useListingVideoPrefs(state => state.setAutoplay);
   const showDailyHotspot = useUserPrefsStore((state) => state.showDailyHotspot);
   const friendCount = useSocialStore((state) => state.friends.length);
   const ownCheckIn = useSocialStore((state) => state.ownCheckIn);
@@ -1508,6 +1522,13 @@ const handleLogout = async () => {
           text: 'Copy',
           onPress: () => Clipboard.setString(APP_VERSION_DETAILS),
         },
+        ...((__DEV__ || APP_UPDATE_CHANNEL === 'preview') ? [{
+          text: 'Preview update notice',
+          onPress: () => {
+            resetUpdateNoticeStoreError();
+            setShowUpdateNoticePreview(true);
+          },
+        }] : []),
         { text: 'Done', style: 'cancel' },
       ]
     );
@@ -1788,6 +1809,17 @@ const handleLogout = async () => {
 
               <View style={styles.preferencesCard}>
                 <Text style={styles.sectionHeading}>Preferences</Text>
+                <View style={styles.compactPreferenceRow}>
+                  <View style={styles.featureIcon}><Ionicons name="play-circle-outline" size={22} color={BRAND.primary} /></View>
+                  <View style={styles.featureCopy}>
+                    <Text style={styles.featureTitle}>Autoplay videos</Text>
+                    <Text style={styles.featureSubtitle}>Muted playback while browsing</Text>
+                  </View>
+                  <Switch value={autoplayVideos} onValueChange={setAutoplayVideos}
+                    trackColor={{ false: '#D9E1EA', true: '#9ECFFF' }} thumbColor={autoplayVideos ? BRAND.primary : '#FFFFFF'}
+                    ios_backgroundColor="#D9E1EA" accessibilityLabel="Autoplay videos" />
+                </View>
+                <View style={styles.featureDivider} />
                 {SOCIAL_FEATURE_ENABLED && <>
                   <TouchableOpacity style={styles.compactPreferenceRow} accessibilityRole="button"
                     accessibilityLabel="Location and check-in preferences" onPress={() => router.push('/check-in-settings')}>
@@ -1857,6 +1889,7 @@ const handleLogout = async () => {
                 </TouchableOpacity>
               </View>
 
+              <OtaUpdateStatus />
               <TouchableOpacity
                 style={styles.versionInfoContainer}
                 onPress={handleVersionInfoPress}
@@ -1876,6 +1909,20 @@ const handleLogout = async () => {
       
       {/* Native-stack Profile sits above the root overlay on iOS. */}
       <ProfileTutorialOverlayHost hostRef={profileTutorialOverlayHostRef} />
+
+      {(__DEV__ || APP_UPDATE_CHANNEL === 'preview') && <Modal
+        visible={showUpdateNoticePreview} animationType="fade" presentationStyle="fullScreen"
+        onRequestClose={() => setShowUpdateNoticePreview(false)}>
+        <SafeAreaProvider>
+          <StatusBar barStyle="dark-content" />
+          <UpdateRequiredNotice installedVersion={Application.nativeApplicationVersion || '1.1.10'}
+            minimumVersion="1.1.20" platform={Platform.OS === 'android' ? 'android' : 'ios'}
+            storeError={updateNoticeStoreError}
+            onUpdate={() => { void openUpdateNoticeStore(); }}
+            onRetry={() => setShowUpdateNoticePreview(false)}
+            onPreviewClose={() => setShowUpdateNoticePreview(false)} />
+        </SafeAreaProvider>
+      </Modal>}
 
       <Modal
         visible={showAccountModal}

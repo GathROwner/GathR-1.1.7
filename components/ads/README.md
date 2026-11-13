@@ -4,7 +4,8 @@ This directory contains the native ad display components for GathR.
 
 ## Components
 
-- **NativeAdComponent.tsx** - Full-size native ad card (200px media height)
+- **FullSizeSdkAdCard.tsx** - Adaptive Events/Specials feed card: portrait B split layout, landscape H2 media-first layout, square/media-free fallbacks. Loaded rows size to their content.
+- **NativeAdComponent.tsx** - Other native ad card surfaces (200px media height)
 - **CompactNativeAdComponent.tsx** - Compact native ad card for callouts (200px media height)
 
 ## Architecture Overview
@@ -86,7 +87,17 @@ Always override the aspect ratio when rendering `NativeMediaView`:
 />
 ```
 
-The `{ aspectRatio: undefined }` override removes the library's default aspect ratio, allowing our fixed-height container to control the media dimensions instead.
+The `{ aspectRatio: undefined }` override removes the library's default aspect ratio, allowing our explicitly sized container to control the media dimensions instead. Preserve this override in adaptive layouts too.
+
+### Adaptive feed layouts (October 18, 2026)
+
+`FullSizeSdkAdCard` reads the loaded SDK `mediaContent.aspectRatio` before rendering media. `utils/nativeAdLayout.ts` selects portrait below 0.9, landscape above 1.1, and square between. Portrait normally uses a 43%-width media column beside the supplied icon, title, body and CTA (B); landscape uses full-width media followed by identity/CTA and body (H2). Square uses the same stacked structure. Missing/invalid ratios with video use a visible 16:9 fallback; missing media uses a compact text/icon card. No creative inference from the icon or playback resize is used.
+
+Feed ad wrappers have no fixed row height. The media frame has explicit dimensions, capped at 420 points high and at least 120 points in each dimension on supported screens. Narrow screens and large font scales use stacked portrait content. Width changes are measured by the card without replacing its SDK ad instance. Ordinary known ratios retain their proportions; extreme ratios are bounded and contained. Padding baked into a creative or unknown video proportions can still leave space.
+
+Keep one SDK ad view/media view and one registration of each supplied asset per placement. Keep Sponsored attribution and the SDK-owned AdChoices corner clear. Do not modify pool loading, ownership or list ranking to achieve presentation changes. `resizeMode="contain"` preserves image content; video fitting/controls remain SDK-owned. Other callout/compact ad components are unchanged.
+
+Rendered layout fixtures and limitations: [QA record](../../docs/qa/ad-layout-20261018/README.md).
 
 ### Media Rendering Logic
 
@@ -170,3 +181,15 @@ Verify the pool kept separate `NativeAd` instances even if their creative fields
 ### Ads take too long to appear
 Confirm the focused surface requested its pool and that the SDK returned at
 least one ad. Development builds use Google's sample native ad unit.
+
+### iOS Fabric spacing follow-up (October 19)
+
+Keep padding/border decoration on the ordinary outer card View, not NativeAdView. Fabric's SDK contentView inset can otherwise shift children twice and clip right/bottom edges. NativeAdView itself remains inset-free, full width, with all registered assets inside. The outer measurement still includes the card border/padding for getNativeAdMediaLayout. See [native spacing diagnosis and rendered comparison](../../docs/qa/ad-spacing-20261019/README.md). Video metadata is a load-time SDK snapshot; no inner-content-bound detection or orientation update event is exposed here. Preserve the reported ratio/unknown fallback rather than cropping or guessing by advertiser.
+
+### Portrait disclosure relocation (October 19)
+
+Split portrait cards now place Sponsored above the right-hand details, freeing the full-width top row for video. Media width is 47% (previously 43%), preserving the SDK ratio while adding about 25 points of height for a standard 374-point card / 9:16 creative. The details column reserves top clearance and AdChoices keeps its top-right corner. Stacked/landscape fallbacks retain their disclosure row. See [rendered comparison and scope](../../docs/qa/ad-disclosure-20261019/README.md). Callout components remain separate and await parity work.
+
+### Callout formatting parity (October 19)
+
+Normal callout SDK ads now use CompactSdkAdCard only for the iOS two-frame + 60ms mount safeguard, then render the exact FullSizeSdkAdCard shared with the lists. Readiness belongs to the current NativeAd object; replacements and unmount cancel pending attachment. The shared loading skeleton measures width before attachment without a hidden SDK view. Portrait B, landscape H2, corrected spacing and right-column Sponsored now stay in sync. EventCallout and its explicitly non-SDK emergency fallback remain unchanged. [Callout parity QA and limits](../../docs/qa/callout-ad-parity-20261019/README.md).

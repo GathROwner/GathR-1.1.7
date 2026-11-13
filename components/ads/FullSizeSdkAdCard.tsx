@@ -1,302 +1,152 @@
-import React from 'react';
-import { Image, StyleSheet, Text, View, useColorScheme } from 'react-native';
-import {
-  NativeAdView,
-  NativeAsset,
-  NativeAssetType,
-  NativeMediaView,
-} from 'react-native-google-mobile-ads';
-import { AdColors, AdSpacing, AdRadius, type AdColorScheme } from '@/constants/AdTheme';
+import React, { useRef, useState } from 'react';
+import { Image, StyleSheet, Text, View, useColorScheme, useWindowDimensions } from 'react-native';
+import { NativeAdView, NativeAsset, NativeAssetType, NativeMediaView } from 'react-native-google-mobile-ads';
+import { AdColors, AdRadius, type AdColorScheme } from '@/constants/AdTheme';
+import { getNativeAdMediaLayout, NATIVE_AD_SIDE_PADDING } from '@/utils/nativeAdLayout';
 
-type FullSizeSdkAdCardProps = {
-  nativeAd: any;
-  loading: boolean;
-  allowMedia?: boolean;
-};
+type FullSizeSdkAdCardProps = { nativeAd: any; loading: boolean; allowMedia?: boolean };
 
-export const FULL_SIZE_SDK_AD_CARD_HEIGHT = 324;
-export const FULL_SIZE_SDK_AD_ROW_HEIGHT = FULL_SIZE_SDK_AD_CARD_HEIGHT;
+const COPY_SIDE_MARGIN = 8 - NATIVE_AD_SIDE_PADDING;
 
-export default function FullSizeSdkAdCard({
-  nativeAd,
-  loading,
-  allowMedia = true,
-}: FullSizeSdkAdCardProps) {
+export default function FullSizeSdkAdCard({ nativeAd, loading, allowMedia = true }: FullSizeSdkAdCardProps) {
   const colorScheme = (useColorScheme() ?? 'light') as AdColorScheme;
   const colors = AdColors[colorScheme];
-
-  if (loading) {
-    return (
-      <View style={[styles.card, { backgroundColor: colors.cardBackground, borderColor: colors.cardBorder }]}>
-        <View style={styles.skeletonHeader}>
-          <View style={[styles.skeletonIcon, { backgroundColor: colors.skeletonBase }]} />
-          <View style={styles.skeletonHeaderText}>
-            <View style={[styles.skeletonLine, { backgroundColor: colors.skeletonBase }]} />
-            <View style={[styles.skeletonLineSmall, { backgroundColor: colors.skeletonBase }]} />
-          </View>
-        </View>
-        <View style={[styles.skeletonMedia, { backgroundColor: colors.skeletonBase }]} />
-        <View style={[styles.skeletonLine, styles.skeletonBodyLine, { backgroundColor: colors.skeletonBase }]} />
-      </View>
-    );
-  }
-
-  if (!nativeAd) {
-    return null;
-  }
-
-  const safeText = (value: unknown) => {
-    if (value === null || value === undefined) return '';
-    return typeof value === 'string' ? value : String(value);
+  const window = useWindowDimensions();
+  const [cardWidth, setCardWidth] = useState(() => Math.max(200, window.width - 16));
+  const currentAd = useRef(nativeAd);
+  currentAd.current = nativeAd;
+  const [unavailableIcon, setUnavailableIcon] = useState<{ ad: any; url: string } | null>(null);
+  const onLayout = (event: { nativeEvent: { layout: { width: number } } }) => {
+    const width = event.nativeEvent.layout.width;
+    if (width > 0) setCardWidth(previous => Math.abs(previous - width) < 1 ? previous : width);
   };
 
+  if (loading) return <View onLayout={onLayout} style={[styles.card, styles.skeletonCard, { backgroundColor: colors.cardBackground }]}>
+    <View style={[styles.skeletonMedia, { backgroundColor: colors.skeletonBase }]} />
+    <View style={[styles.skeletonLine, { backgroundColor: colors.skeletonBase }]} />
+    <View style={[styles.skeletonLine, styles.skeletonShort, { backgroundColor: colors.skeletonBase }]} />
+  </View>;
+  if (!nativeAd) return null;
+
+  const safeText = (value: unknown) => value == null ? '' : typeof value === 'string' ? value : String(value);
   const headline = safeText(nativeAd.headline);
   const advertiser = safeText(nativeAd.advertiser);
   const body = safeText(nativeAd.body);
   const cta = safeText(nativeAd.callToAction);
-  const iconUrl = nativeAd.icon?.url;
-  const hasRenderableMedia = Boolean(
-    allowMedia &&
-      nativeAd.mediaContent &&
-      (nativeAd.mediaContent.aspectRatio > 0 || nativeAd.mediaContent.hasVideoContent)
-  );
+  const iconUrl = typeof nativeAd.icon?.url === 'string' ? nativeAd.icon.url.trim() : '';
+  const iconUnavailable = unavailableIcon?.ad === nativeAd && unavailableIcon?.url === iconUrl;
+  const collapseUnavailableIcon = () => {
+    if (currentAd.current !== nativeAd) return;
+    setUnavailableIcon(previous => previous && previous.ad === nativeAd && previous.url === iconUrl
+      ? previous : { ad: nativeAd, url: iconUrl });
+  };
+  const layout = getNativeAdMediaLayout({
+    cardWidth, aspectRatio: nativeAd.mediaContent?.aspectRatio,
+    hasMediaContent: Boolean(nativeAd.mediaContent), hasVideoContent: Boolean(nativeAd.mediaContent?.hasVideoContent),
+    allowMedia, fontScale: window.fontScale,
+  });
 
-  return (
-    <NativeAdView
-      style={[
-        styles.card,
-        {
-          backgroundColor: colors.cardBackground,
-          borderColor: colors.cardBorder,
-          shadowColor: colors.shadowColor,
-          shadowOpacity: colors.shadowOpacity,
-        },
-      ]}
-      nativeAd={nativeAd}
-    >
-      <View
-        style={[
-          styles.badge,
-          {
-            backgroundColor: colors.badgeBackground,
-            borderColor: colors.badgeBorder,
-          },
-        ]}
-      >
-        <Text style={[styles.badgeText, { color: colors.badgeText }]}>Sponsored</Text>
+  const icon = iconUrl ? <NativeAsset assetType={NativeAssetType.ICON}>
+    <Image source={{ uri: iconUrl }}
+      // Keep the registered SDK asset mounted even if its remote image is unusable.
+      style={iconUnavailable ? styles.unavailableIcon : layout.split ? styles.portraitIcon : styles.icon}
+      onError={collapseUnavailableIcon}
+      onLoad={({ nativeEvent }) => {
+        const { width, height } = nativeEvent.source;
+        if (width > 0 && height > 0 && (width <= 1 || height <= 1)) collapseUnavailableIcon();
+      }} />
+  </NativeAsset> : null;
+  const title = headline ? <NativeAsset assetType={NativeAssetType.HEADLINE}>
+    <Text style={[styles.headline, { color: colors.headline }]} numberOfLines={layout.split ? 3 : 2}>{headline}</Text>
+  </NativeAsset> : null;
+  const advertiserText = advertiser ? <NativeAsset assetType={NativeAssetType.ADVERTISER}>
+    <Text style={[styles.advertiser, { color: colors.advertiser }]} numberOfLines={2}>{advertiser}</Text>
+  </NativeAsset> : null;
+  const description = body ? <NativeAsset assetType={NativeAssetType.BODY}>
+    <Text style={[styles.body, { color: colors.body }]} numberOfLines={layout.split ? 5 : 2}>{body}</Text>
+  </NativeAsset> : null;
+  const action = cta ? <NativeAsset assetType={NativeAssetType.CALL_TO_ACTION}>
+    <Text style={[styles.cta, layout.split ? styles.portraitCta : styles.footerCta,
+      { backgroundColor: colors.ctaBackground, color: colors.ctaText }]} numberOfLines={2}>{cta}</Text>
+  </NativeAsset> : null;
+  const media = layout.kind !== 'compact' ? <View testID="native-ad-media-frame"
+    style={[styles.media, { width: layout.mediaWidth, height: layout.mediaHeight, backgroundColor: colors.mediaPlaceholder }]}>
+    <NativeMediaView
+      // The frame owns dimensions, including for video creatives reporting ratio 0.
+      style={[styles.mediaView, { aspectRatio: undefined }]} resizeMode="contain"
+    />
+  </View> : null;
+  const disclosure = <View testID="native-ad-disclosure"
+    style={[styles.disclosureRow, layout.split && styles.portraitDisclosure]}>
+    <View style={[styles.badge, { backgroundColor: colors.badgeBackground, borderColor: colors.badgeBorder }]}>
+      <Text style={[styles.badgeText, { color: colors.badgeText }]}>Sponsored</Text>
+    </View>
+  </View>;
+
+  // Fabric's SDK view positions its own contentView using padding/border insets.
+  // Keep decoration on a regular View so child coordinates are not inset twice.
+  return <View onLayout={onLayout} testID="native-ad-card-frame"
+    style={[styles.card, { backgroundColor: colors.cardBackground, borderColor: colors.cardBorder,
+      shadowColor: colors.shadowColor, shadowOpacity: colors.shadowOpacity }]}>
+    <NativeAdView nativeAd={nativeAd} style={styles.sdkView}
+      testID={`native-ad-card-${layout.split ? 'portrait' : layout.kind}`}>
+    {/* Reserve the opposite corner for the SDK-owned AdChoices overlay. */}
+    {!layout.split && disclosure}
+    {layout.split ? <View style={styles.splitRow}>
+      {media}
+      <View style={[styles.splitDetails, { minHeight: layout.mediaHeight }]}>
+        {disclosure}
+        {icon}{title}{advertiserText}
+        {description && <View style={styles.portraitBody}>{description}</View>}
+        {action && <View style={styles.portraitAction}>{action}</View>}
       </View>
-
-      <View style={styles.contentContainer}>
-        <View style={styles.headerRow}>
-          <View style={styles.headerLeft}>
-            {iconUrl ? (
-              <NativeAsset assetType={NativeAssetType.ICON}>
-                <Image source={{ uri: iconUrl }} style={styles.iconImage} />
-              </NativeAsset>
-            ) : (
-              <View style={[styles.iconPlaceholder, { backgroundColor: colors.mediaPlaceholder }]} />
-            )}
-            <View style={styles.headerTextColumn}>
-              {headline ? (
-                <NativeAsset assetType={NativeAssetType.HEADLINE}>
-                  <Text style={[styles.headline, { color: colors.headline }]} numberOfLines={1}>
-                    {headline}
-                  </Text>
-                </NativeAsset>
-              ) : null}
-              {advertiser ? (
-                <NativeAsset assetType={NativeAssetType.ADVERTISER}>
-                  <Text style={[styles.advertiser, { color: colors.advertiser }]} numberOfLines={1}>
-                    {advertiser}
-                  </Text>
-                </NativeAsset>
-              ) : null}
-            </View>
-          </View>
-
-          {cta ? (
-            <NativeAsset assetType={NativeAssetType.CALL_TO_ACTION}>
-              <Text
-                style={[
-                  styles.ctaText,
-                  {
-                    backgroundColor: colors.ctaBackground,
-                    color: colors.ctaText,
-                  },
-                ]}
-              >
-                {cta}
-              </Text>
-            </NativeAsset>
-          ) : null}
+    </View> : <>
+      {media && <View style={styles.stackedMedia}>{media}</View>}
+      <View style={styles.footerRow}>
+        <View style={styles.identity}>
+          {icon}<View style={styles.identityText}>{title}{advertiserText}</View>
         </View>
-
-        <View style={[styles.mediaContainer, { backgroundColor: colors.mediaPlaceholder }]}>
-          {hasRenderableMedia ? (
-            <NativeMediaView
-              style={[styles.mediaView, { aspectRatio: undefined }]}
-              resizeMode="cover"
-            />
-          ) : iconUrl ? (
-            <Image
-              source={{ uri: iconUrl }}
-              style={styles.mediaFallbackImage}
-              resizeMode="contain"
-            />
-          ) : (
-            <Text style={[styles.mediaFallbackText, { color: colors.metaText }]}>
-              {headline.charAt(0) || 'A'}
-            </Text>
-          )}
-        </View>
-
-        {body ? (
-          <NativeAsset assetType={NativeAssetType.BODY}>
-            <Text style={[styles.body, { color: colors.body }]} numberOfLines={2}>
-              {body}
-            </Text>
-          </NativeAsset>
-        ) : null}
+        {action}
       </View>
+      {description && <View style={styles.footerBody}>{description}</View>}
+    </>}
     </NativeAdView>
-  );
+  </View>;
 }
 
 const styles = StyleSheet.create({
-  card: {
-    height: FULL_SIZE_SDK_AD_CARD_HEIGHT,
-    borderRadius: AdRadius.md,
-    overflow: 'hidden',
-    borderWidth: 1,
-    shadowOffset: { width: 0, height: 1 },
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  badge: {
-    position: 'absolute',
-    top: AdSpacing.xs,
-    left: AdSpacing.xs,
-    paddingHorizontal: AdSpacing.xs + 2,
-    paddingVertical: 2,
-    borderRadius: AdRadius.xs,
-    borderWidth: 1,
-    zIndex: 10,
-  },
-  badgeText: {
-    fontSize: 9,
-    fontWeight: '500',
-    letterSpacing: 0.2,
-  },
-  contentContainer: {
-    height: '100%',
-    padding: AdSpacing.sm,
-  },
-  headerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginTop: AdSpacing.lg,
-    marginBottom: AdSpacing.sm,
-  },
-  headerLeft: {
-    flexDirection: 'row',
-    flex: 1,
-    alignItems: 'center',
-    marginRight: AdSpacing.sm,
-  },
-  headerTextColumn: {
-    flex: 1,
-  },
-  iconImage: {
-    width: 36,
-    height: 36,
-    borderRadius: AdRadius.sm,
-    marginRight: AdSpacing.sm,
-  },
-  iconPlaceholder: {
-    width: 36,
-    height: 36,
-    borderRadius: AdRadius.sm,
-    marginRight: AdSpacing.sm,
-  },
-  headline: {
-    fontSize: 14,
-    fontWeight: '600',
-    lineHeight: 18,
-    marginBottom: 2,
-  },
-  advertiser: {
-    fontSize: 11,
-    fontWeight: '400',
-  },
-  mediaContainer: {
-    width: '100%',
-    height: 200,
-    marginBottom: AdSpacing.sm,
-    overflow: 'hidden',
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderRadius: AdRadius.md,
-  },
-  mediaView: {
-    width: '100%',
-    height: '100%',
-  },
-  mediaFallbackImage: {
-    width: 100,
-    height: 100,
-    borderRadius: AdRadius.lg,
-  },
-  mediaFallbackText: {
-    fontSize: 24,
-    fontWeight: '700',
-  },
-  body: {
-    fontSize: 14,
-    lineHeight: 20,
-  },
-  ctaText: {
-    paddingHorizontal: AdSpacing.md,
-    paddingVertical: AdSpacing.sm,
-    borderRadius: AdRadius.sm,
-    overflow: 'hidden',
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  skeletonHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: AdSpacing.sm,
-    paddingTop: AdSpacing.xl,
-    paddingBottom: AdSpacing.sm,
-  },
-  skeletonIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: AdRadius.sm,
-    marginRight: AdSpacing.sm,
-  },
-  skeletonHeaderText: {
-    flex: 1,
-  },
-  skeletonLine: {
-    height: 12,
-    borderRadius: AdRadius.xs,
-  },
-  skeletonLineSmall: {
-    height: 10,
-    width: '55%',
-    marginTop: AdSpacing.xs,
-    borderRadius: AdRadius.xs,
-  },
-  skeletonMedia: {
-    height: 200,
-    marginHorizontal: AdSpacing.sm,
-    borderRadius: AdRadius.md,
-  },
-  skeletonBodyLine: {
-    marginHorizontal: AdSpacing.sm,
-    marginVertical: AdSpacing.sm,
-    width: '78%',
-  },
+  card: { paddingVertical: 8, paddingHorizontal: NATIVE_AD_SIDE_PADDING, borderRadius: AdRadius.md, overflow: 'hidden', borderWidth: 1,
+    shadowOffset: { width: 0, height: 1 }, shadowRadius: 4, elevation: 3 },
+  sdkView: { width: '100%' },
+  disclosureRow: { minHeight: 18, paddingRight: 24, marginHorizontal: COPY_SIDE_MARGIN, marginBottom: 8, alignItems: 'flex-start' },
+  portraitDisclosure: { marginHorizontal: 0 },
+  badge: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, borderWidth: 1 },
+  badgeText: { fontSize: 10, lineHeight: 12, fontWeight: '500', letterSpacing: 0.2 },
+  media: { borderRadius: 10, overflow: 'hidden', alignSelf: 'center' },
+  mediaView: { width: '100%', height: '100%' },
+  stackedMedia: { alignItems: 'center', marginBottom: 8 },
+  splitRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
+  // The supplied assets flow beneath Sponsored without reserving a missing icon slot.
+  splitDetails: { flex: 1, minWidth: 0, marginRight: COPY_SIDE_MARGIN, justifyContent: 'flex-start' },
+  portraitIcon: { width: '56%', minWidth: 64, maxWidth: 112, aspectRatio: 1, borderRadius: 8,
+    alignSelf: 'center', marginBottom: 8 },
+  portraitBody: { marginTop: 8 },
+  portraitAction: { marginTop: 12 },
+  footerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginHorizontal: COPY_SIDE_MARGIN },
+  identity: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center' },
+  identityText: { flex: 1, minWidth: 0 },
+  icon: { width: 36, height: 36, borderRadius: 8, marginRight: 8 },
+  unavailableIcon: { width: 0, height: 0, opacity: 0 },
+  headline: { fontSize: 14, fontWeight: '600', lineHeight: 18 },
+  advertiser: { fontSize: 11, lineHeight: 15, marginTop: 2 },
+  body: { fontSize: 14, lineHeight: 20 },
+  footerBody: { marginTop: 8, marginHorizontal: COPY_SIDE_MARGIN },
+  cta: { paddingHorizontal: 12, paddingVertical: 10, borderRadius: 8, overflow: 'hidden',
+    fontSize: 13, lineHeight: 17, fontWeight: '600', textAlign: 'center' },
+  footerCta: { maxWidth: '40%' },
+  portraitCta: { alignSelf: 'stretch' },
+  skeletonCard: { minHeight: 300 },
+  skeletonMedia: { height: 200, borderRadius: 10, marginTop: 26, marginBottom: 12 },
+  skeletonLine: { height: 14, borderRadius: 4, marginBottom: 8, marginHorizontal: COPY_SIDE_MARGIN },
+  skeletonShort: { width: '70%' },
 });

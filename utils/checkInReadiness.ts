@@ -3,6 +3,9 @@ export const CHECK_IN_READINESS = {
   hereMs: 30_000,
   placeMs: 90_000,
   sampleIntervalMs: 10_000,
+  qualifiedSampleIntervalMs: 30_000,
+  qualifiedArrivalMs: 3 * 60_000,
+  departureRadiusMetres: 50,
   nearReadyWindowMs: 5_000,
   nearReadySampleIntervalMs: 2_000,
   maxSampleGapMs: 20_000,
@@ -62,6 +65,8 @@ export interface ReadinessState {
   suppressedUntilMs: number;
   revision: number;
   reason: 'locating' | 'qualifying' | 'moving' | 'driving' | 'low_accuracy' | 'stale' | 'paused';
+  lastHereQualifyingAtMs?: number;
+  lastPlaceQualifyingAtMs?: number;
 }
 export function emptyReadiness(revision = 0, suppressedUntilMs = 0): ReadinessState {
   return { hereMs: 0, placeMs: 0, anchor: null, previous: null, suppressedUntilMs, revision, reason: 'locating' };
@@ -178,14 +183,29 @@ export function advanceReadiness(
   }
   if (nowMs < state.suppressedUntilMs) return reset('driving');
   const accuracy = sample.accuracyMeters;
+  const lastHereAt = state.lastHereQualifyingAtMs ?? state.previous?.capturedAtMs ?? sample.capturedAtMs;
+  const lastPlaceAt = state.lastPlaceQualifyingAtMs
+    ?? (state.previous?.accuracyMeters !== null && state.previous?.accuracyMeters !== undefined
+      && state.previous.accuracyMeters <= CHECK_IN_READINESS.placeAccuracyMetres ? state.previous.capturedAtMs : sample.capturedAtMs);
+  const retainedHere = nowMs - lastHereAt <= CHECK_IN_READINESS.maxResumeGapMs ? state.hereMs : 0;
+  const retainedPlace = nowMs - lastPlaceAt <= CHECK_IN_READINESS.maxResumeGapMs ? state.placeMs : 0;
   if (accuracy === null || !Number.isFinite(accuracy) || accuracy < 0
-    || accuracy > CHECK_IN_READINESS.hereAccuracyMetres) return reset('low_accuracy');
+    || accuracy > CHECK_IN_READINESS.hereAccuracyMetres) {
+    // Uncertain GPS earns no time, but does not prove that a stationary person
+    // departed. Retention is bounded; the next good interval starts from zero.
+    return state.anchor
+      ? { ...state, hereMs: retainedHere, placeMs: retainedPlace, previous: sample, reason: 'low_accuracy',
+        lastHereQualifyingAtMs: lastHereAt, lastPlaceQualifyingAtMs: lastPlaceAt }
+      : { ...reset('low_accuracy'), previous: sample };
+  }
   // Unknown OS speed needs a second stable fix; never coerce it to proof of zero speed.
   if (speed === null && !state.previous) {
     return { ...reset('qualifying'), anchor: sample, previous: sample };
   }
   if (speed !== null && Number.isFinite(speed) && speed > CHECK_IN_READINESS.stationarySpeedMps) return reset('moving');
   if (speed === null && state.previous
+    && state.previous.accuracyMeters !== null && Number.isFinite(state.previous.accuracyMeters)
+    && state.previous.accuracyMeters >= 0 && state.previous.accuracyMeters <= CHECK_IN_READINESS.hereAccuracyMetres
     && readinessDistance(state.previous, sample) > CHECK_IN_READINESS.stationaryRadiusMetres) return reset('moving');
   if (state.anchor && readinessDistance(state.anchor, sample) > CHECK_IN_READINESS.stationaryRadiusMetres) return reset('moving');
   const gap = state.previous ? sample.capturedAtMs - state.previous.capturedAtMs : 0;
@@ -198,8 +218,12 @@ export function advanceReadiness(
     && state.previous.accuracyMeters <= CHECK_IN_READINESS.placeAccuracyMetres;
   return {
     ...state, anchor: state.anchor || sample, previous: sample, reason: 'qualifying',
-    hereMs: Math.min(CHECK_IN_READINESS.hereMs, state.hereMs + gap),
-    placeMs: strong ? Math.min(CHECK_IN_READINESS.placeMs, state.placeMs + gap) : 0,
+    hereMs: Math.min(CHECK_IN_READINESS.hereMs, retainedHere
+      + (state.previous?.accuracyMeters !== null && state.previous?.accuracyMeters !== undefined
+        && state.previous.accuracyMeters <= CHECK_IN_READINESS.hereAccuracyMetres ? gap : 0)),
+    placeMs: strong ? Math.min(CHECK_IN_READINESS.placeMs, retainedPlace + gap) : retainedPlace,
+    lastHereQualifyingAtMs: sample.capturedAtMs,
+    lastPlaceQualifyingAtMs: accuracy <= CHECK_IN_READINESS.placeAccuracyMetres ? sample.capturedAtMs : lastPlaceAt,
   };
 }
 

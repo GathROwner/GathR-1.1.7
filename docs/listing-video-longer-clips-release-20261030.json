@@ -1,0 +1,19 @@
+{
+  "verifiedAtUTC": "2026-10-30T17:09:32.5494018Z",
+  "commit": "1cb68ecc37e19fe665cc1067cb6a04bc7c64f765",
+  "group": "789a6729-f648-4783-850c-b784cdb4de85",
+  "id": "01a18dc9-196e-7535-9f69-41cdad5f76da",
+  "runtime": "1.1.20",
+  "platform": "ios",
+  "branch": "production",
+  "newest": true,
+  "physicalDeviceAdoption": "Not yet confirmed",
+  "focusedTests": 24,
+  "typecheck": "PASS",
+  "lint": "Zero errors; 221 existing warnings, changed coordinator files also passed",
+  "phonePlayerScreenshot": "PLAYER_PHONE_QA.png",
+  "nativeFilesUnchanged": true,
+  "nativeBuild": false,
+  "supersededInitialGroup": "b33b6bd9-1e4d-4a34-abbe-a9f15c7c1929",
+  "sourceRemoteVerified": true
+}

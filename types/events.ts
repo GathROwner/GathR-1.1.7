@@ -92,6 +92,24 @@ export interface EventTiming {
   };
   estimate?: EventScheduleEstimate | null;
   policyVersion?: string | null;
+  /** Source-advertised visitor access; never a replacement for session clocks. */
+  visitingHours?: EventVisitingHours;
+  /** Estimated dated offer availability; legacy clocks remain blank. */
+  availability?: import('./offerAvailability').MultiDayOfferAvailability;
+}
+
+export interface EventVisitingHours {
+  version: 1;
+  facilityId: string;
+  startDate: string;
+  endDate: string;
+  week: {
+    weekday: string;
+    closed: boolean;
+    segments: { open: string; close: string; overnight: boolean }[];
+  }[];
+  source: { type: 'source_explicit'; url: string; postIds: string[]; verifiedAt: string; evidence: string };
+  caveat: string;
 }
 
 // Firestore does not allow arrays nested directly in arrays, so persisted
@@ -280,6 +298,9 @@ export interface Event {
   // Event details (from Firestore metadata)
   sourceUrl?: string;
   sourceUniqueId?: string;
+  sourceUniqueIds?: string[];
+  /** Trusted producer context, persisted separately from the rich timing child. */
+  offerAvailabilityBinding?: import('./offerAvailability').AvailabilityBinding;
   facebookUrl?: string;
   eventType?: string;
   ageRestriction?: string;

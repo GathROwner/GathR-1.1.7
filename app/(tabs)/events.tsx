@@ -1,3 +1,4 @@
+import { useOtaSafetyBlock } from '../../hooks/useOtaSafetyBlock';
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import {
   View,
@@ -37,11 +38,14 @@ import FeedFilterSummary, { FEED_FILTER_SUMMARY_HEIGHT } from '../../components/
 import UpcomingDateOptions from '../../components/map/UpcomingDateOptions';
 import { useFeedBackToTop } from '../../hooks/useFeedBackToTop';
 import FallbackImage from '../../components/common/FallbackImage';
+import ListingVideoButton from '../../components/common/ListingVideoButton';
+import { listingVideoAutoplay } from '../../lib/listingVideoAutoplay';
 import TicketCtaPill from '../../components/common/TicketCtaPill';
 import EventActionLinkPill from '../../components/common/EventActionLinkPill';
 import FamilyFriendlyBadge from '../../components/common/FamilyFriendlyBadge';
 import { EventTimingBadge } from '../../components/common/EventTimingBadge';
 import { EventTimingSummaryText } from '../../components/common/EventTimingSummaryText';
+import { useViewedEventTimeStatus } from '../../hooks/useVisitingHoursView';
 import { EventSeriesContextLine } from '../../components/common/EventSeriesContextLine';
 import { VenueFavoriteButton } from '../../components/common/VenueFavoriteButton';
 import Autolink from 'react-native-autolink';
@@ -58,8 +62,8 @@ import CategoryFilterOptions from '../../components/map/CategoryFilterOptions';
 // Import components
 import EventImageLightbox from '../../components/map/EventImageLightbox';
 import VenueEventRow, { VENUE_FEED_HERO_HEIGHT } from '../../components/common/VenueEventRow';
-import { groupVenueFeedEvents, getVenueFeedKey, type VenueFeedGroup } from '../../utils/venueFeedGroups';
-import FullSizeSdkAdCard, { FULL_SIZE_SDK_AD_ROW_HEIGHT } from '../../components/ads/FullSizeSdkAdCard';
+import { createVenueFeedGrouping, getVenueFeedKey, type VenueFeedGroup } from '../../utils/venueFeedGroups';
+import FullSizeSdkAdCard from '../../components/ads/FullSizeSdkAdCard';
 import { AdColors } from '../../constants/AdTheme';
 
 // Import utilities
@@ -97,6 +101,8 @@ import { areEventIdsEquivalent } from '../../lib/api/firestoreEvents';
 import { doesEventMatchAnyInterest } from '../../utils/familyFriendly';
 import { isProvinceScopeEvent } from '../../utils/locationScope';
 import { useEventTimingMinute } from '../../hooks/useEventTimingMinute';
+import { useEventPreferenceFlags } from '../../hooks/useEventPreferenceFlags';
+import { useDeferredSavedRanking } from '../../hooks/useDeferredSavedRanking';
 import { useTapOnlyPress } from '../../hooks/useTapOnlyPress';
 import { getEventScheduleState } from '../../utils/eventTiming';
 
@@ -364,10 +370,7 @@ const EventListItem: React.FC<EventListItemProps> = ({
   const [isHeroLikeToggling, setIsHeroLikeToggling] = useState(false);
   const [isInterestedToggling, setIsInterestedToggling] = useState(false);
   const eventIdString = String(event.id);
-  const likedEvents = useUserPrefsStore((s: UserPrefsState) => s.likedEvents);
-  const interestedEvents = useUserPrefsStore((s: UserPrefsState) => s.interestedEvents);
-  const isHeroLiked = likedEvents.includes(eventIdString);
-  const isInterested = interestedEvents.includes(eventIdString);
+  const { isHeroLiked, isInterested } = useEventPreferenceFlags(eventIdString);
   const setUserPrefs = useUserPrefsStore.getState().setAll;
 
   // Tutorial awareness - only for first item
@@ -444,7 +447,7 @@ const EventListItem: React.FC<EventListItemProps> = ({
     };
   }, [event.id, isGuest]);
 
-  const timeStatus = getEventTimeStatus(event);
+  const timeStatus = useViewedEventTimeStatus(event);
   const hasVenueAddress = Boolean(event.address?.trim());
   const handleVenuePress = (e: GestureResponderEvent) => {
     e.stopPropagation();
@@ -477,7 +480,7 @@ const EventListItem: React.FC<EventListItemProps> = ({
     if (isInterestedToggling) return;
 
     setIsInterestedToggling(true);
-    const previousInterestedEvents = [...interestedEvents];
+    const previousInterestedEvents = [...useUserPrefsStore.getState().interestedEvents];
     const nextInterestedEvents = isInterested
       ? previousInterestedEvents.filter((id) => id !== eventIdString)
       : [...previousInterestedEvents, eventIdString];
@@ -869,7 +872,7 @@ const result = await userService.toggleSavedEvent(event.id, {
 
     const actionStart = Date.now();
     setIsHeroLikeToggling(true);
-    const previousLikedEvents = [...likedEvents];
+    const previousLikedEvents = [...useUserPrefsStore.getState().likedEvents];
     const nextLikedEvents = isHeroLiked
       ? previousLikedEvents.filter((id) => id !== eventIdString)
       : [...previousLikedEvents, eventIdString];
@@ -986,17 +989,28 @@ const result = await userService.toggleSavedEvent(event.id, {
               />
             </TouchableOpacity>
             
+            <ListingVideoButton event={event} overlay surface="events" />
+
             {/* Badge container positioned at top right of hero image */}
             <BadgeContainer
               isNow={timeStatus === 'now'}
               matchesUserInterests={matchesUserInterests}
-              isSaved={isSaved}
+              isSaved={bookmarked}
               isSharedByUser={event.sharedEventProvenance?.sharedByCurrentUser === true}
             />
 
             {/* Venue identity and address disclosure - top left */}
             {!grouped && <View style={styles.venueIdentityOverlay}>
-              <View style={styles.venueIdentityPill}>
+              <TouchableOpacity
+                style={styles.venueIdentityPill}
+                onPress={handleVenuePress}
+                disabled={!hasVenueAddress}
+                activeOpacity={0.7}
+                accessible={false}
+                accessibilityRole="button"
+                accessibilityLabel={`${addressExpanded ? 'Hide' : 'Show'} venue address for ${event.venue}`}
+                accessibilityState={{ expanded: addressExpanded, disabled: !hasVenueAddress }}
+              >
                 <View style={styles.venueProfileImageContainer}>
                   <FallbackImage
                     imageUrl={event.profileUrl}
@@ -1029,27 +1043,26 @@ const result = await userService.toggleSavedEvent(event.id, {
                   <Text
                     style={styles.venueIdentityText}
                     numberOfLines={1}
-                    accessibilityLabel={event.venue}
+                    onPress={handleVenuePress}
+                    disabled={!hasVenueAddress}
+                    accessibilityRole="button"
+                    accessibilityLabel={`${addressExpanded ? 'Hide' : 'Show'} venue address for ${event.venue}`}
+                    accessibilityState={{ expanded: addressExpanded, disabled: !hasVenueAddress }}
                   >
                     {event.venue}
                   </Text>
                 </GestureScrollView>
                 {hasVenueAddress && (
-                  <TouchableOpacity
-                    style={styles.venueIdentityChevronButton}
-                    onPress={handleVenuePress}
-                    activeOpacity={0.7}
-                    accessibilityRole="button"
-                    accessibilityLabel={addressExpanded ? 'Hide venue address' : 'Show venue address'}
-                  >
+                  <View style={styles.venueIdentityChevronButton} pointerEvents="none"
+                    accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
                     <MaterialIcons
                       name={addressExpanded ? 'expand-less' : 'expand-more'}
                       size={18}
                       color="#FFFFFF"
                     />
-                  </TouchableOpacity>
+                  </View>
                 )}
-              </View>
+              </TouchableOpacity>
               {hasVenueAddress && addressExpanded && (
                 <View style={styles.venueAddressOverlay}>
                   <MaterialIcons name="place" size={13} color="#FFFFFF" />
@@ -1155,6 +1168,7 @@ const result = await userService.toggleSavedEvent(event.id, {
               <>
                 <EventTimingSummaryText
                   event={event}
+                  estimateBadgeVisible
                   suffix={endDateSuffix}
                   style={styles.dateTimeText}
                   numberOfLines={2}
@@ -1619,6 +1633,11 @@ useEffect(() => {
     events: Event[];
   } | null>(null);
   
+  useOtaSafetyBlock(detailsVisible || Boolean(selectedImageData) || feedChrome.filtersExpanded);
+  useFocusEffect(useCallback(() => {
+    listingVideoAutoplay.setScope('events', !(detailsVisible || selectedImageData || feedChrome.filtersExpanded || tutorialVisible));
+    return () => listingVideoAutoplay.setScope('events', false);
+  }, [detailsVisible, selectedImageData, feedChrome.filtersExpanded, tutorialVisible]));
   const [selectedVenueEvents, setSelectedVenueEvents] = useState<Record<string, string>>({});
 
   // Read saved events, interests, and favorite venues from the centralized cache
@@ -1975,6 +1994,10 @@ setSelectedImageData({ imageUrl, event, events: groupEvents });
   const savedEventSet = useMemo(() => {
     return new Set(savedEvents || []);
   }, [savedEvents]);
+  const preferencesReady = useUserPrefsStore(state => state.lastLoadedAt !== undefined);
+  const { rankingSavedIds, rankingRevision, refreshSavedRanking, refreshing } = useDeferredSavedRanking(
+    savedEvents, JSON.stringify([user?.uid ?? null, filterCriteria.eventFilters, filterCriteria.search]), preferencesReady,
+  );
 
   const userInterestLowerSet = useMemo(() => {
     return new Set((userInterests || []).map(interest => interest.toLowerCase()));
@@ -2009,6 +2032,7 @@ setSelectedImageData({ imageUrl, event, events: groupEvents });
     {
       useNativeDriver: false,
       listener: (event: any) => {
+        listingVideoAutoplay.motion('events');
         const currentScrollY = event.nativeEvent.contentOffset.y;
         const scrollDiff = currentScrollY - lastScrollY.current;
         
@@ -2146,7 +2170,7 @@ setSelectedImageData({ imageUrl, event, events: groupEvents });
     const unsavedEvents: ScoredEvent[] = [];
 
     for (const event of events) {
-      const isSaved = isEventSaved(event);
+      const isSaved = rankingSavedIds.has(String(event.id));
       const timeStatus = getEventTimeStatusFast(event, eventTimeContext);
       const matchesInterest = matchesUserInterests(event);
       const provinceWide = isProvinceScopeEvent(event);
@@ -2238,7 +2262,7 @@ setSelectedImageData({ imageUrl, event, events: groupEvents });
     return measureListTabStage('events', 'sort_viewport', {
       inputCount: filteredViewportEvents.length,
     }, () => sortAndPrioritizeEvents(filteredViewportEvents));
-  }, [filteredViewportEvents, userLocation, userInterestLowerSet, savedEventSet, favoriteVenueSet, eventTimeContext]);
+  }, [filteredViewportEvents, userLocation, userInterestLowerSet, rankingSavedIds, favoriteVenueSet, eventTimeContext]);
 
   // State for pagination of outside-viewport events
   const [outsideViewportLoadCount, setOutsideViewportLoadCount] = useState(10);
@@ -2266,22 +2290,23 @@ setSelectedImageData({ imageUrl, event, events: groupEvents });
       const eventsToSort = filteredOutsideViewportEvents.slice(0, maxToSort);
       return sortAndPrioritizeEvents(eventsToSort);
     });
-  }, [filteredOutsideViewportEvents, outsideViewportLoadCount, userLocation, userInterestLowerSet, savedEventSet, favoriteVenueSet, eventTimeContext]);
+  }, [filteredOutsideViewportEvents, outsideViewportLoadCount, userLocation, userInterestLowerSet, rankingSavedIds, favoriteVenueSet, eventTimeContext]);
 
   // Group only already-filtered records; preserve ranked venue order and expose every matching sibling.
-  const viewportVenueGroups = useMemo(() => groupVenueFeedEvents(sortedViewportEvents,
-    [...filteredViewportEvents, ...filteredOutsideViewportEvents]),
-    [sortedViewportEvents, filteredViewportEvents, filteredOutsideViewportEvents]);
-  const outsideVenueGroups = useMemo(() => {
-    const visibleKeys = new Set(viewportVenueGroups.map(group => group.key));
-    return groupVenueFeedEvents([...sortedOutsideViewportEvents, ...filteredOutsideViewportEvents])
-      .filter(group => !visibleKeys.has(group.key));
-  }, [sortedOutsideViewportEvents, filteredOutsideViewportEvents, viewportVenueGroups]);
+  const venueGrouping = useMemo(() => createVenueFeedGrouping(filteredViewportEvents, filteredOutsideViewportEvents),
+    [filteredViewportEvents, filteredOutsideViewportEvents]);
+  const viewportVenueGroups = useMemo(() => venueGrouping.groupViewport(sortedViewportEvents),
+    [venueGrouping, sortedViewportEvents]);
+  const outsideVenuePage = useMemo(() => venueGrouping.groupOutside(
+    sortedOutsideViewportEvents, viewportVenueGroups, outsideViewportLoadCount),
+    [venueGrouping, sortedOutsideViewportEvents, viewportVenueGroups, outsideViewportLoadCount]);
+  const outsideVenueGroups = outsideVenuePage.groups;
+  const outsideVenueCount = outsideVenuePage.totalCount;
 
   // Request one distinct NativeAd instance for every placement in the currently
   // exposed page. The target grows with pagination instead of stopping at four.
   const displayedOutsideViewportEventCount = Math.min(
-    outsideVenueGroups.length,
+    outsideVenueCount,
     outsideViewportLoadCount
   );
   const regularEventAdPlacements =
@@ -2340,7 +2365,7 @@ setSelectedImageData({ imageUrl, event, events: groupEvents });
     return measureListTabStage('events', 'build_list_with_ads', {
       ready: isFocusedContentReady,
       viewportCount: viewportVenueGroups.length,
-      outsideViewportCount: outsideVenueGroups.length,
+      outsideViewportCount: outsideVenueCount,
       nativeAdsCount: nativeAds.length,
     }, () => {
       if (!isFocusedContentReady) {
@@ -2386,7 +2411,7 @@ setSelectedImageData({ imageUrl, event, events: groupEvents });
     }
 
     // Add outside-viewport events (paginated) with ads interspersed
-    const outsideViewportToShow = outsideVenueGroups.slice(0, outsideViewportLoadCount);
+    const outsideViewportToShow = outsideVenueGroups;
     outsideViewportToShow.forEach((group, index) => {
       result.push({ type: 'event', data: group.events[0], group });
 
@@ -2408,7 +2433,7 @@ setSelectedImageData({ imageUrl, event, events: groupEvents });
     });
 
     // Low-count fallback for viewport section: if 1–3 events, append one ad at the end of viewport section
-    if (viewportVenueGroups.length > 0 && viewportVenueGroups.length < adFrequency && nativeAds.length > 0 && outsideVenueGroups.length === 0) {
+    if (viewportVenueGroups.length > 0 && viewportVenueGroups.length < adFrequency && nativeAds.length > 0 && outsideVenueCount === 0) {
       const selectedAd = validAds[0];
       if (selectedAd) {
         result.push({
@@ -2426,13 +2451,13 @@ setSelectedImageData({ imageUrl, event, events: groupEvents });
         ready: true,
         itemCount: result.length,
         viewportCount: viewportVenueGroups.length,
-        outsideViewportCount: outsideVenueGroups.length,
+        outsideViewportCount: outsideVenueCount,
         nativeAdsCount: nativeAds.length,
       });
 
       return result;
     });
-  }, [getAdListKey, isFocusedContentReady, viewportVenueGroups, outsideVenueGroups, filteredOutsideViewportEvents.length, nativeAds, outsideViewportLoadCount]);
+  }, [getAdListKey, isFocusedContentReady, viewportVenueGroups, outsideVenueGroups, outsideVenueCount, filteredOutsideViewportEvents.length, nativeAds]);
 
   // Pre-compute lookup Sets for O(1) access during render
   const interestMatchSet = useMemo(() => {
@@ -2797,6 +2822,9 @@ setSelectedImageData({ imageUrl, event, events: groupEvents });
       {/* Event list with ads */}
      {/* Event list with ads */}
       <FlatList
+          // Applying deferred ranking starts at the top with fresh row measurements.
+          // Saving while browsing leaves this key and the visible rows in place.
+          key={`saved-ranking-${rankingRevision}`}
           ref={flatListRef}
           style={styles.eventList}
           data={isFocusedContentReady ? eventsWithAds : []}
@@ -2804,6 +2832,8 @@ setSelectedImageData({ imageUrl, event, events: groupEvents });
           onViewableItemsChanged={visibleVenueGroups.onViewableItemsChanged}
           viewabilityConfig={visibleVenueGroups.viewabilityConfig}
           onScroll={handleScroll}
+          onRefresh={refreshSavedRanking}
+          refreshing={refreshing}
           onScrollBeginDrag={backToTop.onScrollBeginDrag}
           onScrollEndDrag={backToTop.onScrollEndDrag}
           onMomentumScrollBegin={backToTop.onMomentumScrollBegin}
@@ -3022,11 +3052,9 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   adContainer: {
-    height: FULL_SIZE_SDK_AD_ROW_HEIGHT,
-    // marginHorizontal removed - inner component already has margins
+    // The shared card owns its border; keep media insets equal across both lists.
     marginBottom: 12,
     borderRadius: 16,
-    borderWidth: 2,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.08,
@@ -3156,7 +3184,7 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     borderWidth: 1,
     borderColor: '#DDE1E7',
-    marginHorizontal: 6,
+    marginHorizontal: 0,
     marginBottom: 10,
     ...(Platform.OS === 'android' ? {
       elevation: 0,

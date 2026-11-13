@@ -4,6 +4,7 @@ import renderer, { act } from 'react-test-renderer';
 import { createLegacyTimingContract } from '../../../utils/eventTiming';
 import { EventTimingSummaryText } from '../EventTimingSummaryText';
 import { participationArea } from '../../../utils/__tests__/fixtures/areaParticipation';
+jest.mock('../../../store/mapStore', () => ({ useMapStore: (selector: any) => selector({filterCriteria:{eventFilters:{timeFilter:'today'},specialFilters:{timeFilter:'today'}}}) }));
 
 const estimatedEndEvent = () => {
   const timing = createLegacyTimingContract(
@@ -28,6 +29,14 @@ const estimatedEndEvent = () => {
 };
 
 describe('EventTimingSummaryText', () => {
+  it('uses compact carousel clocks with date context and retains endpoint information controls', () => {
+    let component: renderer.ReactTestRenderer;
+    act(() => { component = renderer.create(<EventTimingSummaryText event={estimatedEndEvent()} carousel />); });
+    const display = JSON.stringify(component!.toJSON());
+    expect(display).toContain('Sep 5 · '); expect(display).toContain('7PM'); expect(display).toContain('9PM');
+    expect(component!.root.findByProps({ testID: 'estimated-end-info' })).toBeTruthy();
+    act(() => component!.unmount());
+  });
   it('shows the original date range and an opening-hours check only for an affirmative unknown-clock hunt', () => {
     let component: renderer.ReactTestRenderer;
     act(() => { component = renderer.create(<EventTimingSummaryText event={participationArea()} />); });

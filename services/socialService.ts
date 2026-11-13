@@ -7,6 +7,7 @@ import {
   type Unsubscribe,
 } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
+import { Platform } from 'react-native';
 
 import {
   app,
@@ -19,6 +20,7 @@ import {
 import { amplitudeTrack } from '../lib/amplitudeAnalytics';
 import { SOCIAL_RELEASE_TWO_ENABLED } from '../types/social';
 import { getSocialAppCheckToken } from './appCheckService';
+import { CHECK_IN_READINESS } from '../utils/checkInReadiness';
 import type {
   BlockProjection,
   CheckInInput,
@@ -179,35 +181,34 @@ async function callAppCheckedSocial<Request, Response>(
 ): Promise<Response> {
   const user = auth.currentUser;
   if (!user) throw new SocialServiceError('unauthenticated', 'Sign in to use this feature.');
-  const appCheckToken = await getSocialAppCheckToken();
-
-  // Internal Preview OTAs can intentionally use the Production web Firebase
-  // project from a staging-registered native shell. In that configuration an
-  // App Check token must not be attached because it belongs to a different
-  // Firebase app. Let the Firebase callable SDK carry the matching web Auth
-  // context instead of hand-building an unattested request.
-  if (!appCheckToken) {
-    if (options.signal?.aborted) {
-      const error = new Error('The operation was aborted.');
-      error.name = 'AbortError';
-      throw error;
-    }
-    return (await httpsCallable<Request, Response>(functions, name, {
-      timeout: options.timeoutMs ?? 30_000,
-    })(data)).data;
-  }
-
-  const idToken = await user.getIdToken();
+  const abortError = new Error('The social request was canceled or timed out. Try again shortly.');
+  abortError.name = 'AbortError';
+  if (options.signal?.aborted) throw abortError;
   const controller = new AbortController();
   const abortFromCaller = () => controller.abort();
-  if (options.signal?.aborted) {
-    controller.abort();
-  } else {
-    options.signal?.addEventListener('abort', abortFromCaller);
-  }
+  let rejectAbort: (error: Error) => void = () => undefined;
+  const aborted = new Promise<never>((_resolve, reject) => { rejectAbort = reject; });
+  // A token provider may remain pending after cancellation. Its eventual result
+  // must never start a late HTTP request or block the observer's next GPS fix.
+  void aborted.catch(() => undefined);
+  const onAbort = () => rejectAbort(abortError);
+  controller.signal.addEventListener('abort', onAbort);
+  options.signal?.addEventListener('abort', abortFromCaller);
   const timeout = setTimeout(() => controller.abort(), options.timeoutMs ?? 30_000);
+  const withinDeadline = <T>(operation: () => Promise<T>): Promise<T> => controller.signal.aborted
+    ? Promise.reject(abortError)
+    : Promise.race([operation(), aborted]);
   try {
-    const response = await fetch(callableUrl(name), {
+    const appCheckToken = await withinDeadline(() => getSocialAppCheckToken());
+    // Preserve the intentional Preview compatibility path; token failure must
+    // never fall back to an unattested request in Production.
+    if (!appCheckToken) {
+      return (await withinDeadline(() => httpsCallable<Request, Response>(functions, name, {
+        timeout: options.timeoutMs ?? 30_000,
+      })(data))).data;
+    }
+    const idToken = await withinDeadline(() => user.getIdToken());
+    const response = await withinDeadline(() => fetch(callableUrl(name), {
       method: 'POST',
       headers: {
         authorization: `Bearer ${idToken}`,
@@ -216,8 +217,8 @@ async function callAppCheckedSocial<Request, Response>(
       },
       body: JSON.stringify({ data }),
       signal: controller.signal,
-    });
-    const payload = await response.json() as {
+    }));
+    const payload = await withinDeadline(() => response.json()) as {
       result?: Response;
       data?: Response;
       error?: { status?: string; message?: string; details?: unknown };
@@ -232,6 +233,7 @@ async function callAppCheckedSocial<Request, Response>(
     return (payload.result ?? payload.data) as Response;
   } finally {
     clearTimeout(timeout);
+    controller.signal.removeEventListener('abort', onAbort);
     options.signal?.removeEventListener('abort', abortFromCaller);
   }
 }
@@ -405,7 +407,9 @@ function normalizeLocationCaptureTime<T extends { capturedAtMs: number }>(input:
 
 export const recordCheckInReadinessSample = async (input: CheckInReadinessSampleInput, options: { signal?: AbortSignal } = {}) =>
   callSocial<CheckInReadinessSampleInput, CheckInReadinessReceipt>(
-    'recordCheckInReadinessSampleCallable', normalizeLocationCaptureTime(input), { ...options, timeoutMs: 8_000 }
+    'recordCheckInReadinessSampleCallable', normalizeLocationCaptureTime({ ...input,
+      ...(Platform.OS === 'ios' ? { arrivalPolicy: 'verified_stop_v1' as const } : {}) }),
+    { ...options, timeoutMs: CHECK_IN_READINESS.maxSampleGapMs }
   );
 
 export const bindCheckInReadiness = async (input: BindCheckInReadinessInput) =>
@@ -418,9 +422,13 @@ export const discoverNearbyCheckInPlaces = async (input: {
   longitude: number;
   accuracyMeters: number;
   capturedAtMs: number;
-}) => callSocial<typeof input, NearbyCheckInPlacesResult>(
+  /** Fetch a bounded nearby pool while the stationary countdown is running. */
+  preparation?: true;
+  renewPreparationPool?: { poolId: string; readinessSessionId: string };
+}, options: { signal?: AbortSignal; timeoutMs?: number } = {}) => callSocial<typeof input, NearbyCheckInPlacesResult>(
   'discoverNearbyCheckInPlacesCallable',
-  normalizeLocationCaptureTime(input)
+  normalizeLocationCaptureTime(input),
+  options
 );
 
 export const listNearbyCanonicalCheckInVenues = async (input: {
@@ -428,13 +436,17 @@ export const listNearbyCanonicalCheckInVenues = async (input: {
   longitude: number;
   accuracyMeters: number;
   capturedAtMs: number;
-}) => callSocial<typeof input, NearbyCheckInPlacesResult>(
+  preparation?: true;
+}, options: { signal?: AbortSignal; timeoutMs?: number } = {}) => callSocial<typeof input, NearbyCheckInPlacesResult>(
   'listNearbyCanonicalCheckInVenuesCallable',
-  normalizeLocationCaptureTime(input)
+  normalizeLocationCaptureTime(input),
+  options
 );
 
 export const createPrivateCheckInPlaceCandidate = async (input: {
   label: string;
+  /** Reuse the server-qualified arrival; never refresh the timestamp of an old fix. */
+  readinessSessionId?: string;
   latitude: number;
   longitude: number;
   accuracyMeters: number;

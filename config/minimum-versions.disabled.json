@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "ios": {
+    "enabled": false,
+    "storeReleaseAvailable": false,
+    "minimumVersion": "1.1.20",
+    "minimumOSVersion": "15.1"
+  },
+  "android": {
+    "enabled": false,
+    "storeReleaseAvailable": false,
+    "minimumVersion": "1.1.20",
+    "minimumApiLevel": 24
+  }
+}

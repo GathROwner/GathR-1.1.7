@@ -11,27 +11,43 @@ import {
 } from 'react-native';
 
 import type { Event } from '../../types/events';
-import { getEventTimingBadge, getEventTimingDisclosure } from '../../utils/eventTiming';
+import { getEventTimingBadge, getEventTimingDisclosure, getEventScheduleState, getEventTiming } from '../../utils/eventTiming';
+import { getContinuousCampaignRange } from '../../utils/campaignTimingPresentation';
+import { useVisitingHoursView } from '../../hooks/useVisitingHoursView';
 
 interface EventTimingBadgeProps {
   event: Pick<Event, 'startDate' | 'startTime' | 'endDate' | 'endTime' | 'timing'>;
   compact?: boolean;
   carousel?: boolean;
+  remainingCampaignDates?: boolean;
   onInfoPress?: () => void;
   showInfoIndicator?: boolean;
   style?: StyleProp<ViewStyle>;
+}
+
+export function getCarouselTimingBadge(event: EventTimingBadgeProps['event'], viewedDate?: string | null) {
+  const originalBadge = getEventTimingBadge(event, new Date(), viewedDate);
+  return originalBadge?.text === 'STATUS\nUNKNOWN'
+    && getEventScheduleState(event).code === 'unknown_cutoff_passed'
+    && getEventTiming(event).schedule.end.status === 'unknown'
+    ? { ...originalBadge, text: 'END\nUNKNOWN', accessibilityLabel: 'End time not provided',
+      infoTitle: 'End time not provided', tone: 'caution' as const }
+    : originalBadge;
 }
 
 export function EventTimingBadge({
   event,
   compact = false,
   carousel = false,
+  remainingCampaignDates = false,
   onInfoPress,
   showInfoIndicator = true,
   style,
 }: EventTimingBadgeProps) {
-  const badge = getEventTimingBadge(event);
-  if (!badge) return null;
+  const viewedDate = useVisitingHoursView(event);
+  // Only this unknown-finish state gets carousel wording; other unknowns retain their meaning.
+  const badge = carousel ? getCarouselTimingBadge(event, viewedDate) : getEventTimingBadge(event, new Date(), viewedDate);
+  if (!badge || ((carousel || remainingCampaignDates) && getContinuousCampaignRange(event))) return null;
   const hasInfoIndicator = Boolean(badge.infoTitle && showInfoIndicator);
 
   const badgeStyle = [
@@ -64,7 +80,7 @@ export function EventTimingBadge({
   );
 
   if (hasInfoIndicator) {
-    const disclosure = getEventTimingDisclosure(event);
+    const disclosure = getEventTimingDisclosure(event, new Date(), viewedDate);
     const handleInfoPress = (pressEvent: GestureResponderEvent) => {
       pressEvent.stopPropagation?.();
       if (onInfoPress) {
