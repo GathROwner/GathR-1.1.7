@@ -1,0 +1,16 @@
+{
+  "method": "Node host microbenchmark of the installed Supercluster index, not iPhone timing",
+  "venues": 1000,
+  "default": {
+    "indexBuildMedianMs": 2.219100000000026,
+    "indexBuildMaxMs": 25.36239999999998,
+    "cachedQueryMeanMs": 0.17499700000000018,
+    "clustersAtZoom15": 1000
+  },
+  "hybrid": {
+    "indexBuildMedianMs": 2.688199999999995,
+    "indexBuildMaxMs": 4.079499999999996,
+    "cachedQueryMeanMs": 0.23049900000000037,
+    "clustersAtZoom15": 500
+  }
+}

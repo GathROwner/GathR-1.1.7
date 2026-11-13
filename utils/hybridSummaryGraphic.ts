@@ -16,12 +16,18 @@ function graphic(width: number, height: number, content: string, label: string):
   return { width, height, label, xml: `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">${content}</svg>` };
 }
 
-/** Entire pills, including glyphs and dividers, are drawn by the SVG renderer before Mapbox captures them. */
-export function venueSummaryGraphic(categories: HybridCategory[], overflow: number, hiddenNew: boolean, accent: string, categoryIcon: (category: string) => string): HybridGraphic {
+export function venueSummarySize(categories: HybridCategory[], overflow: number) {
   const height = p(26), size = p(11), gap = p(3), padding = p(7);
   const widths = categories.map(c => padding * 2 + size + gap + textWidth(number(c.count), size));
   if (overflow) widths.push(p(28));
   const width = p(12) + widths.reduce((a, b) => a + b, 0);
+  return { width, height, widths };
+}
+
+/** Entire pills, including glyphs and dividers, are drawn by the SVG renderer before Mapbox captures them. */
+export function venueSummaryGraphic(categories: HybridCategory[], overflow: number, hiddenNew: boolean, accent: string, categoryIcon: (category: string) => string): HybridGraphic {
+  const { width, height, widths } = venueSummarySize(categories, overflow);
+  const size = p(11), gap = p(3), padding = p(7);
   let x = p(6);
   let content = `<rect x="${p(1)}" y="${p(1)}" width="${width - p(2)}" height="${height - p(2)}" rx="${height / 2}" fill="#FFFEFA" stroke="${accent}" stroke-width="${p(2)}"/>`;
   categories.forEach((c, at) => {

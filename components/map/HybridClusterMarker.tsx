@@ -7,6 +7,7 @@ import { getHasNewContent, useClusterInteractionStore } from '../../store/cluste
 import { buildHybridVenues, HYBRID_ACCENTS, visibleHybridCategories } from '../../utils/hybridClusterPresentation';
 import { clusterSummaryGraphic, countGraphic, friendBadgeGraphic, venueSummaryGraphic } from '../../utils/hybridSummaryGraphic';
 import HybridSummaryImage from './HybridSummaryImage';
+import { hybridMarkerGeometry } from '../../utils/hybridMarkerGeometry';
 
 type Props = {
   cluster: Cluster; isActive: boolean; isSelected: boolean; isReady: boolean; isProcessing: boolean;
@@ -19,8 +20,8 @@ type Props = {
 const p = (value: number) => value * .9;
 
 function Segments({ diameter, count, active = -1, staticRing = false }: { diameter: number; count: number; active?: number; staticRing?: boolean }) {
-  // Fill the old empty gutter inward; the arc now meets the photo's thin border.
-  const stroke = staticRing ? p(1.25) : p(8), radius = diameter / 2 - stroke / 2, circumference = 2 * Math.PI * radius;
+  // The thinner arc still meets the photo's existing white border.
+  const stroke = staticRing ? p(1.25) : 3.15, radius = diameter / 2 - stroke / 2, circumference = 2 * Math.PI * radius;
   // Individual arcs cease to be useful in large clusters; the numeric total remains explicit.
   const segments = count > 12 ? 1 : Math.max(1, count), step = circumference / segments, gap = segments === 1 ? 0 : p(staticRing ? 1.5 : 3.2);
   return <Svg width={diameter} height={diameter} style={StyleSheet.absoluteFill} pointerEvents="none">
@@ -46,7 +47,8 @@ export default function HybridClusterMarker({ cluster, isActive, isSelected, isR
   const [failedPhoto, setFailedPhoto] = useState('');
   const pulse = useRef(new Animated.Value(0)).current;
   const photoSize = p(({ low: 36, medium: 40, high: 44 }[cluster.interestLevel] || 36) * (isSelected ? 1.2 : 1));
-  const ringSize = photoSize + p(16), center = ringSize / 2, radius = center - p(.5);
+  const geometry = useMemo(() => hybridMarkerGeometry(venues, photoSize, cluster.eventCount, cluster.specialCount, !!cluster.containsCityLevelEvent), [venues, photoSize, cluster.eventCount, cluster.specialCount, cluster.containsCityLevelEvent]);
+  const { ringSize, center, radius } = geometry;
   const accent = HYBRID_ACCENTS[index % HYBRID_ACCENTS.length];
   const timing = cluster.timeStatus === 'now' ? '#34A853' : cluster.timeStatus === 'today' ? '#FBBC05' : '#9AA0A6';
 
@@ -73,14 +75,10 @@ export default function HybridClusterMarker({ cluster, isActive, isSelected, isR
   const rings = Math.max(1, venues.length);
   const venueDigits = String(venues.length).length;
   const summaryDiameter = p(venueDigits > 2 ? 30 : 24);
-  const friendAngle = (at: number) => rings === 1 ? -Math.PI / 4 : -Math.PI / 2 + 2 * Math.PI * (at + .5) / rings;
-  // Keep the summaries close to the ring; reserve more space only for an attached badge.
-  const photoTopGap = Math.max(visible.length ? p(4) : 0, ...attachedFriends.map(v => p(9.5) - center - (radius + p(18)) * Math.sin(friendAngle(v.index))));
-  const photoBottomGap = Math.max(p(4), ...attachedFriends.map(v => center + (radius + p(18)) * Math.sin(friendAngle(v.index)) + p(9.5) - ringSize));
-
-  const friendWidth = Math.max(0, ...attachedFriends.map(v => 2 * (Math.abs((radius + p(18)) * Math.cos(friendAngle(v.index))) + friendBadgeGraphic(v.friendCount).width / 2)));
-  return <View testID="hybrid-cluster-marker" pointerEvents="none" style={[s.marker, { minWidth: friendWidth, opacity: !isReady ? .4 : isProcessing ? .6 : 1 }]}
+  const friendAngle = geometry.angle;
+  return <View testID="hybrid-cluster-marker" pointerEvents="none" style={[s.marker, { width: geometry.width, height: geometry.height, opacity: !isReady ? .4 : isProcessing ? .6 : 1 }]}
     accessibilityLabel={`${current.venue.venue}, venue ${index + 1} of ${venues.length}; ${current.categories.map(c => `${c.category} ${c.count}`).join(', ')}; cluster totals ${cluster.eventCount} events, ${cluster.specialCount} specials`}>
+      <View testID="hybrid-header-slot" style={{ height: geometry.headerHeight, alignItems: 'center', justifyContent: 'center' }}>
       {visible.length > 0 && (snapshotMode ? <View testID="hybrid-venue-summary"><HybridSummaryImage graphic={venueSummaryGraphic(visible, overflow, hiddenNew, accent, categoryIcon)} onLoad={onSnapshotChange} /></View> : <View testID="hybrid-venue-summary" style={[s.venueSummary, { borderColor: accent }]}>
         {visible.map((item, at) => <View key={item.key} style={[s.category, at > 0 && s.sectionBorder]} accessibilityLabel={`${item.category}: ${item.count}${item.isNew ? ', new content' : ''}`}>
           <View><MaterialIcons name={categoryIcon(item.category) as any} size={p(11)} color={item.type === 'special' ? '#258446' : '#208EE8'} />{item.isNew && <View testID="hybrid-category-new" style={s.newDot} />}</View>
@@ -88,10 +86,11 @@ export default function HybridClusterMarker({ cluster, isActive, isSelected, isR
         </View>)}
         {overflow > 0 && <View style={[s.category, s.sectionBorder]} accessibilityLabel={`${overflow} more categories; open the existing cluster callout for all events`}><MaterialIcons name="more-horiz" size={p(14)} color="#637B88" />{hiddenNew && <View style={s.newDot} />}</View>}
       </View>)}
-      <View testID="hybrid-photo-ring" onLayout={e => onPhotoLayout?.({ y: e.nativeEvent.layout.y, height: e.nativeEvent.layout.height })} style={{ width: ringSize, height: ringSize, marginTop: photoTopGap, marginBottom: photoBottomGap }}>
+      </View>
+      <View testID="hybrid-photo-ring" onLayout={e => onPhotoLayout?.({ y: e.nativeEvent.layout.y, height: e.nativeEvent.layout.height })} style={{ width: ringSize, height: ringSize, marginTop: geometry.topGap, marginBottom: geometry.bottomGap }}>
         {!snapshotMode && <Animated.View style={[StyleSheet.absoluteFillObject, { borderRadius: center, borderWidth: p(3), borderColor: timing, opacity: reduceMotionEnabled || !isActive || cluster.timeStatus === 'future' ? .25 : pulse.interpolate({ inputRange: [0, 1], outputRange: [.45, 0] }), transform: [{ scale: pulse.interpolate({ inputRange: [0, 1], outputRange: [1, 1.8] }) }] }]} />}
         <Segments diameter={ringSize} count={rings} active={index} />
-        <View testID="hybrid-photo-frame" style={[s.photo, cluster.interestLevel === 'high' && s.interestPhoto, { left: p(8), top: p(8), width: photoSize, height: photoSize, borderRadius: photoSize / 2 }]}>
+        <View testID="hybrid-photo-frame" style={[s.photo, cluster.interestLevel === 'high' && s.interestPhoto, { left: geometry.stroke, top: geometry.stroke, width: photoSize, height: photoSize, borderRadius: photoSize / 2 }]}>
           {current.photo && failedPhoto !== current.photo ? <Image testID="hybrid-venue-photo" source={{ uri: current.photo }} fadeDuration={0} style={{ width: photoSize - p(2), height: photoSize - p(2) }} resizeMode="cover" onLoad={onSnapshotChange} onError={() => setFailedPhoto(current.photo)} /> : snapshotMode ? <HybridSummaryImage graphic={countGraphic(current.venue.venue.split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]).join('').toUpperCase(), p(14), '#143247')} onLoad={onSnapshotChange} /> : <Text maxFontSizeMultiplier={1.2} style={s.initials}>{current.venue.venue.split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]).join('').toUpperCase()}</Text>}
         </View>
         <Svg width={ringSize} height={ringSize} style={[StyleSheet.absoluteFill, { overflow: 'visible' }]} pointerEvents="none">
