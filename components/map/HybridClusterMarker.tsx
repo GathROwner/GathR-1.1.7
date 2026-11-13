@@ -8,7 +8,7 @@ import { buildHybridVenues, HYBRID_ACCENTS, visibleHybridCategories } from '../.
 
 type Props = {
   cluster: Cluster; isActive: boolean; isSelected: boolean; isReady: boolean; isProcessing: boolean;
-  reduceMotionEnabled: boolean; compact?: boolean;
+  reduceMotionEnabled: boolean;
   categoryIcon: (category: string) => string;
 };
 
@@ -29,7 +29,7 @@ function FriendBadge({ count }: { count: number }) {
 }
 
 /** Presentation only. The surrounding map touchable continues to own every cluster tap. */
-export default function HybridClusterMarker({ cluster, isActive, isSelected, isReady, isProcessing, reduceMotionEnabled, compact = false, categoryIcon }: Props) {
+export default function HybridClusterMarker({ cluster, isActive, isSelected, isReady, isProcessing, reduceMotionEnabled, categoryIcon }: Props) {
   const interactions = useClusterInteractionStore(state => state.interactions);
   const venues = useMemo(() => buildHybridVenues(cluster, (key, ids) => interactions.has(key) && getHasNewContent(key, ids)), [cluster, interactions]);
   const venueKey = venues.map(v => v.key).join('|');
@@ -44,19 +44,19 @@ export default function HybridClusterMarker({ cluster, isActive, isSelected, isR
   const timing = cluster.timeStatus === 'now' ? '#34A853' : cluster.timeStatus === 'today' ? '#FBBC05' : '#9AA0A6';
 
   useEffect(() => {
-    if (!isActive || reduceMotionEnabled || compact || venues.length < 2 || isSelected) return;
+    if (!isActive || reduceMotionEnabled || venues.length < 2 || isSelected) return;
     const timer = setInterval(() => setActiveKey(key => { const at = Math.max(0, venues.findIndex(v => v.key === key)); return venues[(at + 1) % venues.length].key; }), 6000);
     return () => clearInterval(timer);
-  }, [venueKey, venues, isActive, isSelected, compact, reduceMotionEnabled]);
+  }, [venueKey, venues, isActive, isSelected, reduceMotionEnabled]);
   useEffect(() => {
     pulse.stopAnimation(); pulse.setValue(0);
-    if (!isActive || compact || reduceMotionEnabled || cluster.timeStatus === 'future') return;
+    if (!isActive || reduceMotionEnabled || cluster.timeStatus === 'future') return;
     const animation = Animated.loop(Animated.sequence([
       Animated.timing(pulse, { toValue: 1, duration: 1600, useNativeDriver: true }),
       Animated.delay(1000), Animated.timing(pulse, { toValue: 0, duration: 0, useNativeDriver: true }),
     ]));
     animation.start(); return () => animation.stop();
-  }, [pulse, compact, isActive, reduceMotionEnabled, cluster.timeStatus]);
+  }, [pulse, isActive, reduceMotionEnabled, cluster.timeStatus]);
   if (!current) return null;
   const { visible, overflow, hiddenNew } = visibleHybridCategories(current.categories);
   // Bound the number of attached badges; others appear as their venue rotates.
@@ -66,12 +66,12 @@ export default function HybridClusterMarker({ cluster, isActive, isSelected, isR
   const venueDigits = String(venues.length).length;
   const summaryDiameter = venueDigits > 2 ? 30 : 24;
   const friendAngle = (at: number) => rings === 1 ? -Math.PI / 4 : -Math.PI / 2 + 2 * Math.PI * (at + .5) / rings;
-  const photoTopGap = Math.max(visible.length ? 12 : 0, ...attachedFriends.map(v => 9.5 - center - (radius + 18) * Math.sin(friendAngle(v.index))));
-  const photoBottomGap = Math.max(16, ...attachedFriends.map(v => center + (radius + 18) * Math.sin(friendAngle(v.index)) + 13.5 - ringSize));
+  // Keep the summaries close to the ring; reserve more space only for an attached badge.
+  const photoTopGap = Math.max(visible.length ? 4 : 0, ...attachedFriends.map(v => 9.5 - center - (radius + 18) * Math.sin(friendAngle(v.index))));
+  const photoBottomGap = Math.max(4, ...attachedFriends.map(v => center + (radius + 18) * Math.sin(friendAngle(v.index)) + 9.5 - ringSize));
 
-  return <View testID="hybrid-cluster-marker" pointerEvents="none" style={[s.marker, { minWidth: compact ? 0 : 140, opacity: !isReady ? .4 : isProcessing ? .6 : 1 }]}
+  return <View testID="hybrid-cluster-marker" pointerEvents="none" style={[s.marker, { minWidth: 140, opacity: !isReady ? .4 : isProcessing ? .6 : 1 }]}
     accessibilityLabel={`${current.venue.venue}, venue ${index + 1} of ${venues.length}; ${current.categories.map(c => `${c.category} ${c.count}`).join(', ')}; cluster totals ${cluster.eventCount} events, ${cluster.specialCount} specials`}>
-    {!compact && <>
       {visible.length > 0 && <View testID="hybrid-venue-summary" style={[s.venueSummary, { borderColor: accent }]}>
         {visible.map((item, at) => <View key={item.key} style={[s.category, at > 0 && s.sectionBorder]} accessibilityLabel={`${item.category}: ${item.count}${item.isNew ? ', new content' : ''}`}>
           <View><MaterialIcons name={categoryIcon(item.category) as any} size={11} color={item.type === 'special' ? '#258446' : '#208EE8'} />{item.isNew && <View testID="hybrid-category-new" style={s.newDot} />}</View>
@@ -90,12 +90,10 @@ export default function HybridClusterMarker({ cluster, isActive, isSelected, isR
         </Svg>
         {attachedFriends.map(v => { const angle = friendAngle(v.index); return <View key={v.key} accessibilityLabel={`${v.friendCount} friends at ${v.venue.venue}`} style={{ position: 'absolute', left: center + (radius + 18) * Math.cos(angle) - 12.5, top: center + (radius + 18) * Math.sin(angle) - 7.5 }}><FriendBadge count={v.friendCount} /></View>; })}
       </View>
-    </>}
-    <View testID="hybrid-cluster-summary" style={[s.clusterSummary, { height: Math.max(28, summaryDiameter + 4) }, compact && { borderColor: timing }]}>
+    <View testID="hybrid-cluster-summary" style={[s.clusterSummary, { height: Math.max(28, summaryDiameter + 4) }]}>
       <View style={[s.venueTotal, { width: summaryDiameter, height: summaryDiameter }]} accessibilityLabel={`${venues.length} venues`}><Segments diameter={summaryDiameter} count={rings} staticRing /><MaterialIcons name="home" size={venueDigits > 1 ? 6 : 7.5} color="#143247" /><Text maxFontSizeMultiplier={1.2} style={[s.venueNumber, venueDigits > 1 && { fontSize: 8 }]}>{venues.length}</Text></View>
       <View style={[s.total, s.sectionBorder]}><MaterialIcons name="event" size={12} color="#208EE8" /><Text maxFontSizeMultiplier={1.2} style={s.eventTotal}>{cluster.eventCount}</Text></View>
       <View style={[s.total, s.sectionBorder]}><MaterialIcons name="restaurant" size={12} color="#258446" /><Text maxFontSizeMultiplier={1.2} style={s.specialTotal}>{cluster.specialCount}</Text></View>
-      {compact && !!cluster.friendPresence && <View style={[s.total, s.sectionBorder]}><FriendBadge count={cluster.friendPresence.friendCount} /></View>}
       {cluster.containsCityLevelEvent && <View style={s.city} accessibilityLabel="City-wide event"><MaterialIcons name="festival" size={9} color="#4E342E" /></View>}
     </View>
   </View>;
