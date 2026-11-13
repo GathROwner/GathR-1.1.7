@@ -5,8 +5,7 @@ import type { Cluster } from '../../types/events';
 import type { MarkerGeometry } from '../../utils/clusterPuckLayout';
 import HybridClusterMarker from './HybridClusterMarker';
 import { PuckMarkerMeasurement } from './PuckMarkerMeasurement';
-import HybridSummaryImage from './HybridSummaryImage';
-import { countGraphic } from '../../utils/hybridSummaryGraphic';
+import HybridCompactCount, { hybridCompactDiameter } from './HybridCompactCount';
 
 type Props = {
   id: string; cluster: Cluster; coordinate: [number, number]; isSelected: boolean;
@@ -25,6 +24,8 @@ export default function HybridMapAnnotation(props: Props) {
   const [size, setSize] = useState({ width: 1, height: 1 });
   const [photo, setPhoto] = useState({ y: 0, height: 0 });
   const [selectionReset, setSelectionReset] = useState(0);
+  const countLabel = String(cluster.eventCount + cluster.specialCount);
+  const compactDiameter = hybridCompactDiameter(countLabel);
   const refresh = useCallback(() => {
     if (frame.current !== null) return;
     // Image decoding and React/native layout must commit before the native bitmap is refreshed.
@@ -48,6 +49,8 @@ export default function HybridMapAnnotation(props: Props) {
   const anchor = { x: (size.width / 2 - dockX) / bitmapWidth, y: (size.height - dockY) / bitmapHeight };
   useEffect(refresh, [refresh, compact, disabled, isSelected, dockX, dockY, coordinate[0], coordinate[1], size, selectionReset]);
   return <>
+    {compact && <HybridCompactCount id={id} coordinate={coordinate} label={countLabel} diameter={compactDiameter}
+      dockX={dockX} dockY={dockY} onPress={() => { if (!disabled && !isSelected) props.onPress(); }} />}
     {!compact && photo.height > 0 && <HybridMapHalo id={id} coordinate={coordinate} radius={photo.height / 2}
       translate={[dockX, dockY - (size.height - photo.y - photo.height / 2)]}
       timing={cluster.timeStatus} active={props.isActive} reduceMotion={props.reduceMotionEnabled} />}
@@ -63,8 +66,9 @@ export default function HybridMapAnnotation(props: Props) {
         if (event.properties && 'deselectAnnotationOnMapTap' in event.properties && event.properties.deselectAnnotationOnMapTap === true) props.onBackgroundPress();
       }}>
       <View collapsable={false} pointerEvents="none" onLayout={measure}>
-        <PuckMarkerMeasurement id={cluster.id} compact={compact} countLabel={String(cluster.eventCount + cluster.specialCount)}
-          countContent={<HybridSummaryImage graphic={countGraphic(String(cluster.eventCount + cluster.specialCount))} visible={compact} onLoad={refresh} />}
+        <PuckMarkerMeasurement id={cluster.id} compact={compact} countLabel={countLabel}
+          countStyle={{ width: compactDiameter, height: compactDiameter, backgroundColor: 'transparent', borderColor: 'transparent' }}
+          countContent={<View pointerEvents="none" accessibilityLabel={`${countLabel} items in cluster`} />}
           dockX={props.measurementDockX} dockY={props.measurementDockY} record={props.record}>
           <HybridClusterMarker cluster={cluster} isActive={props.isActive} isSelected={isSelected} isReady={props.isReady}
             isProcessing={props.isProcessing} reduceMotionEnabled={props.reduceMotionEnabled} categoryIcon={props.categoryIcon}

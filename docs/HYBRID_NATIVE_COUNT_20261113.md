@@ -1,0 +1,9 @@
+# Hybrid compact count and large rings
+
+Craig confirmed the narrower summaries were better, but the beige compact marker beside the user puck remained blank on iOS. The earlier hidden-SVG capture repair therefore did not establish that the reported physical-device case was fixed.
+
+The compact fallback now paints its background and item count through Mapbox CircleLayer/SymbolLayer, independently of PointAnnotation's detached UIView/CALayer snapshot. Its measured annotation footprint remains transparent and square, matching the native circle. The full marker remains mounted, retaining its active venue; its images/rotation pause while compact. Native completed-tap handling and the existing selection/readiness gates remain, with a ShapeSource tap fallback. No React touch responder, gesture interception, movement solver, or clustering change is introduced.
+
+Both the photo ring and static summary ring previously collapsed to a solid circle above 12 venues. That cutoff is removed. A repeating neutral dash plus one highlighted arc renders every venue with at most two Circle nodes. Gaps shrink with the segment length, keeping positive arcs even for high counts. The miniature summary ring stays neutral and fixed during rotation. Photo sizes, thin arc width, summary text sizes, tighter spacing, and omission of zero totals remain accepted baseline behavior.
+
+Rendered React Native components with iOS props were reviewed through RN Web, including 19, 40, and 126 venues, friends, missing images, selection and overflow. Evidence is retained in the task's artifacts/hybrid-native-count-20261113 directory. Native QA and release receipt are recorded after completion; physical iOS adoption remains a separate check.

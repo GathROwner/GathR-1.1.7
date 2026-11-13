@@ -1,5 +1,6 @@
 import type { HybridCategory } from './hybridClusterPresentation';
 import { HYBRID_ICON_PATHS } from './hybridIconPaths';
+import { hybridRingGeometry } from './hybridRingGeometry';
 
 export type HybridGraphic = { xml: string; width: number; height: number; label: string };
 const p = (n: number) => n * .9;
@@ -55,9 +56,9 @@ export function clusterSummaryGraphic(venues: number, events: number, specials: 
   const sectionWidth = (value: number) => padding * 2 + size + gap + textWidth(number(value), size);
   const width = start + sections.reduce((sum, section) => sum + sectionWidth(section.count), 0) + p(4) + (city ? p(13) : 0);
   let content = `<rect x="${p(.5)}" y="${p(.5)}" width="${width - p(1)}" height="${height - p(1)}" rx="${height / 2}" fill="#EFF7FF" stroke="#ABCDE5" stroke-width="${p(1)}"/>`;
-  const cx = p(4) + diameter / 2, cy = height / 2, radius = diameter / 2 - p(.625), circumference = Math.PI * 2 * radius;
-  const segments = venues > 12 ? 1 : Math.max(1, venues), step = circumference / segments, ringGap = segments === 1 ? 0 : p(1.5);
-  for (let at = 0; at < segments; at++) content += `<circle cx="${cx}" cy="${cy}" r="${radius}" fill="none" stroke="#8DA8B8" stroke-width="${p(1.25)}" stroke-dasharray="${step - ringGap} ${circumference - step + ringGap}" stroke-dashoffset="${-at * step - ringGap / 2}" transform="rotate(-90 ${cx} ${cy})"/>`;
+  const cx = p(4) + diameter / 2, cy = height / 2;
+  const { radius, gap: ringGap, arc } = hybridRingGeometry(diameter, p(1.25), venues, p(1.5));
+  content += `<circle cx="${cx}" cy="${cy}" r="${radius}" fill="none" stroke="#8DA8B8" stroke-width="${p(1.25)}" stroke-dasharray="${arc} ${ringGap}" stroke-dashoffset="${-ringGap / 2}" transform="rotate(-90 ${cx} ${cy})"/>`;
   const houseSize = p(count.length > 1 ? 6 : 7.5), countSize = p(count.length > 1 ? 8 : 9), innerWidth = houseSize + p(1) + textWidth(count, countSize);
   content += icon('home', cx - innerWidth / 2, cy - houseSize / 2, houseSize, ink);
   content += text(count, cx - innerWidth / 2 + houseSize + p(1), cy + countSize * .35, countSize, ink);

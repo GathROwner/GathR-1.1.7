@@ -17,7 +17,7 @@ it('keeps the static venue ring, house and every cluster total together for sing
     const result = clusterSummaryGraphic(venues, 241, 61, false);
     for (const value of [venues, 241, 61]) expect(result.xml).toContain(`>${value}</text>`);
     expect(result.xml.match(/<path fill=/g)).toHaveLength(3);
-    expect(result.xml.match(/stroke="#8DA8B8"/g)).toHaveLength(venues > 12 ? 1 : venues);
+    expect(result.xml.match(/stroke="#8DA8B8"/g)).toHaveLength(1);
     expect(result.xml).not.toContain('#3478F6');
     expect(result.width).toBeGreaterThan(100);
   }

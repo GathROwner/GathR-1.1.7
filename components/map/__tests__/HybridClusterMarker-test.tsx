@@ -65,6 +65,24 @@ it('keeps venue detail and rotation for large overview clusters', () => {
   expect(tree.root.findByProps({ testID: 'hybrid-cluster-marker' }).props.accessibilityLabel).toContain('Beta, venue 2 of 126');
 });
 
+it('keeps 19 venue segments and moves only the selected arc, using a bounded number of drawing nodes', () => {
+  const cluster = fixture();
+  cluster.venues = Array.from({ length: 19 }, (_, i) => ({ ...cluster.venues[i % 2], locationKey: String(i).padStart(3, '0') }));
+  act(() => { tree = renderer.create(<HybridClusterMarker cluster={cluster} {...props} snapshotMode />); });
+  const arcs = () => tree.root.findByProps({ testID: 'hybrid-photo-ring' }).findAllByType('Circle' as any);
+  expect(arcs()).toHaveLength(2);
+  const base = arcs()[0].props;
+  const [dash, gap] = base.strokeDasharray.split(' ').map(Number);
+  expect(2 * Math.PI * base.r / (dash + gap)).toBeCloseTo(19);
+  expect(gap).toBeGreaterThan(0);
+  const selected = arcs()[1].props.strokeDashoffset;
+  const summary = tree.root.findByProps({ testID: 'hybrid-cluster-summary' }).findByType('SvgXml' as any).props.xml;
+  act(() => jest.advanceTimersByTime(3000));
+  expect(arcs()[0].props).toEqual(base);
+  expect(arcs()[1].props.strokeDashoffset).toBeCloseTo(selected - dash - gap);
+  expect(tree.root.findByProps({ testID: 'hybrid-cluster-summary' }).findByType('SvgXml' as any).props.xml).toBe(summary);
+});
+
 it('refreshes the map bitmap after profile decoding without snapshotting an image fade', () => {
   const cluster = fixture(); cluster.venues[0].events[0].profileUrl = 'https://example.com/profile.jpg';
   const refresh = jest.fn();

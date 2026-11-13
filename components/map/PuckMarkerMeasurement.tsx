@@ -1,5 +1,5 @@
 import React, { useCallback, useLayoutEffect, useState } from 'react';
-import { StyleSheet, Text, View, type LayoutChangeEvent } from 'react-native';
+import { StyleSheet, Text, View, type LayoutChangeEvent, type StyleProp, type ViewStyle } from 'react-native';
 import type { MapRect, MarkerGeometry } from '../../utils/clusterPuckLayout';
 
 type Props = {
@@ -11,6 +11,7 @@ type Props = {
   record: (id: string, geometry: MarkerGeometry) => void;
   children: React.ReactNode;
   countContent?: React.ReactNode;
+  countStyle?: StyleProp<ViewStyle>;
 };
 const boundsFor = (e: LayoutChangeEvent): MapRect => {
   const { width, height } = e.nativeEvent.layout;
@@ -18,7 +19,7 @@ const boundsFor = (e: LayoutChangeEvent): MapRect => {
 };
 
 /** Both variants are measured by native layout; only the chosen variant is visible/touchable. */
-export function PuckMarkerMeasurement({ id, compact, countLabel, dockX, dockY, record, children, countContent }: Props) {
+export function PuckMarkerMeasurement({ id, compact, countLabel, dockX, dockY, record, children, countContent, countStyle }: Props) {
   const [normalBounds, setNormalBounds] = useState<MapRect | null>(null);
   const [compactBounds, setCompactBounds] = useState<MapRect | null>(null);
   const measureNormal = useCallback((e: LayoutChangeEvent) => setNormalBounds(boundsFor(e)), []);
@@ -29,7 +30,7 @@ export function PuckMarkerMeasurement({ id, compact, countLabel, dockX, dockY, r
   return <View collapsable={false}>
     <View collapsable={false} onLayout={measureNormal} style={compact ? styles.hidden : undefined}
       pointerEvents={compact ? 'none' : 'auto'} accessibilityElementsHidden={compact} importantForAccessibility={compact ? 'no-hide-descendants' : 'auto'}>{children}</View>
-    <View collapsable={false} onLayout={measureCompact} style={[styles.count, !compact && styles.hidden]}
+    <View collapsable={false} onLayout={measureCompact} style={[styles.count, countStyle, !compact && styles.hidden]}
       pointerEvents={compact ? 'auto' : 'none'} accessibilityElementsHidden={!compact} importantForAccessibility={compact ? 'auto' : 'no-hide-descendants'}>
       {countContent ?? <Text style={styles.label}>{countLabel}</Text>}
     </View>
