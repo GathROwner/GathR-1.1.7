@@ -1,0 +1,69 @@
+{
+  "status": "PASS",
+  "realScreenshotBackground": {
+    "loaded": true,
+    "width": 590,
+    "height": 1280
+  },
+  "twoByTwoGrid": true,
+  "choiceHeight44pt": true,
+  "selectionAndLighting": true,
+  "pinnedSelectorWhileLegendScrolls": true,
+  "allLegendRowsReachable": true,
+  "measurements": [
+    {
+      "width": 736,
+      "state": "top",
+      "phoneWidth": 393.328125,
+      "panelTop": 149.98648218829516,
+      "panelBottom": 667.9723282442748,
+      "panelWidth": 209.99045801526717,
+      "clearanceToReadinessButton": 11.027671755725237,
+      "clearanceToBottomTabs": 108.02767175572524,
+      "legendContentHeight": 416.3528413910093,
+      "legendViewportHeight": 306.2595419847328,
+      "scrollNeeded": true
+    },
+    {
+      "width": 736,
+      "state": "scrolled",
+      "phoneWidth": 393.328125,
+      "panelTop": 149.98648218829516,
+      "panelBottom": 667.9723282442748,
+      "panelWidth": 209.99045801526717,
+      "clearanceToReadinessButton": 11.027671755725237,
+      "clearanceToBottomTabs": 108.02767175572524,
+      "legendContentHeight": 416.3528413910093,
+      "legendViewportHeight": 306.2595419847328,
+      "scrollNeeded": true
+    },
+    {
+      "width": 320,
+      "state": "top",
+      "phoneWidth": 288,
+      "panelTop": 149.99674479166666,
+      "panelBottom": 667.9966001157408,
+      "panelWidth": 209.98263888888889,
+      "clearanceToReadinessButton": 11.003399884259238,
+      "clearanceToBottomTabs": 108.00339988425924,
+      "legendContentHeight": 419.2824074074074,
+      "legendViewportHeight": 304.56018518518516,
+      "scrollNeeded": true
+    },
+    {
+      "width": 320,
+      "state": "scrolled",
+      "phoneWidth": 288,
+      "panelTop": 149.99674479166666,
+      "panelBottom": 667.9966001157408,
+      "panelWidth": 209.98263888888889,
+      "clearanceToReadinessButton": 11.003399884259238,
+      "clearanceToBottomTabs": 108.00339988425924,
+      "legendContentHeight": 419.2824074074074,
+      "legendViewportHeight": 304.56018518518516,
+      "scrollNeeded": true
+    }
+  ],
+  "narrowWidth320IsScaledScreenshotPreview": true,
+  "pageErrors": []
+}

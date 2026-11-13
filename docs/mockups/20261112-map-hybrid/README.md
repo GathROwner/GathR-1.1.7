@@ -1,5 +1,7 @@
 # Current/GathR hybrid marker concepts — November 12, 2026
 
+Current marker proposal: [refined segmented markers](refined-segmented/README.md). Trial entry-point proposal: [2 × 2 map selector](selector-2x2/README.md). The earlier concepts below are retained as design history.
+
 Craig accepted the 36/40/44-point GathR venue-photo sizing after seeing it on his phone. Preserve that size as the working baseline. Production sizing source d019fa256c494c45d4fa1e3d0c6e79e1cef6d253; iOS OTA 01a1d19a-7697-7db2-b008-57d5b6bec66e. Exact phone footer adoption was not captured here; Craig's screenshot/feedback confirms acceptance of the visible size.
 
 These three preview-only images explore combining Current's lighter basemap/markers and GathR's venue photos. They do not implement or publish a hybrid map style.
