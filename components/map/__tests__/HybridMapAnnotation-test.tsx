@@ -7,9 +7,9 @@ import type { Cluster } from '../../../types/events';
 const mockRefresh = jest.fn();
 const mockNativeMount = jest.fn();
 jest.mock('@rnmapbox/maps', () => {
-  const React = require('react');
+  const React = jest.requireActual<typeof import('react')>('react');
   return { __esModule: true, default: {
-    PointAnnotation: React.forwardRef((props: any, ref: any) => {
+    PointAnnotation: React.forwardRef(function MockPointAnnotation(props: any, ref: any) {
       React.useImperativeHandle(ref, () => ({ refresh: mockRefresh }));
       React.useEffect(() => { mockNativeMount(); }, []);
       return React.createElement('PointAnnotation', props, props.children);
