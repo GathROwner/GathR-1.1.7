@@ -52,10 +52,13 @@ it('marks the specific new category and removes the dot for another venue', () =
   expect(tree.root.findAllByProps({ testID: 'hybrid-category-new' })).toHaveLength(0);
 });
 
-it('uses a compact overview without hidden venue cycling', () => {
-  act(() => { tree = renderer.create(<HybridClusterMarker cluster={fixture()} {...props} compact />); });
-  expect(tree.root.findAllByProps({ testID: 'hybrid-photo-ring' })).toHaveLength(0);
+it('keeps venue detail and rotation for large overview clusters', () => {
+  const cluster = fixture();
+  cluster.venues = Array.from({ length: 126 }, (_, i) => ({ ...cluster.venues[i % 2], locationKey: String(i).padStart(3, '0') }));
+  act(() => { tree = renderer.create(<HybridClusterMarker cluster={cluster} {...props} />); });
+  expect(tree.root.findAllByType(View).filter(n => n.props.testID === 'hybrid-photo-ring')).toHaveLength(1);
+  expect(tree.root.findAllByType(View).filter(n => n.props.testID === 'hybrid-venue-summary')).toHaveLength(1);
   expect(tree.root.findAllByType(View).filter(n => n.props.testID === 'hybrid-cluster-summary')).toHaveLength(1);
-  act(() => jest.advanceTimersByTime(12000));
-  expect(tree.root.findByProps({ testID: 'hybrid-cluster-marker' }).props.accessibilityLabel).toContain('Alpha');
+  act(() => jest.advanceTimersByTime(6000));
+  expect(tree.root.findByProps({ testID: 'hybrid-cluster-marker' }).props.accessibilityLabel).toContain('Beta, venue 2 of 126');
 });

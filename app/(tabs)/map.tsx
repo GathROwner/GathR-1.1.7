@@ -10846,7 +10846,7 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
           !richClusterMarkersEnabled;
         const isTutorialTarget = tutorialTargetClusterId === String(cluster.id);
         const markerDetailsEnabled =
-          richClusterMarkersEnabled || shouldForceHotspotPreviewDetails || isTutorialTarget;
+          mapStyleChoice === 'hybrid' || richClusterMarkersEnabled || shouldForceHotspotPreviewDetails || isTutorialTarget;
         const gathrPresentation = getGathrClusterPresentation(cluster, zoomLevel, isSelected);
         const projectedPoint =
           (mapStyleChoice === 'gathr' || mapStyleChoice === 'hybrid') &&
@@ -10860,7 +10860,7 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
                 mapDimensions
               )
             : null;
-        const estimatedMarkerHeight = mapStyleChoice === 'hybrid' ? (gathrPresentation === 'summary' ? 44 : 170) : gathrPresentation === 'summary'
+        const estimatedMarkerHeight = mapStyleChoice === 'hybrid' ? 150 : gathrPresentation === 'summary'
           ? 38
           : cluster.venues.length > 1 ? 92 : 76;
         const estimatedMarkerWidth = mapStyleChoice === 'hybrid' ? 160 : gathrPresentation === 'summary' ? 84 : 136;
@@ -11003,7 +11003,6 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
                 isReady={clustersReadyForInteraction}
                 isActive={clusterMarkerAnimationsActive}
                 reduceMotionEnabled={reduceMotionEnabled}
-                compact={!markerDetailsEnabled || gathrPresentation === 'summary'}
                 categoryIcon={getCategoryIcon}
               /> : <TreeMarker
                 key={isTutorialTarget ? `tutorial-target-${tutorialTargetBindingRevision}` : undefined}
