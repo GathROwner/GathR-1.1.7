@@ -1,0 +1,26 @@
+{
+  "status": "PASS_NATIVE_EXPORT_AND_VISUAL_REVIEW",
+  "platform": "Android debug harness only, not iOS adoption",
+  "source": "Actual HybridClusterMarker snapshotMode and HybridSummaryImage; same SVG graphic XML exported explicitly by installed native react-native-svg",
+  "reviewed": [
+    "Category counts/icons, new category dot, section dividers",
+    "Static venue count/ring/house and event/special totals",
+    "126 venues, 241 events, 61 specials, city badge fit",
+    "Friend 9+ stays inside badge",
+    "Nine RNWeb actual-component cases: photo/ring gap, summary spacing, overflow, selected and missing-photo states"
+  ],
+  "nativePNGExports": [
+    "native-venue.png",
+    "native-cluster.png",
+    "native-large.png",
+    "native-friends.png"
+  ],
+  "limits": [
+    "No iPhone available; final iOS CALayer bitmap and adoption not directly verified",
+    "Mapbox TextureView screenshot washed out by existing emulator renderer; standalone native PNG exports and normal view clear",
+    "No claim of iOS pinch verification"
+  ],
+  "packageRestoredByteForByte": true,
+  "nativeConfigAndDependenciesChanged": false,
+  "atUTC": "2026-11-13T11:44:42.944924+00:00"
+}

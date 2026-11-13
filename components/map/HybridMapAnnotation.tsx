@@ -5,6 +5,8 @@ import type { Cluster } from '../../types/events';
 import type { MarkerGeometry } from '../../utils/clusterPuckLayout';
 import HybridClusterMarker from './HybridClusterMarker';
 import { PuckMarkerMeasurement } from './PuckMarkerMeasurement';
+import HybridSummaryImage from './HybridSummaryImage';
+import { countGraphic } from '../../utils/hybridSummaryGraphic';
 
 type Props = {
   id: string; cluster: Cluster; coordinate: [number, number]; isSelected: boolean;
@@ -62,6 +64,7 @@ export default function HybridMapAnnotation(props: Props) {
       }}>
       <View collapsable={false} pointerEvents="none" onLayout={measure}>
         <PuckMarkerMeasurement id={cluster.id} compact={compact} countLabel={String(cluster.eventCount + cluster.specialCount)}
+          countContent={<HybridSummaryImage graphic={countGraphic(String(cluster.eventCount + cluster.specialCount))} onLoad={refresh} />}
           dockX={props.measurementDockX} dockY={props.measurementDockY} record={props.record}>
           <HybridClusterMarker cluster={cluster} isActive={props.isActive} isSelected={isSelected} isReady={props.isReady}
             isProcessing={props.isProcessing} reduceMotionEnabled={props.reduceMotionEnabled} categoryIcon={props.categoryIcon}

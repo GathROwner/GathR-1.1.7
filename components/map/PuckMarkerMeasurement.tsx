@@ -10,6 +10,7 @@ type Props = {
   dockY: number;
   record: (id: string, geometry: MarkerGeometry) => void;
   children: React.ReactNode;
+  countContent?: React.ReactNode;
 };
 const boundsFor = (e: LayoutChangeEvent): MapRect => {
   const { width, height } = e.nativeEvent.layout;
@@ -17,7 +18,7 @@ const boundsFor = (e: LayoutChangeEvent): MapRect => {
 };
 
 /** Both variants are measured by native layout; only the chosen variant is visible/touchable. */
-export function PuckMarkerMeasurement({ id, compact, countLabel, dockX, dockY, record, children }: Props) {
+export function PuckMarkerMeasurement({ id, compact, countLabel, dockX, dockY, record, children, countContent }: Props) {
   const [normalBounds, setNormalBounds] = useState<MapRect | null>(null);
   const [compactBounds, setCompactBounds] = useState<MapRect | null>(null);
   const measureNormal = useCallback((e: LayoutChangeEvent) => setNormalBounds(boundsFor(e)), []);
@@ -30,7 +31,7 @@ export function PuckMarkerMeasurement({ id, compact, countLabel, dockX, dockY, r
       pointerEvents={compact ? 'none' : 'auto'} accessibilityElementsHidden={compact} importantForAccessibility={compact ? 'no-hide-descendants' : 'auto'}>{children}</View>
     <View collapsable={false} onLayout={measureCompact} style={[styles.count, !compact && styles.hidden]}
       pointerEvents={compact ? 'auto' : 'none'} accessibilityElementsHidden={!compact} importantForAccessibility={compact ? 'auto' : 'no-hide-descendants'}>
-      <Text style={styles.label}>{countLabel}</Text>
+      {countContent ?? <Text style={styles.label}>{countLabel}</Text>}
     </View>
   </View>;
 }

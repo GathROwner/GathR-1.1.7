@@ -5,6 +5,8 @@ import Svg, { Circle, Line } from 'react-native-svg';
 import type { Cluster } from '../../types/events';
 import { getHasNewContent, useClusterInteractionStore } from '../../store/clusterInteractionStore';
 import { buildHybridVenues, HYBRID_ACCENTS, visibleHybridCategories } from '../../utils/hybridClusterPresentation';
+import { clusterSummaryGraphic, countGraphic, friendBadgeGraphic, venueSummaryGraphic } from '../../utils/hybridSummaryGraphic';
+import HybridSummaryImage from './HybridSummaryImage';
 
 type Props = {
   cluster: Cluster; isActive: boolean; isSelected: boolean; isReady: boolean; isProcessing: boolean;
@@ -76,33 +78,33 @@ export default function HybridClusterMarker({ cluster, isActive, isSelected, isR
   const photoTopGap = Math.max(visible.length ? p(4) : 0, ...attachedFriends.map(v => p(9.5) - center - (radius + p(18)) * Math.sin(friendAngle(v.index))));
   const photoBottomGap = Math.max(p(4), ...attachedFriends.map(v => center + (radius + p(18)) * Math.sin(friendAngle(v.index)) + p(9.5) - ringSize));
 
-  const friendWidth = Math.max(0, ...attachedFriends.map(v => 2 * (Math.abs((radius + p(18)) * Math.cos(friendAngle(v.index))) + p(12.5))));
+  const friendWidth = Math.max(0, ...attachedFriends.map(v => 2 * (Math.abs((radius + p(18)) * Math.cos(friendAngle(v.index))) + friendBadgeGraphic(v.friendCount).width / 2)));
   return <View testID="hybrid-cluster-marker" pointerEvents="none" style={[s.marker, { minWidth: friendWidth, opacity: !isReady ? .4 : isProcessing ? .6 : 1 }]}
     accessibilityLabel={`${current.venue.venue}, venue ${index + 1} of ${venues.length}; ${current.categories.map(c => `${c.category} ${c.count}`).join(', ')}; cluster totals ${cluster.eventCount} events, ${cluster.specialCount} specials`}>
-      {visible.length > 0 && <View testID="hybrid-venue-summary" style={[s.venueSummary, { borderColor: accent }]}>
+      {visible.length > 0 && (snapshotMode ? <View testID="hybrid-venue-summary"><HybridSummaryImage graphic={venueSummaryGraphic(visible, overflow, hiddenNew, accent, categoryIcon)} onLoad={onSnapshotChange} /></View> : <View testID="hybrid-venue-summary" style={[s.venueSummary, { borderColor: accent }]}>
         {visible.map((item, at) => <View key={item.key} style={[s.category, at > 0 && s.sectionBorder]} accessibilityLabel={`${item.category}: ${item.count}${item.isNew ? ', new content' : ''}`}>
           <View><MaterialIcons name={categoryIcon(item.category) as any} size={p(11)} color={item.type === 'special' ? '#258446' : '#208EE8'} />{item.isNew && <View testID="hybrid-category-new" style={s.newDot} />}</View>
           <Text maxFontSizeMultiplier={1.2} style={[s.categoryCount, { color: item.type === 'special' ? '#258446' : '#208EE8' }]}>{item.count}</Text>
         </View>)}
         {overflow > 0 && <View style={[s.category, s.sectionBorder]} accessibilityLabel={`${overflow} more categories; open the existing cluster callout for all events`}><MaterialIcons name="more-horiz" size={p(14)} color="#637B88" />{hiddenNew && <View style={s.newDot} />}</View>}
-      </View>}
+      </View>)}
       <View testID="hybrid-photo-ring" onLayout={e => onPhotoLayout?.({ y: e.nativeEvent.layout.y, height: e.nativeEvent.layout.height })} style={{ width: ringSize, height: ringSize, marginTop: photoTopGap, marginBottom: photoBottomGap }}>
         {!snapshotMode && <Animated.View style={[StyleSheet.absoluteFillObject, { borderRadius: center, borderWidth: p(3), borderColor: timing, opacity: reduceMotionEnabled || !isActive || cluster.timeStatus === 'future' ? .25 : pulse.interpolate({ inputRange: [0, 1], outputRange: [.45, 0] }), transform: [{ scale: pulse.interpolate({ inputRange: [0, 1], outputRange: [1, 1.8] }) }] }]} />}
         <Segments diameter={ringSize} count={rings} active={index} />
         <View testID="hybrid-photo-frame" style={[s.photo, cluster.interestLevel === 'high' && s.interestPhoto, { left: p(8), top: p(8), width: photoSize, height: photoSize, borderRadius: photoSize / 2 }]}>
-          {current.photo && failedPhoto !== current.photo ? <Image testID="hybrid-venue-photo" source={{ uri: current.photo }} fadeDuration={0} style={{ width: photoSize - p(2), height: photoSize - p(2) }} resizeMode="cover" onLoad={onSnapshotChange} onError={() => setFailedPhoto(current.photo)} /> : <Text maxFontSizeMultiplier={1.2} style={s.initials}>{current.venue.venue.split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]).join('').toUpperCase()}</Text>}
+          {current.photo && failedPhoto !== current.photo ? <Image testID="hybrid-venue-photo" source={{ uri: current.photo }} fadeDuration={0} style={{ width: photoSize - p(2), height: photoSize - p(2) }} resizeMode="cover" onLoad={onSnapshotChange} onError={() => setFailedPhoto(current.photo)} /> : snapshotMode ? <HybridSummaryImage graphic={countGraphic(current.venue.venue.split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]).join('').toUpperCase(), p(14), '#143247')} onLoad={onSnapshotChange} /> : <Text maxFontSizeMultiplier={1.2} style={s.initials}>{current.venue.venue.split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]).join('').toUpperCase()}</Text>}
         </View>
         <Svg width={ringSize} height={ringSize} style={[StyleSheet.absoluteFill, { overflow: 'visible' }]} pointerEvents="none">
           {attachedFriends.map(v => { const angle = friendAngle(v.index); return <Line key={v.key} x1={center + radius * Math.cos(angle)} y1={center + radius * Math.sin(angle)} x2={center + (radius + p(18)) * Math.cos(angle)} y2={center + (radius + p(18)) * Math.sin(angle)} stroke="#7044C6" strokeWidth={p(1)} />; })}
         </Svg>
-        {attachedFriends.map(v => { const angle = friendAngle(v.index); return <View key={v.key} accessibilityLabel={`${v.friendCount} friends at ${v.venue.venue}`} style={{ position: 'absolute', left: center + (radius + p(18)) * Math.cos(angle) - p(12.5), top: center + (radius + p(18)) * Math.sin(angle) - p(7.5) }}><FriendBadge count={v.friendCount} /></View>; })}
+        {attachedFriends.map(v => { const angle = friendAngle(v.index), badge = friendBadgeGraphic(v.friendCount); return <View key={v.key} accessibilityLabel={`${v.friendCount} friends at ${v.venue.venue}`} style={{ position: 'absolute', left: center + (radius + p(18)) * Math.cos(angle) - badge.width / 2, top: center + (radius + p(18)) * Math.sin(angle) - p(7.5) }}>{snapshotMode ? <HybridSummaryImage graphic={badge} onLoad={onSnapshotChange} /> : <FriendBadge count={v.friendCount} />}</View>; })}
       </View>
-    <View testID="hybrid-cluster-summary" style={[s.clusterSummary, { height: Math.max(p(28), summaryDiameter + p(4)) }]}>
+    {snapshotMode ? <View testID="hybrid-cluster-summary"><HybridSummaryImage graphic={clusterSummaryGraphic(venues.length, cluster.eventCount, cluster.specialCount, !!cluster.containsCityLevelEvent)} onLoad={onSnapshotChange} /></View> : <View testID="hybrid-cluster-summary" style={[s.clusterSummary, { height: Math.max(p(28), summaryDiameter + p(4)) }]}>
       <View style={[s.venueTotal, { width: summaryDiameter, height: summaryDiameter }]} accessibilityLabel={`${venues.length} venues`}><Segments diameter={summaryDiameter} count={rings} staticRing /><MaterialIcons name="home" size={p(venueDigits > 1 ? 6 : 7.5)} color="#143247" /><Text maxFontSizeMultiplier={1.2} style={[s.venueNumber, venueDigits > 1 && { fontSize: p(8) }]}>{venues.length}</Text></View>
       <View style={[s.total, s.sectionBorder]}><MaterialIcons name="event" size={p(12)} color="#208EE8" /><Text maxFontSizeMultiplier={1.2} style={s.eventTotal}>{cluster.eventCount}</Text></View>
       <View style={[s.total, s.sectionBorder]}><MaterialIcons name="restaurant" size={p(12)} color="#258446" /><Text maxFontSizeMultiplier={1.2} style={s.specialTotal}>{cluster.specialCount}</Text></View>
       {cluster.containsCityLevelEvent && <View style={s.city} accessibilityLabel="City-wide event"><MaterialIcons name="festival" size={p(9)} color="#4E342E" /></View>}
-    </View>
+    </View>}
   </View>;
 }
 
