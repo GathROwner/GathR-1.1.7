@@ -1,0 +1,97 @@
+{
+  "bytes": 63912288,
+  "sha256": "7420d575e28b3437602dcc5c93afae2e3d55f6b73c66236015b2272f7b3e29ae",
+  "infos": [
+    {
+      "path": "Payload/GathR.app/PlugIns/SavetoGathR.appex/MainInterface.storyboardc/Info.plist",
+      "bundle": null,
+      "version": null,
+      "build": null,
+      "minimumOS": null
+    },
+    {
+      "path": "Payload/GathR.app/PlugIns/SavetoGathR.appex/Info.plist",
+      "bundle": "com.craigb.gathr.share-extension",
+      "version": "1.1.20",
+      "build": "79",
+      "minimumOS": "15.1"
+    },
+    {
+      "path": "Payload/GathR.app/Info.plist",
+      "bundle": "com.craigb.gathr",
+      "version": "1.1.20",
+      "build": "79",
+      "minimumOS": "15.1"
+    }
+  ],
+  "expo": [
+    {
+      "path": "Payload/GathR.app/Expo.plist",
+      "runtime": "1.1.20",
+      "headers": {
+        "expo-channel-name": "production"
+      },
+      "url": "https://u.expo.dev/87fd0c8f-0007-49fb-a057-2f4e81afe1db"
+    }
+  ],
+  "firebase": [
+    {
+      "path": "Payload/GathR.app/GoogleService-Info.plist",
+      "project": "gathr-m1",
+      "appId": "1:234071683975:ios:3ba054e711eb33b1869922",
+      "bundle": "com.craigb.gathr"
+    }
+  ],
+  "profiles": [
+    {
+      "path": "Payload/GathR.app/PlugIns/SavetoGathR.appex/embedded.mobileprovision",
+      "uuid": "3a2324e4-8601-4d53-9f8a-5ae289408e97",
+      "appIdentifier": "G2W34P3KQ7.com.craigb.gathr.share-extension",
+      "team": "G2W34P3KQ7",
+      "appAttest": null,
+      "aps": null,
+      "getTaskAllow": false,
+      "appGroups": [
+        "group.com.craigb.gathr"
+      ]
+    },
+    {
+      "path": "Payload/GathR.app/embedded.mobileprovision",
+      "uuid": "928aa28a-bd7e-47cb-80f3-4bb49ddff883",
+      "appIdentifier": "G2W34P3KQ7.com.craigb.gathr",
+      "team": "G2W34P3KQ7",
+      "appAttest": [
+        "development",
+        "production"
+      ],
+      "aps": "production",
+      "getTaskAllow": false,
+      "appGroups": [
+        "group.com.craigb.gathr"
+      ]
+    }
+  ],
+  "signedEntitlements": [
+    {
+      "bundle": "com.craigb.gathr",
+      "appAttest": "production",
+      "aps": "production",
+      "team": "G2W34P3KQ7",
+      "getTaskAllow": false,
+      "appGroups": [
+        "group.com.craigb.gathr"
+      ]
+    },
+    {
+      "bundle": "com.craigb.gathr.share-extension",
+      "appAttest": null,
+      "aps": null,
+      "team": "G2W34P3KQ7",
+      "getTaskAllow": false,
+      "appGroups": [
+        "group.com.craigb.gathr"
+      ]
+    }
+  ],
+  "verification": "passed"
+}

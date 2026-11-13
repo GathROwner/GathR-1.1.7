@@ -1,0 +1,96 @@
+{
+  "version": "1.1.20",
+  "runtimePolicy": {
+    "policy": "appVersion"
+  },
+  "package": "com.craigb.gathr",
+  "googleServicesFile": "./google-services.json",
+  "gradleProperties": [
+    {
+      "type": "property",
+      "key": "newArchEnabled",
+      "value": "true"
+    },
+    {
+      "type": "property",
+      "key": "hermesEnabled",
+      "value": "true"
+    },
+    {
+      "type": "property",
+      "key": "android.compileSdkVersion",
+      "value": "36"
+    },
+    {
+      "type": "property",
+      "key": "android.targetSdkVersion",
+      "value": "36"
+    }
+  ],
+  "usesPermissions": [
+    "android.permission.INTERNET",
+    "android.permission.VIBRATE",
+    "android.permission.ACCESS_FINE_LOCATION",
+    "android.permission.READ_CALENDAR",
+    "android.permission.WRITE_CALENDAR",
+    "com.google.android.gms.permission.AD_ID",
+    "android.permission.ACCESS_COARSE_LOCATION"
+  ],
+  "metadata": [
+    {
+      "$": {
+        "android:name": "expo.modules.updates.ENABLED",
+        "android:value": "true"
+      }
+    },
+    {
+      "$": {
+        "android:name": "expo.modules.updates.EXPO_UPDATES_CHECK_ON_LAUNCH",
+        "android:value": "ALWAYS"
+      }
+    },
+    {
+      "$": {
+        "android:name": "expo.modules.updates.EXPO_UPDATES_LAUNCH_WAIT_MS",
+        "android:value": "0"
+      }
+    },
+    {
+      "$": {
+        "android:name": "expo.modules.updates.EXPO_UPDATE_URL",
+        "android:value": "https://u.expo.dev/87fd0c8f-0007-49fb-a057-2f4e81afe1db"
+      }
+    },
+    {
+      "$": {
+        "android:name": "expo.modules.updates.EXPO_RUNTIME_VERSION",
+        "android:value": "@string/expo_runtime_version"
+      }
+    },
+    {
+      "$": {
+        "android:name": "com.google.android.gms.ads.APPLICATION_ID",
+        "android:value": "ca-app-pub-9606287073864764~3873969279",
+        "tools:replace": "android:value"
+      }
+    }
+  ],
+  "blockedPermissionDirectives": [
+    {
+      "name": "android.permission.READ_EXTERNAL_STORAGE",
+      "mergeDirective": "remove"
+    },
+    {
+      "name": "android.permission.WRITE_EXTERNAL_STORAGE",
+      "mergeDirective": "remove"
+    },
+    {
+      "name": "android.permission.SYSTEM_ALERT_WINDOW",
+      "mergeDirective": "remove"
+    },
+    {
+      "name": "android.permission.RECORD_AUDIO",
+      "mergeDirective": "remove"
+    }
+  ]
+}

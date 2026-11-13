@@ -1,0 +1,33 @@
+{
+  "projectId": "gathr-m1",
+  "projectNumber": "234071683975",
+  "androidAppId": "1:234071683975:android:988d506511718e89869922",
+  "package": "com.craigb.gathr",
+  "enabledApis": ["firebaseappcheck.googleapis.com", "playintegrity.googleapis.com"],
+  "playSigningSha256": "505D7E974CFBAF4F029C915365AF49DA4349C89483744DF5151D57EB301343E7",
+  "certificateResource": "projects/gathr-m1/androidApps/1:234071683975:android:988d506511718e89869922/sha/66097f6262272a07",
+  "provider": "Play Integrity",
+  "firebaseConsoleRegistered": true,
+  "tokenTtl": "3600s",
+  "enforcementChanged": false,
+  "iosProviderChanged": false,
+  "eventDataChanged": false,
+  "temporaryProjectBrowserGrantRemoved": true,
+  "playCloudProjectLinkVerified": false,
+  "internalVersionCode": "14",
+  "internalReleaseStatus": "completed",
+  "productionActiveVersionCode": "13",
+  "productionDraftVersionCode": "14",
+  "productionTrackUnchanged": true,
+  "physicalStoreTokenVerified": true,
+  "protectedSocialCallVerified": true,
+  "protectedCallEvidence": {
+    "service": "createprivatecheckinplacecandidatecallable",
+    "observedAtUtc": ["2026-10-18T15:31:34.515179Z", "2026-10-18T15:32:12.265582Z"],
+    "appVerification": "VALID",
+    "authVerification": "VALID",
+    "httpStatus": 200,
+    "userAgent": "okhttp/4.12.0",
+    "deviceCorrelation": "Physical Play tablet session and user-provided private check-in setup photos; no installation identifier collected."
+  }
+}

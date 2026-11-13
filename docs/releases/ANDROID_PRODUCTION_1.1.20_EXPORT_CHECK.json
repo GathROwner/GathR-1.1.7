@@ -1,0 +1,47 @@
+{
+  "sourceCommit": "e1bf55fafe8d1b14e2f3797d0276112ffe5f20b6",
+  "platform": "android",
+  "runtime": "1.1.20",
+  "bundle": {
+    "bytes": 5770596,
+    "sha256": "ab7223b29d85ab5093de4ea641e48e88b007b3358403edb5d0cc314a2e4573a0",
+    "sourceMapSources": 2470
+  },
+  "matchedBundledSources": [
+    "app/_layout.tsx",
+    "app/index.tsx",
+    "app/(tabs)/map.tsx",
+    "app/(tabs)/events.tsx",
+    "app/(tabs)/specials.tsx",
+    "app/profile.tsx",
+    "config/firebaseConfig.js",
+    "components/map/MapBrandWordmark.tsx",
+    "components/map/MapLogoBackdrop.tsx",
+    "components/map/FloatingMapSearchHeader.tsx",
+    "components/map/EventImageLightbox.tsx",
+    "components/map/EventCallout.tsx",
+    "components/map/InterestsCarousel.tsx",
+    "components/map/UpcomingDateOptions.tsx",
+    "components/sharedEvent/SharedEventPushRegistration.tsx",
+    "lib/sharedEventPushNotifications.ts",
+    "services/appCheckService.ts",
+    "services/socialService.ts",
+    "store/mapStore.ts",
+    "types/social.ts",
+    "utils/lightboxNavigation.ts"
+  ],
+  "assets": 111,
+  "sharedAssetCount": 103,
+  "allSharedAssetBytesEqualToAcceptedBaseline": true,
+  "platformAssets": [
+    "node_modules\\@react-navigation\\elements\\lib\\module\\assets\\back-icon@3x.android.png",
+    "node_modules\\@react-navigation\\elements\\lib\\module\\assets\\search-icon@2x.android.png",
+    "node_modules\\@react-navigation\\elements\\lib\\module\\assets\\search-icon@4x.android.png",
+    "node_modules\\@react-navigation\\elements\\lib\\module\\assets\\back-icon@4x.android.png",
+    "node_modules\\@react-navigation\\elements\\lib\\module\\assets\\search-icon@1x.android.png",
+    "node_modules\\@react-navigation\\elements\\lib\\module\\assets\\back-icon@1x.android.png",
+    "node_modules\\@react-navigation\\elements\\lib\\module\\assets\\search-icon@3x.android.png",
+    "node_modules\\@react-navigation\\elements\\lib\\module\\assets\\back-icon@2x.android.png"
+  ],
+  "unexpectedQaSources": []
+}
