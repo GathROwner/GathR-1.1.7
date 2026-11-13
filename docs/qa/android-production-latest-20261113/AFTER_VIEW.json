@@ -1,0 +1,14 @@
+[
+  {
+    "id": "01a1d71c-b047-730d-938b-6e1df947c56e",
+    "createdAt": "2026-11-13T22:52:24.007Z",
+    "group": "c7788ad8-fdd9-42e1-bc96-b4fbff6bbd25",
+    "branch": "production",
+    "message": "Bring latest GathR UI and Hybrid map fixes to Android Production",
+    "runtimeVersion": "1.1.20",
+    "platform": "android",
+    "manifestPermalink": "https://u.expo.dev/update/01a1d71c-b047-730d-938b-6e1df947c56e",
+    "isRollBackToEmbedded": false,
+    "gitCommitHash": "4ad22b6bf7910c827ff0e9563b4a6bbbca3f8f5e"
+  }
+]

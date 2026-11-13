@@ -1,0 +1,54 @@
+{
+  "name": "production",
+  "id": "019ed566-a2f6-7cd0-b9af-5ab95668b916",
+  "currentPage": [
+    {
+      "branch": "production",
+      "message": "\"Bring latest GathR UI and Hybrid map fixes to Android Production\" (1 minute ago by craigb)",
+      "runtimeVersion": "1.1.20",
+      "isRollBackToEmbedded": false,
+      "group": "c7788ad8-fdd9-42e1-bc96-b4fbff6bbd25",
+      "platforms": "android"
+    },
+    {
+      "branch": "production",
+      "message": "\"Draw compact Hybrid counts with Mapbox and keep large rings segmented\" (8 hours ago by craigb)",
+      "runtimeVersion": "1.1.20",
+      "isRollBackToEmbedded": false,
+      "group": "d097e6cb-3947-4ba0-b42a-430114c88b7c",
+      "platforms": "ios"
+    },
+    {
+      "branch": "production",
+      "message": "\"Narrow Hybrid summaries and repair compact badge redraw\" (9 hours ago by craigb)",
+      "runtimeVersion": "1.1.20",
+      "isRollBackToEmbedded": false,
+      "group": "1430f5a3-8ed8-4e87-a52b-5e844458a0db",
+      "platforms": "ios"
+    },
+    {
+      "branch": "production",
+      "message": "\"Reduce Hybrid grouping and split venues sooner\" (10 hours ago by craigb)",
+      "runtimeVersion": "1.1.20",
+      "isRollBackToEmbedded": false,
+      "group": "f41f2993-8b7e-424c-8214-24005e5558a5",
+      "platforms": "ios"
+    },
+    {
+      "branch": "production",
+      "message": "\"Refine Hybrid clustering and thin venue rings\" (10 hours ago by craigb)",
+      "runtimeVersion": "1.1.20",
+      "isRollBackToEmbedded": false,
+      "group": "4546ebd9-2b62-4857-8445-8793b2eb20df",
+      "platforms": "ios"
+    },
+    {
+      "branch": "production",
+      "message": "\"Restore Hybrid map summary icons and counts on iOS\" (11 hours ago by craigb)",
+      "runtimeVersion": "1.1.20",
+      "isRollBackToEmbedded": false,
+      "group": "6c5fafe6-5396-4fbc-a68c-5a27d5bf4fca",
+      "platforms": "ios"
+    }
+  ]
+}

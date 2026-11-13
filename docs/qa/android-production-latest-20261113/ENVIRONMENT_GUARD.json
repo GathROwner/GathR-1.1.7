@@ -1,0 +1,28 @@
+{
+  "status": "PASS_ANDROID_PRODUCTION_ENVIRONMENT_AND_NATIVE_COMPATIBILITY",
+  "commit": "4ad22b6bf7910c827ff0e9563b4a6bbbca3f8f5e",
+  "androidBaseline": "ad38037cc574bd2d5f606852e11c4c941739e940",
+  "latestIOSSource": "bcc470110060cac673f50b8bbacea17508805113",
+  "compatibleAndroidBuild": "29d6eb0a-78ab-432a-8cca-a03b249fbc51",
+  "compatibleBuildVersion": "14",
+  "runtime": "1.1.20",
+  "platform": "android",
+  "branch": "production",
+  "firebaseProject": "gathr-m1",
+  "socialEnabled": true,
+  "releaseTwoEnabled": true,
+  "appCheckProvider": "playIntegrity in production",
+  "appCheckDebug": false,
+  "emulators": false,
+  "mapboxTokenPresent": true,
+  "ordinaryLocalDependencies": true,
+  "nativeInputsUnchanged": true,
+  "productionBuildProfileUnchanged": true,
+  "applicationTreeMatchesLatestIOS": true,
+  "sha256": {
+    "appConfig": "08bde109f1774f5b1a0e68f9bf68185e97ba5b5297894a6dfccdfd159210e867",
+    "packageLock": "53860f47093e1662a45f3e1be792261198ad16c76174cd976260ef8316ed7d3e",
+    "googleServices": "6c29a2bed8f9d9db9f8dd79c143f6cd3d3f97f15d41d332a45116030f798787b"
+  },
+  "atUTC": "2026-11-13T22:49:51.643Z"
+}
