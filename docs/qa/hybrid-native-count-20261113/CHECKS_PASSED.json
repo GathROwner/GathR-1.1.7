@@ -1,0 +1,13 @@
+{
+  "actualComponentAndNativeVariantReviewed": false,
+  "typescriptExit": 0,
+  "cleanIOSExport": true,
+  "visualReviewed": true,
+  "lintExit": 0,
+  "atUTC": "2026-11-13T14:02:51.6208635Z",
+  "iOSDeviceVerified": false,
+  "commit": "bcc470110060cac673f50b8bbacea17508805113",
+  "testsPassed": 90,
+  "mapboxGLStylesReviewed": true,
+  "androidNativeGlyphVerified": false
+}

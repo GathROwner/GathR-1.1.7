@@ -1,0 +1,224 @@
+{
+  "status": "PASS",
+  "method": "Actual HybridCompactCount props extracted through React rendering, converted to Mapbox Style Specification and rendered by official Mapbox GL JS 3.9.4 with real glyphs. Shared style semantics; not physical iOS verification.",
+  "initial": [
+    [
+      "5"
+    ],
+    [
+      "165"
+    ],
+    [
+      "4002"
+    ]
+  ],
+  "atRestUpdatedCount": "302",
+  "cameraMoved": false,
+  "errors": [],
+  "configs": [
+    {
+      "label": "5",
+      "diameter": 30,
+      "source": "count-0-compact-source",
+      "shape": {
+        "type": "Feature",
+        "properties": {
+          "count": "5"
+        },
+        "geometry": {
+          "type": "Point",
+          "coordinates": [
+            0,
+            0
+          ]
+        }
+      },
+      "layers": [
+        {
+          "id": "count-0-compact-background",
+          "type": "circle",
+          "source": "count-0-compact-source",
+          "paint": {
+            "circle-radius": 14,
+            "circle-color": "#FFFDF6",
+            "circle-stroke-color": "#8C6E31",
+            "circle-stroke-width": 1,
+            "circle-translate": [
+              0,
+              -15
+            ],
+            "circle-translate-anchor": "viewport",
+            "circle-pitch-alignment": "viewport",
+            "circle-pitch-scale": "viewport"
+          }
+        },
+        {
+          "id": "count-0-compact-count",
+          "type": "symbol",
+          "source": "count-0-compact-source",
+          "layout": {
+            "text-field": [
+              "get",
+              "count"
+            ],
+            "text-size": 12,
+            "text-font": [
+              "Open Sans Bold",
+              "Arial Unicode MS Regular"
+            ],
+            "text-allow-overlap": true,
+            "text-ignore-placement": true,
+            "text-padding": 0,
+            "text-anchor": "center",
+            "text-pitch-alignment": "viewport",
+            "text-rotation-alignment": "viewport"
+          },
+          "paint": {
+            "text-color": "#674C13",
+            "text-translate": [
+              0,
+              -15
+            ],
+            "text-translate-anchor": "viewport"
+          }
+        }
+      ]
+    },
+    {
+      "label": "165",
+      "diameter": 42,
+      "source": "count-1-compact-source",
+      "shape": {
+        "type": "Feature",
+        "properties": {
+          "count": "165"
+        },
+        "geometry": {
+          "type": "Point",
+          "coordinates": [
+            0,
+            0
+          ]
+        }
+      },
+      "layers": [
+        {
+          "id": "count-1-compact-background",
+          "type": "circle",
+          "source": "count-1-compact-source",
+          "paint": {
+            "circle-radius": 20,
+            "circle-color": "#FFFDF6",
+            "circle-stroke-color": "#8C6E31",
+            "circle-stroke-width": 1,
+            "circle-translate": [
+              0,
+              -21
+            ],
+            "circle-translate-anchor": "viewport",
+            "circle-pitch-alignment": "viewport",
+            "circle-pitch-scale": "viewport"
+          }
+        },
+        {
+          "id": "count-1-compact-count",
+          "type": "symbol",
+          "source": "count-1-compact-source",
+          "layout": {
+            "text-field": [
+              "get",
+              "count"
+            ],
+            "text-size": 12,
+            "text-font": [
+              "Open Sans Bold",
+              "Arial Unicode MS Regular"
+            ],
+            "text-allow-overlap": true,
+            "text-ignore-placement": true,
+            "text-padding": 0,
+            "text-anchor": "center",
+            "text-pitch-alignment": "viewport",
+            "text-rotation-alignment": "viewport"
+          },
+          "paint": {
+            "text-color": "#674C13",
+            "text-translate": [
+              0,
+              -21
+            ],
+            "text-translate-anchor": "viewport"
+          }
+        }
+      ]
+    },
+    {
+      "label": "4002",
+      "diameter": 50,
+      "source": "count-2-compact-source",
+      "shape": {
+        "type": "Feature",
+        "properties": {
+          "count": "4002"
+        },
+        "geometry": {
+          "type": "Point",
+          "coordinates": [
+            0,
+            0
+          ]
+        }
+      },
+      "layers": [
+        {
+          "id": "count-2-compact-background",
+          "type": "circle",
+          "source": "count-2-compact-source",
+          "paint": {
+            "circle-radius": 24,
+            "circle-color": "#FFFDF6",
+            "circle-stroke-color": "#8C6E31",
+            "circle-stroke-width": 1,
+            "circle-translate": [
+              0,
+              -25
+            ],
+            "circle-translate-anchor": "viewport",
+            "circle-pitch-alignment": "viewport",
+            "circle-pitch-scale": "viewport"
+          }
+        },
+        {
+          "id": "count-2-compact-count",
+          "type": "symbol",
+          "source": "count-2-compact-source",
+          "layout": {
+            "text-field": [
+              "get",
+              "count"
+            ],
+            "text-size": 12,
+            "text-font": [
+              "Open Sans Bold",
+              "Arial Unicode MS Regular"
+            ],
+            "text-allow-overlap": true,
+            "text-ignore-placement": true,
+            "text-padding": 0,
+            "text-anchor": "center",
+            "text-pitch-alignment": "viewport",
+            "text-rotation-alignment": "viewport"
+          },
+          "paint": {
+            "text-color": "#674C13",
+            "text-translate": [
+              0,
+              -25
+            ],
+            "text-translate-anchor": "viewport"
+          }
+        }
+      ]
+    }
+  ]
+}

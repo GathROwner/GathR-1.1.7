@@ -1,0 +1,14 @@
+[
+  {
+    "id": "01a1d53b-c41d-75aa-a336-6ae4bd130b8e",
+    "createdAt": "2026-11-13T14:07:06.269Z",
+    "group": "d097e6cb-3947-4ba0-b42a-430114c88b7c",
+    "branch": "production",
+    "message": "Draw compact Hybrid counts with Mapbox and keep large rings segmented",
+    "runtimeVersion": "1.1.20",
+    "platform": "ios",
+    "manifestPermalink": "https://u.expo.dev/update/01a1d53b-c41d-75aa-a336-6ae4bd130b8e",
+    "isRollBackToEmbedded": false,
+    "gitCommitHash": "bcc470110060cac673f50b8bbacea17508805113"
+  }
+]
