@@ -1,0 +1,38 @@
+{
+  "name": "production",
+  "id": "019ed566-a2f6-7cd0-b9af-5ab95668b916",
+  "currentPage": [
+    {
+      "branch": "production",
+      "message": "\"Reduce Hybrid grouping and split venues sooner\" (1 minute ago by craigb)",
+      "runtimeVersion": "1.1.20",
+      "isRollBackToEmbedded": false,
+      "group": "f41f2993-8b7e-424c-8214-24005e5558a5",
+      "platforms": "ios"
+    },
+    {
+      "branch": "production",
+      "message": "\"Refine Hybrid clustering and thin venue rings\" (18 minutes ago by craigb)",
+      "runtimeVersion": "1.1.20",
+      "isRollBackToEmbedded": false,
+      "group": "4546ebd9-2b62-4857-8445-8793b2eb20df",
+      "platforms": "ios"
+    },
+    {
+      "branch": "production",
+      "message": "\"Restore Hybrid map summary icons and counts on iOS\" (53 minutes ago by craigb)",
+      "runtimeVersion": "1.1.20",
+      "isRollBackToEmbedded": false,
+      "group": "6c5fafe6-5396-4fbc-a68c-5a27d5bf4fca",
+      "platforms": "ios"
+    },
+    {
+      "branch": "production",
+      "message": "\"Use native map graphics for Hybrid gestures and refine marker sizing\" (10 hours ago by craigb)",
+      "runtimeVersion": "1.1.20",
+      "isRollBackToEmbedded": false,
+      "group": "504afe48-6b46-4947-8025-8b0fe0c46e6c",
+      "platforms": "ios"
+    }
+  ]
+}

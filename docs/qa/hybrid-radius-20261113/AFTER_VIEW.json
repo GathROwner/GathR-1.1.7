@@ -1,0 +1,14 @@
+[
+  {
+    "id": "01a1d4ee-f116-76a0-b5cf-67069154ef5f",
+    "createdAt": "2026-11-13T12:43:11.510Z",
+    "group": "f41f2993-8b7e-424c-8214-24005e5558a5",
+    "branch": "production",
+    "message": "Reduce Hybrid grouping and split venues sooner",
+    "runtimeVersion": "1.1.20",
+    "platform": "ios",
+    "manifestPermalink": "https://u.expo.dev/update/01a1d4ee-f116-76a0-b5cf-67069154ef5f",
+    "isRollBackToEmbedded": false,
+    "gitCommitHash": "36756c0c3ceafb62b313bdc0c7db532d76e43ab1"
+  }
+]
