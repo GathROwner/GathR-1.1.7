@@ -46,7 +46,7 @@ export default function HybridMapAnnotation(props: Props) {
   const bitmapHeight = Platform.OS === 'ios' ? Math.max(4, Math.ceil(Math.floor(size.height) / 4) * 4) : Math.max(1, size.height);
   // Anchor the visible content, not the transparent padding added by native snapshot rounding.
   const anchor = { x: (size.width / 2 - dockX) / bitmapWidth, y: (size.height - dockY) / bitmapHeight };
-  useEffect(refresh, [refresh, compact, disabled, isSelected, dockX, dockY, size, selectionReset]);
+  useEffect(refresh, [refresh, compact, disabled, isSelected, dockX, dockY, coordinate[0], coordinate[1], size, selectionReset]);
   return <>
     {!compact && photo.height > 0 && <HybridMapHalo id={id} coordinate={coordinate} radius={photo.height / 2}
       translate={[dockX, dockY - (size.height - photo.y - photo.height / 2)]}
@@ -64,11 +64,11 @@ export default function HybridMapAnnotation(props: Props) {
       }}>
       <View collapsable={false} pointerEvents="none" onLayout={measure}>
         <PuckMarkerMeasurement id={cluster.id} compact={compact} countLabel={String(cluster.eventCount + cluster.specialCount)}
-          countContent={<HybridSummaryImage graphic={countGraphic(String(cluster.eventCount + cluster.specialCount))} onLoad={refresh} />}
+          countContent={<HybridSummaryImage graphic={countGraphic(String(cluster.eventCount + cluster.specialCount))} visible={compact} onLoad={refresh} />}
           dockX={props.measurementDockX} dockY={props.measurementDockY} record={props.record}>
           <HybridClusterMarker cluster={cluster} isActive={props.isActive} isSelected={isSelected} isReady={props.isReady}
             isProcessing={props.isProcessing} reduceMotionEnabled={props.reduceMotionEnabled} categoryIcon={props.categoryIcon}
-            snapshotMode onSnapshotChange={refresh} onPhotoLayout={measurePhoto} />
+            snapshotMode snapshotVisible={!compact} onSnapshotChange={refresh} onPhotoLayout={measurePhoto} />
         </PuckMarkerMeasurement>
       </View>
     </Mapbox.PointAnnotation>
