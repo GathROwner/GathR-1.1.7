@@ -1,0 +1,20 @@
+[
+  {
+    "view": "markers",
+    "size": [
+      1520,
+      2000
+    ],
+    "identicalRGB": true,
+    "differenceBounds": null
+  },
+  {
+    "view": "selector",
+    "size": [
+      786,
+      1706
+    ],
+    "identicalRGB": true,
+    "differenceBounds": null
+  }
+]

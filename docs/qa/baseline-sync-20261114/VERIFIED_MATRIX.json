@@ -6,12 +6,12 @@
       "channel": "production",
       "platform": "ios",
       "runtime": "1.1.20",
-      "commit": "5525d46c8324a674c3f00993c798e78acec76da3",
-      "group": "94b32700-e9c6-445b-b9a9-94699f1cefe5",
-      "update": "01a1dc4d-d69a-7b3c-ab9c-9e3b0427b39d",
+      "commit": "791c4cb909fdffcb0887abbd77b9fffe9debdfc1",
+      "group": "e3e2342e-4bdb-413e-8295-1dd2fcf5baf6",
+      "update": "01a1dc6c-3b1d-7868-be7f-875a75d7f648",
       "status": "verified-newest-platform-update",
       "deviceAdoptionVerified": false,
-      "scope": "accepted full Production UI plus Hybrid redraw optimization and dormant opt-in tap diagnostics"
+      "scope": "accepted full Production UI, Hybrid redraw optimization and earlier completed-tap entry; dormant diagnostics"
     },
     {
       "channel": "production",
@@ -69,6 +69,7 @@
       "scope": "list-filter backport preserving this runtime baseline"
     }
   ],
-  "latestIOSPerformanceFix": "ef9c17fbe626e9242081b3ccf112fffd59343679",
-  "latestIOSDiagnostic": "5525d46c8324a674c3f00993c798e78acec76da3"
+  "latestIOSPerformanceFix": "791c4cb909fdffcb0887abbd77b9fffe9debdfc1",
+  "latestIOSDiagnostic": "791c4cb909fdffcb0887abbd77b9fffe9debdfc1",
+  "latestIOSTapFix": "791c4cb909fdffcb0887abbd77b9fffe9debdfc1"
 }

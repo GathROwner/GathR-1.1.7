@@ -1,0 +1,37 @@
+{
+  "source": "Craig pasted iPhone diagnostic capture, 19:14 local time, 2026-11-14",
+  "current": {
+    "venueCount": 2,
+    "releaseEventObserved": false,
+    "handlerToSelectionMs": 14,
+    "selectionToFrameProxyMs": 262
+  },
+  "hybrid": {
+    "venueCount": 16,
+    "nativeTouchDurationMs": 87.515,
+    "releaseEventReceivedMonoMs": 74206104.981,
+    "nativeSelectionReceivedMonoMs": 74206458.316,
+    "handlerEntryMonoMs": 74206458.404,
+    "selectionMonoMs": 74206459.387,
+    "componentRenderedMonoMs": 74206575.812,
+    "initialLayoutMonoMs": 74206703.045,
+    "parentPresentationAppliedMonoMs": 74206756.95,
+    "firstFrameProxyMonoMs": 74206823.914,
+    "releaseToHandlerMs": 353,
+    "handlerToSelectionMs": 1,
+    "selectionToFrameProxyMs": 365,
+    "releaseToFrameProxyMs": 719,
+    "preparedCalloutCacheHit": true,
+    "ready": true,
+    "mapMoving": false,
+    "loading": false,
+    "programmaticCamera": false,
+    "processingGuardActive": false
+  },
+  "limits": [
+    "JS receipt of release is the starting clock, not physical native touch time",
+    "First-frame metric is a JS animation-frame proxy, not iPhone pixel display proof",
+    "Current and Hybrid opened different cluster sizes, so rendering comparison is not controlled",
+    "No diagnosis of race condition or specific SDK substage is established"
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "status": "PASS",
+  "actualComponentRender": true,
+  "pixelIdenticalToLive": true,
+  "independentImageReview": true,
+  "views": [
+    "iOS marker variants including 126 venues, selected state, fallback image and friend badges",
+    "compact 2x2 map selector and legend"
+  ],
+  "nativeDeviceGestureCheck": false,
+  "source": "fe6e43c plus 6c9a83e",
+  "releaseCommit": "791c4cb909fdffcb0887abbd77b9fffe9debdfc1"
+}

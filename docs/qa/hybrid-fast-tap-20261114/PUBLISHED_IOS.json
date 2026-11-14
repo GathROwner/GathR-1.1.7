@@ -1,0 +1,12 @@
+{
+  "id": "01a1dc6c-3b1d-7868-be7f-875a75d7f648",
+  "createdAt": "2026-11-14T23:37:22.973Z",
+  "group": "e3e2342e-4bdb-413e-8295-1dd2fcf5baf6",
+  "branch": "production",
+  "message": "Open Hybrid clusters on completed taps before native annotation selection",
+  "runtimeVersion": "1.1.20",
+  "platform": "ios",
+  "manifestPermalink": "https://u.expo.dev/update/01a1dc6c-3b1d-7868-be7f-875a75d7f648",
+  "isRollBackToEmbedded": false,
+  "gitCommitHash": "791c4cb909fdffcb0887abbd77b9fffe9debdfc1"
+}

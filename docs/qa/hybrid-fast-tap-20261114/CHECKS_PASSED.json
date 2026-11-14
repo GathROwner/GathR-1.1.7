@@ -1,0 +1,14 @@
+{
+  "atUTC": "2026-11-14T23:33:11.1229432Z",
+  "visualReviewed": true,
+  "nativeChanges": false,
+  "lintErrors": 0,
+  "typescript": true,
+  "runtime": "1.1.20",
+  "tests": 72,
+  "mapbox": true,
+  "deviceTimingsCaptured": false,
+  "commit": "791c4cb909fdffcb0887abbd77b9fffe9debdfc1",
+  "mode": "earlier completed-tap delivery; existing handlers and native fallback preserved; dormant diagnostics retained",
+  "iosExport": true
+}
