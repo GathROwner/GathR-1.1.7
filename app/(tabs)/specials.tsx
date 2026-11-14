@@ -1,3 +1,4 @@
+import { getListFilterCandidates } from '../../utils/listFilterCandidates';
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import {
   View,
@@ -1761,7 +1762,7 @@ useEffect(() => {
     // Track special-specific filter effectiveness
     setTimeout(() => {
       const filterChangeTime = Date.now() - filterChangeStartTime;
-      const timeFilterCounts = getTimeFilterCounts('special');
+      const timeFilterCounts = getTimeFilterCounts('special', listFilterCandidates);
       
       analytics.trackEventFilter('time', newFilter, {
         previous_filter: previousFilter,
@@ -1828,7 +1829,7 @@ useEffect(() => {
     
     // Track special category filter selection with effectiveness metrics
     setTimeout(() => {
-      const categoryFilterCounts = getCategoryFilterCounts('special');
+      const categoryFilterCounts = getCategoryFilterCounts('special', listFilterCandidates);
       
       analytics.trackEventFilter('category', category, {
         result_count: categoryFilterCounts[category] || 0,
@@ -1839,9 +1840,14 @@ useEffect(() => {
     }, 100);
   };
 
+  const listFilterCandidates = useMemo(() => getListFilterCandidates(
+    viewportEvents, outsideViewportEvents, 'special',
+    filterCriteria.specialFilters.savedOnly, savedEvents,
+  ), [viewportEvents, outsideViewportEvents, filterCriteria.specialFilters.savedOnly, savedEvents]);
+
   // Get dynamic filter counts
   const timeFilterCounts = isFocusedContentReady
-    ? measureListTabStage('specials', 'time_filter_counts', {}, () => getTimeFilterCounts('special'))
+    ? measureListTabStage('specials', 'time_filter_counts', {}, () => getTimeFilterCounts('special', listFilterCandidates))
     : {
         [TimeFilterType.ALL]: 0,
         [TimeFilterType.NOW]: 0,
@@ -1850,7 +1856,7 @@ useEffect(() => {
         [TimeFilterType.UPCOMING]: 0,
       };
   const categoryFilterCounts = isFocusedContentReady
-    ? measureListTabStage('specials', 'category_filter_counts', {}, () => getCategoryFilterCounts('special'))
+    ? measureListTabStage('specials', 'category_filter_counts', {}, () => getCategoryFilterCounts('special', listFilterCandidates))
     : {};
 
   const savedEventSet = useMemo(() => {
