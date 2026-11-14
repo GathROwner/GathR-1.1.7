@@ -10,7 +10,7 @@ import {
 } from 'react-native';
 import {
   MAP_TRACE_UI_ENABLED,
-  clearMapTrace,
+  startMapTrace,
   formatMapTraceExport,
   traceMapEvent,
   useMapTraceState,
@@ -56,7 +56,7 @@ export default function MapTracePanel({ visible, onClose }: MapTracePanelProps) 
   };
 
   const handleClear = () => {
-    clearMapTrace();
+    startMapTrace();
     traceMapEvent('trace_cleared');
   };
 
@@ -86,7 +86,7 @@ export default function MapTracePanel({ visible, onClose }: MapTracePanelProps) 
             <Text style={styles.primaryButtonText}>Share Logs</Text>
           </TouchableOpacity>
           <TouchableOpacity style={[styles.secondaryButton, styles.buttonSpacing]} onPress={handleClear}>
-            <Text style={styles.secondaryButtonText}>Clear</Text>
+            <Text style={styles.secondaryButtonText}>Start / Clear</Text>
           </TouchableOpacity>
           <TouchableOpacity style={styles.secondaryButton} onPress={handleClose}>
             <Text style={styles.secondaryButtonText}>Close</Text>
