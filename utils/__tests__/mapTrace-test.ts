@@ -164,6 +164,22 @@ describe('bounded map latency diagnostics', () => {
     ]);
   });
 
+  it('retains bounded opening stages across camera-log eviction and clears both histories', () => {
+    const trace = loadEnabledTrace();
+    const session = trace.beginMapTraceGestureSession('map_touch');
+    trace.traceMapEvent('map_tap_released', { mapStyle: 'current' }, { gestureSessionId: session });
+    trace.traceMapEvent('marker_press_started', { mapStyle: 'current', clusterId: 'a' }, { gestureSessionId: session });
+    for (let i = 0; i < 180; i++) trace.traceMapEvent('camera_milestone');
+    expect(trace.getMapTraceState().entries).toHaveLength(160);
+    expect(trace.getMapTraceState().openingEntries.map(e => e.label)).toEqual(['map_tap_released', 'marker_press_started']);
+    expect(trace.formatMapTraceExport()).toContain('"style":"current"');
+    for (let i = 0; i < 40; i++) trace.traceMapEvent('marker_press_started');
+    expect(trace.getMapTraceState().openingEntries).toHaveLength(32);
+    trace.clearMapTrace();
+    expect(trace.getMapTraceState().entries).toHaveLength(0);
+    expect(trace.getMapTraceState().openingEntries).toHaveLength(0);
+  });
+
   it('notifies an enabled trace panel subscriber', () => {
     jest.spyOn(globalThis.performance, 'now').mockReturnValue(1);
     const trace = loadEnabledTrace();
