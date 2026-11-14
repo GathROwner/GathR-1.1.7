@@ -23,6 +23,8 @@ export default function HybridMapAnnotation(props: Props) {
   const frame = useRef<number | null>(null);
   const [size, setSize] = useState({ width: 1, height: 1 });
   const [photo, setPhoto] = useState({ y: 0, height: 0 });
+  const measuredSize = useRef(size);
+  const measuredPhoto = useRef(photo);
   const [selectionReset, setSelectionReset] = useState(0);
   const countLabel = String(cluster.eventCount + cluster.specialCount);
   const compactDiameter = hybridCompactDiameter(countLabel);
@@ -36,18 +38,23 @@ export default function HybridMapAnnotation(props: Props) {
   useEffect(() => () => { if (frame.current !== null) cancelAnimationFrame(frame.current); }, []);
   const measure = useCallback((e: LayoutChangeEvent) => {
     const { width, height } = e.nativeEvent.layout;
-    setSize(old => old.width === width && old.height === height ? old : { width, height });
+    if (measuredSize.current.width === width && measuredSize.current.height === height) return;
+    measuredSize.current = { width, height };
+    setSize(measuredSize.current);
     refresh();
   }, [refresh]);
   const measurePhoto = useCallback((next: { y: number; height: number }) => {
-    setPhoto(old => old.y === next.y && old.height === next.height ? old : next); refresh();
+    if (measuredPhoto.current.y === next.y && measuredPhoto.current.height === next.height) return;
+    measuredPhoto.current = next;
+    setPhoto(next);
+    refresh();
   }, [refresh]);
   // iOS rounds snapshot dimensions to a multiple of four logical points.
   const bitmapWidth = Platform.OS === 'ios' ? Math.max(4, Math.ceil(Math.floor(size.width) / 4) * 4) : Math.max(1, size.width);
   const bitmapHeight = Platform.OS === 'ios' ? Math.max(4, Math.ceil(Math.floor(size.height) / 4) * 4) : Math.max(1, size.height);
   // Anchor the visible content, not the transparent padding added by native snapshot rounding.
   const anchor = { x: (size.width / 2 - dockX) / bitmapWidth, y: (size.height - dockY) / bitmapHeight };
-  useEffect(refresh, [refresh, compact, disabled, isSelected, dockX, dockY, coordinate[0], coordinate[1], size, selectionReset]);
+  useEffect(refresh, [refresh, compact, isSelected, dockX, dockY, coordinate[0], coordinate[1], size, selectionReset]);
   return <>
     {compact && <HybridCompactCount id={id} coordinate={coordinate} label={countLabel} diameter={compactDiameter}
       dockX={dockX} dockY={dockY} onPress={() => { if (!disabled && !isSelected) props.onPress(); }} />}
