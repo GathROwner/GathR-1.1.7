@@ -1,0 +1,44 @@
+{
+  "source": "Craig pasted optimized iPhone trace and acceptance, 2026-11-14 19:56 local",
+  "userAssessment": "Whatever you did made the cluster click much faster. Potentially indistinguishable from the current old one.",
+  "largeCluster": {
+    "venueCount": 16,
+    "before": {
+      "releaseToHandlerMs": 353,
+      "handlerToSelectionMs": 1,
+      "selectionToFrameProxyMs": 365,
+      "releaseToFrameProxyMs": 719
+    },
+    "after": {
+      "releaseToHandlerMs": 3,
+      "handlerToSelectionMs": 1,
+      "selectionToFrameProxyMs": 363,
+      "releaseToFrameProxyMs": 367
+    },
+    "observedReductionMs": 352,
+    "observedReductionPercent": 49.0
+  },
+  "smallCluster": {
+    "venueCount": 2,
+    "releaseToHandlerRoundedMs": 0,
+    "releaseToHandlerExactMs": 0.489,
+    "nativeQueryMs": 0.414,
+    "selectionToFrameProxyMs": 233,
+    "releaseToFrameProxyMs": 234,
+    "earlierReleaseRouteObserved": true,
+    "laterNativeSelectionIgnoredWhileSelected": true
+  },
+  "acceptedBaseline": {
+    "releaseCommit": "791c4cb909fdffcb0887abbd77b9fffe9debdfc1",
+    "update": "01a1dc6c-3b1d-7868-be7f-875a75d7f648",
+    "userAccepted": true,
+    "phoneBehaviourVerified": true,
+    "exactProfileFooterIncluded": false
+  },
+  "limits": [
+    "These are phone samples, not a controlled repeated benchmark",
+    "Frame timing is a JS animation-frame proxy, not physical screen-display proof",
+    "No claim of measured equality with Current; user reports potentially indistinguishable",
+    "Later rendering and cold-start loading remain separate"
+  ]
+}

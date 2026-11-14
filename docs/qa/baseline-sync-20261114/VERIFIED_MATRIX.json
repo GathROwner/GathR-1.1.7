@@ -11,7 +11,10 @@
       "update": "01a1dc6c-3b1d-7868-be7f-875a75d7f648",
       "status": "verified-newest-platform-update",
       "deviceAdoptionVerified": false,
-      "scope": "accepted full Production UI, Hybrid redraw optimization and earlier completed-tap entry; dormant diagnostics"
+      "scope": "accepted full Production UI, Hybrid redraw optimization and earlier completed-tap entry; dormant diagnostics",
+      "phoneBehaviourVerified": true,
+      "userAccepted": true,
+      "phoneEvidence": "../hybrid-fast-tap-20261114/PHONE_AFTER.json"
     },
     {
       "channel": "production",
