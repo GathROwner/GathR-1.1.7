@@ -53,6 +53,18 @@ it('routes only native completed selection to the existing cluster action and pr
   act(() => point().props.onSelected()); expect(press).toHaveBeenCalledTimes(1);
 });
 
+it('registers actual committed annotation coordinates and unregisters old/compact hit identities', () => {
+  const cleanup = jest.fn();
+  const registerTapTarget = jest.fn(() => cleanup);
+  act(() => tree.update(render({ registerTapTarget })));
+  expect(registerTapTarget).toHaveBeenLastCalledWith('point-one', cluster, base.coordinate, true);
+  act(() => tree.update(render({ registerTapTarget, coordinate: [-63.2, 46.3] })));
+  expect(cleanup).toHaveBeenCalledTimes(1);
+  expect(registerTapTarget).toHaveBeenLastCalledWith('point-one', cluster, [-63.2, 46.3], true);
+  act(() => tree.update(render({ registerTapTarget, compact: true })));
+  expect(registerTapTarget).toHaveBeenLastCalledWith('point-one', cluster, base.coordinate, false);
+});
+
 it('closes through the existing background path only for native map-background deselection', () => {
   act(() => point().props.onDeselected({ properties: {} }));
   expect(background).not.toHaveBeenCalled();
