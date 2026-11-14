@@ -1,6 +1,7 @@
 import { useMapStore, createEventTimeContext, doesEventMatchTypeFilters } from '../mapStore';
 import type { Event } from '../../types/events';
 import { DEFAULT_FILTER_CRITERIA, TimeFilterType, type UpcomingDateFilter } from '../../types/filter';
+import { getListFilterCandidates } from '../../utils/listFilterCandidates';
 import { countUpcomingDateEvents, countUpcomingDateItems } from '../../utils/mapEventFilters';
 import { getInterestCarouselEvents } from '../../utils/interestCarouselOrder';
 import { doesEventMatchInterestCarouselBaseFilters } from '../../utils/interestCarouselFilterUtils';
@@ -177,5 +178,84 @@ describe('one Upcoming filtering contract', () => {
     useMapStore.getState().setTypeFilters('special', { timeFilter: TimeFilterType.TODAY });
     expect(useMapStore.getState().filterCriteria.specialFilters.upcomingDate).toBeUndefined();
     expect(ids(useMapStore.getState().filteredEvents)).toEqual(['special-today']);
+  });
+});
+
+
+describe('list filter counts beyond the map viewport', () => {
+  beforeEach(() => {
+    jest.useFakeTimers();
+    jest.setSystemTime(new Date(2026, 8, 25, 12));
+    useMapStore.setState({ onScreenEvents: [], filterCriteria: {
+      ...DEFAULT_FILTER_CRITERIA,
+      eventFilters: { timeFilter: TimeFilterType.TODAY },
+      specialFilters: { timeFilter: TimeFilterType.TODAY },
+    } });
+  });
+  afterEach(() => jest.useRealTimers());
+
+  it.each(['event', 'special'] as const)('offers outside-view %s categories with no on-screen results', type => {
+    const outside = [makeEvent('music', '2026-09-25', { type }),
+      makeEvent('comedy', '2026-09-25', { type, category: 'Comedy' }),
+      makeEvent('tomorrow', '2026-09-26', { type }),
+      makeEvent('expired', '2026-09-24', { type })];
+    const candidates = getListFilterCandidates([], outside, type, false, []);
+    const state = useMapStore.getState();
+    expect(state.getCategoryFilterCounts(type, candidates)).toMatchObject({ 'Live Music': 1, Comedy: 1 });
+    expect(state.getTimeFilterCounts(type, candidates)).toMatchObject({ today: 2, tomorrow: 1, all: 3 });
+    expect(state.getTimeFilterCounts(type).today).toBe(0);
+    expect(state.getCategoryFilterCounts(type)).toEqual({});
+  });
+
+  it('keeps all alternative categories while filtering outside-view results by category', () => {
+    const inside = [makeEvent('music', '2026-09-25')];
+    const outside = [makeEvent('comedy', '2026-09-25', { category: 'Comedy' })];
+    const candidates = getListFilterCandidates(inside, outside, 'event', false, []);
+    useMapStore.setState({ onScreenEvents: inside, filterCriteria: {
+      ...useMapStore.getState().filterCriteria,
+      eventFilters: { timeFilter: TimeFilterType.TODAY, category: 'Comedy' },
+    } });
+    const state = useMapStore.getState();
+    expect(state.getCategoryFilterCounts('event', candidates)).toMatchObject({ 'Live Music': 1, Comedy: 1 });
+    expect(state.getTimeFilterCounts('event', candidates).today).toBe(1);
+    expect(state.getTimeFilterCounts('event').today).toBe(0);
+    expect(ids(outside.filter(event => doesEventMatchTypeFilters(event, state.filterCriteria.eventFilters))))
+      .toEqual(['comedy']);
+    expect(state.getCategoryFilterCounts('event', candidates)).toBe(state.getCategoryFilterCounts('event', candidates));
+  });
+
+  it('counts the full pool beyond the first page and includes inside and outside items once', () => {
+    const inside = [makeEvent('inside', '2026-09-25')];
+    const outside = Array.from({ length: 26 }, (_, i) => makeEvent(String(i), '2026-09-25'));
+    const candidates = getListFilterCandidates(inside, outside, 'event', false, []);
+    expect(useMapStore.getState().getTimeFilterCounts('event', candidates).today).toBe(27);
+    expect(useMapStore.getState().getCategoryFilterCounts('event', candidates)['Live Music']).toBe(27);
+  });
+
+  it('respects saved-only, type, search and custom Upcoming dates in counts and date choices', () => {
+    const outside = [makeEvent('saved', '2026-09-28'),
+      makeEvent('unsaved', '2026-09-28', { category: 'Comedy' }),
+      makeEvent('special', '2026-09-28', { type: 'special' }),
+      makeEvent('later', '2026-10-05')];
+    const candidates = getListFilterCandidates([], outside, 'event', true, ['saved', 'special', 'later']);
+    expect(ids(candidates)).toEqual(['saved', 'later']);
+    useMapStore.setState({ filterCriteria: { ...useMapStore.getState().filterCriteria,
+      eventFilters: { timeFilter: TimeFilterType.UPCOMING, upcomingDate: custom, search: 'saved' } } });
+    const state = useMapStore.getState();
+    expect(state.getCategoryFilterCounts('event', candidates)['Live Music']).toBe(1);
+    expect(state.getTimeFilterCounts('event', candidates).upcoming).toBe(1);
+    expect(countUpcomingDateItems(candidates, state.filterCriteria, custom, 'event')).toBe(1);
+    expect(getListFilterCandidates([], outside, 'event', true, [])).toEqual([]);
+  });
+
+  it('does not reuse stale counts after candidates or filters change', () => {
+    const state = useMapStore.getState();
+    const first = [makeEvent('first', '2026-09-25')];
+    const second = [...first, makeEvent('second', '2026-09-25')];
+    expect(state.getTimeFilterCounts('event', first).today).toBe(1);
+    expect(state.getTimeFilterCounts('event', second).today).toBe(2);
+    useMapStore.setState({ filterCriteria: { ...state.filterCriteria,
+      eventFilters: { timeFilter: TimeFilterType.TODAY, search: 'first' } } });
+    expect(useMapStore.getState().getTimeFilterCounts('event', second).today).toBe(1);
   });
 });

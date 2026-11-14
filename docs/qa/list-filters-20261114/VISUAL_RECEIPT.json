@@ -1,0 +1,135 @@
+{
+  "method": "Actual production filter JSX/styles and category/date components via RN Web; actual count function and list candidate helper; fixture data; iOS prop; not device verification",
+  "records": [
+    {
+      "name": "events-outside",
+      "type": "event",
+      "width": 390,
+      "counts": {
+        "time": {
+          "all": 14,
+          "now": 12,
+          "today": 12,
+          "tomorrow": 0,
+          "upcoming": 2
+        },
+        "category": {
+          "Live Music": 5,
+          "Trivia Night": 3,
+          "Workshops & Classes": 4
+        }
+      },
+      "matched": 12,
+      "htmlPath": "C:\\Users\\craig\\.codex\\worktrees\\app-ui-changes\\GathR-upgrade-sdk54\\artifacts\\list-filters-20261114\\events-outside.html",
+      "text": "Actual list filter panel · fixture data · empty map area\nWhen\nShow All\n\nNow (12)\n\nToday (12)\n\nTomorrow (0)\n\nUpcoming (2)\nCategory\nShowing All\n\nLive Music\n(5)\n\nWorkshops & Classes\n(4)\n\nTrivia Night\n(3)\nEvents outside your current map view (12)\nLive Music\nFixture result · outside the map view"
+    },
+    {
+      "name": "events-selected",
+      "type": "event",
+      "width": 390,
+      "counts": {
+        "time": {
+          "all": 7,
+          "now": 5,
+          "today": 5,
+          "tomorrow": 0,
+          "upcoming": 2
+        },
+        "category": {
+          "Live Music": 5,
+          "Trivia Night": 3,
+          "Workshops & Classes": 4
+        }
+      },
+      "matched": 5,
+      "htmlPath": "C:\\Users\\craig\\.codex\\worktrees\\app-ui-changes\\GathR-upgrade-sdk54\\artifacts\\list-filters-20261114\\events-selected.html",
+      "text": "Actual list filter panel · fixture data · empty map area\nWhen\nShow All\n\nNow (5)\n\nToday (5)\n\nTomorrow (0)\n\nUpcoming (2)\nCategory\nShow All\n\nLive Music\n(5)\n\nWorkshops & Classes\n(4)\n\nTrivia Night\n(3)\nEvents outside your current map view (5)\nLive Music\nFixture result · outside the map view"
+    },
+    {
+      "name": "events-upcoming",
+      "type": "event",
+      "width": 390,
+      "counts": {
+        "time": {
+          "all": 14,
+          "now": 12,
+          "today": 12,
+          "tomorrow": 0,
+          "upcoming": 2
+        },
+        "category": {
+          "Live Music": 2,
+          "Trivia Night": 0,
+          "Workshops & Classes": 0
+        }
+      },
+      "matched": 2,
+      "htmlPath": "C:\\Users\\craig\\.codex\\worktrees\\app-ui-changes\\GathR-upgrade-sdk54\\artifacts\\list-filters-20261114\\events-upcoming.html",
+      "text": "Actual list filter panel · fixture data · empty map area\nWhen\nShow All\n\nNow (12)\n\nToday (12)\n\nTomorrow (0)\n\nUpcoming (2)\nUpcoming dates\n\nAny date (2)\n\nThis weekend (0)\n\nNext 7 days (2)\n\nChoose date… (0)\nCategory\nShowing All\n\nLive Music\n(2)\nEvents outside your current map view (2)\nLive Music\nFixture result · outside the map view"
+    },
+    {
+      "name": "specials-outside",
+      "type": "special",
+      "width": 390,
+      "counts": {
+        "time": {
+          "all": 6,
+          "now": 6,
+          "today": 6,
+          "tomorrow": 0,
+          "upcoming": 0
+        },
+        "category": {
+          "Food Special": 4,
+          "Drink Special": 2
+        }
+      },
+      "matched": 6,
+      "htmlPath": "C:\\Users\\craig\\.codex\\worktrees\\app-ui-changes\\GathR-upgrade-sdk54\\artifacts\\list-filters-20261114\\specials-outside.html",
+      "text": "Actual list filter panel · fixture data · empty map area\nWhen\nShow All\n\nNow (6)\n\nToday (6)\n\nTomorrow (0)\n\nUpcoming (0)\nCategory\nShowing All\n\nFood Special\n(4)\n\nDrink Special\n(2)\nSpecials outside your current map view (6)\nFood Special\nFixture result · outside the map view"
+    },
+    {
+      "name": "events-narrow",
+      "type": "event",
+      "width": 320,
+      "counts": {
+        "time": {
+          "all": 14,
+          "now": 12,
+          "today": 12,
+          "tomorrow": 0,
+          "upcoming": 2
+        },
+        "category": {
+          "Live Music": 5,
+          "Trivia Night": 3,
+          "Workshops & Classes": 4
+        }
+      },
+      "matched": 12,
+      "htmlPath": "C:\\Users\\craig\\.codex\\worktrees\\app-ui-changes\\GathR-upgrade-sdk54\\artifacts\\list-filters-20261114\\events-narrow.html",
+      "text": "Actual list filter panel · fixture data · empty map area\nWhen\nShow All\n\nNow (12)\n\nToday (12)\n\nTomorrow (0)\n\nUpcoming (2)\nCategory\nShowing All\n\nLive Music\n(5)\n\nWorkshops & Classes\n(4)\n\nTrivia Night\n(3)\nEvents outside your current map view (12)\nLive Music\nFixture result · outside the map view"
+    },
+    {
+      "name": "events-large-count",
+      "type": "event",
+      "width": 390,
+      "counts": {
+        "time": {
+          "all": 106,
+          "now": 106,
+          "today": 106,
+          "tomorrow": 0,
+          "upcoming": 0
+        },
+        "category": {
+          "Live Music": 65,
+          "Trivia Night": 41
+        }
+      },
+      "matched": 106,
+      "htmlPath": "C:\\Users\\craig\\.codex\\worktrees\\app-ui-changes\\GathR-upgrade-sdk54\\artifacts\\list-filters-20261114\\events-large-count.html",
+      "text": "Actual list filter panel · fixture data · empty map area\nWhen\nShow All\n\nNow (106)\n\nToday (106)\n\nTomorrow (0)\n\nUpcoming (0)\nCategory\nShowing All\n\nLive Music\n(65)\n\nTrivia Night\n(41)\nEvents outside your current map view (106)\nLive Music\nFixture result · outside the map view"
+    }
+  ]
+}
