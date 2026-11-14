@@ -63,6 +63,7 @@ import MapLegend, {
 } from '../../components/map/MapLegend';
 import HybridMapAnnotation from '../../components/map/HybridMapAnnotation';
 import { usesCurrentBasemap } from '../../utils/hybridClusterPresentation';
+import { createMapTouchTrace } from '../../utils/mapTouchTrace';
 import InterestFilterPills from '../../components/map/InterestFilterPills';
 import InterestsCarousel from '../../components/map/InterestsCarousel';
 import HotFlamePill from '../../components/map/HotFlamePill';
@@ -4755,6 +4756,9 @@ const lastMapIdleAtRef = useRef<number>(0);
 const lastSuccessfulCameraReconcileChangeAtRef = useRef<number>(-1);
 const lastViewportFetchZoomRef = useRef<number | null>(null);
 const gestureTraceSessionIdRef = useRef<string | null>(null);
+const mapTouchTrace = useMemo(() => createMapTouchTrace(mapStyleChoice, session => {
+  gestureTraceSessionIdRef.current = session;
+}), [mapStyleChoice]);
 const gestureTraceNativeActiveRef = useRef(false);
 const gestureTraceMeaningfulTickCountRef = useRef(0);
 const gestureTraceFirstMeaningfulAtRef = useRef<number | null>(null);
@@ -7187,6 +7191,7 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
       (isCalloutClosingVisuallyRef.current || androidCalloutTeardownTimerRef.current !== null);
 
     traceMapEvent('marker_press_started', {
+      mapStyle: mapStyleChoice,
       clusterId: cluster.id,
       clusterType: cluster.clusterType,
       venueCount: cluster.venues?.length ?? 0,
@@ -7605,6 +7610,7 @@ lastOpenedClusterIdRef.current = cluster.id;
     isCalloutBlockingMapInteraction,
     isGuest,
     location,
+    mapStyleChoice,
     logAndroidRetapLatencyProbe,
     promoteVenuesToRenderedCallout,
     renderedCalloutClusterId,
@@ -11204,9 +11210,19 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
         <MapboxGL.MapView
         key={`ios-map-layout-${iosMapViewRevision}`}
         ref={mapRef}
-        onTouchStart={event => clusterPuckLayout.onMapTouchStart(event.nativeEvent.touches.length)}
-        onTouchEnd={event => clusterPuckLayout.onMapTouchEnd(event.nativeEvent.touches.length)}
-        onTouchCancel={clusterPuckLayout.onMapTouchCancel}
+        onTouchStart={event => {
+          mapTouchTrace.onTouchStart(event);
+          clusterPuckLayout.onMapTouchStart(event.nativeEvent.touches.length);
+        }}
+        onTouchMove={mapTouchTrace.onTouchMove}
+        onTouchEnd={event => {
+          mapTouchTrace.onTouchEnd(event);
+          clusterPuckLayout.onMapTouchEnd(event.nativeEvent.touches.length);
+        }}
+        onTouchCancel={() => {
+          mapTouchTrace.onTouchCancel();
+          clusterPuckLayout.onMapTouchCancel();
+        }}
         style={styles.map}
         styleURL={usesCurrentBasemap(mapStyleChoice) ? GATHR_MAPBOX_STYLE_URL : GATHR_MAPBOX_STANDARD_STYLE_URL}
         scaleBarEnabled={true}

@@ -6,6 +6,7 @@ import type { MarkerGeometry } from '../../utils/clusterPuckLayout';
 import HybridClusterMarker from './HybridClusterMarker';
 import { PuckMarkerMeasurement } from './PuckMarkerMeasurement';
 import HybridCompactCount, { hybridCompactDiameter } from './HybridCompactCount';
+import { traceMapEvent } from '../../utils/mapTrace';
 
 type Props = {
   id: string; cluster: Cluster; coordinate: [number, number]; isSelected: boolean;
@@ -64,6 +65,7 @@ export default function HybridMapAnnotation(props: Props) {
     <Mapbox.PointAnnotation ref={annotation} key={`${id}-${selectionReset}`} id={id} coordinate={coordinate}
       anchor={anchor} selected={isSelected} draggable={false}
       onSelected={() => {
+        traceMapEvent('hybrid_native_selection_received', { clusterId: cluster.id, disabled, isSelected });
         if (isSelected) return;
         // Discard an ignored native selection, without remounting every marker during normal processing.
         if (disabled) { setSelectionReset(value => value + 1); return; }

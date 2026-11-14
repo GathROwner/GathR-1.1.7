@@ -15,6 +15,7 @@ import {
   traceMapEvent,
   useMapTraceState,
 } from '../../utils/mapTrace';
+import { summarizeCalloutOpenings } from '../../utils/mapCalloutTiming';
 
 interface MapTracePanelProps {
   visible: boolean;
@@ -32,7 +33,8 @@ const formatEntryDetails = (details?: Record<string, string | number | boolean |
 };
 
 export default function MapTracePanel({ visible, onClose }: MapTracePanelProps) {
-  const { entries, snapshot } = useMapTraceState(visible);
+  const { entries, openingEntries, snapshot } = useMapTraceState(visible);
+  const openings = summarizeCalloutOpenings(openingEntries);
 
   if (!MAP_TRACE_UI_ENABLED) {
     return null;
@@ -75,7 +77,7 @@ export default function MapTracePanel({ visible, onClose }: MapTracePanelProps) 
         <View style={styles.header}>
           <Text style={styles.title}>Map Trace</Text>
           <Text style={styles.subtitle}>
-            Share this log from the phone to email it to yourself.
+            Compare Current and Hybrid in the same area. Share the log or capture these timings.
           </Text>
         </View>
 
@@ -92,6 +94,21 @@ export default function MapTracePanel({ visible, onClose }: MapTracePanelProps) 
         </View>
 
         <ScrollView style={styles.content} contentContainerStyle={styles.contentInner}>
+          <Text style={styles.sectionTitle}>Recent callout openings</Text>
+          <View style={styles.section}>
+            <Text style={styles.emptyText}>Milliseconds after finger release. Frame timing is a JS-frame proxy; missing stages show —.</Text>
+            {openings.length === 0 && <Text style={styles.stateLine}>Tap a cluster, close its callout, then reopen this panel.</Text>}
+            {openings.map((opening, index) => {
+              const ms = (value: number | null) => value === null ? '—' : `${value} ms`;
+              return <View key={index} style={styles.entryRow}>
+                <Text style={styles.entryLabel}>{opening.style} · {opening.venueCount} venues</Text>
+                <Text style={styles.entryDetails}>Release → handler: {ms(opening.releaseToHandlerMs)}</Text>
+                <Text style={styles.entryDetails}>Handler → selected: {ms(opening.handlerToSelectionMs)}</Text>
+                <Text style={styles.entryDetails}>Selected → frame: {ms(opening.selectionToFrameMs)}</Text>
+                <Text style={styles.entryLabel}>Release → frame: {ms(opening.releaseToFrameMs)}</Text>
+              </View>;
+            })}
+          </View>
           <Text style={styles.sectionTitle}>State</Text>
           <View style={styles.section}>
             {Object.keys(snapshot).length === 0 ? (

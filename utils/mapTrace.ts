@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { summarizeCalloutOpenings } from './mapCalloutTiming';
 
 type TracePrimitive = string | number | boolean | null;
 
@@ -21,6 +22,7 @@ export interface MapTraceEntry {
 
 interface MapTraceState {
   entries: MapTraceEntry[];
+  openingEntries: MapTraceEntry[];
   snapshot: Record<string, TracePrimitive>;
 }
 
@@ -52,6 +54,7 @@ interface TraceEventOptions {
 }
 
 const MAX_ENTRIES = 160;
+const OPENING_LABELS = new Set(['map_tap_released', 'marker_press_started', 'marker_press_selected', 'event_callout_first_visible_frame']);
 const EMPTY_SCHEDULE_METRIC: MapScheduleStateMetricSnapshot = {
   count: 0,
   cumulativeDurationMs: 0,
@@ -75,6 +78,7 @@ let scheduleStateMetricsSessionId: string | null = null;
 let scheduleStateMetrics = createEmptyScheduleMetrics();
 let traceState: MapTraceState = {
   entries: [],
+  openingEntries: [],
   snapshot: MAP_TRACE_ENABLED
     ? {
         traceRunId: TRACE_RUN_ID,
@@ -191,6 +195,10 @@ export const traceMapEvent = (
     label,
     details: normalizeRecord(details),
   };
+  // Retain the comparison across map-style changes without enlarging the camera
+  // event buffer. Six openings need at most 24 associated stage entries.
+  const openingEntries = OPENING_LABELS.has(label)
+    ? [...traceState.openingEntries, entry].slice(-32) : traceState.openingEntries;
 
   // Keep the idle recorder allocation-light. The panel subscribes only while
   // visible; while it is closed, mutate the fixed-size buffer in place rather
@@ -198,9 +206,11 @@ export const traceMapEvent = (
   if (listeners.size > 0) {
     traceState = {
       ...traceState,
+      openingEntries,
       entries: [...traceState.entries, entry].slice(-MAX_ENTRIES),
     };
   } else {
+    traceState.openingEntries = openingEntries;
     traceState.entries.push(entry);
     if (traceState.entries.length > MAX_ENTRIES) {
       traceState.entries.splice(0, traceState.entries.length - MAX_ENTRIES);
@@ -334,6 +344,7 @@ export const clearMapTrace = () => {
 
   traceState = {
     entries: [],
+    openingEntries: [],
     snapshot: {
       traceRunId: TRACE_RUN_ID,
       traceVariant: MAP_TRACE_VARIANT,
@@ -407,6 +418,9 @@ export const formatMapTraceExport = (): string => {
 
   const lines: string[] = [];
 
+  lines.push('CALLOUT OPENINGS (JS frame proxy, milliseconds)');
+  summarizeCalloutOpenings(traceState.openingEntries).forEach(opening => lines.push(JSON.stringify(opening)));
+  lines.push('');
   lines.push('MAP TRACE');
   lines.push('');
 
