@@ -870,7 +870,8 @@ type FilterCountCacheEntry<T> = {
   result: T;
 };
 
-let filterCountBundleCache: FilterCountCacheEntry<FilterCountBundle> | null = null;
+// Keep map and list count caches separate by their stable candidate arrays.
+const filterCountBundleCache = new WeakMap<Event[], FilterCountCacheEntry<FilterCountBundle>>();
 
 const getFilterCountMinuteKey = () => Math.floor(Date.now() / 60000);
 
@@ -879,7 +880,7 @@ const getCachedFilterCountBundle = (
   currentCriteria: FilterCriteria
 ): FilterCountBundle => {
   const minuteKey = getFilterCountMinuteKey();
-  const cached = filterCountBundleCache;
+  const cached = filterCountBundleCache.get(events);
 
   if (
     cached &&
@@ -891,7 +892,7 @@ const getCachedFilterCountBundle = (
   }
 
   const result = calculateFilterCountBundle(events, currentCriteria);
-  filterCountBundleCache = { events, criteria: currentCriteria, minuteKey, result };
+  filterCountBundleCache.set(events, { events, criteria: currentCriteria, minuteKey, result });
   return result;
 };
 
@@ -2678,19 +2679,19 @@ logStartupDataTiming('generate_clusters_completed', {
   /**
    * Get time filter counts for current criteria
    */
-  getTimeFilterCounts: (eventType: 'event' | 'special') => {
+  getTimeFilterCounts: (eventType: 'event' | 'special', candidates?: Event[]) => {
     const { onScreenEvents, filterCriteria } = get();
-    // Use ONLY on-screen events - counts should reflect what's actually visible on screen
-    return getCachedFilterCountBundle(onScreenEvents, filterCriteria)[eventType].time;
+    // Map callers default to on-screen counts; list callers supply their full candidate pool.
+    return getCachedFilterCountBundle(candidates ?? onScreenEvents, filterCriteria)[eventType].time;
   },
 
   /**
    * Get category filter counts for current criteria
    */
-  getCategoryFilterCounts: (eventType: 'event' | 'special') => {
+  getCategoryFilterCounts: (eventType: 'event' | 'special', candidates?: Event[]) => {
     const { onScreenEvents, filterCriteria } = get();
-    // Use ONLY on-screen events - counts should reflect what's actually visible on screen
-    return getCachedFilterCountBundle(onScreenEvents, filterCriteria)[eventType].category;
+    // Map callers default to on-screen counts; list callers supply their full candidate pool.
+    return getCachedFilterCountBundle(candidates ?? onScreenEvents, filterCriteria)[eventType].category;
   }
 }))
 
