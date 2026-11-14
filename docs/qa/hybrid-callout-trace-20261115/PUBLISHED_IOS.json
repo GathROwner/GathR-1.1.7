@@ -1,0 +1,12 @@
+{
+  "id": "01a1dc4d-d69a-7b3c-ab9c-9e3b0427b39d",
+  "createdAt": "2026-11-14T23:04:11.162Z",
+  "group": "94b32700-e9c6-445b-b9a9-94699f1cefe5",
+  "branch": "production",
+  "message": "Measure Current versus Hybrid tap delivery with opt-in three-minute capture",
+  "runtimeVersion": "1.1.20",
+  "platform": "ios",
+  "manifestPermalink": "https://u.expo.dev/update/01a1dc4d-d69a-7b3c-ab9c-9e3b0427b39d",
+  "isRollBackToEmbedded": false,
+  "gitCommitHash": "5525d46c8324a674c3f00993c798e78acec76da3"
+}
