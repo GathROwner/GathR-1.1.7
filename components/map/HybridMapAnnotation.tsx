@@ -22,8 +22,9 @@ type Props = {
 export default function HybridMapAnnotation(props: Props) {
   const { id, cluster, coordinate, isSelected, disabled, compact, dockX, dockY } = props;
   const registerTapTarget = props.registerTapTarget;
-  useLayoutEffect(() => registerTapTarget?.(id, cluster, [coordinate[0], coordinate[1]], !compact),
-    [compact, registerTapTarget, id, cluster, coordinate[0], coordinate[1]]);
+  const [longitude, latitude] = coordinate;
+  useLayoutEffect(() => registerTapTarget?.(id, cluster, [longitude, latitude], !compact),
+    [compact, registerTapTarget, id, cluster, longitude, latitude]);
   const annotation = useRef<Mapbox.PointAnnotation>(null);
   const frame = useRef<number | null>(null);
   const [size, setSize] = useState({ width: 1, height: 1 });
