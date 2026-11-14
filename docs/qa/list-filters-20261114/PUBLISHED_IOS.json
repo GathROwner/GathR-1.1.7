@@ -1,0 +1,14 @@
+[
+  {
+    "id": "01a1db1e-b1de-7b28-8d07-042ce6d8c154",
+    "createdAt": "2026-11-14T17:33:04.350Z",
+    "group": "5eb5d75c-64d3-4616-831b-000f61a91b4b",
+    "branch": "production",
+    "message": "Keep list filters available outside the map view",
+    "runtimeVersion": "1.1.20",
+    "platform": "ios",
+    "manifestPermalink": "https://u.expo.dev/update/01a1db1e-b1de-7b28-8d07-042ce6d8c154",
+    "isRollBackToEmbedded": false,
+    "gitCommitHash": "82ca96b5ce75fd91bbdcef7095ce30a225ae8f8a"
+  }
+]
