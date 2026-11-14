@@ -1,0 +1,32 @@
+{
+  "method": "Actual Hybrid components and interaction store; native bitmap refresh calls counted with mocked native boundary; not device latency measurements",
+  "mountedMarkers": 32,
+  "visibleVenueEngagement": {
+    "baselineRefreshRequests": 32,
+    "candidateRefreshRequests": 1,
+    "candidatePresentationRebuilds": 1
+  },
+  "repeatedEngagementWithoutVisibleChange": {
+    "candidateRefreshRequests": 0
+  },
+  "unrelatedVenueEngagement": {
+    "candidatePresentationRebuilds": 0,
+    "candidateRefreshRequests": 0
+  },
+  "globalInputGating": {
+    "candidateRefreshRequests": 0
+  },
+  "identicalClusterObjects": {
+    "candidateRefreshRequests": 0
+  },
+  "hiddenVenueNewDotChange": {
+    "candidateRefreshRequests": 0,
+    "refreshWhenRotatedIntoView": 1
+  },
+  "pausedForCallout": {
+    "waitMs": 9000,
+    "candidateRefreshRequests": 0,
+    "resumesThreeSecondRotation": true
+  },
+  "persistedInteractionHydration": "passed separate controlled probe"
+}

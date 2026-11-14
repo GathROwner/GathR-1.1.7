@@ -1,0 +1,17 @@
+# Reduce unnecessary Hybrid marker redraws
+
+The accepted baseline remains intact. This patch scopes interaction tracking to a marker's own venues, compares visible snapshot content before requesting a native bitmap refresh, and keeps input-only disabled flags out of bitmap invalidation. Repeated identical layout reports are ignored. Image decoding, changed summaries/photos, selection, compact restoration, native remount and coordinate/dock changes still refresh as required. The previous moved-marker blank-image repair and native pinch/pan route remain covered by regression tests.
+
+Only Hybrid background rotation/halos pause while a cluster is processing or a callout is selected, mounted or presented. The existing three-second rotation cadence resumes afterward. Current/GathR marker behavior, clustering, cold-start cache handoff and callout tap/close handling are not modified by this patch.
+
+Controlled reproduction: among 32 mounted actual Hybrid components, one venue engagement with a visible red-dot change now rebuilds/captures one marker instead of all 32. Repeating engagement with no pixel change causes zero captures. An unrelated venue produces zero rebuilds/captures. Global input gating and identical cluster objects cause zero captures. A hidden venue's dot change waits until rotation makes it visible. Background captures stop while animation activity is paused and resume at three seconds. An additional persistence hydration probe passes. These are native-refresh request counts in a React harness, not iPhone latency benchmarks.
+
+Before/after renders use the actual Hybrid component, SVG bridge and fixture profiles on iOS and Android platform props. Independent review confirmed the accepted hierarchy, photo/ring dimensions, summary spacing, large counts, segmented rings, overflow, selected marker, fallback initials and friend-badge positions. All four marker/selector PNG comparisons are identical in RGB pixels. This is component visual evidence; physical native UI and device adoption are not verified.
+
+Source fix: `234ddf23a0596f4816a263d1b9304c0ea7e28287`. iOS release assembled from exact live base `82ca96b5ce75fd91bbdcef7095ce30a225ae8f8a`; candidate `ef9c17fbe626e9242081b3ccf112fffd59343679`. All app/component/store/helper files match the accepted source candidate; iOS native configuration, dependencies and runtime 1.1.20 are preserved.
+
+Clean-release checks passed: TypeScript; 67 tests across 11 suites; lint with zero errors and 227 existing warnings; Production Firebase/auth/App Attest configuration; both Social flags; emulators disabled; performance tracing disabled; Mapbox preflight; clean iOS export. EAS bundled 2,571 modules and reports 112 iOS assets. No native build, store submission, backend deployment or data mutation occurred.
+
+Published iOS Production OTA `01a1dc2a-adb5-73f7-a67c-434bc0e97549`, group `3183682b-4bb2-4a28-bd18-6ba9e7512114`, runtime 1.1.20, source `ef9c17f`. Independent update:view and newest-platform update:list readbacks match. Android/Preview Hybrid performance rollouts are not claimed. The separate iOS Development list-filter backport completes the previously requested channel distribution using its established 1.1.10 OTA target; runtime labels alone did not justify a new native build.
+
+Raw scripts, test/export/publish logs and renderer evidence are archived in `artifacts/hybrid-redraw-20261114/`. See `REDRAW_BUDGET.json`, `PIXEL_COMPARISON.json` and `PUBLISHED_IOS.json` for inspectable evidence and limits.

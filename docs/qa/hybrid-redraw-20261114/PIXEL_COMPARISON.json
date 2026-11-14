@@ -1,0 +1,42 @@
+[
+  {
+    "platform": "ios",
+    "view": "markers",
+    "dimensions": [
+      1520,
+      2000
+    ],
+    "RGBDifferenceBounds": null,
+    "identical": true
+  },
+  {
+    "platform": "ios",
+    "view": "selector",
+    "dimensions": [
+      786,
+      1706
+    ],
+    "RGBDifferenceBounds": null,
+    "identical": true
+  },
+  {
+    "platform": "android",
+    "view": "markers",
+    "dimensions": [
+      1520,
+      2000
+    ],
+    "RGBDifferenceBounds": null,
+    "identical": true
+  },
+  {
+    "platform": "android",
+    "view": "selector",
+    "dimensions": [
+      786,
+      1706
+    ],
+    "RGBDifferenceBounds": null,
+    "identical": true
+  }
+]

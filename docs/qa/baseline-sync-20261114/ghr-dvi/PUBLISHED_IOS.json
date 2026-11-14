@@ -1,0 +1,12 @@
+{
+  "id": "01a1dc32-c3fa-7b3b-82e5-8d0ea0cb5903",
+  "createdAt": "2026-11-14T22:34:36.922Z",
+  "group": "8f0e86c0-dadc-475b-988b-46c5db0b2d24",
+  "branch": "development",
+  "message": "Backport accepted outside-map list filters to existing iOS Development",
+  "runtimeVersion": "1.1.10",
+  "platform": "ios",
+  "manifestPermalink": "https://u.expo.dev/update/01a1dc32-c3fa-7b3b-82e5-8d0ea0cb5903",
+  "isRollBackToEmbedded": false,
+  "gitCommitHash": "0d0a2ae4e5c5e38b177509162ac672ee809020e2"
+}

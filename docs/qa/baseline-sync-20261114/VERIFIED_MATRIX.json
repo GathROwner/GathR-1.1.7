@@ -6,12 +6,12 @@
       "channel": "production",
       "platform": "ios",
       "runtime": "1.1.20",
-      "commit": "82ca96b5ce75fd91bbdcef7095ce30a225ae8f8a",
-      "group": "5eb5d75c-64d3-4616-831b-000f61a91b4b",
-      "update": "01a1db1e-b1de-7b28-8d07-042ce6d8c154",
+      "commit": "ef9c17fbe626e9242081b3ccf112fffd59343679",
+      "group": "3183682b-4bb2-4a28-bd18-6ba9e7512114",
+      "update": "01a1dc2a-adb5-73f7-a67c-434bc0e97549",
       "status": "verified-newest-platform-update",
       "deviceAdoptionVerified": false,
-      "scope": "accepted full Production UI"
+      "scope": "accepted full Production UI plus Hybrid redraw optimization"
     },
     {
       "channel": "production",
@@ -60,12 +60,14 @@
     {
       "channel": "development",
       "platform": "ios",
-      "status": "not-published-no-compatible-native-build-found",
-      "previousOTAGroup": "89915473-168a-4b35-afca-83eda9eb1726",
-      "previousOTARuntime": "1.1.10",
-      "latestRecordedNativeBuild": "283d5aaa-7a12-4ad8-bb2c-41a5ace8555a",
-      "latestRecordedNativeAppVersion": "1.1.8",
-      "note": "No matching OTA runtime recorded for this binary. Requires a compatible native development build; existing OTA source is 1.1.10."
+      "runtime": "1.1.10",
+      "commit": "0d0a2ae4e5c5e38b177509162ac672ee809020e2",
+      "group": "8f0e86c0-dadc-475b-988b-46c5db0b2d24",
+      "update": "01a1dc32-c3fa-7b3b-82e5-8d0ea0cb5903",
+      "status": "verified-newest-platform-update",
+      "deviceAdoptionVerified": false,
+      "scope": "list-filter backport preserving this runtime baseline"
     }
-  ]
+  ],
+  "latestIOSPerformanceFix": "ef9c17fbe626e9242081b3ccf112fffd59343679"
 }

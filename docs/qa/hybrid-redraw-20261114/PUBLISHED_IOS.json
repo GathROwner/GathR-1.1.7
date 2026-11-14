@@ -1,0 +1,14 @@
+[
+  {
+    "id": "01a1dc2a-adb5-73f7-a67c-434bc0e97549",
+    "createdAt": "2026-11-14T22:25:46.933Z",
+    "group": "3183682b-4bb2-4a28-bd18-6ba9e7512114",
+    "branch": "production",
+    "message": "Avoid unnecessary Hybrid marker redraws during interactions and callouts",
+    "runtimeVersion": "1.1.20",
+    "platform": "ios",
+    "manifestPermalink": "https://u.expo.dev/update/01a1dc2a-adb5-73f7-a67c-434bc0e97549",
+    "isRollBackToEmbedded": false,
+    "gitCommitHash": "ef9c17fbe626e9242081b3ccf112fffd59343679"
+  }
+]
