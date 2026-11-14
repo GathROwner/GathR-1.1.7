@@ -133,3 +133,29 @@ it('animates native paint rather than rerasterizing photos and stops for reduced
   act(() => tree.update(render({ isActive: true, reduceMotionEnabled: true })));
   expect(halo().circleStrokeOpacity).toBe(.25); expect(halo().circleRadiusTransition.duration).toBe(0);
 });
+
+
+it('keeps interaction gating independent of visible bitmap invalidation', () => {
+  act(() => jest.advanceTimersByTime(64)); mockRefresh.mockClear();
+  act(() => tree.update(render({ disabled: true })));
+  act(() => jest.advanceTimersByTime(64)); expect(mockRefresh).not.toHaveBeenCalled();
+  act(() => tree.update(render({ disabled: false })));
+  act(() => jest.advanceTimersByTime(64)); expect(mockRefresh).not.toHaveBeenCalled();
+});
+
+
+it('skips identical layout reports while retaining image-decode and position refreshes', () => {
+  const layout = () => tree.root.findAllByType(View).find(v => v.props.onLayout)!;
+  act(() => {
+    layout().props.onLayout({ nativeEvent: { layout: { width: 102, height: 106.5 } } });
+    graphics().props.onPhotoLayout({ y: 25, height: 50.4 });
+  });
+  act(() => jest.advanceTimersByTime(64)); mockRefresh.mockClear();
+  act(() => {
+    layout().props.onLayout({ nativeEvent: { layout: { width: 102, height: 106.5 } } });
+    graphics().props.onPhotoLayout({ y: 25, height: 50.4 });
+  });
+  act(() => jest.advanceTimersByTime(64)); expect(mockRefresh).not.toHaveBeenCalled();
+  act(() => graphics().props.onSnapshotChange());
+  act(() => jest.advanceTimersByTime(64)); expect(mockRefresh).toHaveBeenCalledTimes(1);
+});

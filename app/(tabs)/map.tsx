@@ -4117,6 +4117,8 @@ useEffect(() => {
 
   const clusterMarkerAnimationsActive =
     isFocused && !(Platform.OS === 'android' && pauseClusterMarkerAnimations);
+  const hybridMarkerAnimationsActive = clusterMarkerAnimationsActive &&
+    processingClusterId === null && !isCalloutOpen && !hasRenderedCallout && !hasPresentedCallout;
 
   const getPreparedClusterCallout = useCallback((
     cluster: Cluster,
@@ -10913,7 +10915,7 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
           return <HybridMapAnnotation key={markerKey} id={markerKey} cluster={cluster} coordinate={coordinates}
             isSelected={isSelected} isReady={clustersReadyForInteraction} isProcessing={processingClusterId === cluster.id}
             disabled={!clustersReadyForInteraction || processingClusterId !== null}
-            isActive={clusterMarkerAnimationsActive} reduceMotionEnabled={reduceMotionEnabled}
+            isActive={hybridMarkerAnimationsActive} reduceMotionEnabled={reduceMotionEnabled}
             compact={!!puckOffset?.compact} dockX={beaconDock.translateX} dockY={beaconDock.translateY}
             measurementDockX={originalBeaconDock.translateX} measurementDockY={originalBeaconDock.translateY}
             record={clusterPuckLayout.recordMarkerGeometry} categoryIcon={getCategoryIcon}
