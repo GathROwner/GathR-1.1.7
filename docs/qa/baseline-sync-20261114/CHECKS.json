@@ -1,0 +1,65 @@
+[
+  {
+    "worktree": "ghr-sync",
+    "checks": {
+      "androidDeviceVerified": false,
+      "actualComponentFilterPanelsReviewed": true,
+      "typescriptExit": 0,
+      "visualReviewed": true,
+      "testsPassed": 66,
+      "atUTC": "2026-11-14T21:25:39.1000256Z",
+      "cleanAndroidExport": true,
+      "lintExit": 0,
+      "commit": "8840bd45242cd3d2f595fe05644a5c92a4599402"
+    },
+    "lintSummary": "\u2716 227 problems (0 errors, 227 warnings)",
+    "bundleModules": [
+      "2576"
+    ]
+  },
+  {
+    "worktree": "ghr-pi",
+    "checks": {
+      "visualReviewed": true,
+      "testsPassed": 4,
+      "lintExit": 0,
+      "typescriptExit": 0,
+      "cleanExport": true,
+      "commit": "576193aade21bc1d21b09d84cc31faf249a881a9"
+    },
+    "lintSummary": "\u2716 221 problems (0 errors, 221 warnings)",
+    "bundleModules": [
+      "2531"
+    ]
+  },
+  {
+    "worktree": "ghr-pa",
+    "checks": {
+      "testsPassed": 4,
+      "visualReviewed": true,
+      "typescriptExit": 0,
+      "lintExit": 0,
+      "cleanExport": true,
+      "commit": "0b0e16587938cb8c745b1260639ec4b3356b9130"
+    },
+    "lintSummary": "\u2716 219 problems (0 errors, 219 warnings)",
+    "bundleModules": [
+      "2728"
+    ]
+  },
+  {
+    "worktree": "ghr-dv",
+    "checks": {
+      "visualReviewed": true,
+      "testsPassed": 4,
+      "typescriptExit": 0,
+      "lintExit": 0,
+      "cleanExport": true,
+      "commit": "0d0a2ae4e5c5e38b177509162ac672ee809020e2"
+    },
+    "lintSummary": "\u2716 257 problems (0 errors, 257 warnings)",
+    "bundleModules": [
+      "2410"
+    ]
+  }
+]

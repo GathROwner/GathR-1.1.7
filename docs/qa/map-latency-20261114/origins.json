@@ -1,0 +1,17 @@
+[
+  {
+    "needle": "startupViewportRecoveryTimerRef",
+    "file": "app/(tabs)/map.tsx",
+    "history": "35636fbb44d327f4221a368199c84cf7b8571728 2026-05-08T13:36:50-03:00 Create Android map performance stable candidate"
+  },
+  {
+    "needle": "const interactions = useClusterInteractionStore(state => state.interactions)",
+    "file": "components/map/HybridClusterMarker.tsx",
+    "history": "bf6e72474a97099f706d5c4c1d97134915de4b19 2026-11-12T20:42:16-04:00 Add opt-in Hybrid venue clusters and compact map selector"
+  },
+  {
+    "needle": "onSnapshotChange",
+    "file": "components/map/HybridClusterMarker.tsx",
+    "history": "db74f1e773ee903bfbe7265733f52aba1a3519db 2026-11-13T07:44:43-04:00 Draw complete Hybrid summaries into native images before map capture"
+  }
+]

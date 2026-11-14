@@ -1,0 +1,64 @@
+jest.mock('../../../config/firebaseConfig', () => ({
+  auth: {},
+  firestore: {},
+  app: {},
+}));
+jest.mock('firebase/firestore', () => ({
+  collection: jest.fn(),
+  getDocs: jest.fn(),
+  query: jest.fn(),
+  where: jest.fn(),
+}));
+jest.mock('expo-location', () => ({}));
+jest.mock('@react-native-async-storage/async-storage', () =>
+  require('@react-native-async-storage/async-storage/jest/async-storage-mock')
+);
+jest.mock('supercluster', () => ({
+  __esModule: true,
+  default: class SuperclusterMock {
+    private points: unknown[] = [];
+
+    load(points: unknown[]) {
+      this.points = points;
+      return this;
+    }
+
+    getClusters() {
+      return this.points;
+    }
+
+    getLeaves() {
+      return this.points;
+    }
+  },
+}));
+
+
+jest.mock('../../../lib/api/events',()=>({...jest.requireActual('../../../lib/api/events'),fetchMinimalEvents:jest.fn()}));
+import {useMapStore} from '../../../store/mapStore';
+import {fetchMinimalEvents} from '../../../lib/api/events';
+import {DEFAULT_FILTER_CRITERIA,TimeFilterType} from '../../../types/filter';
+import {resetViewportRequestCoordinator} from '../../../utils/viewportRequestCoordinator';
+import {createLegacyTimingContract} from '../../../utils/eventTiming';
+import type {Event} from '../../../types/events';
+it('observes late cache arrival during an unresolved initial viewport fetch',async()=>{
+ jest.useFakeTimers();jest.setSystemTime(new Date(2026,10,14,12));resetViewportRequestCoordinator();
+ const v={id:'fixture',type:'event',title:'Fixture event',description:'',category:'Live Music',venue:'Fixture venue',address:'Test',latitude:46.23,longitude:-63.12,startDate:'2026-11-14',endDate:'2026-11-14',startTime:'19:00',endTime:'23:00'} as Event;
+ const event={...v,timing:createLegacyTimingContract(v)};
+ useMapStore.setState({allEvents:[],events:[],viewportEvents:[],outsideViewportEvents:[],onScreenEvents:[],filteredEvents:[],clusters:[],friendEvents:[],isLoading:false,zoomLevel:12,viewportBbox:null,
+  filterCriteria:{...DEFAULT_FILTER_CRITERIA,eventFilters:{timeFilter:TimeFilterType.TODAY},specialFilters:{timeFilter:TimeFilterType.TODAY}}});
+ let finish:(r:any)=>void=()=>{};let pendingFinished=false;
+ (fetchMinimalEvents as jest.Mock).mockReturnValueOnce(new Promise(resolve=>{finish=resolve}));
+ const bbox={west:-64,south:46,east:-63,north:47};
+ const pending=useMapStore.getState().fetchViewportEvents(bbox,{source:'startup_fixture'}).then(()=>{pendingFinished=true});
+ await Promise.resolve();expect(fetchMinimalEvents).toHaveBeenCalledTimes(1);
+ useMapStore.getState().setAllEvents([event]);await Promise.resolve();
+ const afterCache={allEvents:useMapStore.getState().allEvents.length,viewport:useMapStore.getState().viewportEvents.length,clusters:useMapStore.getState().clusters.length,initialRequestFinished:pendingFinished};
+ expect(afterCache).toEqual({allEvents:1,viewport:0,clusters:0,initialRequestFinished:false});
+ await useMapStore.getState().fetchViewportEvents(bbox,{source:'startup_recovery_fixture'});
+ const afterRecovery={viewport:useMapStore.getState().viewportEvents.length,clusters:useMapStore.getState().clusters.length};
+ expect(afterRecovery.viewport).toBe(1);expect(afterRecovery.clusters).toBe(1);
+ finish({combinedData:[event],sources:{},fetchedAt:Date.now()});await pending;
+ require('fs').writeFileSync(require('path').join(__dirname,'../late-cache-handoff.json'),JSON.stringify({method:'Actual store with controlled deferred public fetch and fixture cache hydration; no real network or device timings',afterCache,afterRecovery,mapRecoveryDelayMs:1200},null,2));
+ jest.useRealTimers();
+});

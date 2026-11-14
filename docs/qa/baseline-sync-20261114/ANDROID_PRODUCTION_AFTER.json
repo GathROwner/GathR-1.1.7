@@ -1,0 +1,14 @@
+[
+  {
+    "id": "01a1dbf7-d99a-7a97-a115-f042432b6a80",
+    "createdAt": "2026-11-14T21:30:15.834Z",
+    "group": "ab1f2990-8bac-4d5d-a477-6bba09fed19e",
+    "branch": "production",
+    "message": "Keep list filters available outside the map view",
+    "runtimeVersion": "1.1.20",
+    "platform": "android",
+    "manifestPermalink": "https://u.expo.dev/update/01a1dbf7-d99a-7a97-a115-f042432b6a80",
+    "isRollBackToEmbedded": false,
+    "gitCommitHash": "8840bd45242cd3d2f595fe05644a5c92a4599402"
+  }
+]

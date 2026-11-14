@@ -1,0 +1,43 @@
+import React from 'react';
+import renderer, {act} from 'react-test-renderer';
+import HybridMapAnnotation from '../../../components/map/HybridMapAnnotation';
+import {useClusterInteractionStore} from '../../../store/clusterInteractionStore';
+import type {Cluster} from '../../../types/events';
+const mockRefresh=jest.fn();
+const mockBuild=jest.fn();
+jest.mock('@react-native-async-storage/async-storage',()=>jest.requireActual('@react-native-async-storage/async-storage/jest/async-storage-mock'));
+jest.mock('@expo/vector-icons/MaterialIcons',()=> 'MaterialIcons');
+jest.mock('react-native-svg',()=>({__esModule:true,default:'Svg',SvgXml:'SvgXml',Circle:'Circle',Line:'Line'}));
+jest.mock('@rnmapbox/maps',()=>{
+ const React=jest.requireActual<typeof import('react')>('react');
+ return {__esModule:true,default:{PointAnnotation:React.forwardRef(function Annotation(p:any,ref:any){React.useImperativeHandle(ref,()=>({refresh:()=>mockRefresh(p.id)}));return React.createElement('PointAnnotation',p,p.children);}),ShapeSource:'ShapeSource',CircleLayer:'CircleLayer',SymbolLayer:'SymbolLayer'}};
+});
+jest.mock('../../../utils/hybridClusterPresentation',()=>{
+ const actual=jest.requireActual('../../../utils/hybridClusterPresentation');
+ return {...actual,buildHybridVenues:(...args:any[])=>{mockBuild(args[0].id);return actual.buildHybridVenues(...args);}};
+});
+const fixture=(i:number)=>({id:'cluster-'+i,clusterType:'single',timeStatus:'future',interestLevel:'medium',eventCount:1,specialCount:0,venues:[{locationKey:'venue-'+i,venue:'Venue '+i,events:[{id:'event-'+i,type:'event',category:'Music',profileUrl:''}]}]}) as unknown as Cluster;
+const results:any[]=[];
+it.each([1,12,32])('measures notification fan-out for %i mounted Hybrid annotations',n=>{
+ jest.useFakeTimers();jest.spyOn(global,'requestAnimationFrame').mockImplementation(cb=>setTimeout(()=>cb(0),16) as unknown as number);jest.spyOn(global,'cancelAnimationFrame').mockImplementation(id=>clearTimeout(id));
+ useClusterInteractionStore.setState({interactions:new Map()});
+ const clusters=Array.from({length:n},(_,i)=>fixture(i));let tree:renderer.ReactTestRenderer;
+ act(()=>{tree=renderer.create(<>{clusters.map(c=><HybridMapAnnotation key={c.id} id={c.id} cluster={c} coordinate={[-63.1,46.2]} isSelected={false} isReady isProcessing={false} disabled={false} isActive={false} reduceMotionEnabled compact={false} dockX={0} dockY={0} measurementDockX={0} measurementDockY={0} record={()=>{}} categoryIcon={()=>'audiotrack'} onPress={()=>{}} onBackgroundPress={()=>{}} />)}</>)});
+ act(()=>jest.advanceTimersByTime(64));const initial={builds:mockBuild.mock.calls.length,refreshes:mockRefresh.mock.calls.length};mockBuild.mockClear();mockRefresh.mockClear();
+ act(()=>useClusterInteractionStore.getState().recordInteraction('venue-0',['event-0']));act(()=>jest.advanceTimersByTime(64));
+ results.push({mounted:n,initial,oneVenueInteraction:{rebuilt:mockBuild.mock.calls.map(c=>c[0]),nativeBitmapRefreshRequested:mockRefresh.mock.calls.map(c=>c[0])}});
+ expect(mockBuild.mock.calls.length).toBe(n);expect(mockRefresh.mock.calls.length).toBe(n);
+ act(()=>tree!.unmount());jest.restoreAllMocks();jest.useRealTimers();mockBuild.mockClear();mockRefresh.mockClear();
+});
+it('counts synchronized rotation refreshes while no cluster is selected',()=>{
+ jest.useFakeTimers();jest.spyOn(global,'requestAnimationFrame').mockImplementation(cb=>setTimeout(()=>cb(0),16) as unknown as number);jest.spyOn(global,'cancelAnimationFrame').mockImplementation(id=>clearTimeout(id));
+ useClusterInteractionStore.setState({interactions:new Map()});mockRefresh.mockClear();mockBuild.mockClear();
+ const clusters=Array.from({length:32},(_,i)=>{const c=fixture(i);c.venues.push({...c.venues[0],locationKey:'second-'+i,venue:'Second '+i});return c;});let tree:renderer.ReactTestRenderer;
+ act(()=>{tree=renderer.create(<>{clusters.map(c=><HybridMapAnnotation key={c.id} id={c.id} cluster={c} coordinate={[-63.1,46.2]} isSelected={false} isReady isProcessing={false} disabled={false} isActive reduceMotionEnabled={false} compact={false} dockX={0} dockY={0} measurementDockX={0} measurementDockY={0} record={()=>{}} categoryIcon={()=>'audiotrack'} onPress={()=>{}} onBackgroundPress={()=>{}} />)}</>)});
+ act(()=>jest.advanceTimersByTime(64));mockRefresh.mockClear();mockBuild.mockClear();
+ act(()=>jest.advanceTimersByTime(3000));act(()=>jest.advanceTimersByTime(64));
+ results.push({mounted:32,rotationTickMs:3000,bitmapRefreshes:mockRefresh.mock.calls.length,rebuiltVenueData:mockBuild.mock.calls.length});
+ expect(mockRefresh.mock.calls.length).toBe(32);
+ act(()=>tree!.unmount());jest.restoreAllMocks();jest.useRealTimers();
+});
+afterAll(()=>{require('fs').writeFileSync(require('path').join(__dirname,'../hybrid-fanout.json'),JSON.stringify({method:'Actual React components and actual interaction store; native annotation refresh mocked and counted; fixture data; not phone timings',results},null,2));});

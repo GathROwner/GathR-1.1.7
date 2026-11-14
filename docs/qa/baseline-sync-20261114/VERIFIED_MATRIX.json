@@ -1,0 +1,71 @@
+{
+  "canonicalAcceptedBaseline": "8840bd45242cd3d2f595fe05644a5c92a4599402",
+  "checkpoint": "baseline/gathr-ui-20261114",
+  "rows": [
+    {
+      "channel": "production",
+      "platform": "ios",
+      "runtime": "1.1.20",
+      "commit": "82ca96b5ce75fd91bbdcef7095ce30a225ae8f8a",
+      "group": "5eb5d75c-64d3-4616-831b-000f61a91b4b",
+      "update": "01a1db1e-b1de-7b28-8d07-042ce6d8c154",
+      "status": "verified-newest-platform-update",
+      "deviceAdoptionVerified": false,
+      "scope": "accepted full Production UI"
+    },
+    {
+      "channel": "production",
+      "platform": "android",
+      "runtime": "1.1.20",
+      "commit": "8840bd45242cd3d2f595fe05644a5c92a4599402",
+      "group": "ab1f2990-8bac-4d5d-a477-6bba09fed19e",
+      "update": "01a1dbf7-d99a-7a97-a115-f042432b6a80",
+      "status": "verified-newest-platform-update",
+      "deviceAdoptionVerified": false,
+      "scope": "accepted full Production UI"
+    },
+    {
+      "channel": "preview",
+      "platform": "ios",
+      "runtime": "1.1.10",
+      "commit": "576193aade21bc1d21b09d84cc31faf249a881a9",
+      "group": "d998729d-b247-4612-bc3f-144afdea8e8e",
+      "update": "01a1dbff-3cfb-78a6-b3dd-1555e9dda601",
+      "status": "verified-newest-platform-update",
+      "deviceAdoptionVerified": false,
+      "scope": "list-filter backport preserving this runtime baseline"
+    },
+    {
+      "channel": "preview",
+      "platform": "android",
+      "runtime": "1.1.10",
+      "commit": "0b0e16587938cb8c745b1260639ec4b3356b9130",
+      "group": "3f1cd282-636f-4ccb-b4bd-9d05b405c118",
+      "update": "01a1dbff-3053-7d6a-8db7-c220125d053e",
+      "status": "verified-newest-platform-update",
+      "deviceAdoptionVerified": false,
+      "scope": "list-filter backport preserving this runtime baseline"
+    },
+    {
+      "channel": "development",
+      "platform": "android",
+      "runtime": "1.1.10",
+      "commit": "0d0a2ae4e5c5e38b177509162ac672ee809020e2",
+      "group": "dd0d684a-2987-4c48-b72b-fa60dd2bff40",
+      "update": "01a1dbff-2793-7da4-ab02-e2fbcad0a68f",
+      "status": "verified-newest-platform-update",
+      "deviceAdoptionVerified": false,
+      "scope": "list-filter backport preserving this runtime baseline"
+    },
+    {
+      "channel": "development",
+      "platform": "ios",
+      "status": "not-published-no-compatible-native-build-found",
+      "previousOTAGroup": "89915473-168a-4b35-afca-83eda9eb1726",
+      "previousOTARuntime": "1.1.10",
+      "latestRecordedNativeBuild": "283d5aaa-7a12-4ad8-bb2c-41a5ace8555a",
+      "latestRecordedNativeAppVersion": "1.1.8",
+      "note": "No matching OTA runtime recorded for this binary. Requires a compatible native development build; existing OTA source is 1.1.10."
+    }
+  ]
+}

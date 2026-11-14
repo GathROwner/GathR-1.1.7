@@ -1,0 +1,102 @@
+[
+  {
+    "file": "components/map/HybridClusterMarker.tsx",
+    "line": 45,
+    "text": "const interactions = useClusterInteractionStore(state => state.interactions);"
+  },
+  {
+    "file": "components/map/HybridClusterMarker.tsx",
+    "line": 46,
+    "text": "const venues = useMemo(() => buildHybridVenues(cluster, (key, ids) => interactions.has(key) && getHasNewContent(key, ids)), [cluster, interactions]);"
+  },
+  {
+    "file": "components/map/HybridClusterMarker.tsx",
+    "line": 61,
+    "text": "const timer = setInterval(() => setActiveKey(key => { const at = Math.max(0, venues.findIndex(v => v.key === key)); return venues[(at + 1) % venues.length].key; }), 3000);"
+  },
+  {
+    "file": "components/map/HybridClusterMarker.tsx",
+    "line": 1,
+    "text": "import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';"
+  },
+  {
+    "file": "components/map/HybridMapAnnotation.tsx",
+    "line": 29,
+    "text": "const refresh = useCallback(() => {"
+  },
+  {
+    "file": "components/map/HybridMapAnnotation.tsx",
+    "line": 32,
+    "text": "frame.current = requestAnimationFrame(() => {"
+  },
+  {
+    "file": "components/map/HybridMapAnnotation.tsx",
+    "line": 59,
+    "text": "onSelected={() => {"
+  },
+  {
+    "file": "components/map/HybridSummaryImage.tsx",
+    "line": 26,
+    "text": "svg.current?.toDataURL(base64 => {"
+  },
+  {
+    "file": "components/map/HybridSummaryImage.tsx",
+    "line": 39,
+    "text": "style={StyleSheet.absoluteFill} onLoad={() => { if (identity.current.revision === revision && identity.current.visible) onLoad?.(); }} />}"
+  },
+  {
+    "file": "store/clusterInteractionStore.ts",
+    "line": 20,
+    "text": "recordInteraction: (clusterId: string, eventIds: string[]) => void;"
+  },
+  {
+    "file": "store/clusterInteractionStore.ts",
+    "line": 37,
+    "text": "const newInteractions = new Map(state.interactions);"
+  },
+  {
+    "file": "store/mapStore.ts",
+    "line": 1186,
+    "text": "setAllEvents: (events) => {"
+  },
+  {
+    "file": "store/mapStore.ts",
+    "line": 1899,
+    "text": "if (publicCandidateEvents.length === 0) {"
+  },
+  {
+    "file": "store/mapStore.ts",
+    "line": 1909,
+    "text": "const result = await fetchMinimalEventsShared(fetchOptions);"
+  },
+  {
+    "file": "app/(tabs)/map.tsx",
+    "line": 4093,
+    "text": "setPauseClusterMarkerAnimations(true);"
+  },
+  {
+    "file": "app/(tabs)/map.tsx",
+    "line": 4118,
+    "text": "const clusterMarkerAnimationsActive ="
+  },
+  {
+    "file": "app/(tabs)/map.tsx",
+    "line": 7350,
+    "text": "recordInteraction(stableVenueId, venueEventIds);"
+  },
+  {
+    "file": "app/(tabs)/map.tsx",
+    "line": 5276,
+    "text": "}, 1200);"
+  },
+  {
+    "file": "app/(tabs)/map.tsx",
+    "line": 10236,
+    "text": "markTabTracePhase('map', 'map_markers_render_complete', {"
+  },
+  {
+    "file": "app/(tabs)/map.tsx",
+    "line": 10921,
+    "text": "traceMapEvent('hybrid_native_annotation_tap', { clusterId: cluster.id, venueCount: cluster.venues.length }, { gestureSessionId: gestureTraceSessionIdRef.current });"
+  }
+]
