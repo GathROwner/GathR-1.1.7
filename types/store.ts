@@ -142,8 +142,8 @@ export interface MapState {
   getFilteredEvents: () => Event[];
   generateClusters: (zoom?: number) => void;
   getClustersForZoom: (zoom: number) => Cluster[];
-  getTimeFilterCounts: (eventType: 'event' | 'special') => { [key in TimeFilterType]: number };
-  getCategoryFilterCounts: (eventType: 'event' | 'special') => { [category: string]: number };
+  getTimeFilterCounts: (eventType: 'event' | 'special', candidates?: Event[]) => { [key in TimeFilterType]: number };
+  getCategoryFilterCounts: (eventType: 'event' | 'special', candidates?: Event[]) => { [category: string]: number };
   fetchEventDetails: (eventIds: (string | number)[]) => Promise<void>;
 
   // Viewport-aware actions

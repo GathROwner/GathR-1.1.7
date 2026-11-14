@@ -1,3 +1,4 @@
+import { getListFilterCandidates } from '../../utils/listFilterCandidates';
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import {
   View,
@@ -1929,7 +1930,7 @@ useEffect(() => {
     // Track filter effectiveness after a brief delay to get updated counts
     setTimeout(() => {
       const filterChangeTime = Date.now() - filterChangeStartTime;
-      const timeFilterCounts = getTimeFilterCounts('event');
+      const timeFilterCounts = getTimeFilterCounts('event', listFilterCandidates);
       
       analytics?.trackEventFilter('time', newFilter, {
         previous_filter: previousFilter,
@@ -1996,7 +1997,7 @@ useEffect(() => {
     
     // Track category filter selection with effectiveness metrics
     setTimeout(() => {
-      const categoryFilterCounts = getCategoryFilterCounts('event');
+      const categoryFilterCounts = getCategoryFilterCounts('event', listFilterCandidates);
       
       analytics?.trackEventFilter('category', category, {
         result_count: categoryFilterCounts[category] || 0,
@@ -2093,9 +2094,14 @@ setSelectedImageData({ imageUrl, event });
 
   };
 
+  const listFilterCandidates = useMemo(() => getListFilterCandidates(
+    viewportEvents, outsideViewportEvents, 'event',
+    filterCriteria.eventFilters.savedOnly, savedEvents,
+  ), [viewportEvents, outsideViewportEvents, filterCriteria.eventFilters.savedOnly, savedEvents]);
+
   // Get dynamic filter counts
   const timeFilterCounts = isFocusedContentReady
-    ? measureListTabStage('events', 'time_filter_counts', {}, () => getTimeFilterCounts('event'))
+    ? measureListTabStage('events', 'time_filter_counts', {}, () => getTimeFilterCounts('event', listFilterCandidates))
     : {
         [TimeFilterType.ALL]: 0,
         [TimeFilterType.NOW]: 0,
@@ -2104,7 +2110,7 @@ setSelectedImageData({ imageUrl, event });
         [TimeFilterType.UPCOMING]: 0,
       };
   const categoryFilterCounts = isFocusedContentReady
-    ? measureListTabStage('events', 'category_filter_counts', {}, () => getCategoryFilterCounts('event'))
+    ? measureListTabStage('events', 'category_filter_counts', {}, () => getCategoryFilterCounts('event', listFilterCandidates))
     : {};
 
   const savedEventSet = useMemo(() => {
@@ -3223,16 +3229,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   timeFilterPillNow: {
-    flex: 1.4,
+    marginRight: 6,
   },
   timeFilterPillToday: {
-    flex: 0.75,
+    marginRight: 6,
   },
   timeFilterPillTomorrow: {
-    flex: 0.95,
+    marginRight: 6,
   },
   timeFilterPillUpcoming: {
-    flex: 1.05,
+    marginRight: 6,
   },
   timeFilterIcon: {
     marginRight: 4,

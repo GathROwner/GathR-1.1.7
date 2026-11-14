@@ -2282,18 +2282,18 @@ logStartupDataTiming('generate_clusters_completed', {
   /**
    * Get time filter counts for current criteria
    */
-  getTimeFilterCounts: (eventType: 'event' | 'special') => {
+  getTimeFilterCounts: (eventType: 'event' | 'special', candidates?: Event[]) => {
     const { onScreenEvents, filterCriteria } = get();
-    // Use ONLY on-screen events - counts should reflect what's actually visible on screen
-    return getCachedTimeFilterCounts(onScreenEvents, filterCriteria, eventType);
+    // Map counts default to on-screen events; lists supply their full candidate pool.
+    return getCachedTimeFilterCounts(candidates ?? onScreenEvents, filterCriteria, eventType);
   },
 
   /**
    * Get category filter counts for current criteria
    */
-  getCategoryFilterCounts: (eventType: 'event' | 'special') => {
+  getCategoryFilterCounts: (eventType: 'event' | 'special', candidates?: Event[]) => {
     const { onScreenEvents, filterCriteria } = get();
-    // Use ONLY on-screen events - counts should reflect what's actually visible on screen
-    return getCachedCategoryFilterCounts(onScreenEvents, filterCriteria, eventType);
+    // Map counts default to on-screen events; lists supply their full candidate pool.
+    return getCachedCategoryFilterCounts(candidates ?? onScreenEvents, filterCriteria, eventType);
   }
 }))
