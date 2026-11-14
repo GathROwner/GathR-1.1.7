@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Platform, View, type LayoutChangeEvent } from 'react-native';
 import Mapbox from '@rnmapbox/maps';
 import type { Cluster } from '../../types/events';
@@ -15,11 +15,15 @@ type Props = {
   record: (id: string, geometry: MarkerGeometry) => void;
   categoryIcon: (category: string) => string;
   onPress: () => void; onBackgroundPress: () => void;
+  registerTapTarget?: (id: string, cluster: Cluster, coordinate: [number, number], eligible: boolean) => (() => void);
 };
 
 /** Canvas-rendered annotations, not UIKit view annotations, keep the map's native gesture surface clear. */
 export default function HybridMapAnnotation(props: Props) {
   const { id, cluster, coordinate, isSelected, disabled, compact, dockX, dockY } = props;
+  const registerTapTarget = props.registerTapTarget;
+  useLayoutEffect(() => registerTapTarget?.(id, cluster, [coordinate[0], coordinate[1]], !compact),
+    [compact, registerTapTarget, id, cluster, coordinate[0], coordinate[1]]);
   const annotation = useRef<Mapbox.PointAnnotation>(null);
   const frame = useRef<number | null>(null);
   const [size, setSize] = useState({ width: 1, height: 1 });

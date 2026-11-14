@@ -64,6 +64,8 @@ import MapLegend, {
 import HybridMapAnnotation from '../../components/map/HybridMapAnnotation';
 import { usesCurrentBasemap } from '../../utils/hybridClusterPresentation';
 import { createMapTouchTrace } from '../../utils/mapTouchTrace';
+import { useHybridTapDelivery } from '../../hooks/useHybridTapDelivery';
+import { HYBRID_POINT_ANNOTATION_LAYER_ID, type MapWindowLayout } from '../../utils/hybridTapDelivery';
 import InterestFilterPills from '../../components/map/InterestFilterPills';
 import InterestsCarousel from '../../components/map/InterestsCarousel';
 import HotFlamePill from '../../components/map/HotFlamePill';
@@ -4686,6 +4688,8 @@ useEffect(() => {
   const onPuckCameraChanged = clusterPuckLayout.onCameraChanged;
   const [, setBeaconProjectionEpoch] = useState(0);
   const [mapScreenOffset, setMapScreenOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const mapAbsoluteLayoutRef = useRef<MapWindowLayout | null>(null);
+  const mapAbsoluteLayoutRevisionRef = useRef(0);
   const [iosMapViewRevision, setIosMapViewRevision] = useState(0);
   const iosMapViewLayoutRefreshScheduledRef = useRef(false);
   const iosMapViewLayoutRefreshCompletedRef = useRef(false);
@@ -7622,6 +7626,24 @@ lastOpenedClusterIdRef.current = cluster.id;
     trackInteraction,
     tutorialClusterInteractionReadyGate,
   ]); // REMOVED analytics, zoomLevel dependencies
+
+  const hybridTapDelivery = useHybridTapDelivery<Cluster>({
+    active: Platform.OS === 'ios' && mapStyleChoice === 'hybrid' && isFocused,
+    canOpen: () => clustersReadyForInteractionRef.current && !isMapLoadingRef.current &&
+      !isMapMovingRef.current && !ignoreProgrammaticCameraRef.current &&
+      clusterProcessingRef.current === null && useMapStore.getState().selectedVenues.length === 0,
+    surface: () => {
+      const map = mapRef.current, layout = mapAbsoluteLayoutRef.current, camera = currentCameraStateRef.current;
+      if (!map || !layout || !camera) return null;
+      return { identity: map, layout, zoom: camera.zoom, query: point =>
+        map.queryRenderedFeaturesAtPoint(point, [], [HYBRID_POINT_ANNOTATION_LAYER_ID]) };
+    },
+    onPress: (cluster, source) => {
+      traceMapEvent('hybrid_tap_delivery', { source, clusterId: cluster.id, venueCount: cluster.venues.length });
+      void handleMarkerPress(cluster);
+    },
+    trace: traceMapEvent,
+  });
 
   useEffect(() => registerTutorialAction('open-cluster', async (signal?: AbortSignal) => {
     const currentTarget = tutorialCurrentClusterRef.current;
@@ -10925,9 +10947,11 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
             compact={!!puckOffset?.compact} dockX={beaconDock.translateX} dockY={beaconDock.translateY}
             measurementDockX={originalBeaconDock.translateX} measurementDockY={originalBeaconDock.translateY}
             record={clusterPuckLayout.recordMarkerGeometry} categoryIcon={getCategoryIcon}
+            registerTapTarget={Platform.OS === 'ios' ? hybridTapDelivery.register : undefined}
             onPress={() => {
               traceMapEvent('hybrid_native_annotation_tap', { clusterId: cluster.id, venueCount: cluster.venues.length }, { gestureSessionId: gestureTraceSessionIdRef.current });
-              void handleMarkerPress(cluster);
+              if (Platform.OS === 'ios') hybridTapDelivery.onNativePress(markerKey, cluster);
+              else void handleMarkerPress(cluster);
             }} onBackgroundPress={handleMapPress} />;
         }
 
@@ -11212,15 +11236,21 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
         ref={mapRef}
         onTouchStart={event => {
           mapTouchTrace.onTouchStart(event);
+          hybridTapDelivery.onTouchStart(event);
           clusterPuckLayout.onMapTouchStart(event.nativeEvent.touches.length);
         }}
-        onTouchMove={mapTouchTrace.onTouchMove}
+        onTouchMove={event => {
+          mapTouchTrace.onTouchMove(event);
+          hybridTapDelivery.onTouchMove(event);
+        }}
         onTouchEnd={event => {
           mapTouchTrace.onTouchEnd(event);
+          hybridTapDelivery.onTouchEnd(event);
           clusterPuckLayout.onMapTouchEnd(event.nativeEvent.touches.length);
         }}
         onTouchCancel={() => {
           mapTouchTrace.onTouchCancel();
+          hybridTapDelivery.onTouchCancel();
           clusterPuckLayout.onMapTouchCancel();
         }}
         style={styles.map}
@@ -11250,6 +11280,9 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
         }}
         surfaceView={Platform.OS === 'android' ? false : undefined}
 onLayout={(event) => {
+  hybridTapDelivery.invalidate();
+  mapAbsoluteLayoutRef.current = null;
+  const absoluteLayoutRevision = ++mapAbsoluteLayoutRevisionRef.current;
   const { width, height, x, y } = event.nativeEvent.layout;
   mapDimensionsRef.current = { width, height };
   setMapDimensions({ width, height });
@@ -11262,6 +11295,8 @@ onLayout={(event) => {
   const nativeHandle = (mapRef.current as any)?._nativeRef;
   if (nativeHandle?.measureInWindow) {
     nativeHandle.measureInWindow((absX: number, absY: number, absWidth: number, absHeight: number) => {
+      if (absoluteLayoutRevision !== mapAbsoluteLayoutRevisionRef.current) return;
+      mapAbsoluteLayoutRef.current = { x: absX, y: absY, width: absWidth, height: absHeight };
       mapDimensionsRef.current = { width: absWidth, height: absHeight };
       setMapDimensions({ width: absWidth, height: absHeight });
       setMapScreenOffset({ x: absX, y: absY });
@@ -11482,7 +11517,10 @@ onDidFinishLoadingMap={() => {
           }
         }}
      
-          onCameraChanged={handleCameraChange}
+          onCameraChanged={event => {
+            hybridTapDelivery.invalidate();
+            handleCameraChange(event);
+          }}
 //onRegionDidChange={handleCameraChange} // removed — we use onMapIdle for idle logging
 
 
