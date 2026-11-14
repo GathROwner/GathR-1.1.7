@@ -3,10 +3,11 @@ import { summarizeCalloutOpenings } from './mapCalloutTiming';
 
 type TracePrimitive = string | number | boolean | null;
 
-// Diagnostic Preview tracing is opt-in at bundle time. The baseline variant
-// records existing behavior only; it does not enable any performance change.
-export const MAP_TRACE_ENABLED = process.env.EXPO_PUBLIC_MAP_LATENCY_TRACE === '1';
-export const MAP_TRACE_UI_ENABLED = MAP_TRACE_ENABLED;
+// A diagnostic bundle exposes the panel, but recording stays dormant until the
+// user starts a bounded capture. The baseline variant never changes behavior.
+export const MAP_TRACE_UI_ENABLED = process.env.EXPO_PUBLIC_MAP_LATENCY_TRACE === '1';
+export let MAP_TRACE_ENABLED = false;
+let captureExpiry: ReturnType<typeof setTimeout> | null = null;
 export const MAP_TRACE_VARIANT = process.env.EXPO_PUBLIC_MAP_LATENCY_VARIANT || 'baseline';
 
 const TRACE_RUN_ID = `map-${Date.now().toString(36)}`;
@@ -359,6 +360,20 @@ export const clearMapTrace = () => {
 };
 
 export const getMapTraceState = (): MapTraceState => traceState;
+
+export const stopMapTrace = () => {
+  MAP_TRACE_ENABLED = false;
+  if (captureExpiry) clearTimeout(captureExpiry);
+  captureExpiry = null;
+};
+
+export const startMapTrace = () => {
+  if (!MAP_TRACE_UI_ENABLED) return;
+  stopMapTrace();
+  MAP_TRACE_ENABLED = true;
+  clearMapTrace();
+  captureExpiry = setTimeout(stopMapTrace, 180000);
+};
 
 export const subscribeToMapTrace = (listener: () => void) => {
   listeners.add(listener);
