@@ -2084,6 +2084,16 @@ refreshPrivateSharedEventsFromServer: async (privateEventIds?: string[]) => {
             })
           : await fetchMinimalEventsShared(fetchOptions);
         if (abortIfStale('after_minimal_fetch')) return;
+        // A type-scoped response cannot replace the cache after the user has
+        // changed which type the current view needs. Full-feed responses are
+        // safe to partition against the latest filters.
+        const latestFilters = get().filterCriteria;
+        const latestTypeFilter = latestFilters.showEvents === latestFilters.showSpecials
+          ? undefined : latestFilters.showEvents;
+        if (firestoreTypeFilter !== undefined && latestTypeFilter !== firestoreTypeFilter) {
+          traceMapEvent('viewport_fetch_stale_skipped', { requestId, stage: 'type_filter_changed' });
+          return;
+        }
         const dedupedAll = dedupeEvents(result.combinedData);
         get().setAllEvents(dedupedAll);
         publicCandidateEvents = get().allEvents.filter(matchesTypeFilter);

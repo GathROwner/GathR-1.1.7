@@ -200,3 +200,12 @@ it('waits for auth readiness before cache publication or a private-aware startup
  await act(async()=>{network.resolve(result([fixture('private',{source:'private_shared'})]));await tick();});
  expect(useMapStore.getState().allEvents[0].id).toBe('private');savedClient.clear();
 });
+it('does not let an old type-scoped response erase a newly restored different-type view',async()=>{
+ useMapStore.setState({filterCriteria:{...useMapStore.getState().filterCriteria,showEvents:true,showSpecials:false}});
+ const {network,pending}=pendingRequest();
+ useMapStore.setState({filterCriteria:{...useMapStore.getState().filterCriteria,showEvents:false,showSpecials:true}});
+ useMapStore.getState().setAllEvents([fixture('special-current',{type:'special'})],{projectViewport:'cache'});
+ network.resolve(result([fixture('old-event')]));await pending;
+ expect(useMapStore.getState().viewportEvents.map(e=>e.id)).toEqual(['special-current']);
+ expect(useMapStore.getState().allEvents.map(e=>e.id)).toEqual(['special-current']);
+});
