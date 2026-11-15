@@ -56,6 +56,8 @@ Last validated: 2025-09-04 • Owner: Map data/UX
 
 
 
+import { createEventTimeContext, doesEventMatchTypeFilters, getFilterScheduleState as getMeasuredEventScheduleState, getEventFilterTimeFacts, matchesTimeFacts, matchesUpcomingDate, eventMatchesSearch, type EventTimeContext } from '../utils/mapEventFilters';
+import { normalizeUpcomingTypeFilters } from '../utils/upcomingDateWindow';
 import { create } from 'zustand';
 import { Event, Venue, Cluster, TimeStatus, InterestLevel } from '../types/events';
 import { FilterCriteria, TimeFilterType, TypeFilterCriteria } from '../types/filter';
@@ -64,10 +66,13 @@ import * as Location from 'expo-location';
 import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Supercluster from 'supercluster';
+import { markerClusterConfig, markerClusterZoom, type MarkerClusterProfile } from '../utils/markerClusterConfig';
 
 
 // Import default filter criteria
 import { DEFAULT_FILTER_CRITERIA } from '../types/filter';
+
+export { createEventTimeContext, doesEventMatchTypeFilters, type EventTimeContext } from '../utils/mapEventFilters';
 
 const FRIEND_EVENTS_MAP_VISIBILITY_KEY = '@gathr/friend-events-map-visible';
 
@@ -98,9 +103,9 @@ import {
   type FetchMinimalEventsOptions,
 } from '../lib/api/events';
 import {
-  areEventIdsEquivalent,
   fetchFirestoreEventDetailsBatch,
   toAppEventId,
+  toFirestoreEventId,
 } from '../lib/api/firestoreEvents';
 import {
   fetchPrivateSharedEventsForCurrentUser,
@@ -114,17 +119,12 @@ import {
 import { EVENT_DETAILS_SCHEMA_VERSION, EVENTS_MINIMAL } from '../lib/queryKeys';
 import { normalizeVenueIdentityText } from '../utils/venueIdentity';
 import { createLegacyTimingContract, readVersion2EventTiming } from '../utils/eventTiming';
+import { readEventAreaData } from '../utils/eventAreaData';
+import { readEventProgrammeData } from '../utils/eventProgramme';
 import { normalizeRecurrenceFlag } from '../utils/eventRecurrence';
 import {
-  getEventDateKey,
   isEventPastFast,
 } from '../utils/eventExpiry';
-import {
-  getEventScheduleState,
-} from '../utils/eventTiming';
-import {
-  getCachedEventScheduleState,
-} from '../utils/eventScheduleStateCache';
 import {
   isLatestStartedViewportRequest,
   markViewportRequestStarted,
@@ -136,7 +136,6 @@ import {
   getActiveMapTraceGestureSessionId,
   getMapScheduleStateMetricSnapshot,
   mapTraceNow,
-  measureMapScheduleState,
   traceMapEvent,
   type MapScheduleStateCaller,
 } from '../utils/mapTrace';
@@ -364,11 +363,8 @@ const getSuperclusterRadiusPx = (venues: Venue[], zoom: number): number => {
   return clampNumber(radiusPx, ANDROID_BASE_SUPERCLUSTER_RADIUS_PX, ANDROID_SUPERCLUSTER_MAX_RADIUS_PX);
 };
 
-const getSuperclusterConfig = (venues: Venue[], zoom: number) => ({
-  radius: getSuperclusterRadiusPx(venues, zoom),
-  extent: SUPERCLUSTER_EXTENT,
-  maxZoom: SUPERCLUSTER_MAX_ZOOM,
-});
+const getSuperclusterConfig = (venues: Venue[], zoom: number, profile: MarkerClusterProfile) =>
+  markerClusterConfig(profile, getSuperclusterRadiusPx(venues, zoom), SUPERCLUSTER_EXTENT, SUPERCLUSTER_MAX_ZOOM);
 
 const expandBoundingBox = (
   bbox: ViewportBoundingBox,
@@ -568,59 +564,6 @@ const calculateInterestLevel = (venues: Venue[]): InterestLevel => {
   return 'low';
 };
 
-export type EventTimeContext = {
-  todayKey: string;
-  tomorrowKey: string;
-  yesterdayKey: string;
-  nowMinutes: number;
-};
-
-const formatLocalDateKey = (date: Date): string => {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-};
-
-const addDaysKey = (date: Date, days: number): string => {
-  const next = new Date(date);
-  next.setDate(next.getDate() + days);
-  return formatLocalDateKey(next);
-};
-
-const eventTimeContextToDate = (context: EventTimeContext): Date => {
-  const [year, month, day] = context.todayKey.split('-').map(Number);
-  return new Date(
-    year,
-    Math.max(0, month - 1),
-    day,
-    Math.floor(context.nowMinutes / 60),
-    context.nowMinutes % 60
-  );
-};
-
-export const createEventTimeContext = (now = new Date()): EventTimeContext => ({
-  todayKey: formatLocalDateKey(now),
-  tomorrowKey: addDaysKey(now, 1),
-  yesterdayKey: addDaysKey(now, -1),
-  nowMinutes: now.getHours() * 60 + now.getMinutes(),
-});
-
-const getMeasuredEventScheduleState = (
-  event: Pick<Event, 'startDate' | 'startTime' | 'endDate' | 'endTime' | 'timing'>,
-  context: EventTimeContext,
-  traceCaller: MapScheduleStateCaller = 'map_filtering'
-): ReturnType<typeof getEventScheduleState> => {
-  const now = eventTimeContextToDate(context);
-  return getCachedEventScheduleState(
-    event,
-    now,
-    () => MAP_TRACE_ENABLED
-      ? measureMapScheduleState(traceCaller, () => getEventScheduleState(event, now))
-      : getEventScheduleState(event, now)
-  );
-};
-
 const isEventNowFast = (
   event: Pick<Event, 'startDate' | 'startTime' | 'endDate' | 'endTime' | 'timing'>,
   context: EventTimeContext,
@@ -707,57 +650,6 @@ const isEventPastMeasured = (
 /**
  * Determines if an event matches the given type-specific filters
  */
-export const doesEventMatchTypeFilters = (
-  event: Event,
-  typeFilters: TypeFilterCriteria,
-  timeContext: EventTimeContext = createEventTimeContext()
-): boolean => {
-  // Ended events (past end time + grace) never show, regardless of time filter
-  if (isEventPastMeasured(event, timeContext, 'map_filtering')) {
-    return false;
-  }
-
-  // Check time filter
-  if (typeFilters.timeFilter === TimeFilterType.ALL) {
-    // No time filtering - show all events
-    // Continue to other filters
-  } else if (typeFilters.timeFilter === TimeFilterType.NOW) {
-    const isNow = isEventNowFast(event, timeContext);
-    if (!isNow) return false;
-  } else if (typeFilters.timeFilter === TimeFilterType.TODAY) {
-    const isToday = isEventHappeningTodayFast(event, timeContext);
-    if (!isToday) return false;
-  } else if (typeFilters.timeFilter === TimeFilterType.TOMORROW) {
-    const isTomorrow = getEventDateKey(event.startDate) === timeContext.tomorrowKey;
-    if (!isTomorrow) return false;
-  } else if (typeFilters.timeFilter === TimeFilterType.UPCOMING) {
-    // UPCOMING should only show future events (not now or today)
-    const timeStatus = getEventTimeStatusFast(event, timeContext);
-    if (timeStatus !== 'future') return false;
-  }
-
-  
-  // Check category filter
-  if (typeFilters.category &&
-      !doesEventMatchCategoryOrFacet(event, typeFilters.category)) {
-    return false;
-  }
-  
-  // Check search filter if implemented
-  if (typeFilters.search && typeFilters.search.trim() !== '') {
-    const searchTerm = typeFilters.search.toLowerCase().trim();
-    const matchesSearch = 
-      event.title.toLowerCase().includes(searchTerm) ||
-      event.description.toLowerCase().includes(searchTerm) ||
-      event.venue.toLowerCase().includes(searchTerm);
-    
-    if (!matchesSearch) return false;
-  }
-  
-  // If passed all filter checks, the event matches
-  return true;
-};
-
 /**
  * Determines if a cluster should be visible based on all active filters
  */
@@ -766,6 +658,7 @@ const shouldClusterBeVisible = (cluster: Cluster, criteria: FilterCriteria): boo
   // authorized check-in visible even when time/category/search filters remove
   // every event at that venue; its fallback cluster carries zero content counts.
   if (cluster.friendPresence) return true;
+  const timeContext = createEventTimeContext();
 
   for (const venue of cluster.venues) {
     for (const event of venue.events) {
@@ -781,7 +674,7 @@ const shouldClusterBeVisible = (cluster: Cluster, criteria: FilterCriteria): boo
         ? criteria.eventFilters 
         : criteria.specialFilters;
       
-      if (doesEventMatchTypeFilters(event, typeFilters)) {
+      if (doesEventMatchTypeFilters(event, typeFilters, timeContext) && eventMatchesSearch(event, criteria.search)) {
         return true; // This event matches all filters
       }
     }
@@ -826,6 +719,28 @@ export const calculateDistance = (
 /**
  * Filter events with type-specific filter support
  */
+let lastUpcomingEvaluationDay = '';
+
+// A callout holds a snapshot of its cluster. Close that snapshot when its date
+// window changes so it cannot retain unrelated occurrences from the previous filter.
+const dateSelectionReset = (previous: FilterCriteria, next: FilterCriteria): Partial<MapState> => {
+  const currentDay = createEventTimeContext().todayKey;
+  const changed = ([before, after]: [TypeFilterCriteria, TypeFilterCriteria]) => {
+    const upcomingInvolved = before.timeFilter === TimeFilterType.UPCOMING ||
+      after.timeFilter === TimeFilterType.UPCOMING;
+    return upcomingInvolved && (before.timeFilter !== after.timeFilter ||
+      JSON.stringify(before.upcomingDate) !== JSON.stringify(after.upcomingDate) ||
+      lastUpcomingEvaluationDay !== currentDay);
+  };
+  const filterPairs: [TypeFilterCriteria, TypeFilterCriteria][] = [
+    [previous.eventFilters, next.eventFilters],
+    [previous.specialFilters, next.specialFilters],
+  ];
+  return filterPairs.some(changed) ? {
+    selectedVenue: null, selectedVenues: [], selectedCluster: null, preferredCalloutVenueLocationKey: null,
+  } : {};
+};
+
 const filterEvents = (events: Event[], criteria: FilterCriteria): Event[] => {
   const timeContext = createEventTimeContext();
   const gestureSessionId = getActiveMapTraceGestureSessionId();
@@ -834,6 +749,7 @@ const filterEvents = (events: Event[], criteria: FilterCriteria): Event[] => {
     ? getMapScheduleStateMetricSnapshot('map_filtering', gestureSessionId)
     : { count: 0, cumulativeDurationMs: 0 };
 
+  lastUpcomingEvaluationDay = timeContext.todayKey;
   const filteredEvents = events.filter(event => {
     // Apply basic visibility filter
     const isVisible = 
@@ -847,7 +763,7 @@ const filterEvents = (events: Event[], criteria: FilterCriteria): Event[] => {
       ? criteria.eventFilters 
       : criteria.specialFilters;
     
-    return doesEventMatchTypeFilters(event, typeFilters, timeContext);
+    return doesEventMatchTypeFilters(event, typeFilters, timeContext) && eventMatchesSearch(event, criteria.search);
   });
 
   if (MAP_TRACE_ENABLED) {
@@ -884,12 +800,6 @@ const createEmptyTimeFilterCounts = (): TimeFilterCounts => ({
   [TimeFilterType.UPCOMING]: 0,
 });
 
-const eventMatchesSearch = (event: Event, searchTerm: string): boolean =>
-  !searchTerm ||
-  event.title.toLowerCase().includes(searchTerm) ||
-  event.description.toLowerCase().includes(searchTerm) ||
-  event.venue.toLowerCase().includes(searchTerm);
-
 /**
  * Calculate every filter-pill count in one pass. A schedule state is resolved
  * at most once for each visible event and then shared by its time and category
@@ -923,18 +833,16 @@ const calculateFilterCountBundle = (
     if (!isVisible) continue;
 
     const searchTerm = typeFilters.search?.trim().toLowerCase() || '';
-    if (!eventMatchesSearch(event, searchTerm)) continue;
+    if (!eventMatchesSearch(event, searchTerm) || !eventMatchesSearch(event, currentCriteria.search)) continue;
 
     const traceCaller: MapScheduleStateCaller = eventType === 'event'
       ? 'events_pill_counts'
       : 'specials_pill_counts';
-    if (isEventPastMeasured(event, timeContext, traceCaller)) continue;
-
-    const scheduleState = getMeasuredEventScheduleState(event, timeContext, traceCaller);
-    const isNow = scheduleState.nowEligibility === 'confirmed';
-    const isToday = scheduleState.todayEligible;
-    const isTomorrow = getEventDateKey(event.startDate) === timeContext.tomorrowKey;
-    const isUpcoming = scheduleState.code !== 'confirmed_ended' && !isToday && !isNow;
+    const facts = getEventFilterTimeFacts(event, timeContext, traceCaller);
+    if (facts.past) continue;
+    const { now: isNow, today: isToday, tomorrow: isTomorrow } = facts;
+    const isUpcoming = facts.upcoming &&
+      matchesUpcomingDate(event, typeFilters.upcomingDate, timeContext);
 
     const categoryFilter = typeFilters.category?.toLowerCase();
     if (!categoryFilter || doesEventMatchCategoryOrFacet(event, categoryFilter)) {
@@ -945,12 +853,7 @@ const calculateFilterCountBundle = (
       if (isUpcoming) typeResult.time[TimeFilterType.UPCOMING] += 1;
     }
 
-    const matchesSelectedTime =
-      typeFilters.timeFilter === TimeFilterType.ALL ||
-      (typeFilters.timeFilter === TimeFilterType.NOW && isNow) ||
-      (typeFilters.timeFilter === TimeFilterType.TODAY && isToday) ||
-      (typeFilters.timeFilter === TimeFilterType.TOMORROW && isTomorrow) ||
-      (typeFilters.timeFilter === TimeFilterType.UPCOMING && isUpcoming);
+    const matchesSelectedTime = matchesTimeFacts(event, typeFilters, timeContext, facts);
 
     if (matchesSelectedTime) {
       for (const key of facetKeys) typeResult.category[key] += 1;
@@ -967,6 +870,7 @@ type FilterCountCacheEntry<T> = {
   result: T;
 };
 
+// Keep map and list count caches separate by their stable candidate arrays.
 const filterCountBundleCache = new WeakMap<Event[], FilterCountCacheEntry<FilterCountBundle>>();
 
 const getFilterCountMinuteKey = () => Math.floor(Date.now() / 60000);
@@ -997,10 +901,10 @@ const getCachedFilterCountBundle = (
  * Optimized with spatial grid indexing to reduce complexity from O(n²) to O(n)
  * Returns an array of Cluster objects
  */
-const clusterVenues = (venues: Venue[], zoom: number = 12): Cluster[] => {
+const clusterVenues = (venues: Venue[], zoom: number = 12, profile: MarkerClusterProfile = 'default'): Cluster[] => {
   if (venues.length === 0) return [];
 
-  const superclusterConfig = getSuperclusterConfig(venues, zoom);
+  const superclusterConfig = getSuperclusterConfig(venues, zoom, profile);
   const shouldRebuildIndex =
     !__scIndex ||
     filtersChanged ||
@@ -1030,7 +934,7 @@ const clusterVenues = (venues: Venue[], zoom: number = 12): Cluster[] => {
   }
 
   // Query clusters for the current zoom; world bbox (minimal change)
-  const z = Math.max(0, Math.min(22, Math.floor(zoom)));
+  const z = markerClusterZoom(profile, zoom);
   const features = __scIndex.getClusters([-180, -85, 180, 85], z);
 
   const clusters: Cluster[] = [];
@@ -1141,6 +1045,7 @@ const clusterVenues = (venues: Venue[], zoom: number = 12): Cluster[] => {
  * Create map store using Zustand
  */
 export const useMapStore = create<MapState>((set, get) => ({
+  markerClusterProfile: 'default',
   // Initial state
   allEvents: [],  // Global cache populated by React Query
   friendEvents: [],
@@ -1160,6 +1065,7 @@ export const useMapStore = create<MapState>((set, get) => ({
     outsideViewportCount: 0,
     lastFetchTimestamp: null,
   },
+  hasInitialViewportSettled: false,
 
   clusters: [],
   selectedVenue: null,
@@ -1345,8 +1251,18 @@ export const useMapStore = create<MapState>((set, get) => ({
    * surfaces. No-ops (no re-render) when nothing expired.
    */
   pruneExpiredEvents: () => {
-    const state = get();
     const timeContext = createEventTimeContext();
+    const criteria = get().filterCriteria;
+    const normalizedEvents = normalizeUpcomingTypeFilters(criteria.eventFilters, timeContext.todayKey);
+    const normalizedSpecials = normalizeUpcomingTypeFilters(criteria.specialFilters, timeContext.todayKey);
+    const upcomingDayChanged = lastUpcomingEvaluationDay !== timeContext.todayKey &&
+      (criteria.eventFilters.timeFilter === TimeFilterType.UPCOMING ||
+        criteria.specialFilters.timeFilter === TimeFilterType.UPCOMING);
+    if (normalizedEvents !== criteria.eventFilters || normalizedSpecials !== criteria.specialFilters ||
+        upcomingDayChanged) {
+      get().setFilterCriteria({ eventFilters: normalizedEvents, specialFilters: normalizedSpecials });
+    }
+    const state = get();
 
     const prune = (list: Event[]): Event[] => {
       if (!Array.isArray(list) || list.length === 0) return list;
@@ -1513,7 +1429,7 @@ export const useMapStore = create<MapState>((set, get) => ({
       .filter((event) => isEventDefaultMapEligibleMeasured(event, timeContext))
   );
   updateMapProjectionSignature(createMapProjectionSignature(filtered, timeContext));
-  const clusters = clusterVenues(venues, zoomLevel);
+  const clusters = clusterVenues(venues, zoomLevel, get().markerClusterProfile);
   
   // Single store update - prevents render cascade
   set({
@@ -1533,10 +1449,12 @@ export const useMapStore = create<MapState>((set, get) => ({
       ...criteria 
     };
     
+    updatedCriteria.eventFilters = normalizeUpcomingTypeFilters(updatedCriteria.eventFilters);
+    updatedCriteria.specialFilters = normalizeUpcomingTypeFilters(updatedCriteria.specialFilters);
     // Set the filters changed flag to true
     filtersChanged = true;
-    
-    set({ filterCriteria: updatedCriteria });
+
+    set({ ...dateSelectionReset(get().filterCriteria, updatedCriteria), filterCriteria: updatedCriteria });
     
     // Apply updated filters and regenerate clusters
     get().getFilteredEvents();
@@ -1566,10 +1484,17 @@ export const useMapStore = create<MapState>((set, get) => ({
           ...updatedCriteria[filterKey],
           ...typeFilters,
           // Set source if category is being set, clear if being cleared
-          categoryFilterSource: typeFilters.category !== undefined ? source : undefined
+          categoryFilterSource: 'category' in typeFilters
+            ? (typeFilters.category ? source : undefined) : updatedCriteria[filterKey].categoryFilterSource
         }
       };
     });
+
+    updatedCriteria = {
+      ...updatedCriteria,
+      eventFilters: normalizeUpcomingTypeFilters(updatedCriteria.eventFilters),
+      specialFilters: normalizeUpcomingTypeFilters(updatedCriteria.specialFilters),
+    };
 
     if (JSON.stringify(updatedCriteria) === JSON.stringify(currentCriteria)) {
       return;
@@ -1594,7 +1519,7 @@ export const useMapStore = create<MapState>((set, get) => ({
         .filter((event) => isEventDefaultMapEligibleMeasured(event, timeContext))
     );
     updateMapProjectionSignature(createMapProjectionSignature(filtered, timeContext));
-    const clusters = clusterVenues(venues, zoomLevel);
+    const clusters = clusterVenues(venues, zoomLevel, get().markerClusterProfile);
 
     __ML_lastVenueCount = venues.length;
     __ML_lastClusterCount = clusters.length;
@@ -1610,6 +1535,7 @@ export const useMapStore = create<MapState>((set, get) => ({
     });
 
     set({
+      ...dateSelectionReset(currentCriteria, updatedCriteria),
       filterCriteria: updatedCriteria,
       filteredEvents: filtered,
       clusters,
@@ -1699,6 +1625,13 @@ export const useMapStore = create<MapState>((set, get) => ({
   setZoomLevel: (zoom) => {
     set({ zoomLevel: zoom });
     get().generateClusters(zoom);
+  },
+
+  setMarkerClusterProfile: (profile) => {
+    if (get().markerClusterProfile === profile) return;
+    filtersChanged = true;
+    set({ markerClusterProfile: profile });
+    get().generateClusters(get().zoomLevel);
   },
 
   /**
@@ -2108,10 +2041,12 @@ refreshPrivateSharedEventsFromServer: async (privateEventIds?: string[]) => {
             outsideViewportCount: outsideViewportEvents.length,
             lastFetchTimestamp: new Date().toISOString(),
           },
+          hasInitialViewportSettled: true,
           isLoading: false,
           lastFetchedAt: Date.now(),
         });
       } else {
+        if (!currentState.hasInitialViewportSettled) set({ hasInitialViewportSettled: true });
         traceMapEvent('viewport_store_commit_skipped', {
           requestId,
           source: options.source ?? 'unspecified',
@@ -2153,6 +2088,7 @@ refreshPrivateSharedEventsFromServer: async (privateEventIds?: string[]) => {
       console.error('[MapStore] Viewport fetch error:', errorMsg);
       set({
         error: errorMsg,
+        hasInitialViewportSettled: true,
         isLoading: false,
       });
       traceMapEvent('viewport_fetch_failed', {
@@ -2187,9 +2123,13 @@ refreshPrivateSharedEventsFromServer: async (privateEventIds?: string[]) => {
   /**
    * Fetch detailed event data for lazy loading callouts
    */
-fetchEventDetails: async (eventIds: (string | number)[]) => {
+fetchEventDetails: async (
+  eventIds: (string | number)[],
+  options: { forceRefresh?: boolean } = {}
+) => {
   if (!eventIds || eventIds.length === 0) return;
 
+  const forceRefresh = options.forceRefresh === true;
   const qc: any = (global as any)?.__RQ_CLIENT ?? null;
   const locallyConfirmedEventIds = new Set(
     get().events
@@ -2217,13 +2157,16 @@ fetchEventDetails: async (eventIds: (string | number)[]) => {
 
   const dedupeByEquivalentId = (items: Event[]): Event[] => {
     const deduped: Event[] = [];
+    const positions = new Map<string, number>();
     for (const item of items) {
-      const existingIndex = deduped.findIndex((candidate) =>
-        areEventIdsEquivalent(candidate.id, item.id)
-      );
-      if (existingIndex >= 0) {
+      // Nullish IDs never match, even each other. Blank IDs do match, as in
+      // areEventIdsEquivalent; use the same single-prefix normalization.
+      const key = item.id == null ? null : toFirestoreEventId(item.id);
+      const existingIndex = key === null ? undefined : positions.get(key);
+      if (existingIndex !== undefined) {
         deduped[existingIndex] = item;
       } else {
+        if (key !== null) positions.set(key, deduped.length);
         deduped.push(item);
       }
     }
@@ -2245,12 +2188,15 @@ fetchEventDetails: async (eventIds: (string | number)[]) => {
       endDate: detail?.endDate || detail?.startDate || '',
       startTime: detail?.startTime || '',
       endTime: detail?.endTime || '',
-      timing: readVersion2EventTiming(detail ?? {}) ?? createLegacyTimingContract(
+      timing: readVersion2EventTiming(detail ?? {})
+        ??
+        createLegacyTimingContract(
             {
               startDate: detail?.startDate || '',
               startTime: detail?.startTime || '',
               endDate: detail?.endDate || detail?.startDate || '',
               endTime: detail?.endTime || '',
+              locationScope: detail?.locationScope ?? detail?.metadata?.locationScope,
             },
             {
               endStatus: 'unknown',
@@ -2265,15 +2211,16 @@ fetchEventDetails: async (eventIds: (string | number)[]) => {
       SharedPostThumbnail: detail?.SharedPostThumbnail || '',
       latitude: Number(detail?.latitude) || 0,
       longitude: Number(detail?.longitude) || 0,
-      locationScope: detail?.locationScope ?? null,
+      locationScope: detail?.locationScope ?? detail?.metadata?.locationScope ?? null,
       locationLabel: detail?.locationLabel ?? null,
       locationCity: detail?.locationCity ?? null,
       locationProvince: detail?.locationProvince ?? null,
       locationPrecision: detail?.locationPrecision ?? null,
       locationReviewStatus: detail?.locationReviewStatus ?? null,
-      mapMode: detail?.mapMode ?? null,
+      mapMode: detail?.mapMode ?? detail?.metadata?.mapMode ?? null,
       routeData: detail?.routeData ?? null,
-      areaData: detail?.areaData ?? null,
+      areaData: readEventAreaData(detail ?? {}),
+      programmeData: readEventProgrammeData(detail ?? {}) ?? undefined,
       ticketLinkPosts: detail?.ticketLinkPosts || '',
       ticketLinkEvents: detail?.ticketLinkEvents || '',
       ticketsBuyUrl: detail?.ticketsBuyUrl || '',
@@ -2314,7 +2261,14 @@ fetchEventDetails: async (eventIds: (string | number)[]) => {
     const isRecurringInstance = detail.isRecurringInstance ?? detail.metadata?.isRecurringInstance;
     return {
       ...detail,
+      programmeData: readEventProgrammeData(detail) ?? undefined,
       ...(readVersion2EventTiming(detail) ? { timing: readVersion2EventTiming(detail) } : {}),
+      ...((detail.areaData !== undefined || detail.metadata?.areaData !== undefined)
+        ? { areaData: readEventAreaData(detail) } : {}),
+      ...((detail.locationScope !== undefined || detail.metadata?.locationScope !== undefined)
+        ? { locationScope: detail.locationScope ?? detail.metadata?.locationScope ?? null } : {}),
+      ...((detail.mapMode !== undefined || detail.metadata?.mapMode !== undefined)
+        ? { mapMode: detail.mapMode ?? detail.metadata?.mapMode ?? null } : {}),
       id: toAppEventId(detail.id),
       description: detail.fullDescription || detail.description || '',
       isRecurring: isRecurring == null ? undefined : normalizeRecurrenceFlag(isRecurring),
@@ -2362,11 +2316,20 @@ fetchEventDetails: async (eventIds: (string | number)[]) => {
 
     if (normalizedDetails.length === 0) return;
 
+    // Match Array.find's first-detail-wins rule. Reuse this lookup for both
+    // collections instead of rescanning every detail for every event.
+    const detailsById = new Map<string, any>();
+    for (const detail of normalizedDetails) {
+      const key = toFirestoreEventId(detail.id);
+      if (!detailsById.has(key)) detailsById.set(key, detail);
+    }
+
     const mergeCollection = (collection: Event[]): Event[] => {
+      const existingIds = new Set<string>();
       const merged = collection.map((event) => {
-        const detail = normalizedDetails.find((candidate) =>
-          areEventIdsEquivalent(candidate.id, event.id)
-        );
+        const key = event.id == null ? null : toFirestoreEventId(event.id);
+        if (key !== null) existingIds.add(key);
+        const detail = key === null ? undefined : detailsById.get(key);
         if (!detail) return event;
 
         return {
@@ -2390,10 +2353,7 @@ fetchEventDetails: async (eventIds: (string | number)[]) => {
       });
 
       const extras = normalizedDetails
-        .filter(
-          (detail) =>
-            !merged.some((event) => areEventIdsEquivalent(event.id, detail.id))
-        )
+        .filter((detail) => !existingIds.has(toFirestoreEventId(detail.id)))
         .map((detail) => coerceDetailToEvent(detail));
 
       return dedupeByEquivalentId([...merged, ...extras]);
@@ -2417,7 +2377,7 @@ fetchEventDetails: async (eventIds: (string | number)[]) => {
   };
 
   const cached = qc?.getQueryData(key) as any[] | undefined;
-  if (cached?.length) {
+  if (cached?.length && !forceRefresh) {
     if (DEBUG_MAP_LOAD) {
       console.log('[MapStore] Using cached event details for', idsString);
     }
@@ -2440,7 +2400,9 @@ fetchEventDetails: async (eventIds: (string | number)[]) => {
   }
 
   try {
-    const fresh = qc
+    const fresh = forceRefresh
+      ? await fetchFresh()
+      : qc
       ? await qc.fetchQuery({
           queryKey: key,
           queryFn: fetchFresh,
@@ -2448,6 +2410,9 @@ fetchEventDetails: async (eventIds: (string | number)[]) => {
           gcTime: 1000 * 60 * 10,
         })
       : await fetchFresh();
+    if (forceRefresh && qc) {
+      qc.setQueryData(key, fresh);
+    }
     mergeIntoStore(fresh);
   } catch (error) {
     console.error('Error fetching event details:', error);
@@ -2522,7 +2487,7 @@ fetchEventDetails: async (eventIds: (string | number)[]) => {
     const groupingDurationMs = MAP_TRACE_ENABLED ? mapTraceNow() - groupingStartedAt : 0;
 
     const clusteringStartedAt = MAP_TRACE_ENABLED ? mapTraceNow() : 0;
-    const clusters = clusterVenues(venues, currentZoom);
+    const clusters = clusterVenues(venues, currentZoom, get().markerClusterProfile);
     const clusteringDurationMs = MAP_TRACE_ENABLED ? mapTraceNow() - clusteringStartedAt : 0;
     const eligibilityMetric = MAP_TRACE_ENABLED
       ? diffMapScheduleStateMetrics(
@@ -2708,7 +2673,7 @@ logStartupDataTiming('generate_clusters_completed', {
         .filter(isMapRenderableEvent)
         .filter((event) => isEventDefaultMapEligibleMeasured(event, timeContext))
     );
-    return clusterVenues(venues, zoom);
+    return clusterVenues(venues, zoom, get().markerClusterProfile);
   },
   
   /**
@@ -2716,7 +2681,7 @@ logStartupDataTiming('generate_clusters_completed', {
    */
   getTimeFilterCounts: (eventType: 'event' | 'special', candidates?: Event[]) => {
     const { onScreenEvents, filterCriteria } = get();
-    // Map counts default to on-screen events; lists supply their full candidate pool.
+    // Map callers default to on-screen counts; list callers supply their full candidate pool.
     return getCachedFilterCountBundle(candidates ?? onScreenEvents, filterCriteria)[eventType].time;
   },
 
@@ -2725,7 +2690,7 @@ logStartupDataTiming('generate_clusters_completed', {
    */
   getCategoryFilterCounts: (eventType: 'event' | 'special', candidates?: Event[]) => {
     const { onScreenEvents, filterCriteria } = get();
-    // Map counts default to on-screen events; lists supply their full candidate pool.
+    // Map callers default to on-screen counts; list callers supply their full candidate pool.
     return getCachedFilterCountBundle(candidates ?? onScreenEvents, filterCriteria)[eventType].category;
   }
 }))

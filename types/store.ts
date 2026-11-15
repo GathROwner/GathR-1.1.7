@@ -6,6 +6,7 @@
 import { Event, Venue, Cluster } from './events';
 import { FilterCriteria, TypeFilterCriteria, TimeFilterType } from './filter';
 import * as Location from 'expo-location';
+import type { MarkerClusterProfile } from '../utils/markerClusterConfig';
 
 /**
  * Scroll triggers interface for tab scroll-to-top functionality
@@ -63,6 +64,9 @@ export interface MapState {
     outsideViewportCount: number;
     lastFetchTimestamp: string | null;
   };
+  // True after the first viewport has been partitioned (or its first request
+  // failed), so app-wide readiness work can wait for the map's initial data pass.
+  hasInitialViewportSettled: boolean;
   
   // Venue and cluster data
   clusters: Cluster[];
@@ -78,6 +82,7 @@ export interface MapState {
   isLoading: boolean;
   error: string | null;
   zoomLevel: number;
+  markerClusterProfile: MarkerClusterProfile;
   filterCriteria: FilterCriteria;
   categories: string[];
   activeFilterPanel: 'events' | 'specials' | null;
@@ -147,6 +152,7 @@ export interface MapState {
     options?: SelectCalloutOptions
   ) => void;
   setZoomLevel: (zoom: number) => void;
+  setMarkerClusterProfile: (profile: MarkerClusterProfile) => void;
   setUserLocation: (location: Location.LocationObject) => void;
   setActiveFilterPanel: (panel: 'events' | 'specials' | null) => void;
   setHeaderSearchActive: (active: boolean) => void;
@@ -179,7 +185,10 @@ export interface MapState {
   getClustersForZoom: (zoom: number) => Cluster[];
   getTimeFilterCounts: (eventType: 'event' | 'special', candidates?: Event[]) => { [key in TimeFilterType]: number };
   getCategoryFilterCounts: (eventType: 'event' | 'special', candidates?: Event[]) => { [category: string]: number };
-  fetchEventDetails: (eventIds: (string | number)[]) => Promise<void>;
+  fetchEventDetails: (
+    eventIds: (string | number)[],
+    options?: { forceRefresh?: boolean }
+  ) => Promise<void>;
 
   // Viewport-aware actions
   fetchViewportEvents: (
