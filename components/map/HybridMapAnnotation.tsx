@@ -33,6 +33,10 @@ export default function HybridMapAnnotation(props: Props) {
   const measuredSize = useRef(size);
   const measuredPhoto = useRef(photo);
   const [selectionReset, setSelectionReset] = useState(0);
+  const venueRotation = useRef<(() => void) | null>(null);
+  const registerPulseRotation = useCallback((advance: (() => void) | null) => { venueRotation.current = advance; }, []);
+  const advanceVenue = useCallback(() => venueRotation.current?.(), []);
+  const coordinateVenueRotation = !compact && cluster.timeStatus !== 'future' && !props.reduceMotionEnabled;
   const countLabel = String(cluster.eventCount + cluster.specialCount);
   const compactDiameter = hybridCompactDiameter(countLabel);
   const refresh = useCallback(() => {
@@ -67,7 +71,8 @@ export default function HybridMapAnnotation(props: Props) {
       dockX={dockX} dockY={dockY} onPress={() => { if (!disabled && !isSelected) props.onPress(); }} />}
     {!compact && photo.height > 0 && <HybridMapHalo id={id} coordinate={coordinate} radius={photo.height / 2}
       translate={[dockX, dockY - (size.height - photo.y - photo.height / 2)]}
-      timing={cluster.timeStatus} active={props.isActive} reduceMotion={props.reduceMotionEnabled} />}
+      timing={cluster.timeStatus} active={props.isActive && !isSelected} reduceMotion={props.reduceMotionEnabled}
+      onVenueRotation={coordinateVenueRotation ? advanceVenue : undefined} />}
     <Mapbox.PointAnnotation ref={annotation} key={`${id}-${selectionReset}`} id={id} coordinate={coordinate}
       anchor={anchor} selected={isSelected} draggable={false}
       onSelected={() => {
@@ -87,7 +92,8 @@ export default function HybridMapAnnotation(props: Props) {
           dockX={props.measurementDockX} dockY={props.measurementDockY} record={props.record}>
           <HybridClusterMarker cluster={cluster} isActive={props.isActive} isSelected={isSelected} isReady={props.isReady}
             isProcessing={props.isProcessing} reduceMotionEnabled={props.reduceMotionEnabled} categoryIcon={props.categoryIcon}
-            snapshotMode snapshotVisible={!compact} onSnapshotChange={refresh} onPhotoLayout={measurePhoto} />
+            snapshotMode snapshotVisible={!compact} onSnapshotChange={refresh} onPhotoLayout={measurePhoto}
+            registerPulseRotation={coordinateVenueRotation ? registerPulseRotation : undefined} />
         </PuckMarkerMeasurement>
       </View>
     </Mapbox.PointAnnotation>
@@ -95,9 +101,10 @@ export default function HybridMapAnnotation(props: Props) {
 }
 
 /** Native paint transitions animate the halo without repeatedly rasterizing the venue graphics. */
-export function HybridMapHalo({ id, coordinate, radius, translate, timing, active, reduceMotion }: {
+export function HybridMapHalo({ id, coordinate, radius, translate, timing, active, reduceMotion, onVenueRotation }: {
   id: string; coordinate: [number, number]; radius: number; translate: [number, number];
   timing: Cluster['timeStatus']; active: boolean; reduceMotion: boolean;
+  onVenueRotation?: () => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const animate = active && !reduceMotion && timing !== 'future';
@@ -106,23 +113,45 @@ export function HybridMapHalo({ id, coordinate, radius, translate, timing, activ
     if (!animate) return;
     let timer: ReturnType<typeof setTimeout>;
     let stopped = false;
+    let pairs = 0;
     const grow = () => {
       if (stopped) return;
       setExpanded(true);
-      timer = setTimeout(() => { setExpanded(false); timer = setTimeout(grow, HYBRID_PULSE.resetMs); }, HYBRID_PULSE.durationMs + HYBRID_PULSE.pauseMs);
+      // Leave settling time after the fade, then switch the venue while the
+      // ring is invisible. The rest of the gap allows its bitmap to refresh
+      // before the next pulse. This clock also owns the venue cadence.
+      timer = setTimeout(() => {
+        pairs += 1;
+        if (pairs % HYBRID_PULSE.pairsPerVenue === 0) onVenueRotation?.();
+        timer = setTimeout(() => {
+          setExpanded(false);
+          timer = setTimeout(grow, HYBRID_PULSE.resetMs);
+        }, HYBRID_PULSE.pauseMs / 2);
+      }, HYBRID_PULSE.durationMs + HYBRID_PULSE.pauseMs / 2);
     };
     timer = setTimeout(grow, HYBRID_PULSE.resetMs);
     return () => { stopped = true; clearTimeout(timer); };
-  }, [animate]);
-  const shape = useMemo(() => ({ type: 'Feature' as const, properties: {}, geometry: { type: 'Point' as const, coordinates: coordinate } }), [coordinate]);
+  }, [animate, onVenueRotation]);
+  const [longitude, latitude] = coordinate;
+  const [translateX, translateY] = translate;
+  const shape = useMemo(() => ({ type: 'Feature' as const, properties: {}, geometry: { type: 'Point' as const, coordinates: [longitude, latitude] } }), [longitude, latitude]);
   const duration = animate && expanded ? HYBRID_PULSE.durationMs : 0;
-  return <Mapbox.ShapeSource id={`${id}-halo-source`} shape={shape}>
-    <Mapbox.CircleLayer id={`${id}-halo`} style={{
+  const style = useMemo(() => ({
       circleRadius: (radius - 2.7) * (animate && expanded ? HYBRID_PULSE.scale : 1), circleRadiusTransition: { duration, delay: 0 },
       circleColor: 'rgba(0,0,0,0)', circleStrokeWidth: 2.7,
       circleStrokeColor: hybridTimingColor(timing),
       circleStrokeOpacity: !animate ? .25 : expanded ? 0 : HYBRID_PULSE.opacity, circleStrokeOpacityTransition: { duration, delay: 0 },
-      circleTranslate: translate, circleTranslateAnchor: 'viewport', circlePitchAlignment: 'viewport', circlePitchScale: 'viewport',
-    }} />
+      circleTranslate: [translateX, translateY] as [number, number], circleTranslateAnchor: 'viewport' as const, circlePitchAlignment: 'viewport' as const, circlePitchScale: 'viewport' as const,
+    }), [radius, animate, expanded, duration, timing, translateX, translateY]);
+  const trailingStyle = useMemo(() => ({
+    ...style,
+    circleRadius: (radius - 2.7) * (animate && expanded ? HYBRID_PULSE.trailingScale : 1),
+    circleRadiusTransition: { duration: animate && expanded ? HYBRID_PULSE.trailingDurationMs : 0, delay: animate && expanded ? HYBRID_PULSE.trailingDelayMs : 0 },
+    circleStrokeOpacity: !animate || expanded ? 0 : HYBRID_PULSE.trailingOpacity,
+    circleStrokeOpacityTransition: { duration: animate && expanded ? HYBRID_PULSE.trailingDurationMs : 0, delay: animate && expanded ? HYBRID_PULSE.trailingDelayMs : 0 },
+  }), [style, radius, animate, expanded]);
+  return <Mapbox.ShapeSource id={`${id}-halo-source`} shape={shape}>
+    <Mapbox.CircleLayer id={`${id}-halo`} style={style} />
+    <Mapbox.CircleLayer id={`${id}-halo-trailing`} style={trailingStyle} />
   </Mapbox.ShapeSource>;
 }
