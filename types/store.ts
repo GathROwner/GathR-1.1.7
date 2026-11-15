@@ -6,6 +6,7 @@
 import { Event, Venue, Cluster } from './events';
 import { FilterCriteria, TypeFilterCriteria, TimeFilterType } from './filter';
 import * as Location from 'expo-location';
+import type { MarkerClusterProfile } from '../utils/markerClusterConfig';
 
 /**
  * Scroll triggers interface for tab scroll-to-top functionality
@@ -81,6 +82,7 @@ export interface MapState {
   isLoading: boolean;
   error: string | null;
   zoomLevel: number;
+  markerClusterProfile: MarkerClusterProfile;
   filterCriteria: FilterCriteria;
   categories: string[];
   activeFilterPanel: 'events' | 'specials' | null;
@@ -150,6 +152,7 @@ export interface MapState {
     options?: SelectCalloutOptions
   ) => void;
   setZoomLevel: (zoom: number) => void;
+  setMarkerClusterProfile: (profile: MarkerClusterProfile) => void;
   setUserLocation: (location: Location.LocationObject) => void;
   setActiveFilterPanel: (panel: 'events' | 'specials' | null) => void;
   setHeaderSearchActive: (active: boolean) => void;

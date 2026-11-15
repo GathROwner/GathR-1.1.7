@@ -66,6 +66,7 @@ import * as Location from 'expo-location';
 import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Supercluster from 'supercluster';
+import { markerClusterConfig, markerClusterZoom, type MarkerClusterProfile } from '../utils/markerClusterConfig';
 
 
 // Import default filter criteria
@@ -362,11 +363,8 @@ const getSuperclusterRadiusPx = (venues: Venue[], zoom: number): number => {
   return clampNumber(radiusPx, ANDROID_BASE_SUPERCLUSTER_RADIUS_PX, ANDROID_SUPERCLUSTER_MAX_RADIUS_PX);
 };
 
-const getSuperclusterConfig = (venues: Venue[], zoom: number) => ({
-  radius: getSuperclusterRadiusPx(venues, zoom),
-  extent: SUPERCLUSTER_EXTENT,
-  maxZoom: SUPERCLUSTER_MAX_ZOOM,
-});
+const getSuperclusterConfig = (venues: Venue[], zoom: number, profile: MarkerClusterProfile) =>
+  markerClusterConfig(profile, getSuperclusterRadiusPx(venues, zoom), SUPERCLUSTER_EXTENT, SUPERCLUSTER_MAX_ZOOM);
 
 const expandBoundingBox = (
   bbox: ViewportBoundingBox,
@@ -872,6 +870,7 @@ type FilterCountCacheEntry<T> = {
   result: T;
 };
 
+// Keep map and list count caches separate by their stable candidate arrays.
 const filterCountBundleCache = new WeakMap<Event[], FilterCountCacheEntry<FilterCountBundle>>();
 
 const getFilterCountMinuteKey = () => Math.floor(Date.now() / 60000);
@@ -902,10 +901,10 @@ const getCachedFilterCountBundle = (
  * Optimized with spatial grid indexing to reduce complexity from O(n²) to O(n)
  * Returns an array of Cluster objects
  */
-const clusterVenues = (venues: Venue[], zoom: number = 12): Cluster[] => {
+const clusterVenues = (venues: Venue[], zoom: number = 12, profile: MarkerClusterProfile = 'default'): Cluster[] => {
   if (venues.length === 0) return [];
 
-  const superclusterConfig = getSuperclusterConfig(venues, zoom);
+  const superclusterConfig = getSuperclusterConfig(venues, zoom, profile);
   const shouldRebuildIndex =
     !__scIndex ||
     filtersChanged ||
@@ -935,7 +934,7 @@ const clusterVenues = (venues: Venue[], zoom: number = 12): Cluster[] => {
   }
 
   // Query clusters for the current zoom; world bbox (minimal change)
-  const z = Math.max(0, Math.min(22, Math.floor(zoom)));
+  const z = markerClusterZoom(profile, zoom);
   const features = __scIndex.getClusters([-180, -85, 180, 85], z);
 
   const clusters: Cluster[] = [];
@@ -1046,6 +1045,7 @@ const clusterVenues = (venues: Venue[], zoom: number = 12): Cluster[] => {
  * Create map store using Zustand
  */
 export const useMapStore = create<MapState>((set, get) => ({
+  markerClusterProfile: 'default',
   // Initial state
   allEvents: [],  // Global cache populated by React Query
   friendEvents: [],
@@ -1429,7 +1429,7 @@ export const useMapStore = create<MapState>((set, get) => ({
       .filter((event) => isEventDefaultMapEligibleMeasured(event, timeContext))
   );
   updateMapProjectionSignature(createMapProjectionSignature(filtered, timeContext));
-  const clusters = clusterVenues(venues, zoomLevel);
+  const clusters = clusterVenues(venues, zoomLevel, get().markerClusterProfile);
   
   // Single store update - prevents render cascade
   set({
@@ -1519,7 +1519,7 @@ export const useMapStore = create<MapState>((set, get) => ({
         .filter((event) => isEventDefaultMapEligibleMeasured(event, timeContext))
     );
     updateMapProjectionSignature(createMapProjectionSignature(filtered, timeContext));
-    const clusters = clusterVenues(venues, zoomLevel);
+    const clusters = clusterVenues(venues, zoomLevel, get().markerClusterProfile);
 
     __ML_lastVenueCount = venues.length;
     __ML_lastClusterCount = clusters.length;
@@ -1625,6 +1625,13 @@ export const useMapStore = create<MapState>((set, get) => ({
   setZoomLevel: (zoom) => {
     set({ zoomLevel: zoom });
     get().generateClusters(zoom);
+  },
+
+  setMarkerClusterProfile: (profile) => {
+    if (get().markerClusterProfile === profile) return;
+    filtersChanged = true;
+    set({ markerClusterProfile: profile });
+    get().generateClusters(get().zoomLevel);
   },
 
   /**
@@ -2480,7 +2487,7 @@ fetchEventDetails: async (
     const groupingDurationMs = MAP_TRACE_ENABLED ? mapTraceNow() - groupingStartedAt : 0;
 
     const clusteringStartedAt = MAP_TRACE_ENABLED ? mapTraceNow() : 0;
-    const clusters = clusterVenues(venues, currentZoom);
+    const clusters = clusterVenues(venues, currentZoom, get().markerClusterProfile);
     const clusteringDurationMs = MAP_TRACE_ENABLED ? mapTraceNow() - clusteringStartedAt : 0;
     const eligibilityMetric = MAP_TRACE_ENABLED
       ? diffMapScheduleStateMetrics(
@@ -2666,7 +2673,7 @@ logStartupDataTiming('generate_clusters_completed', {
         .filter(isMapRenderableEvent)
         .filter((event) => isEventDefaultMapEligibleMeasured(event, timeContext))
     );
-    return clusterVenues(venues, zoom);
+    return clusterVenues(venues, zoom, get().markerClusterProfile);
   },
   
   /**
@@ -2674,7 +2681,7 @@ logStartupDataTiming('generate_clusters_completed', {
    */
   getTimeFilterCounts: (eventType: 'event' | 'special', candidates?: Event[]) => {
     const { onScreenEvents, filterCriteria } = get();
-    // Map counts default to on-screen events; lists supply their full candidate pool.
+    // Map callers default to on-screen counts; list callers supply their full candidate pool.
     return getCachedFilterCountBundle(candidates ?? onScreenEvents, filterCriteria)[eventType].time;
   },
 
@@ -2683,7 +2690,7 @@ logStartupDataTiming('generate_clusters_completed', {
    */
   getCategoryFilterCounts: (eventType: 'event' | 'special', candidates?: Event[]) => {
     const { onScreenEvents, filterCriteria } = get();
-    // Map counts default to on-screen events; lists supply their full candidate pool.
+    // Map callers default to on-screen counts; list callers supply their full candidate pool.
     return getCachedFilterCountBundle(candidates ?? onScreenEvents, filterCriteria)[eventType].category;
   }
 }))

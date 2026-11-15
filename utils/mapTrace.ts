@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react';
+import { summarizeCalloutOpenings } from './mapCalloutTiming';
 
 type TracePrimitive = string | number | boolean | null;
 
-// Diagnostic Preview tracing is opt-in at bundle time. The baseline variant
-// records existing behavior only; it does not enable any performance change.
-export const MAP_TRACE_ENABLED = process.env.EXPO_PUBLIC_MAP_LATENCY_TRACE === '1';
-export const MAP_TRACE_UI_ENABLED = MAP_TRACE_ENABLED;
+// A diagnostic bundle exposes the panel, but recording stays dormant until the
+// user starts a bounded capture. The baseline variant never changes behavior.
+export const MAP_TRACE_UI_ENABLED = process.env.EXPO_PUBLIC_MAP_LATENCY_TRACE === '1';
+export let MAP_TRACE_ENABLED = false;
+let captureExpiry: ReturnType<typeof setTimeout> | null = null;
 export const MAP_TRACE_VARIANT = process.env.EXPO_PUBLIC_MAP_LATENCY_VARIANT || 'baseline';
 
 const TRACE_RUN_ID = `map-${Date.now().toString(36)}`;
@@ -21,6 +23,7 @@ export interface MapTraceEntry {
 
 interface MapTraceState {
   entries: MapTraceEntry[];
+  openingEntries: MapTraceEntry[];
   snapshot: Record<string, TracePrimitive>;
 }
 
@@ -52,6 +55,7 @@ interface TraceEventOptions {
 }
 
 const MAX_ENTRIES = 160;
+const OPENING_LABELS = new Set(['map_tap_released', 'marker_press_started', 'marker_press_selected', 'event_callout_first_visible_frame']);
 const EMPTY_SCHEDULE_METRIC: MapScheduleStateMetricSnapshot = {
   count: 0,
   cumulativeDurationMs: 0,
@@ -75,6 +79,7 @@ let scheduleStateMetricsSessionId: string | null = null;
 let scheduleStateMetrics = createEmptyScheduleMetrics();
 let traceState: MapTraceState = {
   entries: [],
+  openingEntries: [],
   snapshot: MAP_TRACE_ENABLED
     ? {
         traceRunId: TRACE_RUN_ID,
@@ -191,6 +196,10 @@ export const traceMapEvent = (
     label,
     details: normalizeRecord(details),
   };
+  // Retain the comparison across map-style changes without enlarging the camera
+  // event buffer. Six openings need at most 24 associated stage entries.
+  const openingEntries = OPENING_LABELS.has(label)
+    ? [...traceState.openingEntries, entry].slice(-32) : traceState.openingEntries;
 
   // Keep the idle recorder allocation-light. The panel subscribes only while
   // visible; while it is closed, mutate the fixed-size buffer in place rather
@@ -198,9 +207,11 @@ export const traceMapEvent = (
   if (listeners.size > 0) {
     traceState = {
       ...traceState,
+      openingEntries,
       entries: [...traceState.entries, entry].slice(-MAX_ENTRIES),
     };
   } else {
+    traceState.openingEntries = openingEntries;
     traceState.entries.push(entry);
     if (traceState.entries.length > MAX_ENTRIES) {
       traceState.entries.splice(0, traceState.entries.length - MAX_ENTRIES);
@@ -334,6 +345,7 @@ export const clearMapTrace = () => {
 
   traceState = {
     entries: [],
+    openingEntries: [],
     snapshot: {
       traceRunId: TRACE_RUN_ID,
       traceVariant: MAP_TRACE_VARIANT,
@@ -348,6 +360,20 @@ export const clearMapTrace = () => {
 };
 
 export const getMapTraceState = (): MapTraceState => traceState;
+
+export const stopMapTrace = () => {
+  MAP_TRACE_ENABLED = false;
+  if (captureExpiry) clearTimeout(captureExpiry);
+  captureExpiry = null;
+};
+
+export const startMapTrace = () => {
+  if (!MAP_TRACE_UI_ENABLED) return;
+  stopMapTrace();
+  MAP_TRACE_ENABLED = true;
+  clearMapTrace();
+  captureExpiry = setTimeout(stopMapTrace, 180000);
+};
 
 export const subscribeToMapTrace = (listener: () => void) => {
   listeners.add(listener);
@@ -407,6 +433,9 @@ export const formatMapTraceExport = (): string => {
 
   const lines: string[] = [];
 
+  lines.push('CALLOUT OPENINGS (JS frame proxy, milliseconds)');
+  summarizeCalloutOpenings(traceState.openingEntries).forEach(opening => lines.push(JSON.stringify(opening)));
+  lines.push('');
   lines.push('MAP TRACE');
   lines.push('');
 

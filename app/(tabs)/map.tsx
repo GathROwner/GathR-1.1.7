@@ -61,6 +61,11 @@ import MapLegend, {
   type MapPerspective,
   type MapStyleChoice,
 } from '../../components/map/MapLegend';
+import HybridMapAnnotation from '../../components/map/HybridMapAnnotation';
+import { usesCurrentBasemap } from '../../utils/hybridClusterPresentation';
+import { createMapTouchTrace } from '../../utils/mapTouchTrace';
+import { useHybridTapDelivery } from '../../hooks/useHybridTapDelivery';
+import { HYBRID_POINT_ANNOTATION_LAYER_ID, type MapWindowLayout } from '../../utils/hybridTapDelivery';
 import InterestFilterPills from '../../components/map/InterestFilterPills';
 import InterestsCarousel from '../../components/map/InterestsCarousel';
 import HotFlamePill from '../../components/map/HotFlamePill';
@@ -199,6 +204,10 @@ import {
   subscribeTutorialModalOverlay,
 } from '../../utils/tutorialModalOverlay';
 import { useClusterPuckLayout } from '../../hooks/useClusterPuckLayout';
+import { usePuckLocationSnapshot } from '../../hooks/usePuckLocationSnapshot';
+import { PuckDiagnostics } from '../../components/PuckDiagnostics';
+import { PUCK_DIAGNOSTICS_AVAILABLE } from '../../utils/puckDiagnostics';
+import { PuckMarkerMeasurement } from '../../components/map/PuckMarkerMeasurement';
 import type { PuckDisplacement } from '../../utils/clusterPuckLayout';
 import { useReduceMotion } from '../../hooks/useReduceMotion';
 import {
@@ -670,16 +679,19 @@ const getCategoryIcon = (category: string): string => {
   return 'category';
 };
 
-// Helper function to get size based on interest level
+// Keep every rich GathR venue photo readable, with a smaller size spread than the category markers.
+const GATHR_VENUE_PHOTO_DIAMETERS: Record<InterestLevel, number> = { low: 36, medium: 40, high: 44 };
+
+// Base unit used by each marker presentation, rather than a displayed diameter.
 const getInterestLevelSize = (interestLevel: InterestLevel): number => {
   switch (interestLevel) {
     case 'high':
-      return 18; // 50px diameter (25px radius)
+      return 18;
     case 'medium':
-      return 15; // 40px diameter (20px radius)
+      return 15;
     case 'low':
     default:
-      return 12; // 30px diameter (15px radius)
+      return 12;
   }
 };
 
@@ -2285,7 +2297,7 @@ interface VenueLensProps {
   fallbackGlyphColor: string;
   fallbackLabel?: string;
   imageUrl: string;
-  size: number;
+  diameter: number;
   venueName: string;
 }
 
@@ -2295,12 +2307,12 @@ const VenueLens: React.FC<VenueLensProps> = ({
   fallbackGlyphColor,
   fallbackLabel = '',
   imageUrl,
-  size,
+  diameter,
   venueName,
 }) => {
   const [imageFailed, setImageFailed] = useState(false);
   const imageOpacity = useRef(new Animated.Value(0)).current;
-  const lensSize = size * 1.44;
+  const lensSize = diameter;
 
   useEffect(() => {
     setImageFailed(false);
@@ -2355,7 +2367,7 @@ const VenueLens: React.FC<VenueLensProps> = ({
             styles.beaconVenueLensFallbackText,
             {
               color: fallbackGlyphColor,
-              fontSize: Math.max(8, size * 0.46),
+              fontSize: diameter * 0.34,
             },
           ]}
           numberOfLines={1}
@@ -2365,7 +2377,7 @@ const VenueLens: React.FC<VenueLensProps> = ({
       ) : (
         <MaterialIcons
           name={fallbackGlyph}
-          size={size * 0.58}
+          size={diameter * 0.4}
           color={fallbackGlyphColor}
         />
       )}
@@ -2612,6 +2624,10 @@ const TreeMarker: React.FC<TreeMarkerProps> = React.memo(({ cluster, isSelected,
   }, [cluster.id, publishTutorialLocalGeometry, tutorialBindingRevision, tutorialGeometryRef]);
   const isBeacon = appearance === 'beacon';
   const isStoryBeacon = isBeacon && presentation === 'story';
+  const venuePhotoDiameter = (GATHR_VENUE_PHOTO_DIAMETERS[cluster.interestLevel] ?? GATHR_VENUE_PHOTO_DIAMETERS.low) * scaleFactor;
+  const venuePhotoScale = isStoryBeacon ? venuePhotoDiameter / (adjustedSize * 1.44) : 1;
+  const markerDiameter = adjustedSize * 1.5 * venuePhotoScale;
+  const venuePhotoExpansion = markerDiameter - adjustedSize * 1.5;
   const isMultiVenue = cluster.venues.length > 1;
   const clusterCategoryItems = isBeacon && detailsEnabled
     ? getAndroidClusterCategoryItems(cluster, getUserInterestsSync())
@@ -2724,12 +2740,12 @@ const TreeMarker: React.FC<TreeMarkerProps> = React.memo(({ cluster, isSelected,
 
       {/* Broadcasting effect for 'now' events */}
       {detailsEnabled && cluster.isBroadcasting && (
-        <BroadcastingEffect size={adjustedSize} color={color} isActive={isActive} />
+        <BroadcastingEffect size={adjustedSize * venuePhotoScale} color={color} isActive={isActive} />
       )}
 
       {/* Gold fireworks for city-level (festival) events */}
       {detailsEnabled && CITY_EVENT_UI_ENABLED && cluster.containsCityLevelEvent && (
-        <CityEventEffect size={adjustedSize} isActive={isActive} />
+        <CityEventEffect size={adjustedSize * venuePhotoScale} isActive={isActive} />
       )}
 
       {friendEventCount > 0 && (
@@ -2738,9 +2754,9 @@ const TreeMarker: React.FC<TreeMarkerProps> = React.memo(({ cluster, isSelected,
           style={[
             styles.friendEventHalo,
             {
-              width: adjustedSize * (friendPresence ? 2.35 : 2.05),
-              height: adjustedSize * (friendPresence ? 2.35 : 2.05),
-              borderRadius: adjustedSize * 1.2,
+              width: adjustedSize * (friendPresence ? 2.35 : 2.05) * venuePhotoScale,
+              height: adjustedSize * (friendPresence ? 2.35 : 2.05) * venuePhotoScale,
+              borderRadius: adjustedSize * 1.2 * venuePhotoScale,
             },
           ]}
         />
@@ -2760,9 +2776,9 @@ const TreeMarker: React.FC<TreeMarkerProps> = React.memo(({ cluster, isSelected,
           isBeacon && isSelected && styles.beaconTopSelected,
           {
             backgroundColor: color,
-            width: adjustedSize * 1.5,
-            height: adjustedSize * 1.5,
-            borderRadius: adjustedSize, // Circular shape
+            width: markerDiameter,
+            height: markerDiameter,
+            borderRadius: markerDiameter / 2,
             justifyContent: 'center',
             alignItems: 'center',
             opacity: !isReady ? 0.4 : isProcessing ? 0.6 : 1, // Dim when not ready or processing
@@ -2801,10 +2817,10 @@ const TreeMarker: React.FC<TreeMarkerProps> = React.memo(({ cluster, isSelected,
           <VenueLens
             accentColor={primaryCategoryAccent}
             fallbackGlyph={beaconGlyph}
-            fallbackGlyphColor={['#34A853', '#FBBC05'].includes(color) ? '#000000' : '#FFFFFF'}
+            fallbackGlyphColor="#FFFFFF"
             fallbackLabel={fallbackVenueLabel}
             imageUrl={venueLensMedia?.imageUrl ?? ''}
-            size={adjustedSize}
+            diameter={venuePhotoDiameter}
             venueName={venueLensMedia?.venueName ?? fallbackVenueName}
           />
         ) : (
@@ -2886,7 +2902,7 @@ const TreeMarker: React.FC<TreeMarkerProps> = React.memo(({ cluster, isSelected,
         )}
 
         {friendPresence && (
-          <FriendCheckInBadge count={friendPresence.friendCount} style={{ position: 'absolute', top: -6, right: adjustedSize * 0.95 }} />
+          <FriendCheckInBadge count={friendPresence.friendCount} style={{ position: 'absolute', top: -6, right: adjustedSize * 0.95 + venuePhotoExpansion }} />
         )}
         {friendEventCount > 0 && (
           <View
@@ -2898,8 +2914,8 @@ const TreeMarker: React.FC<TreeMarkerProps> = React.memo(({ cluster, isSelected,
                 minWidth: adjustedSize * 0.72,
                 height: adjustedSize * 0.58,
                 borderRadius: adjustedSize * 0.29,
-                top: adjustedSize * 0.42,
-                left: -(adjustedSize * 0.42),
+                top: Math.max(adjustedSize * 0.42, isStoryBeacon && friendPresence ? 12 : 0),
+                left: -(adjustedSize * 0.42 + venuePhotoExpansion / 2),
               },
             ]}
           >
@@ -3521,6 +3537,9 @@ useEffect(() => {
     (location) => location.certainty === 'approximate'
   );
   const [mapStyleChoice, setMapStyleChoice] = useState<MapStyleChoice>('current');
+  useEffect(() => {
+    useMapStore.getState().setMarkerClusterProfile(mapStyleChoice === 'hybrid' ? 'hybrid' : 'default');
+  }, [mapStyleChoice]);
   const [mapStyleChanging, setMapStyleChanging] = useState(false);
   const [mapLightPreset, setMapLightPreset] = useState<MapLightPreset>('day');
   const [mapPerspective, setMapPerspective] = useState<MapPerspective>('2d');
@@ -4101,6 +4120,8 @@ useEffect(() => {
 
   const clusterMarkerAnimationsActive =
     isFocused && !(Platform.OS === 'android' && pauseClusterMarkerAnimations);
+  const hybridMarkerAnimationsActive = clusterMarkerAnimationsActive &&
+    processingClusterId === null && !isCalloutOpen && !hasRenderedCallout && !hasPresentedCallout;
 
   const getPreparedClusterCallout = useCallback((
     cluster: Cluster,
@@ -4641,17 +4662,34 @@ useEffect(() => {
       ? filterClusterForInterestCarouselFilter(cluster, interestCarouselFilter) : cluster)
     .filter((cluster): cluster is Cluster => cluster !== null),
   [clusters, filterCriteria, interestCarouselFilter, shouldClusterBeVisible]);
+  // Overview-only proxy: the SDK puck remains unchanged. Its provider and Expo
+  // update independently, so reject old/inaccurate samples instead of moving far.
+  const puckLocation = usePuckLocationSnapshot({ location, zoom: zoomLevel,
+    enabled: isFocused && locationPermissionGranted && !puckTutorialVisible && !hasRenderedCallout && !activeFilterPanel });
+  const puckSafeViewport = {
+    left: 8,
+    right: Math.max(8, (mapDimensions?.width ?? 0) - Math.max(74, 10 + measuredRailWidth + 8)),
+    top: mapChromeTopReserve + (Platform.OS === 'ios' ? 16 : 20) + pillsHeight + 8,
+    bottom: Math.max(0, (mapDimensions?.height ?? 0) - mapboxOrnamentBottomOffset - 16),
+  };
   const clusterPuckLayout = useClusterPuckLayout({
     map: mapRef,
     clusters: puckEligibleClusters,
     userCoordinate: location ? [location.coords.longitude, location.coords.latitude] : null,
     width: mapDimensions?.width ?? 0,
     height: mapDimensions?.height ?? 0,
-    enabled: isFocused && locationPermissionGranted && !puckTutorialVisible,
+    enabled: puckLocation.active,
     coordinateForCluster: USE_ANDROID_NATIVE_CLUSTER_MARKER_LAYERS ? getClusterCoordinate : getClusterRenderCoordinates,
+    getPuckSnapshot: puckLocation.getPuckSnapshot,
+    puckRevision: puckLocation.revision,
+    safeViewport: puckSafeViewport,
+    layoutRevision: mapStyleChoice,
   });
+  const onPuckCameraChanged = clusterPuckLayout.onCameraChanged;
   const [, setBeaconProjectionEpoch] = useState(0);
   const [mapScreenOffset, setMapScreenOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const mapAbsoluteLayoutRef = useRef<MapWindowLayout | null>(null);
+  const mapAbsoluteLayoutRevisionRef = useRef(0);
   const [iosMapViewRevision, setIosMapViewRevision] = useState(0);
   const iosMapViewLayoutRefreshScheduledRef = useRef(false);
   const iosMapViewLayoutRefreshCompletedRef = useRef(false);
@@ -4722,6 +4760,9 @@ const lastMapIdleAtRef = useRef<number>(0);
 const lastSuccessfulCameraReconcileChangeAtRef = useRef<number>(-1);
 const lastViewportFetchZoomRef = useRef<number | null>(null);
 const gestureTraceSessionIdRef = useRef<string | null>(null);
+const mapTouchTrace = useMemo(() => createMapTouchTrace(mapStyleChoice, session => {
+  gestureTraceSessionIdRef.current = session;
+}), [mapStyleChoice]);
 const gestureTraceNativeActiveRef = useRef(false);
 const gestureTraceMeaningfulTickCountRef = useRef(0);
 const gestureTraceFirstMeaningfulAtRef = useRef<number | null>(null);
@@ -4903,10 +4944,10 @@ const handleMapStyleChange = useCallback(async (nextStyle: MapStyleChoice) => {
   mapStyleSwitchInFlightRef.current = true;
   setMapStyleChanging(true);
 
-  // Standard and GathR Standard share the same native basemap. RNMapbox can
-  // update the imported Standard configuration in place, so do not trigger a
-  // full style reload (or disturb the camera) when comparing those two.
-  if (mapStyleChoice !== 'current' && nextStyle !== 'current') {
+  // Current/Hybrid and Standard/GathR each share a native basemap.
+  // Switch marker presentation/configuration in place without reloading tiles
+  // or disturbing the camera when staying within either pair.
+  if (usesCurrentBasemap(mapStyleChoice) === usesCurrentBasemap(nextStyle)) {
     traceMapEvent('map_style_import_config_change_requested', {
       from: mapStyleChoice,
       to: nextStyle,
@@ -7154,6 +7195,7 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
       (isCalloutClosingVisuallyRef.current || androidCalloutTeardownTimerRef.current !== null);
 
     traceMapEvent('marker_press_started', {
+      mapStyle: mapStyleChoice,
       clusterId: cluster.id,
       clusterType: cluster.clusterType,
       venueCount: cluster.venues?.length ?? 0,
@@ -7572,6 +7614,7 @@ lastOpenedClusterIdRef.current = cluster.id;
     isCalloutBlockingMapInteraction,
     isGuest,
     location,
+    mapStyleChoice,
     logAndroidRetapLatencyProbe,
     promoteVenuesToRenderedCallout,
     renderedCalloutClusterId,
@@ -7583,6 +7626,24 @@ lastOpenedClusterIdRef.current = cluster.id;
     trackInteraction,
     tutorialClusterInteractionReadyGate,
   ]); // REMOVED analytics, zoomLevel dependencies
+
+  const hybridTapDelivery = useHybridTapDelivery<Cluster>({
+    active: Platform.OS === 'ios' && mapStyleChoice === 'hybrid' && isFocused,
+    canOpen: () => clustersReadyForInteractionRef.current && !isMapLoadingRef.current &&
+      !isMapMovingRef.current && !ignoreProgrammaticCameraRef.current &&
+      clusterProcessingRef.current === null && useMapStore.getState().selectedVenues.length === 0,
+    surface: () => {
+      const map = mapRef.current, layout = mapAbsoluteLayoutRef.current, camera = currentCameraStateRef.current;
+      if (!map || !layout || !camera) return null;
+      return { identity: map, layout, zoom: camera.zoom, query: point =>
+        map.queryRenderedFeaturesAtPoint(point, [], [HYBRID_POINT_ANNOTATION_LAYER_ID]) };
+    },
+    onPress: (cluster, source) => {
+      traceMapEvent('hybrid_tap_delivery', { source, clusterId: cluster.id, venueCount: cluster.venues.length });
+      void handleMarkerPress(cluster);
+    },
+    trace: traceMapEvent,
+  });
 
   useEffect(() => registerTutorialAction('open-cluster', async (signal?: AbortSignal) => {
     const currentTarget = tutorialCurrentClusterRef.current;
@@ -9188,6 +9249,7 @@ useEffect(() => {
 }, [clusters?.length]);
 
 const handleCameraChange = useCallback((e: any) => {
+  onPuckCameraChanged(e);
   
 //  console.log('[DEBUG] handleCameraChange fired, tick count:', __ml_cameraTickCountRef.current);
   
@@ -9886,7 +9948,8 @@ Clustering refresh: keep zoom → store → recluster in sync
   fetchViewportEvents,
   isAndroidStartupCameraPayloadInvalid,
   logAndroidZoomTapLatencyProbe,
-  setZoomLevel
+  setZoomLevel,
+  onPuckCameraChanged
 ]);
 
 
@@ -10794,7 +10857,9 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
       {interestFilteredClustersForRender
       .map((cluster: Cluster, index: number) => {
         // Calculate the coordinates for the cluster
-        const coordinates = clusterPuckLayout.offsets[cluster.id]?.coordinate ?? getClusterRenderCoordinates(cluster);
+        const puckOffset = clusterPuckLayout.offsets[cluster.id];
+        const originalCoordinates = getClusterRenderCoordinates(cluster);
+        const coordinates = puckOffset?.coordinate ?? originalCoordinates;
       
         // Check if this cluster contains the selected venue
         const isSelected =
@@ -10814,25 +10879,25 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
           !richClusterMarkersEnabled;
         const isTutorialTarget = tutorialTargetClusterId === String(cluster.id);
         const markerDetailsEnabled =
-          richClusterMarkersEnabled || shouldForceHotspotPreviewDetails || isTutorialTarget;
+          mapStyleChoice === 'hybrid' || richClusterMarkersEnabled || shouldForceHotspotPreviewDetails || isTutorialTarget;
         const gathrPresentation = getGathrClusterPresentation(cluster, zoomLevel, isSelected);
         const projectedPoint =
-          mapStyleChoice === 'gathr' &&
+          (mapStyleChoice === 'gathr' || mapStyleChoice === 'hybrid') &&
           markerDetailsEnabled &&
           !isMapMoving &&
           mapDimensions &&
           currentCameraStateRef.current?.visibleBbox
             ? projectCoordinateToViewportPoint(
-                coordinates,
+                originalCoordinates,
                 currentCameraStateRef.current.visibleBbox,
                 mapDimensions
               )
             : null;
-        const estimatedMarkerHeight = gathrPresentation === 'summary'
+        const estimatedMarkerHeight = mapStyleChoice === 'hybrid' ? 150 : gathrPresentation === 'summary'
           ? 38
           : cluster.venues.length > 1 ? 92 : 76;
-        const estimatedMarkerWidth = gathrPresentation === 'summary' ? 84 : 136;
-        const beaconDock = !isTutorialTarget && projectedPoint && mapDimensions
+        const estimatedMarkerWidth = mapStyleChoice === 'hybrid' ? 160 : gathrPresentation === 'summary' ? 84 : 136;
+        const originalBeaconDock = !isTutorialTarget && projectedPoint && mapDimensions
           ? getGathrBeaconViewportDock({
               markerHeight: estimatedMarkerHeight,
               markerWidth: estimatedMarkerWidth,
@@ -10843,6 +10908,9 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
               safeTop: TOP_OFFSET + pillsHeight + 8,
             })
           : { direction: null, translateX: 0, translateY: 0 };
+        // Offset coordinates already contain the original visual dock plus the
+        // small clearance. Never apply the dock a second time after placement.
+        const beaconDock = puckOffset ? { direction: null, translateX: 0, translateY: 0 } : originalBeaconDock;
         const isBeaconDocked = beaconDock.direction !== null;
         const beaconEdgeCueIcon = beaconDock.direction === 'up'
           ? 'keyboard-arrow-up'
@@ -10871,6 +10939,21 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
         const markerKey = isTutorialTarget
           ? `cluster-${cluster.id}-${markerViewEpoch}-tutorial-coordinate-${coordinates[0]}-${coordinates[1]}`
           : `cluster-${cluster.id}-${markerViewEpoch}`;
+        if (mapStyleChoice === 'hybrid' && !isTutorialTarget) {
+          return <HybridMapAnnotation key={markerKey} id={markerKey} cluster={cluster} coordinate={coordinates}
+            isSelected={isSelected} isReady={clustersReadyForInteraction} isProcessing={processingClusterId === cluster.id}
+            disabled={!clustersReadyForInteraction || processingClusterId !== null}
+            isActive={hybridMarkerAnimationsActive} reduceMotionEnabled={reduceMotionEnabled}
+            compact={!!puckOffset?.compact} dockX={beaconDock.translateX} dockY={beaconDock.translateY}
+            measurementDockX={originalBeaconDock.translateX} measurementDockY={originalBeaconDock.translateY}
+            record={clusterPuckLayout.recordMarkerGeometry} categoryIcon={getCategoryIcon}
+            registerTapTarget={Platform.OS === 'ios' ? hybridTapDelivery.register : undefined}
+            onPress={() => {
+              traceMapEvent('hybrid_native_annotation_tap', { clusterId: cluster.id, venueCount: cluster.venues.length }, { gestureSessionId: gestureTraceSessionIdRef.current });
+              if (Platform.OS === 'ios') hybridTapDelivery.onNativePress(markerKey, cluster);
+              else void handleMarkerPress(cluster);
+            }} onBackgroundPress={handleMapPress} />;
+        }
 
         return (
           <MapboxGL.MarkerView
@@ -10943,7 +11026,6 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
               hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
               style={[
                 styles.clusterMarkerTouchableFrame,
-                clusterPuckLayout.offsets[cluster.id] && { minWidth: 44, minHeight: 44 },
                 isDimmedByInterestFilter && styles.interestFilteredMarkerDimmed,
                 isBeaconDocked && {
                   transform: [
@@ -10958,6 +11040,10 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
                   <MaterialIcons name={beaconEdgeCueIcon} size={10} color="#0B4F6C" />
                 </View>
               )}
+              <PuckMarkerMeasurement id={cluster.id} compact={!!puckOffset?.compact}
+                countLabel={String((cluster.eventCount ?? 0) + (cluster.specialCount ?? 0))}
+                dockX={originalBeaconDock.translateX} dockY={originalBeaconDock.translateY}
+                record={clusterPuckLayout.recordMarkerGeometry}>
               <TreeMarker
                 key={isTutorialTarget ? `tutorial-target-${tutorialTargetBindingRevision}` : undefined}
                 cluster={cluster}
@@ -10997,6 +11083,7 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
                     : undefined
                 }
               />
+              </PuckMarkerMeasurement>
             </TouchableOpacity>
           </MapboxGL.MarkerView>
         );
@@ -11147,8 +11234,27 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
         <MapboxGL.MapView
         key={`ios-map-layout-${iosMapViewRevision}`}
         ref={mapRef}
+        onTouchStart={event => {
+          mapTouchTrace.onTouchStart(event);
+          hybridTapDelivery.onTouchStart(event);
+          clusterPuckLayout.onMapTouchStart(event.nativeEvent.touches.length);
+        }}
+        onTouchMove={event => {
+          mapTouchTrace.onTouchMove(event);
+          hybridTapDelivery.onTouchMove(event);
+        }}
+        onTouchEnd={event => {
+          mapTouchTrace.onTouchEnd(event);
+          hybridTapDelivery.onTouchEnd(event);
+          clusterPuckLayout.onMapTouchEnd(event.nativeEvent.touches.length);
+        }}
+        onTouchCancel={() => {
+          mapTouchTrace.onTouchCancel();
+          hybridTapDelivery.onTouchCancel();
+          clusterPuckLayout.onMapTouchCancel();
+        }}
         style={styles.map}
-        styleURL={mapStyleChoice === 'current' ? GATHR_MAPBOX_STYLE_URL : GATHR_MAPBOX_STANDARD_STYLE_URL}
+        styleURL={usesCurrentBasemap(mapStyleChoice) ? GATHR_MAPBOX_STYLE_URL : GATHR_MAPBOX_STANDARD_STYLE_URL}
         scaleBarEnabled={true}
         logoPosition={{
           bottom: mapboxBrandingBottomOffset,
@@ -11174,6 +11280,9 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
         }}
         surfaceView={Platform.OS === 'android' ? false : undefined}
 onLayout={(event) => {
+  hybridTapDelivery.invalidate();
+  mapAbsoluteLayoutRef.current = null;
+  const absoluteLayoutRevision = ++mapAbsoluteLayoutRevisionRef.current;
   const { width, height, x, y } = event.nativeEvent.layout;
   mapDimensionsRef.current = { width, height };
   setMapDimensions({ width, height });
@@ -11186,6 +11295,8 @@ onLayout={(event) => {
   const nativeHandle = (mapRef.current as any)?._nativeRef;
   if (nativeHandle?.measureInWindow) {
     nativeHandle.measureInWindow((absX: number, absY: number, absWidth: number, absHeight: number) => {
+      if (absoluteLayoutRevision !== mapAbsoluteLayoutRevisionRef.current) return;
+      mapAbsoluteLayoutRef.current = { x: absX, y: absY, width: absWidth, height: absHeight };
       mapDimensionsRef.current = { width: absWidth, height: absHeight };
       setMapDimensions({ width: absWidth, height: absHeight });
       setMapScreenOffset({ x: absX, y: absY });
@@ -11206,7 +11317,8 @@ onLayout={(event) => {
   }
 }}
 onMapIdle={() => {
-  clusterPuckLayout.refresh();
+  puckLocation.refreshIfNeeded();
+  clusterPuckLayout.onMapIdle();
   lastMapIdleAtRef.current = Date.now();
   traceMapEvent('mapbox_on_map_idle', {
     sinceLastMeaningfulCameraMs: gestureTraceLastMeaningfulAtRef.current === null
@@ -11405,13 +11517,16 @@ onDidFinishLoadingMap={() => {
           }
         }}
      
-          onCameraChanged={handleCameraChange}
+          onCameraChanged={event => {
+            hybridTapDelivery.invalidate();
+            handleCameraChange(event);
+          }}
 //onRegionDidChange={handleCameraChange} // removed — we use onMapIdle for idle logging
 
 
         onPress={handleMapPress}
       >
-{mapStyleChoice !== 'current' && (
+{!usesCurrentBasemap(mapStyleChoice) && (
   // RNMapbox 10.3 types this dictionary as string-only, while its native
   // bridge correctly accepts the boolean and numeric Standard properties.
   <MapboxGL.StyleImport
@@ -11788,7 +11903,7 @@ onDidFinishLoadingMap={() => {
       )}
 
       {/* Keep the app's globe mark visible above Mapbox's required attribution. */}
-      {!MAP_TRACE_UI_ENABLED && (
+      {!MAP_TRACE_UI_ENABLED && !PUCK_DIAGNOSTICS_AVAILABLE && (
         <View style={[styles.mapLogoContainer, { bottom: globeBottomOffset }]} pointerEvents="none">
           <Image
             source={require('../../assets/images/icon.png')}
@@ -11860,6 +11975,7 @@ onDidFinishLoadingMap={() => {
         enabled={Boolean(!isCalloutOpen)}
         rightOffset={sideControlRightOffset}
         bottomOffset={floatingSideControlLift}
+        interestRailWidth={measuredRailWidth}
       />
       <FriendEventsMapToggle
           hidden={Boolean(isCalloutOpen)}
@@ -12203,7 +12319,9 @@ Owner: Map UX stability on Android • Last validated: 2025-09-04
       {/* Deep link lightbox - renders when globalSelectedImageData is set from deep link */}
       <GlobalEventLightbox onShowRoute={showRouteOnMap} />
 
-      {MAP_TRACE_UI_ENABLED && (
+      {PUCK_DIAGNOSTICS_AVAILABLE && <PuckDiagnostics bottom={globeBottomOffset} focused={isFocused} permission={locationPermissionGranted} zoom={zoomLevel} blocked={!!(puckTutorialVisible || hasRenderedCallout || activeFilterPanel)} width={mapDimensions?.width ?? 0} height={mapDimensions?.height ?? 0} />}
+
+      {MAP_TRACE_UI_ENABLED && !PUCK_DIAGNOSTICS_AVAILABLE && (
         <TouchableOpacity
           activeOpacity={0.75}
           accessibilityActions={[{ name: 'activate', label: 'Open map trace' }]}
@@ -12240,7 +12358,7 @@ Owner: Map UX stability on Android • Last validated: 2025-09-04
         </TouchableOpacity>
       )}
 
-      {MAP_TRACE_UI_ENABLED && isTracePanelVisible && (
+      {MAP_TRACE_UI_ENABLED && !PUCK_DIAGNOSTICS_AVAILABLE && isTracePanelVisible && (
         <MapTracePanel
           visible={isTracePanelVisible}
           onClose={() => setIsTracePanelVisible(false)}
