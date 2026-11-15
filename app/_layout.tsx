@@ -686,7 +686,7 @@ useEffect(() => {
       };
     }, []);
 
-    useStartupEventCache(rqFetchEventsMinimal, setAllEvents);
+    useStartupEventCache(rqFetchEventsMinimal, setAllEvents, !isLoading);
 
     // ðŸ”„ Foreground refresh: when app becomes active, reconcile with server and report cache vs network
     useEffect(() => {

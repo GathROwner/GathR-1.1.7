@@ -11,11 +11,12 @@ type MinimalResult = { combinedData: Event[] };
 export function useStartupEventCache(
   fetchEvents: () => Promise<MinimalResult>,
   publish: MapState['setAllEvents'],
+  authReady = true,
 ) {
   const client = useQueryClient();
   const restoring = useIsRestoring();
   useEffect(() => {
-    if (restoring) return;
+    if (restoring || !authReady) return;
     let active = true;
     let lastResult: unknown;
     let lastUpdatedAt = -1;
@@ -49,5 +50,5 @@ export function useStartupEventCache(
       console.error('[RQ Startup] Refresh failed:', error);
     });
     return () => { active = false; unsubscribe(); };
-  }, [client, fetchEvents, publish, restoring]);
+  }, [authReady, client, fetchEvents, publish, restoring]);
 }

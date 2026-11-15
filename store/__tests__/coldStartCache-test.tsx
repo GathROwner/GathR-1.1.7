@@ -186,3 +186,17 @@ it('stops publishing boot refresh results after its host unmounts',async()=>{
  await act(async()=>{network.resolve(result([fixture('late')]));await tick();});
  expect(useMapStore.getState().allEvents[0].id).toBe('saved');
 });
+it('waits for auth readiness before cache publication or a private-aware startup fetch',async()=>{
+ client=makeClient();globals.__RQ_CLIENT=client;
+ const restore=deferred<any>(),network=deferred<ReturnType<typeof result>>();const fetcher=jest.fn(()=>network.promise);
+ const savedClient=makeClient();savedClient.setQueryData(EVENTS_MINIMAL,result([fixture()]),{updatedAt:Date.now()-4*60*1000});
+ const persistOptions={persister:{restoreClient:()=>restore.promise,persistClient:async()=>{},removeClient:async()=>{}}};
+ function Probe({ready}:{ready:boolean}){useStartupEventCache(fetcher,useMapStore.getState().setAllEvents,ready);return null;}
+ const content=(ready:boolean)=><PersistQueryClientProvider client={client!} persistOptions={persistOptions}><Probe ready={ready}/></PersistQueryClientProvider>;
+ await act(async()=>{tree=renderer.create(content(false));restore.resolve({timestamp:Date.now(),buster:'',clientState:dehydrate(savedClient)});await tick();});
+ expect(fetcher).not.toHaveBeenCalled();expect(useMapStore.getState().allEvents).toHaveLength(0);
+ await act(async()=>{tree!.update(content(true));await tick();});
+ expect(useMapStore.getState().allEvents[0].id).toBe('saved');expect(fetcher).toHaveBeenCalledTimes(1);
+ await act(async()=>{network.resolve(result([fixture('private',{source:'private_shared'})]));await tick();});
+ expect(useMapStore.getState().allEvents[0].id).toBe('private');savedClient.clear();
+});
