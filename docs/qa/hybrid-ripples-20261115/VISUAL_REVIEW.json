@@ -1,0 +1,16 @@
+{
+  "commit": "d6c11f96abacc39fc068c2444721710790d6305a",
+  "base": "e382ad816f81ca02640b0e665b06b89215b48bf8",
+  "feature": "12b19a6",
+  "runtimeSourceEquivalent": true,
+  "onlyThreePresentationSourcesChanged": true,
+  "oneFocusedRegressionFileChanged": true,
+  "comparisonImageSha256": "f3810c481a5192501d1f8d4c3e7fc37718920974d2ea860b7dbda386de090d55",
+  "independentlyViewed": true,
+  "twoWavesVisible": true,
+  "colorsAlignmentSpacingReviewed": true,
+  "method": "Actual RN components; baseline and candidate native paint props; SVG bridge frozen at 560ms; no native map interaction",
+  "nativeMapboxPlaybackVerified": false,
+  "sourceTimingReviewed": true,
+  "noNativeMapInteraction": true
+}

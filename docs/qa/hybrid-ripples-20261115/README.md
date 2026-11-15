@@ -32,3 +32,15 @@ Both waves are visible at 560 ms, and alignment, spacing, palette and surroundin
 pills were independently reviewed. An animated SVG bridge preview is retained
 under ignored artifacts. Native Mapbox playback is not visually verified; the
 reported phone interruption has not been independently reproduced on a device.
+
+Published on iOS Production runtime 1.1.20 from the exact accepted live baseline
+e382ad816f81ca02640b0e665b06b89215b48bf8. Release source
+d6c11f96abacc39fc068c2444721710790d6305a, group
+649f73b4-e93f-42cf-8185-89fa58cf38ca, update
+01a1e153-caa6-79ec-8c60-fb26b6cb78c1. View/list independently verify source,
+platform, runtime and newest iOS update. Clean export: 2579 modules, 112 final
+EAS assets. Release validation: 257 tests passed across 33 suites, two existing
+explicit skips (opt-in benchmark and independently reproduced stale cache-key
+assertion), TypeScript passes, lint zero errors and existing 226 warnings.
+Native/auth/social/Mapbox preflights passed. No other OTA target was changed.
+The device must still adopt this update and verify the actual animation.
