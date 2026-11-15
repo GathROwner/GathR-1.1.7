@@ -1,0 +1,12 @@
+{
+  "atUTC": "2026-11-15T16:48:07.3970998Z",
+  "visualReviewed": true,
+  "typescriptExit": 0,
+  "commit": "77bdcee8f998a0a125d097463d3a639ea320a843",
+  "nativeChanges": false,
+  "platform": "ios",
+  "testsExit": 0,
+  "lintErrors": 0,
+  "runtime": "1.1.20",
+  "channel": "production"
+}

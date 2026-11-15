@@ -9,18 +9,21 @@
       "channel": "production",
       "platform": "ios",
       "runtime": "1.1.20",
-      "commit": "791c4cb909fdffcb0887abbd77b9fffe9debdfc1",
-      "group": "e3e2342e-4bdb-413e-8295-1dd2fcf5baf6",
-      "update": "01a1dc6c-3b1d-7868-be7f-875a75d7f648",
-      "moduleCount": 2575,
+      "commit": "77bdcee8f998a0a125d097463d3a639ea320a843",
+      "group": "c28bdfa5-459f-4b6e-87db-29632be01d28",
+      "update": "01a1e01e-8b9f-77db-846e-2eb61e78b627",
+      "moduleCount": 2577,
       "finalEasAssetCount": 112,
       "deviceAdoptionVerified": false,
-      "phoneBehaviourVerified": true,
-      "userAccepted": true,
+      "phoneBehaviourVerified": false,
+      "userAccepted": false,
       "status": "verified-newest-platform-update",
-      "startupDelayRepairIncluded": false,
+      "startupDelayRepairIncluded": true,
       "tapRoute": "completed tap with native fallback",
-      "scope": "accepted Hybrid graphics, clustering profile and tap/redraw implementation on preserved platform baseline"
+      "scope": "Accepted Production UI and Hybrid tap fix plus cold-start cache handoff/auth-ready candidate",
+      "tapBehaviourPreviouslyAccepted": true,
+      "coldStartDeviceVerified": false,
+      "lastVerifiedAtUTC": "2026-11-15T16:54:18.479117+00:00"
     },
     {
       "channel": "production",
@@ -97,5 +100,6 @@
       "tapRoute": "native annotation path retained; accepted redraw savings",
       "scope": "accepted Hybrid graphics, clustering profile and tap/redraw implementation on preserved platform baseline"
     }
-  ]
+  ],
+  "latestIosColdStartRelease": "../cold-start-20261115/PUBLISHED_IOS.json"
 }

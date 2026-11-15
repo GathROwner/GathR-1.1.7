@@ -1,0 +1,25 @@
+{
+  "markers": {
+    "fullImageRgbIdentical": true,
+    "differenceBounds": null,
+    "size": [
+      1520,
+      2000
+    ],
+    "authoredSelectorPanelRgbIdentical": null
+  },
+  "selector": {
+    "fullImageRgbIdentical": false,
+    "differenceBounds": [
+      233,
+      1386,
+      677,
+      1592
+    ],
+    "size": [
+      786,
+      1706
+    ],
+    "authoredSelectorPanelRgbIdentical": true
+  }
+}

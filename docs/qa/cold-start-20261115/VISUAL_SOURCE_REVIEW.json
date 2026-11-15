@@ -1,0 +1,12 @@
+{
+  "rootJsxUnchanged": true,
+  "unchangedComponentFiles": [
+    "app/(tabs)/map.tsx",
+    "components/map/MapLegend.tsx",
+    "components/map/HybridClusterMarker.tsx",
+    "components/map/HybridMapAnnotation.tsx",
+    "components/map/EventCallout.tsx"
+  ],
+  "method": "Root JSX AST comparison plus exact component source equality; new actual RN Web component renders separately reviewed",
+  "nativeColdStartSpeedMeasured": false
+}

@@ -1,0 +1,20 @@
+{
+  "dependencySnapshotsUnchanged": true,
+  "snapshots": {
+    "implementation": {
+      "node_modules/.bin/expo.cmd": true,
+      "node_modules/.bin/jest.cmd": true,
+      "node_modules/expo/bin/cli": true,
+      "node_modules/jest/bin/jest.js": true
+    },
+    "protected": {
+      "node_modules/.bin/expo.cmd": false,
+      "node_modules/.bin/jest.cmd": false,
+      "node_modules/expo/bin/cli": true,
+      "node_modules/jest/bin/jest.js": true
+    }
+  },
+  "releaseCheckoutClean": true,
+  "retainedCheckout": "C:\\Windows\\System32\\GathR-Project\\ghr-tap",
+  "reason": "Retained independent release dependencies for the pending physical iPhone comparison"
+}

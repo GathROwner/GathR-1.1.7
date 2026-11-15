@@ -1,5 +1,7 @@
 # Startup cluster investigation
 
+Current implementation: [cold-start cache handoff](../cold-start-20261115/README.md). The findings below describe the pre-repair baseline.
+
 Current reproduction clarification (November 15): Craig reports immediate data when returning to GathR from the app switcher without closing it. The observed slow opening followed minimizing GathR, removing it from the app switcher, then reopening it. Prioritize explicit cold-launch reconstruction; long background absence alone is not currently reproduced. No further paired session-ID exports are required to establish this reproduction distinction.
 
 Accepted starting source: `86fb65f5` on `codex/app-ui-changes`. The approved tap fix remains separate from this diagnosis; no startup behavior change is included in the rollout.
