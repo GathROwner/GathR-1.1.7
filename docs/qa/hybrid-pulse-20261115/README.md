@@ -27,3 +27,16 @@ iPhone has not been observed. No native map was manipulated for this change.
 Relevant redraw, tap contract, clustering and startup-recorder regressions:
 38 tests passed in six suites. TypeScript and lint release checks are retained
 with the publication receipt. No native/configuration or event-data changes.
+
+Published on iOS Production runtime 1.1.20 from the exact live baseline
+0d1acad87a80d980fa49a5e18c35103e813c8529. Release source
+e382ad816f81ca02640b0e665b06b89215b48bf8, group
+1a9d9222-62c4-4d6e-91ef-bd7f452aa1a4, update
+01a1e135-aec8-7fdb-8afe-254777869c08. View/list readbacks independently confirm
+platform, runtime, source and newest iOS update. The clean export contains
+2579 modules and 112 final EAS assets. Independent release validation passed
+255 tests across 33 suites; the existing opt-in benchmark and the independently
+reproduced stale cache-key assertion remain the two explicit skips. TypeScript
+passes; lint reports zero errors and the existing 226 warnings. Native/auth,
+social and Mapbox preflights passed. Device adoption and native animation feel
+are separate, still unverified. The other five OTA targets were not changed.

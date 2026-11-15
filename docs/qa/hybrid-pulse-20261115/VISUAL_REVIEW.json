@@ -1,0 +1,15 @@
+{
+  "commit": "e382ad816f81ca02640b0e665b06b89215b48bf8",
+  "base": "0d1acad87a80d980fa49a5e18c35103e813c8529",
+  "feature": "4198141",
+  "runtimeSourceEquivalent": true,
+  "onlyThreePresentationSourcesChanged": true,
+  "comparisonImageSha256": "98beec7b0d47ae50f452b09802eaba923070c031ba425a17a02a05d1ddbd0123",
+  "independentlyViewed": true,
+  "colorsAndVisibilityReviewed": true,
+  "alignmentSpacingReviewed": true,
+  "method": "Actual RN marker components; actual HybridMapHalo collapsed/expanded native paint props bridged to SVG; frozen at 25 percent sweep; no native interaction",
+  "nativeMapboxPlaybackVerified": false,
+  "sourceTimingReviewed": true,
+  "noNativeMapInteraction": true
+}

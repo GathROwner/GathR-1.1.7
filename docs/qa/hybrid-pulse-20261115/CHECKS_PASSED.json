@@ -1,0 +1,14 @@
+{
+  "testsExit": 0,
+  "channel": "production",
+  "atUTC": "2026-11-15T21:52:22.6795394Z",
+  "platform": "ios",
+  "lintErrors": 0,
+  "runtime": "1.1.20",
+  "excludedExistingAssertion": "Known identical cache-key failure on live baseline; see BASELINE_TEST_FAILURE.log",
+  "nativeChanges": false,
+  "visualReviewed": true,
+  "commit": "e382ad816f81ca02640b0e665b06b89215b48bf8",
+  "typescriptExit": 0,
+  "nativeDeviceVerified": false
+}

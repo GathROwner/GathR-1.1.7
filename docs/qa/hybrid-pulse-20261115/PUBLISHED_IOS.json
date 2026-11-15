@@ -1,0 +1,32 @@
+{
+  "channel": "production",
+  "platform": "ios",
+  "runtime": "1.1.20",
+  "commit": "e382ad816f81ca02640b0e665b06b89215b48bf8",
+  "group": "1a9d9222-62c4-4d6e-91ef-bd7f452aa1a4",
+  "update": "01a1e135-aec8-7fdb-8afe-254777869c08",
+  "moduleCount": 2579,
+  "finalEasAssetCount": 112,
+  "serverVerified": true,
+  "newestPlatformVerified": true,
+  "deviceAdoptionVerified": false,
+  "nativePulsePlaybackVerified": false,
+  "renderedComparisonReviewed": true,
+  "pulse": {
+    "cycleMs": 1290,
+    "previousCycleMs": 2640,
+    "durationMs": 1000,
+    "green": "#188038",
+    "yellow": "#C99700",
+    "initialOpacity": 0.8
+  },
+  "automaticStartupTimingRetained": true,
+  "testsPassed": 255,
+  "testsSkipped": 2,
+  "existingBaselineAssertionExcluded": true,
+  "typescriptExit": 0,
+  "lintErrors": 0,
+  "lintWarnings": 226,
+  "verifiedAtUTC": "2026-11-15T21:56:54.553Z",
+  "dashboard": "https://expo.dev/accounts/craigb/projects/gathr/updates/1a9d9222-62c4-4d6e-91ef-bd7f452aa1a4"
+}
