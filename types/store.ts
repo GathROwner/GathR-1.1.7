@@ -126,7 +126,7 @@ export interface MapState {
   shouldClusterBeVisible: (cluster: Cluster, criteria: FilterCriteria) => boolean;
   
   // Actions
-  setAllEvents: (events: Event[]) => void;  // For React Query global cache
+  setAllEvents: (events: Event[], options?: { projectViewport: 'cache' | 'refresh' }) => void;  // For React Query global cache
   setFriendEvents: (events: Event[]) => void;
   setShowFriendEvents: (visible: boolean) => void;
   setEvents: (events: Event[]) => void;  // Deprecated - use setAllEvents

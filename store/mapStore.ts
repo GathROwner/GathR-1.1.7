@@ -159,6 +159,8 @@ export interface ZoomThreshold {
    console.warn('[GathRStartupData]', label, JSON.stringify(details ?? {}));
  };
  type MinimalEventsResult = Awaited<ReturnType<typeof fetchMinimalEvents>>;
+ // The latest requested viewport owns cache projection, including while its fetch is pending.
+ let projectCurrentViewportCache: ((events: Event[], source: 'cache' | 'refresh') => void) | null = null;
  let __minimalEventsInFlight:
    | { key: string; promise: Promise<MinimalEventsResult>; startedAt: number }
    | null = null;
@@ -1181,9 +1183,9 @@ export const useMapStore = create<MapState>((set, get) => ({
 
   /**
    * Set all events (global cache) - called by React Query prefetch
-   * This populates the global cache but does NOT affect viewport filtering
+   * Viewport projection is opt-in for restoration and complete refresh results.
    */
-  setAllEvents: (events) => {
+  setAllEvents: (events, options) => {
     // Expiry gate: every producer funnels through here (network refreshes and
     // the persisted-cache cold-start hydration), so ended events — including
     // yesterday's from a stale AsyncStorage snapshot — never enter the store.
@@ -1208,6 +1210,11 @@ export const useMapStore = create<MapState>((set, get) => ({
     set({
       allEvents: liveEvents,
     });
+    // Startup cache hydration must wake the latest viewport without cancelling
+    // its refresh. Other producers retain the existing global-cache-only API.
+    if (options?.projectViewport && (liveEvents.length > 0 || options.projectViewport === 'refresh')) {
+      projectCurrentViewportCache?.(liveEvents, options.projectViewport);
+    }
   },
 
   setFriendEvents: (events) => {
@@ -1714,25 +1721,26 @@ fetchEvents: async () => {
   };
 
   // CACHE-FIRST
-  const cached = qc?.getQueryData(queryKey) as { combinedData: any[] } | undefined;
-  if (cached?.combinedData?.length) {
+  const cached = qc?.getQueryData(queryKey) as { combinedData: Event[] } | undefined;
+  const cacheTime = createEventTimeContext();
+  const cachedItems = (cached?.combinedData?.length ? cached.combinedData : get().allEvents)
+    .filter((event) => !isEventPastMeasured(event, cacheTime, 'map_filtering'));
+  if (cachedItems.length) {
     logStartupDataTiming('fetch_events_using_query_cache', {
-      count: cached.combinedData.length,
+      count: cachedItems.length,
       elapsedMs: Date.now() - fetchEventsStartedAt,
     });
     filtersChanged = true; // force recluster
-    get().setAllEvents(cached.combinedData);
+    get().setAllEvents(cachedItems, { projectViewport: 'cache' });
     set({ isLoading: false, error: null, lastFetchedAt: Date.now() });
 
     // Background refresh
-    qc!.fetchQuery({
-      queryKey,
-      queryFn: fetchFresh,
-      staleTime: STALE_MS,
-      gcTime: 1000 * 60 * 10,
-    }).then((fresh: { combinedData: any[]; fetchedAt: number }) => {
+    const refresh = qc
+      ? qc.fetchQuery({ queryKey, queryFn: fetchFresh, staleTime: STALE_MS, gcTime: 1000 * 60 * 10 })
+      : fetchFresh();
+    refresh.then((fresh: { combinedData: Event[]; fetchedAt: number }) => {
       filtersChanged = true;
-      get().setAllEvents(fresh.combinedData);
+      get().setAllEvents(fresh.combinedData, { projectViewport: 'refresh' });
       set({ lastFetchedAt: Date.now() });
     }).catch((err: unknown) => {
       const msg = err instanceof Error ? err.message : String(err);
@@ -1754,7 +1762,7 @@ fetchEvents: async () => {
       : await fetchFresh();
 
     filtersChanged = true;
-    get().setAllEvents(fresh.combinedData);
+    get().setAllEvents(fresh.combinedData, { projectViewport: 'refresh' });
     set({ isLoading: false, lastFetchedAt: Date.now() });
     logStartupDataTiming('fetch_events_completed', {
       elapsedMs: Date.now() - fetchEventsStartedAt,
@@ -1865,73 +1873,20 @@ refreshPrivateSharedEventsFromServer: async (privateEventIds?: string[]) => {
     }
     if (abortIfStale('before_start')) return;
 
-    try {
-      if (get().error !== null) set({ error: null });
-
-      const filters = get().filterCriteria;
-      const typeParam = filters.showEvents && filters.showSpecials
-        ? 'both'
-        : filters.showEvents
-          ? 'event'
-          : filters.showSpecials
-            ? 'special'
-            : 'both';
-
-      const firestoreTypeFilter =
-        typeParam === 'event' ? true : typeParam === 'special' ? false : undefined;
-
-      const matchesTypeFilter = (event: Event): boolean => {
-        if (typeParam === 'event') return event.type === 'event';
-        if (typeParam === 'special') return event.type === 'special';
-        return true;
-      };
-
-      let publicCandidateEvents = (get().allEvents || []).filter(matchesTypeFilter);
-      const friendCandidateEvents = (get().friendEvents || []).filter(matchesTypeFilter);
-      logStartupDataTiming('viewport_candidates_ready', {
-        elapsedMs: Date.now() - startedAt,
-        candidateEvents: publicCandidateEvents.length + friendCandidateEvents.length,
-        friendCandidateEvents: friendCandidateEvents.length,
-        requestedType: typeParam,
-      });
-
-      // Refresh from source when cache is empty for the requested type slice.
-      if (publicCandidateEvents.length === 0) {
-        const fetchOptions =
-          typeof firestoreTypeFilter === 'boolean'
-            ? { isEvent: firestoreTypeFilter }
-            : {};
-
-        logStartupDataTiming('viewport_fetch_awaiting_minimal_events', {
-          elapsedMs: Date.now() - startedAt,
-          fetchOptions,
-        });
-        const result = await fetchMinimalEventsShared(fetchOptions);
-        if (abortIfStale('after_minimal_fetch')) return;
-        const dedupedAll = dedupeEvents(result.combinedData);
-        publicCandidateEvents = dedupedAll.filter(matchesTypeFilter);
-        get().setAllEvents(dedupedAll);
-        set({ lastFetchedAt: Date.now() });
-        logStartupDataTiming('viewport_fetch_minimal_events_ready', {
-          elapsedMs: Date.now() - startedAt,
-          fetched: dedupedAll.length,
-          matchedTypeCount: publicCandidateEvents.length,
-        });
-
-        if (DEBUG_MAP_LOAD) {
-          console.log('[MapLoad][viewport] Warmed candidate events from API:', {
-            firestoreDefault: USE_FIRESTORE_EVENTS,
-            fetched: dedupedAll.length,
-            requestedType: typeParam,
-            matchedTypeCount: publicCandidateEvents.length,
-          });
-        }
-      }
-
+    const projectPublicEvents = (publicCandidateEvents: Event[], source: 'cache' | 'refresh') => {
+      if (abortIfStale('cache_projection')) return;
+      const projectionStartedAt = Date.now();
+      const projectionTraceStartedAt = MAP_TRACE_ENABLED ? mapTraceNow() : 0;
       // Friend events deliberately never enter allEvents or the persisted
       // React Query cache. Their live per-user projections are composed only
       // for the current in-memory map/feed view.
-      const candidateEvents = [...publicCandidateEvents, ...friendCandidateEvents];
+      const filters = get().filterCriteria;
+      const matchesCurrentType = (event: Event) =>
+        filters.showEvents === filters.showSpecials || (filters.showEvents ? event.type === 'event' : event.type === 'special');
+      const candidateEvents = [
+        ...publicCandidateEvents.filter(matchesCurrentType),
+        ...get().friendEvents.filter(matchesCurrentType),
+      ];
       if (abortIfStale('before_partition')) return;
 
       const partitionStartedAt = Date.now();
@@ -1961,7 +1916,7 @@ refreshPrivateSharedEventsFromServer: async (privateEventIds?: string[]) => {
       const filterMs = Date.now() - filterStartedAt;
       const filterTraceMs = MAP_TRACE_ENABLED ? mapTraceNow() - filterTraceStartedAt : 0;
       traceMapEvent('viewport_partition_completed', {
-        elapsedMs: MAP_TRACE_ENABLED ? mapTraceNow() - traceStartedAt : 0,
+        elapsedMs: MAP_TRACE_ENABLED ? mapTraceNow() - projectionTraceStartedAt : 0,
         partitionMs: partitionTraceMs,
         filterMs: filterTraceMs,
         candidateEvents: candidateEvents.length,
@@ -1973,7 +1928,7 @@ refreshPrivateSharedEventsFromServer: async (privateEventIds?: string[]) => {
         clustersBeforeCommit: get().clusters.length,
       }, { gestureSessionId: traceGestureSessionId });
       logStartupDataTiming('viewport_partition_complete', {
-        elapsedMs: Date.now() - startedAt,
+        elapsedMs: Date.now() - projectionStartedAt,
         partitionMs,
         filterMs,
         candidateEvents: candidateEvents.length,
@@ -1989,8 +1944,8 @@ refreshPrivateSharedEventsFromServer: async (privateEventIds?: string[]) => {
 
       if (DEBUG_MAP_LOAD) {
         console.log('[MapLoad][viewport] Firestore client-side partition complete:', {
-          durationMs: Date.now() - startedAt,
-          requestedType: typeParam,
+          durationMs: Date.now() - projectionStartedAt,
+          requestedType: filters.showEvents === filters.showSpecials ? 'both' : filters.showEvents ? 'event' : 'special',
           candidateEvents: candidateEvents.length,
           coordinateEvents: coordinateEvents.length,
           viewportCount: viewportEvents.length,
@@ -2043,7 +1998,7 @@ refreshPrivateSharedEventsFromServer: async (privateEventIds?: string[]) => {
           },
           hasInitialViewportSettled: true,
           isLoading: false,
-          lastFetchedAt: Date.now(),
+          ...(source === 'cache' ? {} : { lastFetchedAt: Date.now() }),
         });
       } else {
         if (!currentState.hasInitialViewportSettled) set({ hasInitialViewportSettled: true });
@@ -2056,7 +2011,7 @@ refreshPrivateSharedEventsFromServer: async (privateEventIds?: string[]) => {
       }
 
       traceMapEvent('viewport_store_committed', {
-        elapsedMs: MAP_TRACE_ENABLED ? mapTraceNow() - traceStartedAt : 0,
+        elapsedMs: MAP_TRACE_ENABLED ? mapTraceNow() - projectionTraceStartedAt : 0,
         committed: storeCommitNeeded,
         events: get().events.length,
         viewportEvents: get().viewportEvents.length,
@@ -2070,6 +2025,86 @@ refreshPrivateSharedEventsFromServer: async (privateEventIds?: string[]) => {
         filtersChanged = true;
         get().generateClusters(get().zoomLevel);
       }
+      traceMapEvent('viewport_projection_ready', {
+        requestId, source, clusters: get().clusters.length,
+      }, { gestureSessionId: traceGestureSessionId });
+    };
+    projectCurrentViewportCache = (events, source) => projectPublicEvents(events, source);
+
+    try {
+      if (get().error !== null) set({ error: null });
+
+      const filters = get().filterCriteria;
+      const typeParam = filters.showEvents && filters.showSpecials
+        ? 'both'
+        : filters.showEvents
+          ? 'event'
+          : filters.showSpecials
+            ? 'special'
+            : 'both';
+
+      const firestoreTypeFilter =
+        typeParam === 'event' ? true : typeParam === 'special' ? false : undefined;
+
+      const matchesTypeFilter = (event: Event): boolean => {
+        if (typeParam === 'event') return event.type === 'event';
+        if (typeParam === 'special') return event.type === 'special';
+        return true;
+      };
+
+      let publicCandidateEvents = (get().allEvents || []).filter(matchesTypeFilter);
+      const friendCandidateEvents = (get().friendEvents || []).filter(matchesTypeFilter);
+      logStartupDataTiming('viewport_candidates_ready', {
+        elapsedMs: Date.now() - startedAt,
+        candidateEvents: publicCandidateEvents.length + friendCandidateEvents.length,
+        friendCandidateEvents: friendCandidateEvents.length,
+        requestedType: typeParam,
+      });
+
+      // Refresh from source when cache is empty for the requested type slice.
+      if (publicCandidateEvents.length === 0) {
+        const fetchOptions =
+          typeof firestoreTypeFilter === 'boolean'
+            ? { isEvent: firestoreTypeFilter }
+            : {};
+
+        logStartupDataTiming('viewport_fetch_awaiting_minimal_events', {
+          elapsedMs: Date.now() - startedAt,
+          fetchOptions,
+        });
+        // The unfiltered boot fetch joins the root preloader's QueryClient
+        // request, so cache restoration and the refresh share one result/order.
+        const queryClient: any = (global as any).__RQ_CLIENT;
+        const result: MinimalEventsResult = firestoreTypeFilter === undefined && queryClient?.fetchQuery
+          ? await queryClient.fetchQuery({
+              queryKey: EVENTS_MINIMAL,
+              queryFn: () => fetchMinimalEventsShared(fetchOptions),
+              staleTime: 1000 * 60 * 3,
+              gcTime: 1000 * 60 * 10,
+            })
+          : await fetchMinimalEventsShared(fetchOptions);
+        if (abortIfStale('after_minimal_fetch')) return;
+        const dedupedAll = dedupeEvents(result.combinedData);
+        get().setAllEvents(dedupedAll);
+        publicCandidateEvents = get().allEvents.filter(matchesTypeFilter);
+        set({ lastFetchedAt: Date.now() });
+        logStartupDataTiming('viewport_fetch_minimal_events_ready', {
+          elapsedMs: Date.now() - startedAt,
+          fetched: dedupedAll.length,
+          matchedTypeCount: publicCandidateEvents.length,
+        });
+
+        if (DEBUG_MAP_LOAD) {
+          console.log('[MapLoad][viewport] Warmed candidate events from API:', {
+            firestoreDefault: USE_FIRESTORE_EVENTS,
+            fetched: dedupedAll.length,
+            requestedType: typeParam,
+            matchedTypeCount: publicCandidateEvents.length,
+          });
+        }
+      }
+
+      projectPublicEvents(publicCandidateEvents, 'refresh');
       traceMapEvent('viewport_fetch_completed', {
         durationMs: MAP_TRACE_ENABLED ? mapTraceNow() - traceStartedAt : 0,
         events: get().events.length,
