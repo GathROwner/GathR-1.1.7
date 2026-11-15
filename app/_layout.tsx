@@ -19,6 +19,7 @@
  */
 
 import React from 'react';
+import { useStartupEventCache } from '../hooks/useStartupEventCache';
 import { useAutomaticOtaUpdates } from '../hooks/useAutomaticOtaUpdates';
 import { noteOtaInteraction } from '../lib/otaUpdates';
 import MapboxGL from '@rnmapbox/maps';
@@ -685,109 +686,7 @@ useEffect(() => {
       };
     }, []);
 
-    useEffect(() => {
-      console.log('ðŸš€ Preloading event data on app start (React Query)â€¦');
-
-      const key = EVENTS_MINIMAL;
-
-      // â³ Give PersistQueryClientProvider a moment to rehydrate from AsyncStorage
-      const timer = setTimeout(() => {
-        // 1) If persisted cache is already present, hydrate immediately from last run
-        const persisted: any = queryClient.getQueryData(key);
-        const persistedItems = Array.isArray(persisted?.combinedData) ? persisted.combinedData : [];
-        const persistedEvents   = persistedItems.filter((x: any) => x?.type === 'event');
-        const persistedSpecials = persistedItems.filter((x: any) => x?.type === 'special');
-
-        if (persistedItems.length > 0) {
-          console.log(
-            '[RQ Persist] Restored', persistedItems.length, 'items from last run (persisted cache)',
-            '| events =', persistedEvents.length, '| specials =', persistedSpecials.length
-          );
-          setAllEvents(persistedItems);
-
-// DEBUG: summarize address/coords presence in preloaded (persisted) items
-try {
-  const addrCount = persistedItems.filter((e:any) => e?.address && e.address !== 'N/A').length;
-  const coordCount = persistedItems.filter((e:any) => e?.latitude != null && e?.longitude != null).length;
-  console.log('[AddressFlow][PersistHydrate]', {
-    total: persistedItems.length,
-    withAddress: addrCount,
-    withCoords: coordCount,
-  });
-  const sample = persistedItems.find((e:any) => e?.address);
-  if (sample) console.log('[AddressFlow][PersistHydrate] sampleWithAddress', { id: sample.id, venue: sample.venue, address: sample.address });
-} catch {}
-
-
-          // Optional: hydrate a dedicated specials slice if your store exposes it
-          const store = (useMapStore as any)?.getState?.();
-          if (store && typeof store.setSpecials === 'function') {
-            store.setSpecials(persistedSpecials);
-          }
-        }
-
-        // 2) Now fetch (respects staleTime) and report whether it was a network refresh or cache hit
-        const before = queryClient.getQueryState(key);
-        const beforeUpdatedAt = before?.dataUpdatedAt ?? 0;
-        const t0 = Date.now();
-
-        queryClient
-          .fetchQuery({
-            queryKey: key,
-            queryFn: rqFetchEventsMinimal,
-            staleTime: 1000 * 60 * 3,
-            gcTime: 1000 * 60 * 10,
-          })
-        .then((result: any) => {
-          const after = queryClient.getQueryState(key);
-          const afterUpdatedAt = after?.dataUpdatedAt ?? 0;
-          const fromNetwork = afterUpdatedAt > beforeUpdatedAt;
-
-          const items = Array.isArray(result?.combinedData) ? result.combinedData : [];
-          const eventsOnly   = items.filter((x: any) => x?.type === 'event');
-          const specialsOnly = items.filter((x: any) => x?.type === 'special');
-
-          if (fromNetwork) {
-            console.log(
-              '[RQ Prefetch] Fetched fresh data from server in', Date.now() - t0, 'ms',
-              '| items =', items.length, '| events =', eventsOnly.length, '| specials =', specialsOnly.length
-            );
-          } else {
-            console.log(
-              '[RQ Prefetch] Used fresh cache (no network)',
-              '| items =', items.length, '| events =', eventsOnly.length, '| specials =', specialsOnly.length
-            );
-          }
-
-          if (items.length > 0) {
-            setAllEvents(items);
-
-// DEBUG: summarize address/coords presence in fresh network items
-try {
-  const addrCount = items.filter((e:any) => e?.address && e.address !== 'N/A').length;
-  const coordCount = items.filter((e:any) => e?.latitude != null && e?.longitude != null).length;
-  console.log('[AddressFlow][NetworkFetch]', {
-    total: items.length,
-    withAddress: addrCount,
-    withCoords: coordCount,
-  });
-  const sample = items.find((e:any) => e?.address);
-  if (sample) console.log('[AddressFlow][NetworkFetch] sampleWithAddress', { id: sample.id, venue: sample.venue, address: sample.address });
-} catch {}
-            const store = (useMapStore as any)?.getState?.();
-            if (store && typeof store.setSpecials === 'function') {
-              store.setSpecials(specialsOnly);
-            }
-          }
-        })
-
-          .catch((error) => {
-            console.error('Prefetch failed:', error);
-          });
-      }, 180);
-
-      return () => clearTimeout(timer);
-    }, []);
+    useStartupEventCache(rqFetchEventsMinimal, setAllEvents);
 
     // ðŸ”„ Foreground refresh: when app becomes active, reconcile with server and report cache vs network
     useEffect(() => {

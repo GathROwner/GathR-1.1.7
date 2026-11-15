@@ -78,7 +78,7 @@ describe('map store latency caller attribution', () => {
   beforeEach(() => {
     jest.useFakeTimers();
     jest.setSystemTime(new Date(2026, 8, 6, 12, 0, 0));
-    trace.clearMapTrace();
+    trace.startMapTrace();
     resetEventScheduleStateCache();
     resetViewportRequestCoordinator();
     useMapStore.setState({
@@ -96,6 +96,7 @@ describe('map store latency caller attribution', () => {
   });
 
   afterEach(() => {
+    trace.stopMapTrace();
     jest.useRealTimers();
   });
 
