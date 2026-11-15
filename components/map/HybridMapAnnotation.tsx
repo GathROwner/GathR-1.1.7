@@ -7,6 +7,7 @@ import HybridClusterMarker from './HybridClusterMarker';
 import { PuckMarkerMeasurement } from './PuckMarkerMeasurement';
 import HybridCompactCount, { hybridCompactDiameter } from './HybridCompactCount';
 import { traceMapEvent } from '../../utils/mapTrace';
+import { HYBRID_PULSE, hybridTimingColor } from '../../utils/hybridPulse';
 
 type Props = {
   id: string; cluster: Cluster; coordinate: [number, number]; isSelected: boolean;
@@ -108,19 +109,19 @@ export function HybridMapHalo({ id, coordinate, radius, translate, timing, activ
     const grow = () => {
       if (stopped) return;
       setExpanded(true);
-      timer = setTimeout(() => { setExpanded(false); timer = setTimeout(grow, 40); }, 2600);
+      timer = setTimeout(() => { setExpanded(false); timer = setTimeout(grow, HYBRID_PULSE.resetMs); }, HYBRID_PULSE.durationMs + HYBRID_PULSE.pauseMs);
     };
-    timer = setTimeout(grow, 40);
+    timer = setTimeout(grow, HYBRID_PULSE.resetMs);
     return () => { stopped = true; clearTimeout(timer); };
   }, [animate]);
   const shape = useMemo(() => ({ type: 'Feature' as const, properties: {}, geometry: { type: 'Point' as const, coordinates: coordinate } }), [coordinate]);
-  const duration = animate && expanded ? 1600 : 0;
+  const duration = animate && expanded ? HYBRID_PULSE.durationMs : 0;
   return <Mapbox.ShapeSource id={`${id}-halo-source`} shape={shape}>
     <Mapbox.CircleLayer id={`${id}-halo`} style={{
-      circleRadius: (radius - 2.7) * (animate && expanded ? 1.8 : 1), circleRadiusTransition: { duration, delay: 0 },
+      circleRadius: (radius - 2.7) * (animate && expanded ? HYBRID_PULSE.scale : 1), circleRadiusTransition: { duration, delay: 0 },
       circleColor: 'rgba(0,0,0,0)', circleStrokeWidth: 2.7,
-      circleStrokeColor: timing === 'now' ? '#34A853' : timing === 'today' ? '#FBBC05' : '#9AA0A6',
-      circleStrokeOpacity: !animate ? .25 : expanded ? 0 : .45, circleStrokeOpacityTransition: { duration, delay: 0 },
+      circleStrokeColor: hybridTimingColor(timing),
+      circleStrokeOpacity: !animate ? .25 : expanded ? 0 : HYBRID_PULSE.opacity, circleStrokeOpacityTransition: { duration, delay: 0 },
       circleTranslate: translate, circleTranslateAnchor: 'viewport', circlePitchAlignment: 'viewport', circlePitchScale: 'viewport',
     }} />
   </Mapbox.ShapeSource>;
