@@ -143,6 +143,7 @@ import {
   traceMapTimerFired,
   traceMapTimerScheduled,
 } from '../../utils/mapTrace';
+import { recordStartupMilestone } from '../../utils/startupTiming';
 import {
   type MapCameraReconciliationSource,
   shouldReconcileAndroidMapIdle,
@@ -11382,6 +11383,9 @@ onMapIdle={() => {
 }}
 
 onDidFinishRenderingFrameFully={() => {
+  if (clusters.length > 0 && fullClusterMarkersEnabled && clustersReadyForInteraction && !isLoading) {
+    recordStartupMilestone('map_frame_with_clusters_proxy', { clusters: clusters.length });
+  }
   if (MAP_TRACE_ENABLED && gestureTraceRenderedClusterArrayRef.current !== clusters) {
     gestureTraceRenderedClusterArrayRef.current = clusters;
     traceMapEvent('cluster_array_first_mapbox_frame_rendered', {
@@ -11414,10 +11418,12 @@ onDidFinishRenderingFrameFully={() => {
 
 
 onDidFinishLoadingStyle={() => {
+  recordStartupMilestone('map_style_loaded');
   restorePendingMapStyleCamera('style_loaded');
 }}
 
 onDidFinishLoadingMap={() => {
+  recordStartupMilestone('map_loaded');
   const isStyleComparisonReload = mapStyleSwitchInFlightRef.current;
   if (isStyleComparisonReload) {
     restorePendingMapStyleCamera('map_loaded');

@@ -604,10 +604,14 @@ export const isPrivateSharedEventId = (id: string | number | null | undefined): 
   String(id ?? '').startsWith('shared_');
 
 export async function fetchPrivateSharedEventsForCurrentUser(
-  options: { forceServer?: boolean; ids?: string[] } = {}
+  options: { forceServer?: boolean; ids?: string[] } = {},
+  startupTiming?: import('../../utils/startupTiming').StartupFetchTiming,
 ): Promise<Event[]> {
   const user = auth.currentUser;
-  if (!user?.uid) return [];
+  if (!user?.uid) {
+    startupTiming?.('private_query_finished', { skippedNoAccount: true });
+    return [];
+  }
 
   try {
     const requestedIds = Array.from(new Set(
@@ -635,6 +639,7 @@ export async function fetchPrivateSharedEventsForCurrentUser(
             data: docSnap.data() as PrivateSharedEventDoc,
           }));
         })();
+    startupTiming?.('private_query_finished', { items: documentRows.length });
     const candidates = documentRows
       .filter(({ data }) => !data.ownerUid || data.ownerUid === user.uid)
       .filter(({ data }) => hasUsableDate(data) && !isExpiredForDisplay(data));
@@ -642,6 +647,7 @@ export async function fetchPrivateSharedEventsForCurrentUser(
     if (candidates.length === 0) return [];
 
     const venues = await fetchVenueDirectory();
+    startupTiming?.('private_venues_finished', { items: venues.length });
     const events: Event[] = [];
     candidates.forEach(({ id, data }) => {
       const venue = matchVenue(data, venues);
@@ -654,6 +660,7 @@ export async function fetchPrivateSharedEventsForCurrentUser(
     return events;
   } catch (error) {
     console.warn('[PrivateSharedEvents] Failed to fetch private shared events:', error);
+    startupTiming?.('private_fetch_failed');
     return [];
   }
 }
