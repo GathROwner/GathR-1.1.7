@@ -1,0 +1,397 @@
+{
+  "method": "Actual RN marker components; actual HybridMapHalo collapsed/expanded native paint props bridged to SVG; frozen at 25 percent sweep; no native interaction",
+  "styles": [
+    {
+      "key": "before-now-light",
+      "initial": {
+        "circleRadius": 18.45,
+        "circleRadiusTransition": {
+          "duration": 0,
+          "delay": 0
+        },
+        "circleColor": "rgba(0,0,0,0)",
+        "circleStrokeWidth": 2.7,
+        "circleStrokeColor": "#34A853",
+        "circleStrokeOpacity": 0.45,
+        "circleStrokeOpacityTransition": {
+          "duration": 0,
+          "delay": 0
+        },
+        "circleTranslate": [
+          0,
+          0
+        ],
+        "circleTranslateAnchor": "viewport",
+        "circlePitchAlignment": "viewport",
+        "circlePitchScale": "viewport"
+      },
+      "expanded": {
+        "circleRadius": 33.21,
+        "circleRadiusTransition": {
+          "duration": 1600,
+          "delay": 0
+        },
+        "circleColor": "rgba(0,0,0,0)",
+        "circleStrokeWidth": 2.7,
+        "circleStrokeColor": "#34A853",
+        "circleStrokeOpacity": 0,
+        "circleStrokeOpacityTransition": {
+          "duration": 1600,
+          "delay": 0
+        },
+        "circleTranslate": [
+          0,
+          0
+        ],
+        "circleTranslateAnchor": "viewport",
+        "circlePitchAlignment": "viewport",
+        "circlePitchScale": "viewport"
+      },
+      "cycleMs": 2640,
+      "durationMs": 1600
+    },
+    {
+      "key": "before-now-dark",
+      "initial": {
+        "circleRadius": 18.45,
+        "circleRadiusTransition": {
+          "duration": 0,
+          "delay": 0
+        },
+        "circleColor": "rgba(0,0,0,0)",
+        "circleStrokeWidth": 2.7,
+        "circleStrokeColor": "#34A853",
+        "circleStrokeOpacity": 0.45,
+        "circleStrokeOpacityTransition": {
+          "duration": 0,
+          "delay": 0
+        },
+        "circleTranslate": [
+          0,
+          0
+        ],
+        "circleTranslateAnchor": "viewport",
+        "circlePitchAlignment": "viewport",
+        "circlePitchScale": "viewport"
+      },
+      "expanded": {
+        "circleRadius": 33.21,
+        "circleRadiusTransition": {
+          "duration": 1600,
+          "delay": 0
+        },
+        "circleColor": "rgba(0,0,0,0)",
+        "circleStrokeWidth": 2.7,
+        "circleStrokeColor": "#34A853",
+        "circleStrokeOpacity": 0,
+        "circleStrokeOpacityTransition": {
+          "duration": 1600,
+          "delay": 0
+        },
+        "circleTranslate": [
+          0,
+          0
+        ],
+        "circleTranslateAnchor": "viewport",
+        "circlePitchAlignment": "viewport",
+        "circlePitchScale": "viewport"
+      },
+      "cycleMs": 2640,
+      "durationMs": 1600
+    },
+    {
+      "key": "before-today-light",
+      "initial": {
+        "circleRadius": 18.45,
+        "circleRadiusTransition": {
+          "duration": 0,
+          "delay": 0
+        },
+        "circleColor": "rgba(0,0,0,0)",
+        "circleStrokeWidth": 2.7,
+        "circleStrokeColor": "#FBBC05",
+        "circleStrokeOpacity": 0.45,
+        "circleStrokeOpacityTransition": {
+          "duration": 0,
+          "delay": 0
+        },
+        "circleTranslate": [
+          0,
+          0
+        ],
+        "circleTranslateAnchor": "viewport",
+        "circlePitchAlignment": "viewport",
+        "circlePitchScale": "viewport"
+      },
+      "expanded": {
+        "circleRadius": 33.21,
+        "circleRadiusTransition": {
+          "duration": 1600,
+          "delay": 0
+        },
+        "circleColor": "rgba(0,0,0,0)",
+        "circleStrokeWidth": 2.7,
+        "circleStrokeColor": "#FBBC05",
+        "circleStrokeOpacity": 0,
+        "circleStrokeOpacityTransition": {
+          "duration": 1600,
+          "delay": 0
+        },
+        "circleTranslate": [
+          0,
+          0
+        ],
+        "circleTranslateAnchor": "viewport",
+        "circlePitchAlignment": "viewport",
+        "circlePitchScale": "viewport"
+      },
+      "cycleMs": 2640,
+      "durationMs": 1600
+    },
+    {
+      "key": "before-today-dark",
+      "initial": {
+        "circleRadius": 18.45,
+        "circleRadiusTransition": {
+          "duration": 0,
+          "delay": 0
+        },
+        "circleColor": "rgba(0,0,0,0)",
+        "circleStrokeWidth": 2.7,
+        "circleStrokeColor": "#FBBC05",
+        "circleStrokeOpacity": 0.45,
+        "circleStrokeOpacityTransition": {
+          "duration": 0,
+          "delay": 0
+        },
+        "circleTranslate": [
+          0,
+          0
+        ],
+        "circleTranslateAnchor": "viewport",
+        "circlePitchAlignment": "viewport",
+        "circlePitchScale": "viewport"
+      },
+      "expanded": {
+        "circleRadius": 33.21,
+        "circleRadiusTransition": {
+          "duration": 1600,
+          "delay": 0
+        },
+        "circleColor": "rgba(0,0,0,0)",
+        "circleStrokeWidth": 2.7,
+        "circleStrokeColor": "#FBBC05",
+        "circleStrokeOpacity": 0,
+        "circleStrokeOpacityTransition": {
+          "duration": 1600,
+          "delay": 0
+        },
+        "circleTranslate": [
+          0,
+          0
+        ],
+        "circleTranslateAnchor": "viewport",
+        "circlePitchAlignment": "viewport",
+        "circlePitchScale": "viewport"
+      },
+      "cycleMs": 2640,
+      "durationMs": 1600
+    },
+    {
+      "key": "after-now-light",
+      "initial": {
+        "circleRadius": 18.45,
+        "circleRadiusTransition": {
+          "duration": 0,
+          "delay": 0
+        },
+        "circleColor": "rgba(0,0,0,0)",
+        "circleStrokeWidth": 2.7,
+        "circleStrokeColor": "#188038",
+        "circleStrokeOpacity": 0.8,
+        "circleStrokeOpacityTransition": {
+          "duration": 0,
+          "delay": 0
+        },
+        "circleTranslate": [
+          0,
+          0
+        ],
+        "circleTranslateAnchor": "viewport",
+        "circlePitchAlignment": "viewport",
+        "circlePitchScale": "viewport"
+      },
+      "expanded": {
+        "circleRadius": 33.21,
+        "circleRadiusTransition": {
+          "duration": 1000,
+          "delay": 0
+        },
+        "circleColor": "rgba(0,0,0,0)",
+        "circleStrokeWidth": 2.7,
+        "circleStrokeColor": "#188038",
+        "circleStrokeOpacity": 0,
+        "circleStrokeOpacityTransition": {
+          "duration": 1000,
+          "delay": 0
+        },
+        "circleTranslate": [
+          0,
+          0
+        ],
+        "circleTranslateAnchor": "viewport",
+        "circlePitchAlignment": "viewport",
+        "circlePitchScale": "viewport"
+      },
+      "cycleMs": 1290,
+      "durationMs": 1000
+    },
+    {
+      "key": "after-now-dark",
+      "initial": {
+        "circleRadius": 18.45,
+        "circleRadiusTransition": {
+          "duration": 0,
+          "delay": 0
+        },
+        "circleColor": "rgba(0,0,0,0)",
+        "circleStrokeWidth": 2.7,
+        "circleStrokeColor": "#188038",
+        "circleStrokeOpacity": 0.8,
+        "circleStrokeOpacityTransition": {
+          "duration": 0,
+          "delay": 0
+        },
+        "circleTranslate": [
+          0,
+          0
+        ],
+        "circleTranslateAnchor": "viewport",
+        "circlePitchAlignment": "viewport",
+        "circlePitchScale": "viewport"
+      },
+      "expanded": {
+        "circleRadius": 33.21,
+        "circleRadiusTransition": {
+          "duration": 1000,
+          "delay": 0
+        },
+        "circleColor": "rgba(0,0,0,0)",
+        "circleStrokeWidth": 2.7,
+        "circleStrokeColor": "#188038",
+        "circleStrokeOpacity": 0,
+        "circleStrokeOpacityTransition": {
+          "duration": 1000,
+          "delay": 0
+        },
+        "circleTranslate": [
+          0,
+          0
+        ],
+        "circleTranslateAnchor": "viewport",
+        "circlePitchAlignment": "viewport",
+        "circlePitchScale": "viewport"
+      },
+      "cycleMs": 1290,
+      "durationMs": 1000
+    },
+    {
+      "key": "after-today-light",
+      "initial": {
+        "circleRadius": 18.45,
+        "circleRadiusTransition": {
+          "duration": 0,
+          "delay": 0
+        },
+        "circleColor": "rgba(0,0,0,0)",
+        "circleStrokeWidth": 2.7,
+        "circleStrokeColor": "#C99700",
+        "circleStrokeOpacity": 0.8,
+        "circleStrokeOpacityTransition": {
+          "duration": 0,
+          "delay": 0
+        },
+        "circleTranslate": [
+          0,
+          0
+        ],
+        "circleTranslateAnchor": "viewport",
+        "circlePitchAlignment": "viewport",
+        "circlePitchScale": "viewport"
+      },
+      "expanded": {
+        "circleRadius": 33.21,
+        "circleRadiusTransition": {
+          "duration": 1000,
+          "delay": 0
+        },
+        "circleColor": "rgba(0,0,0,0)",
+        "circleStrokeWidth": 2.7,
+        "circleStrokeColor": "#C99700",
+        "circleStrokeOpacity": 0,
+        "circleStrokeOpacityTransition": {
+          "duration": 1000,
+          "delay": 0
+        },
+        "circleTranslate": [
+          0,
+          0
+        ],
+        "circleTranslateAnchor": "viewport",
+        "circlePitchAlignment": "viewport",
+        "circlePitchScale": "viewport"
+      },
+      "cycleMs": 1290,
+      "durationMs": 1000
+    },
+    {
+      "key": "after-today-dark",
+      "initial": {
+        "circleRadius": 18.45,
+        "circleRadiusTransition": {
+          "duration": 0,
+          "delay": 0
+        },
+        "circleColor": "rgba(0,0,0,0)",
+        "circleStrokeWidth": 2.7,
+        "circleStrokeColor": "#C99700",
+        "circleStrokeOpacity": 0.8,
+        "circleStrokeOpacityTransition": {
+          "duration": 0,
+          "delay": 0
+        },
+        "circleTranslate": [
+          0,
+          0
+        ],
+        "circleTranslateAnchor": "viewport",
+        "circlePitchAlignment": "viewport",
+        "circlePitchScale": "viewport"
+      },
+      "expanded": {
+        "circleRadius": 33.21,
+        "circleRadiusTransition": {
+          "duration": 1000,
+          "delay": 0
+        },
+        "circleColor": "rgba(0,0,0,0)",
+        "circleStrokeWidth": 2.7,
+        "circleStrokeColor": "#C99700",
+        "circleStrokeOpacity": 0,
+        "circleStrokeOpacityTransition": {
+          "duration": 1000,
+          "delay": 0
+        },
+        "circleTranslate": [
+          0,
+          0
+        ],
+        "circleTranslateAnchor": "viewport",
+        "circlePitchAlignment": "viewport",
+        "circlePitchScale": "viewport"
+      },
+      "cycleMs": 1290,
+      "durationMs": 1000
+    }
+  ]
+}

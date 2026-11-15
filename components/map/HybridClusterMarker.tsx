@@ -10,6 +10,7 @@ import { clusterSummaryGraphic, countGraphic, friendBadgeGraphic, venueSummaryGr
 import HybridSummaryImage from './HybridSummaryImage';
 import { hybridMarkerGeometry } from '../../utils/hybridMarkerGeometry';
 import { hybridRingGeometry } from '../../utils/hybridRingGeometry';
+import { HYBRID_PULSE, hybridTimingColor } from '../../utils/hybridPulse';
 
 type Props = {
   cluster: Cluster; isActive: boolean; isSelected: boolean; isReady: boolean; isProcessing: boolean;
@@ -65,7 +66,7 @@ export default function HybridClusterMarker({ cluster, isActive, isSelected, isR
   const geometry = useMemo(() => hybridMarkerGeometry(venues, photoSize, cluster.eventCount, cluster.specialCount, !!cluster.containsCityLevelEvent), [venues, photoSize, cluster.eventCount, cluster.specialCount, cluster.containsCityLevelEvent]);
   const { ringSize, center, radius } = geometry;
   const accent = HYBRID_ACCENTS[index % HYBRID_ACCENTS.length];
-  const timing = cluster.timeStatus === 'now' ? '#34A853' : cluster.timeStatus === 'today' ? '#FBBC05' : '#9AA0A6';
+  const timing = hybridTimingColor(cluster.timeStatus);
 
   useEffect(() => {
     if (!isActive || reduceMotionEnabled || venues.length < 2 || isSelected || (snapshotMode && !snapshotVisible)) return;
@@ -76,8 +77,8 @@ export default function HybridClusterMarker({ cluster, isActive, isSelected, isR
     pulse.stopAnimation(); pulse.setValue(0);
     if (snapshotMode || !isActive || reduceMotionEnabled || cluster.timeStatus === 'future') return;
     const animation = Animated.loop(Animated.sequence([
-      Animated.timing(pulse, { toValue: 1, duration: 1600, useNativeDriver: true }),
-      Animated.delay(1000), Animated.timing(pulse, { toValue: 0, duration: 0, useNativeDriver: true }),
+      Animated.timing(pulse, { toValue: 1, duration: HYBRID_PULSE.durationMs, useNativeDriver: true }),
+      Animated.delay(HYBRID_PULSE.pauseMs + HYBRID_PULSE.resetMs), Animated.timing(pulse, { toValue: 0, duration: 0, useNativeDriver: true }),
     ]));
     animation.start(); return () => animation.stop();
   }, [pulse, isActive, reduceMotionEnabled, cluster.timeStatus, snapshotMode]);
@@ -120,7 +121,7 @@ export default function HybridClusterMarker({ cluster, isActive, isSelected, isR
       </View>)}
       </View>
       <View testID="hybrid-photo-ring" onLayout={e => onPhotoLayout?.({ y: e.nativeEvent.layout.y, height: e.nativeEvent.layout.height })} style={{ width: ringSize, height: ringSize, marginTop: geometry.topGap, marginBottom: geometry.bottomGap }}>
-        {!snapshotMode && <Animated.View style={[StyleSheet.absoluteFillObject, { borderRadius: center, borderWidth: p(3), borderColor: timing, opacity: reduceMotionEnabled || !isActive || cluster.timeStatus === 'future' ? .25 : pulse.interpolate({ inputRange: [0, 1], outputRange: [.45, 0] }), transform: [{ scale: pulse.interpolate({ inputRange: [0, 1], outputRange: [1, 1.8] }) }] }]} />}
+        {!snapshotMode && <Animated.View style={[StyleSheet.absoluteFillObject, { borderRadius: center, borderWidth: p(3), borderColor: timing, opacity: reduceMotionEnabled || !isActive || cluster.timeStatus === 'future' ? .25 : pulse.interpolate({ inputRange: [0, 1], outputRange: [HYBRID_PULSE.opacity, 0] }), transform: [{ scale: pulse.interpolate({ inputRange: [0, 1], outputRange: [1, HYBRID_PULSE.scale] }) }] }]} />}
         {(!snapshotMode || snapshotVisible) && <Segments diameter={ringSize} count={rings} active={index} />}
         <View testID="hybrid-photo-frame" style={[s.photo, cluster.interestLevel === 'high' && s.interestPhoto, { left: geometry.stroke, top: geometry.stroke, width: photoSize, height: photoSize, borderRadius: photoSize / 2 }]}>
           {current.photo && failedPhoto !== current.photo ? (snapshotMode && !snapshotVisible ? null : <Image testID="hybrid-venue-photo" source={{ uri: current.photo }} fadeDuration={0} style={{ width: photoSize - p(2), height: photoSize - p(2) }} resizeMode="cover" onLoad={onSnapshotChange} onError={() => setFailedPhoto(current.photo)} />) : snapshotMode ? <HybridSummaryImage visible={snapshotVisible} graphic={countGraphic(initials, p(14), '#143247')} onLoad={onSnapshotChange} /> : <Text maxFontSizeMultiplier={1.2} style={s.initials}>{initials}</Text>}
