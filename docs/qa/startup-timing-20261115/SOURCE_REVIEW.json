@@ -1,0 +1,9 @@
+{
+  "base": "77bdcee8f998a0a125d097463d3a639ea320a843",
+  "commit": "0d1acad87a80d980fa49a5e18c35103e813c8529",
+  "mapAstIdenticalAfterRemovingOnlyTimingCalls": true,
+  "rootPanelMarkerCalloutNativeAuthSourceUnchanged": true,
+  "layoutChanges": false,
+  "nativeVisualVerification": false,
+  "reason": "Instrumentation only; no visible layout or interaction change; native map not manipulated"
+}

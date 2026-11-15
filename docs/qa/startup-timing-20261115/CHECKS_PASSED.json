@@ -1,0 +1,13 @@
+{
+  "excludedExistingAssertion": "Identical failure reproduced on untouched live source; see BASELINE_TEST_FAILURE.log",
+  "commit": "0d1acad87a80d980fa49a5e18c35103e813c8529",
+  "testsExit": 0,
+  "platform": "ios",
+  "runtime": "1.1.20",
+  "channel": "production",
+  "atUTC": "2026-11-15T17:11:18.7188192Z",
+  "typescriptExit": 0,
+  "nativeChanges": false,
+  "lintErrors": 0,
+  "nativeDeviceVerified": false
+}

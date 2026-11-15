@@ -40,3 +40,15 @@ errors and the existing 226 warnings. Raw logs are under ignored artifacts.
 Phone instruction after adoption: use GathR normally. After a slow opening,
 open the existing logo diagnostic panel and Share Logs before terminating the
 app again. No Clear, reinstall or repeated restarts are needed to capture it.
+
+Published and independently server-verified on iOS Production runtime 1.1.20:
+group `e1c14d4a-b49e-49e2-bbd4-c82e4694f478`, update
+`01a1e034-6ab7-7f47-8c51-038689a20da5`, release source
+`0d1acad87a80d980fa49a5e18c35103e813c8529`. The clear-cache export bundled
+2578 modules and 112 final EAS assets. The independent release checkout passed
+255 tests across 33 suites; the existing opt-in benchmark and independently
+reproduced stale assertion were skipped explicitly. Source AST comparison,
+after removing only the added timing calls/import, verifies identical map code;
+root layout, panel, marker/callout components, native and auth sources match the
+previous live release. Phone adoption and an actual slow-opening recording
+remain unverified. Other five OTA targets were not changed by this release.
