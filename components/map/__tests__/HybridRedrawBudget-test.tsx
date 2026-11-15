@@ -19,6 +19,12 @@ jest.mock('../../../utils/hybridClusterPresentation',()=>{
 const fixture=(i:number)=>({id:'cluster-'+i,clusterType:'single',timeStatus:'future',interestLevel:'medium',eventCount:1,specialCount:0,venues:[{locationKey:'venue-'+i,venue:'Venue '+i,events:[{id:'event-'+i,type:'event',category:'Music',profileUrl:''}]}]}) as unknown as Cluster;
 
 const frames = () => act(() => jest.advanceTimersByTime(64));
+// Commit animation updates regularly instead of treating several seconds as
+// one giant React batch. Coalesced callbacks are exercised separately below.
+const tick = (ms:number) => {
+ let remaining=ms;
+ while(remaining>0){const step=Math.min(10,remaining);act(()=>jest.advanceTimersByTime(step));remaining-=step;}
+};
 let tree: renderer.ReactTestRenderer;
 beforeEach(() => {
  jest.useFakeTimers();
@@ -78,7 +84,7 @@ it('finishes both ripple pairs before rotating and captures only the venue chang
  act(()=>photo.props.onLayout({nativeEvent:{layout:{y:24,height:42.3}}}));
  frames(); // Complete the snapshot handoff before the first ripple starts.
  const origin=Date.now();
- const advanceTo=(ms:number)=>act(()=>jest.advanceTimersByTime(origin+ms-Date.now()));
+ const advanceTo=(ms:number)=>tick(origin+ms-Date.now());
  const label=()=>tree.root.findAllByProps({testID:'hybrid-cluster-marker'}).at(-1)!.props.accessibilityLabel;
  advanceTo(40);mockRefresh.mockClear();
  expect(tree.root.findAllByType('CircleLayer' as any)).toHaveLength(2);
@@ -94,7 +100,7 @@ it('finishes both ripple pairs before rotating and captures only the venue chang
  act(()=>tree.update(show([cluster],false,true)));frames();mockRefresh.mockClear();
  act(()=>jest.advanceTimersByTime(6000));expect(label()).toContain('Second,');expect(mockRefresh).not.toHaveBeenCalled();
  act(()=>tree.update(show([cluster],true,false)));const resumed=Date.now();
- act(()=>jest.advanceTimersByTime(2819));expect(label()).toContain('Second,');
+ tick(2819);expect(label()).toContain('Second,');
  act(()=>jest.advanceTimersByTime(1));expect(Date.now()-resumed).toBe(2820);expect(label()).toContain('Venue 0,');
 });
 
@@ -147,7 +153,7 @@ it('ignores photo events from the previous venue and cancels pending capture wor
  act(()=>tree.root.findAllByProps({testID:'hybrid-photo-ring'}).at(-1)!.props.onLayout({nativeEvent:{layout:{y:24,height:42.3}}}));frames();
  const previous=tree.root.findAllByProps({testID:'hybrid-venue-photo'}).at(-1)!.props;
  act(()=>previous.onLoad());frames();
- act(()=>jest.advanceTimersByTime(2820));frames();mockRefresh.mockClear();
+ tick(2820);frames();mockRefresh.mockClear();
  const current=tree.root.findAllByProps({testID:'hybrid-venue-photo'}).at(-1)!.props;
  expect(current.source.uri).toBe('https://fixture.invalid/second.webp');
  const ids=tree.root.findAllByType('CircleLayer' as any).map(l=>l.props.id);
@@ -156,4 +162,22 @@ it('ignores photo events from the previous venue and cancels pending capture wor
  act(()=>current.onLoad());act(()=>jest.advanceTimersByTime(16));
  act(()=>tree.unmount());act(()=>jest.advanceTimersByTime(5000));
  expect(mockRefresh).not.toHaveBeenCalled();
+});
+
+it('commits a collapsed target after an 80 ms busy window before scheduling another outward wave',()=>{
+ act(()=>{tree=renderer.create(<HybridMapHalo id="busy-window" coordinate={[-63.1,46.2]} radius={21.15} translate={[0,0]} timing="now" active reduceMotion={false}/>);});
+ act(()=>jest.advanceTimersByTime(40));
+ const outward=tree.root.findAllByType('CircleLayer' as any)[0].props.style;
+ expect(outward.circleRadius).toBeCloseTo(40.59);
+ act(()=>jest.advanceTimersByTime(1420));
+ // Reset at 1500 and the old chained restart at 1540 used to collapse into
+ // the same React batch: `false`, then `true`, with no native reset payload.
+ act(()=>jest.advanceTimersByTime(80));
+ const reset=tree.root.findAllByType('CircleLayer' as any)[0].props.style;
+ expect(reset).not.toBe(outward);expect(reset.circleRadius).toBeCloseTo(18.45);
+ expect(reset.circleRadiusTransition.duration).toBe(0);
+ act(()=>jest.advanceTimersByTime(39));
+ expect(tree.root.findAllByType('CircleLayer' as any)[0].props.style).toBe(reset);
+ act(()=>jest.advanceTimersByTime(1));
+ expect(tree.root.findAllByType('CircleLayer' as any)[0].props.style.circleRadius).toBeCloseTo(40.59);
 });
