@@ -1,6 +1,6 @@
 import React from 'react';
 import renderer, {act} from 'react-test-renderer';
-import HybridMapAnnotation from '../HybridMapAnnotation';
+import HybridMapAnnotation, {HybridMapHalo} from '../HybridMapAnnotation';
 import {useClusterInteractionStore} from '../../../store/clusterInteractionStore';
 import type {Cluster} from '../../../types/events';
 const mockRefresh=jest.fn();
@@ -68,4 +68,48 @@ it('pauses captures while callout activity disables animations and resumes the t
  act(()=>tree.update(show(clusters,true,false)));frames();expect(mockRefresh).not.toHaveBeenCalled();
  act(()=>jest.advanceTimersByTime(2900));expect(mockRefresh).not.toHaveBeenCalled();
  act(()=>jest.advanceTimersByTime(100));frames();expect(mockRefresh).toHaveBeenCalledTimes(32);
+});
+
+it('finishes both ripple pairs before rotating and captures only the venue change',()=>{
+ const cluster=fixture(0);cluster.timeStatus='now';
+ cluster.venues.push({...cluster.venues[0],locationKey:'zz-second',venue:'Second',events:[{...cluster.venues[0].events[0],id:'second-event'}]});
+ mount([cluster],true);
+ const photo=tree.root.findAllByProps({testID:'hybrid-photo-ring'}).at(-1)!;
+ act(()=>photo.props.onLayout({nativeEvent:{layout:{y:24,height:42.3}}}));
+ const origin=Date.now();
+ const advanceTo=(ms:number)=>act(()=>jest.advanceTimersByTime(origin+ms-Date.now()));
+ const label=()=>tree.root.findAllByProps({testID:'hybrid-cluster-marker'}).at(-1)!.props.accessibilityLabel;
+ advanceTo(40);mockRefresh.mockClear();
+ expect(tree.root.findAllByType('CircleLayer' as any)).toHaveLength(2);
+ for(const ms of [700,1140,1320,1540,2300,2700,2819]){
+  advanceTo(ms);expect(label()).toContain('Venue 0,');expect(mockRefresh).not.toHaveBeenCalled();
+ }
+ advanceTo(2820);expect(label()).toContain('Second,');
+ // Both native transitions have already faded to zero during the swap.
+ for(const layer of tree.root.findAllByType('CircleLayer' as any))expect(layer.props.style.circleStrokeOpacity).toBe(0);
+ advanceTo(2852);expect(mockRefresh).toHaveBeenCalledTimes(1);mockRefresh.mockClear();
+ advanceTo(3040);expect(label()).toContain('Second,');expect(mockRefresh).not.toHaveBeenCalled();
+ // A normal callout/activity pause cancels the shared clock; resume starts fresh.
+ act(()=>tree.update(show([cluster],false,true)));frames();mockRefresh.mockClear();
+ act(()=>jest.advanceTimersByTime(6000));expect(label()).toContain('Second,');expect(mockRefresh).not.toHaveBeenCalled();
+ act(()=>tree.update(show([cluster],true,false)));const resumed=Date.now();
+ act(()=>jest.advanceTimersByTime(2819));expect(label()).toContain('Second,');
+ act(()=>jest.advanceTimersByTime(1));expect(Date.now()-resumed).toBe(2820);expect(label()).toContain('Venue 0,');
+});
+
+it('keeps native paint targets stable during unrelated renders and disables ripples for reduced motion',()=>{
+ const rotation=jest.fn();
+ const halo=(reduceMotion=false)=><HybridMapHalo id="fixture" coordinate={[-63.1,46.2]} radius={21.15} translate={[0,0]} timing="today" active reduceMotion={reduceMotion} onVenueRotation={rotation}/>;
+ act(()=>{tree=renderer.create(halo());});
+ act(()=>jest.advanceTimersByTime(400));
+ const layers=tree.root.findAllByType('CircleLayer' as any).map(l=>l.props.style);
+ const shape=tree.root.findByType('ShapeSource' as any).props.shape;
+ act(()=>tree.update(halo()));
+ expect(tree.root.findByType('ShapeSource' as any).props.shape).toBe(shape);
+ tree.root.findAllByType('CircleLayer' as any).forEach((l,i)=>expect(l.props.style).toBe(layers[i]));
+ expect(layers[1].circleRadiusTransition.delay).toBe(220);
+ expect(layers[0].circleRadius).toBeGreaterThan(layers[1].circleRadius);
+ act(()=>tree.update(halo(true)));
+ expect(tree.root.findAllByType('CircleLayer' as any).map(l=>l.props.style.circleStrokeOpacity)).toEqual([.25,0]);
+ act(()=>jest.advanceTimersByTime(10000));expect(rotation).not.toHaveBeenCalled();
 });

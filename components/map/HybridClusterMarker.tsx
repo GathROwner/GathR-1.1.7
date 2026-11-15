@@ -20,6 +20,7 @@ type Props = {
   snapshotVisible?: boolean;
   onSnapshotChange?: () => void;
   onPhotoLayout?: (layout: { y: number; height: number }) => void;
+  registerPulseRotation?: (advance: (() => void) | null) => void;
 };
 const p = (value: number) => value * .9;
 
@@ -43,7 +44,7 @@ function FriendBadge({ count }: { count: number }) {
 }
 
 /** Presentation only. Cluster activation belongs to the native map annotation. */
-export default function HybridClusterMarker({ cluster, isActive, isSelected, isReady, isProcessing, reduceMotionEnabled, categoryIcon, snapshotMode = false, snapshotVisible = true, onSnapshotChange, onPhotoLayout }: Props) {
+export default function HybridClusterMarker({ cluster, isActive, isSelected, isReady, isProcessing, reduceMotionEnabled, categoryIcon, snapshotMode = false, snapshotVisible = true, onSnapshotChange, onPhotoLayout, registerPulseRotation }: Props) {
   // A venue engagement must not rebuild every other marker's presentation.
   const venueInteractions = useClusterInteractionStore(useShallow(state =>
     cluster.venues.map(venue => state.interactions.get(venue.locationKey))));
@@ -70,9 +71,18 @@ export default function HybridClusterMarker({ cluster, isActive, isSelected, isR
 
   useEffect(() => {
     if (!isActive || reduceMotionEnabled || venues.length < 2 || isSelected || (snapshotMode && !snapshotVisible)) return;
-    const timer = setInterval(() => setActiveKey(key => { const at = Math.max(0, venues.findIndex(v => v.key === key)); return venues[(at + 1) % venues.length].key; }), 3000);
+    const advance = () => setActiveKey(key => { const at = Math.max(0, venues.findIndex(v => v.key === key)); return venues[(at + 1) % venues.length].key; });
+    // Native halos own the quiet window. Do not run an independent venue timer
+    // that can replace a bitmap halfway through an outward pulse.
+    if (registerPulseRotation) {
+      registerPulseRotation(advance);
+      return () => registerPulseRotation(null);
+    }
+    const interval = cluster.timeStatus === 'future' ? 3000
+      : HYBRID_PULSE.pairsPerVenue * (HYBRID_PULSE.durationMs + HYBRID_PULSE.pauseMs + HYBRID_PULSE.resetMs);
+    const timer = setInterval(advance, interval);
     return () => clearInterval(timer);
-  }, [venueKey, venues, isActive, isSelected, reduceMotionEnabled, snapshotMode, snapshotVisible]);
+  }, [venueKey, venues, isActive, isSelected, reduceMotionEnabled, snapshotMode, snapshotVisible, registerPulseRotation, cluster.timeStatus]);
   useEffect(() => {
     pulse.stopAnimation(); pulse.setValue(0);
     if (snapshotMode || !isActive || reduceMotionEnabled || cluster.timeStatus === 'future') return;
@@ -121,7 +131,14 @@ export default function HybridClusterMarker({ cluster, isActive, isSelected, isR
       </View>)}
       </View>
       <View testID="hybrid-photo-ring" onLayout={e => onPhotoLayout?.({ y: e.nativeEvent.layout.y, height: e.nativeEvent.layout.height })} style={{ width: ringSize, height: ringSize, marginTop: geometry.topGap, marginBottom: geometry.bottomGap }}>
-        {!snapshotMode && <Animated.View style={[StyleSheet.absoluteFillObject, { borderRadius: center, borderWidth: p(3), borderColor: timing, opacity: reduceMotionEnabled || !isActive || cluster.timeStatus === 'future' ? .25 : pulse.interpolate({ inputRange: [0, 1], outputRange: [HYBRID_PULSE.opacity, 0] }), transform: [{ scale: pulse.interpolate({ inputRange: [0, 1], outputRange: [1, HYBRID_PULSE.scale] }) }] }]} />}
+        {!snapshotMode && <>
+          <Animated.View style={[StyleSheet.absoluteFillObject, { borderRadius: center, borderWidth: p(3), borderColor: timing, opacity: reduceMotionEnabled || !isActive || cluster.timeStatus === 'future' ? .25 : pulse.interpolate({ inputRange: [0, 1], outputRange: [HYBRID_PULSE.opacity, 0] }), transform: [{ scale: pulse.interpolate({ inputRange: [0, 1], outputRange: [1, HYBRID_PULSE.scale] }) }] }]} />
+          {!reduceMotionEnabled && isActive && cluster.timeStatus !== 'future' && <Animated.View style={[StyleSheet.absoluteFillObject, {
+            borderRadius: center, borderWidth: p(3), borderColor: timing,
+            opacity: pulse.interpolate({ inputRange: [0, HYBRID_PULSE.trailingDelayMs / HYBRID_PULSE.durationMs, (HYBRID_PULSE.trailingDelayMs + 1) / HYBRID_PULSE.durationMs, (HYBRID_PULSE.trailingDelayMs + HYBRID_PULSE.trailingDurationMs) / HYBRID_PULSE.durationMs, 1], outputRange: [0, 0, HYBRID_PULSE.trailingOpacity, 0, 0] }),
+            transform: [{ scale: pulse.interpolate({ inputRange: [0, HYBRID_PULSE.trailingDelayMs / HYBRID_PULSE.durationMs, (HYBRID_PULSE.trailingDelayMs + HYBRID_PULSE.trailingDurationMs) / HYBRID_PULSE.durationMs, 1], outputRange: [1, 1, HYBRID_PULSE.trailingScale, HYBRID_PULSE.trailingScale] }) }],
+          }]} />}
+        </>}
         {(!snapshotMode || snapshotVisible) && <Segments diameter={ringSize} count={rings} active={index} />}
         <View testID="hybrid-photo-frame" style={[s.photo, cluster.interestLevel === 'high' && s.interestPhoto, { left: geometry.stroke, top: geometry.stroke, width: photoSize, height: photoSize, borderRadius: photoSize / 2 }]}>
           {current.photo && failedPhoto !== current.photo ? (snapshotMode && !snapshotVisible ? null : <Image testID="hybrid-venue-photo" source={{ uri: current.photo }} fadeDuration={0} style={{ width: photoSize - p(2), height: photoSize - p(2) }} resizeMode="cover" onLoad={onSnapshotChange} onError={() => setFailedPhoto(current.photo)} />) : snapshotMode ? <HybridSummaryImage visible={snapshotVisible} graphic={countGraphic(initials, p(14), '#143247')} onLoad={onSnapshotChange} /> : <Text maxFontSizeMultiplier={1.2} style={s.initials}>{initials}</Text>}
