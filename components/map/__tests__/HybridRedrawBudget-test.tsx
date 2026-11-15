@@ -120,8 +120,8 @@ it('uses fresh hidden native layers for a late photo load and never resumes the 
  mount([cluster],true);
  act(()=>tree.root.findAllByProps({testID:'hybrid-photo-ring'}).at(-1)!.props.onLayout({nativeEvent:{layout:{y:24,height:42.3}}}));frames();
  act(()=>jest.advanceTimersByTime(400));mockRefresh.mockClear();
+ for(const l of tree.root.findAllByType('CircleLayer' as any)){expect(l.props.style.circleStrokeOpacity).toBe(0);expect(l.props.style.circleRadius).toBeCloseTo(18.45);}
  const oldIds=tree.root.findAllByType('CircleLayer' as any).map(l=>l.props.id);
- expect(tree.root.findAllByType('CircleLayer' as any)[0].props.style.circleRadius).toBeGreaterThan(30);
  const loaded=tree.root.findAllByProps({testID:'hybrid-venue-photo'}).at(-1)!.props.onLoad;
  act(()=>loaded());
  const reset=tree.root.findAllByType('CircleLayer' as any);
@@ -146,6 +146,7 @@ it('ignores photo events from the previous venue and cancels pending capture wor
  mount([cluster],true);
  act(()=>tree.root.findAllByProps({testID:'hybrid-photo-ring'}).at(-1)!.props.onLayout({nativeEvent:{layout:{y:24,height:42.3}}}));frames();
  const previous=tree.root.findAllByProps({testID:'hybrid-venue-photo'}).at(-1)!.props;
+ act(()=>previous.onLoad());frames();
  act(()=>jest.advanceTimersByTime(2820));frames();mockRefresh.mockClear();
  const current=tree.root.findAllByProps({testID:'hybrid-venue-photo'}).at(-1)!.props;
  expect(current.source.uri).toBe('https://fixture.invalid/second.webp');

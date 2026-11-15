@@ -32,6 +32,7 @@ export default function HybridMapAnnotation(props: Props) {
   const recapture = useRef(false);
   const [haloRevision, setHaloRevision] = useState(0);
   const [snapshotReady, setSnapshotReady] = useState(false);
+  const [venuePhotoReady, setVenuePhotoReady] = useState(false);
   const [size, setSize] = useState({ width: 1, height: 1 });
   const [photo, setPhoto] = useState({ y: 0, height: 0 });
   const measuredSize = useRef(size);
@@ -102,7 +103,7 @@ export default function HybridMapAnnotation(props: Props) {
     {!compact && photo.height > 0 && <HybridMapHalo
       key={`${id}-presentation-${haloRevision}-${props.isActive && !isSelected ? 'active' : 'rest'}`}
       id={`${id}-presentation-${haloRevision}-${props.isActive && !isSelected ? 'active' : 'rest'}`}
-      coordinate={coordinate} radius={photo.height / 2} hidden={!snapshotReady}
+      coordinate={coordinate} radius={photo.height / 2} hidden={!snapshotReady || !venuePhotoReady}
       translate={[dockX, dockY - (size.height - photo.y - photo.height / 2)]}
       timing={cluster.timeStatus} active={props.isActive && !isSelected} reduceMotion={props.reduceMotionEnabled}
       onVenueRotation={coordinateVenueRotation ? advanceVenue : undefined} />}
@@ -126,6 +127,7 @@ export default function HybridMapAnnotation(props: Props) {
           <HybridClusterMarker cluster={cluster} isActive={props.isActive} isSelected={isSelected} isReady={props.isReady}
             isProcessing={props.isProcessing} reduceMotionEnabled={props.reduceMotionEnabled} categoryIcon={props.categoryIcon}
             snapshotMode snapshotVisible={!compact} onSnapshotChange={refresh} onPhotoLayout={measurePhoto}
+            onPhotoReady={setVenuePhotoReady}
             registerPulseRotation={coordinateVenueRotation ? registerPulseRotation : undefined} />
         </PuckMarkerMeasurement>
       </View>
