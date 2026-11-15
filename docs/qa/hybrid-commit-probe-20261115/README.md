@@ -31,3 +31,8 @@ native visual issue. Publication is held pending a short recording showing the
 actual jump across venue changes. The next diagnostic needs to distinguish a
 skipped wave reset from a photo/snapshot handoff or native paint interruption.
 No native map interaction was performed. Current published OTA remains 01a1e16a.
+
+The recording subsequently arrived and was reviewed. See
+[the video-guided final candidate](../hybrid-video-20261115/README.md), which
+extends this commit-order repair with separately staged native transition
+configuration. The standalone e35d07e candidate was not published by itself.
