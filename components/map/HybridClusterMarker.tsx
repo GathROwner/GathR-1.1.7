@@ -21,6 +21,7 @@ type Props = {
   onSnapshotChange?: () => void;
   onPhotoLayout?: (layout: { y: number; height: number }) => void;
   registerPulseRotation?: (advance: (() => void) | null) => void;
+  onPhotoReady?: (ready: boolean) => void;
 };
 const p = (value: number) => value * .9;
 
@@ -44,7 +45,7 @@ function FriendBadge({ count }: { count: number }) {
 }
 
 /** Presentation only. Cluster activation belongs to the native map annotation. */
-export default function HybridClusterMarker({ cluster, isActive, isSelected, isReady, isProcessing, reduceMotionEnabled, categoryIcon, snapshotMode = false, snapshotVisible = true, onSnapshotChange, onPhotoLayout, registerPulseRotation }: Props) {
+export default function HybridClusterMarker({ cluster, isActive, isSelected, isReady, isProcessing, reduceMotionEnabled, categoryIcon, snapshotMode = false, snapshotVisible = true, onSnapshotChange, onPhotoLayout, registerPulseRotation, onPhotoReady }: Props) {
   // A venue engagement must not rebuild every other marker's presentation.
   const venueInteractions = useClusterInteractionStore(useShallow(state =>
     cluster.venues.map(venue => state.interactions.get(venue.locationKey))));
@@ -108,12 +109,14 @@ export default function HybridClusterMarker({ cluster, isActive, isSelected, isR
   const initials = current?.venue.venue.split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]).join('').toUpperCase() ?? '';
   const photoIdentity = current ? `${current.key}|${current.photo}` : '';
   const visiblePhotoIdentity = snapshotMode && !snapshotVisible ? '' : photoIdentity;
-  const photoAppearance = useMemo(() => ({ identity: visiblePhotoIdentity }), [visiblePhotoIdentity]);
+  const photoFailed = !!current?.photo && failedPhoto === current.photo;
+  const photoAppearance = useMemo(() => ({ identity: visiblePhotoIdentity, failed: photoFailed }), [visiblePhotoIdentity, photoFailed]);
   const visiblePhoto = useRef<object | null>(null);
   useLayoutEffect(() => {
     visiblePhoto.current = visiblePhotoIdentity ? photoAppearance : null;
+    onPhotoReady?.(!!visiblePhotoIdentity && (!current?.photo || photoFailed));
     return () => { visiblePhoto.current = null; };
-  }, [visiblePhotoIdentity, photoAppearance]);
+  }, [visiblePhotoIdentity, photoAppearance, current?.photo, photoFailed, onPhotoReady]);
   const opacity = !isReady ? .4 : isProcessing ? .6 : 1;
   // Only visible pixels invalidate the annotation bitmap. Offscreen venue data,
   // engagement timestamps and identical cluster objects do not need a capture.
@@ -150,7 +153,7 @@ export default function HybridClusterMarker({ cluster, isActive, isSelected, isR
         {(!snapshotMode || snapshotVisible) && <Segments diameter={ringSize} count={rings} active={index} />}
         <View testID="hybrid-photo-frame" style={[s.photo, cluster.interestLevel === 'high' && s.interestPhoto, { left: geometry.stroke, top: geometry.stroke, width: photoSize, height: photoSize, borderRadius: photoSize / 2 }]}>
           {current.photo && failedPhoto !== current.photo ? (snapshotMode && !snapshotVisible ? null : <Image key={photoIdentity} testID="hybrid-venue-photo" source={{ uri: current.photo }} fadeDuration={0} style={{ width: photoSize - p(2), height: photoSize - p(2) }} resizeMode="cover"
-            onLoad={() => { if (visiblePhoto.current === photoAppearance) onSnapshotChange?.(); }}
+            onLoad={() => { if (visiblePhoto.current === photoAppearance) { onPhotoReady?.(true); onSnapshotChange?.(); } }}
             onError={() => { if (visiblePhoto.current === photoAppearance) setFailedPhoto(current.photo); }} />) : snapshotMode ? <HybridSummaryImage visible={snapshotVisible} graphic={countGraphic(initials, p(14), '#143247')} onLoad={onSnapshotChange} /> : <Text maxFontSizeMultiplier={1.2} style={s.initials}>{initials}</Text>}
         </View>
         {(!snapshotMode || snapshotVisible) && <Svg width={ringSize} height={ringSize} style={[StyleSheet.absoluteFill, { overflow: 'visible' }]} pointerEvents="none">

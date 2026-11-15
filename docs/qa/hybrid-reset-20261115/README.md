@@ -14,6 +14,11 @@ capture without revealing the halo in between. Pausing/resuming also changes the
 halo's presentation key, so it cannot reuse the prior active native layer object.
 Tap annotation IDs, source coordinates, hit queries and callout guards are unchanged.
 
+The current visible photo must also report onLoad before a ripple can start.
+A failed photo switches to the existing initials fallback. A slower download
+therefore leaves the halo hidden instead of revealing a ripple before the photo
+arrives. Photo readiness and the post-capture barrier must both be satisfied.
+
 Photo views are keyed by venue/photo identity. Load/error callbacks are scoped
 to the committed visible appearance; events from a previous or hidden image
 cannot refresh the current venue. This includes returning to the same venue on
@@ -40,7 +45,7 @@ New regressions exercise a late current-photo load during an outward ripple,
 fresh hidden native IDs/base radii before capture, recapture during settling,
 stale previous-photo callbacks and unmount cancellation. The fresh-ID test was
 also run against the untouched live d6c11f9 source and failed at the expected
-retained-ID assertion. The temporary test fixture was restored exactly and that
+retained-ID assertion (before adding the separate photo-ready guard). The temporary test fixture was restored exactly and that
 checkout verified clean before release assembly.
 
 Actual RN markers and actual accepted/candidate native circle props were rendered
