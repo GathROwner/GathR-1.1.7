@@ -1,0 +1,22 @@
+{
+  "reference": "791c4cb",
+  "files": {
+    "components/map/HybridClusterMarker.tsx": "01863be708f5d2c7b4d1317bc24879d80b939482b0ef078ebb8387dad76a103c",
+    "components/map/HybridMapAnnotation.tsx": "84c593bb4dc775e7c7449bae2b7b96067e136c3c32f4793ca901e8c31270e1e5",
+    "components/map/HybridSummaryImage.tsx": "8a2ee19746f3dcee3d83b5d6fdb8fdd0b6dcf77cc5ab5026da4ccc3d9fea60bd",
+    "components/map/HybridCompactCount.tsx": "2aa9827fd874f20704dbeb683ab9d7724cb956b54fbab68d9c316fc49b486d22",
+    "components/map/MapLegend.tsx": "7e88a8d17ce217be0c6209a6b5e9bcd0fbf7c27c2dee792b7859844e1eb7cade",
+    "utils/hybridClusterPresentation.ts": "dc0dc811898d1af99c877480dcf0d640fc2e0b9f68dc92863d0eb593db824bce",
+    "utils/hybridRingGeometry.ts": "be3bb9b7e5ccf3fad675afb8b1d73402c468377f4f4f3e7049786c93abc3a30c",
+    "utils/hybridSummaryGraphic.ts": "3b141bba0ed39b4a141decddb81debca7590e54f4ab54b331edd269b82b7b4ff",
+    "utils/hybridMarkerGeometry.ts": "670016ab907f418589cfc177769890973e8332cf35dad987ae8ade78acd8d265",
+    "utils/hybridIconPaths.ts": "d67df9cf6359973a2adc0c3490ecf16193bec76ef8279ff7cc4a9c5787a74e1e"
+  },
+  "targets": [
+    "ghr-ma",
+    "ghr-mi",
+    "ghr-mp",
+    "ghr-md"
+  ],
+  "method": "Exact git blob content equality; reuses actual RN Web rendered fixtures and previously user-accepted physical iPhone Hybrid design. Legacy surrounding map screen is preserved. Native target adoption is not inferred."
+}

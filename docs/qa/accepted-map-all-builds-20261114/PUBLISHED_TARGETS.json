@@ -1,0 +1,57 @@
+[
+  {
+    "channel": "production",
+    "platform": "android",
+    "runtime": "1.1.20",
+    "commit": "9ccc05253d4660f0c66d66ab05054db4c407816f",
+    "group": "c0ef8f7c-9b54-4681-882b-c68212b282db",
+    "update": "01a1dc9f-fa0f-7484-aa83-76fb8bf69381",
+    "moduleCount": 2582,
+    "finalEasAssetCount": 112,
+    "deviceAdoptionVerified": false
+  },
+  {
+    "channel": "preview",
+    "platform": "ios",
+    "runtime": "1.1.10",
+    "commit": "b4ec67c50853840ce5c294656edaa33f2c89b976",
+    "group": "8501bac9-3343-4622-ae03-f82bbfcd9d3d",
+    "update": "01a1dc9d-b40d-7202-a157-9c6a9d349d0f",
+    "moduleCount": 2552,
+    "finalEasAssetCount": 112,
+    "deviceAdoptionVerified": false
+  },
+  {
+    "channel": "preview",
+    "platform": "android",
+    "runtime": "1.1.10",
+    "commit": "ea9a046b49b1b6d88110ffedacb3a0af28f7bd3c",
+    "group": "7e0938fc-2a4b-4f70-a20d-64da24edd9f4",
+    "update": "01a1dc9b-a52e-71f7-93d9-5ddba0fb6ea6",
+    "moduleCount": 2746,
+    "finalEasAssetCount": 128,
+    "deviceAdoptionVerified": false
+  },
+  {
+    "channel": "development",
+    "platform": "ios",
+    "runtime": "1.1.10",
+    "commit": "0c75b85914336a8bf299f02fc47876b84aa2ba31",
+    "group": "98f220cd-38e3-4c52-afe8-a42cade201d3",
+    "update": "01a1dc9b-8176-75f3-8817-20074b26419f",
+    "moduleCount": 2430,
+    "finalEasAssetCount": 119,
+    "deviceAdoptionVerified": false
+  },
+  {
+    "channel": "development",
+    "platform": "android",
+    "runtime": "1.1.10",
+    "commit": "0c75b85914336a8bf299f02fc47876b84aa2ba31",
+    "group": "27552735-b948-4bde-b8b9-910536bce05d",
+    "update": "01a1dca0-4950-7d01-ac0f-949301ade2d6",
+    "moduleCount": 2429,
+    "finalEasAssetCount": 119,
+    "deviceAdoptionVerified": false
+  }
+]

@@ -1,5 +1,7 @@
 # Accepted UI baseline and list-filter distribution
 
+Current status: Craig subsequently accepted the Hybrid tap improvement and requested it on all builds. [The all-target release report](../accepted-map-all-builds-20261114/README.md) and the updated `VERIFIED_MATRIX.json` now record all six targets carrying the accepted Hybrid feature on their compatible source/runtime baselines. The remainder below records the earlier list-filter distribution.
+
 Craig accepted the current UI as the new baseline and requested the list-filter update on Android Production, both Previews and existing Development builds. The accepted source checkpoint is `baseline/gathr-ui-20261114` at `8840bd45242cd3d2f595fe05644a5c92a4599402`.
 
 Production iOS first received the list-filter fix at `82ca96b5ce75fd91bbdcef7095ce30a225ae8f8a`; the subsequent additive Hybrid redraw update is `ef9c17fbe626e9242081b3ccf112fffd59343679`. The original accepted UI checkpoint is retained. Android Production now carries the canonical checkpoint. Existing Preview and Development OTA targets remain on runtime 1.1.10; each received a narrow list-filter backport from its exact live source, preserving native configuration, lockfile, Firebase environment and existing features. These backports do not claim to distribute the full new Hybrid design to those older source baselines.

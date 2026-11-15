@@ -1,0 +1,7 @@
+# Visual review
+
+Independently inspected the actual-component RN Web rendered marker grid and open map selector from the accepted fast-tap baseline: `artifacts/hybrid-fast-tap-20261114/ios-after/markers.png` and `selector.png`. The marker grid covers single, 2/3/4/19/40/126 venues, no-photo fallback, selected marker, friend badges, category overflow. Photos, category pills, segmented rings, venue counts and badges remain readable and separated; the selector has the accepted two-row style controls and Hybrid selected.
+
+Exact git blob comparisons against iOS Production `791c4cb` pass for all four rollout candidates across Hybrid marker/annotation/summary/compact components, selector, geometry, SVG and presentation helpers. See `VISUAL_SOURCE_EQUIVALENCE.json` in the artifact directory. This reuses equivalent rendered component evidence; it is not a newly captured native screen on each target. The physical iPhone tap behavior was separately accepted by Craig. New target adoption remains unverified until a compatible installation shows its exact OTA footer.
+
+Preview Android and Development retain their existing surrounding map implementation; the backport adds the accepted Hybrid design and delivery path without upgrading native dependencies or unrelated app screens. Their old baselines do not acquire the newer puck-clearance feature as part of this tap rollout. iOS Preview retains its existing puck behavior with the accepted current helper code. Android uses the unchanged native annotation tap route; only iOS uses the earlier completed-tap delivery.

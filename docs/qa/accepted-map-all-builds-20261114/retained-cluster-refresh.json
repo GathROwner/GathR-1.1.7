@@ -1,0 +1,15 @@
+{
+  "method": "Actual store with retained events/clusters, absent React Query entry, old lastFetchedAt and controlled pending refresh; no real network or device timings",
+  "duringRefresh": {
+    "cachedEvents": 1,
+    "viewportEvents": 1,
+    "clusters": 1,
+    "isLoading": true,
+    "mapMarkerRenderGate": false
+  },
+  "afterRefresh": {
+    "isLoading": false,
+    "clusters": 1
+  },
+  "sourceLimits": "Root foreground fetchQuery callback alone does not use this loading path; tab post-switch prefetchIfStale or a store fetchEvents caller is required."
+}
