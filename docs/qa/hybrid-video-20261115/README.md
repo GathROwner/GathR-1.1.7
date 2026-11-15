@@ -52,3 +52,16 @@ documents separate radius/stroke transition properties and millisecond timing;
 [Mapbox transitions](https://docs.mapbox.com/style-spec/reference/transition/)
 documents property-specific transition options. These explain the API contract,
 not the cause of the user's recorded artifact.
+
+Published on iOS Production runtime 1.1.20 from exact live d54228d. Release
+source d89cbc2bf7114e3042939c141478e677bf1c8926, group
+6086fae0-5b8d-4f17-b772-85d1f40f6996, update
+01a1e186-9f7c-71db-bc5f-74b4cb01f6e2. Independent view/list readbacks confirm
+platform, runtime, source and newest iOS update. Clean export: 2579 modules,
+112 final EAS assets. Release validation passed 260 tests across 33 suites, with
+two explicit existing skips (opt-in benchmark and independently reproduced stale
+cache-key assertion). TypeScript passed; lint zero errors/226 existing warnings.
+Native/auth/social/Mapbox preflights passed. No other OTA target was changed.
+The separate e35d07e candidate was incorporated into the final staged repair,
+not published as an intermediate update. Native after-playback and adoption of
+this new update remain unverified.

@@ -1,0 +1,18 @@
+{
+  "commit": "d89cbc2bf7114e3042939c141478e677bf1c8926",
+  "base": "d54228da5e6ff224744c520d7d91b99398e3e7a7",
+  "feature": "1c73000",
+  "runtimeSourceEquivalent": true,
+  "orderedResetScopeVerified": true,
+  "onlyOneProductionSourceChanged": true,
+  "waveConstantsUnchanged": true,
+  "nativeBeforeRecordingReviewed": true,
+  "nativeSkipObservedWithUnchangedPhoto": true,
+  "comparisonImageSha256": "cec7db454daac3baec4498989497bf6caf2b49843896bf5bc3babc97ccec909d",
+  "independentlyViewed": true,
+  "nativePaintEndpointsUnchanged": true,
+  "layoutAndPaletteReviewed": true,
+  "method": "Actual RN components; baseline and candidate native paint props; SVG bridge frozen at 560ms; no native map interaction",
+  "nativeAfterMotionVerified": false,
+  "noNativeMapInteraction": true
+}

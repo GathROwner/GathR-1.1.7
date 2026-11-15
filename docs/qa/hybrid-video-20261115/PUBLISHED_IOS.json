@@ -1,0 +1,41 @@
+{
+  "channel": "production",
+  "platform": "ios",
+  "runtime": "1.1.20",
+  "commit": "d89cbc2bf7114e3042939c141478e677bf1c8926",
+  "group": "6086fae0-5b8d-4f17-b772-85d1f40f6996",
+  "update": "01a1e186-9f7c-71db-bc5f-74b4cb01f6e2",
+  "moduleCount": 2579,
+  "finalEasAssetCount": 112,
+  "serverVerified": true,
+  "newestPlatformVerified": true,
+  "deviceAdoptionVerified": false,
+  "nativeBeforeRecordingReviewed": true,
+  "nativeSkipObservedWithUnchangedPhoto": true,
+  "nativeAfterMotionVerified": false,
+  "preciseNativeCauseInstrumented": false,
+  "waveConfigurationUnchanged": true,
+  "orderedStages": [
+    "outward",
+    "disarmed",
+    "collapsed",
+    "armed"
+  ],
+  "reactCommitPrecedesNextStageTimer": true,
+  "acceptedWaveDelayMs": 150,
+  "acceptedWaveDurationsMs": [
+    1100,
+    750
+  ],
+  "intendedCycleMs": 1500,
+  "photoSnapshotGuardsRetained": true,
+  "automaticStartupTimingRetained": true,
+  "testsPassed": 260,
+  "testsSkipped": 2,
+  "existingBaselineAssertionExcluded": true,
+  "typescriptExit": 0,
+  "lintErrors": 0,
+  "lintWarnings": 226,
+  "verifiedAtUTC": "2026-11-15T23:25:36.367Z",
+  "dashboard": "https://expo.dev/accounts/craigb/projects/gathr/updates/6086fae0-5b8d-4f17-b772-85d1f40f6996"
+}
