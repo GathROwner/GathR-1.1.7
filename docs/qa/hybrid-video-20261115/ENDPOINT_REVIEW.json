@@ -1,0 +1,30 @@
+{
+  "method": "Actual RN components; baseline and candidate native paint props; SVG bridge frozen at 560ms; no native map interaction",
+  "cases": [
+    {
+      "case": "after-now-light",
+      "nativePaintEndpointsIdentical": true,
+      "cycleMs": 1500,
+      "delayMs": 150
+    },
+    {
+      "case": "after-now-dark",
+      "nativePaintEndpointsIdentical": true,
+      "cycleMs": 1500,
+      "delayMs": 150
+    },
+    {
+      "case": "after-today-light",
+      "nativePaintEndpointsIdentical": true,
+      "cycleMs": 1500,
+      "delayMs": 150
+    },
+    {
+      "case": "after-today-dark",
+      "nativePaintEndpointsIdentical": true,
+      "cycleMs": 1500,
+      "delayMs": 150
+    }
+  ],
+  "nativeAfterMotionVerified": false
+}

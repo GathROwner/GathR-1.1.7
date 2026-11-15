@@ -88,27 +88,27 @@ it('finishes both ripple pairs before rotating and captures only the venue chang
  const label=()=>tree.root.findAllByProps({testID:'hybrid-cluster-marker'}).at(-1)!.props.accessibilityLabel;
  advanceTo(40);mockRefresh.mockClear();
  expect(tree.root.findAllByType('CircleLayer' as any)).toHaveLength(2);
- for(const ms of [700,1140,1320,1540,2300,2700,2819]){
+ for(const ms of [700,1140,1320,1540,2300,2700,2859]){
   advanceTo(ms);expect(label()).toContain('Venue 0,');expect(mockRefresh).not.toHaveBeenCalled();
  }
- advanceTo(2820);expect(label()).toContain('Second,');
+ advanceTo(2860);expect(label()).toContain('Second,');
  // Both native transitions have already faded to zero during the swap.
  for(const layer of tree.root.findAllByType('CircleLayer' as any))expect(layer.props.style.circleStrokeOpacity).toBe(0);
- advanceTo(2852);expect(mockRefresh).toHaveBeenCalledTimes(1);mockRefresh.mockClear();
+ advanceTo(2892);expect(mockRefresh).toHaveBeenCalledTimes(1);mockRefresh.mockClear();
  advanceTo(3040);expect(label()).toContain('Second,');expect(mockRefresh).not.toHaveBeenCalled();
  // A normal callout/activity pause cancels the shared clock; resume starts fresh.
  act(()=>tree.update(show([cluster],false,true)));frames();mockRefresh.mockClear();
  act(()=>jest.advanceTimersByTime(6000));expect(label()).toContain('Second,');expect(mockRefresh).not.toHaveBeenCalled();
  act(()=>tree.update(show([cluster],true,false)));const resumed=Date.now();
- tick(2819);expect(label()).toContain('Second,');
- act(()=>jest.advanceTimersByTime(1));expect(Date.now()-resumed).toBe(2820);expect(label()).toContain('Venue 0,');
+ tick(2859);expect(label()).toContain('Second,');
+ act(()=>jest.advanceTimersByTime(1));expect(Date.now()-resumed).toBe(2860);expect(label()).toContain('Venue 0,');
 });
 
 it('keeps native paint targets stable during unrelated renders and disables ripples for reduced motion',()=>{
  const rotation=jest.fn();
  const halo=(reduceMotion=false)=><HybridMapHalo id="fixture" coordinate={[-63.1,46.2]} radius={21.15} translate={[0,0]} timing="today" active reduceMotion={reduceMotion} onVenueRotation={rotation}/>;
  act(()=>{tree=renderer.create(halo());});
- act(()=>jest.advanceTimersByTime(400));
+ tick(400);
  const layers=tree.root.findAllByType('CircleLayer' as any).map(l=>l.props.style);
  const shape=tree.root.findByType('ShapeSource' as any).props.shape;
  act(()=>tree.update(halo()));
@@ -153,7 +153,7 @@ it('ignores photo events from the previous venue and cancels pending capture wor
  act(()=>tree.root.findAllByProps({testID:'hybrid-photo-ring'}).at(-1)!.props.onLayout({nativeEvent:{layout:{y:24,height:42.3}}}));frames();
  const previous=tree.root.findAllByProps({testID:'hybrid-venue-photo'}).at(-1)!.props;
  act(()=>previous.onLoad());frames();
- tick(2820);frames();mockRefresh.mockClear();
+ tick(2860);frames();mockRefresh.mockClear();
  const current=tree.root.findAllByProps({testID:'hybrid-venue-photo'}).at(-1)!.props;
  expect(current.source.uri).toBe('https://fixture.invalid/second.webp');
  const ids=tree.root.findAllByType('CircleLayer' as any).map(l=>l.props.id);
@@ -164,20 +164,27 @@ it('ignores photo events from the previous venue and cancels pending capture wor
  expect(mockRefresh).not.toHaveBeenCalled();
 });
 
-it('commits a collapsed target after an 80 ms busy window before scheduling another outward wave',()=>{
+it('disarms, collapses and re-arms in separate commits even when reset callbacks are coalesced',()=>{
  act(()=>{tree=renderer.create(<HybridMapHalo id="busy-window" coordinate={[-63.1,46.2]} radius={21.15} translate={[0,0]} timing="now" active reduceMotion={false}/>);});
- act(()=>jest.advanceTimersByTime(40));
+ tick(80);
  const outward=tree.root.findAllByType('CircleLayer' as any)[0].props.style;
  expect(outward.circleRadius).toBeCloseTo(40.59);
- act(()=>jest.advanceTimersByTime(1420));
- // Reset at 1500 and the old chained restart at 1540 used to collapse into
- // the same React batch: `false`, then `true`, with no native reset payload.
- act(()=>jest.advanceTimersByTime(80));
+ act(()=>jest.advanceTimersByTime(1340));
+ act(()=>jest.advanceTimersByTime(120));
+ const disarmed=tree.root.findAllByType('CircleLayer' as any)[0].props.style;
+ expect(disarmed.circleRadius).toBeCloseTo(40.59);
+ expect(disarmed.circleStrokeOpacity).toBe(0);
+ expect(disarmed.circleRadiusTransition.duration).toBe(0);
+ act(()=>jest.advanceTimersByTime(40));
  const reset=tree.root.findAllByType('CircleLayer' as any)[0].props.style;
  expect(reset).not.toBe(outward);expect(reset.circleRadius).toBeCloseTo(18.45);
  expect(reset.circleRadiusTransition.duration).toBe(0);
  act(()=>jest.advanceTimersByTime(39));
  expect(tree.root.findAllByType('CircleLayer' as any)[0].props.style).toBe(reset);
  act(()=>jest.advanceTimersByTime(1));
+ const armed=tree.root.findAllByType('CircleLayer' as any)[0].props.style;
+ expect(armed.circleRadius).toBeCloseTo(18.45);expect(armed.circleRadiusTransition.duration).toBe(1100);
+ expect(armed.circleStrokeOpacity).toBe(reset.circleStrokeOpacity);
+ act(()=>jest.advanceTimersByTime(40));
  expect(tree.root.findAllByType('CircleLayer' as any)[0].props.style.circleRadius).toBeCloseTo(40.59);
 });

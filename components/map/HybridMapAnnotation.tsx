@@ -142,34 +142,38 @@ export function HybridMapHalo({ id, coordinate, radius, translate, timing, activ
   onVenueRotation?: () => void;
   hidden?: boolean;
 }) {
-  const [expanded, setExpanded] = useState(false);
+  const [phase, setPhase] = useState<'collapsed' | 'armed' | 'outward' | 'disarmed'>('collapsed');
   const pairs = useRef(0);
   const animate = active && !hidden && !reduceMotion && timing !== 'future';
   useEffect(() => {
-    setExpanded(false);
+    setPhase('collapsed');
     pairs.current = 0;
   }, [animate, onVenueRotation]);
   useEffect(() => {
     if (!animate) return;
     let timer: ReturnType<typeof setTimeout>;
-    if (!expanded) {
-      // Schedule growth only AFTER the collapsed state has committed. A
-      // chained timer can otherwise batch reset+growth into unchanged `true`
-      // during a short JS stall, leaving Mapbox at its old expanded target.
-      timer = setTimeout(() => setExpanded(true), HYBRID_PULSE.resetMs);
-    } else {
+    if (phase === 'outward') {
       timer = setTimeout(() => {
         pairs.current += 1;
         if (pairs.current % HYBRID_PULSE.pairsPerVenue === 0) onVenueRotation?.();
-        timer = setTimeout(() => setExpanded(false), HYBRID_PULSE.pauseMs / 2);
+        // Reserve the same total quiet budget for three ordered commits.
+        timer = setTimeout(() => setPhase('disarmed'), HYBRID_PULSE.pauseMs / 2 - 2 * HYBRID_PULSE.resetMs);
       }, HYBRID_PULSE.durationMs + HYBRID_PULSE.pauseMs / 2);
+    } else {
+      // Configure transitions before changing paint targets. Each next timer
+      // starts only after this phase commits, so React cannot skip the reset
+      // and native paint never has to infer the order of target+duration edits.
+      const next = phase === 'disarmed' ? 'collapsed' : phase === 'collapsed' ? 'armed' : 'outward';
+      timer = setTimeout(() => setPhase(next), HYBRID_PULSE.resetMs);
     }
     return () => clearTimeout(timer);
-  }, [animate, expanded, onVenueRotation]);
+  }, [animate, phase, onVenueRotation]);
   const [longitude, latitude] = coordinate;
   const [translateX, translateY] = translate;
   const shape = useMemo(() => ({ type: 'Feature' as const, properties: {}, geometry: { type: 'Point' as const, coordinates: [longitude, latitude] } }), [longitude, latitude]);
-  const duration = animate && expanded ? HYBRID_PULSE.durationMs : 0;
+  const expanded = phase === 'outward' || phase === 'disarmed';
+  const transitionsArmed = animate && (phase === 'armed' || phase === 'outward');
+  const duration = transitionsArmed ? HYBRID_PULSE.durationMs : 0;
   const style = useMemo(() => ({
       circleRadius: (radius - 2.7) * (animate && expanded ? HYBRID_PULSE.scale : 1), circleRadiusTransition: { duration, delay: 0 },
       circleColor: 'rgba(0,0,0,0)', circleStrokeWidth: 2.7,
@@ -180,10 +184,10 @@ export function HybridMapHalo({ id, coordinate, radius, translate, timing, activ
   const trailingStyle = useMemo(() => ({
     ...style,
     circleRadius: (radius - 2.7) * (animate && expanded ? HYBRID_PULSE.trailingScale : 1),
-    circleRadiusTransition: { duration: animate && expanded ? HYBRID_PULSE.trailingDurationMs : 0, delay: animate && expanded ? HYBRID_PULSE.trailingDelayMs : 0 },
+    circleRadiusTransition: { duration: transitionsArmed ? HYBRID_PULSE.trailingDurationMs : 0, delay: transitionsArmed ? HYBRID_PULSE.trailingDelayMs : 0 },
     circleStrokeOpacity: !animate || expanded ? 0 : HYBRID_PULSE.trailingOpacity,
-    circleStrokeOpacityTransition: { duration: animate && expanded ? HYBRID_PULSE.trailingDurationMs : 0, delay: animate && expanded ? HYBRID_PULSE.trailingDelayMs : 0 },
-  }), [style, radius, animate, expanded]);
+    circleStrokeOpacityTransition: { duration: transitionsArmed ? HYBRID_PULSE.trailingDurationMs : 0, delay: transitionsArmed ? HYBRID_PULSE.trailingDelayMs : 0 },
+  }), [style, radius, animate, expanded, transitionsArmed]);
   return <Mapbox.ShapeSource id={`${id}-halo-source`} shape={shape}>
     <Mapbox.CircleLayer id={`${id}-halo`} style={style} />
     <Mapbox.CircleLayer id={`${id}-halo-trailing`} style={trailingStyle} />
