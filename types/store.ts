@@ -64,9 +64,6 @@ export interface MapState {
     outsideViewportCount: number;
     lastFetchTimestamp: string | null;
   };
-  // True after the first viewport has been partitioned (or its first request
-  // failed), so app-wide readiness work can wait for the map's initial data pass.
-  hasInitialViewportSettled: boolean;
   
   // Venue and cluster data
   clusters: Cluster[];
@@ -185,10 +182,7 @@ export interface MapState {
   getClustersForZoom: (zoom: number) => Cluster[];
   getTimeFilterCounts: (eventType: 'event' | 'special', candidates?: Event[]) => { [key in TimeFilterType]: number };
   getCategoryFilterCounts: (eventType: 'event' | 'special', candidates?: Event[]) => { [category: string]: number };
-  fetchEventDetails: (
-    eventIds: (string | number)[],
-    options?: { forceRefresh?: boolean }
-  ) => Promise<void>;
+  fetchEventDetails: (eventIds: (string | number)[]) => Promise<void>;
 
   // Viewport-aware actions
   fetchViewportEvents: (

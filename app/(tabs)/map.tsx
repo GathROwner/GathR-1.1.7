@@ -14,17 +14,14 @@
  */
 
 import React, { useEffect, useLayoutEffect, useRef, useState, useMemo, useCallback } from 'react';
-import { View, Text, StyleSheet, Animated, Dimensions, PixelRatio, TouchableOpacity, Easing, Pressable, Image, Modal, InteractionManager, GestureResponderEvent, LayoutChangeEvent, StatusBar, useWindowDimensions } from 'react-native';
+import { View, Text, StyleSheet, Animated, Dimensions, PixelRatio, TouchableOpacity, Easing, Keyboard, Pressable, Image, Modal, InteractionManager, GestureResponderEvent } from 'react-native';
 import * as Location from 'expo-location';
 import * as Haptics from 'expo-haptics';
 import MapboxGL from '@rnmapbox/maps';
-import Ionicons from '@expo/vector-icons/Ionicons';
-import MaterialIcons from '@expo/vector-icons/MaterialIcons';
+import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import { useIsFocused } from '@react-navigation/native';
-import { getDefaultHeaderHeight } from '@react-navigation/elements';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import { Platform } from 'react-native';
-import { getTabDockBottom, TAB_DOCK_EDGE_INSET, TAB_DOCK_HEIGHT } from '../../constants/tabDock';
 import { usePathname, useRouter } from 'expo-router';
 
 
@@ -49,13 +46,10 @@ import type { InterestCarouselFilter } from '../../types/store';
 import type { ComponentMeasurement } from '../../types/tutorial';
 import { filterClusterForInterestCarouselFilter } from '../../utils/interestCarouselFilterUtils';
 import { isMapCameraGestureActive } from '../../utils/mapCameraGestures';
-import { getAndroidScaleBarLeft } from '../../utils/mapScaleBarLayout';
 import { isFriendEventDetailPath } from '../../utils/friendEventLightbox';
 
 // Import components
 import FilterPills from '../../components/map/FilterPills';
-import FloatingMapSearchHeader from '../../components/map/FloatingMapSearchHeader';
-import EdgeBlur from '../../components/common/EdgeBlur';
 import MapLegend, {
   type MapLightPreset,
   type MapPerspective,
@@ -79,10 +73,7 @@ import HotspotHighlight from '../../components/map/HotspotHighlight';
 import MapTracePanel from '../../components/debug/MapTracePanel';
 import StaticDebugCallout from '../../components/map/StaticDebugCallout';
 import RouteFeatureCallout from '../../components/map/RouteFeatureCallout';
-import AreaLocationBrowser from '../../components/map/AreaLocationBrowser';
-import AreaLocationLayer from '../../components/map/AreaLocationLayer';
 import ContextualCheckInControl from '../../components/social/ContextualCheckInControl';
-import CheckInRadiusOverlay from '../../components/social/CheckInRadiusOverlay';
 import FriendCheckInBadge from '../../components/social/FriendCheckInBadge';
 import FriendEventsMapToggle from '../../components/social/FriendEventsMapToggle';
 import ExternalFriendCheckInMarkers, {
@@ -109,7 +100,6 @@ import {
 
 // Trending lightbox (flame pill + cold-start auto-open)
 import { buildTrendingEvents } from '../../utils/trendingUtils';
-import { shouldLoopGlobalLightbox } from '../../utils/lightboxNavigation';
 import {
   getTrendingLightboxImageUrl,
   openTrendingLightbox,
@@ -203,12 +193,6 @@ import {
   getTutorialModalOverlay,
   subscribeTutorialModalOverlay,
 } from '../../utils/tutorialModalOverlay';
-import { useClusterPuckLayout } from '../../hooks/useClusterPuckLayout';
-import { usePuckLocationSnapshot } from '../../hooks/usePuckLocationSnapshot';
-import { PuckDiagnostics } from '../../components/PuckDiagnostics';
-import { PUCK_DIAGNOSTICS_AVAILABLE } from '../../utils/puckDiagnostics';
-import { PuckMarkerMeasurement } from '../../components/map/PuckMarkerMeasurement';
-import type { PuckDisplacement } from '../../utils/clusterPuckLayout';
 import { useReduceMotion } from '../../hooks/useReduceMotion';
 import {
   isAreaExperienceEvent,
@@ -230,12 +214,11 @@ import {
   type RouteFeatureCalloutData,
 } from '../../utils/routeEvent';
 import {
+  buildAreaLocationFeatureCollection,
   getAreaLocationBounds,
   getAreaLocationCallout,
   getAreaLocations,
   getAreaLocationsLabel,
-  getAreaLocationGroupForPress,
-  type AreaLocationGroup,
   hasDrawableAreaLocations,
 } from '../../utils/areaEvent';
 import { buildRouteSummaryLightboxSelection } from '../../utils/routeEventLightbox';
@@ -339,6 +322,7 @@ const STARTUP_CLUSTER_MARKER_LIMIT = 12;
 const FULL_CLUSTER_MARKER_DELAY_MS = 1000;
 const RICH_CLUSTER_MARKER_DELAY_MS = Platform.OS === 'ios' ? 0 : 2000;
 const ANDROID_RICH_CLUSTER_MARKER_MIN_ZOOM = 13;
+const ANDROID_LOCATION_PUCK_MIN_ZOOM = 11.25;
 const ANDROID_FULL_CLUSTER_MARKER_HOTSPOT_SETTLE_MS = 0;
 const ANDROID_FULL_CLUSTER_MARKER_HOTSPOT_BACKUP_MS = 4000;
 const MAP_BLUR_CLEANUP_DELAY_MS = Platform.OS === 'android' ? 1000 : 0;
@@ -634,6 +618,9 @@ const getTimeBadgeColor = (timeStatus: TimeStatus): string => {
 };
 
 // Helper function to get icon for category
+// Development keeps its existing marker placement; geometry capture has no consumer here.
+const recordHybridGeometry = () => {};
+
 const getCategoryIcon = (category: string): string => {
   const categoryLower = category.toLowerCase();
 
@@ -679,19 +666,16 @@ const getCategoryIcon = (category: string): string => {
   return 'category';
 };
 
-// Keep every rich GathR venue photo readable, with a smaller size spread than the category markers.
-const GATHR_VENUE_PHOTO_DIAMETERS: Record<InterestLevel, number> = { low: 36, medium: 40, high: 44 };
-
-// Base unit used by each marker presentation, rather than a displayed diameter.
+// Helper function to get size based on interest level
 const getInterestLevelSize = (interestLevel: InterestLevel): number => {
   switch (interestLevel) {
     case 'high':
-      return 18;
+      return 18; // 50px diameter (25px radius)
     case 'medium':
-      return 15;
+      return 15; // 40px diameter (20px radius)
     case 'low':
     default:
-      return 12;
+      return 12; // 30px diameter (15px radius)
   }
 };
 
@@ -1143,7 +1127,6 @@ const buildAndroidClusterMarkerShape = (
     reduceMotionEnabled?: boolean;
     selectedClusterId: string | null;
     userInterests: string[];
-    puckOffsets?: Record<string, PuckDisplacement>;
   }
 ): AndroidClusterMarkerShape => ({
   type: 'FeatureCollection',
@@ -1155,7 +1138,6 @@ const buildAndroidClusterMarkerShape = (
       const isProcessing = cluster.id === options.processingClusterId;
       const detailsEnabled =
         options.detailsEnabled ||
-        !!options.puckOffsets?.[cluster.id] ||
         isSelected ||
         cluster.id === options.forceDetailsClusterId;
       const isBroadcasting = detailsEnabled && !!cluster.isBroadcasting;
@@ -1282,7 +1264,7 @@ const buildAndroidClusterMarkerShape = (
         },
         geometry: {
           type: 'Point',
-          coordinates: options.puckOffsets?.[cluster.id]?.coordinate ?? getClusterCoordinate(cluster),
+          coordinates: getClusterCoordinate(cluster),
         },
       };
     }),
@@ -2070,8 +2052,10 @@ const ClusterEventStage: React.FC<ClusterEventStageProps> = ({
  * Native user-location puck. Keeping this off MarkerView lets it appear without
  * waiting for the slower Android annotation path used by event cluster markers.
  */
-const UserLocationMarker: React.FC<{ visible: boolean; zoomLevel: number }> = ({ visible }) => {
-  const shouldShowLocationPuck = visible;
+const UserLocationMarker: React.FC<{ visible: boolean; zoomLevel: number }> = ({ visible, zoomLevel }) => {
+  const shouldShowLocationPuck =
+    visible &&
+    (Platform.OS !== 'android' || zoomLevel >= ANDROID_LOCATION_PUCK_MIN_ZOOM);
 
   if (!shouldShowLocationPuck) return null;
 
@@ -2297,7 +2281,7 @@ interface VenueLensProps {
   fallbackGlyphColor: string;
   fallbackLabel?: string;
   imageUrl: string;
-  diameter: number;
+  size: number;
   venueName: string;
 }
 
@@ -2307,12 +2291,12 @@ const VenueLens: React.FC<VenueLensProps> = ({
   fallbackGlyphColor,
   fallbackLabel = '',
   imageUrl,
-  diameter,
+  size,
   venueName,
 }) => {
   const [imageFailed, setImageFailed] = useState(false);
   const imageOpacity = useRef(new Animated.Value(0)).current;
-  const lensSize = diameter;
+  const lensSize = size * 1.44;
 
   useEffect(() => {
     setImageFailed(false);
@@ -2367,7 +2351,7 @@ const VenueLens: React.FC<VenueLensProps> = ({
             styles.beaconVenueLensFallbackText,
             {
               color: fallbackGlyphColor,
-              fontSize: diameter * 0.34,
+              fontSize: Math.max(8, size * 0.46),
             },
           ]}
           numberOfLines={1}
@@ -2377,7 +2361,7 @@ const VenueLens: React.FC<VenueLensProps> = ({
       ) : (
         <MaterialIcons
           name={fallbackGlyph}
-          size={diameter * 0.4}
+          size={size * 0.58}
           color={fallbackGlyphColor}
         />
       )}
@@ -2624,10 +2608,6 @@ const TreeMarker: React.FC<TreeMarkerProps> = React.memo(({ cluster, isSelected,
   }, [cluster.id, publishTutorialLocalGeometry, tutorialBindingRevision, tutorialGeometryRef]);
   const isBeacon = appearance === 'beacon';
   const isStoryBeacon = isBeacon && presentation === 'story';
-  const venuePhotoDiameter = (GATHR_VENUE_PHOTO_DIAMETERS[cluster.interestLevel] ?? GATHR_VENUE_PHOTO_DIAMETERS.low) * scaleFactor;
-  const venuePhotoScale = isStoryBeacon ? venuePhotoDiameter / (adjustedSize * 1.44) : 1;
-  const markerDiameter = adjustedSize * 1.5 * venuePhotoScale;
-  const venuePhotoExpansion = markerDiameter - adjustedSize * 1.5;
   const isMultiVenue = cluster.venues.length > 1;
   const clusterCategoryItems = isBeacon && detailsEnabled
     ? getAndroidClusterCategoryItems(cluster, getUserInterestsSync())
@@ -2740,12 +2720,12 @@ const TreeMarker: React.FC<TreeMarkerProps> = React.memo(({ cluster, isSelected,
 
       {/* Broadcasting effect for 'now' events */}
       {detailsEnabled && cluster.isBroadcasting && (
-        <BroadcastingEffect size={adjustedSize * venuePhotoScale} color={color} isActive={isActive} />
+        <BroadcastingEffect size={adjustedSize} color={color} isActive={isActive} />
       )}
 
       {/* Gold fireworks for city-level (festival) events */}
       {detailsEnabled && CITY_EVENT_UI_ENABLED && cluster.containsCityLevelEvent && (
-        <CityEventEffect size={adjustedSize * venuePhotoScale} isActive={isActive} />
+        <CityEventEffect size={adjustedSize} isActive={isActive} />
       )}
 
       {friendEventCount > 0 && (
@@ -2754,9 +2734,9 @@ const TreeMarker: React.FC<TreeMarkerProps> = React.memo(({ cluster, isSelected,
           style={[
             styles.friendEventHalo,
             {
-              width: adjustedSize * (friendPresence ? 2.35 : 2.05) * venuePhotoScale,
-              height: adjustedSize * (friendPresence ? 2.35 : 2.05) * venuePhotoScale,
-              borderRadius: adjustedSize * 1.2 * venuePhotoScale,
+              width: adjustedSize * (friendPresence ? 2.35 : 2.05),
+              height: adjustedSize * (friendPresence ? 2.35 : 2.05),
+              borderRadius: adjustedSize * 1.2,
             },
           ]}
         />
@@ -2776,9 +2756,9 @@ const TreeMarker: React.FC<TreeMarkerProps> = React.memo(({ cluster, isSelected,
           isBeacon && isSelected && styles.beaconTopSelected,
           {
             backgroundColor: color,
-            width: markerDiameter,
-            height: markerDiameter,
-            borderRadius: markerDiameter / 2,
+            width: adjustedSize * 1.5,
+            height: adjustedSize * 1.5,
+            borderRadius: adjustedSize, // Circular shape
             justifyContent: 'center',
             alignItems: 'center',
             opacity: !isReady ? 0.4 : isProcessing ? 0.6 : 1, // Dim when not ready or processing
@@ -2817,10 +2797,10 @@ const TreeMarker: React.FC<TreeMarkerProps> = React.memo(({ cluster, isSelected,
           <VenueLens
             accentColor={primaryCategoryAccent}
             fallbackGlyph={beaconGlyph}
-            fallbackGlyphColor="#FFFFFF"
+            fallbackGlyphColor={['#34A853', '#FBBC05'].includes(color) ? '#000000' : '#FFFFFF'}
             fallbackLabel={fallbackVenueLabel}
             imageUrl={venueLensMedia?.imageUrl ?? ''}
-            diameter={venuePhotoDiameter}
+            size={adjustedSize}
             venueName={venueLensMedia?.venueName ?? fallbackVenueName}
           />
         ) : (
@@ -2902,7 +2882,7 @@ const TreeMarker: React.FC<TreeMarkerProps> = React.memo(({ cluster, isSelected,
         )}
 
         {friendPresence && (
-          <FriendCheckInBadge count={friendPresence.friendCount} style={{ position: 'absolute', top: -6, right: adjustedSize * 0.95 + venuePhotoExpansion }} />
+          <FriendCheckInBadge count={friendPresence.friendCount} style={{ position: 'absolute', top: -6, right: adjustedSize * 0.95 }} />
         )}
         {friendEventCount > 0 && (
           <View
@@ -2914,8 +2894,8 @@ const TreeMarker: React.FC<TreeMarkerProps> = React.memo(({ cluster, isSelected,
                 minWidth: adjustedSize * 0.72,
                 height: adjustedSize * 0.58,
                 borderRadius: adjustedSize * 0.29,
-                top: Math.max(adjustedSize * 0.42, isStoryBeacon && friendPresence ? 12 : 0),
-                left: -(adjustedSize * 0.42 + venuePhotoExpansion / 2),
+                top: adjustedSize * 0.42,
+                left: -(adjustedSize * 0.42),
               },
             ]}
           >
@@ -3038,15 +3018,12 @@ const TreeMarker: React.FC<TreeMarkerProps> = React.memo(({ cluster, isSelected,
 // Re-center button component
 const RecenterButton: React.FC<{ 
   onPress: () => void,
-  disabled: boolean,
-  rightOffset?: number,
-  bottomOffset?: number,
-}> = ({ onPress, disabled, rightOffset = 10, bottomOffset = 0 }) => {
+  disabled: boolean 
+}> = ({ onPress, disabled }) => {
   return (
     <TouchableOpacity 
       style={[
         styles.recenterButton,
-        { right: rightOffset, bottom: 88 + bottomOffset },
         disabled && styles.recenterButtonDisabled
       ]}
       onPress={onPress}
@@ -3170,7 +3147,6 @@ const GlobalEventLightbox = ({
           globalSelectedImageData.events ? globalSelectedImageData.currentIndex : undefined
         }
         onNavigate={globalSelectedImageData.events ? handleNavigate : undefined}
-        loopNavigation={shouldLoopGlobalLightbox(globalSelectedImageData.source)}
         isTrending={
           globalSelectedImageData.source === 'trending_manual' ||
           globalSelectedImageData.source === 'trending_auto'
@@ -3276,27 +3252,7 @@ useEffect(() => {
   const { user } = useAuth(); // Adjust import path as needed
   const isGuest = !user;
   const router = useRouter();
-  const safeAreaInsets = useSafeAreaInsets();
-  const windowDimensions = useWindowDimensions();
-  // Center the floating row on the same body as the Events/Specials header,
-  // including React Navigation's Dynamic Island adjustment.
-  const floatingHeaderTop = (getDefaultHeaderHeight(windowDimensions, false, safeAreaInsets.top)
-    + safeAreaInsets.top - 44) / 2;
-  const mapChromeTopReserve = floatingHeaderTop + 34;
-  // One continuous fade behind the controls and status icons. Keep the
-  // strongest portion inside the status area and taper below the 44pt row.
-  const mapTopFadeHeight = floatingHeaderTop + 44 + 6;
-  const floatingSideControlLift = 100;
-  const floatingDockBottomOffset = getTabDockBottom(Platform.OS, safeAreaInsets.bottom);
-  const mapboxOrnamentBottomOffset = floatingDockBottomOffset + TAB_DOCK_HEIGHT + 8;
-  // Native iOS ornaments measure from the safe area; React overlays measure
-  // from the map edge. Keep both branding corners on the ruler's lower row.
-  const mapboxBrandingBottomOffset = Platform.OS === 'ios'
-    ? Math.max(0, mapboxOrnamentBottomOffset - safeAreaInsets.bottom)
-    : mapboxOrnamentBottomOffset;
-  const globeBottomOffset = mapboxOrnamentBottomOffset + 21 + 8;
-  const friendsPillBottomOffset = 88 + floatingSideControlLift + 36 + 12;
-  const interestRailBottomOffset = friendsPillBottomOffset + 30 + 10;
+  const modalTabBarHeight = useBottomTabBarHeight();
 
   // Guest limitation hook - only for guests
   const { trackInteraction } = useGuestInteraction();
@@ -3395,7 +3351,8 @@ useEffect(() => {
   const setActiveFilterPanel = useMapStore((state) => state.setActiveFilterPanel);
   const closeCalloutTrigger = useMapStore((state) => state.closeCalloutTrigger);
   const triggerCloseCallout = useMapStore((state) => state.triggerCloseCallout);
-  const profileButtonHighlighted = useTutorialUiStore((state) => state.currentStepId === 'profile-facebook');
+  const isHeaderSearchActive = useMapStore((state) => state.isHeaderSearchActive);
+  const setHeaderSearchActive = useMapStore((state) => state.setHeaderSearchActive);
   const setTypeFiltersBatch = useMapStore((state) => state.setTypeFiltersBatch);
   const pendingRouteEvent = useMapStore((state) => state.pendingRouteEvent);
   const interestCarouselFilter = useInterestCarouselUiStore((state) => state.interestCarouselFilter);
@@ -3480,26 +3437,8 @@ useEffect(() => {
   const [mapTabOverlaysReady, setMapTabOverlaysReady] = useState<boolean>(Platform.OS !== 'android');
   const [activeRouteEvent, setActiveRouteEvent] = useState<Event | null>(null);
   const [activeAreaEvent, setActiveAreaEvent] = useState<Event | null>(null);
-  const [areaLocationGroup, setAreaLocationGroup] = useState<AreaLocationGroup | null>(null);
   const activeMapExperienceEvent = activeRouteEvent || activeAreaEvent;
   const [routeOverlayHeight, setRouteOverlayHeight] = useState(0);
-  const [interestRailLayout, setInterestRailLayout] = useState({ width: 0, height: 0 });
-  const handleInterestRailLayout = useCallback((event: LayoutChangeEvent) => {
-    const { width, height } = event.nativeEvent.layout;
-    setInterestRailLayout((current) => (
-      Math.abs(current.width - width) < 1 && Math.abs(current.height - height) < 1
-        ? current
-        : { width, height }
-    ));
-  }, []);
-  const measuredRailWidth = interestRailLayout.width;
-  const sideControlRightOffset = measuredRailWidth >= 36 && measuredRailWidth <= 220
-    ? 10 + (measuredRailWidth - 36) / 2
-    : 27;
-  const sideControlCenterRightOffset = sideControlRightOffset + 18;
-  // iOS's info glyph sits at the bottom of a 44-point native touch target.
-  const mapboxAttributionRightOffset = sideControlCenterRightOffset
-    - (Platform.OS === 'ios' ? 22 : 10);
   const [routeFeatureCallout, setRouteFeatureCallout] = useState<{
     data: RouteFeatureCalloutData;
     anchorX: number;
@@ -3744,7 +3683,6 @@ useEffect(() => {
     useMapStore.getState().setSelectedImageData(null);
     routeFeatureCalloutRequestRef.current += 1;
     setRouteFeatureCallout(null);
-    setAreaLocationGroup(null);
     setActiveRouteEvent(routeExperience ? event : null);
     setActiveAreaEvent(areaExperience ? event : null);
 
@@ -3781,7 +3719,6 @@ useEffect(() => {
     }
     routeFeatureCalloutRequestRef.current += 1;
     setRouteFeatureCallout(null);
-    setAreaLocationGroup(null);
     setActiveRouteEvent(null);
     setActiveAreaEvent(null);
   }, [activeMapExperienceEvent, activeRouteEvent]);
@@ -3792,7 +3729,6 @@ useEffect(() => {
 
     routeFeatureCalloutRequestRef.current += 1;
     setRouteFeatureCallout(null);
-    setAreaLocationGroup(null);
     useMapStore.getState().setSelectedImageData(selection);
     amplitudeTrack('route_summary_lightbox_reopened', {
       event_id: String(activeMapExperienceEvent?.id || ''),
@@ -4655,41 +4591,10 @@ useEffect(() => {
   // Actual map viewport dimensions (accounting for header, tab bar, safe areas)
   const [mapDimensions, setMapDimensions] = useState<{ width: number; height: number } | null>(null);
   const mapDimensionsRef = useRef<{ width: number; height: number } | null>(null);
-  const puckTutorialVisible = useTutorialUiStore(state => state.isVisible);
-  const puckEligibleClusters = useMemo(() => clusters
-    .filter(cluster => shouldClusterBeVisible(cluster, filterCriteria))
-    .map(cluster => interestCarouselFilter?.status === 'active'
-      ? filterClusterForInterestCarouselFilter(cluster, interestCarouselFilter) : cluster)
-    .filter((cluster): cluster is Cluster => cluster !== null),
-  [clusters, filterCriteria, interestCarouselFilter, shouldClusterBeVisible]);
-  // Overview-only proxy: the SDK puck remains unchanged. Its provider and Expo
-  // update independently, so reject old/inaccurate samples instead of moving far.
-  const puckLocation = usePuckLocationSnapshot({ location, zoom: zoomLevel,
-    enabled: isFocused && locationPermissionGranted && !puckTutorialVisible && !hasRenderedCallout && !activeFilterPanel });
-  const puckSafeViewport = {
-    left: 8,
-    right: Math.max(8, (mapDimensions?.width ?? 0) - Math.max(74, 10 + measuredRailWidth + 8)),
-    top: mapChromeTopReserve + (Platform.OS === 'ios' ? 16 : 20) + pillsHeight + 8,
-    bottom: Math.max(0, (mapDimensions?.height ?? 0) - mapboxOrnamentBottomOffset - 16),
-  };
-  const clusterPuckLayout = useClusterPuckLayout({
-    map: mapRef,
-    clusters: puckEligibleClusters,
-    userCoordinate: location ? [location.coords.longitude, location.coords.latitude] : null,
-    width: mapDimensions?.width ?? 0,
-    height: mapDimensions?.height ?? 0,
-    enabled: puckLocation.active,
-    coordinateForCluster: USE_ANDROID_NATIVE_CLUSTER_MARKER_LAYERS ? getClusterCoordinate : getClusterRenderCoordinates,
-    getPuckSnapshot: puckLocation.getPuckSnapshot,
-    puckRevision: puckLocation.revision,
-    safeViewport: puckSafeViewport,
-    layoutRevision: mapStyleChoice,
-  });
-  const onPuckCameraChanged = clusterPuckLayout.onCameraChanged;
   const [, setBeaconProjectionEpoch] = useState(0);
-  const [mapScreenOffset, setMapScreenOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const mapAbsoluteLayoutRef = useRef<MapWindowLayout | null>(null);
   const mapAbsoluteLayoutRevisionRef = useRef(0);
+  const [mapScreenOffset, setMapScreenOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [iosMapViewRevision, setIosMapViewRevision] = useState(0);
   const iosMapViewLayoutRefreshScheduledRef = useRef(false);
   const iosMapViewLayoutRefreshCompletedRef = useRef(false);
@@ -4760,9 +4665,6 @@ const lastMapIdleAtRef = useRef<number>(0);
 const lastSuccessfulCameraReconcileChangeAtRef = useRef<number>(-1);
 const lastViewportFetchZoomRef = useRef<number | null>(null);
 const gestureTraceSessionIdRef = useRef<string | null>(null);
-const mapTouchTrace = useMemo(() => createMapTouchTrace(mapStyleChoice, session => {
-  gestureTraceSessionIdRef.current = session;
-}), [mapStyleChoice]);
 const gestureTraceNativeActiveRef = useRef(false);
 const gestureTraceMeaningfulTickCountRef = useRef(0);
 const gestureTraceFirstMeaningfulAtRef = useRef<number | null>(null);
@@ -4944,9 +4846,9 @@ const handleMapStyleChange = useCallback(async (nextStyle: MapStyleChoice) => {
   mapStyleSwitchInFlightRef.current = true;
   setMapStyleChanging(true);
 
-  // Current/Hybrid and Standard/GathR each share a native basemap.
-  // Switch marker presentation/configuration in place without reloading tiles
-  // or disturbing the camera when staying within either pair.
+  // Standard and GathR Standard share the same native basemap. RNMapbox can
+  // update the imported Standard configuration in place, so do not trigger a
+  // full style reload (or disturb the camera) when comparing those two.
   if (usesCurrentBasemap(mapStyleChoice) === usesCurrentBasemap(nextStyle)) {
     traceMapEvent('map_style_import_config_change_requested', {
       from: mapStyleChoice,
@@ -6002,7 +5904,7 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
     );
     const projected = sourceClusters
       .map((cluster): AndroidClusterHitTarget | null => {
-        const coordinate = clusterPuckLayout.offsets[cluster.id]?.coordinate ?? getClusterMapCoordinate(cluster);
+        const coordinate = getClusterMapCoordinate(cluster);
         if (!coordinate) {
           return null;
         }
@@ -6026,7 +5928,6 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
   }, [
     clusters,
     clustersReadyForInteraction,
-    clusterPuckLayout.offsets,
     filterCriteria,
     isFocused,
     isLoading,
@@ -7195,7 +7096,6 @@ const lastOpenedClusterIdRef = useRef<string | number | null>(null);
       (isCalloutClosingVisuallyRef.current || androidCalloutTeardownTimerRef.current !== null);
 
     traceMapEvent('marker_press_started', {
-      mapStyle: mapStyleChoice,
       clusterId: cluster.id,
       clusterType: cluster.clusterType,
       venueCount: cluster.venues?.length ?? 0,
@@ -7524,9 +7424,41 @@ lastOpenedClusterIdRef.current = cluster.id;
         console.log(`[Hotspot]   ${idx + 1}. ${v.venue} (score: ${v.relevanceScore?.toFixed(2)}, top event: "${topEvent?.title}" ${topEvent?.category})`);
       });
       
-      // Cluster selection preserves the camera; explicit camera controls remain independent.
-      traceMapEvent('cluster_callout_camera_preserved', { clusterId: cluster.id });
+      const moveCameraToCluster = () => {
+        setIgnoreProgrammaticTrace(true, 'cluster_tap_camera_move');
+        logPills('PROGRAMMATIC MOVE START (cluster tap) — suppress hides 800ms');
+        setTimeout(() => {
+          setIgnoreProgrammaticTrace(false, 'cluster_tap_camera_move_complete');
+          logPills('PROGRAMMATIC MOVE END (cluster tap)');
+        }, 800);
 
+        cameraRef.current?.setCamera({
+          centerCoordinate: preparedCallout.coordinates,
+          zoomLevel: 14,
+          animationDuration: 500,
+        });
+      };
+
+      if (!shouldOpenCalloutForMarker) {
+        traceMapEvent('city_lightbox_only_camera_move_skipped', {
+          clusterId: cluster.id,
+          venueCount: sortedVenues.length,
+        });
+      } else if (Platform.OS === 'android') {
+        if (androidCalloutCameraMoveTimerRef.current) {
+          clearTimeout(androidCalloutCameraMoveTimerRef.current);
+          androidCalloutCameraMoveTimerRef.current = null;
+        }
+        traceMapEvent('android_callout_camera_move_skipped_freeze_map', {
+          clusterId: cluster.id,
+          venueCount: sortedVenues.length,
+        });
+      } else {
+        moveCameraToCluster();
+      }
+
+
+      // 🔥 ANALYTICS: TEMPORARILY COMMENTED OUT - Track successful cluster interaction
       // const interactionDuration = Date.now() - interactionStartTime;
       // analytics.trackMapInteraction('cluster_clicked', {
       //   cluster_id: cluster.id,
@@ -7614,7 +7546,6 @@ lastOpenedClusterIdRef.current = cluster.id;
     isCalloutBlockingMapInteraction,
     isGuest,
     location,
-    mapStyleChoice,
     logAndroidRetapLatencyProbe,
     promoteVenuesToRenderedCallout,
     renderedCalloutClusterId,
@@ -7626,24 +7557,6 @@ lastOpenedClusterIdRef.current = cluster.id;
     trackInteraction,
     tutorialClusterInteractionReadyGate,
   ]); // REMOVED analytics, zoomLevel dependencies
-
-  const hybridTapDelivery = useHybridTapDelivery<Cluster>({
-    active: Platform.OS === 'ios' && mapStyleChoice === 'hybrid' && isFocused,
-    canOpen: () => clustersReadyForInteractionRef.current && !isMapLoadingRef.current &&
-      !isMapMovingRef.current && !ignoreProgrammaticCameraRef.current &&
-      clusterProcessingRef.current === null && useMapStore.getState().selectedVenues.length === 0,
-    surface: () => {
-      const map = mapRef.current, layout = mapAbsoluteLayoutRef.current, camera = currentCameraStateRef.current;
-      if (!map || !layout || !camera) return null;
-      return { identity: map, layout, zoom: camera.zoom, query: point =>
-        map.queryRenderedFeaturesAtPoint(point, [], [HYBRID_POINT_ANNOTATION_LAYER_ID]) };
-    },
-    onPress: (cluster, source) => {
-      traceMapEvent('hybrid_tap_delivery', { source, clusterId: cluster.id, venueCount: cluster.venues.length });
-      void handleMarkerPress(cluster);
-    },
-    trace: traceMapEvent,
-  });
 
   useEffect(() => registerTutorialAction('open-cluster', async (signal?: AbortSignal) => {
     const currentTarget = tutorialCurrentClusterRef.current;
@@ -8226,17 +8139,8 @@ lastOpenedClusterIdRef.current = cluster.id;
   const handleAreaLocationPress = async (pressEvent: any) => {
     if (!activeAreaEvent) return;
 
-    const group = getAreaLocationGroupForPress(activeAreaEvent, pressEvent);
-    const featureId = group?.id || String(pressEvent?.features?.[0]?.properties?.id || '').trim();
+    const featureId = String(pressEvent?.features?.[0]?.properties?.id || '').trim();
     if (!featureId) return;
-
-    if (group && (group.locations.length > 1 || group.locations.some((location) => location.venueId))) {
-      routeFeatureCalloutRequestRef.current += 1;
-      routeFeaturePressGuardUntilRef.current = Date.now() + 500;
-      setRouteFeatureCallout(null);
-      setAreaLocationGroup(group);
-      return;
-    }
 
     const data = getAreaLocationCallout(activeAreaEvent, featureId);
     if (!data) return;
@@ -8281,6 +8185,25 @@ lastOpenedClusterIdRef.current = cluster.id;
   };
 
   // Handle map press to close callout
+  const mapTouchTrace = useMemo(() => createMapTouchTrace(mapStyleChoice, () => {}), [mapStyleChoice]);
+  const hybridTapDelivery = useHybridTapDelivery<Cluster>({
+    active: Platform.OS === 'ios' && mapStyleChoice === 'hybrid' && isFocused,
+    canOpen: () => clustersReadyForInteractionRef.current && !isMapLoadingRef.current &&
+      !isMapMovingRef.current && !ignoreProgrammaticCameraRef.current &&
+      clusterProcessingRef.current === null && useMapStore.getState().selectedVenues.length === 0,
+    surface: () => {
+      const map = mapRef.current, layout = mapAbsoluteLayoutRef.current, camera = currentCameraStateRef.current;
+      if (!map || !layout || !camera) return null;
+      return { identity: map, layout, zoom: camera.zoom, query: point =>
+        map.queryRenderedFeaturesAtPoint(point, [], [HYBRID_POINT_ANNOTATION_LAYER_ID]) };
+    },
+    onPress: (cluster, source) => {
+      traceMapEvent('hybrid_tap_delivery', { source, clusterId: cluster.id, venueCount: cluster.venues.length });
+      void handleMarkerPress(cluster);
+    },
+    trace: traceMapEvent,
+  });
+
   const handleMapPress = () => {
     const guardRemainingMs = Math.max(0, calloutOpenTouchGuardUntilRef.current - Date.now());
     const routeFeatureGuardRemainingMs = Math.max(
@@ -8502,7 +8425,7 @@ const showPills = useCallback((reason: string = 'unspecified') => {
 
   // --- Floating pills top offset (baseline + small per-platform nudge) ---
 const BASELINE_TOP = 0; // dp - starting point that looks good under the header (reduced by 6px)
-const PLATFORM_NUDGE = Platform.select({ ios: 16, android: 20, default: 0 })!;
+const PLATFORM_NUDGE = Platform.select({ ios: 20, android: 20, default: 0 })!;
 const TOP_OFFSET = BASELINE_TOP + PLATFORM_NUDGE;
 // -----------
 
@@ -9249,7 +9172,6 @@ useEffect(() => {
 }, [clusters?.length]);
 
 const handleCameraChange = useCallback((e: any) => {
-  onPuckCameraChanged(e);
   
 //  console.log('[DEBUG] handleCameraChange fired, tick count:', __ml_cameraTickCountRef.current);
   
@@ -9670,7 +9592,7 @@ Clustering refresh: keep zoom → store → recluster in sync
       const DEBOUNCE_DELAY = 50; // Final fetch 50ms after movement stops
       const ANDROID_PRIORITY_FETCH_MIN_INTERVAL = 180;
       const ANDROID_PRIORITY_ZOOM_DELTA = 0.35;
-      const ANDROID_OVERVIEW_ZOOM = 11.25;
+      const ANDROID_OVERVIEW_ZOOM = ANDROID_LOCATION_PUCK_MIN_ZOOM;
       const ANDROID_LATE_DEBOUNCE_SKIP_MS = 750;
       const ANDROID_LATE_DEBOUNCE_MAX_SPAN_RATIO = 0.04;
       const ANDROID_LATE_DEBOUNCE_MAX_CENTER_DEGREES = 0.004;
@@ -9948,8 +9870,7 @@ Clustering refresh: keep zoom → store → recluster in sync
   fetchViewportEvents,
   isAndroidStartupCameraPayloadInvalid,
   logAndroidZoomTapLatencyProbe,
-  setZoomLevel,
-  onPuckCameraChanged
+  setZoomLevel
 ]);
 
 
@@ -10294,25 +10215,8 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
       console.log(`[MapLoad][${__ml_sessionIdRef.current}] startup_marker_subset_rendered +${delta}ms (visible=${visibleClustersForRender.length}, rendered=${clustersForRender.length})`);
     }
 
-    const puckLeaderFeatures = interestFilteredClustersForRender.flatMap(cluster => {
-      const offset = clusterPuckLayout.offsets[cluster.id];
-      return offset ? [
-        { type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: [offset.anchor, offset.coordinate] } },
-        { type: 'Feature', properties: {}, geometry: { type: 'Point', coordinates: offset.anchor } },
-      ] : [];
-    });
-    const puckLeaders = puckLeaderFeatures.length > 0 ? (
-      <MapboxGL.ShapeSource id="cluster-puck-leaders" shape={{ type: 'FeatureCollection', features: puckLeaderFeatures } as any}>
-        <MapboxGL.LineLayer id="cluster-puck-leader-lines" filter={['==', ['geometry-type'], 'LineString'] as any}
-          style={{ lineColor: '#8C6E31', lineWidth: 2, lineOpacity: 0.9 }} />
-        <MapboxGL.CircleLayer id="cluster-puck-leader-anchors" filter={['==', ['geometry-type'], 'Point'] as any}
-          style={{ circleRadius: 3, circleColor: '#8C6E31', circleStrokeColor: '#FFFFFF', circleStrokeWidth: 1 }} />
-      </MapboxGL.ShapeSource>
-    ) : null;
-
     if (USE_ANDROID_NATIVE_CLUSTER_MARKER_LAYERS) {
       const layerMarkerShape = buildAndroidClusterMarkerShape(interestFilteredClustersForRender, {
-        puckOffsets: clusterPuckLayout.offsets,
         categoryCycleTick: androidCategoryCycleTick,
         clustersReadyForInteraction,
         detailsEnabled: richClusterMarkerDetailsEnabled,
@@ -10325,8 +10229,6 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
       });
 
       return (
-        <>
-        {puckLeaders}
         <MapboxGL.ShapeSource
           key="android-cluster-layer-source"
           id="android-cluster-layer-source"
@@ -10365,7 +10267,7 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
                     )
                   )
                 : 0;
-            const friendCluster = !clusterPuckLayout.offsets[clusterId] && friendHitRadiusMeters > 0
+            const friendCluster = friendHitRadiusMeters > 0
               ? findFriendPresenceClusterNearCoordinate(
                   interestFilteredClustersForRender,
                   pressCoordinate,
@@ -10848,18 +10750,13 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
             }}
           />
         </MapboxGL.ShapeSource>
-        </>
       );
     }
 
-    return <>
-      {puckLeaders}
-      {interestFilteredClustersForRender
+    return interestFilteredClustersForRender
       .map((cluster: Cluster, index: number) => {
         // Calculate the coordinates for the cluster
-        const puckOffset = clusterPuckLayout.offsets[cluster.id];
-        const originalCoordinates = getClusterRenderCoordinates(cluster);
-        const coordinates = puckOffset?.coordinate ?? originalCoordinates;
+        const coordinates = getClusterRenderCoordinates(cluster);
       
         // Check if this cluster contains the selected venue
         const isSelected =
@@ -10878,8 +10775,7 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
           cluster.id === hotspotPreviewClusterId &&
           !richClusterMarkersEnabled;
         const isTutorialTarget = tutorialTargetClusterId === String(cluster.id);
-        const markerDetailsEnabled =
-          mapStyleChoice === 'hybrid' || richClusterMarkersEnabled || shouldForceHotspotPreviewDetails || isTutorialTarget;
+        const markerDetailsEnabled = mapStyleChoice === 'hybrid' || richClusterMarkersEnabled || shouldForceHotspotPreviewDetails || isTutorialTarget;
         const gathrPresentation = getGathrClusterPresentation(cluster, zoomLevel, isSelected);
         const projectedPoint =
           (mapStyleChoice === 'gathr' || mapStyleChoice === 'hybrid') &&
@@ -10888,7 +10784,7 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
           mapDimensions &&
           currentCameraStateRef.current?.visibleBbox
             ? projectCoordinateToViewportPoint(
-                originalCoordinates,
+                coordinates,
                 currentCameraStateRef.current.visibleBbox,
                 mapDimensions
               )
@@ -10897,7 +10793,7 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
           ? 38
           : cluster.venues.length > 1 ? 92 : 76;
         const estimatedMarkerWidth = mapStyleChoice === 'hybrid' ? 160 : gathrPresentation === 'summary' ? 84 : 136;
-        const originalBeaconDock = !isTutorialTarget && projectedPoint && mapDimensions
+        const beaconDock = !isTutorialTarget && projectedPoint && mapDimensions
           ? getGathrBeaconViewportDock({
               markerHeight: estimatedMarkerHeight,
               markerWidth: estimatedMarkerWidth,
@@ -10908,9 +10804,6 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
               safeTop: TOP_OFFSET + pillsHeight + 8,
             })
           : { direction: null, translateX: 0, translateY: 0 };
-        // Offset coordinates already contain the original visual dock plus the
-        // small clearance. Never apply the dock a second time after placement.
-        const beaconDock = puckOffset ? { direction: null, translateX: 0, translateY: 0 } : originalBeaconDock;
         const isBeaconDocked = beaconDock.direction !== null;
         const beaconEdgeCueIcon = beaconDock.direction === 'up'
           ? 'keyboard-arrow-up'
@@ -10944,12 +10837,12 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
             isSelected={isSelected} isReady={clustersReadyForInteraction} isProcessing={processingClusterId === cluster.id}
             disabled={!clustersReadyForInteraction || processingClusterId !== null}
             isActive={hybridMarkerAnimationsActive} reduceMotionEnabled={reduceMotionEnabled}
-            compact={!!puckOffset?.compact} dockX={beaconDock.translateX} dockY={beaconDock.translateY}
-            measurementDockX={originalBeaconDock.translateX} measurementDockY={originalBeaconDock.translateY}
-            record={clusterPuckLayout.recordMarkerGeometry} categoryIcon={getCategoryIcon}
+            compact={false} dockX={beaconDock.translateX} dockY={beaconDock.translateY}
+            measurementDockX={beaconDock.translateX} measurementDockY={beaconDock.translateY}
+            record={recordHybridGeometry} categoryIcon={getCategoryIcon}
             registerTapTarget={Platform.OS === 'ios' ? hybridTapDelivery.register : undefined}
             onPress={() => {
-              traceMapEvent('hybrid_native_annotation_tap', { clusterId: cluster.id, venueCount: cluster.venues.length }, { gestureSessionId: gestureTraceSessionIdRef.current });
+              traceMapEvent('hybrid_native_annotation_tap', { clusterId: cluster.id, venueCount: cluster.venues.length });
               if (Platform.OS === 'ios') hybridTapDelivery.onNativePress(markerKey, cluster);
               else void handleMarkerPress(cluster);
             }} onBackgroundPress={handleMapPress} />;
@@ -10961,8 +10854,8 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
             id={markerKey}
             coordinate={coordinates}
             anchor={{ x: 0.5, y: 1.0 }}
-            allowOverlap={Platform.OS === 'android' || !!clusterPuckLayout.offsets[cluster.id]}
-            allowOverlapWithPuck
+            allowOverlap={Platform.OS === 'android'}
+            allowOverlapWithPuck={Platform.OS === 'android'}
             isSelected={isSelected}
              
           >
@@ -11017,9 +10910,6 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
                 }
                 void handleMarkerPress(cluster);
               }}
-              accessibilityRole="button"
-              accessibilityLabel={String(cluster.eventCount || 0) + ' events, ' + String(cluster.specialCount || 0) + ' specials at ' + String(cluster.venues.length) + ' venues'}
-              accessibilityHint="Opens event details without moving the map"
               testID={isClosestCluster ? "closest-cluster" : undefined}
               disabled={!clustersReadyForInteraction || processingClusterId !== null}
               activeOpacity={0.7}
@@ -11040,10 +10930,6 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
                   <MaterialIcons name={beaconEdgeCueIcon} size={10} color="#0B4F6C" />
                 </View>
               )}
-              <PuckMarkerMeasurement id={cluster.id} compact={!!puckOffset?.compact}
-                countLabel={String((cluster.eventCount ?? 0) + (cluster.specialCount ?? 0))}
-                dockX={originalBeaconDock.translateX} dockY={originalBeaconDock.translateY}
-                record={clusterPuckLayout.recordMarkerGeometry}>
               <TreeMarker
                 key={isTutorialTarget ? `tutorial-target-${tutorialTargetBindingRevision}` : undefined}
                 cluster={cluster}
@@ -11083,12 +10969,10 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
                     : undefined
                 }
               />
-              </PuckMarkerMeasurement>
             </TouchableOpacity>
           </MapboxGL.MarkerView>
         );
-      })}
-    </>;
+      });
   };
 
   // Render error state if there is an error
@@ -11147,9 +11031,7 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
           {content}
           <CalloutTutorialOverlayHost />
           <CalloutModalTabBarTouchLayer
-            height={TAB_DOCK_HEIGHT}
-            bottomOffset={floatingDockBottomOffset}
-            edgeInset={TAB_DOCK_EDGE_INSET}
+            height={modalTabBarHeight}
             onSelect={handleCalloutModalTabSelect}
           />
         </View>
@@ -11169,25 +11051,10 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
       style={styles.container}
       onLayout={handleRootLayout}
     >
-      {isFocused && (
-        <StatusBar barStyle="dark-content" backgroundColor="transparent" translucent />
-      )}
-      {isFocused && !profileButtonHighlighted && (
-        <FloatingMapSearchHeader
-          top={floatingHeaderTop}
-          onSettings={() => {
-            analytics.trackUserAction('profile_access', { access_method: 'header_button' });
-            router.push('/profile');
-          }}
-        />
-      )}
-      {activeFilterPanel && shouldRenderAncillaryOverlays && (
+      {isHeaderSearchActive && (
         <Pressable
-          testID="filter-panel-map-dismiss-target"
-          accessibilityRole="button"
-          accessibilityLabel="Close filters"
-          onPress={() => setActiveFilterPanel(null)}
-          style={[StyleSheet.absoluteFillObject, { zIndex: 30, elevation: 30 }]}
+          onPress={() => { setHeaderSearchActive(false); Keyboard.dismiss(); }}
+          style={[StyleSheet.absoluteFillObject, { zIndex: 9999 }]}
         />
       )}
       {/* Add Filter Bar at the top */}
@@ -11200,9 +11067,9 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
             position: 'absolute',
             left: 0,
             right: 0,
-            top: TOP_OFFSET + mapChromeTopReserve, // preserve the old header-relative position over the full-screen map
-            zIndex: activeFilterPanel ? 40 : 12,
-            elevation: activeFilterPanel ? 40 : 12,
+            top: TOP_OFFSET, // baseline + per-platform nudge
+            zIndex: 12,
+            elevation: 12,
             transform: [{ translateY: pillsAnimation }],
             opacity: shouldRenderAncillaryOverlays ? pillsOpacity : 0,
           }}
@@ -11210,7 +11077,7 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
           <View
             ref={filterPillsContentRef}
             testID="filter-pills"
-            pointerEvents={shouldRenderAncillaryOverlays ? 'box-none' : 'none'}
+            pointerEvents={shouldRenderAncillaryOverlays ? 'auto' : 'none'}
             onLayout={(e) => {
               const h = e.nativeEvent.layout.height || 0;
               if (h && Math.abs(h - pillsHeight) > 1) setPillsHeight(h);
@@ -11234,50 +11101,26 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
         <MapboxGL.MapView
         key={`ios-map-layout-${iosMapViewRevision}`}
         ref={mapRef}
-        onTouchStart={event => {
-          mapTouchTrace.onTouchStart(event);
-          hybridTapDelivery.onTouchStart(event);
-          clusterPuckLayout.onMapTouchStart(event.nativeEvent.touches.length);
-        }}
-        onTouchMove={event => {
-          mapTouchTrace.onTouchMove(event);
-          hybridTapDelivery.onTouchMove(event);
-        }}
-        onTouchEnd={event => {
-          mapTouchTrace.onTouchEnd(event);
-          hybridTapDelivery.onTouchEnd(event);
-          clusterPuckLayout.onMapTouchEnd(event.nativeEvent.touches.length);
-        }}
-        onTouchCancel={() => {
-          mapTouchTrace.onTouchCancel();
-          hybridTapDelivery.onTouchCancel();
-          clusterPuckLayout.onMapTouchCancel();
-        }}
+        onTouchStart={event => { mapTouchTrace.onTouchStart(event); hybridTapDelivery.onTouchStart(event); }}
+        onTouchMove={event => { mapTouchTrace.onTouchMove(event); hybridTapDelivery.onTouchMove(event); }}
+        onTouchEnd={event => { mapTouchTrace.onTouchEnd(event); hybridTapDelivery.onTouchEnd(event); }}
+        onTouchCancel={() => { mapTouchTrace.onTouchCancel(); hybridTapDelivery.onTouchCancel(); }}
         style={styles.map}
         styleURL={usesCurrentBasemap(mapStyleChoice) ? GATHR_MAPBOX_STYLE_URL : GATHR_MAPBOX_STANDARD_STYLE_URL}
         scaleBarEnabled={true}
-        logoPosition={{
-          bottom: mapboxBrandingBottomOffset,
-          // Center Mapbox's 21-point circle beneath the 24-point globe, inset 10.
-          left: 11.5,
-        }}
-        attributionPosition={{ bottom: mapboxBrandingBottomOffset, right: mapboxAttributionRightOffset }}
         scaleBarPosition={
-          // iOS stacks ornaments sharing a corner, ignoring the scale's bottom
-          // margin. A separate top anchor keeps its lower edge above the dock.
-          Platform.OS === 'ios' ? {
-          top: Math.max(0,
-            (mapDimensions?.height ?? Dimensions.get('window').height)
-              - safeAreaInsets.top - mapboxOrnamentBottomOffset - 16),
-          left: Math.round((Dimensions.get('window').width / 2) - 50),
-        } : {
-          bottom: mapboxOrnamentBottomOffset,
-          left: getAndroidScaleBarLeft(
-            windowDimensions.width,
-            mapDimensions?.width ?? windowDimensions.width,
-            mapScreenOffset.x,
-          ),
-        }}
+          mapDimensions?.height
+            ? {
+                // Bottom margins reserve ornament clearance. Anchor from the
+                // measured top so the visible rule shares the attribution row.
+                top: Math.max(0, Math.round(mapDimensions.height - 28)),
+                left: Math.round((Dimensions.get('window').width / 2) - 50),
+              }
+            : {
+                bottom: 12,
+                left: Math.round((Dimensions.get('window').width / 2) - 50),
+              }
+        }
         surfaceView={Platform.OS === 'android' ? false : undefined}
 onLayout={(event) => {
   hybridTapDelivery.invalidate();
@@ -11317,8 +11160,6 @@ onLayout={(event) => {
   }
 }}
 onMapIdle={() => {
-  puckLocation.refreshIfNeeded();
-  clusterPuckLayout.onMapIdle();
   lastMapIdleAtRef.current = Date.now();
   traceMapEvent('mapbox_on_map_idle', {
     sinceLastMeaningfulCameraMs: gestureTraceLastMeaningfulAtRef.current === null
@@ -11517,10 +11358,7 @@ onDidFinishLoadingMap={() => {
           }
         }}
      
-          onCameraChanged={event => {
-            hybridTapDelivery.invalidate();
-            handleCameraChange(event);
-          }}
+          onCameraChanged={event => { hybridTapDelivery.invalidate(); handleCameraChange(event); }}
 //onRegionDidChange={handleCameraChange} // removed — we use onMapIdle for idle logging
 
 
@@ -11729,7 +11567,54 @@ onDidFinishLoadingMap={() => {
 
         {activeAreaEvent && (
           <>
-            <AreaLocationLayer event={activeAreaEvent} onPress={(event) => void handleAreaLocationPress(event)} />
+            <MapboxGL.ShapeSource
+              id="active-area-locations-source"
+              shape={buildAreaLocationFeatureCollection(activeAreaEvent) as any}
+              hitbox={{ width: 52, height: 52 }}
+              onPress={(event: any) => void handleAreaLocationPress(event)}
+            >
+              <MapboxGL.CircleLayer
+                id="active-area-location-halos"
+                style={{
+                  circleColor: '#FFFFFF',
+                  circleRadius: 10,
+                  circleOpacity: 0.98,
+                }}
+              />
+              <MapboxGL.CircleLayer
+                id="active-area-confirmed-locations"
+                filter={['==', ['get', 'certainty'], 'confirmed'] as any}
+                style={{
+                  circleColor: '#F6C84C',
+                  circleRadius: 7,
+                  circleStrokeColor: '#6B4E16',
+                  circleStrokeWidth: 2,
+                }}
+              />
+              <MapboxGL.CircleLayer
+                id="active-area-possible-locations"
+                filter={['==', ['get', 'certainty'], 'approximate'] as any}
+                style={{
+                  circleColor: '#FFFFFF',
+                  circleRadius: 7,
+                  circleStrokeColor: '#D98700',
+                  circleStrokeWidth: 3,
+                }}
+              />
+              <MapboxGL.SymbolLayer
+                id="active-area-location-labels"
+                style={{
+                  textField: ['get', 'label'] as any,
+                  textSize: 12,
+                  textColor: '#4E342E',
+                  textHaloColor: '#FFFFFF',
+                  textHaloWidth: 2,
+                  textOffset: [0, 1.65],
+                  textAnchor: 'top',
+                  textAllowOverlap: true,
+                }}
+              />
+            </MapboxGL.ShapeSource>
 
             {routeFeatureCallout && (
               <MapboxGL.MarkerView
@@ -11764,8 +11649,6 @@ onDidFinishLoadingMap={() => {
           <MapboxGL.Images images={ANDROID_CLUSTER_MARKER_IMAGES} />
         )}
        
-        {SOCIAL_FEATURE_ENABLED && <CheckInRadiusOverlay />}
-
         {/* Render native user location as soon as permission is available */}
         {locationPermissionGranted && (
           <UserLocationMarker visible={locationPermissionGranted} zoomLevel={zoomLevel} />
@@ -11782,22 +11665,6 @@ onDidFinishLoadingMap={() => {
         {/* Render event markers */}
         {!isLoading && !ANDROID_CLUSTER_MARKERVIEW_ISOLATION_DEBUG && renderClusterMarkers()}
       </MapboxGL.MapView>
-      )}
-      {/* Android's Mapbox texture cannot be sampled by a view blur. Preserve
-          the map beneath a translucent tint there; iOS uses the native blur. */}
-      {isFocused && !profileButtonHighlighted && (
-        <View pointerEvents="none" style={{
-          position: 'absolute', top: 0, left: 0, right: 0,
-          height: mapTopFadeHeight, zIndex: 20, elevation: 20,
-        }}>
-          <EdgeBlur edge="top" androidBlurEnabled={false}
-            topFadeStart={safeAreaInsets.top * 0.6 / mapTopFadeHeight} />
-        </View>
-      )}
-
-      {activeAreaEvent && areaLocationGroup && (
-        <AreaLocationBrowser key={`${activeAreaEvent.id}-${areaLocationGroup.id}`} umbrella={activeAreaEvent}
-          group={areaLocationGroup} onClose={() => setAreaLocationGroup(null)} />
       )}
 
       {activeMapExperienceEvent && (
@@ -11902,9 +11769,9 @@ onDidFinishLoadingMap={() => {
         </View>
       )}
 
-      {/* Keep the app's globe mark visible above Mapbox's required attribution. */}
-      {!MAP_TRACE_UI_ENABLED && !PUCK_DIAGNOSTICS_AVAILABLE && (
-        <View style={[styles.mapLogoContainer, { bottom: globeBottomOffset }]} pointerEvents="none">
+      {/* GathR logo above Mapbox logo */}
+      {!MAP_TRACE_UI_ENABLED && (
+        <View style={styles.mapLogoContainer} pointerEvents="none">
           <Image
             source={require('../../assets/images/icon.png')}
             style={styles.mapLogo}
@@ -11927,7 +11794,7 @@ onDidFinishLoadingMap={() => {
           ]}
         >
           <MapLegend
-            topOffset={18 + mapChromeTopReserve}
+            topOffset={30}
             rightOffset={10}
             mapStyle={mapStyleChoice}
             mapStyleChanging={mapStyleChanging}
@@ -11940,20 +11807,13 @@ onDidFinishLoadingMap={() => {
 
           {/* Trending pill - opens the trending lightbox from the top-right */}
           <HotFlamePill
-            top={122 + mapChromeTopReserve}
+            top={134}
             right={10}
             onPress={handleTrendingPillPress}
           />
 
-          <View
-            pointerEvents="box-none"
-            onLayout={handleInterestRailLayout}
-            style={[styles.interestPillsContainer, {
-              top: 170 + mapChromeTopReserve,
-              bottom: interestRailBottomOffset,
-            }]}
-          >
-            <InterestFilterPills availableHeight={interestRailLayout.height || undefined} />
+          <View pointerEvents="box-none" style={styles.interestPillsContainer}>
+            <InterestFilterPills />
           </View>
 
           {/* Interests Carousel - appears when interest pill is selected */}
@@ -11961,26 +11821,27 @@ onDidFinishLoadingMap={() => {
         </View>
       )}
 
+      <View style={styles.mapLogoContainer} pointerEvents="none">
+        <Image
+          source={require('../../assets/images/icon.png')}
+          style={styles.mapLogo}
+          resizeMode="contain"
+        />
+      </View>
+      
       {/* Add the Re-center button */}
       {location && locationPermissionGranted && (
         <RecenterButton 
           onPress={handleRecenterPress}
           disabled={!location} 
-          rightOffset={sideControlRightOffset}
-          bottomOffset={floatingSideControlLift}
         />
       )}
 
       <ContextualCheckInControl
         enabled={Boolean(!isCalloutOpen)}
-        rightOffset={sideControlRightOffset}
-        bottomOffset={floatingSideControlLift}
-        interestRailWidth={measuredRailWidth}
       />
       <FriendEventsMapToggle
-          hidden={Boolean(isCalloutOpen)}
-          bottomOffset={friendsPillBottomOffset - 136}
-          centerRightOffset={sideControlCenterRightOffset}
+        hidden={Boolean(isCalloutOpen)}
         onOpenExternal={(activity) => {
           const group = externalFriendPlaces.find(
             (candidate) => candidate.locationKey === activity.venueLocationKey
@@ -12319,9 +12180,7 @@ Owner: Map UX stability on Android • Last validated: 2025-09-04
       {/* Deep link lightbox - renders when globalSelectedImageData is set from deep link */}
       <GlobalEventLightbox onShowRoute={showRouteOnMap} />
 
-      {PUCK_DIAGNOSTICS_AVAILABLE && <PuckDiagnostics bottom={globeBottomOffset} focused={isFocused} permission={locationPermissionGranted} zoom={zoomLevel} blocked={!!(puckTutorialVisible || hasRenderedCallout || activeFilterPanel)} width={mapDimensions?.width ?? 0} height={mapDimensions?.height ?? 0} />}
-
-      {MAP_TRACE_UI_ENABLED && !PUCK_DIAGNOSTICS_AVAILABLE && (
+      {MAP_TRACE_UI_ENABLED && (
         <TouchableOpacity
           activeOpacity={0.75}
           accessibilityActions={[{ name: 'activate', label: 'Open map trace' }]}
@@ -12358,7 +12217,7 @@ Owner: Map UX stability on Android • Last validated: 2025-09-04
         </TouchableOpacity>
       )}
 
-      {MAP_TRACE_UI_ENABLED && !PUCK_DIAGNOSTICS_AVAILABLE && isTracePanelVisible && (
+      {MAP_TRACE_UI_ENABLED && isTracePanelVisible && (
         <MapTracePanel
           visible={isTracePanelVisible}
           onClose={() => setIsTracePanelVisible(false)}
@@ -13264,7 +13123,7 @@ countText: {
   // Re-center button styles
   recenterButton: {
     position: 'absolute',
-    bottom: 88,
+    bottom: 80,
     right: 10,
     backgroundColor: 'white',
     width: 36,
@@ -13311,7 +13170,8 @@ countText: {
   interestPillsContainer: {
     position: 'absolute',
     right: 10,
-    top: 170, // Keep the wheel tucked below the raised Trending control.
+    top: 182, // Legend button ends at ~170 (80+54+36), add 12px spacing
+    bottom: 172, // Reserve the compact Friends shortcut above recenter.
     justifyContent: 'center',
     alignItems: 'flex-end',
     zIndex: 11,
@@ -13349,9 +13209,9 @@ countText: {
     elevation: 200,
   },
   mapLogo: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.25,
