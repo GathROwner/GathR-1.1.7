@@ -76,6 +76,7 @@ it('finishes both ripple pairs before rotating and captures only the venue chang
  mount([cluster],true);
  const photo=tree.root.findAllByProps({testID:'hybrid-photo-ring'}).at(-1)!;
  act(()=>photo.props.onLayout({nativeEvent:{layout:{y:24,height:42.3}}}));
+ frames(); // Complete the snapshot handoff before the first ripple starts.
  const origin=Date.now();
  const advanceTo=(ms:number)=>act(()=>jest.advanceTimersByTime(origin+ms-Date.now()));
  const label=()=>tree.root.findAllByProps({testID:'hybrid-cluster-marker'}).at(-1)!.props.accessibilityLabel;
@@ -107,9 +108,51 @@ it('keeps native paint targets stable during unrelated renders and disables ripp
  act(()=>tree.update(halo()));
  expect(tree.root.findByType('ShapeSource' as any).props.shape).toBe(shape);
  tree.root.findAllByType('CircleLayer' as any).forEach((l,i)=>expect(l.props.style).toBe(layers[i]));
- expect(layers[1].circleRadiusTransition.delay).toBe(220);
+ expect(layers[1].circleRadiusTransition.delay).toBe(150);
  expect(layers[0].circleRadius).toBeGreaterThan(layers[1].circleRadius);
  act(()=>tree.update(halo(true)));
  expect(tree.root.findAllByType('CircleLayer' as any).map(l=>l.props.style.circleStrokeOpacity)).toEqual([.25,0]);
  act(()=>jest.advanceTimersByTime(10000));expect(rotation).not.toHaveBeenCalled();
+});
+
+it('uses fresh hidden native layers for a late photo load and never resumes the expanded paint state',()=>{
+ const cluster=fixture(0);cluster.timeStatus='now';cluster.venues[0].events[0].profileUrl='https://fixture.invalid/first.webp';
+ mount([cluster],true);
+ act(()=>tree.root.findAllByProps({testID:'hybrid-photo-ring'}).at(-1)!.props.onLayout({nativeEvent:{layout:{y:24,height:42.3}}}));frames();
+ act(()=>jest.advanceTimersByTime(400));mockRefresh.mockClear();
+ const oldIds=tree.root.findAllByType('CircleLayer' as any).map(l=>l.props.id);
+ expect(tree.root.findAllByType('CircleLayer' as any)[0].props.style.circleRadius).toBeGreaterThan(30);
+ const loaded=tree.root.findAllByProps({testID:'hybrid-venue-photo'}).at(-1)!.props.onLoad;
+ act(()=>loaded());
+ const reset=tree.root.findAllByType('CircleLayer' as any);
+ expect(reset.map(l=>l.props.id)).not.toEqual(oldIds);
+ for(const l of reset){expect(l.props.style.circleStrokeOpacity).toBe(0);expect(l.props.style.circleRadius).toBeCloseTo(18.45);expect(l.props.style.circleRadiusTransition.duration).toBe(0);}
+ act(()=>jest.advanceTimersByTime(32));expect(mockRefresh).toHaveBeenCalledTimes(1);
+ // A load arriving after the native capture requests another capture and
+ // keeps both waves hidden until that final capture has settled.
+ act(()=>loaded());act(()=>jest.advanceTimersByTime(32));
+ for(const l of tree.root.findAllByType('CircleLayer' as any))expect(l.props.style.circleStrokeOpacity).toBe(0);
+ act(()=>jest.advanceTimersByTime(64));expect(mockRefresh).toHaveBeenCalledTimes(2);
+ const primed=tree.root.findAllByType('CircleLayer' as any);
+ expect(primed[0].props.style.circleRadius).toBeCloseTo(18.45);
+ expect(primed[0].props.style.circleRadiusTransition.duration).toBe(0);
+ act(()=>jest.advanceTimersByTime(40));
+ expect(tree.root.findAllByType('CircleLayer' as any)[0].props.style.circleRadiusTransition.duration).toBe(1100);
+});
+
+it('ignores photo events from the previous venue and cancels pending capture work on unmount',()=>{
+ const cluster=fixture(0);cluster.timeStatus='now';cluster.venues[0].events[0].profileUrl='https://fixture.invalid/first.webp';
+ cluster.venues.push({...cluster.venues[0],locationKey:'zz-second',venue:'Second',events:[{...cluster.venues[0].events[0],id:'second-event',profileUrl:'https://fixture.invalid/second.webp'}]});
+ mount([cluster],true);
+ act(()=>tree.root.findAllByProps({testID:'hybrid-photo-ring'}).at(-1)!.props.onLayout({nativeEvent:{layout:{y:24,height:42.3}}}));frames();
+ const previous=tree.root.findAllByProps({testID:'hybrid-venue-photo'}).at(-1)!.props;
+ act(()=>jest.advanceTimersByTime(2820));frames();mockRefresh.mockClear();
+ const current=tree.root.findAllByProps({testID:'hybrid-venue-photo'}).at(-1)!.props;
+ expect(current.source.uri).toBe('https://fixture.invalid/second.webp');
+ const ids=tree.root.findAllByType('CircleLayer' as any).map(l=>l.props.id);
+ act(()=>{previous.onLoad();previous.onError();});frames();
+ expect(mockRefresh).not.toHaveBeenCalled();expect(tree.root.findAllByType('CircleLayer' as any).map(l=>l.props.id)).toEqual(ids);
+ act(()=>current.onLoad());act(()=>jest.advanceTimersByTime(16));
+ act(()=>tree.unmount());act(()=>jest.advanceTimersByTime(5000));
+ expect(mockRefresh).not.toHaveBeenCalled();
 });
