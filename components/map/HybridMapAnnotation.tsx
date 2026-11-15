@@ -143,31 +143,29 @@ export function HybridMapHalo({ id, coordinate, radius, translate, timing, activ
   hidden?: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const pairs = useRef(0);
   const animate = active && !hidden && !reduceMotion && timing !== 'future';
   useEffect(() => {
     setExpanded(false);
+    pairs.current = 0;
+  }, [animate, onVenueRotation]);
+  useEffect(() => {
     if (!animate) return;
     let timer: ReturnType<typeof setTimeout>;
-    let stopped = false;
-    let pairs = 0;
-    const grow = () => {
-      if (stopped) return;
-      setExpanded(true);
-      // Leave settling time after the fade, then switch the venue while the
-      // ring is invisible. The rest of the gap allows its bitmap to refresh
-      // before the next pulse. This clock also owns the venue cadence.
+    if (!expanded) {
+      // Schedule growth only AFTER the collapsed state has committed. A
+      // chained timer can otherwise batch reset+growth into unchanged `true`
+      // during a short JS stall, leaving Mapbox at its old expanded target.
+      timer = setTimeout(() => setExpanded(true), HYBRID_PULSE.resetMs);
+    } else {
       timer = setTimeout(() => {
-        pairs += 1;
-        if (pairs % HYBRID_PULSE.pairsPerVenue === 0) onVenueRotation?.();
-        timer = setTimeout(() => {
-          setExpanded(false);
-          timer = setTimeout(grow, HYBRID_PULSE.resetMs);
-        }, HYBRID_PULSE.pauseMs / 2);
+        pairs.current += 1;
+        if (pairs.current % HYBRID_PULSE.pairsPerVenue === 0) onVenueRotation?.();
+        timer = setTimeout(() => setExpanded(false), HYBRID_PULSE.pauseMs / 2);
       }, HYBRID_PULSE.durationMs + HYBRID_PULSE.pauseMs / 2);
-    };
-    timer = setTimeout(grow, HYBRID_PULSE.resetMs);
-    return () => { stopped = true; clearTimeout(timer); };
-  }, [animate, onVenueRotation]);
+    }
+    return () => clearTimeout(timer);
+  }, [animate, expanded, onVenueRotation]);
   const [longitude, latitude] = coordinate;
   const [translateX, translateY] = translate;
   const shape = useMemo(() => ({ type: 'Feature' as const, properties: {}, geometry: { type: 'Point' as const, coordinates: [longitude, latitude] } }), [longitude, latitude]);
