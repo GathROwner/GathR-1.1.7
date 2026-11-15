@@ -4,6 +4,7 @@ import { EVENTS_MINIMAL } from '../lib/queryKeys';
 import { EVENTS_QUERY_GC_MS, EVENTS_QUERY_STALE_MS } from '../lib/eventCachePolicy';
 import type { Event } from '../types/events';
 import type { MapState } from '../types/store';
+import { recordStartupMilestone } from '../utils/startupTiming';
 
 type MinimalResult = { combinedData: Event[] };
 
@@ -16,6 +17,9 @@ export function useStartupEventCache(
   const client = useQueryClient();
   const restoring = useIsRestoring();
   useEffect(() => {
+    recordStartupMilestone('startup_gate_observed', { authReady, restoring });
+    if (authReady) recordStartupMilestone('auth_ready');
+    if (!restoring) recordStartupMilestone('cache_restore_ready');
     if (restoring || !authReady) return;
     let active = true;
     let lastResult: unknown;
@@ -27,6 +31,7 @@ export function useStartupEventCache(
       lastResult = result;
       lastUpdatedAt = updatedAt;
       publish(items, { projectViewport: source });
+      recordStartupMilestone(source === 'cache' ? 'startup_cache_published' : 'startup_refresh_published', { items: items.length });
     };
     // Observe successful feed updates without making this an active query or
     // changing its cache lifetime. A request already running before restoration
@@ -38,6 +43,10 @@ export function useStartupEventCache(
       }
     });
     const saved = client.getQueryData<MinimalResult>(EVENTS_MINIMAL);
+    recordStartupMilestone('startup_cache_checked', {
+      items: saved?.combinedData?.length ?? 0,
+      ageMs: saved ? Math.max(0, Date.now() - (client.getQueryState(EVENTS_MINIMAL)?.dataUpdatedAt ?? 0)) : null,
+    });
     publishResult(saved, 'cache', client.getQueryState(EVENTS_MINIMAL)?.dataUpdatedAt ?? 0);
     void client.fetchQuery({
       queryKey: EVENTS_MINIMAL,

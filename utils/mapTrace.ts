@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { summarizeCalloutOpenings } from './mapCalloutTiming';
+import { formatStartupTimingExport } from './startupTiming';
 
 type TracePrimitive = string | number | boolean | null;
 
@@ -427,8 +428,9 @@ export const captureMapTraceSamplers = (trigger: string, details?: Record<string
 };
 
 export const formatMapTraceExport = (): string => {
+  const startup = formatStartupTimingExport();
   if (!MAP_TRACE_ENABLED) {
-    return 'MAP TRACE\n\nTracing is disabled. Set EXPO_PUBLIC_MAP_LATENCY_TRACE=1 for a diagnostic bundle.';
+    return startup || 'MAP TRACE\n\nTracing is disabled. Set EXPO_PUBLIC_MAP_LATENCY_TRACE=1 for a diagnostic bundle.';
   }
 
   const lines: string[] = [];
@@ -464,7 +466,7 @@ export const formatMapTraceExport = (): string => {
       lines.push(`${key}=${String(value)}`);
     });
 
-  return lines.join('\n');
+  return [startup, lines.join('\n')].filter(Boolean).join('\n\n');
 };
 
 export const useMapTraceState = (enabled: boolean = true): MapTraceState => {

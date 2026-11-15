@@ -59,6 +59,7 @@ Last validated: 2025-09-04 • Owner: Map data/UX
 import { createEventTimeContext, doesEventMatchTypeFilters, getFilterScheduleState as getMeasuredEventScheduleState, getEventFilterTimeFacts, matchesTimeFacts, matchesUpcomingDate, eventMatchesSearch, type EventTimeContext } from '../utils/mapEventFilters';
 import { normalizeUpcomingTypeFilters } from '../utils/upcomingDateWindow';
 import { create } from 'zustand';
+import { recordStartupMilestone } from '../utils/startupTiming';
 import { Event, Venue, Cluster, TimeStatus, InterestLevel } from '../types/events';
 import { FilterCriteria, TimeFilterType, TypeFilterCriteria } from '../types/filter';
 import { MapState, type ViewportFetchOptions } from '../types/store';
@@ -1832,6 +1833,7 @@ refreshPrivateSharedEventsFromServer: async (privateEventIds?: string[]) => {
     options: ViewportFetchOptions = {}
   ) => {
     const requestId = options.requestId ?? reserveViewportRequestId();
+    recordStartupMilestone('viewport_requested', { savedItems: get().allEvents.length });
     const startedAt = Date.now();
     const traceStartedAt = MAP_TRACE_ENABLED ? mapTraceNow() : 0;
     const traceGestureSessionId = getActiveMapTraceGestureSessionId();
@@ -2028,6 +2030,9 @@ refreshPrivateSharedEventsFromServer: async (privateEventIds?: string[]) => {
       traceMapEvent('viewport_projection_ready', {
         requestId, source, clusters: get().clusters.length,
       }, { gestureSessionId: traceGestureSessionId });
+      recordStartupMilestone(source === 'cache' ? 'viewport_cache_ready' : 'viewport_refresh_ready', {
+        items: get().viewportEvents.length, clusters: get().clusters.length,
+      });
     };
     projectCurrentViewportCache = (events, source) => projectPublicEvents(events, source);
 
@@ -2702,6 +2707,7 @@ traceMapEvent('cluster_store_committed', {
   clusterNowTodayCalls: clusterClassificationMetric.count,
   clusterNowTodayCumulativeMs: clusterClassificationMetric.cumulativeDurationMs,
 }, { gestureSessionId: traceGestureSessionId });
+if (get().clusters.length > 0) recordStartupMilestone('clusters_computed', { clusters: get().clusters.length });
 logStartupDataTiming('generate_clusters_completed', {
   elapsedMs: Date.now() - t0,
   zoom: currentZoom,

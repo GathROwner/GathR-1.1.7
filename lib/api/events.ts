@@ -17,6 +17,7 @@ import { fetchPrivateSharedEventsForCurrentUser } from './privateSharedEvents';
 import { normalizeVenueIdentityText } from '../../utils/venueIdentity';
 import { isScopedLocationEvent } from '../../utils/locationScope';
 import { applyCityCentroidFallback } from '../../utils/peiCityCentroids';
+import { beginStartupFetch } from '../../utils/startupTiming';
 
 const DEBUG_FETCH = __DEV__ ?? true;
 
@@ -317,14 +318,26 @@ async function fetchMinimalEventsFromSource(
   const t0 = Date.now();
 
   if (USE_FIRESTORE_EVENTS) {
+    const timing = beginStartupFetch({ typeScoped: typeof options.isEvent === 'boolean' });
     const [firestoreEvents, privateSharedEvents] = await Promise.all([
-      fetchAllFirestoreEvents(options),
-      fetchPrivateSharedEventsForCurrentUser(),
-    ]);
+      fetchAllFirestoreEvents(options, timing).then(items => {
+        timing?.('public_fetch_finished', { items: items.length });
+        return items;
+      }),
+      fetchPrivateSharedEventsForCurrentUser({}, timing).then(items => {
+        timing?.('private_fetch_finished', { items: items.length });
+        return items;
+      }),
+    ]).catch(error => {
+      timing?.('feed_fetch_failed');
+      throw error;
+    });
+    timing?.('merge_started');
     // Firestore events resolve centroids in normalizeFirestoreEvent; this
     // pass covers private-shared city-level events the same way.
     const combinedData = mergePrivateSharedEvents(firestoreEvents, privateSharedEvents)
       .map(applyCityCentroidFallback);
+    timing?.('feed_fetch_finished', { items: combinedData.length });
 
     if (DEBUG_FETCH) {
       console.log(

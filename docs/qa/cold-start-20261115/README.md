@@ -26,7 +26,7 @@ New actual-component RN Web marker-grid and selector renders were independently 
 
 This iteration targets iOS Production runtime 1.1.20, assembled on its exact live baseline 791c4cb in the retained independent ghr-tap checkout. The initial cache-handoff group c8231195-0823-4fed-a1ed-df78e239282a was followed by the final account-readiness/type-order guard refinement. PUBLISHED_IOS.json records the final newest platform update and server readbacks. Android, Preview and Development retain the accepted Hybrid tap releases from the prior all-target rollout; this cold-start candidate is not described as adopted there.
 
-After adoption, a force-close and reopen with valid saved data is the relevant phone comparison. No reinstall, data clearing or racing to open the manual trace panel is required. Exact OTA adoption and physical startup improvement remain separate from EAS publication proof.
+Craig subsequently clarified that cached force-close/reopens were already fast. That comparison does not reproduce or validate a repair for his original first-data-pull delay. See [automatic startup timing](../startup-timing-20261115/README.md) for the separately authorized instrumentation. No original-symptom improvement is claimed from the cached restart.
 
 Raw validation, environment, export/publish and readbacks are archived under artifacts/cold-start-20261115/. The new permanent regression suite is store/__tests__/coldStartCache-test.tsx.
 

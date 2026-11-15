@@ -24,6 +24,7 @@ import { readEventAreaData, isExplicitTrue } from '../../utils/eventAreaData';
 import { readEventProgrammeData } from '../../utils/eventProgramme';
 import { normalizeRecurrenceFlag } from '../../utils/eventRecurrence';
 import { toFirestoreEventId, toAppEventId } from '../../utils/firestoreEventIds';
+import type { StartupFetchTiming } from '../../utils/startupTiming';
 export { toFirestoreEventId, toAppEventId, areEventIdsEquivalent } from '../../utils/firestoreEventIds';
 
 // Debug flag for logging
@@ -743,7 +744,8 @@ export async function fetchVenueDetailsByName(
  * Fetch ALL Firestore events (handles pagination automatically).
  */
 export async function fetchAllFirestoreEvents(
-  options: FirestoreFetchOptions = {}
+  options: FirestoreFetchOptions = {},
+  startupTiming?: StartupFetchTiming,
 ): Promise<Event[]> {
   const allRawEvents: FirestoreEvent[] = [];
   let nextPageToken: string | undefined;
@@ -754,10 +756,12 @@ export async function fetchAllFirestoreEvents(
 
   try {
     do {
+      if (pageCount < 16) startupTiming?.('public_page_started', { page: pageCount + 1 });
       const response = await fetchFirestorePage({
         ...options,
         startAfter: nextPageToken,
       });
+      if (pageCount < 16) startupTiming?.('public_page_received', { page: pageCount + 1, items: response.events?.length ?? 0, hasMore: Boolean(response.nextPageToken) });
 
       if (Array.isArray(response.events)) {
         allRawEvents.push(...response.events);
@@ -797,6 +801,7 @@ export async function fetchAllFirestoreEvents(
     return normalizedEvents;
   } catch (error) {
     console.error('[Firestore] Error fetching events:', error);
+    startupTiming?.('public_fetch_failed', { pages: pageCount });
     return [];
   }
 }
