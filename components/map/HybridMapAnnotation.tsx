@@ -28,6 +28,10 @@ export default function HybridMapAnnotation(props: Props) {
     [compact, registerTapTarget, id, cluster, longitude, latitude]);
   const annotation = useRef<Mapbox.PointAnnotation>(null);
   const frame = useRef<number | null>(null);
+  const capturePhase = useRef<'idle' | 'scheduled' | 'settling'>('idle');
+  const recapture = useRef(false);
+  const [haloRevision, setHaloRevision] = useState(0);
+  const [snapshotReady, setSnapshotReady] = useState(false);
   const [size, setSize] = useState({ width: 1, height: 1 });
   const [photo, setPhoto] = useState({ y: 0, height: 0 });
   const measuredSize = useRef(size);
@@ -40,13 +44,39 @@ export default function HybridMapAnnotation(props: Props) {
   const countLabel = String(cluster.eventCount + cluster.specialCount);
   const compactDiameter = hybridCompactDiameter(countLabel);
   const refresh = useCallback(() => {
-    if (frame.current !== null) return;
-    // Image decoding and React/native layout must commit before the native bitmap is refreshed.
-    frame.current = requestAnimationFrame(() => {
-      frame.current = requestAnimationFrame(() => { frame.current = null; annotation.current?.refresh(); });
-    });
+    if (capturePhase.current !== 'idle') {
+      // A load after the capture needs another snapshot; earlier loads are
+      // already included in the scheduled capture.
+      if (capturePhase.current === 'settling') recapture.current = true;
+      return;
+    }
+    const capture = () => {
+      capturePhase.current = 'scheduled';
+      setSnapshotReady(false);
+      setHaloRevision(value => value + 1);
+      // Hide and replace native paint state before replacing the venue bitmap.
+      frame.current = requestAnimationFrame(() => {
+        frame.current = requestAnimationFrame(() => {
+          capturePhase.current = 'settling';
+          annotation.current?.refresh();
+          // Allow the native snapshot command and its following frames to
+          // settle before a brand-new, collapsed ripple is allowed to start.
+          frame.current = requestAnimationFrame(() => {
+            frame.current = requestAnimationFrame(() => {
+              if (recapture.current) { recapture.current = false; capture(); return; }
+              capturePhase.current = 'idle'; frame.current = null;
+              setSnapshotReady(true);
+            });
+          });
+        });
+      });
+    };
+    capture();
   }, []);
-  useEffect(() => () => { if (frame.current !== null) cancelAnimationFrame(frame.current); }, []);
+  useEffect(() => () => {
+    if (frame.current !== null) cancelAnimationFrame(frame.current);
+    capturePhase.current = 'idle'; recapture.current = false;
+  }, []);
   const measure = useCallback((e: LayoutChangeEvent) => {
     const { width, height } = e.nativeEvent.layout;
     if (measuredSize.current.width === width && measuredSize.current.height === height) return;
@@ -69,7 +99,10 @@ export default function HybridMapAnnotation(props: Props) {
   return <>
     {compact && <HybridCompactCount id={id} coordinate={coordinate} label={countLabel} diameter={compactDiameter}
       dockX={dockX} dockY={dockY} onPress={() => { if (!disabled && !isSelected) props.onPress(); }} />}
-    {!compact && photo.height > 0 && <HybridMapHalo id={id} coordinate={coordinate} radius={photo.height / 2}
+    {!compact && photo.height > 0 && <HybridMapHalo
+      key={`${id}-presentation-${haloRevision}-${props.isActive && !isSelected ? 'active' : 'rest'}`}
+      id={`${id}-presentation-${haloRevision}-${props.isActive && !isSelected ? 'active' : 'rest'}`}
+      coordinate={coordinate} radius={photo.height / 2} hidden={!snapshotReady}
       translate={[dockX, dockY - (size.height - photo.y - photo.height / 2)]}
       timing={cluster.timeStatus} active={props.isActive && !isSelected} reduceMotion={props.reduceMotionEnabled}
       onVenueRotation={coordinateVenueRotation ? advanceVenue : undefined} />}
@@ -101,13 +134,14 @@ export default function HybridMapAnnotation(props: Props) {
 }
 
 /** Native paint transitions animate the halo without repeatedly rasterizing the venue graphics. */
-export function HybridMapHalo({ id, coordinate, radius, translate, timing, active, reduceMotion, onVenueRotation }: {
+export function HybridMapHalo({ id, coordinate, radius, translate, timing, active, reduceMotion, onVenueRotation, hidden = false }: {
   id: string; coordinate: [number, number]; radius: number; translate: [number, number];
   timing: Cluster['timeStatus']; active: boolean; reduceMotion: boolean;
   onVenueRotation?: () => void;
+  hidden?: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
-  const animate = active && !reduceMotion && timing !== 'future';
+  const animate = active && !hidden && !reduceMotion && timing !== 'future';
   useEffect(() => {
     setExpanded(false);
     if (!animate) return;
@@ -140,9 +174,9 @@ export function HybridMapHalo({ id, coordinate, radius, translate, timing, activ
       circleRadius: (radius - 2.7) * (animate && expanded ? HYBRID_PULSE.scale : 1), circleRadiusTransition: { duration, delay: 0 },
       circleColor: 'rgba(0,0,0,0)', circleStrokeWidth: 2.7,
       circleStrokeColor: hybridTimingColor(timing),
-      circleStrokeOpacity: !animate ? .25 : expanded ? 0 : HYBRID_PULSE.opacity, circleStrokeOpacityTransition: { duration, delay: 0 },
+      circleStrokeOpacity: hidden ? 0 : !animate ? .25 : expanded ? 0 : HYBRID_PULSE.opacity, circleStrokeOpacityTransition: { duration, delay: 0 },
       circleTranslate: [translateX, translateY] as [number, number], circleTranslateAnchor: 'viewport' as const, circlePitchAlignment: 'viewport' as const, circlePitchScale: 'viewport' as const,
-    }), [radius, animate, expanded, duration, timing, translateX, translateY]);
+    }), [radius, animate, expanded, duration, timing, translateX, translateY, hidden]);
   const trailingStyle = useMemo(() => ({
     ...style,
     circleRadius: (radius - 2.7) * (animate && expanded ? HYBRID_PULSE.trailingScale : 1),

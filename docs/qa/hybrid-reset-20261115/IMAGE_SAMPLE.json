@@ -1,0 +1,153 @@
+{
+  "firstFeedPageEvents": 100,
+  "uniqueProfilePhotosOnPage": 38,
+  "sampleCount": 12,
+  "durationSeconds": 2.41,
+  "results": [
+    {
+      "sample": 1,
+      "host": "storage.googleapis.com",
+      "bytesRead": 242176,
+      "contentType": "image/webp",
+      "contentLength": "242176",
+      "truncated": false,
+      "width": 2048,
+      "height": 2048,
+      "format": "WEBP",
+      "estimatedRGBABytes": 16777216
+    },
+    {
+      "sample": 2,
+      "host": "storage.googleapis.com",
+      "bytesRead": 10400,
+      "contentType": "image/webp",
+      "contentLength": "10400",
+      "truncated": false,
+      "width": 500,
+      "height": 500,
+      "format": "WEBP",
+      "estimatedRGBABytes": 1000000
+    },
+    {
+      "sample": 3,
+      "host": "storage.googleapis.com",
+      "bytesRead": 10008,
+      "contentType": "image/webp",
+      "contentLength": "10008",
+      "truncated": false,
+      "width": 700,
+      "height": 700,
+      "format": "WEBP",
+      "estimatedRGBABytes": 1960000
+    },
+    {
+      "sample": 4,
+      "host": "storage.googleapis.com",
+      "bytesRead": 1488,
+      "contentType": "image/webp",
+      "contentLength": "1488",
+      "truncated": false,
+      "width": 50,
+      "height": 50,
+      "format": "WEBP",
+      "estimatedRGBABytes": 10000
+    },
+    {
+      "sample": 5,
+      "host": "storage.googleapis.com",
+      "bytesRead": 58260,
+      "contentType": "image/webp",
+      "contentLength": "58260",
+      "truncated": false,
+      "width": 2000,
+      "height": 2000,
+      "format": "WEBP",
+      "estimatedRGBABytes": 16000000
+    },
+    {
+      "sample": 6,
+      "host": "storage.googleapis.com",
+      "bytesRead": 342932,
+      "contentType": "image/webp",
+      "contentLength": "342932",
+      "truncated": false,
+      "width": 2048,
+      "height": 1536,
+      "format": "WEBP",
+      "estimatedRGBABytes": 12582912
+    },
+    {
+      "sample": 7,
+      "host": "storage.googleapis.com",
+      "bytesRead": 74796,
+      "contentType": "image/webp",
+      "contentLength": "74796",
+      "truncated": false,
+      "width": 2048,
+      "height": 2048,
+      "format": "WEBP",
+      "estimatedRGBABytes": 16777216
+    },
+    {
+      "sample": 8,
+      "host": "storage.googleapis.com",
+      "bytesRead": 1250,
+      "contentType": "image/webp",
+      "contentLength": "1250",
+      "truncated": false,
+      "width": 50,
+      "height": 50,
+      "format": "WEBP",
+      "estimatedRGBABytes": 10000
+    },
+    {
+      "sample": 9,
+      "host": "storage.googleapis.com",
+      "bytesRead": 524,
+      "contentType": "image/webp",
+      "contentLength": "524",
+      "truncated": false,
+      "width": 50,
+      "height": 50,
+      "format": "WEBP",
+      "estimatedRGBABytes": 10000
+    },
+    {
+      "sample": 10,
+      "host": "storage.googleapis.com",
+      "bytesRead": 734,
+      "contentType": "image/webp",
+      "contentLength": "734",
+      "truncated": false,
+      "width": 50,
+      "height": 50,
+      "format": "WEBP",
+      "estimatedRGBABytes": 10000
+    },
+    {
+      "sample": 11,
+      "host": "storage.googleapis.com",
+      "bytesRead": 32650,
+      "contentType": "image/webp",
+      "contentLength": "32650",
+      "truncated": false,
+      "width": 768,
+      "height": 768,
+      "format": "WEBP",
+      "estimatedRGBABytes": 2359296
+    },
+    {
+      "sample": 12,
+      "host": "storage.googleapis.com",
+      "bytesRead": 42992,
+      "contentType": "image/webp",
+      "contentLength": "42992",
+      "truncated": false,
+      "width": 960,
+      "height": 955,
+      "format": "WEBP",
+      "estimatedRGBABytes": 3667200
+    }
+  ],
+  "limits": "Public first-page profile images only, maximum 12 requests, 4MiB per image. No phone decode or render timing measured."
+}

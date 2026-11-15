@@ -7,9 +7,9 @@ export const HYBRID_PULSE = {
   resetMs: 40,
   opacity: 0.8,
   scale: 2.2,
-  trailingDelayMs: 220,
+  trailingDelayMs: 150,
   trailingDurationMs: 750,
-  trailingScale: 1.6,
+  trailingScale: 1.7,
   trailingOpacity: 0.65,
   pairsPerVenue: 2,
 } as const;

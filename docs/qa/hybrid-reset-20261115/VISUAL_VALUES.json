@@ -1,0 +1,773 @@
+{
+  "method": "Actual RN components; baseline and candidate native paint props; SVG bridge frozen at 560ms; no native map interaction",
+  "specs": [
+    {
+      "key": "before-now-light",
+      "initial": [
+        {
+          "circleRadius": 18.45,
+          "circleRadiusTransition": {
+            "duration": 0,
+            "delay": 0
+          },
+          "circleColor": "rgba(0,0,0,0)",
+          "circleStrokeWidth": 2.7,
+          "circleStrokeColor": "#188038",
+          "circleStrokeOpacity": 0.8,
+          "circleStrokeOpacityTransition": {
+            "duration": 0,
+            "delay": 0
+          },
+          "circleTranslate": [
+            0,
+            0
+          ],
+          "circleTranslateAnchor": "viewport",
+          "circlePitchAlignment": "viewport",
+          "circlePitchScale": "viewport"
+        },
+        {
+          "circleRadius": 18.45,
+          "circleRadiusTransition": {
+            "duration": 0,
+            "delay": 0
+          },
+          "circleColor": "rgba(0,0,0,0)",
+          "circleStrokeWidth": 2.7,
+          "circleStrokeColor": "#188038",
+          "circleStrokeOpacity": 0.65,
+          "circleStrokeOpacityTransition": {
+            "duration": 0,
+            "delay": 0
+          },
+          "circleTranslate": [
+            0,
+            0
+          ],
+          "circleTranslateAnchor": "viewport",
+          "circlePitchAlignment": "viewport",
+          "circlePitchScale": "viewport"
+        }
+      ],
+      "expanded": [
+        {
+          "circleRadius": 40.59,
+          "circleRadiusTransition": {
+            "duration": 1100,
+            "delay": 0
+          },
+          "circleColor": "rgba(0,0,0,0)",
+          "circleStrokeWidth": 2.7,
+          "circleStrokeColor": "#188038",
+          "circleStrokeOpacity": 0,
+          "circleStrokeOpacityTransition": {
+            "duration": 1100,
+            "delay": 0
+          },
+          "circleTranslate": [
+            0,
+            0
+          ],
+          "circleTranslateAnchor": "viewport",
+          "circlePitchAlignment": "viewport",
+          "circlePitchScale": "viewport"
+        },
+        {
+          "circleRadius": 29.52,
+          "circleRadiusTransition": {
+            "duration": 750,
+            "delay": 220
+          },
+          "circleColor": "rgba(0,0,0,0)",
+          "circleStrokeWidth": 2.7,
+          "circleStrokeColor": "#188038",
+          "circleStrokeOpacity": 0,
+          "circleStrokeOpacityTransition": {
+            "duration": 750,
+            "delay": 220
+          },
+          "circleTranslate": [
+            0,
+            0
+          ],
+          "circleTranslateAnchor": "viewport",
+          "circlePitchAlignment": "viewport",
+          "circlePitchScale": "viewport"
+        }
+      ],
+      "cycleMs": 1500
+    },
+    {
+      "key": "before-now-dark",
+      "initial": [
+        {
+          "circleRadius": 18.45,
+          "circleRadiusTransition": {
+            "duration": 0,
+            "delay": 0
+          },
+          "circleColor": "rgba(0,0,0,0)",
+          "circleStrokeWidth": 2.7,
+          "circleStrokeColor": "#188038",
+          "circleStrokeOpacity": 0.8,
+          "circleStrokeOpacityTransition": {
+            "duration": 0,
+            "delay": 0
+          },
+          "circleTranslate": [
+            0,
+            0
+          ],
+          "circleTranslateAnchor": "viewport",
+          "circlePitchAlignment": "viewport",
+          "circlePitchScale": "viewport"
+        },
+        {
+          "circleRadius": 18.45,
+          "circleRadiusTransition": {
+            "duration": 0,
+            "delay": 0
+          },
+          "circleColor": "rgba(0,0,0,0)",
+          "circleStrokeWidth": 2.7,
+          "circleStrokeColor": "#188038",
+          "circleStrokeOpacity": 0.65,
+          "circleStrokeOpacityTransition": {
+            "duration": 0,
+            "delay": 0
+          },
+          "circleTranslate": [
+            0,
+            0
+          ],
+          "circleTranslateAnchor": "viewport",
+          "circlePitchAlignment": "viewport",
+          "circlePitchScale": "viewport"
+        }
+      ],
+      "expanded": [
+        {
+          "circleRadius": 40.59,
+          "circleRadiusTransition": {
+            "duration": 1100,
+            "delay": 0
+          },
+          "circleColor": "rgba(0,0,0,0)",
+          "circleStrokeWidth": 2.7,
+          "circleStrokeColor": "#188038",
+          "circleStrokeOpacity": 0,
+          "circleStrokeOpacityTransition": {
+            "duration": 1100,
+            "delay": 0
+          },
+          "circleTranslate": [
+            0,
+            0
+          ],
+          "circleTranslateAnchor": "viewport",
+          "circlePitchAlignment": "viewport",
+          "circlePitchScale": "viewport"
+        },
+        {
+          "circleRadius": 29.52,
+          "circleRadiusTransition": {
+            "duration": 750,
+            "delay": 220
+          },
+          "circleColor": "rgba(0,0,0,0)",
+          "circleStrokeWidth": 2.7,
+          "circleStrokeColor": "#188038",
+          "circleStrokeOpacity": 0,
+          "circleStrokeOpacityTransition": {
+            "duration": 750,
+            "delay": 220
+          },
+          "circleTranslate": [
+            0,
+            0
+          ],
+          "circleTranslateAnchor": "viewport",
+          "circlePitchAlignment": "viewport",
+          "circlePitchScale": "viewport"
+        }
+      ],
+      "cycleMs": 1500
+    },
+    {
+      "key": "before-today-light",
+      "initial": [
+        {
+          "circleRadius": 18.45,
+          "circleRadiusTransition": {
+            "duration": 0,
+            "delay": 0
+          },
+          "circleColor": "rgba(0,0,0,0)",
+          "circleStrokeWidth": 2.7,
+          "circleStrokeColor": "#C99700",
+          "circleStrokeOpacity": 0.8,
+          "circleStrokeOpacityTransition": {
+            "duration": 0,
+            "delay": 0
+          },
+          "circleTranslate": [
+            0,
+            0
+          ],
+          "circleTranslateAnchor": "viewport",
+          "circlePitchAlignment": "viewport",
+          "circlePitchScale": "viewport"
+        },
+        {
+          "circleRadius": 18.45,
+          "circleRadiusTransition": {
+            "duration": 0,
+            "delay": 0
+          },
+          "circleColor": "rgba(0,0,0,0)",
+          "circleStrokeWidth": 2.7,
+          "circleStrokeColor": "#C99700",
+          "circleStrokeOpacity": 0.65,
+          "circleStrokeOpacityTransition": {
+            "duration": 0,
+            "delay": 0
+          },
+          "circleTranslate": [
+            0,
+            0
+          ],
+          "circleTranslateAnchor": "viewport",
+          "circlePitchAlignment": "viewport",
+          "circlePitchScale": "viewport"
+        }
+      ],
+      "expanded": [
+        {
+          "circleRadius": 40.59,
+          "circleRadiusTransition": {
+            "duration": 1100,
+            "delay": 0
+          },
+          "circleColor": "rgba(0,0,0,0)",
+          "circleStrokeWidth": 2.7,
+          "circleStrokeColor": "#C99700",
+          "circleStrokeOpacity": 0,
+          "circleStrokeOpacityTransition": {
+            "duration": 1100,
+            "delay": 0
+          },
+          "circleTranslate": [
+            0,
+            0
+          ],
+          "circleTranslateAnchor": "viewport",
+          "circlePitchAlignment": "viewport",
+          "circlePitchScale": "viewport"
+        },
+        {
+          "circleRadius": 29.52,
+          "circleRadiusTransition": {
+            "duration": 750,
+            "delay": 220
+          },
+          "circleColor": "rgba(0,0,0,0)",
+          "circleStrokeWidth": 2.7,
+          "circleStrokeColor": "#C99700",
+          "circleStrokeOpacity": 0,
+          "circleStrokeOpacityTransition": {
+            "duration": 750,
+            "delay": 220
+          },
+          "circleTranslate": [
+            0,
+            0
+          ],
+          "circleTranslateAnchor": "viewport",
+          "circlePitchAlignment": "viewport",
+          "circlePitchScale": "viewport"
+        }
+      ],
+      "cycleMs": 1500
+    },
+    {
+      "key": "before-today-dark",
+      "initial": [
+        {
+          "circleRadius": 18.45,
+          "circleRadiusTransition": {
+            "duration": 0,
+            "delay": 0
+          },
+          "circleColor": "rgba(0,0,0,0)",
+          "circleStrokeWidth": 2.7,
+          "circleStrokeColor": "#C99700",
+          "circleStrokeOpacity": 0.8,
+          "circleStrokeOpacityTransition": {
+            "duration": 0,
+            "delay": 0
+          },
+          "circleTranslate": [
+            0,
+            0
+          ],
+          "circleTranslateAnchor": "viewport",
+          "circlePitchAlignment": "viewport",
+          "circlePitchScale": "viewport"
+        },
+        {
+          "circleRadius": 18.45,
+          "circleRadiusTransition": {
+            "duration": 0,
+            "delay": 0
+          },
+          "circleColor": "rgba(0,0,0,0)",
+          "circleStrokeWidth": 2.7,
+          "circleStrokeColor": "#C99700",
+          "circleStrokeOpacity": 0.65,
+          "circleStrokeOpacityTransition": {
+            "duration": 0,
+            "delay": 0
+          },
+          "circleTranslate": [
+            0,
+            0
+          ],
+          "circleTranslateAnchor": "viewport",
+          "circlePitchAlignment": "viewport",
+          "circlePitchScale": "viewport"
+        }
+      ],
+      "expanded": [
+        {
+          "circleRadius": 40.59,
+          "circleRadiusTransition": {
+            "duration": 1100,
+            "delay": 0
+          },
+          "circleColor": "rgba(0,0,0,0)",
+          "circleStrokeWidth": 2.7,
+          "circleStrokeColor": "#C99700",
+          "circleStrokeOpacity": 0,
+          "circleStrokeOpacityTransition": {
+            "duration": 1100,
+            "delay": 0
+          },
+          "circleTranslate": [
+            0,
+            0
+          ],
+          "circleTranslateAnchor": "viewport",
+          "circlePitchAlignment": "viewport",
+          "circlePitchScale": "viewport"
+        },
+        {
+          "circleRadius": 29.52,
+          "circleRadiusTransition": {
+            "duration": 750,
+            "delay": 220
+          },
+          "circleColor": "rgba(0,0,0,0)",
+          "circleStrokeWidth": 2.7,
+          "circleStrokeColor": "#C99700",
+          "circleStrokeOpacity": 0,
+          "circleStrokeOpacityTransition": {
+            "duration": 750,
+            "delay": 220
+          },
+          "circleTranslate": [
+            0,
+            0
+          ],
+          "circleTranslateAnchor": "viewport",
+          "circlePitchAlignment": "viewport",
+          "circlePitchScale": "viewport"
+        }
+      ],
+      "cycleMs": 1500
+    },
+    {
+      "key": "after-now-light",
+      "initial": [
+        {
+          "circleRadius": 18.45,
+          "circleRadiusTransition": {
+            "duration": 0,
+            "delay": 0
+          },
+          "circleColor": "rgba(0,0,0,0)",
+          "circleStrokeWidth": 2.7,
+          "circleStrokeColor": "#188038",
+          "circleStrokeOpacity": 0.8,
+          "circleStrokeOpacityTransition": {
+            "duration": 0,
+            "delay": 0
+          },
+          "circleTranslate": [
+            0,
+            0
+          ],
+          "circleTranslateAnchor": "viewport",
+          "circlePitchAlignment": "viewport",
+          "circlePitchScale": "viewport"
+        },
+        {
+          "circleRadius": 18.45,
+          "circleRadiusTransition": {
+            "duration": 0,
+            "delay": 0
+          },
+          "circleColor": "rgba(0,0,0,0)",
+          "circleStrokeWidth": 2.7,
+          "circleStrokeColor": "#188038",
+          "circleStrokeOpacity": 0.65,
+          "circleStrokeOpacityTransition": {
+            "duration": 0,
+            "delay": 0
+          },
+          "circleTranslate": [
+            0,
+            0
+          ],
+          "circleTranslateAnchor": "viewport",
+          "circlePitchAlignment": "viewport",
+          "circlePitchScale": "viewport"
+        }
+      ],
+      "expanded": [
+        {
+          "circleRadius": 40.59,
+          "circleRadiusTransition": {
+            "duration": 1100,
+            "delay": 0
+          },
+          "circleColor": "rgba(0,0,0,0)",
+          "circleStrokeWidth": 2.7,
+          "circleStrokeColor": "#188038",
+          "circleStrokeOpacity": 0,
+          "circleStrokeOpacityTransition": {
+            "duration": 1100,
+            "delay": 0
+          },
+          "circleTranslate": [
+            0,
+            0
+          ],
+          "circleTranslateAnchor": "viewport",
+          "circlePitchAlignment": "viewport",
+          "circlePitchScale": "viewport"
+        },
+        {
+          "circleRadius": 31.365,
+          "circleRadiusTransition": {
+            "duration": 750,
+            "delay": 150
+          },
+          "circleColor": "rgba(0,0,0,0)",
+          "circleStrokeWidth": 2.7,
+          "circleStrokeColor": "#188038",
+          "circleStrokeOpacity": 0,
+          "circleStrokeOpacityTransition": {
+            "duration": 750,
+            "delay": 150
+          },
+          "circleTranslate": [
+            0,
+            0
+          ],
+          "circleTranslateAnchor": "viewport",
+          "circlePitchAlignment": "viewport",
+          "circlePitchScale": "viewport"
+        }
+      ],
+      "cycleMs": 1500
+    },
+    {
+      "key": "after-now-dark",
+      "initial": [
+        {
+          "circleRadius": 18.45,
+          "circleRadiusTransition": {
+            "duration": 0,
+            "delay": 0
+          },
+          "circleColor": "rgba(0,0,0,0)",
+          "circleStrokeWidth": 2.7,
+          "circleStrokeColor": "#188038",
+          "circleStrokeOpacity": 0.8,
+          "circleStrokeOpacityTransition": {
+            "duration": 0,
+            "delay": 0
+          },
+          "circleTranslate": [
+            0,
+            0
+          ],
+          "circleTranslateAnchor": "viewport",
+          "circlePitchAlignment": "viewport",
+          "circlePitchScale": "viewport"
+        },
+        {
+          "circleRadius": 18.45,
+          "circleRadiusTransition": {
+            "duration": 0,
+            "delay": 0
+          },
+          "circleColor": "rgba(0,0,0,0)",
+          "circleStrokeWidth": 2.7,
+          "circleStrokeColor": "#188038",
+          "circleStrokeOpacity": 0.65,
+          "circleStrokeOpacityTransition": {
+            "duration": 0,
+            "delay": 0
+          },
+          "circleTranslate": [
+            0,
+            0
+          ],
+          "circleTranslateAnchor": "viewport",
+          "circlePitchAlignment": "viewport",
+          "circlePitchScale": "viewport"
+        }
+      ],
+      "expanded": [
+        {
+          "circleRadius": 40.59,
+          "circleRadiusTransition": {
+            "duration": 1100,
+            "delay": 0
+          },
+          "circleColor": "rgba(0,0,0,0)",
+          "circleStrokeWidth": 2.7,
+          "circleStrokeColor": "#188038",
+          "circleStrokeOpacity": 0,
+          "circleStrokeOpacityTransition": {
+            "duration": 1100,
+            "delay": 0
+          },
+          "circleTranslate": [
+            0,
+            0
+          ],
+          "circleTranslateAnchor": "viewport",
+          "circlePitchAlignment": "viewport",
+          "circlePitchScale": "viewport"
+        },
+        {
+          "circleRadius": 31.365,
+          "circleRadiusTransition": {
+            "duration": 750,
+            "delay": 150
+          },
+          "circleColor": "rgba(0,0,0,0)",
+          "circleStrokeWidth": 2.7,
+          "circleStrokeColor": "#188038",
+          "circleStrokeOpacity": 0,
+          "circleStrokeOpacityTransition": {
+            "duration": 750,
+            "delay": 150
+          },
+          "circleTranslate": [
+            0,
+            0
+          ],
+          "circleTranslateAnchor": "viewport",
+          "circlePitchAlignment": "viewport",
+          "circlePitchScale": "viewport"
+        }
+      ],
+      "cycleMs": 1500
+    },
+    {
+      "key": "after-today-light",
+      "initial": [
+        {
+          "circleRadius": 18.45,
+          "circleRadiusTransition": {
+            "duration": 0,
+            "delay": 0
+          },
+          "circleColor": "rgba(0,0,0,0)",
+          "circleStrokeWidth": 2.7,
+          "circleStrokeColor": "#C99700",
+          "circleStrokeOpacity": 0.8,
+          "circleStrokeOpacityTransition": {
+            "duration": 0,
+            "delay": 0
+          },
+          "circleTranslate": [
+            0,
+            0
+          ],
+          "circleTranslateAnchor": "viewport",
+          "circlePitchAlignment": "viewport",
+          "circlePitchScale": "viewport"
+        },
+        {
+          "circleRadius": 18.45,
+          "circleRadiusTransition": {
+            "duration": 0,
+            "delay": 0
+          },
+          "circleColor": "rgba(0,0,0,0)",
+          "circleStrokeWidth": 2.7,
+          "circleStrokeColor": "#C99700",
+          "circleStrokeOpacity": 0.65,
+          "circleStrokeOpacityTransition": {
+            "duration": 0,
+            "delay": 0
+          },
+          "circleTranslate": [
+            0,
+            0
+          ],
+          "circleTranslateAnchor": "viewport",
+          "circlePitchAlignment": "viewport",
+          "circlePitchScale": "viewport"
+        }
+      ],
+      "expanded": [
+        {
+          "circleRadius": 40.59,
+          "circleRadiusTransition": {
+            "duration": 1100,
+            "delay": 0
+          },
+          "circleColor": "rgba(0,0,0,0)",
+          "circleStrokeWidth": 2.7,
+          "circleStrokeColor": "#C99700",
+          "circleStrokeOpacity": 0,
+          "circleStrokeOpacityTransition": {
+            "duration": 1100,
+            "delay": 0
+          },
+          "circleTranslate": [
+            0,
+            0
+          ],
+          "circleTranslateAnchor": "viewport",
+          "circlePitchAlignment": "viewport",
+          "circlePitchScale": "viewport"
+        },
+        {
+          "circleRadius": 31.365,
+          "circleRadiusTransition": {
+            "duration": 750,
+            "delay": 150
+          },
+          "circleColor": "rgba(0,0,0,0)",
+          "circleStrokeWidth": 2.7,
+          "circleStrokeColor": "#C99700",
+          "circleStrokeOpacity": 0,
+          "circleStrokeOpacityTransition": {
+            "duration": 750,
+            "delay": 150
+          },
+          "circleTranslate": [
+            0,
+            0
+          ],
+          "circleTranslateAnchor": "viewport",
+          "circlePitchAlignment": "viewport",
+          "circlePitchScale": "viewport"
+        }
+      ],
+      "cycleMs": 1500
+    },
+    {
+      "key": "after-today-dark",
+      "initial": [
+        {
+          "circleRadius": 18.45,
+          "circleRadiusTransition": {
+            "duration": 0,
+            "delay": 0
+          },
+          "circleColor": "rgba(0,0,0,0)",
+          "circleStrokeWidth": 2.7,
+          "circleStrokeColor": "#C99700",
+          "circleStrokeOpacity": 0.8,
+          "circleStrokeOpacityTransition": {
+            "duration": 0,
+            "delay": 0
+          },
+          "circleTranslate": [
+            0,
+            0
+          ],
+          "circleTranslateAnchor": "viewport",
+          "circlePitchAlignment": "viewport",
+          "circlePitchScale": "viewport"
+        },
+        {
+          "circleRadius": 18.45,
+          "circleRadiusTransition": {
+            "duration": 0,
+            "delay": 0
+          },
+          "circleColor": "rgba(0,0,0,0)",
+          "circleStrokeWidth": 2.7,
+          "circleStrokeColor": "#C99700",
+          "circleStrokeOpacity": 0.65,
+          "circleStrokeOpacityTransition": {
+            "duration": 0,
+            "delay": 0
+          },
+          "circleTranslate": [
+            0,
+            0
+          ],
+          "circleTranslateAnchor": "viewport",
+          "circlePitchAlignment": "viewport",
+          "circlePitchScale": "viewport"
+        }
+      ],
+      "expanded": [
+        {
+          "circleRadius": 40.59,
+          "circleRadiusTransition": {
+            "duration": 1100,
+            "delay": 0
+          },
+          "circleColor": "rgba(0,0,0,0)",
+          "circleStrokeWidth": 2.7,
+          "circleStrokeColor": "#C99700",
+          "circleStrokeOpacity": 0,
+          "circleStrokeOpacityTransition": {
+            "duration": 1100,
+            "delay": 0
+          },
+          "circleTranslate": [
+            0,
+            0
+          ],
+          "circleTranslateAnchor": "viewport",
+          "circlePitchAlignment": "viewport",
+          "circlePitchScale": "viewport"
+        },
+        {
+          "circleRadius": 31.365,
+          "circleRadiusTransition": {
+            "duration": 750,
+            "delay": 150
+          },
+          "circleColor": "rgba(0,0,0,0)",
+          "circleStrokeWidth": 2.7,
+          "circleStrokeColor": "#C99700",
+          "circleStrokeOpacity": 0,
+          "circleStrokeOpacityTransition": {
+            "duration": 750,
+            "delay": 150
+          },
+          "circleTranslate": [
+            0,
+            0
+          ],
+          "circleTranslateAnchor": "viewport",
+          "circlePitchAlignment": "viewport",
+          "circlePitchScale": "viewport"
+        }
+      ],
+      "cycleMs": 1500
+    }
+  ]
+}

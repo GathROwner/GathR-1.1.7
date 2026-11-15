@@ -106,6 +106,14 @@ export default function HybridClusterMarker({ cluster, isActive, isSelected, isR
   const summaryGraphic = useMemo(() => clusterSummaryGraphic(venues.length, cluster.eventCount, cluster.specialCount, !!cluster.containsCityLevelEvent),
     [venues.length, cluster.eventCount, cluster.specialCount, cluster.containsCityLevelEvent]);
   const initials = current?.venue.venue.split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]).join('').toUpperCase() ?? '';
+  const photoIdentity = current ? `${current.key}|${current.photo}` : '';
+  const visiblePhotoIdentity = snapshotMode && !snapshotVisible ? '' : photoIdentity;
+  const photoAppearance = useMemo(() => ({ identity: visiblePhotoIdentity }), [visiblePhotoIdentity]);
+  const visiblePhoto = useRef<object | null>(null);
+  useLayoutEffect(() => {
+    visiblePhoto.current = visiblePhotoIdentity ? photoAppearance : null;
+    return () => { visiblePhoto.current = null; };
+  }, [visiblePhotoIdentity, photoAppearance]);
   const opacity = !isReady ? .4 : isProcessing ? .6 : 1;
   // Only visible pixels invalidate the annotation bitmap. Offscreen venue data,
   // engagement timestamps and identical cluster objects do not need a capture.
@@ -141,7 +149,9 @@ export default function HybridClusterMarker({ cluster, isActive, isSelected, isR
         </>}
         {(!snapshotMode || snapshotVisible) && <Segments diameter={ringSize} count={rings} active={index} />}
         <View testID="hybrid-photo-frame" style={[s.photo, cluster.interestLevel === 'high' && s.interestPhoto, { left: geometry.stroke, top: geometry.stroke, width: photoSize, height: photoSize, borderRadius: photoSize / 2 }]}>
-          {current.photo && failedPhoto !== current.photo ? (snapshotMode && !snapshotVisible ? null : <Image testID="hybrid-venue-photo" source={{ uri: current.photo }} fadeDuration={0} style={{ width: photoSize - p(2), height: photoSize - p(2) }} resizeMode="cover" onLoad={onSnapshotChange} onError={() => setFailedPhoto(current.photo)} />) : snapshotMode ? <HybridSummaryImage visible={snapshotVisible} graphic={countGraphic(initials, p(14), '#143247')} onLoad={onSnapshotChange} /> : <Text maxFontSizeMultiplier={1.2} style={s.initials}>{initials}</Text>}
+          {current.photo && failedPhoto !== current.photo ? (snapshotMode && !snapshotVisible ? null : <Image key={photoIdentity} testID="hybrid-venue-photo" source={{ uri: current.photo }} fadeDuration={0} style={{ width: photoSize - p(2), height: photoSize - p(2) }} resizeMode="cover"
+            onLoad={() => { if (visiblePhoto.current === photoAppearance) onSnapshotChange?.(); }}
+            onError={() => { if (visiblePhoto.current === photoAppearance) setFailedPhoto(current.photo); }} />) : snapshotMode ? <HybridSummaryImage visible={snapshotVisible} graphic={countGraphic(initials, p(14), '#143247')} onLoad={onSnapshotChange} /> : <Text maxFontSizeMultiplier={1.2} style={s.initials}>{initials}</Text>}
         </View>
         {(!snapshotMode || snapshotVisible) && <Svg width={ringSize} height={ringSize} style={[StyleSheet.absoluteFill, { overflow: 'visible' }]} pointerEvents="none">
           {attachedFriends.map(v => { const angle = friendAngle(v.index); return <Line key={v.key} x1={center + radius * Math.cos(angle)} y1={center + radius * Math.sin(angle)} x2={center + (radius + p(18)) * Math.cos(angle)} y2={center + (radius + p(18)) * Math.sin(angle)} stroke="#7044C6" strokeWidth={p(1)} />; })}
