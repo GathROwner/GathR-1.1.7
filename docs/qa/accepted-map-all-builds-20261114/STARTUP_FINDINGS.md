@@ -1,5 +1,7 @@
 # Startup cluster investigation
 
+Current reproduction clarification (November 15): Craig reports immediate data when returning to GathR from the app switcher without closing it. The observed slow opening followed minimizing GathR, removing it from the app switcher, then reopening it. Prioritize explicit cold-launch reconstruction; long background absence alone is not currently reproduced. No further paired session-ID exports are required to establish this reproduction distinction.
+
 Accepted starting source: `86fb65f5` on `codex/app-ui-changes`. The approved tap fix remains separate from this diagnosis; no startup behavior change is included in the rollout.
 
 The actual current map store reproduces a cache-to-viewport handoff gap. A first viewport request starts with an empty cache and waits for minimal events. When `setAllEvents` receives a valid cached event during that wait, `allEvents` becomes 1 while viewport and clusters remain 0. A second viewport request immediately projects the cached item, yielding viewport=1 and clusters=1. The stale first request cannot overwrite it. The controlled test passed on the accepted source. This test uses deferred network completion and fixture events, not device performance measurements.
@@ -37,3 +39,12 @@ A second controlled test seeds the actual store with one valid event, a populate
 The tab layout's delayed post-switch prefetch is a current caller (`app/(tabs)/_layout.tsx:636-646`). Query cache garbage collection can leave this cache absent after inactivity, while Zustand still retains data. The root AppState fetchQuery callback alone does not invoke this loading path. Therefore this is a concrete refresh/visibility failure condition and a candidate for the reported long-absence return, not a confirmed account of the phone's exact path.
 
 Both controlled store cases pass on the accepted implementation baseline. The reproducer is retained as `.repro.txt` to avoid treating undesirable behavior as a permanent product contract. No application fix or additional startup OTA was made.
+
+
+## Current diagnosis boundary after the cold-start clarification
+
+The leading reproduced condition is now the late-hydration startup handoff: a new process begins with empty in-memory viewport/cluster state, while persisted React Query restoration and the first viewport request can overlap. The root provider renders its children while restoration occurs, and the preload uses a 180 ms timer rather than a restoration-complete handoff. Existing store tests already establish that newly restored allEvents does not itself complete the waiting first viewport projection. The 1200 ms recovery can eventually use the cache, if it is available by then. These are source/reproduction findings, not a measured breakdown of Craig's phone delay.
+
+The retained-cluster refresh reproduction remains a separate valid condition, but is lower priority for this specifically reported process-restart sequence. Avoid asking Craig to keep waiting for a warm-resume delay that has not recurred.
+
+The existing manual recorder starts after Start / Clear and stops after 180 seconds. Starting it after the clusters appear cannot capture the cold-launch wait, so another after-the-fact trace is not a timing measurement. A module session ID can establish session continuity but does not isolate cache, network, location or native marker readiness. Accurate phone attribution requires recording those launch milestones before the map appears.
