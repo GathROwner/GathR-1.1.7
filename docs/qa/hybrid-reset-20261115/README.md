@@ -53,3 +53,16 @@ through an SVG bridge on light/dark surfaces and independently reviewed. Palette
 two-ring distinction, spacing and surrounding marker layout were checked. The
 animated preview remains in ignored artifacts. Native iPhone playback and the
 reported visual interruption are not independently reproduced/verified.
+
+Published on iOS Production runtime 1.1.20 from the exact live d6c11f9 baseline.
+Release source d54228da5e6ff224744c520d7d91b99398e3e7a7, group
+d044caa0-1e42-474c-b8a8-13172f8941f3, update
+01a1e16a-8bb3-7601-b982-cc427df060bf. View/list independently verify source,
+platform, runtime and newest iOS update. Clean export: 2579 modules, 112 final
+EAS assets. Final release validation: 259 tests passed across 33 suites, two
+existing explicit skips (opt-in benchmark and independently reproduced stale
+cache-key assertion), TypeScript passed, lint zero errors/226 existing warnings.
+Native/auth/social/Mapbox preflights passed. No other OTA target was changed.
+An intermediate candidate was validated before the photo-ready guard; only the
+final candidate containing both changes was published. Device adoption and
+native animation still need verification.
