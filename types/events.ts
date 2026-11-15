@@ -222,6 +222,7 @@ export interface Cluster {
   specialCount: number;              // Number of specials
   categories: string[];              // Unique categories in this cluster
   hasNewContent?: boolean;           // Whether cluster has new events/specials since last interaction
+  friendPresence?: { friendCount: number; venues: Record<string, { friendCount: number }> };
   containsCityLevelEvent?: boolean;  // Whether cluster contains a city/area/route experience
   containsRouteEvent?: boolean;      // Whether cluster contains a route-scoped event
 }

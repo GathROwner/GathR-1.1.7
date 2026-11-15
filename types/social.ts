@@ -1,0 +1,368 @@
+import type { Timestamp } from 'firebase/firestore';
+
+export type SocialTimestamp = Timestamp | Date | number | null | undefined;
+
+export interface SocialProfile {
+  uid: string;
+  displayName: string;
+  photoURL: string;
+  socialHandle: string;
+}
+
+export interface FriendProjection extends SocialProfile {
+  acceptedAt?: SocialTimestamp;
+  updatedAt?: SocialTimestamp;
+}
+
+export interface FriendRequestProjection extends SocialProfile {
+  direction: 'incoming' | 'outgoing';
+  requestedAt?: SocialTimestamp;
+  updatedAt?: SocialTimestamp;
+}
+
+export interface BlockProjection extends SocialProfile {
+  ownerUid: string;
+  blockedUid: string;
+  createdAt?: SocialTimestamp;
+}
+
+export interface FriendActivityProjection extends SocialProfile {
+  ownerUid: string;
+  venueId?: string;
+  locationType?: 'gathr_venue' | 'external_place' | 'private_place';
+  venueLocationKey: string;
+  venueName: string;
+  placeAddress?: string;
+  placeCategory?: string;
+  latitude?: number;
+  longitude?: number;
+  locationPrecision?: 'exact' | 'approximate';
+  message: string;
+  createdAt?: SocialTimestamp;
+  expiresAt?: SocialTimestamp;
+  revision: string;
+}
+
+export type CheckInAudienceMode = 'all_friends' | 'selected_friends';
+export type CheckInDurationMinutes = 30 | 60 | 120;
+
+export interface OwnCheckIn {
+  ownerUid: string;
+  venueId?: string;
+  locationType?: 'gathr_venue' | 'external_place' | 'private_place';
+  venueLocationKey: string;
+  venueNameSnapshot: string;
+  placeAddress?: string;
+  placeCategory?: string;
+  latitude?: number;
+  longitude?: number;
+  locationPrecision?: 'exact' | 'approximate';
+  audienceMode: CheckInAudienceMode;
+  selectedUids: string[];
+  shareExactLocation?: boolean;
+  viewerUids: string[];
+  viewerCount: number;
+  message: string;
+  durationMinutes: CheckInDurationMinutes;
+  createdAt?: SocialTimestamp;
+  expiresAt?: SocialTimestamp;
+  revision: string;
+}
+
+export interface VenueFriendPresence {
+  venueLocationKey: string;
+  venueName: string;
+  friends: FriendActivityProjection[];
+  friendCount: number;
+}
+
+export interface ClusterFriendPresence {
+  friendCount: number;
+  displayCount: string;
+  previewFriends: FriendActivityProjection[];
+  venues: Record<string, VenueFriendPresence>;
+}
+
+export interface CheckInInput {
+  operationId?: string;
+  eligibilitySessionId?: string;
+  venueId?: string;
+  placeCandidateId?: string;
+  durationMinutes: CheckInDurationMinutes;
+  audienceMode: CheckInAudienceMode;
+  selectedUids?: string[];
+  shareExactLocation?: boolean;
+  message?: string;
+}
+
+export type CheckInEligibilityReason =
+  | 'qualifying'
+  | 'eligible'
+  | 'outside'
+  | 'low_accuracy'
+  | 'moving_too_fast';
+
+export interface CheckInEligibilityResult {
+  sessionId: string;
+  venueId?: string;
+  placeCandidateId?: string;
+  locationKey: string;
+  eligibleVenueIds: string[];
+  eligible: boolean;
+  qualifyingMs: number;
+  requiredMs: number;
+  remainingMs: number;
+  distanceMetres: number;
+  reason: CheckInEligibilityReason;
+  expiresAt?: SocialTimestamp;
+}
+
+export interface CheckInEligibilitySampleInput {
+  sessionId: string;
+  venueId?: string;
+  placeCandidateId?: string;
+  candidateVenueIds?: string[];
+  latitude: number;
+  longitude: number;
+  accuracyMeters: number;
+  speedMetersPerSecond?: number | null;
+}
+
+/** V1 is server-timed, target-free evidence. Client elapsed times are never submitted. */
+export interface CheckInReadinessSampleInput {
+  protocolVersion: 1;
+  /** Explicit reset can only remove evidence, never create eligibility. */
+  reset: boolean;
+  sessionId: string;
+  sequence: number;
+  latitude: number;
+  longitude: number;
+  accuracyMeters: number | null;
+  speedMetersPerSecond: number | null;
+  capturedAtMs: number;
+}
+
+export interface CheckInReadinessReceipt {
+  hereRequiredMs?: number;
+  placeRequiredMs?: number;
+  protocolVersion: 1;
+  sessionId: string;
+  sequence: number;
+  hereQualifyingMs: number;
+  placeQualifyingMs: number;
+  expiresAtMs: number;
+  /** Server-qualified arrival on this same readiness session; never client-timed. */
+  arrival?: CheckInQualifiedArrival;
+}
+
+export interface CheckInQualifiedArrival {
+  sessionId: string;
+  expiresAtMs: number;
+  latitude: number;
+  longitude: number;
+  accuracyMeters: number;
+  capturedAtMs: number;
+  here: boolean;
+  place: boolean;
+}
+
+export interface BindCheckInReadinessInput {
+  protocolVersion: 1;
+  readinessSessionId: string;
+  /** Stable per selection; server must make retries idempotent. */
+  operationId: string;
+  venueId?: string;
+  placeCandidateId?: string;
+  latitude: number;
+  longitude: number;
+  accuracyMeters: number | null;
+  speedMetersPerSecond: number | null;
+  capturedAtMs: number;
+  /** Use the still-valid server arrival snapshot instead of retiming the form. */
+  useQualifiedArrival?: true;
+}
+
+export interface BoundCheckInReadiness {
+  protocolVersion: 1;
+  eligibilitySessionId: string;
+  readinessSessionId: string;
+  venueId?: string;
+  placeCandidateId?: string;
+  locationType: 'gathr_venue' | 'external_place' | 'private_place';
+  exactPrivateAllowed: boolean;
+  expiresAtMs: number;
+}
+
+export interface NearbyCheckInPlaceCandidate {
+  id: string;
+  /** Stable public source identity; candidate UUID remains the binding authority. */
+  locationKey?: string;
+  type: 'gathr_venue' | 'external_place' | 'private_place';
+  venueId?: string;
+  name: string;
+  address: string;
+  category: string;
+  latitude: number;
+  longitude: number;
+  distanceMetres: number;
+  /** Public OSM footprint used to filter a prepared pool against arrival. */
+  checkInBoundary?: { lat: number; lon: number }[];
+}
+
+export interface CheckInPreparationPool {
+  id: string;
+  expiresAtMs: number;
+  refreshAtMs: number;
+  sourceExpiresAtMs: number;
+  originLatitude: number;
+  originLongitude: number;
+}
+
+export interface NearbyCheckInPlacesResult {
+  candidates: NearbyCheckInPlaceCandidate[];
+  preparationPool?: CheckInPreparationPool;
+  /** Only true after a server-authorized renewal of the original candidate IDs. */
+  preparationReused?: boolean;
+  /** Capability marker: the server honored the bounded preparation pool request. */
+  preparationRadiusMetres?: 175;
+  /**
+   * `complete` includes a successful empty provider result. When the backend
+   * can still return canonical GathR venues but its public-place lookup is
+   * unavailable, it returns `partial_unavailable` instead of hiding them.
+   * Optional while older callable deployments remain in circulation.
+   */
+  externalLookupStatus?: 'complete' | 'partial_unavailable';
+  expiresAt?: SocialTimestamp;
+}
+
+export interface PrivateCheckInPlaceCandidateResult {
+  candidate: NearbyCheckInPlaceCandidate & { type: 'private_place' };
+  expiresAt?: SocialTimestamp;
+}
+
+export type FriendEventVisibility = 'all_friends' | 'selected_friends';
+export type FriendEventGuestInviteMode = 'host_only' | 'guests_can_invite';
+export type FriendEventLocationType = 'recognized_venue' | 'custom_address' | 'online' | 'tbd';
+export type FriendEventStatus = 'published' | 'canceled' | 'ended';
+export type FriendEventRsvp = 'invited' | 'going' | 'maybe' | 'cant_go' | 'host';
+
+export interface FriendEventResponseCounts {
+  going: number;
+  maybe: number;
+  cant_go: number;
+}
+
+export interface FriendEventGuest extends SocialProfile {
+  invitedByUid: string;
+  response: FriendEventRsvp;
+}
+
+export interface FriendEventHistoryEntry {
+  kind: 'created' | 'edited' | 'canceled' | 'ended';
+  summary: string;
+  at?: SocialTimestamp;
+  revision: string;
+}
+
+export interface FriendEventProjection {
+  eventId: string;
+  hostUid: string;
+  host: SocialProfile;
+  viewerUid: string;
+  viewerRole: 'host' | 'guest';
+  title: string;
+  description: string;
+  category: string;
+  startAt?: SocialTimestamp;
+  endAt?: SocialTimestamp;
+  status: FriendEventStatus;
+  visibility: FriendEventVisibility;
+  guestInviteMode: FriendEventGuestInviteMode;
+  guestListVisible: boolean;
+  coverImageUrl: string;
+  externalUrl: string;
+  locationType: FriendEventLocationType;
+  locationLabel: string;
+  locationAddress: string;
+  addressRevealAt?: SocialTimestamp;
+  addressRevealed: boolean;
+  venueId: string;
+  latitude: number | null;
+  longitude: number | null;
+  approximateLatitude: number | null;
+  approximateLongitude: number | null;
+  onlineUrl: string;
+  viewerCount: number;
+  responseCounts: FriendEventResponseCounts;
+  guests: FriendEventGuest[];
+  ownRsvp: FriendEventRsvp;
+  cancellationReason: string;
+  updateHistory: FriendEventHistoryEntry[];
+  revision: string;
+  createdAt?: SocialTimestamp;
+  updatedAt?: SocialTimestamp;
+}
+
+export interface FriendEventLocationProjection {
+  eventId: string;
+  hostUid: string;
+  address: string;
+  placeName: string;
+  latitude: number;
+  longitude: number;
+  revealedAt?: SocialTimestamp;
+  updatedAt?: SocialTimestamp;
+}
+
+export interface FriendEventLocationSuggestion {
+  id: string;
+  mapboxId: string;
+  primaryText: string;
+  secondaryText: string;
+  fullAddress: string;
+  featureType: string;
+}
+
+export interface ResolvedFriendEventLocationSuggestion {
+  mapboxId: string;
+  primaryText: string;
+  fullAddress: string;
+  featureType: string;
+  latitude: number;
+  longitude: number;
+}
+
+export type FriendEventLocationInput =
+  | { type: 'recognized_venue'; venueId: string }
+  | {
+      type: 'custom_address';
+      address: string;
+      placeName?: string;
+      latitude: number;
+      longitude: number;
+      revealAtMs?: number;
+    }
+  | { type: 'online'; onlineUrl?: string }
+  | { type: 'tbd' };
+
+export interface FriendEventInput {
+  operationId?: string;
+  title: string;
+  description?: string;
+  category: string;
+  startAtMs: number;
+  endAtMs: number;
+  visibility: FriendEventVisibility;
+  selectedUids?: string[];
+  guestInviteMode: FriendEventGuestInviteMode;
+  guestListVisible?: boolean;
+  coverImageUrl?: string;
+  externalUrl?: string;
+  location: FriendEventLocationInput;
+}
+
+export const SOCIAL_FEATURE_ENABLED =
+  process.env.EXPO_PUBLIC_SOCIAL_FEATURE_ENABLED === 'true';
+
+export const SOCIAL_RELEASE_TWO_ENABLED =
+  SOCIAL_FEATURE_ENABLED && process.env.EXPO_PUBLIC_SOCIAL_RELEASE_TWO_ENABLED === 'true';

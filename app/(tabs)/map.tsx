@@ -49,6 +49,11 @@ import MapLegend, {
   type MapPerspective,
   type MapStyleChoice,
 } from '../../components/map/MapLegend';
+import HybridMapAnnotation from '../../components/map/HybridMapAnnotation';
+import { usesCurrentBasemap } from '../../utils/hybridClusterPresentation';
+import { createMapTouchTrace } from '../../utils/mapTouchTrace';
+import { useHybridTapDelivery } from '../../hooks/useHybridTapDelivery';
+import { HYBRID_POINT_ANNOTATION_LAYER_ID, type MapWindowLayout } from '../../utils/hybridTapDelivery';
 import InterestFilterPills from '../../components/map/InterestFilterPills';
 import InterestsCarousel from '../../components/map/InterestsCarousel';
 import HotFlamePill from '../../components/map/HotFlamePill';
@@ -507,6 +512,9 @@ const getTimeBadgeColor = (timeStatus: TimeStatus): string => {
 };
 
 // Helper function to get icon for category
+// Development keeps its existing marker placement; geometry capture has no consumer here.
+const recordHybridGeometry = () => {};
+
 const getCategoryIcon = (category: string): string => {
   const categoryLower = category.toLowerCase();
 
@@ -3136,6 +3144,9 @@ useEffect(() => {
     (stop) => stop.certainty === 'approximate'
   );
   const [mapStyleChoice, setMapStyleChoice] = useState<MapStyleChoice>('current');
+  useEffect(() => {
+    useMapStore.getState().setMarkerClusterProfile(mapStyleChoice === 'hybrid' ? 'hybrid' : 'default');
+  }, [mapStyleChoice]);
   const [mapStyleChanging, setMapStyleChanging] = useState(false);
   const [mapLightPreset, setMapLightPreset] = useState<MapLightPreset>('day');
   const [mapPerspective, setMapPerspective] = useState<MapPerspective>('2d');
@@ -3502,6 +3513,8 @@ useEffect(() => {
 
   const clusterMarkerAnimationsActive =
     isFocused && !(Platform.OS === 'android' && pauseClusterMarkerAnimations);
+  const hybridMarkerAnimationsActive = clusterMarkerAnimationsActive &&
+    processingClusterId === null && !isCalloutOpen && !hasRenderedCallout && !hasPresentedCallout;
 
   const getPreparedClusterCallout = useCallback((
     cluster: Cluster,
@@ -3979,6 +3992,8 @@ useEffect(() => {
   // Actual map viewport dimensions (accounting for header, tab bar, safe areas)
   const [mapDimensions, setMapDimensions] = useState<{ width: number; height: number } | null>(null);
   const [, setBeaconProjectionEpoch] = useState(0);
+  const mapAbsoluteLayoutRef = useRef<MapWindowLayout | null>(null);
+  const mapAbsoluteLayoutRevisionRef = useRef(0);
   const [mapScreenOffset, setMapScreenOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [iosMapViewRevision, setIosMapViewRevision] = useState(0);
   const iosMapViewLayoutRefreshScheduledRef = useRef(false);
@@ -4208,7 +4223,7 @@ const handleMapStyleChange = useCallback(async (nextStyle: MapStyleChoice) => {
   // Standard and GathR Standard share the same native basemap. RNMapbox can
   // update the imported Standard configuration in place, so do not trigger a
   // full style reload (or disturb the camera) when comparing those two.
-  if (mapStyleChoice !== 'current' && nextStyle !== 'current') {
+  if (usesCurrentBasemap(mapStyleChoice) === usesCurrentBasemap(nextStyle)) {
     traceMapEvent('map_style_import_config_change_requested', {
       from: mapStyleChoice,
       to: nextStyle,
@@ -7016,6 +7031,25 @@ lastOpenedClusterIdRef.current = cluster.id;
   };
 
   // Handle map press to close callout
+  const mapTouchTrace = useMemo(() => createMapTouchTrace(mapStyleChoice, () => {}), [mapStyleChoice]);
+  const hybridTapDelivery = useHybridTapDelivery<Cluster>({
+    active: Platform.OS === 'ios' && mapStyleChoice === 'hybrid' && isFocused,
+    canOpen: () => clustersReadyForInteractionRef.current && !isMapLoadingRef.current &&
+      !isMapMovingRef.current && !ignoreProgrammaticCameraRef.current &&
+      clusterProcessingRef.current === null && useMapStore.getState().selectedVenues.length === 0,
+    surface: () => {
+      const map = mapRef.current, layout = mapAbsoluteLayoutRef.current, camera = currentCameraStateRef.current;
+      if (!map || !layout || !camera) return null;
+      return { identity: map, layout, zoom: camera.zoom, query: point =>
+        map.queryRenderedFeaturesAtPoint(point, [], [HYBRID_POINT_ANNOTATION_LAYER_ID]) };
+    },
+    onPress: (cluster, source) => {
+      traceMapEvent('hybrid_tap_delivery', { source, clusterId: cluster.id, venueCount: cluster.venues.length });
+      void handleMarkerPress(cluster);
+    },
+    trace: traceMapEvent,
+  });
+
   const handleMapPress = () => {
     const guardRemainingMs = Math.max(0, calloutOpenTouchGuardUntilRef.current - Date.now());
     const routeFeatureGuardRemainingMs = Math.max(
@@ -9103,10 +9137,10 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
           hotspotPreviewClusterId !== null &&
           cluster.id === hotspotPreviewClusterId &&
           !richClusterMarkersEnabled;
-        const markerDetailsEnabled = richClusterMarkersEnabled || shouldForceHotspotPreviewDetails;
+        const markerDetailsEnabled = mapStyleChoice === 'hybrid' || richClusterMarkersEnabled || shouldForceHotspotPreviewDetails;
         const gathrPresentation = getGathrClusterPresentation(cluster, zoomLevel, isSelected);
         const projectedPoint =
-          mapStyleChoice === 'gathr' &&
+          (mapStyleChoice === 'gathr' || mapStyleChoice === 'hybrid') &&
           markerDetailsEnabled &&
           !isMapMoving &&
           mapDimensions &&
@@ -9117,10 +9151,10 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
                 mapDimensions
               )
             : null;
-        const estimatedMarkerHeight = gathrPresentation === 'summary'
+        const estimatedMarkerHeight = mapStyleChoice === 'hybrid' ? 150 : gathrPresentation === 'summary'
           ? 38
           : cluster.venues.length > 1 ? 92 : 76;
-        const estimatedMarkerWidth = gathrPresentation === 'summary' ? 84 : 136;
+        const estimatedMarkerWidth = mapStyleChoice === 'hybrid' ? 160 : gathrPresentation === 'summary' ? 84 : 136;
         const beaconDock = projectedPoint && mapDimensions
           ? getGathrBeaconViewportDock({
               markerHeight: estimatedMarkerHeight,
@@ -9158,6 +9192,21 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
         }
 
         const markerKey = `cluster-${cluster.id}-${markerViewEpoch}`;
+        if (mapStyleChoice === 'hybrid') {
+          return <HybridMapAnnotation key={markerKey} id={markerKey} cluster={cluster} coordinate={coordinates}
+            isSelected={isSelected} isReady={clustersReadyForInteraction} isProcessing={processingClusterId === cluster.id}
+            disabled={!clustersReadyForInteraction || processingClusterId !== null}
+            isActive={hybridMarkerAnimationsActive} reduceMotionEnabled={reduceMotionEnabled}
+            compact={false} dockX={beaconDock.translateX} dockY={beaconDock.translateY}
+            measurementDockX={beaconDock.translateX} measurementDockY={beaconDock.translateY}
+            record={recordHybridGeometry} categoryIcon={getCategoryIcon}
+            registerTapTarget={Platform.OS === 'ios' ? hybridTapDelivery.register : undefined}
+            onPress={() => {
+              traceMapEvent('hybrid_native_annotation_tap', { clusterId: cluster.id, venueCount: cluster.venues.length });
+              if (Platform.OS === 'ios') hybridTapDelivery.onNativePress(markerKey, cluster);
+              else void handleMarkerPress(cluster);
+            }} onBackgroundPress={handleMapPress} />;
+        }
 
         return (
           <MapboxGL.MarkerView
@@ -9329,8 +9378,12 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
         <MapboxGL.MapView
         key={`ios-map-layout-${iosMapViewRevision}`}
         ref={mapRef}
+        onTouchStart={event => { mapTouchTrace.onTouchStart(event); hybridTapDelivery.onTouchStart(event); }}
+        onTouchMove={event => { mapTouchTrace.onTouchMove(event); hybridTapDelivery.onTouchMove(event); }}
+        onTouchEnd={event => { mapTouchTrace.onTouchEnd(event); hybridTapDelivery.onTouchEnd(event); }}
+        onTouchCancel={() => { mapTouchTrace.onTouchCancel(); hybridTapDelivery.onTouchCancel(); }}
         style={styles.map}
-        styleURL={mapStyleChoice === 'current' ? GATHR_MAPBOX_STYLE_URL : GATHR_MAPBOX_STANDARD_STYLE_URL}
+        styleURL={usesCurrentBasemap(mapStyleChoice) ? GATHR_MAPBOX_STYLE_URL : GATHR_MAPBOX_STANDARD_STYLE_URL}
         scaleBarEnabled={true}
         scaleBarPosition={
           mapDimensions?.height
@@ -9347,6 +9400,9 @@ if (DEBUG_CAMERA_TICKS && reason === 'CLUSTER_COUNT_CHANGE') {
         }
         surfaceView={Platform.OS === 'android' ? false : undefined}
 onLayout={(event) => {
+  hybridTapDelivery.invalidate();
+  mapAbsoluteLayoutRef.current = null;
+  const absoluteLayoutRevision = ++mapAbsoluteLayoutRevisionRef.current;
   const { width, height, x, y } = event.nativeEvent.layout;
   setMapDimensions({ width, height });
   setMapScreenOffset({ x, y });
@@ -9358,6 +9414,8 @@ onLayout={(event) => {
   const nativeHandle = (mapRef.current as any)?._nativeRef;
   if (nativeHandle?.measureInWindow) {
     nativeHandle.measureInWindow((absX: number, absY: number, absWidth: number, absHeight: number) => {
+      if (absoluteLayoutRevision !== mapAbsoluteLayoutRevisionRef.current) return;
+      mapAbsoluteLayoutRef.current = { x: absX, y: absY, width: absWidth, height: absHeight };
       setMapDimensions({ width: absWidth, height: absHeight });
       setMapScreenOffset({ x: absX, y: absY });
       (global as any).mapViewLayout = {
@@ -9530,13 +9588,13 @@ onDidFinishLoadingMap={() => {
           }
         }}
      
-          onCameraChanged={handleCameraChange}
+          onCameraChanged={event => { hybridTapDelivery.invalidate(); handleCameraChange(event); }}
 //onRegionDidChange={handleCameraChange} // removed — we use onMapIdle for idle logging
 
 
         onPress={handleMapPress}
       >
-{mapStyleChoice !== 'current' && (
+{!usesCurrentBasemap(mapStyleChoice) && (
   // RNMapbox 10.3 types this dictionary as string-only, while its native
   // bridge correctly accepts the boolean and numeric Standard properties.
   <MapboxGL.StyleImport
