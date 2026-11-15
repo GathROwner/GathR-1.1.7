@@ -8,7 +8,6 @@ import { useMapStore } from '../../store';
 import useAnalytics from '../../hooks/useAnalytics';
 import MapBrandWordmark from './MapBrandWordmark';
 import MapLogoBackdrop from './MapLogoBackdrop';
-import OtaSettingsIcon from '../common/OtaSettingsIcon';
 
 type Props = { top: number; onSettings: () => void };
 
@@ -116,7 +115,7 @@ export default function FloatingMapSearchHeader({ top, onSettings }: Props) {
             </View>
             <TouchableOpacity accessibilityRole="button" accessibilityLabel="Settings"
               testID="floating-profile-button" onPress={onSettings} style={styles.circle} hitSlop={4}>
-              <OtaSettingsIcon size={18} color="#202124" />
+              <Ionicons name="settings-outline" size={18} color="#202124" />
             </TouchableOpacity>
           </>
         )}

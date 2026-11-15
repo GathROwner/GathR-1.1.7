@@ -11975,7 +11975,6 @@ onDidFinishLoadingMap={() => {
         enabled={Boolean(!isCalloutOpen)}
         rightOffset={sideControlRightOffset}
         bottomOffset={floatingSideControlLift}
-        interestRailWidth={measuredRailWidth}
       />
       <FriendEventsMapToggle
           hidden={Boolean(isCalloutOpen)}
