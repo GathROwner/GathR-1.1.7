@@ -415,7 +415,7 @@ async function fetchMinimalEventsFromSource(
   }
 }
 
-export function fetchMinimalEvents(
+function fetchMinimalEventsForReadyAccount(
   options: FetchMinimalEventsOptions = {}
 ): Promise<FetchMinimalEventsResult> {
   const key = getFetchMinimalEventsKey(options);
@@ -436,6 +436,25 @@ export function fetchMinimalEvents(
   });
   minimalEventsInFlight = { key, startedAt, promise };
 
+  return promise;
+}
+
+const authReadyFetches = new Map<string, Promise<FetchMinimalEventsResult>>();
+
+/** AppState/map callers can run before AuthProvider's first callback. Gate the
+ * shared entry point so they cannot download a guest feed during sign-in and
+ * then retry the entire feed when the account changes. Derive the real source
+ * request's account key only AFTER Firebase has settled its initial state. */
+export function fetchMinimalEvents(options: FetchMinimalEventsOptions = {}): Promise<FetchMinimalEventsResult> {
+  if (typeof auth.authStateReady !== 'function') return fetchMinimalEventsForReadyAccount(options);
+  const key = getFetchMinimalEventsKey(options);
+  const existing = authReadyFetches.get(key);
+  if (existing) return existing;
+  const promise = Promise.resolve().then(() => auth.authStateReady())
+    .then(() => fetchMinimalEventsForReadyAccount(options)).finally(() => {
+      if (authReadyFetches.get(key) === promise) authReadyFetches.delete(key);
+    });
+  authReadyFetches.set(key, promise);
   return promise;
 }
 
