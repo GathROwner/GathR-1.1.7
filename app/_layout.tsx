@@ -150,6 +150,9 @@ export default function RootLayout() {
         },
       },
     });
+    // Apply before hydration, including while auth is still restoring. Only the
+    // shared full feed needs to survive the default ten-minute inactive-query GC.
+    qc.setQueryDefaults(EVENTS_MINIMAL, { gcTime: EVENTS_QUERY_GC_MS });
     // Expose so non-React modules (Zustand store) can use the same client
     (global as any).__RQ_CLIENT = qc;
     return qc;
@@ -499,7 +502,7 @@ try {
   persistOptions={{
     persister: asyncStoragePersister,
     // Auto-expire persisted data after 12 hours (tweak as you like)
-    maxAge: 1000 * 60 * 60 * 12,
+    maxAge: EVENTS_PERSIST_MAX_AGE_MS,
   }}
 >
         <AuthProvider>
@@ -702,7 +705,7 @@ useEffect(() => {
               queryKey: key,
               queryFn: rqFetchEventsMinimal,
               staleTime: 1000 * 60 * 3,
-              gcTime: 1000 * 60 * 10,
+              gcTime: EVENTS_QUERY_GC_MS,
             })
             .then((result: any) => {
               const after = queryClient.getQueryState(key);
@@ -779,7 +782,7 @@ useEffect(() => {
               queryKey: key,
               queryFn: rqFetchEventsMinimal,
               staleTime: 0,
-              gcTime: 1000 * 60 * 10,
+              gcTime: EVENTS_QUERY_GC_MS,
             })
             .then((result: any) => ({ result, marker }));
         })
