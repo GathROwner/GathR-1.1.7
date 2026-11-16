@@ -12354,7 +12354,11 @@ Owner: Map UX stability on Android • Last validated: 2025-09-04
             });
             setIsTracePanelVisible(true);
           }}
-          style={styles.mapTraceLogoHost}
+          style={[
+            styles.mapTraceLogoHost,
+            // Center the 24pt logo in its 40pt touch target at the normal anchor.
+            { bottom: globeBottomOffset - 8 },
+          ]}
         >
           <Image
             source={require('../../assets/images/icon.png')}
@@ -13347,8 +13351,7 @@ countText: {
     alignItems: 'center',
     position: 'absolute',
     justifyContent: 'center',
-    left: 0,
-    bottom: 24,
+    left: 2,
     width: 40,
     height: 40,
     zIndex: 200,

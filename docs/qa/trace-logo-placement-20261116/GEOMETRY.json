@@ -1,0 +1,138 @@
+{
+  "handlerSourceUnchanged": true,
+  "imageStyleUnchanged": true,
+  "fixtures": [
+    {
+      "id": "ios-34-before",
+      "target": {
+        "x": 0,
+        "y": 246,
+        "width": 40,
+        "height": 40
+      },
+      "icon": {
+        "x": 8,
+        "y": 254,
+        "width": 24,
+        "height": 24
+      },
+      "mapbox": {
+        "x": 11.5,
+        "y": 201,
+        "height": 21
+      },
+      "gap": -77,
+      "hitGap": -85
+    },
+    {
+      "id": "ios-34-after",
+      "target": {
+        "x": 2,
+        "y": 161,
+        "width": 40,
+        "height": 40
+      },
+      "icon": {
+        "x": 10,
+        "y": 169,
+        "width": 24,
+        "height": 24
+      },
+      "mapbox": {
+        "x": 11.5,
+        "y": 201,
+        "height": 21
+      },
+      "gap": 8,
+      "hitGap": 0
+    },
+    {
+      "id": "ios-0-before",
+      "target": {
+        "x": 0,
+        "y": 246,
+        "width": 40,
+        "height": 40
+      },
+      "icon": {
+        "x": 8,
+        "y": 254,
+        "width": 24,
+        "height": 24
+      },
+      "mapbox": {
+        "x": 11.5,
+        "y": 211,
+        "height": 21
+      },
+      "gap": -67,
+      "hitGap": -75
+    },
+    {
+      "id": "ios-0-after",
+      "target": {
+        "x": 2,
+        "y": 171,
+        "width": 40,
+        "height": 40
+      },
+      "icon": {
+        "x": 10,
+        "y": 179,
+        "width": 24,
+        "height": 24
+      },
+      "mapbox": {
+        "x": 11.5,
+        "y": 211,
+        "height": 21
+      },
+      "gap": 8,
+      "hitGap": 0
+    },
+    {
+      "id": "android-24-before",
+      "target": {
+        "x": 0,
+        "y": 246,
+        "width": 40,
+        "height": 40
+      },
+      "icon": {
+        "x": 8,
+        "y": 254,
+        "width": 24,
+        "height": 24
+      },
+      "mapbox": {
+        "x": 11.5,
+        "y": 203,
+        "height": 21
+      },
+      "gap": -75,
+      "hitGap": -83
+    },
+    {
+      "id": "android-24-after",
+      "target": {
+        "x": 2,
+        "y": 163,
+        "width": 40,
+        "height": 40
+      },
+      "icon": {
+        "x": 10,
+        "y": 171,
+        "width": 24,
+        "height": 24
+      },
+      "mapbox": {
+        "x": 11.5,
+        "y": 203,
+        "height": 21
+      },
+      "gap": 8,
+      "hitGap": 0
+    }
+  ]
+}
