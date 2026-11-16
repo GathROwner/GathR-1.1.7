@@ -13,8 +13,45 @@ const raw = (id='public') => ({id,title:id,description:'public description',star
 const response=(events: FirestoreEvent[],nextPageToken?:string)=>({ok:true,json:async()=>({events,nextPageToken})});
 const flush=async()=>{for(let i=0;i<60;i++)await Promise.resolve();};
 beforeEach(async()=>{jest.useFakeTimers();jest.setSystemTime(new Date(2026,10,16,12));jest.clearAllMocks();(auth as any).currentUser={uid:'account-a'};await AsyncStorage.clear();(fetchPrivateSharedEventsForCurrentUser as jest.Mock).mockResolvedValue([]);});
-afterEach(()=>{global.fetch=originalFetch;jest.useRealTimers();});
+afterEach(()=>{global.fetch=originalFetch;delete (auth as any).authStateReady;jest.useRealTimers();});
 const seed=async()=>savePublicEventSnapshot([normalizeFirestoreEvent(raw('old'))],Date.now(),beginPublicSnapshotRefresh());
+it('holds all startup callers until initial auth settles and downloads once across that transition',async()=>{
+ let ready!: ()=>void;
+ (auth as any).currentUser=null;
+ (auth as any).authStateReady=jest.fn(()=>new Promise<void>(resolve=>{ready=resolve;}));
+ const privateAccounts: unknown[]=[];
+ (fetchPrivateSharedEventsForCurrentUser as jest.Mock).mockImplementation(async()=>{privateAccounts.push(auth.currentUser?.uid);return [];});
+ global.fetch=jest.fn().mockResolvedValue(response([raw()]));
+ const early=fetchMinimalEvents();expect(fetchMinimalEvents()).toBe(early);
+ await flush();
+ expect(global.fetch).not.toHaveBeenCalled();
+ expect(fetchPrivateSharedEventsForCurrentUser).not.toHaveBeenCalled();
+ (auth as any).currentUser={uid:'account-a'};
+ ready();
+ (auth as any).authStateReady=jest.fn().mockResolvedValue(undefined);
+ const afterSignIn=fetchMinimalEvents();
+ const results=await Promise.all([early,afterSignIn]);await flush();
+ expect(global.fetch).toHaveBeenCalledTimes(1);
+ expect(privateAccounts).toEqual(['account-a']);
+ expect(results.every(result=>result.accountId==='account-a')).toBe(true);
+});
+it('allows a settled signed-out session without waiting for a user to sign in',async()=>{
+ (auth as any).currentUser=null;
+ (auth as any).authStateReady=jest.fn().mockResolvedValue(undefined);
+ global.fetch=jest.fn().mockResolvedValue(response([raw()]));
+ const result=await fetchMinimalEvents();await flush();
+ expect(result.accountId).toBeNull();expect(global.fetch).toHaveBeenCalledTimes(1);
+});
+it('keeps rejecting an account change after an authenticated download actually started',async()=>{
+ (auth as any).authStateReady=jest.fn().mockResolvedValue(undefined);
+ let finish!: (items: never[])=>void;
+ (fetchPrivateSharedEventsForCurrentUser as jest.Mock).mockReturnValueOnce(new Promise(resolve=>{finish=resolve;}));
+ global.fetch=jest.fn().mockResolvedValue(response([raw()]));
+ const pending=fetchMinimalEvents();const rejected=expect(pending).rejects.toThrow('Account changed');
+ await flush();expect(global.fetch).toHaveBeenCalledTimes(1);
+ (auth as any).currentUser={uid:'account-b'};
+ finish([]);await rejected;
+});
 it('saves the complete public source before private overlays, without account-specific contents',async()=>{
  const publicEvent=normalizeFirestoreEvent(raw());
  (fetchPrivateSharedEventsForCurrentUser as jest.Mock).mockResolvedValue([{...publicEvent,source:'private_shared',description:'private secret',imageUrl:'private-image',sharedEventProvenance:{sharedByCurrentUser:true,privateEventId:'secret-id'}}]);
