@@ -1,0 +1,55 @@
+{
+  "reportedStartup": {
+    "run": "map-mwj4lsq7",
+    "startedAtUtc": "2026-11-16T10:33:57.679Z",
+    "feedStartedMs": 117,
+    "initialPrivateFetchSkippedNoAccount": true,
+    "reactAuthReadyMs": 282.6,
+    "publicFinishedMs": 3091.1,
+    "mergeAndAccountFailureMs": 3124.1,
+    "clustersMs": 6523.8,
+    "frameProxyMs": 6668.6,
+    "publicItems": 848,
+    "pagesPerDownload": 9,
+    "matchingServerRequestChains": 2,
+    "matchingServerRequests": 18,
+    "serverFirstPageLatencySeconds": [
+      0.226288032,
+      0.239644012
+    ]
+  },
+  "repair": {
+    "implementationCommit": "1cb057f",
+    "releaseCommit": "44d6d542b67008844a9580cc30fa6d81f936c5b5",
+    "base": "694643660061283c3dc4cf30a3dbb9beb788268c",
+    "waitCondition": "Firebase initial auth state settled; no signed-in user required",
+    "allFeedCallersUseSharedEntryPoint": true,
+    "oneSourceFetchAcrossRestoredSignInVerified": true,
+    "realLaterAccountChangeStillRejected": true,
+    "durablePublicSnapshotUnchanged": true,
+    "mapPulseAndTapFilesUnchanged": true,
+    "nativeDependencyChanges": false,
+    "backendOrCloudSettingsChanged": false
+  },
+  "guest": {
+    "actualContinueAsGuestHandlerReviewed": "app/index.tsx handleGuestMode",
+    "handlerOpensMapWithoutSigningIn": true,
+    "mapGuestCondition": "!user",
+    "settledNullAccountAllowed": true,
+    "guestDoesNotWaitForFutureLogin": true,
+    "existingGuestLimitsUnchanged": true,
+    "automatedSignedOutFeedTestPassed": true,
+    "nativeGuestInteractionTestPerformed": false
+  },
+  "verification": {
+    "focusedTestsPassed": 36,
+    "releaseSuites": 38,
+    "releaseTestsPassed": 294,
+    "existingSkips": 2,
+    "typescriptExit": 0,
+    "lintErrors": 0,
+    "lintWarnings": 224,
+    "deviceAdoptionVerified": false,
+    "nativeAfterFixStartupSpeedVerified": false
+  }
+}

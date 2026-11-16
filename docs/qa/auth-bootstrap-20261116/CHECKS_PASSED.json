@@ -1,0 +1,17 @@
+{
+  "channel": "production",
+  "testsExit": 0,
+  "nativeSlowStartImprovementVerified": false,
+  "typescriptExit": 0,
+  "testsPassed": 294,
+  "paintFilesUnchanged": true,
+  "platform": "ios",
+  "lintErrors": 0,
+  "nativeChanges": false,
+  "commit": "44d6d542b67008844a9580cc30fa6d81f936c5b5",
+  "deviceAdoptionVerified": false,
+  "runtime": "1.1.20",
+  "atUTC": "2026-11-16T10:41:30.6919915Z",
+  "testsSkipped": 2,
+  "existingBaselineAssertionExcluded": true
+}
