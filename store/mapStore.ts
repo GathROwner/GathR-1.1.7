@@ -119,6 +119,7 @@ import {
 } from '../lib/config/backend';
 import { EVENT_DETAILS_SCHEMA_VERSION, EVENTS_MINIMAL } from '../lib/queryKeys';
 import { EVENTS_QUERY_GC_MS } from '../lib/eventCachePolicy';
+import { auth } from '../config/firebaseConfig';
 import { normalizeVenueIdentityText } from '../utils/venueIdentity';
 import { createLegacyTimingContract, readVersion2EventTiming } from '../utils/eventTiming';
 import { readEventAreaData } from '../utils/eventAreaData';
@@ -164,7 +165,7 @@ export interface ZoomThreshold {
  // The latest requested viewport owns cache projection, including while its fetch is pending.
  let projectCurrentViewportCache: ((events: Event[], source: 'cache' | 'refresh') => void) | null = null;
  let __minimalEventsInFlight:
-   | { key: string; promise: Promise<MinimalEventsResult>; startedAt: number }
+   | { key: string; accountId: string | null; promise: Promise<MinimalEventsResult>; startedAt: number }
    | null = null;
  const getMinimalEventsFetchKey = (options: FetchMinimalEventsOptions = {}) =>
    JSON.stringify(options ?? {});
@@ -172,7 +173,8 @@ export interface ZoomThreshold {
    options: FetchMinimalEventsOptions = {}
  ): Promise<MinimalEventsResult> => {
    const key = getMinimalEventsFetchKey(options);
-   if (__minimalEventsInFlight?.key === key) {
+   const accountId = auth.currentUser?.uid ?? null;
+   if (__minimalEventsInFlight?.key === key && __minimalEventsInFlight.accountId === accountId) {
      logStartupDataTiming('minimal_fetch_reused_inflight', {
        key,
        ageMs: Date.now() - __minimalEventsInFlight.startedAt,
@@ -197,7 +199,7 @@ export interface ZoomThreshold {
        }
      });
 
-   __minimalEventsInFlight = { key, promise, startedAt };
+   __minimalEventsInFlight = { key, accountId, promise, startedAt };
    return promise;
  };
  let __ML_fetchCount = 0;
@@ -1719,7 +1721,7 @@ fetchEvents: async () => {
       }
     }
 
-    return { combinedData: result.combinedData, fetchedAt: result.fetchedAt };
+    return result;
   };
 
   // CACHE-FIRST

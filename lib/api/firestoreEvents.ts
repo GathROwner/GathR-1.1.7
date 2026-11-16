@@ -763,16 +763,14 @@ export async function fetchAllFirestoreEvents(
       });
       if (pageCount < 16) startupTiming?.('public_page_received', { page: pageCount + 1, items: response.events?.length ?? 0, hasMore: Boolean(response.nextPageToken) });
 
-      if (Array.isArray(response.events)) {
-        allRawEvents.push(...response.events);
-      }
+      if (!Array.isArray(response.events)) throw new Error('Invalid public events response');
+      allRawEvents.push(...response.events);
 
       nextPageToken = response.nextPageToken;
       pageCount += 1;
 
-      if (pageCount >= maxPages) {
-        console.warn(`[Firestore] Reached max page limit (${maxPages}), stopping pagination`);
-        break;
+      if (nextPageToken && pageCount >= maxPages) {
+        throw new Error('Public events download exceeded page limit');
       }
     } while (nextPageToken);
 
@@ -802,7 +800,7 @@ export async function fetchAllFirestoreEvents(
   } catch (error) {
     console.error('[Firestore] Error fetching events:', error);
     startupTiming?.('public_fetch_failed', { pages: pageCount });
-    return [];
+    throw error;
   }
 }
 

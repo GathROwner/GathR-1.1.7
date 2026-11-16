@@ -20,6 +20,9 @@ import { DEFAULT_FILTER_CRITERIA, TimeFilterType } from '../../types/filter';
 import { resetViewportRequestCoordinator, reserveViewportRequestId } from '../../utils/viewportRequestCoordinator';
 import { createLegacyTimingContract } from '../../utils/eventTiming';
 import type { Event } from '../../types/events';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { AppState } from 'react-native';
+import * as publicSnapshot from '../../lib/publicEventSnapshot';
 
 const initial = useMapStore.getState();
 const globals = global as typeof global & { __RQ_CLIENT?: QueryClient };
@@ -30,7 +33,7 @@ const fixture = (id='saved', extra: Partial<Event> = {}): Event => {
  const event = {id,type:'event',title:id,description:'',category:'Live Music',venue:id,address:'Fixture',latitude:46.23,longitude:-63.12,startDate:'2026-11-15',endDate:'2026-11-15',startTime:'19:00',endTime:'23:00',...extra} as Event;
  return {...event,timing:createLegacyTimingContract(event)};
 };
-const result = (events: Event[]) => ({combinedData:events,fetchedAt:Date.now(),sources:{}});
+const result = (events: Event[]) => ({combinedData:events,fetchedAt:Date.now(),sources:{},accountId:null});
 const deferred = <T,>() => {
  let resolve!: (v:T)=>void, reject!: (e:Error)=>void;
  const promise = new Promise<T>((yes,no)=>{resolve=yes;reject=no;});
@@ -39,8 +42,9 @@ const deferred = <T,>() => {
 const tick = async () => {for(let i=0;i<8;i++) await Promise.resolve();};
 let client: QueryClient | undefined;
 let tree: renderer.ReactTestRenderer | undefined;
-beforeEach(()=>{
+beforeEach(async()=>{
  jest.useFakeTimers();jest.setSystemTime(new Date(2026,10,15,12));jest.clearAllMocks();
+ await AsyncStorage.clear();
  resetViewportRequestCoordinator();delete globals.__RQ_CLIENT;
  useMapStore.setState({...initial,allEvents:[],events:[],viewportEvents:[],outsideViewportEvents:[],onScreenEvents:[],filteredEvents:[],clusters:[],friendEvents:[],isLoading:false,lastFetchedAt:null,viewportBbox:null,hasInitialViewportSettled:false,
  filterCriteria:{...DEFAULT_FILTER_CRITERIA,eventFilters:{timeFilter:TimeFilterType.TODAY},specialFilters:{timeFilter:TimeFilterType.TODAY}}});
@@ -48,6 +52,7 @@ beforeEach(()=>{
 afterEach(async()=>{
  if(tree){await act(async()=>{tree?.unmount();});tree=undefined;}
  client?.clear();client=undefined;globals.__RQ_CLIENT=oldClient;resetViewportRequestCoordinator();useMapStore.setState(initial);jest.useRealTimers();
+ jest.restoreAllMocks();
 });
 const pendingRequest = (bbox=firstBox) => {
  const network=deferred<ReturnType<typeof result>>();
@@ -208,4 +213,62 @@ it('does not let an old type-scoped response erase a newly restored different-ty
  network.resolve(result([fixture('old-event')]));await pending;
  expect(useMapStore.getState().viewportEvents.map(e=>e.id)).toEqual(['special-current']);
  expect(useMapStore.getState().allEvents.map(e=>e.id)).toEqual(['special-current']);
+});
+
+const mountDurableStartup = async (fetcher: () => Promise<ReturnType<typeof result>>) => {
+ client=makeClient();globals.__RQ_CLIENT=client;
+ const options={persister:{restoreClient:async()=>undefined,persistClient:async()=>{},removeClient:async()=>{}}};
+ function Probe(){useStartupEventCache(fetcher,useMapStore.getState().setAllEvents);return null;}
+ await act(async()=>{tree=renderer.create(<PersistQueryClientProvider client={client!} persistOptions={options}><Probe/></PersistQueryClientProvider>);await tick();});
+};
+const saveDurable = async () => {
+ await publicSnapshot.savePublicEventSnapshot([
+  fixture('saved-today',{source:'firestore'}),
+  fixture('saved-tomorrow',{source:'firestore',startDate:'2026-11-16',endDate:'2026-11-16'})
+ ],Date.now()-3*24*60*60*1000,publicSnapshot.beginPublicSnapshotRefresh());
+};
+const primeViewport = async () => {
+ useMapStore.getState().setAllEvents([fixture('viewport-seed')]);
+ await useMapStore.getState().fetchViewportEvents(firstBox);
+ useMapStore.getState().setAllEvents([],{projectViewport:'refresh'});
+};
+it('shows today from a days-old durable public copy while query restoration is empty and network is pending',async()=>{
+ await saveDurable();const network=deferred<ReturnType<typeof result>>();
+ const {network:viewportNetwork,pending}=pendingRequest();
+ await mountDurableStartup(()=>network.promise);
+ await act(async()=>{await tick();});
+ expect(useMapStore.getState().clusters.length).toBeGreaterThan(0);
+ expect(useMapStore.getState().filteredEvents.map(e=>e.id)).toEqual(['saved-today']);
+ expect(client!.getQueryData(EVENTS_MINIMAL)).toBeUndefined(); // never marked fresh
+ await act(async()=>{network.resolve(result([fixture('fresh')]));viewportNetwork.resolve(result([fixture('fresh')]));await pending;await tick();});
+ expect(useMapStore.getState().filteredEvents.map(e=>e.id)).toEqual(['fresh']);
+});
+it('keeps saved markers on sync failure and reconciles an authoritative empty retry while open',async()=>{
+ await saveDurable();await primeViewport();
+ const fetcher=jest.fn().mockRejectedValueOnce(new Error('offline')).mockResolvedValue(result([]));
+ await mountDurableStartup(fetcher);await act(async()=>{await tick();});
+ expect(useMapStore.getState().filteredEvents.map(e=>e.id)).toEqual(['saved-today']);
+ await act(async()=>{jest.advanceTimersByTime(30000);await tick();});
+ expect(fetcher).toHaveBeenCalledTimes(2);
+ expect(useMapStore.getState().clusters).toHaveLength(0);
+});
+it('pauses failed-sync retries in background, retries on foreground and cancels on unmount',async()=>{
+ let change!: (state: any)=>void;
+ jest.spyOn(AppState,'addEventListener').mockImplementation(((_event: string, listener: typeof change)=>{change=listener;return {remove:jest.fn()};}) as any);
+ const fetcher=jest.fn().mockRejectedValue(new Error('offline'));
+ await mountDurableStartup(fetcher);await act(async()=>{await tick();});
+ await act(async()=>{change('background');jest.advanceTimersByTime(60000);await tick();});
+ expect(fetcher).toHaveBeenCalledTimes(1);
+ await act(async()=>{change('active');await tick();});expect(fetcher).toHaveBeenCalledTimes(2);
+ await act(async()=>{tree!.unmount();tree=undefined;});
+ await act(async()=>{jest.advanceTimersByTime(600000);await tick();});
+ expect(fetcher).toHaveBeenCalledTimes(2);
+});
+it('does not let a late disk read replace a completed refresh, even with a newer-looking disk timestamp',async()=>{
+ const disk=deferred<{combinedData:Event[];fetchedAt:number}>();
+ jest.spyOn(publicSnapshot,'readPublicEventSnapshot').mockReturnValueOnce(disk.promise);
+ await primeViewport();
+ await mountDurableStartup(async()=>result([fixture('fresh')]));
+ await act(async()=>{disk.resolve({combinedData:[fixture('old-disk')],fetchedAt:Date.now()+1000});await tick();});
+ expect(useMapStore.getState().filteredEvents.map(e=>e.id)).toEqual(['fresh']);
 });

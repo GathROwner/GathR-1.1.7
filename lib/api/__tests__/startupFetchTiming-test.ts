@@ -1,4 +1,5 @@
 jest.mock('../../../config/firebaseConfig', () => ({ auth: { currentUser: null }, firestore: {} }));
+jest.mock('@react-native-async-storage/async-storage', () => require('@react-native-async-storage/async-storage/jest/async-storage-mock'));
 jest.mock('../privateSharedEvents', () => ({ fetchPrivateSharedEventsForCurrentUser: jest.fn() }));
 const originalFetch = global.fetch;
 const originalFlag = process.env.EXPO_PUBLIC_MAP_LATENCY_TRACE;
@@ -40,11 +41,11 @@ it('records pages independently of a slower private fetch, preserving the origin
   expect(report.match(/"stage":"feed_fetch_started"/g)).toHaveLength(1);
   expect(report).not.toContain('synthetic'); // cursor never recorded
 });
-it('records public failure without changing the existing empty-result fallback', async () => {
+it('records public failure and rejects so a saved feed cannot be cleared as a successful empty sync', async () => {
   const { api, privateApi, timing } = load();
   privateApi.fetchPrivateSharedEventsForCurrentUser.mockResolvedValue([]);
   global.fetch = jest.fn().mockRejectedValue(new Error('synthetic network failure'));
-  await expect(api.fetchMinimalEvents()).resolves.toMatchObject({ combinedData: [] });
+  await expect(api.fetchMinimalEvents()).rejects.toThrow('synthetic network failure');
   expect(timing.formatStartupTimingExport()).toContain('public_fetch_failed');
   expect(timing.formatStartupTimingExport()).not.toContain('synthetic network failure');
 });
