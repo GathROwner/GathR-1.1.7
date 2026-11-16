@@ -1,0 +1,19 @@
+{
+  "imageStyleUnchanged": true,
+  "commit": "b06809e0d8e9c26b39815c717eebe340ff1498b5",
+  "deviceAdoptionVerified": false,
+  "atUTC": "2026-11-16T11:12:50.1496886Z",
+  "channel": "production",
+  "nativeChanges": false,
+  "runtime": "1.1.20",
+  "typescriptExit": 0,
+  "gestureAndCacheCodeUnchanged": true,
+  "handlerSourceUnchanged": true,
+  "nativeAppearanceVerified": false,
+  "lintErrors": 0,
+  "scope": "trace logo positioning only",
+  "platform": "ios",
+  "testsNotRunReason": "Reversible placement-only edit; actual component render, source-handler comparison and geometry reviewed instead",
+  "renderExit": 0,
+  "testsRun": 0
+}

@@ -31,3 +31,19 @@ suite reruns were added. Source/render checks, TypeScript, lint, Mapbox and the
 production release preflight are the checks for this scope. Native adoption and
 appearance remain unverified until Craig observes the update. Startup caching,
 guest handling, pulses and tap delivery are preserved.
+
+## Published iOS Production
+
+- Implementation `4c07e39`; clean release source `b06809e0d8e9c26b39815c717eebe340ff1498b5`.
+- Runtime `1.1.20`, group `345e9529-555f-4187-b906-197cfa533756`.
+- Update `01a1e412-284e-7b96-ab0c-6081a4c3d8a2` (`OTA 01a1e412`).
+- EAS view and newest-iOS list independently match source, runtime, platform,
+  group and update. Export: 2581 modules, 112 final iOS assets.
+- Release render/source checks, TypeScript, lint (zero errors), Mapbox,
+  production Firebase/auth/social environment and clean ancestry preflights passed.
+- The release comparison PNG is byte-identical to the independently viewed source
+  render (SHA-256 `a88ae76082b4d168d96d5cebea30e29a2273d64e7e1f934d8effbd915a0ab457`).
+- No other platforms/channels, native builds, startup/cache changes or backend
+  changes in this iteration. Native phone adoption/appearance remain unverified.
+
+Receipts: `CHECKS_PASSED.json`, `VISUAL_REVIEW.json`, `PUBLISHED_IOS.json`.
