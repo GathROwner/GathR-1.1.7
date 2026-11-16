@@ -118,6 +118,7 @@ import {
   USE_FIRESTORE_EVENTS,
 } from '../lib/config/backend';
 import { EVENT_DETAILS_SCHEMA_VERSION, EVENTS_MINIMAL } from '../lib/queryKeys';
+import { EVENTS_QUERY_GC_MS } from '../lib/eventCachePolicy';
 import { normalizeVenueIdentityText } from '../utils/venueIdentity';
 import { createLegacyTimingContract, readVersion2EventTiming } from '../utils/eventTiming';
 import { readEventAreaData } from '../utils/eventAreaData';
@@ -1737,7 +1738,7 @@ fetchEvents: async () => {
 
     // Background refresh
     const refresh = qc
-      ? qc.fetchQuery({ queryKey, queryFn: fetchFresh, staleTime: STALE_MS, gcTime: 1000 * 60 * 10 })
+      ? qc.fetchQuery({ queryKey, queryFn: fetchFresh, staleTime: STALE_MS, gcTime: EVENTS_QUERY_GC_MS })
       : fetchFresh();
     refresh.then((fresh: { combinedData: Event[]; fetchedAt: number }) => {
       filtersChanged = true;
@@ -1759,7 +1760,7 @@ fetchEvents: async () => {
   set({ isLoading: true, error: null });
   try {
     const fresh = qc
-      ? await qc.fetchQuery({ queryKey, queryFn: fetchFresh, staleTime: STALE_MS, gcTime: 1000 * 60 * 10 })
+      ? await qc.fetchQuery({ queryKey, queryFn: fetchFresh, staleTime: STALE_MS, gcTime: EVENTS_QUERY_GC_MS })
       : await fetchFresh();
 
     filtersChanged = true;
@@ -2085,7 +2086,7 @@ refreshPrivateSharedEventsFromServer: async (privateEventIds?: string[]) => {
               queryKey: EVENTS_MINIMAL,
               queryFn: () => fetchMinimalEventsShared(fetchOptions),
               staleTime: 1000 * 60 * 3,
-              gcTime: 1000 * 60 * 10,
+              gcTime: EVENTS_QUERY_GC_MS,
             })
           : await fetchMinimalEventsShared(fetchOptions);
         if (abortIfStale('after_minimal_fetch')) return;
