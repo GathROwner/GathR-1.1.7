@@ -9,6 +9,7 @@ const MAX_ENTRIES = 64;
 type Counts = Record<string, number | boolean | null>;
 type Milestone = 'startup_gate_observed' | 'auth_ready' | 'cache_restore_ready'
   | 'startup_cache_checked' | 'startup_cache_published' | 'startup_refresh_published'
+  | 'durable_public_cache_ready'
   | 'viewport_requested' | 'viewport_cache_ready' | 'viewport_refresh_ready'
   | 'clusters_computed' | 'map_style_loaded' | 'map_loaded'
   | 'map_frame_with_clusters_proxy';

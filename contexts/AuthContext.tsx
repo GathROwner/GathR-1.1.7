@@ -1,11 +1,13 @@
 // \contexts\AuthContext.tsx
 
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef, ReactNode } from 'react';
 import { onAuthStateChanged, User } from 'firebase/auth';
 import { auth } from '../config/firebaseConfig';
 import { startUserPrefsListener, stopUserPrefsListener } from '../store/userPrefsStore';
 import { useQueryClient } from '@tanstack/react-query';
 import { startSocialListeners, stopSocialListeners } from '../store/socialStore';
+import { EVENTS_MINIMAL } from '../lib/queryKeys';
+import { useMapStore } from '../store/mapStore';
 
 interface AuthContextType {
   user: User | null;
@@ -25,12 +27,23 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const queryClient = useQueryClient(); // <-- keep this here at the top level
+  const previousAccount = useRef<string | null | undefined>(undefined);
 
 
   useEffect(() => {
     console.log('AuthProvider: Setting up authentication listener');
     
     const unsubscribe = onAuthStateChanged(auth, (user) => {
+      const accountId = user?.uid ?? null;
+      const cached = queryClient.getQueryData<{ accountId?: string | null }>(EVENTS_MINIMAL);
+      if (cached && cached.accountId !== accountId) {
+        queryClient.removeQueries({ queryKey: EVENTS_MINIMAL, exact: true });
+      }
+      if (previousAccount.current !== undefined && previousAccount.current !== accountId) {
+        queryClient.clear();
+        useMapStore.getState().setAllEvents([], { projectViewport: 'refresh' });
+      }
+      previousAccount.current = accountId;
       console.log('AuthProvider: Auth state changed', user ? 'User logged in' : 'No user');
       setUser(user);
       setIsLoading(false);

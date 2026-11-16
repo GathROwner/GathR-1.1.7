@@ -115,3 +115,4 @@ describe('private shared event reconciliation', () => {
     expect(result[0].title).toBe('West Prince PEI Markets Trail – Inside Market');
   });
 });
+jest.mock('@react-native-async-storage/async-storage', () => require('@react-native-async-storage/async-storage/jest/async-storage-mock'));

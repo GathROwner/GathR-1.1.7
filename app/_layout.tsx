@@ -41,6 +41,7 @@ import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client
 import { createAsyncStoragePersister } from '@tanstack/query-async-storage-persister';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { chunkedQueryStorage } from '../utils/chunkedAsyncStorage';
+import { deserializeEventQueryCache, persistNonFeedQuery } from '../lib/eventFeedPersistence';
 import { AppState } from 'react-native';
 import { amplitudeInit, amplitudeTrack, amplitudeSetUserId, amplitudeSetUserProps } from '../lib/amplitudeAnalytics';
 import * as Notifications from 'expo-notifications';
@@ -88,7 +89,7 @@ const asyncStoragePersister = createAsyncStoragePersister({
   key: 'rq-gathr-cache-v3-chunked',
   throttleTime: 1000,
   serialize: JSON.stringify,
-  deserialize: JSON.parse,
+  deserialize: deserializeEventQueryCache,
 });
 
 // â±ï¸ Live refresh cadence (adjust as desired; backend updates a few times/day)
@@ -503,6 +504,7 @@ try {
     persister: asyncStoragePersister,
     // Auto-expire persisted data after 12 hours (tweak as you like)
     maxAge: EVENTS_PERSIST_MAX_AGE_MS,
+    dehydrateOptions: { shouldDehydrateQuery: persistNonFeedQuery },
   }}
 >
         <AuthProvider>
@@ -689,7 +691,7 @@ useEffect(() => {
       };
     }, []);
 
-    useStartupEventCache(rqFetchEventsMinimal, setAllEvents, !isLoading);
+    useStartupEventCache(rqFetchEventsMinimal, setAllEvents, !isLoading, user?.uid ?? null);
 
     // ðŸ”„ Foreground refresh: when app becomes active, reconcile with server and report cache vs network
     useEffect(() => {

@@ -18,6 +18,8 @@ import { normalizeVenueIdentityText } from '../../utils/venueIdentity';
 import { isScopedLocationEvent } from '../../utils/locationScope';
 import { applyCityCentroidFallback } from '../../utils/peiCityCentroids';
 import { beginStartupFetch } from '../../utils/startupTiming';
+import { auth } from '../../config/firebaseConfig';
+import { beginPublicSnapshotRefresh, savePublicEventSnapshot } from '../publicEventSnapshot';
 
 const DEBUG_FETCH = __DEV__ ?? true;
 
@@ -28,6 +30,7 @@ export type FetchMinimalEventsOptions = FirestoreFetchOptions;
 type FetchMinimalEventsResult = {
   combinedData: Event[];
   fetchedAt: number;
+  accountId: string | null;
   sources: { googleSheets: number; firestore: number; privateShared: number };
 };
 
@@ -36,7 +39,7 @@ let minimalEventsInFlight:
   | null = null;
 
 const getFetchMinimalEventsKey = (options: FetchMinimalEventsOptions = {}) =>
-  JSON.stringify(options ?? {});
+  JSON.stringify([auth.currentUser?.uid ?? null, options ?? {}]);
 
 /**
  * Stronger dedupe key to avoid collapsing distinct same-day occurrences.
@@ -316,12 +319,17 @@ async function fetchMinimalEventsFromSource(
   options: FetchMinimalEventsOptions = {}
 ): Promise<FetchMinimalEventsResult> {
   const t0 = Date.now();
+  const accountId = auth.currentUser?.uid ?? null;
 
   if (USE_FIRESTORE_EVENTS) {
     const timing = beginStartupFetch({ typeScoped: typeof options.isEvent === 'boolean' });
+    // Only an unscoped, complete public feed may replace the durable snapshot.
+    const snapshotRequest = Object.values(options).every(value => value === undefined)
+      ? beginPublicSnapshotRefresh() : null;
     const [firestoreEvents, privateSharedEvents] = await Promise.all([
       fetchAllFirestoreEvents(options, timing).then(items => {
         timing?.('public_fetch_finished', { items: items.length });
+        if (snapshotRequest !== null) void savePublicEventSnapshot(items, Date.now(), snapshotRequest);
         return items;
       }),
       fetchPrivateSharedEventsForCurrentUser({}, timing).then(items => {
@@ -333,6 +341,10 @@ async function fetchMinimalEventsFromSource(
       throw error;
     });
     timing?.('merge_started');
+    if ((auth.currentUser?.uid ?? null) !== accountId) {
+      timing?.('feed_fetch_failed');
+      throw new Error('Account changed during event sync');
+    }
     // Firestore events resolve centroids in normalizeFirestoreEvent; this
     // pass covers private-shared city-level events the same way.
     const combinedData = mergePrivateSharedEvents(firestoreEvents, privateSharedEvents)
@@ -348,6 +360,7 @@ async function fetchMinimalEventsFromSource(
     if (combinedData.length > 0 || !ENABLE_LEGACY_EVENTS_FALLBACK) {
       return {
         combinedData,
+        accountId,
         fetchedAt: Date.now(),
         sources: {
           googleSheets: 0,
@@ -365,6 +378,7 @@ async function fetchMinimalEventsFromSource(
   if (!ENABLE_LEGACY_EVENTS_FALLBACK) {
     return {
       combinedData: [],
+      accountId,
       fetchedAt: Date.now(),
       sources: {
         googleSheets: 0,
@@ -378,6 +392,7 @@ async function fetchMinimalEventsFromSource(
     const legacyEvents = await fetchLegacyMinimalEvents();
     return {
       combinedData: legacyEvents,
+      accountId,
       fetchedAt: Date.now(),
       sources: {
         googleSheets: legacyEvents.length,
@@ -389,6 +404,7 @@ async function fetchMinimalEventsFromSource(
     console.error('[fetchMinimalEvents] Legacy fallback failed:', error);
     return {
       combinedData: [],
+      accountId,
       fetchedAt: Date.now(),
       sources: {
         googleSheets: 0,
@@ -406,7 +422,7 @@ export function fetchMinimalEvents(
   if (minimalEventsInFlight?.key === key) {
     if (DEBUG_FETCH) {
       console.log(
-        `[fetchMinimalEvents] Reusing in-flight request key=${key} ageMs=${Date.now() - minimalEventsInFlight.startedAt}`
+        `[fetchMinimalEvents] Reusing in-flight request ageMs=${Date.now() - minimalEventsInFlight.startedAt}`
       );
     }
     return minimalEventsInFlight.promise;
