@@ -85,7 +85,11 @@ changes do not alter layout or paint; native slow-start improvement and OTA
 adoption require later user observation. The fix prevents premature cache loss;
 it cannot make an empty/expired-cache first download instantaneous.
 
-## Optional backend configuration, awaiting cost decision
+## Optional backend configuration, not applied
+
+Craig questioned the recurring cost and the need for another server. Clarified
+that this would keep existing backend capacity ready, not replace the backend.
+No affirmative cost approval was received; no cloud setting was changed.
 
 Proposed service-level change only:
 
@@ -111,3 +115,22 @@ models USD 18.396/month before free tier, credits, tax and currency conversion.
 Normal active request costs remain; this is an idle-capacity model, not an
 account invoice forecast. Official setting reference:
 https://docs.cloud.google.com/run/docs/configuring/min-instances
+
+## Published iOS Production
+
+- Live baseline: `d89cbc2bf7114e3042939c141478e677bf1c8926`.
+- Implementation: `f865bc3`; clean independent release: `8ea6d967ccf077397215c4c05a809adf7bb76b64`.
+- Runtime `1.1.20`, group `fc0bd4f8-a462-4d6c-adb6-e39ab43d91a0`.
+- iOS update `01a1e228-f136-7565-bf26-4f7dbeeeb461` (`OTA 01a1e228`).
+- Independent EAS view and newest-platform list readback passed.
+- Export: 2579 modules, 112 final EAS iOS assets.
+- Independent release checks: 35 suites / 269 passed / two existing skips,
+  TypeScript passed, lint zero errors / 224 existing warnings, Mapbox and
+  production Firebase/auth/social/runtime/environment preflights passed.
+- No new device adoption or startup speed observation claimed. Craig's prior
+  smooth-ripple acceptance is preserved; all ripple/tap paint files are unchanged.
+- Backend revision and effective minimum zero independently re-read unchanged.
+- Android, Preview and Development were not published in this iteration.
+
+Machine-readable evidence: `DIAGNOSIS.json`, `CHECKS_PASSED.json`,
+`SERVER_UNCHANGED.json` and `PUBLISHED_IOS.json` in this directory.

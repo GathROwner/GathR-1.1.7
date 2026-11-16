@@ -1,0 +1,20 @@
+{
+  "project": "gathr-migrated",
+  "limits": {
+    "cpu": "1000m",
+    "memory": "1Gi"
+  },
+  "configurationMutationPerformed": false,
+  "startupCpuBoost": "true",
+  "revisionMinimum": null,
+  "serviceMinimum": null,
+  "traffic": [
+    {
+      "latestRevision": true,
+      "percent": 100
+    }
+  ],
+  "latestReadyRevision": "gathr-backend-00088-m9k",
+  "service": "gathr-backend",
+  "region": "northamerica-northeast1"
+}

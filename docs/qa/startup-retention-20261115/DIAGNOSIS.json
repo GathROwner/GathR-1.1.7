@@ -1,0 +1,97 @@
+{
+  "startupRun": "map-mwimc4s3",
+  "startedAtUtc": "2026-11-16T02:02:33.651Z",
+  "exportsAreSameStartup": true,
+  "client": {
+    "savedFeedItems": 0,
+    "authReadyMs": 942.5,
+    "publicPage1StartedMs": 942.8,
+    "publicPage1ReceivedMs": 7125,
+    "lastPageReceivedMs": 9825.6,
+    "pageCount": 8,
+    "items": 791,
+    "feedFinishedMs": 9890.7,
+    "clustersComputedMs": 9934.1,
+    "mapFrameProxyMs": 10155.3
+  },
+  "server": {
+    "project": "gathr-migrated",
+    "service": "gathr-backend",
+    "region": "northamerica-northeast1",
+    "revision": "gathr-backend-00088-m9k",
+    "firstRequestUtc": "2026-11-16T02:02:34.984683Z",
+    "firstRequestStatus": 200,
+    "firstRequestLatencySeconds": 5.38264,
+    "newInstanceUtc": "2026-11-16T02:02:35.010238Z",
+    "newInstanceReason": "AUTOSCALING",
+    "startupTcpProbeUtc": "2026-11-16T02:02:39.160334Z",
+    "cursorRequestLatencySeconds": [
+      0.386024591,
+      0.392803764,
+      0.29040351,
+      0.209537,
+      0.182181636,
+      0.192113503,
+      0.148008452
+    ],
+    "startupCpuBoostAlreadyEnabled": true,
+    "configuredCpu": 1,
+    "configuredMemoryGiB": 1,
+    "minimumInstancesChanged": false
+  },
+  "cache": {
+    "reproducedOldEvictionAfterMinutes": 11,
+    "oldInactiveGcMinutes": 10,
+    "newFeedInactiveGcHours": 12,
+    "diskSnapshotMaxAgeHoursUnchanged": 12,
+    "feedFreshnessMinutesUnchanged": 3,
+    "unrelatedDetailGcMinutesUnchanged": 10,
+    "cacheKeyUnchanged": true,
+    "privateAuthCompositionUnchanged": true,
+    "onlyPossibleCacheMissCauseProven": false
+  },
+  "pagination": {
+    "requestedLimits": [
+      100,
+      500
+    ],
+    "receivedItemsEach": [
+      100,
+      100
+    ],
+    "responseBytesEach": [
+      512683,
+      512683
+    ],
+    "hasMoreEach": [
+      true,
+      true
+    ],
+    "backendPaginationChanged": false,
+    "partialFeedPublicationIntroduced": false
+  },
+  "verification": {
+    "implementationCommit": "f865bc3",
+    "releaseCommit": "8ea6d967ccf077397215c4c05a809adf7bb76b64",
+    "sourceSuites": 35,
+    "sourceTestsPassed": 269,
+    "releaseSuites": 35,
+    "releaseTestsPassed": 269,
+    "existingSkips": 2,
+    "counterfactualBaseline": "d89cbc2bf7114e3042939c141478e677bf1c8926",
+    "counterfactualNewTestsFailed": 2,
+    "counterfactualNewTestsPassed": 2,
+    "sourceLintWarnings": 225,
+    "releaseLintWarnings": 224,
+    "lintErrors": 0,
+    "typescriptExit": 0,
+    "newNativeStartupObservation": false
+  },
+  "paidServerOption": {
+    "status": "NOT_APPLIED_NO_AFFIRMATIVE_COST_APPROVAL",
+    "proposedServiceMinimum": 1,
+    "idleMonthlyModelUsd730Hours": 18.396,
+    "pricingUrl": "https://cloud.google.com/run/pricing",
+    "noChangeToCloudChargesConfigured": true
+  }
+}
