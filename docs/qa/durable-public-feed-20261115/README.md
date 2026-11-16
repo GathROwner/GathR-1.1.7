@@ -75,3 +75,20 @@ The accepted marker/pulse files are compared byte-for-byte with live iOS source
 Tests demonstrate the data handoff and ordering, not iPhone startup speed or
 pixel visibility. Device adoption and an on-device restart remain unverified
 until Craig observes the published update.
+
+## Published iOS Production
+
+- Implementation commit: `31e047d`.
+- Clean independent release source: `694643660061283c3dc4cf30a3dbb9beb788268c`.
+- Runtime `1.1.20`, group `8ccc77bc-755b-43be-aef9-304e6116fee3`.
+- Update `01a1e240-0efb-7110-97d4-4ff49127ba42` (`OTA 01a1e240`).
+- Independent EAS view and newest-iOS list readback match platform, runtime,
+  source commit, update and group. Export: 2581 modules, 112 final iOS assets.
+- Final release checks: 38 suites, 291 passed, two existing skips. TypeScript
+  passed. Lint: zero errors, 224 existing warnings. Mapbox, production Firebase,
+  App Check, social flags, clean worktree and live-source ancestry checks passed.
+- No backend code or cloud settings changed. Android, Preview and Development
+  were not published in this iteration. Device adoption/startup speed remain
+  unverified; the first successful full sync on this OTA seeds the public copy.
+
+Receipts: `CONTRACT.json`, `CHECKS_PASSED.json` and `PUBLISHED_IOS.json`.

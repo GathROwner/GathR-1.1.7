@@ -1,0 +1,63 @@
+{
+  "publicSnapshot": {
+    "storage": "existing chunked AsyncStorage",
+    "ageExpiry": null,
+    "compatibility": [
+      "backend API URL",
+      "normalized-event schema key"
+    ],
+    "writeSource": "complete public API result before private merging",
+    "pruneExpiredOnSaveAndRead": true,
+    "currentDayAndViewportUseExistingStoreFilters": true,
+    "replaceOnSuccessfulFullSync": true,
+    "replaceOnSuccessfulEmptyFullSync": true,
+    "keepOnFailureOrTruncation": true,
+    "scopedResponsesCannotReplaceFullSnapshot": true,
+    "olderRequestCannotOverwriteNewerRequest": true,
+    "storageFailureRetainsPriorCommittedGeneration": true
+  },
+  "privateFeed": {
+    "longLivedPublicCopyContainsPrivateRows": false,
+    "longLivedPublicCopyContainsFriendRows": false,
+    "publicContributorBadgesRemoved": true,
+    "mixedFeedGenericDiskPersistence": false,
+    "legacyMixedFeedDiscardedOnGenericRestore": true,
+    "mixedResultsAccountTagged": true,
+    "apiAndStoreInflightJoinAccountAware": true,
+    "accountSwitchRejectsOldResponse": true,
+    "signOutClearsMixedQueriesButKeepsPublicSnapshot": true
+  },
+  "sync": {
+    "genericPublicCopyDoesNotBecomeFreshMixedQueryData": true,
+    "lateDiskCannotReplaceFreshNetwork": true,
+    "failedSyncRetryForegroundSeconds": [
+      30,
+      60,
+      120,
+      240,
+      300
+    ],
+    "retryDelayCapSeconds": 300,
+    "backgroundTimerStopped": true,
+    "freshnessMinutes": 3,
+    "fullDownloadProtocolUnchanged": true,
+    "backendDeltaSyncAdded": false
+  },
+  "releaseScope": {
+    "implementationCommit": "31e047d",
+    "releaseCommit": "694643660061283c3dc4cf30a3dbb9beb788268c",
+    "liveBase": "8ea6d967ccf077397215c4c05a809adf7bb76b64",
+    "platform": "ios",
+    "channel": "production",
+    "runtime": "1.1.20",
+    "nativeDependenciesChanged": false,
+    "cloudSettingsChanged": false,
+    "acceptedPulseAndTapPaintFilesUnchanged": true,
+    "testsPassed": 291,
+    "suites": 38,
+    "existingSkips": 2,
+    "deviceAdoptionVerified": false,
+    "nativeStartupSpeedVerified": false
+  },
+  "firstAdoption": "first successful complete public download on this update seeds the new copy; older mixed query data is not promoted to an indefinite public feed"
+}
